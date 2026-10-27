@@ -159,6 +159,15 @@ verified, and record that as a remaining gap.
   fetches. Add new formats only when the storage contract supports them. Verify both themes,
   desktop/narrow layouts, keyboard/focus, rendering boundaries, and save/discard flows; revisit
   this policy when adding binary or streaming storage. See [verification](../file-preview-verification.md).
+- **Preview fallback (accepted and implemented, owner correction 2026-10-27):** preflight
+  file size, text shape, and supported type before parsing or highlighting. Preview budgets
+  are independent of storage/upload limits. If a budget is exceeded or content cannot be
+  rendered, explain why in the existing panel and keep Download and navigation available;
+  do not force an expensive source fallback. Isolate renderer exceptions from the workspace.
+  Preserve editable text drafts and label their download as Download draft. Verify boundary
+  sizes (including UTF-8), complex/invalid content, recovery after correction, and downloaded
+  bytes. Current budgets are documented in [file preview verification](../file-preview-verification.md);
+  revisit them with measured renderer performance or a streaming/binary storage implementation.
 - The selector offers Light, Dark, and System; map the visible System option to TiUI `auto`.
   Use the library's persistence/system support. Migrate the current `tidb-workspace-theme`
   preference once (`system` → `auto`) so integration does not reset a user's selection.

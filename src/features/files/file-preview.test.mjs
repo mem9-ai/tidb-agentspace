@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { fileFormat, formatJson, previewCsv } from './file-preview.ts';
+import { fileFormat, formatJson, previewCsv, prepareFilePreview } from './file-preview.ts';
 import { MarkdownPreview } from './MarkdownPreview.ts';
 
 test('file preview selects text formats case-insensitively and treats active formats as code', () => {
@@ -51,6 +51,58 @@ test('CSV preview bounds large tables and rejects malformed quoting without sile
   assert.throws(() => previewCsv('"quoted"suffix'));
   assert.throws(() => previewCsv('un"quoted'));
   assert.throws(() => previewCsv('a,b,c', 200, 2));
+});
+
+test('preview checks UTF-8 bytes before parsing or rendering, including exact size boundaries', () => {
+  const text = ('a'.repeat(1023) + '\n').repeat(128);
+  assert.equal(prepareFilePreview('/large.txt', text).kind, 'text');
+  assert.match(prepareFilePreview('/large.md', text + 'a').reason, /128 KiB/);
+  assert.match(prepareFilePreview('/invalid.json', text + '{').reason, /128 KiB/);
+  const unicode = ('é'.repeat(511) + 'a\n').repeat(128);
+  assert.equal(new TextEncoder().encode(unicode).length, 128 * 1024);
+  assert.equal(prepareFilePreview('/unicode.txt', unicode).kind, 'text');
+  assert.match(prepareFilePreview('/unicode.txt', unicode + 'é').reason, /128 KiB/);
+});
+
+test('preview bounds line counts and long lines without rejecting ordinary unknown text formats', () => {
+  assert.equal(prepareFilePreview('/LICENSE', 'x\r\n'.repeat(1999) + 'x').kind, 'text');
+  assert.match(prepareFilePreview('/lines.md', 'x\r\n'.repeat(2000) + 'x').reason, /2,000-line/);
+  assert.equal(prepareFilePreview('/line.txt', 'a'.repeat(10000)).kind, 'text');
+  assert.match(prepareFilePreview('/line.js', 'a'.repeat(10001)).reason, /10,000-character/);
+  assert.equal(prepareFilePreview('/text.custom', 'café\t→\nnext line').kind, 'text');
+});
+
+test('unsupported file types and binary/control data use an unavailable preview', () => {
+  assert.match(prepareFilePreview('/report.PDF', '%PDF-1.4').reason, /not supported/);
+  assert.match(prepareFilePreview('/photo.png', 'not an image decoder').reason, /not supported/);
+  assert.match(prepareFilePreview('/unknown', 'a\0b').reason, /binary or control/);
+  assert.match(prepareFilePreview('/log.txt', '\u001b[31m').reason, /binary or control/);
+  assert.equal(prepareFilePreview('/vector.svg', '<svg></svg>').kind, 'code');
+});
+
+test('failed parsing has a useful unavailable reason and corrected content recovers', () => {
+  assert.match(prepareFilePreview('/data.json', '{bad}').reason, /could not be parsed as JSON/);
+  assert.equal(prepareFilePreview('/data.json', '{"ok":true}').kind, 'json');
+  assert.match(prepareFilePreview('/data.csv', '"unfinished').reason, /could not be rendered/);
+  assert.match(
+    prepareFilePreview('/wide.csv', Array(51).fill('cell').join(',')).reason,
+    /50-column/,
+  );
+  assert.equal(prepareFilePreview('/data.csv', 'name\nAda').kind, 'csv');
+  const csv = prepareFilePreview('/rows.csv', 'row\n'.repeat(300));
+  assert.equal(csv.kind, 'csv');
+  assert.equal(csv.rows.length, 200);
+  assert.equal(csv.truncated, true);
+});
+
+test('small deeply nested or expanded JSON cannot cause unbounded formatted output', () => {
+  const nested = (depth) => '['.repeat(depth) + '0' + ']'.repeat(depth);
+  assert.equal(prepareFilePreview('/deep.json', nested(64)).kind, 'json');
+  assert.match(prepareFilePreview('/deep.json', nested(65)).reason, /64-level nesting/);
+  assert.match(prepareFilePreview('/deep.json', nested(4000)).reason, /64-level nesting/);
+  const expanded = '['.repeat(64) + Array(1000).fill('0').join(',') + ']'.repeat(64);
+  assert.match(prepareFilePreview('/expanded.json', expanded).reason, /formatted JSON exceeds/);
+  assert.throws(() => formatJson(expanded), /formatted JSON exceeds/);
 });
 
 test('Markdown renders headings, emphasis, code, tables and task lists', () => {

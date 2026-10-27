@@ -18,8 +18,103 @@ const codeLanguages = {
   go: 'go',
 } as const;
 
+// Rendering has a smaller budget than storage. Check before parsers or highlighters run.
+export const previewLimits = {
+  bytes: 128 * 1024,
+  lines: 2000,
+  lineLength: 10000,
+  jsonDepth: 64,
+} as const;
+
+const binaryExtensions = new Set([
+  'pdf',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'avif',
+  'ico',
+  'bmp',
+  'tif',
+  'tiff',
+  'zip',
+  'gz',
+  'tar',
+  '7z',
+  'rar',
+  'parquet',
+  'arrow',
+  'db',
+  'sqlite',
+  'sqlite3',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'ppt',
+  'pptx',
+  'mp3',
+  'mp4',
+  'wav',
+  'ogg',
+  'webm',
+  'mov',
+  'woff',
+  'woff2',
+  'ttf',
+  'exe',
+  'bin',
+  'wasm',
+]);
+
+class PreviewLimitError extends Error {}
+
+function previewIssue(path: string, content: string): string | null {
+  if (
+    content.length > previewLimits.bytes ||
+    new TextEncoder().encode(content).length > previewLimits.bytes
+  )
+    return 'This file exceeds the 128 KiB preview limit.';
+  const extension = path.split('/').pop()?.split('.').pop()?.toLowerCase() ?? '';
+  if (binaryExtensions.has(extension))
+    return `The .${extension} file type is not supported by the text preview.`;
+  // Permit normal text whitespace, but do not render binary/control data as a document.
+  for (const character of content) {
+    const code = character.charCodeAt(0);
+    if ((code < 32 && ![9, 10, 12, 13].includes(code)) || code === 127)
+      return 'This file contains binary or control data that cannot be previewed as text.';
+  }
+  const lines = content.split(/\r\n|\r|\n/);
+  if (lines.length > previewLimits.lines) return 'This file exceeds the 2,000-line preview limit.';
+  if (lines.some((line) => line.length > previewLimits.lineLength))
+    return 'This file contains a line longer than the 10,000-character preview limit.';
+  return null;
+}
+
+export function prepareFilePreview(path: string, content: string) {
+  const issue = previewIssue(path, content);
+  if (issue) return { kind: 'unavailable', reason: issue } as const;
+  const format = fileFormat(path);
+  try {
+    if (format.kind === 'json') return { ...format, content: formatJson(content) };
+    if (format.kind === 'csv') return { ...format, ...previewCsv(content) };
+    return { ...format, content };
+  } catch (error) {
+    return {
+      kind: 'unavailable',
+      reason:
+        error instanceof PreviewLimitError
+          ? error.message
+          : format.kind === 'json'
+            ? 'This file could not be parsed as JSON. You can correct it in Edit source.'
+            : 'This CSV could not be rendered. Check its quoting and the 50-column limit in Edit source.',
+    } as const;
+  }
+}
+
 export function fileFormat(path: string) {
-  const extension = path.split('.').pop()?.toLowerCase() ?? '';
+  const extension = path.split('/').pop()?.split('.').pop()?.toLowerCase() ?? '';
   if (extension === 'md' || extension === 'markdown') return { kind: 'markdown' } as const;
   if (extension === 'json') return { kind: 'json', language: 'json' } as const;
   if (extension === 'csv') return { kind: 'csv' } as const;
@@ -33,24 +128,33 @@ export function formatJson(content: string): string {
   const tokens = content.match(/"(?:\\.|[^"\\])*"|[{}[\],:]|[^\s{}[\],:]+/g) ?? [];
   let depth = 0;
   let result = '';
+  const append = (value: string) => {
+    if (result.length + value.length > previewLimits.bytes)
+      throw new PreviewLimitError('The formatted JSON exceeds the 128 KiB preview limit.');
+    result += value;
+  };
   const newline = () => '\n' + '  '.repeat(depth);
   tokens.forEach((token, index) => {
     if (token === '{' || token === '[') {
-      result += token;
+      if (depth >= previewLimits.jsonDepth)
+        throw new PreviewLimitError('This JSON exceeds the 64-level nesting limit for previews.');
+      append(token);
       if (tokens[index + 1] !== (token === '{' ? '}' : ']')) {
         depth++;
-        result += newline();
+        append(newline());
       }
     } else if (token === '}' || token === ']') {
       if (tokens[index - 1] !== (token === '}' ? '{' : '[')) {
         depth--;
-        result += newline();
+        append(newline());
       }
-      result += token;
-    } else if (token === ',') result += token + newline();
-    else if (token === ':') result += ': ';
-    else result += token;
+      append(token);
+    } else if (token === ',') append(token + newline());
+    else if (token === ':') append(': ');
+    else append(token);
   });
+  if (new TextEncoder().encode(result).length > previewLimits.bytes)
+    throw new PreviewLimitError('The formatted JSON exceeds the 128 KiB preview limit.');
   return result;
 }
 

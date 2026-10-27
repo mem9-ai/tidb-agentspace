@@ -69,7 +69,10 @@ File System opens files in a non-modal reading panel beside the desktop file lis
 screens the panel has an explicit return to the list. Markdown is rendered by default;
 JSON, CSV, common source files, and plain text have text-based previews with an Edit source
 tab. Save keeps the current file open. The existing API still accepts only UTF-8 text up to
-256 KiB; binary images, PDFs, and rich media are not implemented. See the
+256 KiB; automatic preview has a separate 128 KiB budget plus line/complexity limits.
+Oversized, unsupported, invalid, or failed previews show a reason and retain Download and
+navigation. Text source editing remains available; correcting a draft can restore its preview.
+Binary images, PDFs, and rich media are not implemented. See the
 [file reading standard](standards/tiui-design-system.md#theme-responsive-behavior-and-interaction).
 
 Use real TiUI components, its semantic palette and theme provider, with the Workspace's
