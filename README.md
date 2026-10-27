@@ -22,7 +22,7 @@ npm run preview
 
 ## What works
 
-- Ten complete frontend routes: overview, databases, SQL editor, files, agent connection, keys, API explorer, monitoring, billing, settings.
+- Nine top-level destinations: overview, databases, files, agent connection, keys, API explorer, monitoring, billing, settings. Each database has its own SQL editor at `#databases/<resource-id>/sql`, preserving the selected database on reload and browser history navigation.
 - Creation of simulated resources with capability and free-tier validation, plus retry-safe idempotency keys.
 - Persistent UTF-8 file and directory operations, text uploads up to 256 KiB, editing, downloading, and empty-directory deletion.
 - Unified Workspace Keys with action scopes and explicit resource access, 7/30/90-day expiration, last-used metadata, and immediate revocation. Keys are revealed once; only a digest is stored.

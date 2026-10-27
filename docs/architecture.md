@@ -44,18 +44,26 @@ optional mix of three distinct resource types. [Supabase Platform](https://supab
 
 ## Console information architecture
 
-| Page             | Primary task                                  | Important states and interactions                                                                                       |
-| ---------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Overview         | Understand resources and the next useful step | Resource health, create resource, connect agent, allowance summary, recent activity, empty-workspace onboarding         |
-| Databases        | Create and use MySQL or PG resources          | Protocol, region, lifecycle, supported capabilities, unified API examples; future native client integration             |
-| SQL editor       | Explore and troubleshoot data                 | Resource selection, query/result/error states, export; future schema explorer, cancellation, history, bounded execution |
-| File System      | Manage agent context and output               | Directory navigation, filtering, preview/edit/upload/download, scoped access; future streaming and checkpoints          |
-| Connect an agent | Complete the first authenticated request      | Workspace Key, environment setup, OpenAPI, project instructions, REST examples, future MCP integration                  |
-| API keys         | Grant access to a workflow                    | Allowed resources, allowed actions, explicit future-resource permission, expiry, last use, rotation and revocation      |
-| API explorer     | Try the actual public API                     | Endpoint/scope selection, request and response examples, error codes, request ID, contract download                     |
-| Monitoring       | Understand behavior and performance           | Resource health, actual activity, query/file metrics, actor/resource filters, measurement freshness                     |
-| Usage & billing  | Understand allowances and charges             | Per-resource usage, customer allocation, upstream allowance attribution, estimated/settled spend, limits                |
-| Settings         | Manage the personal workspace                 | Names, profile and account/session status; future account claim, security, export and deletion                          |
+| Page             | Primary task                                  | Important states and interactions                                                                                                                    |
+| ---------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Overview         | Understand resources and the next useful step | Resource health, create resource, connect agent, allowance summary, recent activity, empty-workspace onboarding                                      |
+| Databases        | Create and use MySQL or PG resources          | Resource list, per-database SQL editor and connection actions, protocol, region, lifecycle, supported capabilities; future native client integration |
+| File System      | Manage agent context and output               | Directory navigation, filtering, preview/edit/upload/download, scoped access; future streaming and checkpoints                                       |
+| Connect an agent | Complete the first authenticated request      | Workspace Key, environment setup, OpenAPI, project instructions, REST examples, future MCP integration                                               |
+| API keys         | Grant access to a workflow                    | Allowed resources, allowed actions, explicit future-resource permission, expiry, last use, rotation and revocation                                   |
+| API explorer     | Try the actual public API                     | Endpoint/scope selection, request and response examples, error codes, request ID, contract download                                                  |
+| Monitoring       | Understand behavior and performance           | Resource health, actual activity, query/file metrics, actor/resource filters, measurement freshness                                                  |
+| Usage & billing  | Understand allowances and charges             | Per-resource usage, customer allocation, upstream allowance attribution, estimated/settled spend, limits                                             |
+| Settings         | Manage the personal workspace                 | Names, profile and account/session status; future account claim, security, export and deletion                                                       |
+
+SQL Editor belongs inside Databases, scoped to a selected MySQL or PostgreSQL resource;
+it is not a peer of Databases in the workspace navigation. The implemented route is
+`#databases/<resource-id>/sql`. Database names, row actions, and connection dialogs must
+open that exact resource, with Databases remaining active in the sidebar. Reload and
+browser back/forward preserve the resource; switching databases clears previous query
+results/errors. An unavailable or non-database resource must never silently select another
+database. Legacy `#sql` links open the database list for explicit selection. Keep the query
+target, displayed database, and URL consistent when adding future database tools.
 
 Use real TiUI components, its semantic palette and theme provider, with the Workspace's
 larger typography and spacing requirements. The [TiUI standard](standards/tiui-design-system.md)

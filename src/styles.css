@@ -1180,6 +1180,18 @@ td small {
   font-size: 0.9375rem;
   white-space: nowrap;
 }
+.database-name {
+  font-size: 0.9375rem;
+  white-space: nowrap;
+}
+.database-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.database-back {
+  margin-bottom: 20px;
+}
 .status {
   display: flex;
   align-items: center;
@@ -3209,6 +3221,10 @@ td {
   .breadcrumbs > span:not(.breadcrumb-icon),
   .breadcrumbs > svg {
     display: none;
+  }
+  .breadcrumbs > .resource-breadcrumb-separator {
+    display: block;
+    flex-shrink: 0;
   }
   .breadcrumbs strong {
     overflow: hidden;
