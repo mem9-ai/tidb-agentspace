@@ -39,6 +39,12 @@ An agent's personal memory is not a substitute for repository policy. Keep local
 settings untracked. The product's downloadable agent connection instructions are for
 API consumers and are separate from these source-code collaboration instructions.
 
+Read the applicable documents in the [shared standards index](docs/standards/README.md).
+All frontend work follows the [TiUI standard](docs/standards/tiui-design-system.md), also
+linked by `src/AGENTS.md`. Follow [knowledge maintenance](docs/standards/knowledge-maintenance.md)
+to preserve reusable user corrections and verified conventions in the same PR. Keep one
+canonical rule and link it from agent entry points instead of copying it into each tool.
+
 Official references: [Codex instructions](https://developers.openai.com/codex/guides/agents-md/),
 [Claude memory/imports](https://code.claude.com/docs/en/memory),
 [Cursor rules](https://cursor.com/docs/rules), and
@@ -46,12 +52,13 @@ Official references: [Codex instructions](https://developers.openai.com/codex/gu
 
 ## Change workflow
 
-1. Read the task, `AGENTS.md`, relevant code/tests, and applicable architecture notes.
+1. Read the task, `AGENTS.md`, relevant code/tests, and applicable standards/architecture notes.
 2. Inspect the working tree. Use a focused branch or checkout and preserve unrelated edits.
 3. State the intended result and scope. For multi-person work, agree on file ownership;
    use separate checkouts instead of letting agents rewrite the same files simultaneously.
 4. Implement the smallest complete change. Record important architectural decisions in
-   `docs/decisions/`; do not invent future APIs or label simulated behavior as integrated.
+   `docs/decisions/` and reusable practices in the applicable standard; do not invent future
+   APIs or label simulated behavior as integrated.
 5. Run targeted checks while working, then `npm run check` before handoff.
 6. Review the diff for unrelated changes, secrets, generated-file drift, and compatibility.
 7. Open a focused PR using the template, with validation evidence and relevant screenshots.
@@ -67,8 +74,10 @@ recreating formatter output or introduce broad `eslint-disable` / `ts-ignore` es
 
 Keep new frontend features in focused modules rather than expanding `src/App.tsx` indefinitely.
 The existing prototype is a starting point, not the target module structure. Use the current
-shared primitives and semantic design tokens; integrate official TiUI components as they
-become available. Keep UI text, comments, and common engineering documentation in English.
+TiUI standard for real components, semantic tokens, theme ownership, and shared readability
+overrides. The public TiUI package is available; the custom console's migration is pending.
+Preserve existing behavior during scoped migrations and update their status with evidence.
+Keep UI text, comments, and common engineering documentation in English.
 
 A customer uses one Workspace Key for the public REST/SDK/MCP surface. Key permissions
 combine allowed actions with allowed components/resources. Backend services own the upstream

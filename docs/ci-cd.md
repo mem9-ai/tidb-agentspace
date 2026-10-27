@@ -10,9 +10,11 @@
   API contract, source SHA, and checksums. It does not deploy to a cloud provider.
 - Exact npm dependency versions, a committed lockfile, fixed Node/npm versions, editor
   settings, Prettier, ESLint, strict TypeScript, and a generated-contract drift check.
-- `scripts/check-repo.mjs` checks instruction entry points, toolchain consistency,
-  dependency pins, and baseline workflow properties. It supplements CI review; it is not
-  a sandbox or a comprehensive workflow security scanner.
+- `scripts/check-repo.mjs` checks instruction entry points, required standards and their
+  routing links, toolchain consistency, dependency pins, and baseline workflow properties.
+  It supplements CI review; it is not a sandbox or a comprehensive workflow security scanner.
+  Document presence does not prove an agent read the rule or that the UI conforms to TiUI;
+  the [design standard](standards/tiui-design-system.md) requires code and browser evidence.
 
 The private repository is [siddontang/tidb.ai](https://github.com/siddontang/tidb.ai).
 GitHub CI is running; branch protection, deployment environments, and hosting are not
