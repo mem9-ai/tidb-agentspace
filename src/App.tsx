@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ResourceAccessPicker } from './features/keys/ResourceAccessPicker';
+import { ThemePicker } from './features/theme/ThemePicker';
 
 type Kind = 'mysql' | 'postgresql' | 'filesystem';
 type Resource = {
@@ -352,19 +353,27 @@ function Sparkline({ large = false, range = '24h' }: { large?: boolean; range?: 
     >
       <defs>
         <linearGradient id={large ? 'fill-lg' : 'fill-sm'} x1="0" y1="0" x2="0" y2="1">
-          <stop stopColor="#e34857" stopOpacity=".16" />
-          <stop offset="1" stopColor="#e34857" stopOpacity="0" />
+          <stop stopColor="var(--accent-text)" stopOpacity=".16" />
+          <stop offset="1" stopColor="var(--accent-text)" stopOpacity="0" />
         </linearGradient>
       </defs>
       {large &&
         [20, 50, 80, 109].map((y) => (
-          <line key={y} x1="0" x2="520" y1={y} y2={y} stroke="#eceef2" strokeDasharray="3 4" />
+          <line
+            key={y}
+            x1="0"
+            x2="520"
+            y1={y}
+            y2={y}
+            stroke="var(--border-subtle)"
+            strokeDasharray="3 4"
+          />
         ))}
       <polygon points={`0,110 ${points} 520,110`} fill={`url(#${large ? 'fill-lg' : 'fill-sm'})`} />
       <polyline
         points={points}
         fill="none"
-        stroke="#df4b58"
+        stroke="var(--accent-text)"
         strokeWidth={large ? 1.7 : 2}
         vectorEffect="non-scaling-stroke"
         strokeLinejoin="round"
@@ -378,29 +387,64 @@ function WorkspaceIllustration() {
       <svg viewBox="0 0 420 210">
         <defs>
           <pattern id="dots" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
-            <circle cx="1" cy="1" r=".7" fill="#ccd0d9" />
+            <circle cx="1" cy="1" r=".7" fill="var(--border-strong)" />
           </pattern>
         </defs>
         <rect width="420" height="210" fill="url(#dots)" />
-        <g fill="none" stroke="#cbd0d9" strokeWidth="1.4">
+        <g fill="none" stroke="var(--border-strong)" strokeWidth="1.4">
           <path d="M100 106H179Q193 106 193 92V48H281" />
           <path d="M100 106H281" />
           <path d="M100 106H179Q193 106 193 120V165H281" />
         </g>
-        <circle cx="193" cy="106" r="4" fill="#e74b59" />
+        <circle cx="193" cy="106" r="4" fill="var(--accent-text)" />
         <g>
-          <rect x="36" y="75" width="64" height="64" rx="15" fill="#fff" stroke="#d9dce3" />
-          <path d="m68 91 17 10v19l-17 10-17-10v-19Zm0 6-12 7v13l12 7 12-7v-13Z" fill="#e44152" />
-          <rect x="281" y="26" width="112" height="43" rx="8" fill="#fff" stroke="#d9dce3" />
-          <text x="299" y="52" fill="#455164" fontSize="12" fontFamily="monospace">
+          <rect
+            x="36"
+            y="75"
+            width="64"
+            height="64"
+            rx="15"
+            fill="var(--surface)"
+            stroke="var(--border)"
+          />
+          <path
+            d="m68 91 17 10v19l-17 10-17-10v-19Zm0 6-12 7v13l12 7 12-7v-13Z"
+            fill="var(--accent-text)"
+          />
+          <rect
+            x="281"
+            y="26"
+            width="112"
+            height="43"
+            rx="8"
+            fill="var(--surface)"
+            stroke="var(--border)"
+          />
+          <text x="299" y="52" fill="var(--text-secondary)" fontSize="12" fontFamily="monospace">
             {'{ memory }'}
           </text>
-          <rect x="281" y="85" width="112" height="43" rx="8" fill="#fff" stroke="#d9dce3" />
-          <text x="299" y="111" fill="#455164" fontSize="12" fontFamily="monospace">
+          <rect
+            x="281"
+            y="85"
+            width="112"
+            height="43"
+            rx="8"
+            fill="var(--surface)"
+            stroke="var(--border)"
+          />
+          <text x="299" y="111" fill="var(--text-secondary)" fontSize="12" fontFamily="monospace">
             {'[ vectors ]'}
           </text>
-          <rect x="281" y="144" width="112" height="43" rx="8" fill="#fff" stroke="#d9dce3" />
-          <text x="299" y="170" fill="#455164" fontSize="12" fontFamily="monospace">
+          <rect
+            x="281"
+            y="144"
+            width="112"
+            height="43"
+            rx="8"
+            fill="var(--surface)"
+            stroke="var(--border)"
+          />
+          <text x="299" y="170" fill="var(--text-secondary)" fontSize="12" fontFamily="monospace">
             {'/ context'}
           </text>
         </g>
@@ -584,7 +628,12 @@ function App() {
             <strong>{routes[route].label}</strong>
           </div>
           <div className="topbar-right">
-            <button className="search-button" onClick={() => setModal('search')}>
+            <ThemePicker />
+            <button
+              className="search-button"
+              aria-label="Search workspace"
+              onClick={() => setModal('search')}
+            >
               <Search size={14} />
               <span>Search workspace</span>
               <kbd>⌘ K</kbd>
