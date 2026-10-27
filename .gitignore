@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.data/
+.env*
+*.log
+*.tsbuildinfo
+coverage/
+release/
+.DS_Store
+.env
+!.env.example
+CLAUDE.local.md
+.claude/settings.local.json
+.codex/
+.cursor/workspaceStorage/

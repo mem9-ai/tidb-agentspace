@@ -1,0 +1,8 @@
+---
+description: Shared TiDB Workspace contributor and agent policy
+alwaysApply: true
+---
+
+Read `AGENTS.md` and `CONTRIBUTING.md` at the repository root before implementation,
+plus any applicable nested instructions. Keep shared rules in those files rather
+than duplicating them here. Run `npm run check` before handoff.

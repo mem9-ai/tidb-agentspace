@@ -1,0 +1,10 @@
+{
+  "singleQuote": true,
+  "semi": true,
+  "trailingComma": "all",
+  "tabWidth": 2,
+  "printWidth": 100,
+  "endOfLine": "lf",
+  "proseWrap": "preserve",
+  "overrides": [{ "files": "*.mdc", "options": { "parser": "markdown" } }]
+}

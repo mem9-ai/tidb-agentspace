@@ -1,0 +1,42 @@
+name: Internal artifact
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: internal-artifact
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Verify and package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Require reviewed main-branch source
+        run: test "$GITHUB_REF" = refs/heads/main
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Select the pinned npm version
+        run: npm install --global npm@11.6.2 --ignore-scripts
+      - run: npm ci
+      - run: npm run check
+      - name: Verify source sign-offs
+        run: node scripts/check-signoff.mjs '' "$GITHUB_SHA"
+      - name: Package the internal runtime
+        run: node scripts/package-runtime.mjs "$GITHUB_SHA"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: internal-workspace-${{ github.sha }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 14

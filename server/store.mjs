@@ -1,0 +1,167 @@
+import { readFile, mkdir, rename, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
+
+export const workspaceId = 'ws_agentlab';
+export const capabilities = {
+  mysql: {
+    label: 'TiDB Starter · MySQL',
+    regions: ['aws-us-east-1', 'aws-us-west-2'],
+    storageGiB: 5,
+    monthlyRU: 50_000_000,
+    preview: false,
+  },
+  postgresql: {
+    label: 'TiDB Starter · PostgreSQL',
+    regions: ['aws-us-east-1'],
+    storageGiB: 50,
+    monthlyRU: 500_000_000,
+    preview: true,
+  },
+  filesystem: {
+    label: 'TiDB Cloud File System',
+    regions: ['aws-us-west-2'],
+    storageGiB: 2,
+    maxFiles: 2000,
+    preview: true,
+  },
+};
+export function seed() {
+  const now = new Date().toISOString();
+  return {
+    workspace: {
+      id: workspaceId,
+      name: 'Agent playground',
+      description: 'A home for your next idea.',
+      plan: 'Free',
+      createdAt: now,
+    },
+    profile: { name: 'Siddon', email: '', role: 'Local developer' },
+    resources: [
+      {
+        id: 'db_memory',
+        name: 'agent-memory',
+        kind: 'mysql',
+        region: 'aws-us-east-1',
+        status: 'active',
+        createdAt: now,
+      },
+      {
+        id: 'db_vectors',
+        name: 'knowledge-base',
+        kind: 'postgresql',
+        region: 'aws-us-east-1',
+        status: 'active',
+        createdAt: now,
+      },
+      {
+        id: 'fs_shared',
+        name: 'shared-files',
+        kind: 'filesystem',
+        region: 'aws-us-west-2',
+        status: 'active',
+        createdAt: now,
+      },
+    ],
+    files: [
+      { id: 'f_docs', resourceId: 'fs_shared', path: '/docs', type: 'directory', updatedAt: now },
+      {
+        id: 'f_data',
+        resourceId: 'fs_shared',
+        path: '/datasets',
+        type: 'directory',
+        updatedAt: now,
+      },
+      {
+        id: 'f_outputs',
+        resourceId: 'fs_shared',
+        path: '/outputs',
+        type: 'directory',
+        updatedAt: now,
+      },
+      {
+        id: 'f_agents',
+        resourceId: 'fs_shared',
+        path: '/AGENTS.md',
+        type: 'file',
+        content:
+          '# Agent playground\n\nUse the workspace API to discover databases and files.\nUse a scoped key. Never put credentials in source files.\n\nThis local prototype uses simulated cloud resources.\n',
+        updatedAt: now,
+      },
+      {
+        id: 'f_readme',
+        resourceId: 'fs_shared',
+        path: '/README.md',
+        type: 'file',
+        content:
+          '# Welcome to your workspace\n\nDatabases for memory. Files for context. One place to build.\n\nThis is a local product prototype. Database provisioning and telemetry are simulated; files and keys persist locally.\n',
+        updatedAt: now,
+      },
+      {
+        id: 'f_notes',
+        resourceId: 'fs_shared',
+        path: '/docs/architecture.md',
+        type: 'file',
+        content:
+          '# Architecture notes\n\nA workspace groups resources, scoped API keys, activity, and usage.\nMySQL and PostgreSQL are separate instances. File systems have independent regional endpoints and data tokens.\n',
+        updatedAt: now,
+      },
+    ],
+    keys: [],
+    events: [
+      {
+        id: 'evt_welcome',
+        action: 'workspace.created',
+        resource: 'Agent playground',
+        actor: 'You',
+        at: now,
+        outcome: 'success',
+      },
+    ],
+    queryCount: 0,
+    resourceQueryCounts: {},
+    idempotency: {},
+  };
+}
+export async function createStore(file) {
+  let state;
+  try {
+    state = JSON.parse(await readFile(file, 'utf8'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    state = seed();
+  }
+  let queue = Promise.resolve();
+  return {
+    read: () => structuredClone(state),
+    mutate(fn) {
+      const job = queue.then(async () => {
+        const draft = structuredClone(state);
+        const result = await fn(draft);
+        await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+        await writeFile(file + '.tmp', JSON.stringify(draft, null, 2), { mode: 0o600 });
+        await rename(file + '.tmp', file);
+        state = draft;
+        return result;
+      });
+      queue = job.catch(() => {});
+      return job;
+    },
+  };
+}
+export function usage(state) {
+  return state.resources.map((resource) => ({
+    resourceId: resource.id,
+    name: resource.name,
+    kind: resource.kind,
+    storageBytes:
+      resource.kind === 'filesystem'
+        ? state.files
+            .filter((f) => f.resourceId === resource.id)
+            .reduce((n, f) => n + Buffer.byteLength(f.content || ''), 0)
+        : 0,
+    storageLimitBytes: capabilities[resource.kind].storageGiB * 1024 ** 3,
+    fileCount: state.files.filter((f) => f.resourceId === resource.id && f.type === 'file').length,
+    monthlyRU: 0,
+    monthlyRULimit: capabilities[resource.kind].monthlyRU ?? null,
+  }));
+}
