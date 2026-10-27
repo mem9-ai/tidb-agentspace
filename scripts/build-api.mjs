@@ -1,0 +1,44 @@
+import { cp, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+export const runtimeFiles = [
+  'server/index.mjs',
+  'server/store.mjs',
+  'server/access-policy.mjs',
+  'server/file-transfer.mjs',
+  'server/http-policy.mjs',
+  'server/providers/drive9.mjs',
+  'public/openapi.json',
+];
+
+export async function buildApi({ root, destination = resolve(root, 'dist/api') }) {
+  await rm(destination, { recursive: true, force: true });
+  await mkdir(destination, { recursive: true });
+  for (const path of runtimeFiles) {
+    const target = resolve(destination, path);
+    await mkdir(resolve(target, '..'), { recursive: true });
+    await cp(resolve(root, path), target);
+  }
+  const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
+  await writeFile(
+    resolve(destination, 'package.json'),
+    JSON.stringify(
+      {
+        name: 'tidb-workspace-api',
+        version: pkg.version,
+        private: true,
+        type: 'module',
+        engines: pkg.engines,
+        scripts: { start: 'node server/index.mjs' },
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await buildApi({ root: fileURLToPath(new URL('../', import.meta.url)) });
+  console.log('Standalone API built in dist/api (Node only; no frontend dependencies).');
+}

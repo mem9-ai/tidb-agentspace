@@ -18,7 +18,20 @@ npm run check
 npm run preview
 ```
 
-`preview` serves the built frontend and API together at http://127.0.0.1:4318. Agent connection samples use the current page origin, so they work with either preview mode. Regenerate the checked-in API contract after contract changes with `node server/generate-openapi.mjs`.
+`preview` serves only the built Console at http://127.0.0.1:4173. Start the API separately with
+`npm run start:api`. Console requests and agent examples use the API origin in `/config.json`.
+Run `npm run api:generate` after contract changes to generate both OpenAPI and client types.
+
+The frontend and backend build and run independently in this repository:
+
+| Component | Build                   | Development           | Run built output                           |
+| --------- | ----------------------- | --------------------- | ------------------------------------------ |
+| Console   | `npm run build:console` | `npm run dev:console` | `npm run start:console`                    |
+| API       | `npm run build:api`     | `npm run dev:api`     | `cd dist/api` then `node server/index.mjs` |
+
+The API build requires only Node and no frontend dependencies. The Console output is static;
+its API origin can change without rebuilding JavaScript. See [independent delivery](docs/independent-delivery.md)
+for configuration, separate artifacts, contract checks, and current deployment limits.
 
 To enable real Singapore anonymous File System creation (explicit opt-in):
 
@@ -52,12 +65,15 @@ The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, 
 ## Code map
 
 - `src/App.tsx`, `src/main.tsx`, `src/styles.css`: interactive frontend prototype.
-- `server/index.mjs`: local API, resource/file/key/query handlers, and built frontend serving.
+- `server/index.mjs`: standalone API and resource/file/key/query handlers; no Console serving.
 - `server/providers/drive9.mjs`, `server/file-transfer.mjs`: internal provider adapter and bounded transfers.
 - `server/access-policy.mjs`: shared action/resource authorization support.
 - `src/features/keys/ResourceAccessPicker.tsx`: explicit customer key resource selection.
 - `server/store.mjs`: serialized atomic local state persistence and capability snapshot.
-- `public/openapi.json`: implemented public API contract.
+- `server/generate-openapi.mjs`: canonical API contract source.
+- `public/openapi.json`, `src/api/schema.d.ts`: generated contract and client types.
+- `src/api/`: shared generated-type HTTP client and runtime API configuration.
+- `console/public/config.json`: runtime API origin; `scripts/serve-console.mjs`: optional static runner.
 - `server/api.test.mjs`: behavior tests using temporary state and isolated ports.
 - `docs/architecture.md`: product model, page design, backend boundaries, integration strategy, and release acceptance criteria.
 

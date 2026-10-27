@@ -6,61 +6,109 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { buildApi } from './build-api.mjs';
 import { packageRuntime } from './package-runtime.mjs';
 
-test('runtime artifacts include the contract and source identity but exclude local secrets/data', async () => {
+async function listen(app) {
+  await new Promise((resolve) => app.listen(0, '127.0.0.1', resolve));
+  return `http://127.0.0.1:${app.address().port}`;
+}
+
+test('API builds without a frontend; separate archives boot independently without dependencies or secrets', async (t) => {
   const root = await mkdtemp(resolve(tmpdir(), 'tidb-package-test-'));
-  try {
-    for (const path of ['dist', 'server', 'public', '.data']) await mkdir(resolve(root, path));
-    for (const path of [
-      'dist/index.html',
-      'server/index.mjs',
-      'server/store.mjs',
-      'server/access-policy.mjs',
-      'public/openapi.json',
-      '.data/private.json',
-      '.env',
-    ])
-      await writeFile(resolve(root, path), 'fixture');
-    await cp(new URL('../server/', import.meta.url), resolve(root, 'server'), { recursive: true });
-    await writeFile(resolve(root, 'package.json'), JSON.stringify({ version: '0.0.0-test' }));
-    await writeFile(resolve(root, '.node-version'), '24.22.1\n');
-    const result = await packageRuntime({
-      root,
-      destination: resolve(root, 'output'),
-      sourceSha: 'a'.repeat(40),
-    });
-    const entries = execFileSync('tar', ['-tzf', result.archive], { encoding: 'utf8' });
-    assert.ok(entries.includes('workspace/public/openapi.json'));
-    assert.ok(entries.includes('workspace/server/store.mjs'));
-    assert.ok(entries.includes('workspace/server/providers/drive9.mjs'));
-    assert.ok(!entries.includes('.test.mjs'));
-    const unpacked = resolve(root, 'unpacked');
-    await mkdir(unpacked);
-    execFileSync('tar', ['-xzf', result.archive, '-C', unpacked]);
-    const { createApp } = await import(
-      pathToFileURL(resolve(unpacked, 'workspace/server/index.mjs')).href
-    );
-    const app = await createApp({ filesProvider: 'local' });
-    await new Promise((resolve) => app.listen(0, '127.0.0.1', resolve));
-    try {
-      const health = await fetch(`http://127.0.0.1:${app.address().port}/api/health`);
-      assert.equal(health.status, 200);
-      assert.equal((await health.json()).mode, 'demo');
-    } finally {
-      await new Promise((resolve) => app.close(resolve));
-    }
-    assert.ok(!entries.includes('.data') && !entries.includes('.env'));
-    assert.equal(result.info.sourceSha, 'a'.repeat(40));
-    assert.equal(result.info.deployed, false);
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await cp(new URL('../server/', import.meta.url), resolve(root, 'server'), { recursive: true });
+  await mkdir(resolve(root, 'public'));
+  await cp(
+    new URL('../public/openapi.json', import.meta.url),
+    resolve(root, 'public/openapi.json'),
+  );
+  await writeFile(resolve(root, 'package.json'), JSON.stringify({ version: '0.0.0-test' }));
+  await writeFile(resolve(root, '.node-version'), '24.22.1\n');
+  await buildApi({ root });
+  const apiPackage = JSON.parse(await readFile(resolve(root, 'dist/api/package.json'), 'utf8'));
+  assert.equal(apiPackage.dependencies, undefined);
+  await mkdir(resolve(root, 'dist/console'), { recursive: true });
+  await writeFile(
+    resolve(root, 'dist/console/index.html'),
+    '<!doctype html><title>Independent Console</title>',
+  );
+  await writeFile(
+    resolve(root, 'dist/console/config.json'),
+    JSON.stringify({ apiOrigin: 'http://127.0.0.1:4318' }),
+  );
+  await mkdir(resolve(root, 'scripts'));
+  await cp(
+    new URL('./serve-console.mjs', import.meta.url),
+    resolve(root, 'scripts/serve-console.mjs'),
+  );
+  await mkdir(resolve(root, '.data'));
+  await writeFile(resolve(root, '.data/private.json'), 'secret');
+  await writeFile(resolve(root, '.env'), 'secret');
+  const artifacts = await packageRuntime({
+    root,
+    destination: resolve(root, 'output'),
+    sourceSha: 'a'.repeat(40),
+  });
+  assert.equal(artifacts.length, 2);
+  const checksums = await readFile(resolve(root, 'output/SHA256SUMS'), 'utf8');
+  for (const artifact of artifacts) {
+    const { component } = artifact.info;
+    const entries = execFileSync('tar', ['-tzf', artifact.archive], { encoding: 'utf8' });
+    for (const excluded of ['.data', '.env', '.test.mjs', 'node_modules', 'generate-openapi'])
+      assert.ok(!entries.includes(excluded));
+    assert.equal(artifact.info.sourceSha, 'a'.repeat(40));
+    assert.equal(artifact.info.deployed, false);
     assert.equal(
-      result.digest,
+      artifact.digest,
       createHash('sha256')
-        .update(await readFile(result.archive))
+        .update(await readFile(artifact.archive))
         .digest('hex'),
     );
-    assert.ok((await readFile(resolve(root, 'output/SHA256SUMS'), 'utf8')).includes(result.digest));
-  } finally {
-    await rm(root, { recursive: true, force: true });
+    assert.ok(checksums.includes(`${artifact.digest}  workspace-${component}.tar.gz`));
+    const unpacked = resolve(root, 'unpacked-' + component);
+    await mkdir(unpacked);
+    execFileSync('tar', ['-xzf', artifact.archive, '-C', unpacked]);
+    let app;
+    if (component === 'api') {
+      assert.ok(entries.includes('api/public/openapi.json'));
+      assert.ok(entries.includes('api/server/providers/drive9.mjs'));
+      assert.ok(!entries.includes('index.html') && !entries.includes('console'));
+      const { createApp } = await import(
+        pathToFileURL(resolve(unpacked, 'api/server/index.mjs')).href
+      );
+      app = await createApp({ filesProvider: 'local' });
+      const origin = await listen(app);
+      try {
+        assert.equal((await fetch(origin + '/api/health')).status, 200);
+        assert.equal((await (await fetch(origin + '/openapi.json')).json()).openapi, '3.1.0');
+        assert.equal((await fetch(origin + '/')).status, 404);
+        assert.equal((await fetch(origin + '/api/v1/workspaces')).status, 401);
+      } finally {
+        await new Promise((resolve) => app.close(resolve));
+      }
+    } else {
+      assert.ok(!entries.includes('/server/') && !entries.includes('openapi.json'));
+      const { createConsoleServer } = await import(
+        pathToFileURL(resolve(unpacked, 'console/serve-console.mjs')).href
+      );
+      app = createConsoleServer({
+        directory: resolve(unpacked, 'console/static'),
+        apiOrigin: 'http://127.0.0.1:4999',
+      });
+      const origin = await listen(app);
+      try {
+        assert.match(await (await fetch(origin)).text(), /Independent Console/);
+        assert.equal(
+          (await (await fetch(origin + '/config.json')).json()).apiOrigin,
+          'http://127.0.0.1:4999',
+        );
+        assert.equal((await fetch(origin + '/api/health')).status, 404);
+        assert.equal((await fetch(origin + '/openapi.json')).status, 404);
+        assert.equal((await fetch(origin + '/missing.js')).status, 404);
+      } finally {
+        await new Promise((resolve) => app.close(resolve));
+      }
+    }
   }
 });

@@ -102,8 +102,15 @@ throughout the app.
 
 ## Backend boundaries
 
-Start with one modular Workspace service and a provisioning/reconciliation worker. Use the
-team's established Go or TypeScript stack and existing provider clients. Separate deployment
+Implemented delivery: the Console and API have independent builds, processes, and artifacts in
+one repository. The API serves only HTTP API/schema endpoints; the static Console uses runtime
+API-origin configuration and an OpenAPI-generated typed client. The existing backend remains
+Node ESM. See [ADR 0005](decisions/0005-independent-console-and-api.md) and the
+[operating guide](independent-delivery.md). Production identity and hosting remain proposed.
+
+The proposed production service starts with one modular Workspace service and a
+provisioning/reconciliation worker. A future language migration needs its own scoped decision;
+the current implementation retains Node ESM and existing provider clients. Separate deployment
 into microservices only when independent scaling or ownership justifies it.
 
 ```mermaid

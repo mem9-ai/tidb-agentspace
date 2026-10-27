@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "node server/dev.mjs",
-    "build": "npm run typecheck && vite build",
-    "preview": "node server/index.mjs",
+    "build": "npm run build:console && npm run build:api",
+    "preview": "npm run start:console",
     "test": "node --test",
     "start": "node server/index.mjs",
     "typecheck": "tsc -b",
@@ -14,13 +14,20 @@
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
-    "api:generate": "node server/generate-openapi.mjs",
-    "api:check": "node server/generate-openapi.mjs --check",
+    "api:generate": "node server/generate-openapi.mjs && node tools/api-contract/generate-client.mjs",
+    "api:check": "node server/generate-openapi.mjs --check && node tools/api-contract/generate-client.mjs --check",
     "check:runtime": "node scripts/check-runtime.mjs",
     "check:repo": "node scripts/check-repo.mjs",
     "check:signoff": "node scripts/check-signoff.mjs",
     "check": "npm run check:runtime && npm run check:repo && npm run format:check && npm run lint && npm run api:check && npm test && npm run build",
-    "preinstall": "node scripts/check-runtime.mjs"
+    "preinstall": "node scripts/check-runtime.mjs",
+    "dev:console": "vite",
+    "dev:api": "node --watch server/index.mjs",
+    "build:console": "npm run typecheck && vite build",
+    "build:api": "node scripts/build-api.mjs",
+    "start:console": "node scripts/serve-console.mjs",
+    "start:api": "node server/index.mjs",
+    "package": "node scripts/package-runtime.mjs"
   },
   "dependencies": {
     "@codemirror/lang-sql": "6.10.0",
@@ -30,6 +37,7 @@
     "@tidbcloud/codemirror-extension-themes": "0.0.6",
     "@tidbcloud/tisqleditor-react": "0.0.6",
     "@tidbcloud/uikit": "2.9.1",
+    "openapi-fetch": "0.17.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-hook-form": "7.91.0",
@@ -42,6 +50,7 @@
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",
     "@vitejs/plugin-react": "6.1.2",
+    "ajv": "8.20.0",
     "eslint": "10.13.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.13.0",
@@ -55,5 +64,8 @@
     "node": ">=24.22.1 <25",
     "npm": "11.6.2"
   },
-  "packageManager": "npm@11.6.2"
+  "packageManager": "npm@11.6.2",
+  "workspaces": [
+    "tools/api-contract"
+  ]
 }
