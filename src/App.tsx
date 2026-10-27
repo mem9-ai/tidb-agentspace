@@ -80,7 +80,13 @@ import {
 import type { IconProps } from '@tidbcloud/uikit/icons';
 import { ResourceAccessPicker } from './features/keys/ResourceAccessPicker';
 import { WorkspaceLayout } from './ui/WorkspaceLayout';
-import { databaseEditorHash, parseWorkspaceRoute } from './features/navigation/workspace-route';
+import { DatabaseBrowser } from './features/databases/DatabaseBrowser';
+import {
+  databaseEditorHash,
+  databaseTablesHash,
+  tableSelectSql,
+  parseWorkspaceRoute,
+} from './features/navigation/workspace-route';
 import type { Route, WorkspaceRoute } from './features/navigation/workspace-route';
 
 import { SqlQueryPanel } from './features/sql/SqlQueryPanel';
@@ -382,12 +388,13 @@ function App() {
         profileName={data.profile.name}
         active={route}
         databaseId={routeLocation.databaseId}
+        databaseView={routeLocation.databaseView}
         navigation={Object.entries(routes).map(([id, item]) => ({ id, ...item }))}
         onSearch={() => setModal('search')}
       >
         <div key={route}>
           {route === 'overview' && <Overview {...shared} />}
-          {route === 'databases' && <Databases {...shared} databaseId={routeLocation.databaseId} />}
+          {route === 'databases' && <Databases {...shared} routeLocation={routeLocation} />}
           {route === 'files' && <Files {...shared} />}
           {route === 'connect' && <Connect {...shared} />}
           {route === 'keys' && <Keys {...shared} onNewKey={() => setModal('key')} />}
@@ -706,7 +713,8 @@ function eventLabel(action: string) {
     )[action] || action
   );
 }
-function Databases({ databaseId, ...shared }: Shared & { databaseId?: string }) {
+function Databases({ routeLocation, ...shared }: Shared & { routeLocation: WorkspaceRoute }) {
+  const { databaseId } = routeLocation;
   const { data, onCreate, onConnect } = shared;
   const databases = data.resources
     .filter((r) => r.kind !== 'filesystem')
@@ -725,7 +733,14 @@ function Databases({ databaseId, ...shared }: Shared & { databaseId?: string }) 
         />
       );
     }
-    return <SqlEditor key={database.id} {...shared} database={database} />;
+    return (
+      <DatabaseDetail
+        key={database.id}
+        {...shared}
+        database={database}
+        routeLocation={routeLocation}
+      />
+    );
   }
   return (
     <>
@@ -782,7 +797,7 @@ function Databases({ databaseId, ...shared }: Shared & { databaseId?: string }) 
                     <div className="table-resource">
                       <KindIcon small kind={r.kind} />
                       <div>
-                        <a className="text-link database-name" href={databaseEditorHash(r.id)}>
+                        <a className="text-link database-name" href={databaseTablesHash(r.id)}>
                           {r.name}
                         </a>
                         <small>{r.id}</small>
@@ -841,8 +856,8 @@ function Databases({ databaseId, ...shared }: Shared & { databaseId?: string }) 
           <Code2 size={22} />
           <Heading level={3}>Start with a query</Heading>
           <Text component="p">
-            Choose a database above and open its SQL editor. Live databases execute SQL on TiDB
-            Cloud Zero. Resources marked Local demo support two sample queries.
+            Choose a database to browse tables, inspect columns and indexes, and preview data. Live
+            databases execute SQL on TiDB Cloud Zero. Resources marked Local demo show sample data.
           </Text>
         </Paper>
         <Paper className="panel info-panel" withBorder>
@@ -865,20 +880,21 @@ function Databases({ databaseId, ...shared }: Shared & { databaseId?: string }) 
     </>
   );
 }
-function SqlEditor({
+function DatabaseDetail({
   data,
   database,
   refresh,
   notify,
   onConnect,
-}: Shared & { database: Resource }) {
+  routeLocation,
+}: Shared & { database: Resource; routeLocation: WorkspaceRoute }) {
   return (
     <>
       <a className="text-link database-back" href="#databases">
         <ArrowLeft size={16} /> All databases
       </a>
       <PageHeading
-        eyebrow="SQL EDITOR"
+        eyebrow="DATABASE"
         title={database.name}
         description={`${kindLabel[database.kind]} · ${database.provider === 'tidb-cloud-zero' ? 'TiDB Cloud Zero' : 'Local demo'} · ${region(database.region)}`}
         actions={
@@ -912,17 +928,40 @@ function SqlEditor({
           )}
         </Alert>
       )}
-      <SqlQueryPanel
-        database={database}
-        databases={data.resources.filter((r) => r.kind !== 'filesystem')}
-        execute={(sql) => workspaceApi.query({ resourceId: database.id, sql })}
-        onComplete={refresh}
-        onSelect={openDatabaseEditor}
-        onExport={(result) => {
-          download('query-results.json', JSON.stringify(result.rows, null, 2), 'application/json');
-          notify('Results exported');
+      <ChoiceTabs
+        value={routeLocation.databaseView === 'tables' ? 'Tables' : 'SQL editor'}
+        onChange={(view) => {
+          location.hash =
+            view === 'Tables'
+              ? databaseTablesHash(database.id, routeLocation.tableName)
+              : databaseEditorHash(database.id, routeLocation.tableName);
         }}
-      />
+        options={['Tables', 'SQL editor']}
+      >
+        {routeLocation.databaseView === 'tables' ? (
+          <DatabaseBrowser database={database} tableName={routeLocation.tableName} />
+        ) : (
+          <SqlQueryPanel
+            key={`${database.id}:${routeLocation.tableName ?? ''}`}
+            initialSql={
+              routeLocation.tableName ? tableSelectSql(routeLocation.tableName) : undefined
+            }
+            database={database}
+            databases={data.resources.filter((r) => r.kind !== 'filesystem')}
+            execute={(sql) => workspaceApi.query({ resourceId: database.id, sql })}
+            onComplete={refresh}
+            onSelect={openDatabaseEditor}
+            onExport={(result) => {
+              download(
+                'query-results.json',
+                JSON.stringify(result.rows, null, 2),
+                'application/json',
+              );
+              notify('Results exported');
+            }}
+          />
+        )}
+      </ChoiceTabs>
     </>
   );
 }
@@ -1520,7 +1559,7 @@ function Connect({ data, copy }: Shared) {
   const snippet = `# Discover your workspace resources\ncurl ${apiOrigin}${base}/resources \\\n  -H "Authorization: Bearer $WORKSPACE_API_KEY"`;
   const python = `import os, json, urllib.request\n\nreq = urllib.request.Request(\n    "${apiOrigin}${base}/resources",\n    headers={"Authorization": "Bearer " + os.environ["WORKSPACE_API_KEY"]}\n)\nwith urllib.request.urlopen(req) as response:\n    print(json.load(response))`;
   const js = `const response = await fetch(\n  "${apiOrigin}${base}/resources",\n  { headers: { Authorization: \`Bearer \${process.env.WORKSPACE_API_KEY}\` } }\n);\nconsole.log(await response.json());`;
-  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiOrigin}/api/v1\nOpenAPI: ${apiOrigin}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for directory listings and UTF-8 writes; Drive9 listings contain metadata only. Use /files/content?resourceId=ID&path=PATH for binary upload/download and add preview=1 for bounded text previews. Use /queries for SQL on the selected database. Resources marked tidb-cloud-zero execute real SQL; queries:execute permits reads and writes within the database role. Run one statement per request; results are limited to 1,000 rows / 1 MiB and queries to 15 seconds. A timeout can leave a write outcome unknown; verify before retrying.\nOnly call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local Workspace gateway. File Systems marked drive9-anonymous use real Singapore trial storage. Databases marked tidb-cloud-zero connect to real temporary MySQL databases. Check expiresAt and export important data before expiration. Other databases remain demos. Cloud telemetry is not measured.\nDo not upload credentials to the workspace or commit them to Git.\n`;
+  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiOrigin}/api/v1\nOpenAPI: ${apiOrigin}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for directory listings and UTF-8 writes; Drive9 listings contain metadata only. Use /files/content?resourceId=ID&path=PATH for binary upload/download and add preview=1 for bounded text previews. Use /resources/{resourceId}/tables to list tables, /resources/{resourceId}/table?name=NAME for columns and indexes, and /resources/{resourceId}/table/rows?name=NAME for up to 100 preview rows. Encode the exact table name as a query parameter. These reads require queries:execute and resource access, just like /queries for SQL on the selected database. Resources marked tidb-cloud-zero execute real SQL; queries:execute permits reads and writes within the database role. Run one statement per request; results are limited to 1,000 rows / 1 MiB and queries to 15 seconds. A timeout can leave a write outcome unknown; verify before retrying.\nOnly call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local Workspace gateway. File Systems marked drive9-anonymous use real Singapore trial storage. Databases marked tidb-cloud-zero connect to real temporary MySQL databases. Check expiresAt and export important data before expiration. Other databases remain demos. Cloud telemetry is not measured.\nDo not upload credentials to the workspace or commit them to Git.\n`;
   return (
     <>
       <PageHeading

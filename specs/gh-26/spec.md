@@ -104,7 +104,9 @@ No public or paid deployment is authorized by this specification.
 ## Remaining implementation decisions
 
 Select and pin the DuckDB library/worker packaging and Just Bash/SDK distribution using verified
-exports and compatible versions. The native extension proof is one option for future larger
+exports and compatible versions. The checked npm `drive9@0.3.0` does not export `./just-bash`,
+although the checkout does; use a verified release/source build or the existing provider's
+bounded snapshot path. The native extension proof is one option for future larger
 remote scans, not a requirement to use an unsigned native extension in v1. Validate the snapshot
 read-only implementation and engine access controls before exposing user code. Any expansion to
 multi-file access, writes or remote sandbox compute needs an amended permission and acceptance

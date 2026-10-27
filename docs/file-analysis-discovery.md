@@ -69,6 +69,13 @@ removed; the three remote examples were intentionally retained.
   against DuckDB 2.0.0 on macOS arm64. Its pinned C++ SDK revision is
   `42a316a20a71d3d7b789053ed020b45ba633aedc`.
 
+The live proof used the SDK built from its checkout. On the verification date, npm metadata
+for `drive9@0.3.0` exported only the package root, not `./just-bash`. Do not assume that
+installing the source package's version string supplies this entry point. Verify a published
+compatible release or a reproducible pinned source build before using that adapter as a
+dependency. A selected-file snapshot runner can instead reuse the existing backend file
+adapter and supply an in-memory filesystem to Just Bash.
+
 The system DuckDB was 1.4.2 and rejected the extension's 2.0.0 ABI. An existing matching 2.0.0
 binary was reused successfully. Pin and verify the engine/extension/platform combination;
 do not silently load an incompatible artifact. The extension is not available through
@@ -100,3 +107,8 @@ Reprobe runtime availability before choosing hosted execution in a future deploy
 SDK exports, exact package/ABI versions, guest confinement, network/file restrictions and
 provider read behavior during implementation. The proof is not permission to expose a generic
 remote terminal or to forward the provider owner token into a customer-controlled runtime.
+
+Repository validation after synchronizing the database-browser main branch passed
+`npm run check`: 74 tests, runtime/repository rules, formatting, lint, generated OpenAPI/client,
+strict types and both independent production builds. Existing dependency eval and bundle-size
+warnings remain. This documentation change adds no public analysis API or UI to browser-test.

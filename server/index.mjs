@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createStore, capabilities, workspaceId, usage } from './store.mjs';
 import { createDrive9, drive9Provider, drive9Region } from './providers/drive9.mjs';
 import { createZero, zeroProvider, zeroRegion } from './providers/zero.mjs';
+import { browseDatabase, demoColumns, demoRows } from './database-browser.mjs';
 import { readUpload, previewFile, downloadFile } from './file-transfer.mjs';
 import { canAccessResource, normalizeResourceGrant } from './access-policy.mjs';
 import { applyHttpPolicy, consoleOrigins } from './http-policy.mjs';
@@ -499,6 +500,28 @@ export async function createApp({
         });
         return send(200, { deleted: true });
       }
+      const browseMatch = /^\/resources\/([^/]+)\/(tables|table|table\/rows)$/.exec(route);
+      if (browseMatch && req.method === 'GET') {
+        requireScope('queries:execute');
+        const resource = requireResource(browseMatch[1], 'mysql');
+        const controller = new AbortController();
+        const onClose = () => controller.abort();
+        res.on('close', onClose);
+        try {
+          return send(
+            200,
+            await browseDatabase({
+              resource,
+              action: browseMatch[2] === 'table/rows' ? 'rows' : browseMatch[2],
+              name: url.searchParams.get('name'),
+              createdAt: state.workspace.createdAt,
+              execute: (sql) => zero.execute(resource, sql, controller.signal),
+            }),
+          );
+        } finally {
+          res.off('close', onClose);
+        }
+      }
       if (route === '/queries' && req.method === 'POST') {
         requireScope('queries:execute');
         const input = await body(req);
@@ -542,32 +565,14 @@ export async function createApp({
         if (/^select\s+1(?:\s+as\s+connected)?$/i.test(sql)) {
           columns = ['connected'];
           rows = [{ connected: 1 }];
-        } else if (/^select\s+\*\s+from\s+agent_events(?:\s+limit\s+(\d{1,3}))?$/i.test(sql)) {
-          columns = ['id', 'agent', 'event', 'status', 'created_at'];
+        } else if (
+          /^select\s+\*\s+from\s+(?:agent_events|`agent_events`)(?:\s+limit\s+(\d{1,3}))?$/i.test(
+            sql,
+          )
+        ) {
+          columns = demoColumns;
           const limit = Math.min(Number(/limit\s+(\d+)/i.exec(sql)?.[1] || 10), 100);
-          rows = [
-            {
-              id: 1,
-              agent: 'research-agent',
-              event: 'context.loaded',
-              status: 'completed',
-              created_at: state.workspace.createdAt,
-            },
-            {
-              id: 2,
-              agent: 'coding-agent',
-              event: 'memory.recalled',
-              status: 'completed',
-              created_at: state.workspace.createdAt,
-            },
-            {
-              id: 3,
-              agent: 'research-agent',
-              event: 'output.saved',
-              status: 'completed',
-              created_at: state.workspace.createdAt,
-            },
-          ].slice(0, limit);
+          rows = demoRows(state.workspace.createdAt).slice(0, limit);
         } else
           fail(
             422,

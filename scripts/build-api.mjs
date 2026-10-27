@@ -5,6 +5,7 @@ import { copySqlDependencies } from './sql-runtime-dependencies.mjs';
 
 export const runtimeFiles = [
   'server/index.mjs',
+  'server/database-browser.mjs',
   'server/store.mjs',
   'server/access-policy.mjs',
   'server/file-transfer.mjs',
