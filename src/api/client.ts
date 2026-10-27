@@ -2,6 +2,8 @@ import { createWorkspaceClient, resolveApiOrigin, responseData } from './transpo
 import type { components, operations } from './schema';
 
 export type Resource = components['schemas']['Resource'];
+export type TableList = components['schemas']['TableList'];
+export type TableDetail = components['schemas']['TableDetail'];
 export type ApiKey = components['schemas']['Key'];
 export type Data = components['schemas']['Bootstrap'];
 export type WorkspaceFile = components['schemas']['File'];
@@ -41,6 +43,27 @@ export const workspaceApi = {
     responseData(
       client.POST('/workspaces/{workspaceId}/resources/{resourceId}/setup', {
         params: { path: { workspaceId, resourceId } },
+      }),
+    ),
+  tables: (resourceId: string, signal?: AbortSignal) =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/resources/{resourceId}/tables', {
+        params: { path: { workspaceId, resourceId } },
+        signal,
+      }),
+    ),
+  table: (resourceId: string, name: string, signal?: AbortSignal) =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/resources/{resourceId}/table', {
+        params: { path: { workspaceId, resourceId }, query: { name } },
+        signal,
+      }),
+    ),
+  tableRows: (resourceId: string, name: string, signal?: AbortSignal) =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/resources/{resourceId}/table/rows', {
+        params: { path: { workspaceId, resourceId }, query: { name } },
+        signal,
       }),
     ),
   query: (body: JsonBody<operations['executeQuery']>) =>

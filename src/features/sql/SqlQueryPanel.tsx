@@ -29,6 +29,7 @@ type DatabaseResource = {
 };
 const kindLabel = { mysql: 'MySQL', filesystem: 'File System' };
 type Props = {
+  initialSql?: string;
   database: DatabaseResource;
   databases: DatabaseResource[];
   execute: (sql: string) => Promise<QueryResult>;
@@ -37,6 +38,7 @@ type Props = {
   onExport: (result: QueryResult) => void;
 };
 export function SqlQueryPanel({
+  initialSql,
   database,
   databases,
   execute,
@@ -48,7 +50,7 @@ export function SqlQueryPanel({
   const resourceId = database.id;
   const live = database.provider === 'tidb-cloud-zero';
   const [sql, setSql] = useState(
-      live ? 'SELECT 1 AS connected;' : 'SELECT * FROM agent_events LIMIT 10;',
+      initialSql ?? (live ? 'SELECT 1 AS connected;' : 'SELECT * FROM agent_events LIMIT 10;'),
     ),
     [busy, setBusy] = useState(false),
     [result, setResult] = useState<QueryResult | null>(null),
