@@ -241,7 +241,7 @@ export async function createApp({ dataFile = resolve(root, '.data/workspace.json
             fail(
               409,
               'FREE_TIER_LIMIT',
-              'The free tier supports one file system per region. Use shared-files in this region.',
+              'The free tier supports one file system per region. Use the existing file system in this region.',
             );
           const limit = input.kind === 'mysql' ? 5 : 10;
           if (
