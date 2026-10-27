@@ -45,6 +45,8 @@ follow its task-specific references before implementation. Keep detailed rules c
   real cloud provisioning, payments, and production identity require explicit implementation.
 - Enforce authorization in the backend. Cover cross-workspace/resource access, scopes,
   expiration, and revocation when changing authorization. A UI restriction is insufficient.
+- Keep the Console and API independently buildable, runnable, and packageable in this repository.
+  Follow [independent delivery](docs/independent-delivery.md) and [ADR 0005](docs/decisions/0005-independent-console-and-api.md); the API must not serve Console assets.
 - Reuse domain operations across the Console and agent APIs. Keep provider-specific behavior
   behind adapters when adding real cloud integrations.
 
@@ -91,7 +93,7 @@ follow its task-specific references before implementation. Keep detailed rules c
 - For visible UI changes, inspect the browser and provide a screenshot plus the checked
   viewport(s). If browser verification is unavailable, state the limitation.
 - Modify `server/generate-openapi.mjs` and run `npm run api:generate` when the public contract
-  changes. Keep the implementation, contract, clients, and tests aligned. Do not edit the
+  changes. Keep the implementation, contract, generated client types, and tests aligned. Do not edit the
   generated `public/openapi.json` by hand.
 - Report what changed, why, which checks actually ran, and any remaining limitations. Never
   claim an unrun check, remote CI run, deployment, or cloud integration succeeded.

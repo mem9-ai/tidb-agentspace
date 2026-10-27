@@ -117,18 +117,22 @@ concrete reason; use existing platform capabilities where sufficient.
 
 ## Shared commands
 
-| Command                              | Purpose                                                                 |
-| ------------------------------------ | ----------------------------------------------------------------------- |
-| `npm ci`                             | Install exactly the lockfile contents; validates the selected runtime   |
-| `npm run format`                     | Apply the shared formatting baseline                                    |
-| `npm run format:check`               | Check formatting without edits                                          |
-| `npm run lint`                       | Check code, with zero warnings allowed                                  |
-| `npm run typecheck`                  | Check strict frontend TypeScript                                        |
-| `npm run api:generate`               | Regenerate `public/openapi.json` from its source                        |
-| `npm run api:check`                  | Fail if the generated API contract has drifted; does not rewrite files  |
-| `npm test`                           | Run API and repository-tool behavior tests with isolated temporary data |
-| `npm run check`                      | Run the same complete quality gate used by CI                           |
-| `npm run check:signoff -- BASE HEAD` | Check commit sign-offs for a Git revision range                         |
+| Command                                       | Purpose                                                                        |
+| --------------------------------------------- | ------------------------------------------------------------------------------ |
+| `npm ci`                                      | Install exactly the lockfile contents; validates the selected runtime          |
+| `npm run format`                              | Apply the shared formatting baseline                                           |
+| `npm run format:check`                        | Check formatting without edits                                                 |
+| `npm run lint`                                | Check code, with zero warnings allowed                                         |
+| `npm run typecheck`                           | Check strict frontend TypeScript                                               |
+| `npm run build:console`                       | Build only the static Console in `dist/console/`                               |
+| `npm run build:api`                           | Build only the dependency-free API in `dist/api/`                              |
+| `npm run dev:console` / `npm run dev:api`     | Run either development process independently                                   |
+| `npm run start:console` / `npm run start:api` | Run built Console / source API separately                                      |
+| `npm run api:generate`                        | Regenerate OpenAPI and Console client types from the contract source           |
+| `npm run api:check`                           | Fail if OpenAPI or generated client types have drifted; does not rewrite files |
+| `npm test`                                    | Run API and repository-tool behavior tests with isolated temporary data        |
+| `npm run check`                               | Run the same complete quality gate used by CI                                  |
+| `npm run check:signoff -- BASE HEAD`          | Check commit sign-offs for a Git revision range                                |
 
 Use `npm run lint:fix` for supported mechanical fixes and review its diff. Tests must be
 repeatable on clean machines and must not need cloud secrets, paid resources, or the
@@ -162,6 +166,10 @@ Do not bundle unrelated formatting with a feature; the initial repository-wide f
 baseline was explicitly part of establishing the shared standard.
 
 ## Delivery
+
+Keep frontend and backend independently buildable and runnable in one repository. Read
+[independent delivery](docs/independent-delivery.md) for configuration and packaging and
+[ADR 0005](docs/decisions/0005-independent-console-and-api.md) for the accepted boundary.
 
 See [CI/CD policy](docs/ci-cd.md). The repository is hosted at `siddontang/tidb.ai` and GitHub
 CI is running. Branch protections, required reviewers, deployment environments, and a real
