@@ -289,3 +289,11 @@ that implementation and must not be made public by simply changing its bind addr
 
 Measure time to first useful request, agent onboarding success, second-session context reuse,
 permission-denial reasons, revocation behavior, allowance accuracy, and safe retry outcomes.
+
+### Database browsing
+
+Tables, columns, indexes and a bounded 100-row preview live inside each database, alongside
+SQL Editor. The Console and agents use the same resource-scoped reads with `queries:execute`
+and resource grants. Discovery-only keys do not gain data access. Table selection is encoded
+in the URL and Query table opens an editable SELECT without running it. See
+[ADR 0007](decisions/0007-database-browser.md) for limits and the additive API contract.

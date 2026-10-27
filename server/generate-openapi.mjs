@@ -110,6 +110,59 @@ const object = (properties, required = Object.keys(properties)) => ({
   properties,
 });
 Object.assign(schemas, {
+  QueryResult: {
+    type: 'object',
+    required: ['columns', 'rows', 'rowCount', 'mode', 'durationMs'],
+    properties: {
+      columns: { type: 'array', items: str },
+      rows: { type: 'array', items: { type: 'object', additionalProperties: true } },
+      rowCount: { type: 'integer' },
+      mode: { enum: ['demo', 'live'] },
+      affectedRows: {
+        type: 'integer',
+        description: 'Live statement affected-row count; SELECT returns zero.',
+      },
+      durationMs: { type: 'number' },
+    },
+  },
+  DatabaseTable: object({ name: str, type: str }),
+  TableList: object({
+    data: { type: 'array', maxItems: 500, items: ref('DatabaseTable') },
+    truncated: { type: 'boolean' },
+    mode: { enum: ['demo', 'live'] },
+  }),
+  TableDetail: object({
+    name: str,
+    type: str,
+    mode: { enum: ['demo', 'live'] },
+    query: str,
+    columns: {
+      type: 'array',
+      items: object({
+        name: str,
+        type: str,
+        nullable: { type: 'boolean' },
+        default: { type: ['string', 'null'] },
+        key: str,
+        extra: str,
+      }),
+    },
+    indexes: {
+      type: 'array',
+      items: object({
+        name: str,
+        unique: { type: 'boolean' },
+        columns: {
+          type: 'array',
+          items: object({
+            name: { type: ['string', 'null'] },
+            position: { type: 'integer' },
+            prefixLength: { type: ['integer', 'null'] },
+          }),
+        },
+      }),
+    },
+  }),
   Workspace: object({
     id: str,
     name: str,
@@ -407,6 +460,55 @@ const paths = {
       },
     ),
   },
+  [ws + '/resources/{resourceId}/tables']: {
+    parameters: [{ name: 'resourceId', in: 'path', required: true, schema: str }],
+    get: operation(
+      'listDatabaseTables',
+      'List up to 500 tables and views in the selected database, ordered by name; truncated means more exist',
+      'queries:execute',
+      { output: ref('TableList') },
+    ),
+  },
+  [ws + '/resources/{resourceId}/table']: {
+    parameters: [{ name: 'resourceId', in: 'path', required: true, schema: str }],
+    get: operation(
+      'getDatabaseTable',
+      'Read columns and ordered index parts for an exact table name; includes a SELECT for the editor',
+      'queries:execute',
+      {
+        parameters: [
+          {
+            name: 'name',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', minLength: 1, maxLength: 64 },
+            description:
+              'Exact table name in the current database; not a schema-qualified SQL expression.',
+          },
+        ],
+        output: ref('TableDetail'),
+      },
+    ),
+  },
+  [ws + '/resources/{resourceId}/table/rows']: {
+    parameters: [{ name: 'resourceId', in: 'path', required: true, schema: str }],
+    get: operation(
+      'previewDatabaseTable',
+      'Read up to 100 unordered rows, bounded by 1 MiB and 15 seconds per statement; not pagination or a full export',
+      'queries:execute',
+      {
+        parameters: [
+          {
+            name: 'name',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', minLength: 1, maxLength: 64 },
+          },
+        ],
+        output: ref('QueryResult'),
+      },
+    ),
+  },
   [ws + '/queries']: {
     post: operation(
       'executeQuery',
@@ -425,21 +527,7 @@ const paths = {
             },
           },
         },
-        output: {
-          type: 'object',
-          required: ['columns', 'rows', 'rowCount', 'mode', 'durationMs'],
-          properties: {
-            columns: { type: 'array', items: str },
-            rows: { type: 'array', items: { type: 'object', additionalProperties: true } },
-            rowCount: { type: 'integer' },
-            mode: { enum: ['demo', 'live'] },
-            affectedRows: {
-              type: 'integer',
-              description: 'Live statement affected-row count; SELECT returns zero.',
-            },
-            durationMs: { type: 'number' },
-          },
-        },
+        output: ref('QueryResult'),
       },
     ),
   },

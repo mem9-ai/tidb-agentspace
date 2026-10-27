@@ -83,6 +83,23 @@ test('standalone API responses conform to every declared JSON operation, includi
   await request(workspace);
   await request(workspace + '/bootstrap');
   await request(workspace + '/resources');
+  await request(workspace + '/resources/{resourceId}/tables', 'get', undefined, {
+    resourceId: 'db_memory',
+  });
+  await request(workspace + '/resources/{resourceId}/table', 'get', undefined, {
+    resourceId: 'db_memory',
+    suffix: '?name=agent_events',
+  });
+  await request(workspace + '/resources/{resourceId}/table/rows', 'get', undefined, {
+    resourceId: 'db_memory',
+    suffix: '?name=agent_events',
+  });
+  await request(workspace + '/resources/{resourceId}/table', 'get', undefined, {
+    resourceId: 'db_memory',
+    suffix: '?name=missing',
+    status: 404,
+  });
+
   await request(workspace + '/resources', 'get', undefined, { owner: false, status: 401 });
   const database = await request(
     workspace + '/resources',

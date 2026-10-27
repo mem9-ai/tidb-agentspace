@@ -11,20 +11,47 @@ const pages = [
 ] as const;
 
 export type Route = (typeof pages)[number];
-export type WorkspaceRoute = { page: Route; databaseId?: string };
+export type WorkspaceRoute = {
+  page: Route;
+  databaseId?: string;
+  databaseView?: 'tables' | 'sql';
+  tableName?: string;
+};
 
-export function databaseEditorHash(resourceId: string): string {
-  return `#databases/${encodeURIComponent(resourceId)}/sql`;
+function databaseHash(resourceId: string, view: 'tables' | 'sql', tableName?: string): string {
+  return `#databases/${encodeURIComponent(resourceId)}/${view}${tableName ? `?table=${encodeURIComponent(tableName)}` : ''}`;
 }
-
+export function databaseEditorHash(resourceId: string, tableName?: string): string {
+  return databaseHash(resourceId, 'sql', tableName);
+}
+export function databaseTablesHash(resourceId: string, tableName?: string): string {
+  return databaseHash(resourceId, 'tables', tableName);
+}
+export function tableSelectSql(name: string): string {
+  return `SELECT * FROM \`${name.replaceAll('`', '``')}\` LIMIT 100;`;
+}
 export function parseWorkspaceRoute(hash: string): WorkspaceRoute {
   const value = hash.replace(/^#/, '');
-  // Old workspace-level editor bookmarks now ask the user to choose a database.
   if (value === 'sql') return { page: 'databases' };
-  const editor = /^databases\/([^/]+)\/sql$/.exec(value);
-  if (editor) {
+  const database = /^databases\/([^/]+)\/(tables|sql)(?:\?table=([^&]*))?$/.exec(value);
+  if (database) {
     try {
-      return { page: 'databases', databaseId: decodeURIComponent(editor[1]) };
+      const tableName = database[3] === undefined ? undefined : decodeURIComponent(database[3]);
+      if (
+        tableName !== undefined &&
+        (!tableName ||
+          [...tableName].length > 64 ||
+          [...tableName].some(
+            (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+          ))
+      )
+        return { page: 'databases' };
+      return {
+        page: 'databases',
+        databaseId: decodeURIComponent(database[1]),
+        databaseView: database[2] === 'tables' ? 'tables' : 'sql',
+        ...(tableName === undefined ? {} : { tableName }),
+      };
     } catch {
       return { page: 'databases' };
     }

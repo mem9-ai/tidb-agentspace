@@ -31,6 +31,7 @@ type Props = {
   profileName: string;
   active: string;
   databaseId?: string;
+  databaseView?: 'tables' | 'sql';
   navigation: NavigationItem[];
   onSearch: () => void;
   children: ReactNode;
@@ -43,6 +44,7 @@ export function WorkspaceLayout({
   profileName,
   active,
   databaseId,
+  databaseView,
   navigation,
   onSearch,
   children,
@@ -51,7 +53,7 @@ export function WorkspaceLayout({
   useEffect(() => {
     setOpened(false);
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  }, [active, databaseId]);
+  }, [active, databaseId, databaseView]);
   const navigate = (page: string) => {
     location.hash = page;
     setOpened(false);
@@ -134,7 +136,7 @@ export function WorkspaceLayout({
               </Anchor>
             )}
             <Text size="sm" fw={600}>
-              {databaseId ? 'SQL editor' : label}
+              {databaseId ? (databaseView === 'tables' ? 'Tables' : 'SQL editor') : label}
             </Text>
           </Breadcrumbs>
           <Group gap={12} wrap="nowrap" className="header-actions">

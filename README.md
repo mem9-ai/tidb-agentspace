@@ -70,7 +70,8 @@ See [the SQL boundary and recovery](docs/decisions/0006-zero-sql-gateway.md) and
 
 ## What works
 
-- Nine top-level destinations: overview, databases, files, agent connection, keys, API explorer, monitoring, billing, settings. Each database has its own SQL editor at `#databases/<resource-id>/sql`, preserving the selected database on reload and browser history navigation.
+- Nine top-level destinations: overview, databases, files, agent connection, keys, API explorer, monitoring, billing, settings. Each database has a Tables view (columns, indexes and up to 100 preview rows) and its own SQL editor at `#databases/<resource-id>/sql`, preserving the selected database on reload and browser history navigation.
+- Table links preserve exact names and open an editable SELECT in SQL Editor. Agents use the same scoped table APIs; see [database browser verification](docs/database-browser-verification.md).
 - Simulated databases/local files by default, plus opt-in real Zero MySQL databases and Drive9 anonymous File Systems in Singapore. Creation persists idempotency and provider bindings across restarts.
 - Local UTF-8 files up to 256 KiB; live text/binary uploads up to the negotiated gateway maximum of 1 MiB, metadata listings, bounded previews, streaming downloads, and empty-directory deletion. Markdown, JSON, CSV, code, and text render in a side panel; oversized/binary content remains downloadable.
 - Unified Workspace Keys with action scopes and explicit resource access, 7/30/90-day expiration, last-used metadata, and immediate revocation. Keys are revealed once; only a digest is stored.

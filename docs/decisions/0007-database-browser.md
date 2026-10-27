@@ -1,0 +1,35 @@
+# ADR 0007: Database browsing through the SQL boundary
+
+- Status: Accepted project choice for the owner-requested database browser, 2026-10-28.
+- Implementation evidence: [verification](../database-browser-verification.md).
+
+Developers and agents need table structure and bounded row previews without discovering native
+credentials or constructing metadata SQL. Add three read operations to the Workspace API:
+resource-scoped `/tables`, `/table?name=...` and `/table/rows?name=...`.
+
+All reads require `queries:execute` and the selected database grant, just like SQL Editor.
+`resources:read` remains resource discovery only. This does not create a read-only SQL role:
+keys with `queries:execute` can already execute reads and writes. A separate read-only capability
+would require a separately reviewed permission contract and native enforcement.
+
+Use the existing provider adapter and database-scoped native connection. Restrict metadata to
+`DATABASE()`, quote identifiers and encode metadata comparison values independently. Listing
+is bounded to 500 entries with explicit truncation; preview is an unordered first 100 rows,
+subject to the existing byte/time/concurrency budgets. Never count full tables for navigation.
+On errors keep navigation and an explicit retry/query action; don't silently return a partial
+result. Metadata/rows are not persisted. Native credentials remain backend-only.
+
+The Console opens a Tables view under each database, keeps identity in the route, and prefills
+an editable SELECT when opening SQL Editor from a table. It never executes that query merely
+because a link was opened. Existing SQL links remain valid. Demo tables are visibly labeled.
+
+This additive contract needs no persisted-data migration or new grants. Roll back application
+code without modifying database data. Revisit with read-only roles, pagination, multiple schemas
+or another database protocol. See the [acceptance specification](../../specs/database-browser/spec.md)
+and [TiDB Cloud integration policy](../architecture.md#tidb-cloud-integration-policy).
+
+Verified upstream reference (2026-10-28): TiDB's
+[Information Schema](https://docs.pingcap.com/tidb/stable/information-schema/) exposes TABLES,
+COLUMNS and STATISTICS; [STATISTICS](https://docs.pingcap.com/tidb/stable/information-schema-statistics/)
+provides index part order and prefix length. This implementation filters those reads to the
+connection database. Live acceptance verifies the installed provider behavior.

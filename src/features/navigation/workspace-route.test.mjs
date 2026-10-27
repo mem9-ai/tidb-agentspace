@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { databaseEditorHash, parseWorkspaceRoute } from './workspace-route.ts';
+import {
+  databaseEditorHash,
+  databaseTablesHash,
+  tableSelectSql,
+  parseWorkspaceRoute,
+} from './workspace-route.ts';
 
 test('database editor links retain the exact resource identity for reload and history', () => {
   for (const databaseId of ['db_memory', 'db_vectors', 'database / with % and #']) {
     assert.deepEqual(parseWorkspaceRoute(databaseEditorHash(databaseId)), {
       page: 'databases',
       databaseId,
+      databaseView: 'sql',
     });
   }
 });
@@ -27,7 +33,34 @@ test('unknown database IDs are preserved for availability checks, never replaced
   assert.deepEqual(parseWorkspaceRoute('#databases/missing/sql'), {
     page: 'databases',
     databaseId: 'missing',
+    databaseView: 'sql',
   });
   assert.deepEqual(parseWorkspaceRoute('#files'), { page: 'files' });
   assert.deepEqual(parseWorkspaceRoute('#constructor'), { page: 'overview' });
+});
+
+test('table links preserve reserved characters across browse, editor, reload and history', () => {
+  for (const name of [
+    'workspace_notes',
+    'a/b?c#d%&e',
+    '订单 `detail`',
+    "x'; DROP TABLE users; --",
+  ]) {
+    for (const [build, view] of [
+      [databaseEditorHash, 'sql'],
+      [databaseTablesHash, 'tables'],
+    ]) {
+      assert.deepEqual(parseWorkspaceRoute(build('db_memory', name)), {
+        page: 'databases',
+        databaseId: 'db_memory',
+        databaseView: view,
+        tableName: name,
+      });
+    }
+  }
+  assert.equal(tableSelectSql('a`b'), 'SELECT * FROM `a``b` LIMIT 100;');
+  for (const tail of ['%ZZ', '', 'a%00b', 'a'.repeat(65)])
+    assert.deepEqual(parseWorkspaceRoute('#databases/db_memory/tables?table=' + tail), {
+      page: 'databases',
+    });
 });

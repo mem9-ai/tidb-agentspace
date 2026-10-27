@@ -1242,6 +1242,341 @@
         }
       }
     },
+    "/workspaces/{workspaceId}/resources/{resourceId}/tables": {
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "const": "ws_agentlab" },
+          "description": "This local prototype has one workspace."
+        },
+        { "name": "resourceId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "operationId": "listDatabaseTables",
+        "summary": "List up to 500 tables and views in the selected database, ordered by name; truncated means more exist",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: queries:execute. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint.",
+        "x-required-scope": "queries:execute",
+        "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/TableList" } }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/resources/{resourceId}/table": {
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "const": "ws_agentlab" },
+          "description": "This local prototype has one workspace."
+        },
+        { "name": "resourceId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "operationId": "getDatabaseTable",
+        "summary": "Read columns and ordered index parts for an exact table name; includes a SELECT for the editor",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: queries:execute. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint.",
+        "x-required-scope": "queries:execute",
+        "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 64 },
+            "description": "Exact table name in the current database; not a schema-qualified SQL expression."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/TableDetail" } }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/resources/{resourceId}/table/rows": {
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "const": "ws_agentlab" },
+          "description": "This local prototype has one workspace."
+        },
+        { "name": "resourceId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "operationId": "previewDatabaseTable",
+        "summary": "Read up to 100 unordered rows, bounded by 1 MiB and 15 seconds per statement; not pagination or a full export",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: queries:execute. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint.",
+        "x-required-scope": "queries:execute",
+        "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 64 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/QueryResult" } }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
     "/workspaces/{workspaceId}/queries": {
       "post": {
         "operationId": "executeQuery",
@@ -1272,26 +1607,7 @@
           "200": {
             "description": "Success",
             "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["columns", "rows", "rowCount", "mode", "durationMs"],
-                  "properties": {
-                    "columns": { "type": "array", "items": { "type": "string" } },
-                    "rows": {
-                      "type": "array",
-                      "items": { "type": "object", "additionalProperties": true }
-                    },
-                    "rowCount": { "type": "integer" },
-                    "mode": { "enum": ["demo", "live"] },
-                    "affectedRows": {
-                      "type": "integer",
-                      "description": "Live statement affected-row count; SELECT returns zero."
-                    },
-                    "durationMs": { "type": "number" }
-                  }
-                }
-              }
+              "application/json": { "schema": { "$ref": "#/components/schemas/QueryResult" } }
             }
           },
           "400": {
@@ -2339,6 +2655,87 @@
               "code": { "type": "string" },
               "message": { "type": "string" },
               "requestId": { "type": "string" }
+            }
+          }
+        }
+      },
+      "QueryResult": {
+        "type": "object",
+        "required": ["columns", "rows", "rowCount", "mode", "durationMs"],
+        "properties": {
+          "columns": { "type": "array", "items": { "type": "string" } },
+          "rows": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+          "rowCount": { "type": "integer" },
+          "mode": { "enum": ["demo", "live"] },
+          "affectedRows": {
+            "type": "integer",
+            "description": "Live statement affected-row count; SELECT returns zero."
+          },
+          "durationMs": { "type": "number" }
+        }
+      },
+      "DatabaseTable": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": { "name": { "type": "string" }, "type": { "type": "string" } }
+      },
+      "TableList": {
+        "type": "object",
+        "required": ["data", "truncated", "mode"],
+        "properties": {
+          "data": {
+            "type": "array",
+            "maxItems": 500,
+            "items": { "$ref": "#/components/schemas/DatabaseTable" }
+          },
+          "truncated": { "type": "boolean" },
+          "mode": { "enum": ["demo", "live"] }
+        }
+      },
+      "TableDetail": {
+        "type": "object",
+        "required": ["name", "type", "mode", "query", "columns", "indexes"],
+        "properties": {
+          "name": { "type": "string" },
+          "type": { "type": "string" },
+          "mode": { "enum": ["demo", "live"] },
+          "query": { "type": "string" },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "type", "nullable", "default", "key", "extra"],
+              "properties": {
+                "name": { "type": "string" },
+                "type": { "type": "string" },
+                "nullable": { "type": "boolean" },
+                "default": { "type": ["string", "null"] },
+                "key": { "type": "string" },
+                "extra": { "type": "string" }
+              }
+            }
+          },
+          "indexes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "unique", "columns"],
+              "properties": {
+                "name": { "type": "string" },
+                "unique": { "type": "boolean" },
+                "columns": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["name", "position", "prefixLength"],
+                    "properties": {
+                      "name": { "type": ["string", "null"] },
+                      "position": { "type": "integer" },
+                      "prefixLength": { "type": ["integer", "null"] }
+                    }
+                  }
+                }
+              }
             }
           }
         }
