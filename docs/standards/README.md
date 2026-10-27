@@ -42,3 +42,7 @@ The repository check validates that required documents and instruction links exi
 not prove that a model read them or that the UI conforms to TiUI; code and browser review do.
 
 For database integration, read [the Zero SQL boundary](../decisions/0006-zero-sql-gateway.md): anonymous provisioning, private database-scoped credentials, expiry and recovery, verified TLS, bounded sessions, and no automatic SQL retries.
+
+For File System analytics or shell tooling, read [the capability discovery](../file-analysis-discovery.md)
+and [GH-26 design baseline](../../specs/gh-26/spec.md). Verify deployed Exec availability separately
+from DuckDB/Just Bash library support; preserve the Workspace credential and selected-file boundaries.
