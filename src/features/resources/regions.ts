@@ -1,4 +1,5 @@
 const regionLabels: Record<string, string> = {
+  automatic: 'Assigned by TiDB Cloud Zero',
   'aws-us-east-1': 'AWS · N. Virginia',
   'aws-us-west-2': 'AWS · Oregon',
   'aws-ap-southeast-1': 'AWS · Singapore',

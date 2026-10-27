@@ -148,7 +148,7 @@ small {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .resource-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .overview-grid > .panel,
 .two-column > .panel {
@@ -207,10 +207,6 @@ small {
   color: var(--mantine-color-peacock-7);
   flex-shrink: 0;
 }
-.kind-icon.postgresql {
-  color: var(--mantine-color-purple-7);
-  background: var(--mantine-color-purple-1);
-}
 .kind-icon.filesystem {
   color: var(--mantine-color-green-7);
   background: var(--mantine-color-green-1);
@@ -219,16 +215,6 @@ small {
   width: 36px;
   height: 36px;
   border-radius: 8px;
-}
-.pg-pip {
-  position: absolute;
-  right: -4px;
-  bottom: -4px;
-  font-size: 12px;
-  font-weight: 700;
-  background: var(--surface);
-  border-radius: 4px;
-  padding: 1px 4px;
 }
 .live-dot {
   display: inline-block;

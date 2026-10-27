@@ -1,46 +1,48 @@
-# Starter SQL verification
+# Zero SQL verification
 
-Date: 2026-10-28. Implementation and fixtures only; **real TiDB Cloud SQL has not been verified**.
-The available management credential was rejected (HTTP 401). The main local preview and its
-Drive9 files remain unchanged. Do not merge this change until both real protocols pass.
+Date: 2026-10-28. Real anonymous TiDB Cloud Zero MySQL and Singapore Drive9 were verified.
+PG is intentionally disabled; no equivalent anonymous PG service is assumed. See
+[ADR 0005](decisions/0005-starter-sql-gateway.md) for scope, credential boundaries and recovery.
 
-## Automated checks
+## Acceptance evidence
 
-`npm run check` passes: runtime/repository policy, formatting, ESLint, generated OpenAPI,
-64 tests, strict frontend types, and production build. The existing dependency eval/build-size
-warnings remain. No cloud credentials are used by CI.
+| Intent                                           | Evidence                                                                                                                                                           | Result                                                                            |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| Create real MySQL without a cloud account/key    | Console created `zero-playground`; backend created a separate database-scoped native user                                                                          | Active; real SQL succeeds                                                         |
+| Execute useful real SQL through Workspace APIs   | `scripts/verify-zero.mjs` created a unique table, inserted, selected, updated, deleted and dropped it                                                              | Correct values and affected-row counts; test table removed                        |
+| One key across components                        | The same scoped key executed SQL and wrote/read a Markdown file in the real Singapore File System                                                                  | Passed; verification file retained for inspection                                 |
+| Restrict customer and native access              | Live missing-query-scope, wrong-resource and revoked keys; native `mysql.user` read and out-of-scope database creation                                             | Denied                                                                            |
+| Bound errors and execution                       | Live syntax/multi-statement rejection, >1 MiB result and a slow query                                                                                              | Safe structured errors, result limit and 15-second timeout                        |
+| Preserve recovery and credential isolation       | `server/zero.test.mjs`: concurrent/repeated creation, restart, unknown POST outcome, incomplete setup, expiry, private files, scope/workspace/resource/key denials | Covered without cloud credentials                                                 |
+| Keep PG unavailable without deleting prior state | Discovery, creation, key grant, query and persisted legacy-record tests                                                                                            | Hidden/denied publicly; original records retained                                 |
+| Preserve driver and release behavior             | `server/sql-drivers.test.mjs`, runtime package tests                                                                                                               | TLS identity, teardown, exact values, DML packets and packaged dependency loading |
 
-New tests cover one Workspace Key across MySQL/PG, write results, restart, scope/resource/
-workspace denials, revocation/expiry, missing/mismatched/private bindings, SQL input bounds,
-concurrency, duplicate column names, output bounds, sanitized errors, TLS identity checks,
-connection teardown, timeouts, cancellation, and operator role guards. Runtime packaging boots
-an extracted backend and includes both drivers and their dependencies.
+The live script takes only a loopback URL and public resource IDs. It creates short-lived
+verification keys, revokes them in cleanup, and never reads native credentials. It must be
+explicitly invoked by an operator and never runs in CI. It modifies only its randomly named
+test table and a uniquely named verification Markdown file. Cloud API calls are not mocked in
+this script. The Console-created `zero-playground` retains a `workspace_notes` table with two
+sample rows for the local preview. A separate QA trial was used for destructive/error probes.
 
-## UI checks
+## Browser evidence
 
-TiUI 2.9.1 and the official SQL Editor 0.0.6, retaining shared 16px text/48px controls and themes.
-An isolated backend with injected test responses was used; its workspace is named
-`SQL UI fixture (no cloud)`. These screenshots prove presentation and interactions, not cloud
-connectivity. The fixture has no usable provider credentials.
+Real provider responses, TiUI 2.9.1 and official SQL Editor 0.0.6. Shared 16px typography,
+48px controls, spacious layout and Light/Dark/System modes remain in place.
 
-- 1280 × 900 Light: SELECT result and export action.
-- 1280 × 900 Dark: PG selection, write affected-row result, Cmd+Enter.
-- 390 × 844 Light/Dark: toolbar stacking, theme control, editor, no page horizontal overflow.
-- Syntax error clears stale results; Test connection restores a successful result.
-- Switching database changes the route and resets editor/results. Resource context remains under Databases.
+- 1280 × 900 Light/Dark: creation form offers MySQL/Files only, automatic region, real expiry,
+  database list, SQL execution, two-row SELECT and affected-row results.
+- Cmd+Enter executed a real INSERT; SELECT confirmed both rows. No provider credentials appear.
+- 390 × 844 Light/Dark: toolbar stacks and editor wraps, with no page horizontal overflow.
+- SQL remains scoped under Databases; local demo resources retain their separate explicit label.
 
-![Desktop light fixture](screenshots/starter-sql/desktop-light-fixture.png)
-![Desktop dark write fixture](screenshots/starter-sql/desktop-dark-write-fixture.png)
-![Mobile dark fixture](screenshots/starter-sql/mobile-dark-fixture.png)
-![Mobile light fixture](screenshots/starter-sql/mobile-light-fixture.png)
+![Desktop light, real Zero SQL](screenshots/zero-sql/desktop-light.png)
+![Desktop dark, real Zero SQL](screenshots/zero-sql/desktop-dark.png)
+![Mobile light](screenshots/zero-sql/mobile-light.png)
+![Mobile dark](screenshots/zero-sql/mobile-dark.png)
 
-## Pending cloud acceptance
+## Limits
 
-Using dedicated free Starter instances and least-privilege roles, verify TLS, create table,
-insert, select, update, delete, and drop of task-owned test tables for both protocols. Use one
-scoped Workspace Key for both and the File System; verify wrong-resource/no-query-scope keys,
-revocation and expiry. Probe that native roles cannot access another database's data or admin
-credential catalogs. Check syntax errors, a bounded slow query, oversized output, and reload.
-Record protocol/region and outcomes, never passwords, provider keys or private connection URLs.
-After acceptance, run the complete quality gate again, merge only a green latest PR head, and
-restart the main preview without replacing existing files/keys.
+Zero trial data expires; export before the displayed date. The integration does not claim,
+upgrade or renew instances. Cloud usage/billing are unmeasured. Local private credential files
+are not encrypted secret management. Persistent Starter, PG, native external client gateways,
+public identity and public hosting remain outside this loopback validation release.

@@ -38,13 +38,12 @@ test('runtime artifacts include the contract and source identity but exclude loc
     assert.ok(entries.includes('workspace/server/providers/drive9.mjs'));
     assert.ok(!entries.includes('server/api.test.mjs'));
     assert.ok(entries.includes('workspace/node_modules/mysql2/package.json'));
-    assert.ok(entries.includes('workspace/node_modules/pg/package.json'));
+    assert.ok(!entries.includes('workspace/node_modules/pg/package.json'));
     const unpacked = resolve(root, 'unpacked');
     await mkdir(unpacked);
     execFileSync('tar', ['-xzf', result.archive, '-C', unpacked]);
     const runtimeRequire = createRequire(resolve(unpacked, 'workspace/server/index.mjs'));
     assert.equal(typeof runtimeRequire('mysql2').createConnection, 'function');
-    assert.equal(typeof runtimeRequire('pg').Client, 'function');
     const { createApp } = await import(
       pathToFileURL(resolve(unpacked, 'workspace/server/index.mjs')).href
     );

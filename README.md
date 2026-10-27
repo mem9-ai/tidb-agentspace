@@ -1,6 +1,6 @@
 # TiDB Agent Workspace
 
-An independent developer and agent console prototype for MySQL-compatible TiDB Starter, PostgreSQL-compatible TiDB Starter, and TiDB Cloud File System.
+An independent developer and agent console with real MySQL through TiDB Cloud Zero and TiDB Cloud File System. PostgreSQL is temporarily unavailable.
 
 ## Run locally
 
@@ -31,21 +31,31 @@ credential; customers still use a scoped Workspace Key. Existing local files rem
 See [the provider decision](docs/decisions/0004-drive9-anonymous-provider.md) for limits,
 private storage, recovery, and live verification instructions.
 
-## Starter SQL integration (cloud verification pending)
+## Real MySQL with TiDB Cloud Zero
 
-Native MySQL/PG SQL adapters and a backend-only binding tool are implemented. Existing database
-resources remain demos until explicitly bound; Console database creation is still simulated.
-The current PR must complete real-cloud acceptance before merge or main preview replacement.
-See [the SQL boundary and setup](docs/decisions/0005-starter-sql-gateway.md) and
-[verification status](docs/starter-sql-verification.md). Operators supply least-privilege native
-connections privately; customers continue using Workspace Keys with `queries:execute` and
-resource grants. That action allows both SQL reads and writes. Production credential management
-and automatic Starter provisioning are not implemented.
+Enable anonymous database creation alongside the Singapore File System:
+
+```sh
+WORKSPACE_MYSQL_PROVIDER=tidb-cloud-zero WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run dev
+```
+
+Create a MySQL database in the Console, then open its SQL editor. The backend creates the
+Zero instance and a database-scoped application user; no provider account or customer-supplied
+credential is needed. Customers use Workspace Keys with `queries:execute` and resource grants.
+That action permits both reads and writes. Native passwords stay in a separate 0600 private
+file. Existing demo resources retain their labeled local behavior.
+
+Zero databases expire after up to 30 days; the Console shows the provider's exact expiry.
+Export important data before expiry. Region assignment is automatic. This integration does not
+claim/upgrade trials or automatically replace expired/uncertain instances. PostgreSQL creation,
+discovery and SQL are disabled; legacy PG records remain on disk for possible future migration.
+See [the SQL boundary and recovery](docs/decisions/0005-starter-sql-gateway.md) and
+[real verification evidence](docs/starter-sql-verification.md).
 
 ## What works
 
 - Nine top-level destinations: overview, databases, files, agent connection, keys, API explorer, monitoring, billing, settings. Each database has its own SQL editor at `#databases/<resource-id>/sql`, preserving the selected database on reload and browser history navigation.
-- Simulated databases/local files by default, plus opt-in live Drive9 anonymous File Systems in Singapore. Creation persists idempotency and provider bindings across restarts.
+- Simulated databases/local files by default, plus opt-in real Zero MySQL databases and Drive9 anonymous File Systems in Singapore. Creation persists idempotency and provider bindings across restarts.
 - Local UTF-8 files up to 256 KiB; live text/binary uploads up to the negotiated gateway maximum of 1 MiB, metadata listings, bounded previews, streaming downloads, and empty-directory deletion. Markdown, JSON, CSV, code, and text render in a side panel; oversized/binary content remains downloadable.
 - Unified Workspace Keys with action scopes and explicit resource access, 7/30/90-day expiration, last-used metadata, and immediate revocation. Keys are revealed once; only a digest is stored.
 - Working Bearer-authenticated REST APIs, owner-only key administration, OpenAPI 3.1, API explorer, and agent instructions.
@@ -56,7 +66,7 @@ and automatic Starter provisioning are not implemented.
 
 Unbound database instances and chart series are simulated and labeled in the UI. Demo SQL supports only `SELECT 1 [AS connected]` and `SELECT * FROM agent_events [LIMIT n]`; this is not a MySQL or PostgreSQL server. Legacy/local files remain text in JSON. File Systems marked `drive9-anonymous` store their content in the real Singapore service, with internal tokens in a separate owner-only ignored file. Database usage is not metered; local filesystem allowances are a reference snapshot. Live trial storage usage, quotas, and billing are not measured. One Workspace Key works across its permitted database and file APIs. Both action scopes and resource IDs are enforced; selected resources do not automatically expand to future resources. Path-level policies and native protocol gateways are not implemented.
 
-Automatic database provisioning, production secret management, native protocol gateways, real telemetry, MCP, sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). This loopback-only guest server is for local validation, not public deployment.
+Persistent Starter provisioning, production secret management, native protocol gateways, real telemetry, MCP, sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). This loopback-only guest server is for local validation, not public deployment.
 
 The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, and TiUI SQL Editor 0.0.6. Shared overrides preserve 16px body text, 48px primary controls, spacious layouts, and Light/Dark/System modes. Inter is self-hosted. See the [TiUI standard](docs/standards/tiui-design-system.md) for compatibility, extension rules, and [migration verification](docs/tiui-migration-verification.md).
 
@@ -64,6 +74,7 @@ The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, 
 
 - `src/App.tsx`, `src/main.tsx`, `src/styles.css`: interactive frontend prototype.
 - `server/index.mjs`: local API, resource/file/key/query handlers, and built frontend serving.
+- `server/providers/zero.mjs`, `server/providers/sql-drivers.mjs`: anonymous MySQL provisioning and bounded native SQL.
 - `server/providers/drive9.mjs`, `server/file-transfer.mjs`: internal provider adapter and bounded transfers.
 - `server/access-policy.mjs`: shared action/resource authorization support.
 - `src/features/keys/ResourceAccessPicker.tsx`: explicit customer key resource selection.

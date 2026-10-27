@@ -1,9 +1,9 @@
-import { resultCollector, sanitizeSqlError, sqlError } from './starter-sql.mjs';
+import { resultCollector, sanitizeSqlError, sqlError } from './sql-common.mjs';
 
 export async function executeNativeSql(
   binding,
   sql,
-  { limits, signal, loadDriver = (kind) => (kind === 'mysql' ? import('mysql2') : import('pg')) },
+  { limits, signal, loadDriver = () => import('mysql2') },
 ) {
   const collector = resultCollector(limits);
   let close = () => {};
@@ -42,107 +42,52 @@ export async function executeNativeSql(
       );
       void (async () => {
         if (signal?.aborted) return abort();
-        if (binding.kind === 'mysql') {
-          const { createConnection } = await loadDriver('mysql');
+        if (binding.kind !== 'mysql')
+          throw sqlError(400, 'UNSUPPORTED_DATABASE', 'Only MySQL is available.');
+        const { createConnection } = await loadDriver('mysql');
+        if (settled) return;
+        const client = createConnection({
+          host: binding.host,
+          port: binding.port,
+          user: binding.user,
+          password: binding.password,
+          database: binding.database,
+          ssl: { rejectUnauthorized: true, verifyIdentity: true, minVersion: 'TLSv1.2' },
+          connectTimeout: limits.timeoutMs,
+          multipleStatements: false,
+          rowsAsArray: true,
+          supportBigNumbers: true,
+          bigNumberStrings: true,
+          dateStrings: true,
+          jsonStrings: true,
+          flags: ['-LOCAL_FILES'],
+        });
+        close = () => client.destroy();
+        client.on('error', (error) => finish(sanitizeSqlError(error)));
+        let affectedRows = 0;
+        const query = client.query(sql);
+        query.on('fields', (fields) => {
+          if (!fields) return;
+          try {
+            collector.fields(fields.map((field) => field.name));
+          } catch (error) {
+            finish(sanitizeSqlError(error));
+          }
+        });
+        query.on('result', (row) => {
           if (settled) return;
-          const client = createConnection({
-            host: binding.host,
-            port: binding.port,
-            user: binding.user,
-            password: binding.password,
-            database: binding.database,
-            ssl: { rejectUnauthorized: true, verifyIdentity: true, minVersion: 'TLSv1.2' },
-            connectTimeout: limits.timeoutMs,
-            multipleStatements: false,
-            rowsAsArray: true,
-            supportBigNumbers: true,
-            bigNumberStrings: true,
-            dateStrings: true,
-            jsonStrings: true,
-            flags: ['-LOCAL_FILES'],
-          });
-          close = () => client.destroy();
-          client.on('error', (error) => finish(sanitizeSqlError(error)));
-          let affectedRows = 0;
-          const query = client.query(sql);
-          query.on('fields', (fields) => {
-            try {
-              collector.fields(fields.map((field) => field.name));
-            } catch (error) {
-              finish(sanitizeSqlError(error));
-            }
-          });
-          query.on('result', (row) => {
-            if (settled) return;
-            try {
-              if (Array.isArray(row))
-                collector.row(
-                  row.map((value) => (Buffer.isBuffer(value) ? value.toString('base64') : value)),
-                );
-              else affectedRows = row.affectedRows ?? 0;
-            } catch (error) {
-              finish(sanitizeSqlError(error));
-            }
-          });
-          query.on('error', (error) => finish(sanitizeSqlError(error)));
-          query.on('end', () => finish(null, collector.finish(affectedRows)));
-        } else {
-          const { Client, Query } = await loadDriver('postgresql');
-          if (settled) return;
-          const client = new Client({
-            host: binding.host,
-            port: binding.port,
-            user: binding.user,
-            password: binding.password,
-            database: binding.database,
-            ssl: { rejectUnauthorized: true, minVersion: 'TLSv1.2' },
-            connectionTimeoutMillis: limits.timeoutMs,
-            statement_timeout: limits.timeoutMs,
-            lock_timeout: limits.timeoutMs,
-            application_name: 'tidb-workspace',
-            options: '',
-          });
-          close = () => {
-            void client.end().catch(() => {});
-          };
-          client.on('error', (error) => finish(sanitizeSqlError(error)));
-          await client.connect();
-          if (settled) return close();
-          // Extended protocol rejects multiple statements, including semicolons inside comments/strings correctly.
-          // Return text values to avoid lossy bigint/numeric conversion and unbounded JSON parsing.
-          const query = new Query({
-            text: sql,
-            queryMode: 'extended',
-            rowMode: 'array',
-            types: { getTypeParser: () => (value) => value },
-          });
-          let fieldsSet = false;
-          query.on('row', (row, result) => {
-            if (settled) return;
-            try {
-              if (!fieldsSet) {
-                collector.fields(result.fields.map((field) => field.name));
-                fieldsSet = true;
-              }
-              collector.row(row);
-            } catch (error) {
-              finish(sanitizeSqlError(error));
-            }
-          });
-          query.on('error', (error) => finish(sanitizeSqlError(error)));
-          query.on('end', (result) => {
-            try {
-              if (!fieldsSet) collector.fields(result.fields.map((field) => field.name));
-              finish(
-                null,
-                collector.finish(result.command === 'SELECT' ? 0 : (result.rowCount ?? 0)),
+          try {
+            if (Array.isArray(row))
+              collector.row(
+                row.map((value) => (Buffer.isBuffer(value) ? value.toString('base64') : value)),
               );
-            } catch (error) {
-              finish(sanitizeSqlError(error));
-            }
-          });
-          client.query(query);
-        }
+            else affectedRows = row.affectedRows ?? 0;
+          } catch (error) {
+            finish(sanitizeSqlError(error));
+          }
+        });
+        query.on('error', (error) => finish(sanitizeSqlError(error)));
+        query.on('end', () => finish(null, collector.finish(affectedRows)));
       })().catch((error) => finish(sanitizeSqlError(error)));
     });
   } finally {

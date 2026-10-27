@@ -10,13 +10,6 @@ export const capabilities = {
     monthlyRU: 50_000_000,
     preview: false,
   },
-  postgresql: {
-    label: 'TiDB Starter · PostgreSQL',
-    regions: ['aws-us-east-1'],
-    storageGiB: 50,
-    monthlyRU: 500_000_000,
-    preview: true,
-  },
   filesystem: {
     label: 'TiDB Cloud File System',
     // The first region is the Console default. See ADR 0003 for provider/mode evidence.
@@ -42,14 +35,6 @@ export function seed() {
         id: 'db_memory',
         name: 'agent-memory',
         kind: 'mysql',
-        region: 'aws-us-east-1',
-        status: 'active',
-        createdAt: now,
-      },
-      {
-        id: 'db_vectors',
-        name: 'knowledge-base',
-        kind: 'postgresql',
         region: 'aws-us-east-1',
         status: 'active',
         createdAt: now,
@@ -103,7 +88,7 @@ export function seed() {
         path: '/docs/architecture.md',
         type: 'file',
         content:
-          '# Architecture notes\n\nA workspace groups resources, scoped API keys, activity, and usage.\nMySQL and PostgreSQL are separate instances. File systems have independent regional endpoints and data tokens.\n',
+          '# Architecture notes\n\nA workspace groups resources, scoped API keys, activity, and usage.\nEach MySQL resource has its own instance. PostgreSQL is currently unavailable. File systems have independent regional endpoints and data tokens.\n',
         updatedAt: now,
       },
     ],
@@ -150,28 +135,30 @@ export async function createStore(file, initialState = seed) {
   };
 }
 export function usage(state) {
-  return state.resources.map((resource) => ({
-    resourceId: resource.id,
-    name: resource.name,
-    kind: resource.kind,
-    storageBytes: ['drive9-anonymous', 'tidb-cloud-starter'].includes(resource.provider)
-      ? null
-      : resource.kind === 'filesystem'
-        ? state.files
-            .filter((f) => f.resourceId === resource.id)
-            .reduce((n, f) => n + Buffer.byteLength(f.content || ''), 0)
-        : 0,
-    storageLimitBytes: ['drive9-anonymous', 'tidb-cloud-starter'].includes(resource.provider)
-      ? null
-      : capabilities[resource.kind].storageGiB * 1024 ** 3,
-    measured: !['drive9-anonymous', 'tidb-cloud-starter'].includes(resource.provider),
-    fileCount: ['drive9-anonymous', 'tidb-cloud-starter'].includes(resource.provider)
-      ? null
-      : state.files.filter((f) => f.resourceId === resource.id && f.type === 'file').length,
-    monthlyRU: ['drive9-anonymous', 'tidb-cloud-starter'].includes(resource.provider) ? null : 0,
-    monthlyRULimit:
-      resource.provider === 'tidb-cloud-starter'
+  return state.resources
+    .filter((resource) => Object.hasOwn(capabilities, resource.kind))
+    .map((resource) => ({
+      resourceId: resource.id,
+      name: resource.name,
+      kind: resource.kind,
+      storageBytes: ['drive9-anonymous', 'tidb-cloud-zero'].includes(resource.provider)
         ? null
-        : (capabilities[resource.kind].monthlyRU ?? null),
-  }));
+        : resource.kind === 'filesystem'
+          ? state.files
+              .filter((f) => f.resourceId === resource.id)
+              .reduce((n, f) => n + Buffer.byteLength(f.content || ''), 0)
+          : 0,
+      storageLimitBytes: ['drive9-anonymous', 'tidb-cloud-zero'].includes(resource.provider)
+        ? null
+        : capabilities[resource.kind].storageGiB * 1024 ** 3,
+      measured: !['drive9-anonymous', 'tidb-cloud-zero'].includes(resource.provider),
+      fileCount: ['drive9-anonymous', 'tidb-cloud-zero'].includes(resource.provider)
+        ? null
+        : state.files.filter((f) => f.resourceId === resource.id && f.type === 'file').length,
+      monthlyRU: ['drive9-anonymous', 'tidb-cloud-zero'].includes(resource.provider) ? null : 0,
+      monthlyRULimit:
+        resource.provider === 'tidb-cloud-zero'
+          ? null
+          : (capabilities[resource.kind].monthlyRU ?? null),
+    }));
 }

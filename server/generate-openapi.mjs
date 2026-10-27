@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { format, resolveConfig } from 'prettier';
 import { capabilities } from './store.mjs';
+import { zeroRegion } from './providers/zero.mjs';
 const schemas = {
   Resource: {
     type: 'object',
@@ -9,11 +10,13 @@ const schemas = {
     properties: {
       id: { type: 'string' },
       name: { type: 'string' },
-      kind: { enum: ['mysql', 'postgresql', 'filesystem'] },
+      kind: { enum: ['mysql', 'filesystem'] },
       region: { type: 'string' },
-      status: { enum: ['active', 'provisioning', 'failed', 'suspended', 'deleting', 'deleted'] },
+      status: {
+        enum: ['active', 'provisioning', 'failed', 'suspended', 'deleting', 'deleted', 'expired'],
+      },
       provider: {
-        enum: ['local', 'drive9-anonymous', 'tidb-cloud-starter'],
+        enum: ['local', 'drive9-anonymous', 'tidb-cloud-zero'],
         description: 'Missing on legacy local resources.',
       },
       uploadLimitBytes: {
@@ -21,6 +24,11 @@ const schemas = {
         description: 'Negotiated gateway upload limit; zero means uploads are unavailable.',
       },
       connectionError: { type: 'string' },
+      expiresAt: {
+        type: 'string',
+        format: 'date-time',
+        description: 'Zero expiry reported by the provider. No automatic renewal or replacement.',
+      },
       createdAt: { type: 'string', format: 'date-time' },
     },
   },
@@ -108,7 +116,9 @@ function operation(
       429: response(ref('Error'), 'Provider quota or rate limit'),
       502: response(ref('Error'), 'Provider unavailable or invalid response'),
       503: response(ref('Error'), 'Provider binding needs operator recovery'),
-      422: response(ref('Error'), 'Unsupported demo SQL'),
+      422: response(ref('Error'), 'SQL syntax, result limit, or unsupported demo query'),
+      410: response(ref('Error'), 'Temporary database expired'),
+      504: response(ref('Error'), 'SQL timeout; a write outcome may be unknown'),
     },
   };
 }
@@ -151,11 +161,16 @@ const paths = {
           required: ['name', 'kind', 'region'],
           properties: {
             name: { type: 'string', pattern: '^[a-z][a-z0-9-]{2,39}$' },
-            kind: { enum: ['mysql', 'postgresql', 'filesystem'] },
+            kind: { enum: ['mysql', 'filesystem'] },
             region: {
-              enum: [...new Set(Object.values(capabilities).flatMap((value) => value.regions))],
+              enum: [
+                ...new Set([
+                  ...Object.values(capabilities).flatMap((value) => value.regions),
+                  zeroRegion,
+                ]),
+              ],
               description:
-                'Choose a region supported by the resource kind in capabilities. The first supported region is the Console default.',
+                'Choose a region supported by the resource kind in capabilities. Zero MySQL uses automatic provider assignment. The first supported region is the Console default.',
             },
           },
         },
@@ -284,6 +299,17 @@ const paths = {
       },
     },
   },
+  [ws + '/resources/{resourceId}/setup']: {
+    parameters: [{ name: 'resourceId', in: 'path', required: true, schema: str }],
+    post: operation(
+      'retryDatabaseSetup',
+      'Resume setup on the same Zero instance; never create a replacement for an uncertain request',
+      'resources:write',
+      {
+        output: { type: 'object', properties: { data: { $ref: '#/components/schemas/Resource' } } },
+      },
+    ),
+  },
   [ws + '/queries']: {
     post: operation(
       'executeQuery',
@@ -298,7 +324,7 @@ const paths = {
             sql: {
               type: 'string',
               description:
-                'Live Starter: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n].',
+                'Live Zero: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n].',
             },
           },
         },
@@ -444,7 +470,7 @@ const spec = {
     title: 'TiDB Agent Workspace · Local Prototype API',
     version: '0.1.0',
     description:
-      'A local demonstration API. Cloud provisioning, native database connections, and cloud telemetry are simulated. Files, API-key enforcement, and settings persist on this machine. Browser guest sessions are only suitable for loopback validation; production identity is deferred.',
+      'A loopback Workspace gateway with opt-in real TiDB Cloud Zero MySQL and Singapore Drive9 files. Existing local resources remain demos. Workspace Keys authorize actions and resources; upstream credentials stay internal. Zero trials expire; cloud usage is unmeasured. Production identity and public hosting are deferred.',
   },
   servers: [
     { url: 'http://127.0.0.1:5173/api/v1', description: 'Local Vite proxy' },

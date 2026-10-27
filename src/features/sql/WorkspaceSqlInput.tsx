@@ -6,18 +6,17 @@ import {
   useEditorCacheContext,
 } from '@tidbcloud/tisqleditor-react';
 import { bbedit, oneDark } from '@tidbcloud/codemirror-extension-themes';
-import { MySQL, PostgreSQL } from '@codemirror/lang-sql';
+import { MySQL } from '@codemirror/lang-sql';
 import { Prec } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 
 type Props = {
   databaseId: string;
-  protocol: 'mysql' | 'postgresql' | 'filesystem';
   value: string;
   onChange: (value: string) => void;
   onRun: () => void;
 };
-function Editor({ databaseId, protocol, value, onChange, onRun }: Props) {
+function Editor({ databaseId, value, onChange, onRun }: Props) {
   const cache = useEditorCacheContext();
   const callbacks = useRef({ onChange, onRun });
   useEffect(() => {
@@ -25,10 +24,7 @@ function Editor({ databaseId, protocol, value, onChange, onRun }: Props) {
   }, [onChange, onRun]);
   const scheme = useComputedColorScheme('light');
   const palette = useMantineTheme();
-  const sqlConfig = useMemo(
-    () => ({ dialect: protocol === 'postgresql' ? PostgreSQL : MySQL, upperCaseKeywords: true }),
-    [protocol],
-  );
+  const sqlConfig = useMemo(() => ({ dialect: MySQL, upperCaseKeywords: true }), []);
   const theme = useMemo(
     () => [
       EditorView.theme({

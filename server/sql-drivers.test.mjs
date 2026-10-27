@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { executeNativeSql } from './providers/sql-drivers.mjs';
-import { sqlLimits } from './providers/starter-sql.mjs';
+import { sqlLimits } from './providers/sql-common.mjs';
 
-function fakeDriver(kind, behavior) {
+function fakeDriver(behavior) {
   const clients = [];
   class Query extends EventEmitter {
     constructor(config) {
@@ -21,7 +21,7 @@ function fakeDriver(kind, behavior) {
     }
     async connect() {}
     query(input) {
-      const query = kind === 'mysql' ? new Query({ text: input }) : input;
+      const query = new Query({ text: input });
       this.queryConfig = query.config;
       queueMicrotask(() => behavior(query));
       return query;
@@ -39,7 +39,7 @@ function fakeDriver(kind, behavior) {
   };
 }
 
-for (const kind of ['mysql', 'postgresql']) {
+for (const kind of ['mysql']) {
   const binding = {
     kind,
     host: 'gateway.test.tidbcloud.com',
@@ -49,16 +49,11 @@ for (const kind of ['mysql', 'postgresql']) {
     database: 'app',
   };
   test(`${kind}: fresh TLS sessions stream results, preserve values and close after each query`, async () => {
-    const driver = fakeDriver(kind, (query) => {
+    const driver = fakeDriver((query) => {
       const fields = [{ name: 'n' }, { name: 'n' }];
-      if (kind === 'mysql') {
-        query.emit('fields', fields);
-        query.emit('result', ['9007199254740993', null]);
-        query.emit('end');
-      } else {
-        query.emit('row', ['9007199254740993', null], { fields });
-        query.emit('end', { fields, command: 'SELECT', rowCount: 1 });
-      }
+      query.emit('fields', fields);
+      query.emit('result', ['9007199254740993', null]);
+      query.emit('end');
     });
     for (let i = 0; i < 2; i++) {
       const result = await executeNativeSql(binding, "SELECT ';', NULL", {
@@ -69,24 +64,17 @@ for (const kind of ['mysql', 'postgresql']) {
       const client = driver.clients[i];
       assert.equal(client.closed, true);
       assert.equal(client.config.ssl.rejectUnauthorized, true);
-      if (kind === 'mysql') {
-        assert.equal(client.config.ssl.verifyIdentity, true);
-        assert.equal(client.config.multipleStatements, false);
-        assert.ok(client.config.flags.includes('-LOCAL_FILES'));
-      } else {
-        assert.equal(client.queryConfig.queryMode, 'extended');
-        assert.equal(client.config.statement_timeout, 15_000);
-      }
+      assert.equal(client.config.ssl.verifyIdentity, true);
+      assert.equal(client.config.multipleStatements, false);
+      assert.ok(client.config.flags.includes('-LOCAL_FILES'));
     }
     assert.equal(driver.clients.length, 2);
   });
   test(`${kind}: row limits, errors, timeouts and canceled requests always close the session`, async () => {
-    const overflow = fakeDriver(kind, (query) => {
+    const overflow = fakeDriver((query) => {
       const fields = [{ name: 'data' }];
-      if (kind === 'mysql') {
-        query.emit('fields', fields);
-        query.emit('result', ['x'.repeat(200)]);
-      } else query.emit('row', ['x'.repeat(200)], { fields });
+      query.emit('fields', fields);
+      query.emit('result', ['x'.repeat(200)]);
     });
     await assert.rejects(
       executeNativeSql(binding, 'SELECT data', {
@@ -96,9 +84,9 @@ for (const kind of ['mysql', 'postgresql']) {
       { code: 'RESULT_TOO_LARGE' },
     );
     assert.ok(overflow.clients[0].closed);
-    const error = fakeDriver(kind, (query) =>
+    const error = fakeDriver((query) =>
       query.emit('error', {
-        code: kind === 'mysql' ? 'ER_PARSE_ERROR' : '42601',
+        code: 'ER_PARSE_ERROR',
         message: 'private',
       }),
     );
@@ -107,7 +95,7 @@ for (const kind of ['mysql', 'postgresql']) {
       { code: 'SQL_SYNTAX_ERROR' },
     );
     assert.ok(error.clients[0].closed);
-    const waiting = fakeDriver(kind, () => {});
+    const waiting = fakeDriver(() => {});
     await assert.rejects(
       executeNativeSql(binding, 'SELECT slow()', {
         limits: { ...sqlLimits, timeoutMs: 20 },
@@ -129,3 +117,17 @@ for (const kind of ['mysql', 'postgresql']) {
     assert.equal(waiting.clients.length, 1);
   });
 }
+
+test('MySQL DDL/DML completion accepts the driver undefined fields event and affected rows', async () => {
+  const driver = fakeDriver((query) => {
+    query.emit('fields', undefined);
+    query.emit('result', { affectedRows: 2 });
+    query.emit('end');
+  });
+  const result = await executeNativeSql({ kind: 'mysql' }, 'UPDATE tasks SET done = true', {
+    limits: sqlLimits,
+    loadDriver: driver.loadDriver,
+  });
+  assert.deepEqual(result, { columns: [], rows: [], rowCount: 0, affectedRows: 2 });
+  assert.ok(driver.clients[0].closed);
+});

@@ -5,7 +5,7 @@ import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStore, capabilities, workspaceId, usage } from './store.mjs';
 import { createDrive9, drive9Provider, drive9Region } from './providers/drive9.mjs';
-import { createStarterSql, starterProvider } from './providers/starter-sql.mjs';
+import { createZero, zeroProvider, zeroRegion } from './providers/zero.mjs';
 import { readUpload, previewFile, downloadFile } from './file-transfer.mjs';
 import { canAccessResource, normalizeResourceGrant } from './access-policy.mjs';
 
@@ -75,6 +75,8 @@ export async function createApp({
   filesProvider = process.env.WORKSPACE_FILES_PROVIDER || 'local',
   drive9Transport,
   sqlExecute,
+  zeroTransport,
+  mysqlProvider = process.env.WORKSPACE_MYSQL_PROVIDER || 'local',
 } = {}) {
   if (!['local', drive9Provider].includes(filesProvider))
     throw new Error('Unknown File System provider.');
@@ -82,19 +84,38 @@ export async function createApp({
     credentialsFile: dataFile + '.providers.json',
     transport: drive9Transport,
   });
+  if (!['local', zeroProvider].includes(mysqlProvider)) throw new Error('Unknown MySQL provider.');
+  const zero = await createZero({
+    credentialsFile: dataFile + '.databases.json',
+    transport: zeroTransport,
+    execute: sqlExecute,
+  });
   const availableCapabilities = structuredClone(capabilities);
   availableCapabilities.filesystem.provider = filesProvider;
+  availableCapabilities.mysql.provider = mysqlProvider;
+  if (mysqlProvider === zeroProvider) {
+    Object.assign(availableCapabilities.mysql, {
+      regions: [zeroRegion],
+      storageGiB: null,
+      monthlyRU: null,
+    });
+  }
   if (filesProvider === drive9Provider) {
     availableCapabilities.filesystem.regions = [drive9Region];
     availableCapabilities.filesystem.storageGiB = null;
     availableCapabilities.filesystem.maxFiles = null;
   }
   const store = await createStore(dataFile);
-  const starterSql = createStarterSql({
-    credentialsFile: dataFile + '.databases.json',
-    execute: sqlExecute,
-  });
   const sessions = new Map();
+  function visibleState() {
+    const state = store.read();
+    const retired = new Set(
+      state.resources.filter((r) => !Object.hasOwn(capabilities, r.kind)).map((r) => r.id),
+    );
+    state.resources = state.resources.filter((r) => !retired.has(r.id));
+    state.events = state.events.filter((e) => !retired.has(e.resourceId));
+    return state;
+  }
   async function recordQuery(resourceId, principal) {
     await store.mutate((draft) => {
       draft.queryCount++;
@@ -104,12 +125,18 @@ export async function createApp({
     });
   }
   async function updateProvider(resource, provision = false) {
-    if (resource.provider !== drive9Provider) return resource;
+    if (![drive9Provider, zeroProvider].includes(resource.provider)) return resource;
     let info;
     try {
-      info = await (provision ? drive9.provision(resource.id) : drive9.status(resource.id));
+      info =
+        resource.provider === zeroProvider
+          ? await (provision ? zero.provision(resource) : zero.status(resource.id))
+          : await (provision ? drive9.provision(resource.id) : drive9.status(resource.id));
     } catch (error) {
-      info = { connectionError: error.message };
+      info = {
+        ...(resource.provider === zeroProvider ? zero.status(resource.id) : {}),
+        connectionError: error.message,
+      };
     }
     return store.mutate((draft) => {
       const current = draft.resources.find((r) => r.id === resource.id);
@@ -151,7 +178,7 @@ export async function createApp({
           status: 'ok',
           mode:
             filesProvider === drive9Provider ||
-            store.read().resources.some((r) => r.provider === starterProvider)
+            store.read().resources.some((r) => r.provider === zeroProvider)
               ? 'hybrid'
               : 'demo',
           filesProvider,
@@ -194,7 +221,7 @@ export async function createApp({
         });
         return res.end(content);
       }
-      let state = store.read();
+      let state = visibleState();
       const sessionToken = /(?:^|; )aw_session=([^;]+)/.exec(req.headers.cookie || '')?.[1];
       let isOwner = !!sessionToken && (sessions.get(sessionToken) || 0) > Date.now();
       let principal = 'You',
@@ -248,17 +275,17 @@ export async function createApp({
         requireOwner();
         await Promise.all(
           state.resources
-            .filter((r) => r.provider === drive9Provider)
+            .filter((r) => [drive9Provider, zeroProvider].includes(r.provider))
             .map((r) => updateProvider(r)),
         );
-        state = store.read();
+        state = visibleState();
         return send(200, {
           ...state,
           keys: state.keys.map(keyView),
           idempotency: undefined,
           capabilities: availableCapabilities,
           usage: usage(state),
-          mode: state.resources.some((r) => [drive9Provider, starterProvider].includes(r.provider))
+          mode: state.resources.some((r) => [drive9Provider, zeroProvider].includes(r.provider))
             ? 'hybrid'
             : 'demo',
         });
@@ -280,7 +307,11 @@ export async function createApp({
           );
         const input = await body(req);
         if (!Object.hasOwn(capabilities, input.kind))
-          fail(400, 'INVALID_KIND', 'Choose mysql, postgresql, or filesystem.');
+          fail(
+            400,
+            'INVALID_KIND',
+            'Choose mysql or filesystem. PostgreSQL is not currently available.',
+          );
         if (typeof input.name !== 'string' || !/^[a-z][a-z0-9-]{2,39}$/.test(input.name))
           fail(
             400,
@@ -299,7 +330,7 @@ export async function createApp({
             const previous = draft.idempotency[idemSlot];
             if (previous.fingerprint !== fingerprint)
               fail(409, 'IDEMPOTENCY_CONFLICT', 'This key was used with a different request.');
-            return previous.resource;
+            return draft.resources.find((r) => r.id === previous.resource.id) || previous.resource;
           }
           if (draft.resources.some((r) => r.name === input.name))
             fail(409, 'NAME_EXISTS', 'A resource with this name already exists.');
@@ -317,22 +348,27 @@ export async function createApp({
               'FREE_TIER_LIMIT',
               'One File System per provider and region is supported in this prototype. Use the existing File System.',
             );
-          const limit = input.kind === 'mysql' ? 5 : 10;
+          const limit = 5;
           if (
             input.kind !== 'filesystem' &&
             draft.resources.filter((r) => r.kind === input.kind).length >= limit
           )
-            fail(409, 'FREE_TIER_LIMIT', 'The demo free-tier instance limit has been reached.');
+            fail(
+              409,
+              'FREE_TIER_LIMIT',
+              'This prototype supports at most five database resources. Use an existing database.',
+            );
           const resource = {
             id: `${input.kind === 'filesystem' ? 'fs' : 'db'}_${randomBytes(6).toString('hex')}`,
             name: input.name,
             kind: input.kind,
             region: input.region,
             status:
-              input.kind === 'filesystem' && filesProvider === drive9Provider
+              (input.kind === 'filesystem' && filesProvider === drive9Provider) ||
+              (input.kind === 'mysql' && mysqlProvider === zeroProvider)
                 ? 'provisioning'
                 : 'active',
-            ...(input.kind === 'filesystem' ? { provider: filesProvider } : {}),
+            provider: input.kind === 'filesystem' ? filesProvider : mysqlProvider,
             createdAt: new Date().toISOString(),
           };
           draft.resources.push(resource);
@@ -342,8 +378,16 @@ export async function createApp({
         });
         return send(201, {
           data: await updateProvider(resource, true),
-          mode: resource.provider === drive9Provider ? 'live' : 'demo',
+          mode: [drive9Provider, zeroProvider].includes(resource.provider) ? 'live' : 'demo',
         });
+      }
+      const setupMatch = /^\/resources\/([^/]+)\/setup$/.exec(route);
+      if (setupMatch && req.method === 'POST') {
+        requireScope('resources:write');
+        const resource = requireResource(setupMatch[1], 'mysql');
+        if (resource.provider !== zeroProvider)
+          fail(400, 'UNSUPPORTED_PROVIDER', 'Setup is available only for Zero databases.');
+        return send(200, { data: await updateProvider(resource, true) });
       }
       if (route === '/files' && req.method === 'GET') {
         requireScope('files:read');
@@ -491,14 +535,20 @@ export async function createApp({
         const input = await body(req);
         const resource = requireResource(input.resourceId);
         if (resource.kind === 'filesystem') fail(404, 'NOT_FOUND', 'Database not found.');
-        if (resource.provider === starterProvider) {
+        if (resource.provider === zeroProvider) {
+          if (resource.status === 'expired')
+            fail(
+              410,
+              'DATABASE_EXPIRED',
+              'This Zero database has expired. Its data is no longer available.',
+            );
           if (resource.status !== 'active')
             fail(409, 'DATABASE_UNAVAILABLE', 'This database is not active.');
           const controller = new AbortController();
           const onClose = () => controller.abort();
           res.on('close', onClose);
           try {
-            const result = await starterSql.execute(resource, input.sql, controller.signal);
+            const result = await zero.execute(resource, input.sql, controller.signal);
             try {
               await recordQuery(resource.id, principal);
             } catch {

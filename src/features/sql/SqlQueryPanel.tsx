@@ -22,10 +22,11 @@ const WorkspaceSqlInput = lazy(() => import('./WorkspaceSqlInput'));
 type DatabaseResource = {
   id: string;
   name: string;
-  kind: 'mysql' | 'postgresql' | 'filesystem';
+  kind: 'mysql' | 'filesystem';
   provider?: string;
+  status: string;
 };
-const kindLabel = { mysql: 'MySQL', postgresql: 'PostgreSQL', filesystem: 'File System' };
+const kindLabel = { mysql: 'MySQL', filesystem: 'File System' };
 export type QueryResult = {
   columns: string[];
   rows: Record<string, unknown>[];
@@ -52,7 +53,7 @@ export function SqlQueryPanel({
 }: Props) {
   const dbs = databases;
   const resourceId = database.id;
-  const live = database.provider === 'tidb-cloud-starter';
+  const live = database.provider === 'tidb-cloud-zero';
   const [sql, setSql] = useState(
       live ? 'SELECT 1 AS connected;' : 'SELECT * FROM agent_events LIMIT 10;',
     ),
@@ -62,7 +63,7 @@ export function SqlQueryPanel({
     [notice, setNotice] = useState('');
   const running = useRef(false);
   async function run() {
-    if (running.current) return;
+    if (running.current || database.status !== 'active') return;
     running.current = true;
     setBusy(true);
     setError('');
@@ -88,7 +89,7 @@ export function SqlQueryPanel({
       <Alert className="notice" color="peacock" icon={<Sparkles size={17} />}>
         <span>
           {live ? (
-            'Queries run on your TiDB Cloud Starter database. Run one statement at a time; writes change real data. Results are limited to 1,000 rows / 1 MiB, with a 15-second timeout.'
+            'Queries run on your temporary TiDB Cloud Zero database. Run one statement at a time; writes change real data. Results are limited to 1,000 rows / 1 MiB, with a 15-second timeout.'
           ) : (
             <>
               Local demo. Supports <code>SELECT 1</code> and{' '}
@@ -121,7 +122,7 @@ export function SqlQueryPanel({
             variant="filled"
             loading={busy}
             leftSection={<Play size={18} />}
-            disabled={busy || !resourceId}
+            disabled={busy || !resourceId || database.status !== 'active'}
             onClick={run}
           >
             {busy ? 'Running…' : 'Run query'}
@@ -137,7 +138,6 @@ export function SqlQueryPanel({
         >
           <WorkspaceSqlInput
             databaseId={database.id}
-            protocol={database.kind}
             value={sql}
             onChange={setSql}
             onRun={() => void run()}
@@ -150,6 +150,9 @@ export function SqlQueryPanel({
       </Paper>
       <div className="sample-queries">
         <span>Try a sample:</span>
+        {live && (
+          <UnstyledButton onClick={() => setSql('SHOW TABLES;')}>List tables</UnstyledButton>
+        )}
         <UnstyledButton onClick={() => setSql('SELECT 1 AS connected;')}>
           Test connection
         </UnstyledButton>

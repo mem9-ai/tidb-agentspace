@@ -42,7 +42,6 @@ export async function copySqlDependencies(root, staged) {
       await copy(dependency, directory, true);
   }
   await copy('mysql2', root);
-  await copy('pg', root);
 }
 
 export async function packageRuntime({ root, destination, sourceSha }) {
@@ -59,7 +58,8 @@ export async function packageRuntime({ root, destination, sourceSha }) {
       'server/access-policy.mjs',
       'server/file-transfer.mjs',
       'server/providers/drive9.mjs',
-      'server/providers/starter-sql.mjs',
+      'server/providers/sql-common.mjs',
+      'server/providers/zero.mjs',
       'server/providers/sql-drivers.mjs',
       'public/openapi.json',
     ]) {

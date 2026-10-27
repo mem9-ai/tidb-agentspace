@@ -12,7 +12,7 @@ const base = '/api/v1/workspaces/ws_agentlab';
 before(async () => {
   directory = await mkdtemp(join(tmpdir(), 'tidb-workspace-test-'));
   dataFile = join(directory, 'state.json');
-  server = await createApp({ dataFile });
+  server = await createApp({ dataFile, mysqlProvider: 'local', filesProvider: 'local' });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   address = `http://127.0.0.1:${server.address().port}`;
   const response = await fetch(address + '/api/session', {
@@ -38,12 +38,12 @@ async function request(path, method = 'GET', data, credential = cookie, extra = 
   return { status: response.status, body: await response.json() };
 }
 let readKey, writeKey;
-test('owner discovers three separate resources and receives no stored digests', async () => {
+test('owner discovers supported resources and receives no stored digests', async () => {
   const result = await request(base + '/bootstrap');
   assert.equal(result.status, 200);
-  assert.equal(result.body.resources.length, 3);
+  assert.equal(result.body.resources.length, 2);
   assert.equal(result.body.mode, 'demo');
-  assert.equal(result.body.resources.filter((r) => r.kind === 'postgresql').length, 1);
+  assert.equal(result.body.resources.filter((r) => r.kind === 'postgresql').length, 0);
 });
 test('unauthenticated requests and wrong workspaces cannot read data', async () => {
   assert.equal((await request(base + '/resources', 'GET', undefined, null)).status, 401);
@@ -265,7 +265,7 @@ test('File System defaults to Singapore, keeps Oregon, and enforces resource-spe
   });
   assert.equal(duplicate.status, 409);
   assert.equal(duplicate.body.error.code, 'FREE_TIER_LIMIT');
-  for (const kind of ['mysql', 'postgresql']) {
+  for (const kind of ['mysql']) {
     const unsupported = await request(base + '/resources', 'POST', {
       name: `singapore-${kind}`,
       kind,
@@ -287,7 +287,7 @@ test('File System defaults to Singapore, keeps Oregon, and enforces resource-spe
     ].schema.properties.region.enum;
   assert.deepEqual(
     new Set(documentedRegions),
-    new Set(Object.values(capabilities).flatMap((c) => c.regions)),
+    new Set([...Object.values(capabilities).flatMap((c) => c.regions), 'automatic']),
   );
 });
 
@@ -345,7 +345,7 @@ test('queries execute supported patterns and reject invented cloud behavior', as
   assert.equal(
     (
       await request(base + '/queries', 'POST', {
-        resourceId: 'db_vectors',
+        resourceId: 'db_memory',
         sql: 'SELECT 1 AS connected;',
       })
     ).body.rows[0].connected,
@@ -458,9 +458,15 @@ test('non-object JSON request bodies return a validation error', async () => {
   assert.equal((await response.json()).error.code, 'INVALID_BODY');
 });
 
-test('one key can query PG and read/write files while MySQL remains inaccessible', async () => {
+test('one key can query one MySQL resource and read/write files while another database remains inaccessible', async () => {
+  const secondDatabase = await request(base + '/resources', 'POST', {
+    name: 'key-scoped-mysql',
+    kind: 'mysql',
+    region: 'aws-us-east-1',
+  });
+  const secondId = secondDatabase.body.data.id;
   const created = await request(base + '/keys', 'POST', {
-    name: 'pg-and-files-agent',
+    name: 'mysql-and-files-agent',
     scopes: [
       'resources:read',
       'resources:write',
@@ -469,15 +475,15 @@ test('one key can query PG and read/write files while MySQL remains inaccessible
       'files:write',
       'usage:read',
     ],
-    resourceIds: ['db_vectors', 'fs_shared'],
+    resourceIds: [secondId, 'fs_shared'],
     expiresInDays: 7,
   });
   assert.equal(created.status, 201);
   const key = created.body.secret;
   const discovered = await request(base + '/resources', 'GET', undefined, key);
-  assert.deepEqual(discovered.body.data.map((r) => r.id).sort(), ['db_vectors', 'fs_shared']);
+  assert.deepEqual(discovered.body.data.map((r) => r.id).sort(), [secondId, 'fs_shared']);
   assert.equal(
-    (await request(base + '/queries', 'POST', { resourceId: 'db_vectors', sql: 'SELECT 1;' }, key))
+    (await request(base + '/queries', 'POST', { resourceId: secondId, sql: 'SELECT 1;' }, key))
       .status,
     200,
   );
@@ -507,10 +513,10 @@ test('one key can query PG and read/write files while MySQL remains inaccessible
     'RESOURCE_ACCESS_DENIED',
   );
   const usage = await request(base + '/usage', 'GET', undefined, key);
-  assert.deepEqual(usage.body.data.map((u) => u.resourceId).sort(), ['db_vectors', 'fs_shared']);
+  assert.deepEqual(usage.body.data.map((u) => u.resourceId).sort(), [secondId, 'fs_shared']);
   const events = await request(base + '/events', 'GET', undefined, key);
   assert.ok(events.body.data.length > 0);
-  assert.ok(events.body.data.every((e) => ['db_vectors', 'fs_shared'].includes(e.resourceId)));
+  assert.ok(events.body.data.every((e) => [secondId, 'fs_shared'].includes(e.resourceId)));
   assert.equal(
     (
       await request(
@@ -529,7 +535,7 @@ test('one key can query PG and read/write files while MySQL remains inaccessible
     401,
   );
   assert.equal(
-    (await request(base + '/queries', 'POST', { resourceId: 'db_vectors', sql: 'SELECT 1;' }, key))
+    (await request(base + '/queries', 'POST', { resourceId: secondId, sql: 'SELECT 1;' }, key))
       .status,
     401,
   );
