@@ -67,6 +67,8 @@ configuration, formatting, lint, API generation, tests, strict types, and a prod
 Checks run without cloud credentials. The test suite uses temporary directories and ephemeral
 ports; it never reads a contributor's persisted workspace data.
 
+When adding backend modules, update the explicit runtime packaging list. The packaging test boots the extracted API to catch missing imports and checks that local data, credentials, and test modules stay out of the archive.
+
 The default job runs on Linux with the exact Node/npm versions. When adding OS-sensitive
 behavior, add a focused macOS/Windows matrix rather than claiming all-platform coverage from
 the Linux result. Contributors can use different editors and coding agents on the same
