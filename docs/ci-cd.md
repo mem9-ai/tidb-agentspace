@@ -116,6 +116,14 @@ release changes against the workflow's actual inputs/events. After fixing shared
 update affected PR branches and validate the new head before merging; rerunning an old
 head does not pick up a changed script. Record closure reasons and revisit conditions.
 
+When several PRs change the same workflow files, merge them sequentially and bring each
+remaining branch up to the latest `main` before its final CI run. This validates the actual
+combination and keeps the complete workflow contents visible on the PR branch. GitHub's
+[OAuth scope rules](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps)
+allow a merge without the `workflow` scope when the same workflow path and contents already
+exist on another repository branch. Sync branches only through an existing authorized Git
+write path, preserve sign-offs, and recheck the new head; do not bypass repository protections.
+
 ## Internal artifact delivery
 
 Use the manual `Internal artifact` workflow on `main`. Each artifact contains:
