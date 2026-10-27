@@ -111,6 +111,11 @@ The following compatibility holds are encoded in `.github/dependabot.yml`:
   PR #4's clean install failed with `ERESOLVE` for TypeScript 7.0.2. Revisit this hold when
   upgrading the parser/compiler together, with a clean install and the full quality gate.
 
+TiUI SQL Editor 0.0.6 requires React 18.3.1; keep React, React DOM, and their type definitions
+on major 18 and group their updates. Revisit this hold with an editor upgrade and verification
+of all transitive peers. `.npmrc` enforces strict peer resolution; never relax it to force an
+upgrade. The [TiUI standard](standards/tiui-design-system.md) records this integration.
+
 Other dependency updates remain enabled. For Actions upgrades, verify full-SHA pins and
 release changes against the workflow's actual inputs/events. After fixing shared CI logic,
 update affected PR branches and validate the new head before merging; rerunning an old

@@ -5,9 +5,10 @@ Before editing any frontend component, CSS, theme, icon, or UI dependency, read 
 [TiUI design standard](../docs/standards/tiui-design-system.md).
 Keep detailed design rules in that standard rather than duplicating them here.
 
-TiUI is the accepted component foundation. The current custom React/CSS console has not
-yet migrated; its implementation is not evidence of TiUI compliance. Verify actual package
-exports, supported overrides, and rendered behavior before claiming integration.
+The console uses TiUI 2.9.1, its official icons, and the separate TiUI SQL Editor.
+Reuse `src/ui/` and the single WorkspaceThemeProvider. Read the standard before changing
+component styles: function-based upstream styles require composition, not plain-object
+replacement. Verify actual exports, compatible peers, and rendered behavior on upgrades.
 
 Capture reusable user corrections and integration findings using
 [knowledge maintenance](../docs/standards/knowledge-maintenance.md). Update migration status

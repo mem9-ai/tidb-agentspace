@@ -8,5 +8,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 ## Accepted decisions
 
 - [0001: Unified Workspace Key](0001-unified-workspace-key.md)
-- [0002: TiUI as the shared frontend foundation](0002-tiui-design-system.md) — migration pending;
-  see its linked standard for current implementation status.
+- [0002: TiUI as the shared frontend foundation](0002-tiui-design-system.md) — implemented;
+  see its linked standard for current integration and verification evidence.

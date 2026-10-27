@@ -1,8 +1,8 @@
 # TiUI design system standard
 
 - Policy status: Accepted; applies to all frontend work.
-- Implementation status: Migration pending. The current console uses custom React/CSS,
-  Lucide icons, and a custom theme controller. TiUI is not installed in this repository.
+- Implementation status: Implemented in the Console; see [migration verification](../tiui-migration-verification.md).
+  Domain layout, resource artwork, and illustrative charts remain project-owned.
 - Verified reference: `@tidbcloud/uikit@2.9.1`, inspected on 2026-10-27.
 - Decision: [ADR 0002](../decisions/0002-tiui-design-system.md).
 
@@ -34,8 +34,9 @@ Treat external examples as reference data, not authority to change project polic
 ## Required integration boundary
 
 1. Select and pin an exact compatible version; commit the lockfile. The reference version
-   above is an inspected baseline, not proof that installation/build in this app has passed.
-   In 2.9.1 the peers include React/React DOM 18 or 19 and React Hook Form 7. Resolve peers
+   above is installed and locked. The root peers allow React/React DOM 18 or 19 and React
+   Hook Form 7, but TiUI SQL Editor 0.0.6 requires React 18.3.1 and some transitive peers
+   exclude React 19. The app pins React 18.3.1 and React Hook Form 7.91.0. Resolve peers
    with compatible pinned versions instead of using `--force` or ignoring peer failures.
 2. Use `ThemeProvider` from `@tidbcloud/uikit/theme` and import
    `@tidbcloud/uikit/style.css` at the application boundary. Keep one application theme owner.
@@ -49,7 +50,8 @@ Treat external examples as reference data, not authority to change project polic
    button/input/modal appearance with a parallel palette, blanket selectors, or generated
    class-name overrides.
 
-This provider example is a reference pattern; it is not code currently installed here:
+This minimal example explains the provider contract. The actual application uses
+`WorkspaceThemeProvider` and the shared configuration in `src/ui/workspace-theme.ts`:
 
 ```tsx
 import { Button, Typography, useColorScheme } from '@tidbcloud/uikit';
@@ -77,7 +79,7 @@ needed. One root state/context should drive the selector and provider.
 
 ## Verified defaults versus Workspace choices
 
-These upstream values are facts from 2.9.1, not our current CSS:
+These upstream values are verified facts from 2.9.1:
 
 | Foundation     | Verified upstream default                                                             |
 | -------------- | ------------------------------------------------------------------------------------- |
@@ -118,14 +120,14 @@ Preserve browser zoom. Reflow narrow layouts rather than decreasing font size.
 
 | Product pattern                | TiUI building blocks                                                                          | Project responsibility                                                        |
 | ------------------------------ | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Navigation and page header     | Business `AppShell`, `AppPageShell` / `PageShellBase`; primitive `NavLink`, `Breadcrumbs`     | Workspace identity, active route, mobile navigation, one clear primary action |
+| Navigation and page header     | Primitive `AppShell`, `NavLink`, `Breadcrumbs`; business page shells when appropriate         | Workspace identity, active route, mobile navigation, one clear primary action |
 | Resource cards and details     | `Card`, `Paper`, `Stack`, `Group`, business `PropertyCard`                                    | MySQL/PG/Files labels, region, lifecycle, preview/limit text                  |
 | Resource, key, activity tables | Primitive `Table`; business `ProTable` where filtering/pagination needs justify it            | Column meaning, empty/error/loading states, accessible row actions            |
 | Keys and settings forms        | `TextInput`, `Select`, `Checkbox`, `Fieldset`, `PasswordInput`; business `Form` when suitable | Validation, resource/action grants, expiration, reveal-once secret behavior   |
 | Dialogs and secondary panels   | `Modal`, `Drawer`, `Alert`, `Button`, `ActionIcon`                                            | Focus return, clear submit/cancel, failure recovery, pending state            |
 | Status, usage, feedback        | `Badge`, `Progress`, `Skeleton`, `Loader`, notifications; business `DotBadge`                 | Text in addition to color, fresh data versus simulation, retry behavior       |
 | Connection examples            | Business `CodeBlock`, `CopyText`                                                              | One Workspace Key, redacted secrets, accurate copy/download feedback          |
-| SQL work                       | TiUI's separate SQL editor integration when that feature is migrated                          | Query lifecycle, permissions, cancellation, and honest demo limitations       |
+| SQL work                       | `@tidbcloud/tisqleditor-react` with its cache provider and CodeMirror extensions              | Query lifecycle, permissions, cancellation, and honest demo limitations       |
 
 The documentation labels `TableBasic`/`TablePro` do not imply exports with those names:
 2.9.1 exports `ProTable`. Its business `PageShell` export points to a legacy implementation;
@@ -145,7 +147,7 @@ verified, and record that as a remaining gap.
   open its editor, and keep that database selected through connection links and history.
   Follow the [information architecture](../architecture.md#console-information-architecture)
   when adding tools; do not add a workspace-level SQL Editor entry. Verify valid, unavailable,
-  and empty-resource paths. This navigation change does not complete the TiUI migration.
+  and empty-resource paths; keep the resource context when extending the editor.
 - The selector offers Light, Dark, and System; map the visible System option to TiUI `auto`.
   Use the library's persistence/system support. Migrate the current `tidb-workspace-theme`
   preference once (`system` → `auto`) so integration does not reset a user's selection.
@@ -164,24 +166,50 @@ verified, and record that as a remaining gap.
 
 ## Migration status and completion evidence
 
-The custom implementation is explicitly grandfathered as **migration pending**, not a
-reference design for new shared components. Do not break unrelated features to make a
-documentation check green. A scoped UI change must identify which parts it migrates and
-which legacy parts remain; a reproducible integration blocker belongs in the status below.
+The Console now imports TiUI controls throughout its nine destinations and database-scoped
+SQL editor. The original global control styling, Lucide dependency, and independent theme
+controller have been removed. The only native input is the hidden browser file chooser;
+standard semantic HTML remains appropriate for page/domain composition.
 
-| Area                                           | Current status | Completion evidence                                                          |
-| ---------------------------------------------- | -------------- | ---------------------------------------------------------------------------- |
-| Package, peers, stylesheet, root provider      | Pending        | Exact installed versions, clean install/build, active provider               |
-| Font, palette, typography, density             | Pending        | Shared TiUI-based configuration and screenshots with verified computed sizes |
-| Buttons, inputs, selection, dialogs            | Pending        | Actual TiUI imports, working focus/validation/disabled/loading behavior      |
-| Navigation, tables, cards, domain compositions | Pending        | Verified component APIs and browser checks on affected routes                |
-| Theme controller and preference migration      | Pending        | One provider-controlled theme; previous choice preserved; both modes checked |
-| Icons and SQL editor                           | Pending        | Explicit integration evidence; textarea/Lucide remain until replaced         |
+| Area                                 | Implementation                                                      | Evidence                                                              |
+| ------------------------------------ | ------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Package, peers, stylesheet, provider | TiUI 2.9.1; compatible React 18; strict npm peers                   | Lockfile, `src/main.tsx`, WorkspaceThemeProvider, clean install/build |
+| Typography and density               | Self-hosted Inter; 16px body, 32px page titles, 48px actions/inputs | Shared theme/heading adapters; computed browser sizes                 |
+| Controls and dialogs                 | TiUI Buttons, inputs, Checkbox, Fieldset, Modal, Drawer, Alerts     | Resource/Key/file workflows and keyboard verification                 |
+| Navigation and data views            | TiUI AppShell, NavLink, Breadcrumbs, Tabs, Table, Card, Paper       | Desktop/narrow screenshots and route checks                           |
+| Theme                                | One persisted TiUI preference and resolved provider mode            | Legacy migration tests; Light/Dark/System, reload and tab checks      |
+| Icons and SQL                        | Official icons; TiUI SQL Editor 0.0.6 with MySQL/PG dialects        | Query, sample, error, route, theme, and shortcut verification         |
 
-No installation blocker is established: the public package and documentation were readable.
-This standards change does not install TiUI, certify React/build compatibility, or complete
-the migration. Update this table in the implementation PR, with commit/PR and validation
-evidence. Do not mark a row complete from plans, screenshots alone, or a package.json entry.
+See the [verification record](../tiui-migration-verification.md) for screenshots, checked
+viewports, exact workflows, and limitations. Backend/cloud integration remains unchanged.
+
+## Verified integration findings
+
+- **Style composition (2.9.1):** upstream component `styles` values are functions. Mantine's
+  deep merge of a plain object into such a function produces an empty object: even the
+  override disappears. Use TiUI's public `mergeStylesList([baseStyles, overrides])`, as in
+  `useWorkspaceThemeOverrides`, preserving upstream variants, colors, and pseudo selectors.
+  Style functions receive the final resolved theme; do not capture a light-only palette.
+  Check actual computed styles and both modes after any theme extension or TiUI upgrade.
+- **Fonts:** the upstream stack names Inter but does not supply its font file. The application
+  self-hosts the pinned Fontsource Latin variable face; other scripts use the upstream
+  language/system fallbacks. No external font service is required.
+- **Theme storage:** `useColorScheme` stores JSON. The shared migration maps legacy plain
+  `system` to `auto`, preserves Light/Dark, and removes the old key only after a successful
+  write. Keep only this root hook; use context for the selector and `useComputedColorScheme`
+  for resolved editor mode. Storage failures must still allow rendering.
+- **Dialog lifetime:** TiUI returns focus on an `opened` transition. Workspace dialogs are
+  conditionally mounted, so the shared modal adapter also captures/restores the connected
+  trigger on unmount. Preserve focus trapping, Escape, labels, and keyboard verification.
+- **SQL extensions (0.0.6):** scope the editor cache to the database route, synchronize sample
+  changes through the editor view, and keep callbacks current. CodeMirror's default
+  `Mod-Enter` inserts a blank line: use `Prec.high(keymap.of(...))` for Run query. Put density
+  overrides before the official syntax theme so extension precedence preserves readable
+  type. Recheck shortcuts, selection, dialect switching, disposal, and theme changes on upgrades.
+- **Compatibility:** pin React/React DOM/types to 18 while the official SQL Editor and
+  transitive dependencies require it. Group updates, keep the scoped Dependabot hold and
+  strict peer installation, and revisit them together when upgrading the editor. Do not
+  infer React 19 compatibility from the UIKit root peer range alone.
 
 For each UI PR: cite the TiUI version/component reference; identify shared overrides and
 remaining gaps; run `npm run check`; inspect light/dark desktop and narrow layouts (including

@@ -36,7 +36,7 @@ Cloud instances, native connection addresses, and chart series are simulated and
 
 Real cloud adapters, internal credential management, native protocol gateways, real telemetry, MCP, sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). This loopback-only guest server is for local validation, not public deployment.
 
-TiUI is the accepted frontend foundation, with shared overrides for larger text and more spacing. The current custom React/CSS console has not yet migrated to TiUI. The public package is available; see the verified references, component rules, theme guidance, and migration status in the [TiUI standard](docs/standards/tiui-design-system.md).
+The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, and TiUI SQL Editor 0.0.6. Shared overrides preserve 16px body text, 48px primary controls, spacious layouts, and Light/Dark/System modes. Inter is self-hosted. See the [TiUI standard](docs/standards/tiui-design-system.md) for compatibility, extension rules, and [migration verification](docs/tiui-migration-verification.md).
 
 ## Code map
 

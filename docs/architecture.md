@@ -71,8 +71,9 @@ defines verified defaults, component selection, light/dark/system behavior, resp
 interaction, and migration evidence. [ADR 0002](decisions/0002-tiui-design-system.md) records
 the accepted foundation. Preview status, limits, and the three resource types need text labels.
 
-The prototype still uses custom React/CSS; TiUI migration is pending, and the public package
-is available. Build repeated domain compositions such as ResourceCard, QuotaMeter,
+The prototype now uses TiUI components and a single provider-controlled theme. Shared
+readability, modal, navigation, code, and SQL adapters live under `src/ui/` and `src/features/`.
+Build repeated domain compositions such as ResourceCard, QuotaMeter,
 ConnectionPanel, PermissionEditor, and ActivityTable from verified TiUI primitives/business
 components. Organize new features into focused modules with shared API/domain types. Register
 navigation and capabilities for future services instead of adding global conditionals

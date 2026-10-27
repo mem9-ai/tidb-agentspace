@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-27
 - Scope: UI components, theme ownership, design consistency, and shared agent guidance
-- Implementation status: Migration pending
+- Implementation status: Implemented; see [verification](../tiui-migration-verification.md).
 
 ## Context
 
@@ -38,8 +38,10 @@ and the duplicate theme controller as their replacements become active. Preserve
 theme preference and existing behavior. Verify peer compatibility and bundle/build behavior
 before selecting the exact application dependency version.
 
-The current custom UI remains explicitly labeled as awaiting migration. A scoped PR must
-report which components actually migrated and which remain. A styling workaround needs a
+The migration replaces the prototype controls, icons, theme controller, and SQL textarea.
+React 18.3.1 satisfies the official SQL Editor peer contract; strict peer resolution and a
+scoped Dependabot hold prevent an incompatible automatic React upgrade. Domain layout,
+charts, and artwork remain project-owned. Future scoped PRs must report integration gaps. A styling workaround needs a
 specific reason, owner/scope, and removal condition in the canonical standard; routine
 supported size/density overrides do not require a new approval ceremony.
 

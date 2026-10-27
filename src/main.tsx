@@ -1,8 +1,12 @@
 import { createRoot } from 'react-dom/client';
 import App from './App';
-import { applyTheme, readThemePreference } from './features/theme/theme-preference';
+import { WorkspaceThemeProvider } from './features/theme/WorkspaceThemeProvider';
+import '@tidbcloud/uikit/style.css';
 import './theme.css';
 import './styles.css';
 
-applyTheme(readThemePreference());
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(
+  <WorkspaceThemeProvider>
+    <App />
+  </WorkspaceThemeProvider>,
+);
