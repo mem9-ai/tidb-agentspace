@@ -1,5 +1,8 @@
 # Contributing
 
+Start with [the project entry point](start-here.md) to understand the product, current state,
+reading route, and code/document map. This guide owns setup and contribution commands.
+
 All contributors and coding agents follow [AGENTS.md](AGENTS.md). Humans own the
 correctness and review of their changes, regardless of which agent produced them.
 

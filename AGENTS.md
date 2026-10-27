@@ -6,6 +6,10 @@ entry points to this policy; keep the substantive rules here. Explicit user inst
 the tool's higher-priority requirements still apply. Explain conflicts rather than silently
 changing repository policy.
 
+For project orientation, read [start-here.md](start-here.md). It is the shared entry point for
+the product, implementation status, design principles, source map, and development workflow;
+follow its task-specific references before implementation. Keep detailed rules canonical.
+
 ## Shared standards
 
 - Read the applicable references in [the standards index](docs/standards/README.md) before

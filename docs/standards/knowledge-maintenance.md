@@ -24,6 +24,7 @@ agent memory are never shared engineering knowledge.
 
 | Kind                                                                            | Canonical home                                      |
 | ------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Project orientation, reading routes, and the source/document map                | [Root project entry point](../../start-here.md)     |
 | Short cross-cutting instruction or routing rule                                 | Root `AGENTS.md`                                    |
 | Folder-specific entry point                                                     | A scoped `AGENTS.md` linking the canonical standard |
 | Reusable design/engineering practice                                            | `docs/standards/` with an entry in its index        |
@@ -36,6 +37,11 @@ Prefer updating an existing canonical section. Tool-specific `CLAUDE.md`, Cursor
 Copilot files are loaders; do not duplicate the full rule in every tool. Keep root guidance
 short enough to read and put detailed examples in the domain standard. A new vendor-specific
 skill is unnecessary for a rule that can be shared through the repository.
+
+The root entry point is the shared first-session map. When changing source layout, canonical
+document locations, or implementation status, update its affected references and summaries in
+the same change. Keep detailed rules in their existing homes rather than copying them into
+the entry point.
 
 ## Evidence and status
 

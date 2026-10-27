@@ -1,5 +1,8 @@
 # Shared engineering standards
 
+For first-session project context and a guided reading route, start with
+[the project entry point](../../start-here.md).
+
 These versioned documents are the project's shared memory for humans and coding agents.
 Read the applicable standard before implementation. They apply to Codex, Claude Code,
 Cursor, Copilot, and other tools through the root [AGENTS.md](../../AGENTS.md); no personal

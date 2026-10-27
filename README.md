@@ -2,6 +2,9 @@
 
 An independent developer and agent console with real MySQL through TiDB Cloud Zero and TiDB Cloud File System. PostgreSQL is temporarily unavailable.
 
+New to the repository? Read [start-here.md](start-here.md) for the project goals, current
+state, reading route, source map, and the path from an Issue to verified delivery.
+
 ## Run locally
 
 Use Node **24.22.1** and npm **11.6.2**. See [CONTRIBUTING.md](CONTRIBUTING.md) for version-manager setup. Shared agent instructions are in [AGENTS.md](AGENTS.md).
