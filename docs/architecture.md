@@ -5,6 +5,11 @@ and agent product. The repository currently implements a loopback-only interacti
 with simulated databases and an opt-in real Singapore Drive9 anonymous File System. See [ADR 0004](decisions/0004-drive9-anonymous-provider.md) for the implemented provider boundary. See [ADR 0001](decisions/0001-unified-workspace-key.md) for the
 accepted single-key authorization model.
 
+The [intent driven development system](standards/intent-driven-development.md) records the
+API-first and agent-experience direction, specification contributions, and proposed delivery
+harness. It complements this product architecture; it does not imply new runtime capabilities
+or deployment authority.
+
 ## Product model
 
 A Workspace is the persistent context for one application, experiment, or agent workflow.

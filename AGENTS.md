@@ -10,6 +10,10 @@ changing repository policy.
 
 - Read the applicable references in [the standards index](docs/standards/README.md) before
   implementation. These are shared across tools and machines, not private agent memory.
+- For feature specifications, API/agent experience design, or delivery harness work, read
+  [intent driven contribution](docs/standards/intent-driven-development.md). Welcome intent,
+  specification, and acceptance contributions; distinguish accepted direction from proposed
+  automation and preserve the current delivery authority.
 - For any UI, component, typography, layout, theme, icon, or frontend dependency change,
   read [the TiUI standard](docs/standards/tiui-design-system.md) and `src/AGENTS.md`.
   Use the installed TiUI components and supported shared overrides in `src/ui/`.
