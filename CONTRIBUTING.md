@@ -58,6 +58,23 @@ Official references: [Codex instructions](https://developers.openai.com/codex/gu
 
 ## Change workflow
 
+Contributions can start with a user problem, detailed specification, acceptance case, code,
+or a harness improvement. An intent/specification contribution does not require implementing
+the feature. Read [intent driven contribution](docs/standards/intent-driven-development.md)
+for API-first and agent-experience principles, specification acceptance, and the proposed
+delivery harness. Use the [feature specification template](docs/templates/feature-spec.md)
+for new capabilities or consequential changes; a small fix can use a reproduction and
+regression test. Existing review and merge authority remains governed by the CI/CD policy.
+
+Start on GitHub with an [intent](https://github.com/siddontang/tidb.ai/issues/new?template=01-intent.yml),
+[bounded task](https://github.com/siddontang/tidb.ai/issues/new?template=02-task.yml), or
+[acceptance case](https://github.com/siddontang/tidb.ai/issues/new?template=03-acceptance.yml).
+Follow the [GitHub contribution workflow](docs/standards/github-contribution-workflow.md):
+refine the intent, merge a specification PR, implement against that revision in a separate
+PR, evaluate the candidate, and complete the agreed delivery endpoint. A design PR references
+the parent Issue without closing it. Native templates and manual labels are available;
+agent dispatch commands and the automated controller remain proposed.
+
 1. Read the task, `AGENTS.md`, relevant code/tests, and applicable standards/architecture notes.
 2. Inspect the working tree. Use a focused branch or checkout and preserve unrelated edits.
 3. State the intended result and scope. For multi-person work, agree on file ownership;
@@ -97,18 +114,22 @@ concrete reason; use existing platform capabilities where sufficient.
 
 ## Shared commands
 
-| Command                              | Purpose                                                                 |
-| ------------------------------------ | ----------------------------------------------------------------------- |
-| `npm ci`                             | Install exactly the lockfile contents; validates the selected runtime   |
-| `npm run format`                     | Apply the shared formatting baseline                                    |
-| `npm run format:check`               | Check formatting without edits                                          |
-| `npm run lint`                       | Check code, with zero warnings allowed                                  |
-| `npm run typecheck`                  | Check strict frontend TypeScript                                        |
-| `npm run api:generate`               | Regenerate `public/openapi.json` from its source                        |
-| `npm run api:check`                  | Fail if the generated API contract has drifted; does not rewrite files  |
-| `npm test`                           | Run API and repository-tool behavior tests with isolated temporary data |
-| `npm run check`                      | Run the same complete quality gate used by CI                           |
-| `npm run check:signoff -- BASE HEAD` | Check commit sign-offs for a Git revision range                         |
+| Command                                       | Purpose                                                                        |
+| --------------------------------------------- | ------------------------------------------------------------------------------ |
+| `npm ci`                                      | Install exactly the lockfile contents; validates the selected runtime          |
+| `npm run format`                              | Apply the shared formatting baseline                                           |
+| `npm run format:check`                        | Check formatting without edits                                                 |
+| `npm run lint`                                | Check code, with zero warnings allowed                                         |
+| `npm run typecheck`                           | Check strict frontend TypeScript                                               |
+| `npm run build:console`                       | Build only the static Console in `dist/console/`                               |
+| `npm run build:api`                           | Build only the dependency-free API in `dist/api/`                              |
+| `npm run dev:console` / `npm run dev:api`     | Run either development process independently                                   |
+| `npm run start:console` / `npm run start:api` | Run built Console / source API separately                                      |
+| `npm run api:generate`                        | Regenerate OpenAPI and Console client types from the contract source           |
+| `npm run api:check`                           | Fail if OpenAPI or generated client types have drifted; does not rewrite files |
+| `npm test`                                    | Run API and repository-tool behavior tests with isolated temporary data        |
+| `npm run check`                               | Run the same complete quality gate used by CI                                  |
+| `npm run check:signoff -- BASE HEAD`          | Check commit sign-offs for a Git revision range                                |
 
 Use `npm run lint:fix` for supported mechanical fixes and review its diff. Tests must be
 repeatable on clean machines and must not need cloud secrets, paid resources, or the
@@ -142,6 +163,10 @@ Do not bundle unrelated formatting with a feature; the initial repository-wide f
 baseline was explicitly part of establishing the shared standard.
 
 ## Delivery
+
+Keep frontend and backend independently buildable and runnable in one repository. Read
+[independent delivery](docs/independent-delivery.md) for configuration and packaging and
+[ADR 0005](docs/decisions/0005-independent-console-and-api.md) for the accepted boundary.
 
 See [CI/CD policy](docs/ci-cd.md). The repository is hosted at `siddontang/tidb.ai` and GitHub
 CI is running. Branch protections, required reviewers, deployment environments, and a real

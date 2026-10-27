@@ -1,33 +1,7 @@
 import { useEffect, useState } from 'react';
 
-export type WorkspaceFile = {
-  id: string;
-  resourceId: string;
-  path: string;
-  type: 'file' | 'directory';
-  content?: string;
-  updatedAt: string | null;
-  size?: number;
-};
-export type RemotePreview = { content?: string; size: number; unavailableReason?: string };
-const base = '/api/v1/workspaces/ws_agentlab/files';
-export function contentUrl(file: Pick<WorkspaceFile, 'resourceId' | 'path'>, preview = false) {
-  return (
-    base +
-    '/content?' +
-    new URLSearchParams({
-      resourceId: file.resourceId,
-      path: file.path,
-      ...(preview ? { preview: '1' } : {}),
-    })
-  );
-}
-export async function fileRequest<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, options);
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error?.message || 'File request failed.');
-  return result;
-}
+import { contentUrl, workspaceApi, type WorkspaceFile } from '../../api/client';
+export type { WorkspaceFile } from '../../api/client';
 export function useRemoteFiles(resourceId: string, path: string, enabled: boolean) {
   const [listing, setListing] = useState<{
     resourceId: string;
@@ -42,9 +16,8 @@ export function useRemoteFiles(resourceId: string, path: string, enabled: boolea
     const controller = new AbortController();
     setLoading(true);
     setError('');
-    fileRequest<{ data: WorkspaceFile[] }>(base + '?' + new URLSearchParams({ resourceId, path }), {
-      signal: controller.signal,
-    })
+    workspaceApi
+      .listFiles(resourceId, path, controller.signal)
       .then((result) => {
         if (!controller.signal.aborted) setListing({ resourceId, path, files: result.data });
       })

@@ -4,7 +4,7 @@
 
 - `.github/workflows/ci.yml`: clean installation and `npm run check` on PRs, pushes to
   `main`, merge-queue candidates, and manual requests. Introduced commits are also checked
-  for a DCO sign-off. A successful quality job uploads the built frontend for review.
+  for a DCO sign-off. A successful quality job uploads both build directories for review.
 - `.github/workflows/release.yml`: a manual, main-branch-only internal artifact build. It
   runs the same quality gate, checks commit sign-off, and packages the runtime, frontend,
   API contract, source SHA, and checksums. It does not deploy to a cloud provider.
@@ -62,12 +62,25 @@ hosting plan and repository configuration.
 
 ## CI contract
 
+The [intent driven development system](standards/intent-driven-development.md) proposes
+specification acceptance, independent evaluation, persistent run evidence, and a staged
+delivery harness. These extend the development model; the permissions and implemented
+checks in this policy remain authoritative. Specification metadata and an agent's success
+report do not grant merge or deployment rights.
+
+Use the [GitHub contribution workflow](standards/github-contribution-workflow.md) for Issue
+intake, specification/implementation PR links, and requirement evidence. A specification PR
+does not close its parent feature intent. Labels and future dispatch commands do not replace
+the review, latest-head checks, sign-offs, or hosting requirements in this policy. No automatic
+agent dispatcher is installed by the Issue templates.
+
 Local and remote validation both use `npm run check`. It checks runtime versions, repository
-configuration, formatting, lint, API generation, tests, strict types, and a production build.
+configuration, formatting, lint, API and client generation, tests, strict types, and independent
+Console/API builds.
 Checks run without cloud credentials. The test suite uses temporary directories and ephemeral
 ports; it never reads a contributor's persisted workspace data.
 
-When adding backend modules, update the explicit runtime packaging list. The packaging test boots the extracted API to catch missing imports and checks that local data, credentials, and test modules stay out of the archive.
+When adding backend modules, update the explicit runtime list in `scripts/build-api.mjs`. The packaging test boots the extracted API to catch missing imports and checks that local data, credentials, and test modules stay out of the archive.
 
 The default job runs on Linux with the exact Node/npm versions. When adding OS-sensitive
 behavior, add a focused macOS/Windows matrix rather than claiming all-platform coverage from
@@ -135,14 +148,19 @@ write path, preserve sign-offs, and recheck the new head; do not bypass reposito
 
 Use the manual `Internal artifact` workflow on `main`. Each artifact contains:
 
-- `dist/`, the runtime server modules, and `public/openapi.json`;
+- separate `workspace-console.tar.gz` and `workspace-api.tar.gz` archives;
+- static Console assets in one archive and runtime API modules plus OpenAPI in the other;
 - `build-info.json` with source SHA, runtime, and package version;
-- an internal runtime README;
-- a compressed archive and a SHA-256 checksum file.
+- component-specific internal runtime READMEs;
+- a SHA-256 checksum file covering both component archives.
 
 Packaging requires no cloud secrets and performs no external deployment. The local guest
 owner endpoint grants local administrative access, so this artifact is only suitable for a
 trusted local evaluation. Do not place it behind a public proxy and call it production-ready.
+
+See [independent delivery](independent-delivery.md) for component commands, runtime API
+configuration, persistent data, compatibility, and rollback. Source-based CI currently uploads
+the `dist/` build directory; the internal-artifact workflow emits the separate delivery archives.
 
 ## Actual deployment policy for the next phase
 

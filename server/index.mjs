@@ -1,13 +1,14 @@
 import http from 'node:http';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { resolve, extname } from 'node:path';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStore, capabilities, workspaceId, usage } from './store.mjs';
 import { createDrive9, drive9Provider, drive9Region } from './providers/drive9.mjs';
 import { createZero, zeroProvider, zeroRegion } from './providers/zero.mjs';
 import { readUpload, previewFile, downloadFile } from './file-transfer.mjs';
 import { canAccessResource, normalizeResourceGrant } from './access-policy.mjs';
+import { applyHttpPolicy, consoleOrigins } from './http-policy.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 export const allowedScopes = [
@@ -71,7 +72,8 @@ async function body(req) {
   return parsed;
 }
 export async function createApp({
-  dataFile = resolve(root, '.data/workspace.json'),
+  dataFile = process.env.WORKSPACE_DATA_FILE || resolve(root, '.data/workspace.json'),
+  allowedOrigins = consoleOrigins(),
   filesProvider = process.env.WORKSPACE_FILES_PROVIDER || 'local',
   drive9Transport,
   sqlExecute,
@@ -157,23 +159,10 @@ export async function createApp({
       res.end(JSON.stringify(data));
     };
     try {
-      const hostname = (req.headers.host || '').split(':')[0];
-      if (!['localhost', '127.0.0.1'].includes(hostname))
-        fail(403, 'LOCAL_ONLY', 'This prototype is available on loopback only.');
-      if (
-        req.headers.origin &&
-        ![
-          'http://127.0.0.1:5173',
-          'http://localhost:5173',
-          'http://127.0.0.1:4318',
-          'http://localhost:4318',
-          `http://${req.headers.host}`,
-        ].includes(req.headers.origin)
-      )
-        fail(403, 'ORIGIN_DENIED', 'Untrusted origin.');
+      if (applyHttpPolicy(req, res, allowedOrigins, fail)) return;
       const url = new URL(req.url, `http://${req.headers.host}`),
         path = url.pathname;
-      if (path === '/api/health')
+      if (path === '/api/health' && req.method === 'GET')
         return send(200, {
           status: 'ok',
           mode:
@@ -183,7 +172,7 @@ export async function createApp({
               : 'demo',
           filesProvider,
         });
-      if (path === '/openapi.json') {
+      if (path === '/openapi.json' && req.method === 'GET') {
         const schema = JSON.parse(await readFile(resolve(root, 'public/openapi.json'), 'utf8'));
         return send(200, schema);
       }
@@ -198,29 +187,8 @@ export async function createApp({
         );
         return send(200, { workspaceId, mode: 'demo' });
       }
-      if (!path.startsWith('/api/')) {
-        const file = path === '/' ? 'index.html' : path.slice(1);
-        const staticRoot = resolve(root, 'dist');
-        let location = resolve(staticRoot, file);
-        if (!location.startsWith(staticRoot + '/')) fail(404, 'NOT_FOUND', 'Not found.');
-        let content;
-        try {
-          content = await readFile(location);
-        } catch {
-          location = resolve(staticRoot, 'index.html');
-          content = await readFile(location);
-        }
-        res.writeHead(200, {
-          'Content-Type':
-            {
-              '.html': 'text/html',
-              '.js': 'text/javascript',
-              '.css': 'text/css',
-              '.svg': 'image/svg+xml',
-            }[extname(location)] || 'application/octet-stream',
-        });
-        return res.end(content);
-      }
+      if (!path.startsWith('/api/'))
+        fail(404, 'NOT_FOUND', 'This service provides the Workspace API only.');
       let state = visibleState();
       const sessionToken = /(?:^|; )aw_session=([^;]+)/.exec(req.headers.cookie || '')?.[1];
       let isOwner = !!sessionToken && (sessions.get(sessionToken) || 0) > Date.now();
@@ -281,6 +249,7 @@ export async function createApp({
         state = visibleState();
         return send(200, {
           ...state,
+          files: state.files.map(fileView),
           keys: state.keys.map(keyView),
           idempotency: undefined,
           capabilities: availableCapabilities,
@@ -722,7 +691,11 @@ export async function startServer(options = {}) {
   const server = await createApp(options);
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(options.port ?? 4318, '127.0.0.1', resolve);
+    server.listen(
+      options.port ?? Number(process.env.WORKSPACE_API_PORT || 4318),
+      '127.0.0.1',
+      resolve,
+    );
   });
   console.log(
     `Workspace API: http://127.0.0.1:${server.address().port} (loopback Workspace gateway)`,

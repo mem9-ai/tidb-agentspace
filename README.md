@@ -18,7 +18,20 @@ npm run check
 npm run preview
 ```
 
-`preview` serves the built frontend and API together at http://127.0.0.1:4318. Agent connection samples use the current page origin, so they work with either preview mode. Regenerate the checked-in API contract after contract changes with `node server/generate-openapi.mjs`.
+`preview` serves only the built Console at http://127.0.0.1:4173. Start the API separately with
+`npm run start:api`. Console requests and agent examples use the API origin in `/config.json`.
+Run `npm run api:generate` after contract changes to generate both OpenAPI and client types.
+
+The frontend and backend build and run independently in this repository:
+
+| Component | Build                   | Development           | Run built output                           |
+| --------- | ----------------------- | --------------------- | ------------------------------------------ |
+| Console   | `npm run build:console` | `npm run dev:console` | `npm run start:console`                    |
+| API       | `npm run build:api`     | `npm run dev:api`     | `cd dist/api` then `node server/index.mjs` |
+
+The API build requires only Node and no frontend dependencies. The Console output is static;
+its API origin can change without rebuilding JavaScript. See [independent delivery](docs/independent-delivery.md)
+for configuration, separate artifacts, contract checks, and current deployment limits.
 
 To enable real Singapore anonymous File System creation (explicit opt-in):
 
@@ -49,7 +62,7 @@ Zero databases expire after up to 30 days; the Console shows the provider's exac
 Export important data before expiry. Region assignment is automatic. This integration does not
 claim/upgrade trials or automatically replace expired/uncertain instances. PostgreSQL creation,
 discovery and SQL are disabled; legacy PG records remain on disk for possible future migration.
-See [the SQL boundary and recovery](docs/decisions/0005-starter-sql-gateway.md) and
+See [the SQL boundary and recovery](docs/decisions/0006-zero-sql-gateway.md) and
 [real verification evidence](docs/starter-sql-verification.md).
 
 ## What works
@@ -73,19 +86,34 @@ The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, 
 ## Code map
 
 - `src/App.tsx`, `src/main.tsx`, `src/styles.css`: interactive frontend prototype.
-- `server/index.mjs`: local API, resource/file/key/query handlers, and built frontend serving.
+- `server/index.mjs`: standalone API and resource/file/key/query handlers; no Console serving.
 - `server/providers/zero.mjs`, `server/providers/sql-drivers.mjs`: anonymous MySQL provisioning and bounded native SQL.
 - `server/providers/drive9.mjs`, `server/file-transfer.mjs`: internal provider adapter and bounded transfers.
 - `server/access-policy.mjs`: shared action/resource authorization support.
 - `src/features/keys/ResourceAccessPicker.tsx`: explicit customer key resource selection.
 - `server/store.mjs`: serialized atomic local state persistence and capability snapshot.
-- `public/openapi.json`: implemented public API contract.
+- `server/generate-openapi.mjs`: canonical API contract source.
+- `public/openapi.json`, `src/api/schema.d.ts`: generated contract and client types.
+- `src/api/`: shared generated-type HTTP client and runtime API configuration.
+- `console/public/config.json`: runtime API origin; `scripts/serve-console.mjs`: optional static runner.
 - `server/api.test.mjs`: behavior tests using temporary state and isolated ports.
 - `docs/architecture.md`: product model, page design, backend boundaries, integration strategy, and release acceptance criteria.
 
 The live adapter creates real anonymous trials only when enabled and explicitly requested. CI uses injected provider fixtures and never provisions cloud resources. Local credential files are not encrypted; public deployment is unsupported.
 
 ## Collaboration and delivery
+
+Contribute a user problem, detailed specification, acceptance case, implementation, or harness
+improvement. The [intent driven development system](docs/standards/intent-driven-development.md)
+defines API-first and agent-experience principles and a staged design for safe automated
+delivery. Start a specification with [the feature template](docs/templates/feature-spec.md).
+The autonomous harness remains proposed; existing quality and delivery policies apply.
+
+Use the [GitHub contribution workflow](docs/standards/github-contribution-workflow.md) to take
+an [intent Issue](https://github.com/siddontang/tidb.ai/issues/new?template=01-intent.yml)
+through a specification PR, bounded implementation tasks, evaluation, and delivery. Different
+agents can take successive roles against the same accepted Git revision. Native Issue forms
+support intent, tasks, and acceptance cases; automatic dispatch is not yet implemented.
 
 Every coding tool uses the shared [agent instructions](AGENTS.md), [contribution guide](CONTRIBUTING.md), and [standards index](docs/standards/README.md). The [knowledge-maintenance workflow](docs/standards/knowledge-maintenance.md) captures reusable user feedback and integration findings in repository docs, so future contributors can use them without this chat's history.
 

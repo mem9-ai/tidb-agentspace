@@ -1,0 +1,62 @@
+name: Implementation or evaluation task
+description: Define one bounded assignment against an accepted specification or a small-fix reproduction.
+title: '[Task]: '
+labels: ['kind:task', 'stage:triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for a bounded implementation, evaluation, or workflow assignment.
+        A maintainer checks the baseline, dependencies, ownership, and authority before marking it ready.
+        An assignee or a label is not an execution lock or a permission grant.
+        See the [GitHub contribution workflow](https://github.com/siddontang/tidb.ai/blob/main/docs/standards/github-contribution-workflow.md).
+  - type: input
+    id: parent
+    attributes:
+      label: Parent intent or standalone scope
+      description: Link the parent Issue, or explain why this is a standalone small fix or workflow task.
+    validations:
+      required: true
+  - type: textarea
+    id: baseline
+    attributes:
+      label: Accepted baseline
+      description: Link the specification at a full Git SHA, acceptance references, and source base SHA. Small fixes can link their reproduction instead.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Task scope and non-goals
+      description: State the expected result, change boundary, relevant standards, and exclusions.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance requirements and evidence
+      description: List requirement IDs, expected observations, checks or reviews, and any missing evaluation infrastructure.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and ownership
+      description: Link prerequisite tasks and identify the accountable owner once agreed. Do not assign another person without agreement.
+  - type: dropdown
+    id: delivery
+    attributes:
+      label: Promised delivery endpoint
+      description: This describes scope and does not grant deployment authority.
+      options:
+        - Merged source
+        - Reviewed internal artifact
+        - Verified release in an authorized environment
+      default: 0
+    validations:
+      required: true
+  - type: textarea
+    id: execution
+    attributes:
+      label: Execution boundary and recovery
+      description: Propose tools, resource scope, risk, finite time/attempt/cost limits, and recovery needs. Trusted policy determines effective permissions before unattended execution.

@@ -1,0 +1,44 @@
+name: Acceptance case or counterexample
+description: Contribute a reproduction or a scenario that exposes incorrect behavior or a specification gap.
+title: '[Acceptance]: '
+labels: ['kind:acceptance', 'stage:triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Counterexamples and acceptance scenarios are useful contributions even without a code fix.
+        Explain what the case distinguishes and link the relevant requirement when one exists.
+        Do not include credentials, private customer data, or unrestricted logs.
+  - type: input
+    id: context
+    attributes:
+      label: Related Issue, PR, or capability
+      description: Link the affected work or describe a standalone capability.
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Starting state and action
+      description: Provide repeatable steps, actor permissions, sanitized inputs, and relevant fixture or environment details.
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed result or plausible wrong implementation
+      description: State what happens today, or the incorrect behavior a proposed acceptance case should reject. Label hypothetical cases explicitly.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected observation
+      description: Give the correct result, including relevant errors, state changes, or absence of side effects.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Requirement and evidence references
+      description: Optional specification permalink, requirement ID, test, or sanitized evidence.

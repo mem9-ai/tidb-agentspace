@@ -1,12 +1,19 @@
+import {
+  apiOrigin,
+  base,
+  workspaceApi,
+  type Data,
+  type Resource,
+  type ApiKey,
+  type CreateKeyInput,
+  type WriteFileInput,
+} from './api/client';
 import './features/files/file-preview.css';
 import {
-  contentUrl,
-  fileRequest,
   useRemoteFiles,
   downloadRemoteFile,
   fileSize,
   type WorkspaceFile,
-  type RemotePreview,
 } from './features/files/remote-files';
 import { regionLabel as region } from './features/resources/regions';
 import {
@@ -76,74 +83,11 @@ import { WorkspaceLayout } from './ui/WorkspaceLayout';
 import { databaseEditorHash, parseWorkspaceRoute } from './features/navigation/workspace-route';
 import type { Route, WorkspaceRoute } from './features/navigation/workspace-route';
 
-import { SqlQueryPanel, type QueryResult } from './features/sql/SqlQueryPanel';
+import { SqlQueryPanel } from './features/sql/SqlQueryPanel';
 const FilePreviewPanel = lazy(() => import('./features/files/FilePreviewPanel'));
 type WorkspaceIcon = React.ComponentType<IconProps>;
 
-type Kind = 'mysql' | 'filesystem';
-type Resource = {
-  id: string;
-  name: string;
-  kind: Kind;
-  region: string;
-  status: string;
-  provider?: string;
-  uploadLimitBytes?: number;
-  connectionError?: string;
-  expiresAt?: string;
-  createdAt: string;
-};
-type ApiKey = {
-  id: string;
-  name: string;
-  prefix: string;
-  scopes: string[];
-  resourceIds: string[];
-  createdAt: string;
-  expiresAt: string;
-  lastUsedAt: string | null;
-  revokedAt: string | null;
-};
-type Event = {
-  id: string;
-  action: string;
-  resource: string;
-  actor: string;
-  at: string;
-  outcome: string;
-};
-type Usage = {
-  resourceId: string;
-  name: string;
-  kind: Kind;
-  storageBytes: number | null;
-  storageLimitBytes: number | null;
-  measured?: boolean;
-  monthlyRU: number | null;
-  monthlyRULimit: number | null;
-  fileCount: number | null;
-};
-type Data = {
-  workspace: { id: string; name: string; description: string; plan: string };
-  profile: { name: string; email: string };
-  resources: Resource[];
-  files: WorkspaceFile[];
-  keys: ApiKey[];
-  events: Event[];
-  usage: Usage[];
-  queryCount: number;
-  capabilities: Record<
-    Kind,
-    {
-      regions: string[];
-      preview: boolean;
-      storageGiB: number | null;
-      monthlyRU?: number | null;
-      provider?: string;
-    }
-  >;
-};
-
+type Kind = Resource['kind'];
 const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string }> = {
   overview: { label: 'Overview', icon: LayoutDashboard, group: 'Workspace' },
   databases: { label: 'Databases', icon: Database, group: 'Workspace' },
@@ -163,9 +107,7 @@ const kindDescription: Record<Kind, string> = {
   mysql: 'Relational memory for your agents.',
   filesystem: 'Persistent context, across sessions.',
 };
-const base = '/api/v1/workspaces/ws_agentlab';
-const apiOrigin = window.location.origin;
-const allScopes = [
+const allScopes: CreateKeyInput['scopes'] = [
   'resources:read',
   'resources:write',
   'files:read',
@@ -173,15 +115,6 @@ const allScopes = [
   'queries:execute',
   'usage:read',
 ];
-async function api<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...init.headers },
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message || 'Request failed.');
-  return data;
-}
 function go(route: Route) {
   location.hash = route;
 }
@@ -377,12 +310,12 @@ function App() {
     toastTimer.current = setTimeout(() => setToast(''), 3500);
   }
   const refresh = useCallback(async () => {
-    setData(await api<Data>(base + '/bootstrap'));
+    setData(await workspaceApi.bootstrap());
   }, []);
   const start = useCallback(async () => {
     try {
       setError('');
-      await api('/api/session', { method: 'POST', body: '{}' });
+      await workspaceApi.startSession();
       await refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -967,7 +900,7 @@ function SqlEditor({
             <Button
               onClick={async () => {
                 try {
-                  await api(base + '/resources/' + database.id + '/setup', { method: 'POST' });
+                  await workspaceApi.retryDatabaseSetup(database.id);
                   await refresh();
                 } catch (error) {
                   notify((error as Error).message);
@@ -982,12 +915,7 @@ function SqlEditor({
       <SqlQueryPanel
         database={database}
         databases={data.resources.filter((r) => r.kind !== 'filesystem')}
-        execute={(sql) =>
-          api<QueryResult>(base + '/queries', {
-            method: 'POST',
-            body: JSON.stringify({ resourceId: database.id, sql }),
-          })
-        }
+        execute={(sql) => workspaceApi.query({ resourceId: database.id, sql })}
         onComplete={refresh}
         onSelect={openDatabaseEditor}
         onExport={(result) => {
@@ -1049,9 +977,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
     setPreviewLoading(remote);
     if (!remote) return;
     try {
-      const result = await fileRequest<RemotePreview>(contentUrl(file, true), {
-        signal: controller.signal,
-      });
+      const result = await workspaceApi.previewFile(file, controller.signal);
       if (controller.signal.aborted) return;
       setEditing({ ...file, content: result.content, size: result.size });
       setContent(result.content || '');
@@ -1081,14 +1007,16 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
     .sort((a, b) =>
       a.type === b.type ? a.path.localeCompare(b.path) : a.type === 'directory' ? -1 : 1,
     );
-  async function saveFile(target: string, type: string, text = '', resourceId = system) {
+  async function saveFile(
+    target: string,
+    type: WriteFileInput['type'],
+    text = '',
+    resourceId = system,
+  ) {
     setBusy(true);
     setError('');
     try {
-      await api(base + '/files', {
-        method: 'PUT',
-        body: JSON.stringify({ resourceId, path: target, type, content: text }),
-      });
+      await workspaceApi.saveFile({ resourceId, path: target, type, content: text });
       await refresh();
       listing.refresh();
       notify(type === 'directory' ? 'Folder created' : 'File saved');
@@ -1112,11 +1040,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
       }
       setBusy(true);
       try {
-        await fileRequest(contentUrl({ resourceId: system, path: target }), {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/octet-stream', 'If-None-Match': '*' },
-          body: file,
-        });
+        await workspaceApi.uploadFile({ resourceId: system, path: target }, file);
         listing.refresh();
         await refresh();
         notify('File uploaded to Singapore');
@@ -1150,10 +1074,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
     setBusy(true);
     setError('');
     try {
-      await api(base + '/files', {
-        method: 'DELETE',
-        body: JSON.stringify({ resourceId: system, path: deleting.path }),
-      });
+      await workspaceApi.deleteFile({ resourceId: system, path: deleting.path });
       await refresh();
       listing.refresh();
       notify('Item deleted');
@@ -1668,7 +1589,12 @@ function Connect({ data, copy }: Shared) {
                 >
                   Download workspace instructions
                 </Button>
-                <a className="text-link" href="/openapi.json" target="_blank" rel="noreferrer">
+                <a
+                  className="text-link"
+                  href={apiOrigin + '/openapi.json'}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   OpenAPI schema <ArrowUpRight size={13} />
                 </a>
               </div>
@@ -1721,7 +1647,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
     if (!revoke) return;
     setBusy(true);
     try {
-      await api(base + '/keys/' + revoke.id, { method: 'DELETE' });
+      await workspaceApi.revokeKey(revoke.id);
       await refresh();
       setRevoke(null);
       notify('API key revoked. Access has been removed.');
@@ -1910,7 +1836,15 @@ function ApiExplorer({ data, copy }: Shared) {
     setBusy(true);
     setError('');
     try {
-      setResult(JSON.stringify(await api(base + endpoint), null, 2));
+      const result =
+        endpoint === '/resources'
+          ? await workspaceApi.resources()
+          : endpoint === '/usage'
+            ? await workspaceApi.usage()
+            : endpoint === '/events'
+              ? await workspaceApi.events()
+              : await workspaceApi.listFiles(fileSystem?.id || '');
+      setResult(JSON.stringify(result, null, 2));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -1923,7 +1857,12 @@ function ApiExplorer({ data, copy }: Shared) {
         title="API explorer"
         description="The same API powers your console and your agents."
         actions={
-          <Anchor href="/openapi.json" target="_blank" rel="noreferrer" className="schema-link">
+          <Anchor
+            href={apiOrigin + '/openapi.json'}
+            target="_blank"
+            rel="noreferrer"
+            className="schema-link"
+          >
             <ArrowUpRight size={15} />
             OpenAPI 3.1 schema
           </Anchor>
@@ -2360,10 +2299,7 @@ function WorkspaceSettings({ data, refresh, notify, copy }: Shared) {
     setBusy(true);
     setError('');
     try {
-      await api(base + '/settings', {
-        method: 'PATCH',
-        body: JSON.stringify({ name, workspaceName, description }),
-      });
+      await workspaceApi.settings({ name, workspaceName, description });
       await refresh();
       notify('Workspace settings saved');
     } catch (e) {
@@ -2480,11 +2416,7 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
     setBusy(true);
     setError('');
     try {
-      await api(base + '/resources', {
-        method: 'POST',
-        headers: { 'Idempotency-Key': createId.current },
-        body: JSON.stringify({ name, kind, region: selectedRegion }),
-      });
+      await workspaceApi.createResource({ name, kind, region: selectedRegion }, createId.current);
       await refresh();
       notify(
         liveMysql
@@ -2560,7 +2492,12 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
             </>
           }
           value={selectedRegion}
-          onChange={(e) => setRegion(e.target.value)}
+          onChange={(e) => {
+            const selected = data.capabilities[kind].regions.find(
+              (value) => value === e.target.value,
+            );
+            if (selected) setRegion(selected);
+          }}
         >
           {data.capabilities[kind].regions.map((r) => (
             <option key={r} value={r}>
@@ -2631,9 +2568,13 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
 }
 function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose: () => void }) {
   const [name, setName] = useState(''),
-    [scopes, setScopes] = useState(['resources:read', 'files:read', 'usage:read']),
+    [scopes, setScopes] = useState<CreateKeyInput['scopes']>([
+      'resources:read',
+      'files:read',
+      'usage:read',
+    ]),
     [resourceIds, setResourceIds] = useState(data.resources.map((resource) => resource.id)),
-    [expires, setExpires] = useState(30),
+    [expires, setExpires] = useState<CreateKeyInput['expiresInDays']>(30),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [secret, setSecret] = useState('');
@@ -2642,9 +2583,11 @@ function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose:
     setBusy(true);
     setError('');
     try {
-      const result = await api<{ secret: string }>(base + '/keys', {
-        method: 'POST',
-        body: JSON.stringify({ name, scopes, resourceIds, expiresInDays: expires }),
+      const result = await workspaceApi.createKey({
+        name,
+        scopes,
+        resourceIds,
+        expiresInDays: expires,
       });
       setSecret(result.secret);
       await refresh();
@@ -2747,7 +2690,10 @@ function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose:
           <NativeSelect
             label="Expiration"
             value={expires}
-            onChange={(e) => setExpires(Number(e.target.value))}
+            onChange={(e) => {
+              const days = Number(e.target.value);
+              if (days === 7 || days === 30 || days === 90) setExpires(days);
+            }}
           >
             <option value={7}>7 days</option>
             <option value={30}>30 days</option>

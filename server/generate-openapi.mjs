@@ -3,10 +3,16 @@ import { fileURLToPath } from 'node:url';
 import { format, resolveConfig } from 'prettier';
 import { capabilities } from './store.mjs';
 import { zeroRegion } from './providers/zero.mjs';
+const regionSchema = {
+  type: 'string',
+  enum: [
+    ...new Set([...Object.values(capabilities).flatMap((value) => value.regions), zeroRegion]),
+  ],
+};
 const schemas = {
   Resource: {
     type: 'object',
-    required: ['id', 'name', 'kind', 'region', 'status'],
+    required: ['id', 'name', 'kind', 'region', 'status', 'createdAt'],
     properties: {
       id: { type: 'string' },
       name: { type: 'string' },
@@ -34,6 +40,7 @@ const schemas = {
   },
   File: {
     type: 'object',
+    required: ['id', 'resourceId', 'path', 'type', 'size', 'updatedAt'],
     properties: {
       id: { type: 'string' },
       resourceId: { type: 'string' },
@@ -46,6 +53,17 @@ const schemas = {
   },
   Key: {
     type: 'object',
+    required: [
+      'id',
+      'name',
+      'prefix',
+      'scopes',
+      'resourceIds',
+      'createdAt',
+      'expiresAt',
+      'lastUsedAt',
+      'revokedAt',
+    ],
     properties: {
       id: { type: 'string' },
       name: { type: 'string' },
@@ -65,6 +83,7 @@ const schemas = {
   },
   Error: {
     type: 'object',
+    required: ['error'],
     properties: {
       error: {
         type: 'object',
@@ -80,7 +99,76 @@ const schemas = {
 };
 const ref = (name) => ({ $ref: `#/components/schemas/${name}` });
 const str = { type: 'string' };
-const array = (item) => ({ type: 'object', properties: { data: { type: 'array', items: item } } });
+const array = (item) => ({
+  type: 'object',
+  required: ['data'],
+  properties: { data: { type: 'array', items: item } },
+});
+const object = (properties, required = Object.keys(properties)) => ({
+  type: 'object',
+  required,
+  properties,
+});
+Object.assign(schemas, {
+  Workspace: object({
+    id: str,
+    name: str,
+    description: str,
+    plan: str,
+    createdAt: { type: 'string', format: 'date-time' },
+  }),
+  Profile: object({ name: str, email: str, role: str }),
+  Event: object(
+    {
+      id: str,
+      action: str,
+      resource: str,
+      resourceId: { type: ['string', 'null'] },
+      actor: str,
+      at: str,
+      outcome: str,
+    },
+    ['id', 'action', 'resource', 'actor', 'at', 'outcome'],
+  ),
+  Usage: object({
+    resourceId: str,
+    name: str,
+    kind: { enum: ['mysql', 'filesystem'] },
+    storageBytes: { type: ['integer', 'null'] },
+    storageLimitBytes: { type: ['integer', 'null'] },
+    monthlyRU: { type: ['integer', 'null'] },
+    monthlyRULimit: { type: ['integer', 'null'] },
+    fileCount: { type: ['integer', 'null'] },
+    measured: { type: 'boolean' },
+  }),
+  Capability: object(
+    {
+      label: str,
+      regions: { type: 'array', items: regionSchema },
+      storageGiB: { type: ['number', 'null'] },
+      monthlyRU: { type: ['number', 'null'] },
+      maxFiles: { type: ['integer', 'null'] },
+      preview: { type: 'boolean' },
+      provider: str,
+    },
+    ['label', 'regions', 'storageGiB', 'preview'],
+  ),
+  Capabilities: object(
+    Object.fromEntries(['mysql', 'filesystem'].map((kind) => [kind, ref('Capability')])),
+  ),
+  Bootstrap: object({
+    workspace: ref('Workspace'),
+    profile: ref('Profile'),
+    resources: { type: 'array', items: ref('Resource') },
+    files: { type: 'array', items: ref('File') },
+    keys: { type: 'array', items: ref('Key') },
+    events: { type: 'array', items: ref('Event') },
+    usage: { type: 'array', items: ref('Usage') },
+    queryCount: { type: 'integer' },
+    capabilities: ref('Capabilities'),
+    mode: { enum: ['demo', 'hybrid'] },
+  }),
+});
 const response = (schema, description = 'Success') => ({
   description,
   content: { 'application/json': { schema } },
@@ -133,13 +221,26 @@ const workspaceId = {
 const paths = {
   '/workspaces': {
     get: operation('listWorkspaces', 'List available workspaces', 'resources:read', {
-      output: array({ type: 'object', properties: { id: str, name: str, plan: str } }),
+      output: array(ref('Workspace')),
     }),
   },
-  [ws]: { get: operation('getWorkspace', 'Describe a workspace', 'resources:read') },
+  [ws]: {
+    get: operation('getWorkspace', 'Describe a workspace', 'resources:read', {
+      output: object({ data: ref('Workspace') }),
+    }),
+  },
+  [ws + '/bootstrap']: {
+    get: operation('getBootstrap', 'Load the local owner Console state', null, {
+      owner: true,
+      output: ref('Bootstrap'),
+    }),
+  },
   [ws + '/resources']: {
     get: operation('listResources', 'Discover databases and file systems', 'resources:read', {
-      output: array(ref('Resource')),
+      output: object({
+        data: { type: 'array', items: ref('Resource') },
+        capabilities: ref('Capabilities'),
+      }),
     }),
     post: operation(
       'createResource',
@@ -163,12 +264,7 @@ const paths = {
             name: { type: 'string', pattern: '^[a-z][a-z0-9-]{2,39}$' },
             kind: { enum: ['mysql', 'filesystem'] },
             region: {
-              enum: [
-                ...new Set([
-                  ...Object.values(capabilities).flatMap((value) => value.regions),
-                  zeroRegion,
-                ]),
-              ],
+              ...regionSchema,
               description:
                 'Choose a region supported by the resource kind in capabilities. Zero MySQL uses automatic provider assignment. The first supported region is the Console default.',
             },
@@ -258,6 +354,7 @@ const paths = {
             'application/json': {
               schema: {
                 type: 'object',
+                required: ['size'],
                 properties: { content: str, size: { type: 'integer' }, unavailableReason: str },
               },
             },
@@ -330,9 +427,10 @@ const paths = {
         },
         output: {
           type: 'object',
+          required: ['columns', 'rows', 'rowCount', 'mode', 'durationMs'],
           properties: {
             columns: { type: 'array', items: str },
-            rows: { type: 'array', items: { type: 'object' } },
+            rows: { type: 'array', items: { type: 'object', additionalProperties: true } },
             rowCount: { type: 'integer' },
             mode: { enum: ['demo', 'live'] },
             affectedRows: {
@@ -351,21 +449,10 @@ const paths = {
       'Get local usage; live trial usage and allowances are unmeasured',
       'usage:read',
       {
-        output: array({
-          type: 'object',
-          properties: {
-            resourceId: str,
-            kind: str,
-            storageBytes: { type: ['integer', 'null'] },
-            storageLimitBytes: { type: ['integer', 'null'] },
-            monthlyRU: { type: ['integer', 'null'] },
-            monthlyRULimit: { type: ['integer', 'null'] },
-            fileCount: { type: ['integer', 'null'] },
-            measured: {
-              type: 'boolean',
-              description: 'False for live trial usage; null counters are unknown, not zero.',
-            },
-          },
+        output: object({
+          data: { type: 'array', items: ref('Usage') },
+          mode: { const: 'demo' },
+          queryCount: { type: 'integer' },
         }),
       },
     ),
@@ -376,17 +463,7 @@ const paths = {
       'List the latest 200 successful local mutation events',
       'resources:read',
       {
-        output: array({
-          type: 'object',
-          properties: {
-            id: str,
-            action: str,
-            resource: str,
-            actor: str,
-            at: { type: 'string', format: 'date-time' },
-            outcome: str,
-          },
-        }),
+        output: array(ref('Event')),
       },
     ),
   },
@@ -429,6 +506,7 @@ const paths = {
       },
       output: {
         type: 'object',
+        required: ['data', 'secret'],
         properties: {
           data: ref('Key'),
           secret: {
@@ -462,6 +540,30 @@ const paths = {
     }),
   },
 };
+paths['/api/health'] = {
+  servers: [{ url: '/' }],
+  get: {
+    operationId: 'getHealth',
+    security: [],
+    responses: {
+      200: response(
+        object({ status: { const: 'ok' }, mode: { enum: ['demo', 'hybrid'] }, filesProvider: str }),
+      ),
+    },
+  },
+};
+paths['/api/session'] = {
+  servers: [{ url: '/' }],
+  post: {
+    ...operation('createLocalSession', 'Create a loopback-only demo owner session', null, {
+      input: object({}, []),
+      output: object({ workspaceId: { const: 'ws_agentlab' }, mode: { const: 'demo' } }),
+    }),
+    security: [],
+    description:
+      'Local demonstration only. Sets an HttpOnly SameSite=Strict cookie. Allowed browser origins require credentialed CORS; production identity is not implemented.',
+  },
+};
 for (const [path, item] of Object.entries(paths))
   if (path.includes('{workspaceId}')) item.parameters = [workspaceId, ...(item.parameters || [])];
 const spec = {
@@ -473,8 +575,7 @@ const spec = {
       'A loopback Workspace gateway with opt-in real TiDB Cloud Zero MySQL and Singapore Drive9 files. Existing local resources remain demos. Workspace Keys authorize actions and resources; upstream credentials stay internal. Zero trials expire; cloud usage is unmeasured. Production identity and public hosting are deferred.',
   },
   servers: [
-    { url: 'http://127.0.0.1:5173/api/v1', description: 'Local Vite proxy' },
-    { url: 'http://127.0.0.1:4318/api/v1', description: 'Local API and built frontend' },
+    { url: '/api/v1', description: 'Standalone Workspace API; resolve against the API origin' },
   ],
   tags: [{ name: 'Workspace' }, { name: 'Local owner' }],
   paths,

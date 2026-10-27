@@ -2,8 +2,13 @@
 
 Design baseline: 2026-10-27. This is the proposed architecture for an independent developer
 and agent product. The repository currently implements a loopback-only interactive prototype
-with demo databases and an opt-in real Singapore Drive9 anonymous File System. Anonymous Zero MySQL provisioning and SQL execution are implemented and verified; PostgreSQL is temporarily disabled. Persistent Starter and PG support below remain proposals; see [ADR 0005](decisions/0005-starter-sql-gateway.md). See [ADR 0004](decisions/0004-drive9-anonymous-provider.md) for the implemented provider boundary. See [ADR 0001](decisions/0001-unified-workspace-key.md) for the
+with demo databases and an opt-in real Singapore Drive9 anonymous File System. Anonymous Zero MySQL provisioning and SQL execution are implemented and verified; PostgreSQL is temporarily disabled. Persistent Starter and PG support below remain proposals; see [ADR 0006](decisions/0006-zero-sql-gateway.md). See [ADR 0004](decisions/0004-drive9-anonymous-provider.md) for the implemented provider boundary. See [ADR 0001](decisions/0001-unified-workspace-key.md) for the
 accepted single-key authorization model.
+
+The [intent driven development system](standards/intent-driven-development.md) records the
+API-first and agent-experience direction, specification contributions, and proposed delivery
+harness. It complements this product architecture; it does not imply new runtime capabilities
+or deployment authority.
 
 ## Product model
 
@@ -96,8 +101,15 @@ throughout the app.
 
 ## Backend boundaries
 
-Start with one modular Workspace service and a provisioning/reconciliation worker. Use the
-team's established Go or TypeScript stack and existing provider clients. Separate deployment
+Implemented delivery: the Console and API have independent builds, processes, and artifacts in
+one repository. The API serves only HTTP API/schema endpoints; the static Console uses runtime
+API-origin configuration and an OpenAPI-generated typed client. The existing backend remains
+Node ESM. See [ADR 0005](decisions/0005-independent-console-and-api.md) and the
+[operating guide](independent-delivery.md). Production identity and hosting remain proposed.
+
+The proposed production service starts with one modular Workspace service and a
+provisioning/reconciliation worker. A future language migration needs its own scoped decision;
+the current implementation retains Node ESM and existing provider clients. Separate deployment
 into microservices only when independent scaling or ownership justifies it.
 
 ```mermaid

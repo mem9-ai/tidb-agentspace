@@ -1,4 +1,4 @@
-# ADR 0005: Anonymous Zero SQL through the Workspace gateway
+# ADR 0006: Anonymous Zero SQL through the Workspace gateway
 
 - Status: Accepted and implemented; real MySQL and unified-key acceptance passed.
 - Date: 2026-10-28.

@@ -1,3 +1,14 @@
+## Contribution links and baseline
+
+State the contribution type: specification, implementation, acceptance case, harness, or small fix.
+Link the parent intent and task Issue where applicable. Use `Refs #...` for design or partial
+work. Use `Closes #...` only when this PR completes that Issue's full promised endpoint;
+a design-only PR must not close the parent feature intent.
+
+For implementation, link the accepted specification at its full Git SHA, relevant requirement
+IDs, source base, and acceptance baseline. For a small fix, link its reproduction or explain
+the scoped problem. See `docs/standards/github-contribution-workflow.md`.
+
 ## Problem and resulting behavior
 
 Describe the user-visible problem and what changes after this PR.
@@ -6,6 +17,9 @@ Describe the user-visible problem and what changes after this PR.
 
 List checks actually run and their results. Include screenshots/viewports for visible UI changes.
 Explain any verification gaps.
+Map mandatory requirement IDs to tests, completed reviews, and evidence references when using
+a specification. Identify the evaluated candidate SHA and any baseline changes. Check results
+must be current for the actual PR head; a completion claim does not replace them.
 For UI work, cite the TiUI version/component references, shared overrides, and remaining
 migration gaps; follow `docs/standards/tiui-design-system.md` for theme/viewport checks.
 

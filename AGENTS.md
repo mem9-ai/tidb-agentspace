@@ -10,6 +10,13 @@ changing repository policy.
 
 - Read the applicable references in [the standards index](docs/standards/README.md) before
   implementation. These are shared across tools and machines, not private agent memory.
+- For feature specifications, API/agent experience design, or delivery harness work, read
+  [intent driven contribution](docs/standards/intent-driven-development.md). Welcome intent,
+  specification, and acceptance contributions; distinguish accepted direction from proposed
+  automation and preserve the current delivery authority.
+- Coordinate intent, design, task handoffs, and implementation PRs through the
+  [GitHub contribution workflow](docs/standards/github-contribution-workflow.md). Pin accepted
+  specifications to Git revisions; a design PR must not prematurely close its parent intent.
 - For any UI, component, typography, layout, theme, icon, or frontend dependency change,
   read [the TiUI standard](docs/standards/tiui-design-system.md) and `src/AGENTS.md`.
   Use the installed TiUI components and supported shared overrides in `src/ui/`.
@@ -26,7 +33,7 @@ changing repository policy.
 - Read `docs/architecture.md` for the proposed product. Distinguish proposed behavior from
   what the running prototype implements.
 - MySQL and File System are currently available; PostgreSQL is planned but disabled. Read
-  [the Zero SQL boundary](docs/decisions/0005-starter-sql-gateway.md) before database work.
+  [the Zero SQL boundary](docs/decisions/0006-zero-sql-gateway.md) before database work.
   The proposed Starter protocols and File System are separate resource types with their
   own endpoints, credentials, regional availability, and capabilities.
 - Customers use one Workspace Key for the public product API, with both action and resource
@@ -36,6 +43,8 @@ changing repository policy.
   real cloud provisioning, payments, and production identity require explicit implementation.
 - Enforce authorization in the backend. Cover cross-workspace/resource access, scopes,
   expiration, and revocation when changing authorization. A UI restriction is insufficient.
+- Keep the Console and API independently buildable, runnable, and packageable in this repository.
+  Follow [independent delivery](docs/independent-delivery.md) and [ADR 0005](docs/decisions/0005-independent-console-and-api.md); the API must not serve Console assets.
 - Reuse domain operations across the Console and agent APIs. Keep provider-specific behavior
   behind adapters when adding real cloud integrations.
 
@@ -82,7 +91,7 @@ changing repository policy.
 - For visible UI changes, inspect the browser and provide a screenshot plus the checked
   viewport(s). If browser verification is unavailable, state the limitation.
 - Modify `server/generate-openapi.mjs` and run `npm run api:generate` when the public contract
-  changes. Keep the implementation, contract, clients, and tests aligned. Do not edit the
+  changes. Keep the implementation, contract, generated client types, and tests aligned. Do not edit the
   generated `public/openapi.json` by hand.
 - Report what changed, why, which checks actually ran, and any remaining limitations. Never
   claim an unrun check, remote CI run, deployment, or cloud integration succeeded.

@@ -6,8 +6,7 @@
     "description": "A loopback Workspace gateway with opt-in real TiDB Cloud Zero MySQL and Singapore Drive9 files. Existing local resources remain demos. Workspace Keys authorize actions and resources; upstream credentials stay internal. Zero trials expire; cloud usage is unmeasured. Production identity and public hosting are deferred."
   },
   "servers": [
-    { "url": "http://127.0.0.1:5173/api/v1", "description": "Local Vite proxy" },
-    { "url": "http://127.0.0.1:4318/api/v1", "description": "Local API and built frontend" }
+    { "url": "/api/v1", "description": "Standalone Workspace API; resolve against the API origin" }
   ],
   "tags": [{ "name": "Workspace" }, { "name": "Local owner" }],
   "paths": {
@@ -26,17 +25,11 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": ["data"],
                   "properties": {
                     "data": {
                       "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": { "type": "string" },
-                          "name": { "type": "string" },
-                          "plan": { "type": "string" }
-                        }
-                      }
+                      "items": { "$ref": "#/components/schemas/Workspace" }
                     }
                   }
                 }
@@ -135,7 +128,120 @@
         "responses": {
           "200": {
             "description": "Success",
-            "content": { "application/json": { "schema": { "type": "object" } } }
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": { "data": { "$ref": "#/components/schemas/Workspace" } }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "const": "ws_agentlab" },
+          "description": "This local prototype has one workspace."
+        }
+      ]
+    },
+    "/workspaces/{workspaceId}/bootstrap": {
+      "get": {
+        "operationId": "getBootstrap",
+        "summary": "Load the local owner Console state",
+        "tags": ["Local owner"],
+        "description": "Requires the local browser owner session. Workspace API keys cannot perform this operation.",
+        "x-required-scope": null,
+        "security": [{ "localOwner": [] }],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Bootstrap" } }
+            }
           },
           "400": {
             "description": "Invalid request",
@@ -242,11 +348,13 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": ["data", "capabilities"],
                   "properties": {
                     "data": {
                       "type": "array",
                       "items": { "$ref": "#/components/schemas/Resource" }
-                    }
+                    },
+                    "capabilities": { "$ref": "#/components/schemas/Capabilities" }
                   }
                 }
               }
@@ -358,6 +466,7 @@
                   "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,39}$" },
                   "kind": { "enum": ["mysql", "filesystem"] },
                   "region": {
+                    "type": "string",
                     "enum": ["aws-us-east-1", "aws-us-west-2", "aws-ap-southeast-1", "automatic"],
                     "description": "Choose a region supported by the resource kind in capabilities. Zero MySQL uses automatic provider assignment. The first supported region is the Console default."
                   }
@@ -495,6 +604,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": ["data"],
                   "properties": {
                     "data": { "type": "array", "items": { "$ref": "#/components/schemas/File" } }
                   }
@@ -848,6 +958,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": ["size"],
                   "properties": {
                     "content": { "type": "string" },
                     "size": { "type": "integer" },
@@ -1164,9 +1275,13 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": ["columns", "rows", "rowCount", "mode", "durationMs"],
                   "properties": {
                     "columns": { "type": "array", "items": { "type": "string" } },
-                    "rows": { "type": "array", "items": { "type": "object" } },
+                    "rows": {
+                      "type": "array",
+                      "items": { "type": "object", "additionalProperties": true }
+                    },
                     "rowCount": { "type": "integer" },
                     "mode": { "enum": ["demo", "live"] },
                     "affectedRows": {
@@ -1284,26 +1399,11 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": ["data", "mode", "queryCount"],
                   "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "resourceId": { "type": "string" },
-                          "kind": { "type": "string" },
-                          "storageBytes": { "type": ["integer", "null"] },
-                          "storageLimitBytes": { "type": ["integer", "null"] },
-                          "monthlyRU": { "type": ["integer", "null"] },
-                          "monthlyRULimit": { "type": ["integer", "null"] },
-                          "fileCount": { "type": ["integer", "null"] },
-                          "measured": {
-                            "type": "boolean",
-                            "description": "False for live trial usage; null counters are unknown, not zero."
-                          }
-                        }
-                      }
-                    }
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Usage" } },
+                    "mode": { "const": "demo" },
+                    "queryCount": { "type": "integer" }
                   }
                 }
               }
@@ -1414,21 +1514,9 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": ["data"],
                   "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": { "type": "string" },
-                          "action": { "type": "string" },
-                          "resource": { "type": "string" },
-                          "actor": { "type": "string" },
-                          "at": { "type": "string", "format": "date-time" },
-                          "outcome": { "type": "string" }
-                        }
-                      }
-                    }
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Event" } }
                   }
                 }
               }
@@ -1539,6 +1627,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": ["data"],
                   "properties": {
                     "data": { "type": "array", "items": { "$ref": "#/components/schemas/Key" } }
                   }
@@ -1675,6 +1764,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "required": ["data", "secret"],
                   "properties": {
                     "data": { "$ref": "#/components/schemas/Key" },
                     "secret": {
@@ -2006,6 +2096,143 @@
           "description": "This local prototype has one workspace."
         }
       ]
+    },
+    "/api/health": {
+      "servers": [{ "url": "/" }],
+      "get": {
+        "operationId": "getHealth",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status", "mode", "filesProvider"],
+                  "properties": {
+                    "status": { "const": "ok" },
+                    "mode": { "enum": ["demo", "hybrid"] },
+                    "filesProvider": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session": {
+      "servers": [{ "url": "/" }],
+      "post": {
+        "operationId": "createLocalSession",
+        "summary": "Create a loopback-only demo owner session",
+        "tags": ["Workspace"],
+        "description": "Local demonstration only. Sets an HttpOnly SameSite=Strict cookie. Allowed browser origins require credentialed CORS; production identity is not implemented.",
+        "x-required-scope": null,
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "type": "object", "required": [], "properties": {} } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["workspaceId", "mode"],
+                  "properties": {
+                    "workspaceId": { "const": "ws_agentlab" },
+                    "mode": { "const": "demo" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2025,7 +2252,7 @@
     "schemas": {
       "Resource": {
         "type": "object",
-        "required": ["id", "name", "kind", "region", "status"],
+        "required": ["id", "name", "kind", "region", "status", "createdAt"],
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
@@ -2061,6 +2288,7 @@
       },
       "File": {
         "type": "object",
+        "required": ["id", "resourceId", "path", "type", "size", "updatedAt"],
         "properties": {
           "id": { "type": "string" },
           "resourceId": { "type": "string" },
@@ -2073,6 +2301,17 @@
       },
       "Key": {
         "type": "object",
+        "required": [
+          "id",
+          "name",
+          "prefix",
+          "scopes",
+          "resourceIds",
+          "createdAt",
+          "expiresAt",
+          "lastUsedAt",
+          "revokedAt"
+        ],
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
@@ -2091,6 +2330,7 @@
       },
       "Error": {
         "type": "object",
+        "required": ["error"],
         "properties": {
           "error": {
             "type": "object",
@@ -2101,6 +2341,118 @@
               "requestId": { "type": "string" }
             }
           }
+        }
+      },
+      "Workspace": {
+        "type": "object",
+        "required": ["id", "name", "description", "plan", "createdAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "plan": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Profile": {
+        "type": "object",
+        "required": ["name", "email", "role"],
+        "properties": {
+          "name": { "type": "string" },
+          "email": { "type": "string" },
+          "role": { "type": "string" }
+        }
+      },
+      "Event": {
+        "type": "object",
+        "required": ["id", "action", "resource", "actor", "at", "outcome"],
+        "properties": {
+          "id": { "type": "string" },
+          "action": { "type": "string" },
+          "resource": { "type": "string" },
+          "resourceId": { "type": ["string", "null"] },
+          "actor": { "type": "string" },
+          "at": { "type": "string" },
+          "outcome": { "type": "string" }
+        }
+      },
+      "Usage": {
+        "type": "object",
+        "required": [
+          "resourceId",
+          "name",
+          "kind",
+          "storageBytes",
+          "storageLimitBytes",
+          "monthlyRU",
+          "monthlyRULimit",
+          "fileCount",
+          "measured"
+        ],
+        "properties": {
+          "resourceId": { "type": "string" },
+          "name": { "type": "string" },
+          "kind": { "enum": ["mysql", "filesystem"] },
+          "storageBytes": { "type": ["integer", "null"] },
+          "storageLimitBytes": { "type": ["integer", "null"] },
+          "monthlyRU": { "type": ["integer", "null"] },
+          "monthlyRULimit": { "type": ["integer", "null"] },
+          "fileCount": { "type": ["integer", "null"] },
+          "measured": { "type": "boolean" }
+        }
+      },
+      "Capability": {
+        "type": "object",
+        "required": ["label", "regions", "storageGiB", "preview"],
+        "properties": {
+          "label": { "type": "string" },
+          "regions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["aws-us-east-1", "aws-us-west-2", "aws-ap-southeast-1", "automatic"]
+            }
+          },
+          "storageGiB": { "type": ["number", "null"] },
+          "monthlyRU": { "type": ["number", "null"] },
+          "maxFiles": { "type": ["integer", "null"] },
+          "preview": { "type": "boolean" },
+          "provider": { "type": "string" }
+        }
+      },
+      "Capabilities": {
+        "type": "object",
+        "required": ["mysql", "filesystem"],
+        "properties": {
+          "mysql": { "$ref": "#/components/schemas/Capability" },
+          "filesystem": { "$ref": "#/components/schemas/Capability" }
+        }
+      },
+      "Bootstrap": {
+        "type": "object",
+        "required": [
+          "workspace",
+          "profile",
+          "resources",
+          "files",
+          "keys",
+          "events",
+          "usage",
+          "queryCount",
+          "capabilities",
+          "mode"
+        ],
+        "properties": {
+          "workspace": { "$ref": "#/components/schemas/Workspace" },
+          "profile": { "$ref": "#/components/schemas/Profile" },
+          "resources": { "type": "array", "items": { "$ref": "#/components/schemas/Resource" } },
+          "files": { "type": "array", "items": { "$ref": "#/components/schemas/File" } },
+          "keys": { "type": "array", "items": { "$ref": "#/components/schemas/Key" } },
+          "events": { "type": "array", "items": { "$ref": "#/components/schemas/Event" } },
+          "usage": { "type": "array", "items": { "$ref": "#/components/schemas/Usage" } },
+          "queryCount": { "type": "integer" },
+          "capabilities": { "$ref": "#/components/schemas/Capabilities" },
+          "mode": { "enum": ["demo", "hybrid"] }
         }
       }
     }

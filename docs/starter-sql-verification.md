@@ -2,7 +2,9 @@
 
 Date: 2026-10-28. Real anonymous TiDB Cloud Zero MySQL and Singapore Drive9 were verified.
 PG is intentionally disabled; no equivalent anonymous PG service is assumed. See
-[ADR 0005](decisions/0005-starter-sql-gateway.md) for scope, credential boundaries and recovery.
+[ADR 0006](decisions/0006-zero-sql-gateway.md) for scope, credential boundaries and recovery.
+
+`npm ci` and `npm run check` passed after integrating the independent-delivery main branch: 69 tests, repository/runtime checks, formatting, lint, generated OpenAPI/client checks, types and both production builds. Existing UIKit transitive eval and bundle-size warnings remain. No checks were suppressed.
 
 ## Acceptance evidence
 
@@ -25,6 +27,8 @@ this script. The Console-created `zero-playground` retains a `workspace_notes` t
 sample rows for the local preview. A separate QA trial was used for destructive/error probes.
 
 ## Browser evidence
+
+The production Console at port 5174 was checked against the separately built API at port 4319, including a real SELECT after restart; no Vite proxy was used for final evidence.
 
 Real provider responses, TiUI 2.9.1 and official SQL Editor 0.0.6. Shared 16px typography,
 48px controls, spacious layout and Light/Dark/System modes remain in place.

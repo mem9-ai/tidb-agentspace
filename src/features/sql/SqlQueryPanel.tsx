@@ -1,3 +1,4 @@
+import type { QueryResult } from '../../api/client';
 import React, { lazy, Suspense, useRef, useState } from 'react';
 import {
   Alert,
@@ -27,14 +28,6 @@ type DatabaseResource = {
   status: string;
 };
 const kindLabel = { mysql: 'MySQL', filesystem: 'File System' };
-export type QueryResult = {
-  columns: string[];
-  rows: Record<string, unknown>[];
-  rowCount: number;
-  mode: 'demo' | 'live';
-  affectedRows?: number;
-  durationMs: number;
-};
 type Props = {
   database: DatabaseResource;
   databases: DatabaseResource[];
