@@ -113,13 +113,19 @@ dependency-update commits also need a valid author sign-off before merge. GitHub
 merge commits are excluded; a squash commit is an ordinary commit and needs its own sign-off.
 
 A reviewer checks product behavior, API compatibility, authorization, credential boundaries,
-and the quality of the tests. The PR author reviews the agent's output before requesting
-review and cannot satisfy the independent review requirement themselves. Do not bundle
-unrelated formatting with a feature; this initial repository-wide formatting baseline is
-explicitly part of establishing the shared standard.
+and the quality of the tests. During early prototyping, the project owner has authorized
+agents to merge task-scoped PRs after reviewing the diff, verifying sign-offs, and confirming
+all CI checks pass on the latest PR head. A completed draft can be marked ready and merged
+without another confirmation or a separate human approval. Do not submit a self-approval,
+bypass enforced GitHub protections, or merge failing/conflicting changes. Maintainers remain
+responsible for the code; CI does not replace review. Before shared production deployment,
+adopt the independent review policy in `docs/ci-cd.md`.
+
+Do not bundle unrelated formatting with a feature; the initial repository-wide formatting
+baseline was explicitly part of establishing the shared standard.
 
 ## Delivery
 
-See [CI/CD policy](docs/ci-cd.md). CI and artifact packaging are checked in. GitHub rulesets,
-required reviewers, environments, and a real hosting target must be configured after this
-folder is attached to a remote repository. None are enabled by writing these files alone.
+See [CI/CD policy](docs/ci-cd.md). The repository is hosted at `siddontang/tidb.ai` and GitHub
+CI is running. Branch protections, required reviewers, deployment environments, and a real
+hosting target are not configured by the workflow files themselves.

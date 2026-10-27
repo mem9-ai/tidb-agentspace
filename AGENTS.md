@@ -78,8 +78,12 @@ changing repository policy.
 - When acting for Siddon, preserve the configured Git name and existing author attribution,
   use `git -c user.email=siddontang@gmail.com commit --signoff`, and verify the trailer before
   pushing. Do not rewrite existing commits to change attribution without authorization.
-- Follow `.github/PULL_REQUEST_TEMPLATE.md` and `docs/ci-cd.md`. PR authors remain responsible
-  for reviewing agent-written code. No self-approval or bypass of required checks/reviews.
+- Follow `.github/PULL_REQUEST_TEMPLATE.md` and `docs/ci-cd.md`. During the early prototype
+  phase, the project owner authorizes agents to merge task-scoped PRs after reviewing the
+  diff, verifying sign-offs, and confirming all CI checks pass on the latest PR head.
+  No additional confirmation or separate human approval is required in this phase.
+  Mark a completed draft ready before merging. Do not submit a self-approval, bypass any
+  enforced GitHub checks/reviews, merge failing/conflicting changes, or broaden task scope.
 - CI must run without cloud credentials. Keep actions pinned to full commit SHAs and tokens
   least-privileged. Do not execute untrusted PR code in a privileged deployment job.
 - Package reviewed code with a source SHA and checksums. Actual deployment must use the
