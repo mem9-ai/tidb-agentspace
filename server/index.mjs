@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStore, capabilities, workspaceId, usage } from './store.mjs';
+import { createDrive9, drive9Provider, drive9Region } from './providers/drive9.mjs';
+import { readUpload, previewFile, downloadFile } from './file-transfer.mjs';
 import { canAccessResource, normalizeResourceGrant } from './access-policy.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -67,9 +69,43 @@ async function body(req) {
     fail(400, 'INVALID_BODY', 'Request body must be a JSON object.');
   return parsed;
 }
-export async function createApp({ dataFile = resolve(root, '.data/workspace.json') } = {}) {
+export async function createApp({
+  dataFile = resolve(root, '.data/workspace.json'),
+  filesProvider = process.env.WORKSPACE_FILES_PROVIDER || 'local',
+  drive9Transport,
+} = {}) {
+  if (!['local', drive9Provider].includes(filesProvider))
+    throw new Error('Unknown File System provider.');
+  const drive9 = await createDrive9({
+    credentialsFile: dataFile + '.providers.json',
+    transport: drive9Transport,
+  });
+  const availableCapabilities = structuredClone(capabilities);
+  availableCapabilities.filesystem.provider = filesProvider;
+  if (filesProvider === drive9Provider) {
+    availableCapabilities.filesystem.regions = [drive9Region];
+    availableCapabilities.filesystem.storageGiB = null;
+    availableCapabilities.filesystem.maxFiles = null;
+  }
   const store = await createStore(dataFile);
   const sessions = new Map();
+  async function updateProvider(resource, provision = false) {
+    if (resource.provider !== drive9Provider) return resource;
+    let info;
+    try {
+      info = await (provision ? drive9.provision(resource.id) : drive9.status(resource.id));
+    } catch (error) {
+      info = { connectionError: error.message };
+    }
+    return store.mutate((draft) => {
+      const current = draft.resources.find((r) => r.id === resource.id);
+      Object.assign(current, { connectionError: undefined }, info);
+      return current;
+    });
+  }
+  async function recordFile(action, resourceId, path, actor) {
+    await store.mutate((draft) => event(draft, action, path, actor, resourceId));
+  }
   return http.createServer(async (req, res) => {
     const requestId = randomUUID();
     res.setHeader('X-Request-Id', requestId);
@@ -97,7 +133,11 @@ export async function createApp({ dataFile = resolve(root, '.data/workspace.json
       const url = new URL(req.url, `http://${req.headers.host}`),
         path = url.pathname;
       if (path === '/api/health')
-        return send(200, { status: 'ok', mode: 'demo', cloudConnected: false });
+        return send(200, {
+          status: 'ok',
+          mode: filesProvider === drive9Provider ? 'hybrid' : 'demo',
+          filesProvider,
+        });
       if (path === '/openapi.json') {
         const schema = JSON.parse(await readFile(resolve(root, 'public/openapi.json'), 'utf8'));
         return send(200, schema);
@@ -188,18 +228,27 @@ export async function createApp({ dataFile = resolve(root, '.data/workspace.json
       }
       if (route === '/bootstrap' && req.method === 'GET') {
         requireOwner();
+        await Promise.all(
+          state.resources
+            .filter((r) => r.provider === drive9Provider)
+            .map((r) => updateProvider(r)),
+        );
+        state = store.read();
         return send(200, {
           ...state,
           keys: state.keys.map(keyView),
           idempotency: undefined,
-          capabilities,
+          capabilities: availableCapabilities,
           usage: usage(state),
-          mode: 'demo',
+          mode: state.resources.some((r) => r.provider === drive9Provider) ? 'hybrid' : 'demo',
         });
       }
       if (route === '/resources' && req.method === 'GET') {
         requireScope('resources:read');
-        return send(200, { data: state.resources.filter((r) => hasResource(r.id)), capabilities });
+        const resources = await Promise.all(
+          state.resources.filter((r) => hasResource(r.id)).map((r) => updateProvider(r)),
+        );
+        return send(200, { data: resources, capabilities: availableCapabilities });
       }
       if (route === '/resources' && req.method === 'POST') {
         requireScope('resources:write');
@@ -218,7 +267,7 @@ export async function createApp({ dataFile = resolve(root, '.data/workspace.json
             'INVALID_NAME',
             'Use 3–40 lowercase letters, numbers, and hyphens; start with a letter.',
           );
-        if (!capabilities[input.kind].regions.includes(input.region))
+        if (!availableCapabilities[input.kind].regions.includes(input.region))
           fail(400, 'UNSUPPORTED_REGION', 'This region is not available for this resource.');
         const idem = req.headers['idempotency-key'];
         if (idem && (typeof idem !== 'string' || idem.length > 128))
@@ -236,12 +285,17 @@ export async function createApp({ dataFile = resolve(root, '.data/workspace.json
             fail(409, 'NAME_EXISTS', 'A resource with this name already exists.');
           if (
             input.kind === 'filesystem' &&
-            draft.resources.some((r) => r.kind === 'filesystem' && r.region === input.region)
+            draft.resources.some(
+              (r) =>
+                r.kind === 'filesystem' &&
+                r.region === input.region &&
+                (r.provider || 'local') === filesProvider,
+            )
           )
             fail(
               409,
               'FREE_TIER_LIMIT',
-              'The free tier supports one file system per region. Use the existing file system in this region.',
+              'One File System per provider and region is supported in this prototype. Use the existing File System.',
             );
           const limit = input.kind === 'mysql' ? 5 : 10;
           if (
@@ -254,7 +308,11 @@ export async function createApp({ dataFile = resolve(root, '.data/workspace.json
             name: input.name,
             kind: input.kind,
             region: input.region,
-            status: 'active',
+            status:
+              input.kind === 'filesystem' && filesProvider === drive9Provider
+                ? 'provisioning'
+                : 'active',
+            ...(input.kind === 'filesystem' ? { provider: filesProvider } : {}),
             createdAt: new Date().toISOString(),
           };
           draft.resources.push(resource);
@@ -262,21 +320,54 @@ export async function createApp({ dataFile = resolve(root, '.data/workspace.json
           if (idem) draft.idempotency[idemSlot] = { fingerprint, resource };
           return resource;
         });
-        return send(201, { data: resource, mode: 'demo' });
+        return send(201, {
+          data: await updateProvider(resource, true),
+          mode: resource.provider === drive9Provider ? 'live' : 'demo',
+        });
       }
       if (route === '/files' && req.method === 'GET') {
         requireScope('files:read');
         const resourceId = url.searchParams.get('resourceId');
-        requireResource(resourceId, 'filesystem');
+        const resource = requireResource(resourceId, 'filesystem');
+        const directory = url.searchParams.has('path')
+          ? cleanPath(url.searchParams.get('path'))
+          : null;
+        if (resource.provider === drive9Provider)
+          return send(200, { data: await drive9.list(resourceId, directory || '/') });
         return send(200, {
-          data: state.files.filter((f) => f.resourceId === resourceId).map(fileView),
+          data: state.files
+            .filter(
+              (f) =>
+                f.resourceId === resourceId &&
+                (!directory || (f.path.slice(0, f.path.lastIndexOf('/')) || '/') === directory),
+            )
+            .map(fileView),
         });
+      }
+      if (route === '/files/content' && ['GET', 'PUT'].includes(req.method)) {
+        requireScope(req.method === 'GET' ? 'files:read' : 'files:write');
+        const resourceId = url.searchParams.get('resourceId');
+        const resource = requireResource(resourceId, 'filesystem');
+        const targetPath = cleanPath(url.searchParams.get('path'));
+        if (targetPath === '/') fail(400, 'INVALID_PATH', 'Select a file.');
+        if (resource.provider !== drive9Provider)
+          fail(400, 'LOCAL_FILE_API', 'Use the JSON files endpoint for local files.');
+        if (req.method === 'PUT') {
+          const bytes = await readUpload(req);
+          await drive9.write(resourceId, targetPath, bytes, req.headers['if-none-match'] === '*');
+          await recordFile('file.uploaded', resourceId, targetPath, principal);
+          return send(200, { saved: true, size: bytes.length });
+        }
+        if (url.searchParams.get('preview') === '1')
+          return send(200, await previewFile(drive9, resourceId, targetPath));
+        await downloadFile(drive9, resourceId, targetPath, res);
+        return;
       }
       if (route === '/files' && req.method === 'PUT') {
         requireScope('files:write');
         const input = await body(req),
           targetPath = cleanPath(input.path);
-        requireResource(input.resourceId, 'filesystem');
+        const resource = requireResource(input.resourceId, 'filesystem');
         if (targetPath === '/') fail(400, 'INVALID_PATH', 'Choose a file or directory name.');
         if (!['file', 'directory'].includes(input.type))
           fail(400, 'INVALID_TYPE', 'Choose file or directory.');
@@ -284,7 +375,27 @@ export async function createApp({ dataFile = resolve(root, '.data/workspace.json
           input.type === 'file' &&
           (typeof input.content !== 'string' || Buffer.byteLength(input.content) > 256 * 1024)
         )
-          fail(413, 'FILE_TOO_LARGE', 'The demo supports UTF-8 text files up to 256 KiB.');
+          fail(413, 'FILE_TOO_LARGE', 'The JSON endpoint supports UTF-8 text files up to 256 KiB.');
+        if (resource.provider === drive9Provider) {
+          if (input.type === 'directory') await drive9.mkdir(resource.id, targetPath);
+          else await drive9.write(resource.id, targetPath, Buffer.from(input.content));
+          await recordFile(
+            input.type === 'directory' ? 'directory.created' : 'file.saved',
+            resource.id,
+            targetPath,
+            principal,
+          );
+          return send(200, {
+            data: {
+              id: `${resource.id}:${targetPath}`,
+              resourceId: resource.id,
+              path: targetPath,
+              type: input.type,
+              size: input.type === 'file' ? Buffer.byteLength(input.content) : 0,
+              updatedAt: new Date().toISOString(),
+            },
+          });
+        }
         const result = await store.mutate((draft) => {
           if (!draft.resources.some((r) => r.id === input.resourceId && r.kind === 'filesystem'))
             fail(404, 'NOT_FOUND', 'File system not found.');
@@ -332,7 +443,13 @@ export async function createApp({ dataFile = resolve(root, '.data/workspace.json
         requireScope('files:write');
         const input = await body(req),
           targetPath = cleanPath(input.path);
-        requireResource(input.resourceId, 'filesystem');
+        const resource = requireResource(input.resourceId, 'filesystem');
+        if (targetPath === '/') fail(400, 'INVALID_PATH', 'The root directory cannot be deleted.');
+        if (resource.provider === drive9Provider) {
+          await drive9.remove(resource.id, targetPath);
+          await recordFile('file.deleted', resource.id, targetPath, principal);
+          return send(200, { deleted: true });
+        }
         await store.mutate((draft) => {
           const file = draft.files.find(
             (f) => f.resourceId === input.resourceId && f.path === targetPath,
@@ -499,6 +616,10 @@ export async function createApp({ dataFile = resolve(root, '.data/workspace.json
       }
       fail(404, 'NOT_FOUND', 'Endpoint or method not found.');
     } catch (error) {
+      if (res.headersSent || res.destroyed) {
+        res.destroy();
+        return;
+      }
       send(error.status || 500, {
         error: {
           code: error.code || 'INTERNAL_ERROR',
@@ -515,7 +636,9 @@ export async function startServer(options = {}) {
     server.once('error', reject);
     server.listen(options.port ?? 4318, '127.0.0.1', resolve);
   });
-  console.log(`Workspace API: http://127.0.0.1:${server.address().port} (local demo provider)`);
+  console.log(
+    `Workspace API: http://127.0.0.1:${server.address().port} (loopback Workspace gateway)`,
+  );
   return server;
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))

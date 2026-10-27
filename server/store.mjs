@@ -123,13 +123,13 @@ export function seed() {
     idempotency: {},
   };
 }
-export async function createStore(file) {
+export async function createStore(file, initialState = seed) {
   let state;
   try {
     state = JSON.parse(await readFile(file, 'utf8'));
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
-    state = seed();
+    state = initialState();
   }
   let queue = Promise.resolve();
   return {
@@ -155,14 +155,23 @@ export function usage(state) {
     name: resource.name,
     kind: resource.kind,
     storageBytes:
-      resource.kind === 'filesystem'
-        ? state.files
-            .filter((f) => f.resourceId === resource.id)
-            .reduce((n, f) => n + Buffer.byteLength(f.content || ''), 0)
-        : 0,
-    storageLimitBytes: capabilities[resource.kind].storageGiB * 1024 ** 3,
-    fileCount: state.files.filter((f) => f.resourceId === resource.id && f.type === 'file').length,
-    monthlyRU: 0,
+      resource.provider === 'drive9-anonymous'
+        ? null
+        : resource.kind === 'filesystem'
+          ? state.files
+              .filter((f) => f.resourceId === resource.id)
+              .reduce((n, f) => n + Buffer.byteLength(f.content || ''), 0)
+          : 0,
+    storageLimitBytes:
+      resource.provider === 'drive9-anonymous'
+        ? null
+        : capabilities[resource.kind].storageGiB * 1024 ** 3,
+    measured: resource.provider !== 'drive9-anonymous',
+    fileCount:
+      resource.provider === 'drive9-anonymous'
+        ? null
+        : state.files.filter((f) => f.resourceId === resource.id && f.type === 'file').length,
+    monthlyRU: resource.provider === 'drive9-anonymous' ? null : 0,
     monthlyRULimit: capabilities[resource.kind].monthlyRU ?? null,
   }));
 }

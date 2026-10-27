@@ -9,6 +9,7 @@ import {
   Tabs,
   Text,
   Textarea,
+  Loader,
 } from '@tidbcloud/uikit';
 import { IconArrowLeft, IconDownload01, IconXClose } from '@tidbcloud/uikit/icons';
 import { Heading } from '../../ui/WorkspaceHeading';
@@ -18,6 +19,9 @@ import { fileFormat } from './file-preview';
 export default function FilePreviewPanel({
   path,
   content,
+  size,
+  loading = false,
+  unavailableReason = '',
   dirty,
   busy,
   error,
@@ -32,6 +36,9 @@ export default function FilePreviewPanel({
 }: {
   path: string;
   content: string;
+  size?: number;
+  loading?: boolean;
+  unavailableReason?: string;
   dirty: boolean;
   busy: boolean;
   error: string;
@@ -107,7 +114,11 @@ export default function FilePreviewPanel({
             {fileFormat(path).kind === 'code' ? 'Code' : fileFormat(path).kind.toUpperCase()}
           </Badge>
           <Text size="sm" c="carbon.7">
-            {new TextEncoder().encode(content).length.toLocaleString()} bytes
+            {(dirty
+              ? new TextEncoder().encode(content).length
+              : (size ?? new TextEncoder().encode(content).length)
+            ).toLocaleString()}{' '}
+            bytes
           </Text>
           {dirty && <Badge color="yellow">Unsaved changes</Badge>}
         </Group>
@@ -137,12 +148,22 @@ export default function FilePreviewPanel({
       >
         <Tabs.List px={24}>
           <Tabs.Tab value="preview">Preview</Tabs.Tab>
-          <Tabs.Tab value="source">Edit source</Tabs.Tab>
+          <Tabs.Tab value="source" disabled={loading || !!unavailableReason}>
+            Edit source
+          </Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="preview" className="file-preview-content">
-          <FilePreviewBoundary path={path} content={content}>
-            <FileContent path={path} content={content} />
-          </FilePreviewBoundary>
+          {loading ? (
+            <Loader aria-label="Loading file content" />
+          ) : unavailableReason ? (
+            <Alert color="yellow" title="Preview unavailable">
+              {unavailableReason}
+            </Alert>
+          ) : (
+            <FilePreviewBoundary path={path} content={content}>
+              <FileContent path={path} content={content} />
+            </FilePreviewBoundary>
+          )}
         </Tabs.Panel>
         <Tabs.Panel value="source" className="file-preview-content">
           <Textarea
@@ -163,7 +184,12 @@ export default function FilePreviewPanel({
         <Button leftSection={<IconDownload01 size={18} />} onClick={onDownload}>
           {dirty ? 'Download draft' : 'Download'}
         </Button>
-        <Button variant="filled" loading={busy} disabled={!dirty || busy} onClick={onSave}>
+        <Button
+          variant="filled"
+          loading={busy}
+          disabled={!dirty || busy || loading || !!unavailableReason}
+          onClick={onSave}
+        >
           Save changes
         </Button>
       </footer>

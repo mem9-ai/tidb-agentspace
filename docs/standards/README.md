@@ -14,6 +14,8 @@ plugin, skill, or conversation history is required.
 | Public authorization or credentials                                                        | [Workspace Key decision](../decisions/0001-unified-workspace-key.md)                         |
 | Build, review, merge, release, or environment behavior                                     | [Contribution guide](../../CONTRIBUTING.md) and [CI/CD policy](../ci-cd.md)                  |
 
+For live file integrations, also read [the Drive9 provider boundary](../decisions/0004-drive9-anonymous-provider.md): authenticate before provider I/O, persist credentials privately, bound preview reads, and never retry uncertain tenant creation.
+
 ## How to interpret a standard
 
 - **Verified upstream fact:** includes an official source and version/date. Recheck when

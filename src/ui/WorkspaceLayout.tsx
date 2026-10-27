@@ -26,6 +26,7 @@ import { ThemePicker } from '../features/theme/ThemePicker';
 type NavigationItem = { id: string; label: string; group: string; icon: ComponentType<IconProps> };
 type Props = {
   workspaceName: string;
+  liveFiles?: boolean;
   profileName: string;
   active: string;
   databaseId?: string;
@@ -36,6 +37,7 @@ type Props = {
 
 export function WorkspaceLayout({
   workspaceName,
+  liveFiles = false,
   profileName,
   active,
   databaseId,
@@ -58,7 +60,7 @@ export function WorkspaceLayout({
         Personal workspace
       </Button>
       <Text size="sm" c="carbon.7" mt={8}>
-        Free plan · Local demo
+        {liveFiles ? 'Prototype · Live file trial' : 'Free plan · Local demo'}
       </Text>
       <nav aria-label="Main navigation">
         {['Workspace', 'Build', 'Manage'].map((group) => (
@@ -139,7 +141,7 @@ export function WorkspaceLayout({
               <IconSearchLg size={20} />
             </ActionIcon>
             <Badge visibleFrom="md" color="carbon">
-              Local demo
+              {liveFiles ? 'Live file trial' : 'Local demo'}
             </Badge>
             <ActionIcon
               visibleFrom="md"
@@ -178,8 +180,12 @@ export function WorkspaceLayout({
       <AppShell.Main>
         <div className="workspace-content">{children}</div>
         <footer className="footer">
-          <Text size="sm">Local provider operational</Text>
-          <Text size="sm">Product prototype · Cloud resources & telemetry are simulated</Text>
+          <Text size="sm">Local Workspace gateway</Text>
+          <Text size="sm">
+            {liveFiles
+              ? 'Drive9 files are live · Databases & telemetry are simulated'
+              : 'Product prototype · Cloud resources & telemetry are simulated'}
+          </Text>
           <Anchor
             size="sm"
             href="https://docs.pingcap.com/tidbcloud/"

@@ -12,3 +12,5 @@ migration, and how the decision is verified. Routine implementation choices do n
   see its linked standard for current integration and verification evidence.
 - [0003: File System regions and provider modes](0003-filesystem-regions-and-modes.md) —
   Singapore default, additive API support, preserved existing regions, and mode boundaries.
+
+- [0004: Drive9 anonymous provider](0004-drive9-anonymous-provider.md) — real Singapore files, private backend bindings, bounded transfers, and explicit provisioning recovery.

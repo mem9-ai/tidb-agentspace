@@ -89,3 +89,7 @@ UTF-8 text only; binary image/PDF/media previews and real cloud storage are not 
 Creation and deletion still use their existing dialogs. The file-level draft guard covers
 switching files/systems, closing the panel and browser unload; it does not add application-wide
 SPA navigation blocking. Save before leaving File System for another workspace destination.
+
+## Live provider extension
+
+[Drive9 verification](drive9-verification.md) covers metadata-only listings, bounded content loading, binary downloads, and live Singapore examples. The original local UTF-8 behavior above remains supported. See [ADR 0004](decisions/0004-drive9-anonymous-provider.md) for current transfer limits.
