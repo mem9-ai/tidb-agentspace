@@ -2901,15 +2901,20 @@ function Connection({
       <ChoiceTabs value={tab} onChange={setTab} options={['REST API', 'JavaScript', 'Python']}>
         <Code
           copy={copy}
-          label="WORKSPACE API · LOCAL DEMO"
+          label={
+            r.provider === 'drive9-anonymous'
+              ? 'WORKSPACE API · LIVE FILE TRIAL'
+              : 'WORKSPACE API · LOCAL DEMO'
+          }
           value={tab === 'REST API' ? shell : tab === 'JavaScript' ? javascript : python}
         />
       </ChoiceTabs>
       <div className="connection-note">
         <ShieldCheck size={18} />
         <Text component="p">
-          Provider credentials are handled by the service. This preview uses a local provider;
-          native database connections and file mounts are not available yet.
+          {r.provider === 'drive9-anonymous'
+            ? 'Files are stored in the Singapore anonymous trial. Use the file content API for upload, preview, and download; provider credentials stay inside the service. Native file mounts are not available yet.'
+            : 'Provider credentials are handled by the service. This resource uses a local demo provider; native database connections and file mounts are not available yet.'}
         </Text>
       </div>
       <div className="modal-actions">
