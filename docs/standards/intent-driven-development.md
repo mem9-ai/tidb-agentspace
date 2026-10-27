@@ -79,7 +79,9 @@ interface; authorization correctness, retry safety, and product usefulness still
 specifications and tests.
 
 In this repository, `server/generate-openapi.mjs` remains the canonical contract source and
-`public/openapi.json` its generated artifact. Design the contract first, then update the
+`public/openapi.json` its generated artifact. The same command generates
+`src/api/schema.d.ts` for the Console client, and `npm run api:check` verifies both artifacts.
+See [independent delivery](../independent-delivery.md) for build/runtime boundaries. Design the contract first, then update the
 generator, implementation, affected clients, and tests together. Run `npm run api:generate`;
 never hand-edit the generated file. API-first design does not require changing the current
 source format or upgrading the pinned OpenAPI version.
