@@ -154,24 +154,24 @@ export function usage(state) {
     resourceId: resource.id,
     name: resource.name,
     kind: resource.kind,
-    storageBytes:
-      resource.provider === 'drive9-anonymous'
+    storageBytes: ['drive9-anonymous', 'tidb-cloud-starter'].includes(resource.provider)
+      ? null
+      : resource.kind === 'filesystem'
+        ? state.files
+            .filter((f) => f.resourceId === resource.id)
+            .reduce((n, f) => n + Buffer.byteLength(f.content || ''), 0)
+        : 0,
+    storageLimitBytes: ['drive9-anonymous', 'tidb-cloud-starter'].includes(resource.provider)
+      ? null
+      : capabilities[resource.kind].storageGiB * 1024 ** 3,
+    measured: !['drive9-anonymous', 'tidb-cloud-starter'].includes(resource.provider),
+    fileCount: ['drive9-anonymous', 'tidb-cloud-starter'].includes(resource.provider)
+      ? null
+      : state.files.filter((f) => f.resourceId === resource.id && f.type === 'file').length,
+    monthlyRU: ['drive9-anonymous', 'tidb-cloud-starter'].includes(resource.provider) ? null : 0,
+    monthlyRULimit:
+      resource.provider === 'tidb-cloud-starter'
         ? null
-        : resource.kind === 'filesystem'
-          ? state.files
-              .filter((f) => f.resourceId === resource.id)
-              .reduce((n, f) => n + Buffer.byteLength(f.content || ''), 0)
-          : 0,
-    storageLimitBytes:
-      resource.provider === 'drive9-anonymous'
-        ? null
-        : capabilities[resource.kind].storageGiB * 1024 ** 3,
-    measured: resource.provider !== 'drive9-anonymous',
-    fileCount:
-      resource.provider === 'drive9-anonymous'
-        ? null
-        : state.files.filter((f) => f.resourceId === resource.id && f.type === 'file').length,
-    monthlyRU: resource.provider === 'drive9-anonymous' ? null : 0,
-    monthlyRULimit: capabilities[resource.kind].monthlyRU ?? null,
+        : (capabilities[resource.kind].monthlyRU ?? null),
   }));
 }

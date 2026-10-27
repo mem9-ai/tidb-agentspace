@@ -13,7 +13,7 @@ const schemas = {
       region: { type: 'string' },
       status: { enum: ['active', 'provisioning', 'failed', 'suspended', 'deleting', 'deleted'] },
       provider: {
-        enum: ['local', 'drive9-anonymous'],
+        enum: ['local', 'drive9-anonymous', 'tidb-cloud-starter'],
         description: 'Missing on legacy local resources.',
       },
       uploadLimitBytes: {
@@ -286,8 +286,8 @@ const paths = {
   },
   [ws + '/queries']: {
     post: operation(
-      'executeDemoQuery',
-      'Execute supported demo SELECT patterns',
+      'executeQuery',
+      'Execute one statement on a selected database; live SQL can read and write',
       'queries:execute',
       {
         input: {
@@ -298,7 +298,7 @@ const paths = {
             sql: {
               type: 'string',
               description:
-                'Only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n]. Other SQL returns 422.',
+                'Live Starter: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n].',
             },
           },
         },
@@ -308,7 +308,11 @@ const paths = {
             columns: { type: 'array', items: str },
             rows: { type: 'array', items: { type: 'object' } },
             rowCount: { type: 'integer' },
-            mode: { const: 'demo' },
+            mode: { enum: ['demo', 'live'] },
+            affectedRows: {
+              type: 'integer',
+              description: 'Live statement affected-row count; SELECT returns zero.',
+            },
             durationMs: { type: 'number' },
           },
         },

@@ -31,6 +31,17 @@ credential; customers still use a scoped Workspace Key. Existing local files rem
 See [the provider decision](docs/decisions/0004-drive9-anonymous-provider.md) for limits,
 private storage, recovery, and live verification instructions.
 
+## Starter SQL integration (cloud verification pending)
+
+Native MySQL/PG SQL adapters and a backend-only binding tool are implemented. Existing database
+resources remain demos until explicitly bound; Console database creation is still simulated.
+The current PR must complete real-cloud acceptance before merge or main preview replacement.
+See [the SQL boundary and setup](docs/decisions/0005-starter-sql-gateway.md) and
+[verification status](docs/starter-sql-verification.md). Operators supply least-privilege native
+connections privately; customers continue using Workspace Keys with `queries:execute` and
+resource grants. That action allows both SQL reads and writes. Production credential management
+and automatic Starter provisioning are not implemented.
+
 ## What works
 
 - Nine top-level destinations: overview, databases, files, agent connection, keys, API explorer, monitoring, billing, settings. Each database has its own SQL editor at `#databases/<resource-id>/sql`, preserving the selected database on reload and browser history navigation.
@@ -43,9 +54,9 @@ private storage, recovery, and live verification instructions.
 
 ## Prototype boundaries
 
-Database instances, native database connection addresses, and chart series are simulated and labeled in the UI. SQL supports only `SELECT 1 [AS connected]` and `SELECT * FROM agent_events [LIMIT n]`; this is not a MySQL or PostgreSQL server. Legacy/local files remain text in JSON. File Systems marked `drive9-anonymous` store their content in the real Singapore service, with internal tokens in a separate owner-only ignored file. Database usage is not metered; local filesystem allowances are a reference snapshot. Live trial storage usage, quotas, and billing are not measured. One Workspace Key works across its permitted database and file APIs. Both action scopes and resource IDs are enforced; selected resources do not automatically expand to future resources. Path-level policies and native protocol gateways are not implemented.
+Unbound database instances and chart series are simulated and labeled in the UI. Demo SQL supports only `SELECT 1 [AS connected]` and `SELECT * FROM agent_events [LIMIT n]`; this is not a MySQL or PostgreSQL server. Legacy/local files remain text in JSON. File Systems marked `drive9-anonymous` store their content in the real Singapore service, with internal tokens in a separate owner-only ignored file. Database usage is not metered; local filesystem allowances are a reference snapshot. Live trial storage usage, quotas, and billing are not measured. One Workspace Key works across its permitted database and file APIs. Both action scopes and resource IDs are enforced; selected resources do not automatically expand to future resources. Path-level policies and native protocol gateways are not implemented.
 
-Database cloud adapters, production secret management, native protocol gateways, real telemetry, MCP, sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). This loopback-only guest server is for local validation, not public deployment.
+Automatic database provisioning, production secret management, native protocol gateways, real telemetry, MCP, sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). This loopback-only guest server is for local validation, not public deployment.
 
 The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, and TiUI SQL Editor 0.0.6. Shared overrides preserve 16px body text, 48px primary controls, spacious layouts, and Light/Dark/System modes. Inter is self-hosted. See the [TiUI standard](docs/standards/tiui-design-system.md) for compatibility, extension rules, and [migration verification](docs/tiui-migration-verification.md).
 

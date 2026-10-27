@@ -76,7 +76,7 @@ import { WorkspaceLayout } from './ui/WorkspaceLayout';
 import { databaseEditorHash, parseWorkspaceRoute } from './features/navigation/workspace-route';
 import type { Route, WorkspaceRoute } from './features/navigation/workspace-route';
 
-const WorkspaceSqlInput = lazy(() => import('./features/sql/WorkspaceSqlInput'));
+import { SqlQueryPanel, type QueryResult } from './features/sql/SqlQueryPanel';
 const FilePreviewPanel = lazy(() => import('./features/files/FilePreviewPanel'));
 type WorkspaceIcon = React.ComponentType<IconProps>;
 
@@ -142,13 +142,7 @@ type Data = {
     }
   >;
 };
-type QueryResult = {
-  columns: string[];
-  rows: Record<string, unknown>[];
-  rowCount: number;
-  mode: 'demo';
-  durationMs: number;
-};
+
 const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string }> = {
   overview: { label: 'Overview', icon: LayoutDashboard, group: 'Workspace' },
   databases: { label: 'Databases', icon: Database, group: 'Workspace' },
@@ -452,6 +446,7 @@ function App() {
     <>
       <WorkspaceLayout
         liveFiles={data.resources.some((r) => r.provider === 'drive9-anonymous')}
+        liveDatabases={data.resources.some((r) => r.provider === 'tidb-cloud-starter')}
         workspaceName={data.workspace.name}
         profileName={data.profile.name}
         active={route}
@@ -857,7 +852,13 @@ function Databases({ databaseId, ...shared }: Shared & { databaseId?: string }) 
                       Active
                     </span>
                   </Table.Td>
-                  <Table.Td>Starter · Free</Table.Td>
+                  <Table.Td>
+                    {r.provider === 'tidb-cloud-starter' ? (
+                      <Badge color="green">Live Starter</Badge>
+                    ) : (
+                      <Badge>Local demo</Badge>
+                    )}
+                  </Table.Td>
                   <Table.Td>
                     <div className="database-actions">
                       <Button
@@ -883,8 +884,8 @@ function Databases({ databaseId, ...shared }: Shared & { databaseId?: string }) 
           <Code2 size={22} />
           <Heading level={3}>Start with a query</Heading>
           <Text component="p">
-            Choose a database above and open its SQL editor. Queries run against that database; the
-            demo provider supports two read-only query patterns.
+            Choose a database above and open its SQL editor. Live databases execute SQL on TiDB
+            Cloud Starter. Resources marked Local demo support two sample queries.
           </Text>
         </Paper>
         <Paper className="panel info-panel" withBorder>
@@ -892,7 +893,7 @@ function Databases({ databaseId, ...shared }: Shared & { databaseId?: string }) 
           <Heading level={3}>Built for your existing tools</Heading>
           <Text component="p">
             Use a single Workspace Key through the API. MySQL and PostgreSQL compatibility is
-            handled by the database service; native client connections are a future integration.
+            handled inside the backend. Internal connection credentials stay private.
           </Text>
           <a
             className="text-link"
@@ -914,31 +915,6 @@ function SqlEditor({
   notify,
   onConnect,
 }: Shared & { database: Resource }) {
-  const dbs = data.resources.filter((r) => r.kind !== 'filesystem');
-  const resourceId = database.id;
-  const [sql, setSql] = useState('SELECT * FROM agent_events LIMIT 10;'),
-    [busy, setBusy] = useState(false),
-    [result, setResult] = useState<QueryResult | null>(null),
-    [error, setError] = useState('');
-  async function run() {
-    if (busy) return;
-    setBusy(true);
-    setError('');
-    try {
-      setResult(
-        await api<QueryResult>(base + '/queries', {
-          method: 'POST',
-          body: JSON.stringify({ resourceId, sql }),
-        }),
-      );
-      await refresh();
-    } catch (e) {
-      setResult(null);
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
   return (
     <>
       <a className="text-link database-back" href="#databases">
@@ -954,132 +930,26 @@ function SqlEditor({
           </Button>
         }
       />
-      <Alert className="notice" color="peacock" icon={<Sparkles size={17} />}>
-        <span>
-          Local query sandbox. Supports <code>SELECT 1</code> and{' '}
-          <code>SELECT * FROM agent_events LIMIT n</code>. Cloud SQL execution is not connected.
-        </span>
-      </Alert>
-      <Paper className="panel sql-panel" withBorder>
-        <div className="sql-toolbar">
-          <div className="inline-controls">
-            <Database size={16} />
-            <NativeSelect
-              className="sql-database-select"
-              aria-label="Database"
-              value={resourceId}
-              onChange={(e) => openDatabaseEditor(e.target.value)}
-            >
-              {dbs.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name} · {kindLabel[r.kind]}
-                </option>
-              ))}
-            </NativeSelect>
-            <Badge>Demo</Badge>
-          </div>
-          <Button
-            variant="filled"
-            loading={busy}
-            leftSection={<Play size={18} />}
-            disabled={busy || !resourceId}
-            onClick={run}
-          >
-            {busy ? 'Running…' : 'Run query'}
-          </Button>
-        </div>
-        <Suspense
-          fallback={
-            <div className="editor-loading">
-              <Loader size="md" />
-              <Text>Loading SQL editor…</Text>
-            </div>
-          }
-        >
-          <WorkspaceSqlInput
-            databaseId={database.id}
-            protocol={database.kind}
-            value={sql}
-            onChange={setSql}
-            onRun={() => void run()}
-          />
-        </Suspense>
-        <div className="editor-bottom">
-          <span>SQL · {kindLabel[database.kind]}</span>
-          <span>⌘ / Ctrl + Enter to run</span>
-        </div>
-      </Paper>
-      <div className="sample-queries">
-        <span>Try a sample:</span>
-        <UnstyledButton onClick={() => setSql('SELECT 1 AS connected;')}>
-          Test connection
-        </UnstyledButton>
-        <UnstyledButton onClick={() => setSql('SELECT * FROM agent_events LIMIT 10;')}>
-          Read agent events
-        </UnstyledButton>
-      </div>
-      <Paper className="panel result-panel" withBorder>
-        <div className="panel-header">
-          <Heading level={2}>
-            Results {result && <Badge color="green">{result.rowCount} rows</Badge>}
-          </Heading>
-          {result && (
-            <Button
-              leftSection={React.createElement(ArrowDownToLine, { size: 18 })}
-              onClick={() => {
-                download(
-                  'query-results.json',
-                  JSON.stringify(result.rows, null, 2),
-                  'application/json',
-                );
-                notify('Results exported');
-              }}
-            >
-              Export JSON
-            </Button>
-          )}
-        </div>
-        {error ? (
-          <Alert className="inline-error" color="red">
-            {error}
-          </Alert>
-        ) : result ? (
-          <div className="table-scroll">
-            <Table>
-              <Table.Thead>
-                <Table.Tr>
-                  {result.columns.map((c: string) => (
-                    <Table.Th key={c}>{c}</Table.Th>
-                  ))}
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {result.rows.map((r: Record<string, unknown>, i: number) => (
-                  <Table.Tr key={i}>
-                    {result.columns.map((c: string) => (
-                      <Table.Td key={c}>
-                        <code>{String(r[c])}</code>
-                      </Table.Td>
-                    ))}
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-            <div className="result-footnote">
-              <CheckCircle2 size={13} /> Demo query completed. Results are sample data.
-            </div>
-          </div>
-        ) : (
-          <Empty
-            icon={Terminal}
-            title="Ready when you are"
-            description="Run a sample query to see its results here."
-          />
-        )}
-      </Paper>
+      <SqlQueryPanel
+        database={database}
+        databases={data.resources.filter((r) => r.kind !== 'filesystem')}
+        execute={(sql) =>
+          api<QueryResult>(base + '/queries', {
+            method: 'POST',
+            body: JSON.stringify({ resourceId: database.id, sql }),
+          })
+        }
+        onComplete={refresh}
+        onSelect={openDatabaseEditor}
+        onExport={(result) => {
+          download('query-results.json', JSON.stringify(result.rows, null, 2), 'application/json');
+          notify('Results exported');
+        }}
+      />
     </>
   );
 }
+
 function download(name: string, value: string, mime = 'text/plain') {
   const url = URL.createObjectURL(new Blob([value], { type: mime }));
   const a = document.createElement('a');
@@ -1680,7 +1550,7 @@ function Connect({ data, copy }: Shared) {
   const snippet = `# Discover your workspace resources\ncurl ${apiOrigin}${base}/resources \\\n  -H "Authorization: Bearer $WORKSPACE_API_KEY"`;
   const python = `import os, json, urllib.request\n\nreq = urllib.request.Request(\n    "${apiOrigin}${base}/resources",\n    headers={"Authorization": "Bearer " + os.environ["WORKSPACE_API_KEY"]}\n)\nwith urllib.request.urlopen(req) as response:\n    print(json.load(response))`;
   const js = `const response = await fetch(\n  "${apiOrigin}${base}/resources",\n  { headers: { Authorization: \`Bearer \${process.env.WORKSPACE_API_KEY}\` } }\n);\nconsole.log(await response.json());`;
-  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiOrigin}/api/v1\nOpenAPI: ${apiOrigin}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for directory listings and UTF-8 writes; Drive9 listings contain metadata only. Use /files/content?resourceId=ID&path=PATH for binary upload/download and add preview=1 for bounded text previews. Use /queries for demo SQL.\nOnly call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local Workspace gateway. File Systems marked drive9-anonymous use real Singapore trial storage. Databases and cloud telemetry remain simulated.\nDo not upload credentials to the workspace or commit them to Git.\n`;
+  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiOrigin}/api/v1\nOpenAPI: ${apiOrigin}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for directory listings and UTF-8 writes; Drive9 listings contain metadata only. Use /files/content?resourceId=ID&path=PATH for binary upload/download and add preview=1 for bounded text previews. Use /queries for SQL on the selected database. Resources marked tidb-cloud-starter execute real SQL; queries:execute permits reads and writes within the database role. Run one statement per request; results are limited to 1,000 rows / 1 MiB and queries to 15 seconds. A timeout can leave a write outcome unknown; verify before retrying.\nOnly call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local Workspace gateway. File Systems marked drive9-anonymous use real Singapore trial storage. Databases marked tidb-cloud-starter connect to real cloud instances. Other databases remain demos. Cloud telemetry is not measured.\nDo not upload credentials to the workspace or commit them to Git.\n`;
   return (
     <>
       <PageHeading
@@ -2211,7 +2081,11 @@ function Monitoring({ data }: Shared) {
                       </Table.Td>
                       <Table.Td>{kindLabel[r.kind]}</Table.Td>
                       <Table.Td>
-                        {r.provider === 'drive9-anonymous' ? 'Live trial' : 'Local demo'}
+                        {r.provider === 'drive9-anonymous'
+                          ? 'Live trial'
+                          : r.provider === 'tidb-cloud-starter'
+                            ? 'Live Starter'
+                            : 'Local demo'}
                       </Table.Td>
                       <Table.Td>
                         <span className="status">
@@ -2785,7 +2659,7 @@ function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose:
                               'resources:write': 'Create resources',
                               'files:read': 'Read files and context',
                               'files:write': 'Create, edit, and delete files',
-                              'queries:execute': 'Run supported sample SQL',
+                              'queries:execute': 'Read and write SQL on permitted databases',
                               'usage:read': 'Read usage and allowances',
                             } as Record<string, string>
                           )[s]
@@ -2904,7 +2778,9 @@ function Connection({
           label={
             r.provider === 'drive9-anonymous'
               ? 'WORKSPACE API · LIVE FILE TRIAL'
-              : 'WORKSPACE API · LOCAL DEMO'
+              : r.provider === 'tidb-cloud-starter'
+                ? 'WORKSPACE API · LIVE STARTER'
+                : 'WORKSPACE API · LOCAL DEMO'
           }
           value={tab === 'REST API' ? shell : tab === 'JavaScript' ? javascript : python}
         />
@@ -2914,7 +2790,9 @@ function Connection({
         <Text component="p">
           {r.provider === 'drive9-anonymous'
             ? 'Files are stored in the Singapore anonymous trial. Use the file content API for upload, preview, and download; provider credentials stay inside the service. Native file mounts are not available yet.'
-            : 'Provider credentials are handled by the service. This resource uses a local demo provider; native database connections and file mounts are not available yet.'}
+            : r.provider === 'tidb-cloud-starter'
+              ? 'SQL runs on TiDB Cloud Starter through the Workspace API. This key action permits reads and writes within the internal database role; connection credentials remain private.'
+              : 'Provider credentials are handled by the service. This resource uses a local demo provider; native database connections and file mounts are not available yet.'}
         </Text>
       </div>
       <div className="modal-actions">

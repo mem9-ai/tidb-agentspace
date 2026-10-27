@@ -27,6 +27,7 @@ type NavigationItem = { id: string; label: string; group: string; icon: Componen
 type Props = {
   workspaceName: string;
   liveFiles?: boolean;
+  liveDatabases?: boolean;
   profileName: string;
   active: string;
   databaseId?: string;
@@ -38,6 +39,7 @@ type Props = {
 export function WorkspaceLayout({
   workspaceName,
   liveFiles = false,
+  liveDatabases = false,
   profileName,
   active,
   databaseId,
@@ -60,7 +62,7 @@ export function WorkspaceLayout({
         Personal workspace
       </Button>
       <Text size="sm" c="carbon.7" mt={8}>
-        {liveFiles ? 'Prototype · Live file trial' : 'Free plan · Local demo'}
+        {liveFiles || liveDatabases ? 'Prototype · Live resources' : 'Free plan · Local demo'}
       </Text>
       <nav aria-label="Main navigation">
         {['Workspace', 'Build', 'Manage'].map((group) => (
@@ -141,7 +143,7 @@ export function WorkspaceLayout({
               <IconSearchLg size={20} />
             </ActionIcon>
             <Badge visibleFrom="md" color="carbon">
-              {liveFiles ? 'Live file trial' : 'Local demo'}
+              {liveFiles || liveDatabases ? 'Live resources' : 'Local demo'}
             </Badge>
             <ActionIcon
               visibleFrom="md"
@@ -182,9 +184,11 @@ export function WorkspaceLayout({
         <footer className="footer">
           <Text size="sm">Local Workspace gateway</Text>
           <Text size="sm">
-            {liveFiles
-              ? 'Drive9 files are live · Databases & telemetry are simulated'
-              : 'Product prototype · Cloud resources & telemetry are simulated'}
+            {liveDatabases
+              ? 'Live Starter databases · Cloud usage is not measured'
+              : liveFiles
+                ? 'Drive9 files are live · Databases & telemetry are simulated'
+                : 'Product prototype · Cloud resources & telemetry are simulated'}
           </Text>
           <Anchor
             size="sm"

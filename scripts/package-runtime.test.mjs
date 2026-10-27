@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { packageRuntime } from './package-runtime.mjs';
+import { packageRuntime, copySqlDependencies } from './package-runtime.mjs';
 
 test('runtime artifacts include the contract and source identity but exclude local secrets/data', async () => {
   const root = await mkdtemp(resolve(tmpdir(), 'tidb-package-test-'));
@@ -25,6 +26,7 @@ test('runtime artifacts include the contract and source identity but exclude loc
     await cp(new URL('../server/', import.meta.url), resolve(root, 'server'), { recursive: true });
     await writeFile(resolve(root, 'package.json'), JSON.stringify({ version: '0.0.0-test' }));
     await writeFile(resolve(root, '.node-version'), '24.22.1\n');
+    await copySqlDependencies(fileURLToPath(new URL('../', import.meta.url)), root);
     const result = await packageRuntime({
       root,
       destination: resolve(root, 'output'),
@@ -34,10 +36,15 @@ test('runtime artifacts include the contract and source identity but exclude loc
     assert.ok(entries.includes('workspace/public/openapi.json'));
     assert.ok(entries.includes('workspace/server/store.mjs'));
     assert.ok(entries.includes('workspace/server/providers/drive9.mjs'));
-    assert.ok(!entries.includes('.test.mjs'));
+    assert.ok(!entries.includes('server/api.test.mjs'));
+    assert.ok(entries.includes('workspace/node_modules/mysql2/package.json'));
+    assert.ok(entries.includes('workspace/node_modules/pg/package.json'));
     const unpacked = resolve(root, 'unpacked');
     await mkdir(unpacked);
     execFileSync('tar', ['-xzf', result.archive, '-C', unpacked]);
+    const runtimeRequire = createRequire(resolve(unpacked, 'workspace/server/index.mjs'));
+    assert.equal(typeof runtimeRequire('mysql2').createConnection, 'function');
+    assert.equal(typeof runtimeRequire('pg').Client, 'function');
     const { createApp } = await import(
       pathToFileURL(resolve(unpacked, 'workspace/server/index.mjs')).href
     );

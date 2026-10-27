@@ -5,6 +5,7 @@ import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStore, capabilities, workspaceId, usage } from './store.mjs';
 import { createDrive9, drive9Provider, drive9Region } from './providers/drive9.mjs';
+import { createStarterSql, starterProvider } from './providers/starter-sql.mjs';
 import { readUpload, previewFile, downloadFile } from './file-transfer.mjs';
 import { canAccessResource, normalizeResourceGrant } from './access-policy.mjs';
 
@@ -73,6 +74,7 @@ export async function createApp({
   dataFile = resolve(root, '.data/workspace.json'),
   filesProvider = process.env.WORKSPACE_FILES_PROVIDER || 'local',
   drive9Transport,
+  sqlExecute,
 } = {}) {
   if (!['local', drive9Provider].includes(filesProvider))
     throw new Error('Unknown File System provider.');
@@ -88,7 +90,19 @@ export async function createApp({
     availableCapabilities.filesystem.maxFiles = null;
   }
   const store = await createStore(dataFile);
+  const starterSql = createStarterSql({
+    credentialsFile: dataFile + '.databases.json',
+    execute: sqlExecute,
+  });
   const sessions = new Map();
+  async function recordQuery(resourceId, principal) {
+    await store.mutate((draft) => {
+      draft.queryCount++;
+      draft.resourceQueryCounts ??= {};
+      draft.resourceQueryCounts[resourceId] = (draft.resourceQueryCounts[resourceId] || 0) + 1;
+      event(draft, 'query.executed', resourceId, principal, resourceId);
+    });
+  }
   async function updateProvider(resource, provision = false) {
     if (resource.provider !== drive9Provider) return resource;
     let info;
@@ -135,7 +149,11 @@ export async function createApp({
       if (path === '/api/health')
         return send(200, {
           status: 'ok',
-          mode: filesProvider === drive9Provider ? 'hybrid' : 'demo',
+          mode:
+            filesProvider === drive9Provider ||
+            store.read().resources.some((r) => r.provider === starterProvider)
+              ? 'hybrid'
+              : 'demo',
           filesProvider,
         });
       if (path === '/openapi.json') {
@@ -240,7 +258,9 @@ export async function createApp({
           idempotency: undefined,
           capabilities: availableCapabilities,
           usage: usage(state),
-          mode: state.resources.some((r) => r.provider === drive9Provider) ? 'hybrid' : 'demo',
+          mode: state.resources.some((r) => [drive9Provider, starterProvider].includes(r.provider))
+            ? 'hybrid'
+            : 'demo',
         });
       }
       if (route === '/resources' && req.method === 'GET') {
@@ -469,8 +489,32 @@ export async function createApp({
       if (route === '/queries' && req.method === 'POST') {
         requireScope('queries:execute');
         const input = await body(req);
-        if (requireResource(input.resourceId).kind === 'filesystem')
-          fail(404, 'NOT_FOUND', 'Database not found.');
+        const resource = requireResource(input.resourceId);
+        if (resource.kind === 'filesystem') fail(404, 'NOT_FOUND', 'Database not found.');
+        if (resource.provider === starterProvider) {
+          if (resource.status !== 'active')
+            fail(409, 'DATABASE_UNAVAILABLE', 'This database is not active.');
+          const controller = new AbortController();
+          const onClose = () => controller.abort();
+          res.on('close', onClose);
+          try {
+            const result = await starterSql.execute(resource, input.sql, controller.signal);
+            try {
+              await recordQuery(resource.id, principal);
+            } catch {
+              fail(
+                500,
+                'QUERY_RECORD_FAILED',
+                'SQL completed, but its activity record could not be saved. Do not repeat a write; refresh the workspace instead.',
+              );
+            }
+            return send(200, result);
+          } finally {
+            res.off('close', onClose);
+          }
+        }
+        if (resource.provider && resource.provider !== 'local')
+          fail(503, 'DATABASE_NOT_CONFIGURED', 'This database provider is not configured.');
         const sql = String(input.sql || '')
           .trim()
           .replace(/;$/, '')
@@ -511,13 +555,7 @@ export async function createApp({
             'DEMO_QUERY_ONLY',
             'The local provider supports SELECT 1 and SELECT * FROM agent_events LIMIT n. Connect a cloud provider to execute arbitrary SQL.',
           );
-        await store.mutate((draft) => {
-          draft.queryCount++;
-          draft.resourceQueryCounts ??= {};
-          draft.resourceQueryCounts[input.resourceId] =
-            (draft.resourceQueryCounts[input.resourceId] || 0) + 1;
-          event(draft, 'query.executed', input.resourceId, principal, input.resourceId);
-        });
+        await recordQuery(input.resourceId, principal);
         return send(200, { columns, rows, rowCount: rows.length, mode: 'demo', durationMs: 0 });
       }
       if (route === '/keys' && req.method === 'GET') {

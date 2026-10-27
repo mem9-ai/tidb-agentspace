@@ -2,7 +2,7 @@
 
 Design baseline: 2026-10-27. This is the proposed architecture for an independent developer
 and agent product. The repository currently implements a loopback-only interactive prototype
-with simulated databases and an opt-in real Singapore Drive9 anonymous File System. See [ADR 0004](decisions/0004-drive9-anonymous-provider.md) for the implemented provider boundary. See [ADR 0001](decisions/0001-unified-workspace-key.md) for the
+with demo databases and an opt-in real Singapore Drive9 anonymous File System. Native Starter SQL adapters and private binding are now implemented, with real-cloud acceptance still pending; see [ADR 0005](decisions/0005-starter-sql-gateway.md). See [ADR 0004](decisions/0004-drive9-anonymous-provider.md) for the implemented provider boundary. See [ADR 0001](decisions/0001-unified-workspace-key.md) for the
 accepted single-key authorization model.
 
 ## Product model

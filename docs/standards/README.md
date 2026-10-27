@@ -33,3 +33,5 @@ Tool-specific entry files should route here rather than maintain competing polic
 
 The repository check validates that required documents and instruction links exist. It does
 not prove that a model read them or that the UI conforms to TiUI; code and browser review do.
+
+For database integration, read [the Starter SQL boundary](../decisions/0005-starter-sql-gateway.md): private least-privilege bindings, explicit TLS hostname checks, bounded fresh sessions, no automatic write retries, and separate fixture versus real-cloud evidence.
