@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActionIcon,
   Alert,
@@ -6,98 +6,14 @@ import {
   Button,
   Group,
   Paper,
-  Table,
   Tabs,
   Text,
   Textarea,
 } from '@tidbcloud/uikit';
-import { CodeBlock } from '@tidbcloud/uikit/biz';
 import { IconArrowLeft, IconDownload01, IconXClose } from '@tidbcloud/uikit/icons';
 import { Heading } from '../../ui/WorkspaceHeading';
-import { MarkdownPreview } from './MarkdownPreview';
-import { fileFormat, formatJson, previewCsv } from './file-preview';
-
-function FileContent({ path, content }: { path: string; content: string }) {
-  const preview = useMemo(() => {
-    const format = fileFormat(path);
-    try {
-      return {
-        format,
-        json: format.kind === 'json' ? formatJson(content) : '',
-        csv: format.kind === 'csv' ? previewCsv(content) : null,
-        error: '',
-      };
-    } catch (error) {
-      return {
-        format,
-        json: '',
-        csv: null,
-        error:
-          format.kind === 'json'
-            ? 'Invalid JSON. Showing the original text.'
-            : `${(error as Error).message} Showing the original text.`,
-      };
-    }
-  }, [path, content]);
-  if (!content)
-    return <Text c="carbon.7">This file is empty. Choose Edit source to add content.</Text>;
-  if (preview.error)
-    return (
-      <>
-        <Alert color="yellow" mb={20}>
-          {preview.error}
-        </Alert>
-        <pre className="file-text-preview">{content}</pre>
-      </>
-    );
-  if (preview.format.kind === 'markdown')
-    return (
-      <article className="file-markdown">
-        <MarkdownPreview content={content} />
-      </article>
-    );
-  if (preview.csv)
-    return (
-      <>
-        <div className="file-csv-scroll" tabIndex={0} aria-label="CSV table">
-          <Table withColumnBorders withTableBorder>
-            <Table.Thead>
-              <Table.Tr>
-                {preview.csv.rows[0]?.map((cell, i) => (
-                  <Table.Th key={i}>{cell || `Column ${i + 1}`}</Table.Th>
-                ))}
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {preview.csv.rows.slice(1).map((row, i) => (
-                <Table.Tr key={i}>
-                  {row.map((cell, j) => (
-                    <Table.Td key={j}>{cell}</Table.Td>
-                  ))}
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </div>
-        {preview.csv.truncated && (
-          <Text size="sm" mt={16}>
-            Showing the first 200 rows. Download the file for all rows.
-          </Text>
-        )}
-      </>
-    );
-  if (preview.format.kind === 'json' || preview.format.kind === 'code')
-    return (
-      <CodeBlock
-        language={preview.format.language}
-        withCopyButton={false}
-        codeHighlightProps={{ trim: false, styles: { code: { fontSize: 16, lineHeight: 1.7 } } }}
-      >
-        {preview.format.kind === 'json' ? preview.json : content}
-      </CodeBlock>
-    );
-  return <pre className="file-text-preview">{content}</pre>;
-}
+import { FileContent, FilePreviewBoundary } from './FileContent';
+import { fileFormat } from './file-preview';
 
 export default function FilePreviewPanel({
   path,
@@ -224,7 +140,9 @@ export default function FilePreviewPanel({
           <Tabs.Tab value="source">Edit source</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="preview" className="file-preview-content">
-          <FileContent path={path} content={content} />
+          <FilePreviewBoundary path={path} content={content}>
+            <FileContent path={path} content={content} />
+          </FilePreviewBoundary>
         </Tabs.Panel>
         <Tabs.Panel value="source" className="file-preview-content">
           <Textarea
@@ -243,7 +161,7 @@ export default function FilePreviewPanel({
       </Tabs>
       <footer className="file-preview-footer">
         <Button leftSection={<IconDownload01 size={18} />} onClick={onDownload}>
-          Download
+          {dirty ? 'Download draft' : 'Download'}
         </Button>
         <Button variant="filled" loading={busy} disabled={!dirty || busy} onClick={onSave}>
           Save changes
