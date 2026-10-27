@@ -13,9 +13,10 @@ Explicit user instructions and higher-priority tool requirements still apply.
 
 The project has two connected goals:
 
-1. Build an independent workspace for developers and agents using MySQL-compatible TiDB
-   Starter, PostgreSQL-compatible TiDB Starter, and File System resources. These are separate
-   resource types. Customers use a Workspace Key; backend services manage provider credentials.
+1. Build an independent TiDB workspace for developers and agents. MySQL and File System are
+   currently available; PostgreSQL and persistent Starter integrations remain planned. Resource
+   types have distinct capabilities. Customers use a Workspace Key; backend services manage
+   provider credentials. The README and accepted decisions own current provider availability.
 2. Make intent, specifications, and acceptance cases useful open source contributions.
    Different agents should implement the same accepted behavior, with a harness supplying
    bounded execution, independent evidence, and authorized delivery.
@@ -48,13 +49,13 @@ note. An intent contribution can start with a user problem and a concrete exampl
 
 ## Understand the current state
 
-| Area                | Current interpretation                                                                                                                                                                                                |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Product runtime     | Independently runnable Console and API in a loopback-only prototype, with simulated databases/local files and an explicitly enabled live Drive9 File System adapter. The README owns current capabilities and limits. |
-| Public API          | [Generated OpenAPI](public/openapi.json) and [client types](src/api/schema.d.ts) describe the implemented HTTP surface. The [contract generator](server/generate-openapi.mjs) is the editable source.                 |
-| Product target      | Identity, cloud database adapters, telemetry, billing, SDK/CLI/MCP, and production delivery include proposed work in the architecture.                                                                                |
-| Contribution system | Native GitHub forms, labels, documents, and PR/CI procedures support manual coordination. Autonomous dispatch, isolated runs, and independent specification evaluation remain proposed.                               |
-| Delivery            | [CI/CD policy](docs/ci-cd.md) distinguishes accepted specs, passing checks, merged source, packaged artifacts, and verified deployments.                                                                              |
+| Area                | Current interpretation                                                                                                                                                                                                                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product runtime     | Independently runnable Console and API in a loopback-only prototype. MySQL and Files support explicit live-provider modes; labeled local demo behavior also exists. PostgreSQL is disabled. Read the README for current availability, limits, and configuration. |
+| Public API          | [Generated OpenAPI](public/openapi.json) and [client types](src/api/schema.d.ts) describe the implemented HTTP surface. The [contract generator](server/generate-openapi.mjs) is the editable source.                                                            |
+| Product target      | Persistent Starter/PG, production identity, telemetry, billing, SDK/CLI/MCP, and public delivery include proposed work. Use the architecture, README, and accepted decisions to assess each capability.                                                          |
+| Contribution system | Native GitHub forms, labels, documents, and PR/CI procedures support manual coordination. Autonomous dispatch, isolated runs, and independent specification evaluation remain proposed.                                                                          |
+| Delivery            | [CI/CD policy](docs/ci-cd.md) distinguishes accepted specs, passing checks, merged source, packaged artifacts, and verified deployments.                                                                                                                         |
 
 Distinguish **verified implementation**, **accepted project rule**, and **proposal**. Check
 relevant behavior against current source, contracts, and tests. When documents disagree,
@@ -69,6 +70,7 @@ within the task's scope. A proposed architecture does not establish a runtime ca
 | UI, theme, icons, layout, or frontend dependencies       | [Frontend instructions](src/AGENTS.md) and [TiUI standard](docs/standards/tiui-design-system.md)                                                                                                        |
 | Public API, authorization, or credentials                | [Architecture](docs/architecture.md), [Workspace Key decision](docs/decisions/0001-unified-workspace-key.md), generator, and affected API tests                                                         |
 | File System providers or regions                         | [Regions and modes](docs/decisions/0003-filesystem-regions-and-modes.md), [Drive9 boundary](docs/decisions/0004-drive9-anonymous-provider.md), and [provider verification](docs/drive9-verification.md) |
+| SQL providers, query behavior, or database availability  | [Zero SQL boundary](docs/decisions/0006-zero-sql-gateway.md) and [SQL verification](docs/starter-sql-verification.md)                                                                                   |
 | Build, review, merge, artifacts, or deployment           | [Contribution guide](CONTRIBUTING.md), [CI/CD policy](docs/ci-cd.md), and [workflow sources](.github/workflows/)                                                                                        |
 | Separate Console/API builds, configuration, or packaging | [Independent delivery](docs/independent-delivery.md) and [ADR 0005](docs/decisions/0005-independent-console-and-api.md)                                                                                 |
 | Reusable corrections or integration findings             | [Knowledge maintenance](docs/standards/knowledge-maintenance.md); update the canonical standard or ADR and its entry points                                                                             |
@@ -85,7 +87,7 @@ rules and verification stay in these linked sources.
 | [src/api/](src/api/) and [Console configuration](console/public/config.json)                                                                    | Generated-type HTTP client, API transport, and runtime API-origin selection          |
 | [server/index.mjs](server/index.mjs)                                                                                                            | Current API entry point and request handling                                         |
 | [Authorization](server/access-policy.mjs) and [store](server/store.mjs)                                                                         | Shared resource-grant rules and local persistence                                    |
-| [Providers](server/providers/) and [file transfer](server/file-transfer.mjs)                                                                    | Upstream File System integration and bounded transfers                               |
+| [Providers](server/providers/) and [file transfer](server/file-transfer.mjs)                                                                    | Upstream resource adapters, SQL drivers, and bounded file transfers                  |
 | [Contract generator](server/generate-openapi.mjs) and [generated contract](public/openapi.json)                                                 | Editable description and generated public API artifact                               |
 | [Client type generator](tools/api-contract/generate-client.mjs) and [client declarations](src/api/schema.d.ts)                                  | Isolated build-time generation of Console API types                                  |
 | [API tests](server/api.test.mjs), [provider tests](server/drive9.test.mjs), and colocated feature tests                                         | Behavior, isolation, persistence, and regression evidence                            |
