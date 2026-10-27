@@ -9,6 +9,11 @@ const nodeVersion = (await read('.node-version')).trim();
 assert.equal((await read('.nvmrc')).trim(), nodeVersion, 'Node version files drifted.');
 assert.match(pkg.engines.node, new RegExp(nodeVersion.replaceAll('.', '\\.')));
 assert.equal(pkg.packageManager, `npm@${pkg.engines.npm}`);
+assert.equal(
+  pkg.devDependencies['@types/node'].split('.')[0],
+  nodeVersion.split('.')[0],
+  '@types/node must match the pinned Node runtime major.',
+);
 for (const [name, version] of Object.entries({ ...pkg.dependencies, ...pkg.devDependencies })) {
   assert.match(version, /^\d+\.\d+\.\d+(?:-[\w.-]+)?$/, `Pin an exact version for ${name}.`);
 }

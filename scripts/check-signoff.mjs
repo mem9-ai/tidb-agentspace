@@ -3,7 +3,8 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export function hasSignoff(message, identities) {
-  const trailers = execFileSync('git', ['interpret-trailers', '--parse'], {
+  // Input is a raw commit message, not a patch; Dependabot metadata can contain "---".
+  const trailers = execFileSync('git', ['interpret-trailers', '--parse', '--no-divider'], {
     input: message,
     encoding: 'utf8',
   });
@@ -11,10 +12,17 @@ export function hasSignoff(message, identities) {
     const match = /^Signed-off-by:\s*(.+?)\s*<([^<>\s]+@[^<>\s]+)>\s*$/i.exec(line);
     return (
       match &&
-      identities.some(
-        ({ name, email }) =>
-          match[1].trim() === name.trim() && match[2].toLowerCase() === email.toLowerCase(),
-      )
+      identities.some(({ name, email }) => {
+        const signerEmail = match[2].toLowerCase();
+        if (match[1].trim() !== name.trim()) return false;
+        if (signerEmail === email.toLowerCase()) return true;
+        // GitHub Dependabot uses a different email in its DCO trailer. See docs/ci-cd.md.
+        return (
+          name.trim() === 'dependabot[bot]' &&
+          email.toLowerCase() === '49699333+dependabot[bot]@users.noreply.github.com' &&
+          signerEmail === 'support@github.com'
+        );
+      })
     );
   });
 }

@@ -23,6 +23,9 @@ just to match one machine. Dependencies use exact versions and the committed npm
 Update the version pins, lockfile, and CI expectations together in a focused PR.
 TypeScript 6.0.3 is paired with the supported range of the pinned typescript-eslint parser;
 upgrade the compiler and parser together rather than independently selecting `latest`.
+Keep `@types/node` on the pinned Node runtime's major. Review the compatibility holds in
+`.github/dependabot.yml` when upgrading Node or typescript-eslint; see
+[dependency update triage](docs/ci-cd.md#dependency-update-triage).
 
 ## Agent entry points
 
@@ -117,9 +120,11 @@ Use `git commit --signoff` with your own identity. When an agent acts for Siddon
 `siddontang@gmail.com` for the sign-off while preserving the configured name and existing
 attribution. Do not configure a shared identity for other contributors.
 
-CI checks sign-offs on introduced non-merge commits. There is no bot identity bypass:
-dependency-update commits also need a valid author sign-off before merge. GitHub-generated
-merge commits are excluded; a squash commit is an ordinary commit and needs its own sign-off.
+CI checks sign-offs on introduced non-merge commits, including dependency-update commits.
+The [CI/CD policy](docs/ci-cd.md#commit-sign-off) documents the exact Dependabot email alias
+accepted for its existing trailer; unsigned bots and unrelated identities still fail.
+Merge commits are excluded from the checker; commits created on a contributor's behalf
+still require their sign-off. A squash commit is an ordinary commit and needs its own sign-off.
 
 A reviewer checks product behavior, API compatibility, authorization, credential boundaries,
 and the quality of the tests. During early prototyping, the project owner has authorized
