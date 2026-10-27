@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { packageRuntime } from './package-runtime.mjs';
 
@@ -21,6 +22,7 @@ test('runtime artifacts include the contract and source identity but exclude loc
       '.env',
     ])
       await writeFile(resolve(root, path), 'fixture');
+    await cp(new URL('../server/', import.meta.url), resolve(root, 'server'), { recursive: true });
     await writeFile(resolve(root, 'package.json'), JSON.stringify({ version: '0.0.0-test' }));
     await writeFile(resolve(root, '.node-version'), '24.22.1\n');
     const result = await packageRuntime({
@@ -31,6 +33,23 @@ test('runtime artifacts include the contract and source identity but exclude loc
     const entries = execFileSync('tar', ['-tzf', result.archive], { encoding: 'utf8' });
     assert.ok(entries.includes('workspace/public/openapi.json'));
     assert.ok(entries.includes('workspace/server/store.mjs'));
+    assert.ok(entries.includes('workspace/server/providers/drive9.mjs'));
+    assert.ok(!entries.includes('.test.mjs'));
+    const unpacked = resolve(root, 'unpacked');
+    await mkdir(unpacked);
+    execFileSync('tar', ['-xzf', result.archive, '-C', unpacked]);
+    const { createApp } = await import(
+      pathToFileURL(resolve(unpacked, 'workspace/server/index.mjs')).href
+    );
+    const app = await createApp({ filesProvider: 'local' });
+    await new Promise((resolve) => app.listen(0, '127.0.0.1', resolve));
+    try {
+      const health = await fetch(`http://127.0.0.1:${app.address().port}/api/health`);
+      assert.equal(health.status, 200);
+      assert.equal((await health.json()).mode, 'demo');
+    } finally {
+      await new Promise((resolve) => app.close(resolve));
+    }
     assert.ok(!entries.includes('.data') && !entries.includes('.env'));
     assert.equal(result.info.sourceSha, 'a'.repeat(40));
     assert.equal(result.info.deployed, false);

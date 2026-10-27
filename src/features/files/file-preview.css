@@ -244,3 +244,15 @@
     overflow: auto;
   }
 }
+
+@media (max-width: 600px) {
+  .file-system-summary .file-system-identity {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    width: 100%;
+  }
+  .file-system-identity > :last-child {
+    grid-column: 2;
+    justify-self: start;
+  }
+}

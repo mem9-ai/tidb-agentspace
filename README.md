@@ -20,11 +20,22 @@ npm run preview
 
 `preview` serves the built frontend and API together at http://127.0.0.1:4318. Agent connection samples use the current page origin, so they work with either preview mode. Regenerate the checked-in API contract after contract changes with `node server/generate-openapi.mjs`.
 
+To enable real Singapore anonymous File System creation (explicit opt-in):
+
+```sh
+WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run dev
+```
+
+Create a File System in the Console. The backend provisions the trial and retains its internal
+credential; customers still use a scoped Workspace Key. Existing local files remain local.
+See [the provider decision](docs/decisions/0004-drive9-anonymous-provider.md) for limits,
+private storage, recovery, and live verification instructions.
+
 ## What works
 
 - Nine top-level destinations: overview, databases, files, agent connection, keys, API explorer, monitoring, billing, settings. Each database has its own SQL editor at `#databases/<resource-id>/sql`, preserving the selected database on reload and browser history navigation.
-- Creation of simulated resources with capability and free-tier validation, plus retry-safe idempotency keys.
-- Persistent UTF-8 file and directory operations, text uploads up to 256 KiB, editing, downloading, and empty-directory deletion.
+- Simulated databases/local files by default, plus opt-in live Drive9 anonymous File Systems in Singapore. Creation persists idempotency and provider bindings across restarts.
+- Local UTF-8 files up to 256 KiB; live text/binary uploads up to the negotiated gateway maximum of 1 MiB, metadata listings, bounded previews, streaming downloads, and empty-directory deletion. Markdown, JSON, CSV, code, and text render in a side panel; oversized/binary content remains downloadable.
 - Unified Workspace Keys with action scopes and explicit resource access, 7/30/90-day expiration, last-used metadata, and immediate revocation. Keys are revealed once; only a digest is stored.
 - Working Bearer-authenticated REST APIs, owner-only key administration, OpenAPI 3.1, API explorer, and agent instructions.
 - Local action counts, file usage, latest 200 successful mutation events, and saved profile / workspace settings.
@@ -32,9 +43,9 @@ npm run preview
 
 ## Prototype boundaries
 
-Cloud instances, native connection addresses, and chart series are simulated and labeled in the UI. SQL supports only `SELECT 1 [AS connected]` and `SELECT * FROM agent_events [LIMIT n]`; this is not a MySQL or PostgreSQL server. Files are stored as text in a local JSON state file, not in TiDB Cloud File System. Database usage is not metered; filesystem allowance values are a configurable reference snapshot. One Workspace Key works across its permitted database and file APIs. Both action scopes and resource IDs are enforced; selected resources do not automatically expand to future resources. Path-level policies and native protocol gateways are not implemented.
+Database instances, native database connection addresses, and chart series are simulated and labeled in the UI. SQL supports only `SELECT 1 [AS connected]` and `SELECT * FROM agent_events [LIMIT n]`; this is not a MySQL or PostgreSQL server. Legacy/local files remain text in JSON. File Systems marked `drive9-anonymous` store their content in the real Singapore service, with internal tokens in a separate owner-only ignored file. Database usage is not metered; local filesystem allowances are a reference snapshot. Live trial storage usage, quotas, and billing are not measured. One Workspace Key works across its permitted database and file APIs. Both action scopes and resource IDs are enforced; selected resources do not automatically expand to future resources. Path-level policies and native protocol gateways are not implemented.
 
-Real cloud adapters, internal credential management, native protocol gateways, real telemetry, MCP, sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). This loopback-only guest server is for local validation, not public deployment.
+Database cloud adapters, production secret management, native protocol gateways, real telemetry, MCP, sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). This loopback-only guest server is for local validation, not public deployment.
 
 The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, and TiUI SQL Editor 0.0.6. Shared overrides preserve 16px body text, 48px primary controls, spacious layouts, and Light/Dark/System modes. Inter is self-hosted. See the [TiUI standard](docs/standards/tiui-design-system.md) for compatibility, extension rules, and [migration verification](docs/tiui-migration-verification.md).
 
@@ -42,6 +53,7 @@ The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, 
 
 - `src/App.tsx`, `src/main.tsx`, `src/styles.css`: interactive frontend prototype.
 - `server/index.mjs`: local API, resource/file/key/query handlers, and built frontend serving.
+- `server/providers/drive9.mjs`, `server/file-transfer.mjs`: internal provider adapter and bounded transfers.
 - `server/access-policy.mjs`: shared action/resource authorization support.
 - `src/features/keys/ResourceAccessPicker.tsx`: explicit customer key resource selection.
 - `server/store.mjs`: serialized atomic local state persistence and capability snapshot.
@@ -49,7 +61,7 @@ The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, 
 - `server/api.test.mjs`: behavior tests using temporary state and isolated ports.
 - `docs/architecture.md`: product model, page design, backend boundaries, integration strategy, and release acceptance criteria.
 
-No cloud credentials are configured and no real cloud resources or charges were created.
+The live adapter creates real anonymous trials only when enabled and explicitly requested. CI uses injected provider fixtures and never provisions cloud resources. Local credential files are not encrypted; public deployment is unsupported.
 
 ## Collaboration and delivery
 

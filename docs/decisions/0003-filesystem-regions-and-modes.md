@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-27
 - Scope: File System defaults, additive regional API support, and provider evidence
-- Implementation status: Singapore is the local demo default; no hosted provider is connected.
+- Implementation status: Singapore is the local demo default. [ADR 0004](0004-drive9-anonymous-provider.md) adds an opt-in hosted Anonymous provider while preserving local resources.
 
 ## Context and verified evidence
 

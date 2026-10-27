@@ -1,4 +1,13 @@
 import './features/files/file-preview.css';
+import {
+  contentUrl,
+  fileRequest,
+  useRemoteFiles,
+  downloadRemoteFile,
+  fileSize,
+  type WorkspaceFile,
+  type RemotePreview,
+} from './features/files/remote-files';
 import { regionLabel as region } from './features/resources/regions';
 import {
   ActionIcon,
@@ -78,16 +87,10 @@ type Resource = {
   kind: Kind;
   region: string;
   status: string;
+  provider?: string;
+  uploadLimitBytes?: number;
+  connectionError?: string;
   createdAt: string;
-};
-type WorkspaceFile = {
-  id: string;
-  resourceId: string;
-  path: string;
-  type: 'file' | 'directory';
-  content?: string;
-  updatedAt: string;
-  size?: number;
 };
 type ApiKey = {
   id: string;
@@ -112,11 +115,12 @@ type Usage = {
   resourceId: string;
   name: string;
   kind: Kind;
-  storageBytes: number;
-  storageLimitBytes: number;
-  monthlyRU: number;
+  storageBytes: number | null;
+  storageLimitBytes: number | null;
+  measured?: boolean;
+  monthlyRU: number | null;
   monthlyRULimit: number | null;
-  fileCount: number;
+  fileCount: number | null;
 };
 type Data = {
   workspace: { id: string; name: string; description: string; plan: string };
@@ -129,7 +133,13 @@ type Data = {
   queryCount: number;
   capabilities: Record<
     Kind,
-    { regions: string[]; preview: boolean; storageGiB: number; monthlyRU?: number }
+    {
+      regions: string[];
+      preview: boolean;
+      storageGiB: number | null;
+      monthlyRU?: number;
+      provider?: string;
+    }
   >;
 };
 type QueryResult = {
@@ -194,7 +204,8 @@ function bytes(value: number) {
   if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KiB`;
   return `${(value / 1024 ** 2).toFixed(1)} MiB`;
 }
-function relative(value: string) {
+function relative(value: string | null) {
+  if (!value) return 'Time unavailable';
   const seconds = (Date.now() - Date.parse(value)) / 1000;
   return seconds < 60
     ? 'Just now'
@@ -440,6 +451,7 @@ function App() {
   return (
     <>
       <WorkspaceLayout
+        liveFiles={data.resources.some((r) => r.provider === 'drive9-anonymous')}
         workspaceName={data.workspace.name}
         profileName={data.profile.name}
         active={route}
@@ -659,8 +671,7 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
             <Badge>Free plan</Badge>
           </div>
           <div className="spend-number">
-            $0<span>.00</span>
-            <small>Estimated spend</small>
+            —<small>Billing not connected</small>
           </div>
           <div className="spend-rule">
             <ShieldCheck size={15} />
@@ -674,9 +685,13 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
             <Progress value={0} aria-label="MySQL request units used" />
             <div>
               <span>File System allowance</span>
-              <strong>$5 / month</strong>
+              <strong>
+                {data.capabilities.filesystem.provider === 'drive9-anonymous'
+                  ? 'Service trial limits'
+                  : '$5 / month (reference)'}
+              </strong>
             </div>
-            <small>Shared across the cloud organization.</small>
+            <small>Live trial quota and usage are not measured here.</small>
           </div>
           <Button className="text-link" onClick={() => go('billing')} variant="subtle">
             View usage & limits <ArrowRight size={14} />
@@ -1075,7 +1090,9 @@ function download(name: string, value: string, mime = 'text/plain') {
 }
 function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
   const systems = data.resources.filter((r) => r.kind === 'filesystem');
-  const [system, setSystem] = useState(systems[0]?.id || ''),
+  const [system, setSystem] = useState(
+      systems.find((r) => r.provider === 'drive9-anonymous')?.id || systems[0]?.id || '',
+    ),
     [path, setPath] = useState('/'),
     [search, setSearch] = useState(''),
     [editing, setEditing] = useState<WorkspaceFile | null>(null),
@@ -1085,6 +1102,13 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [deleting, setDeleting] = useState<WorkspaceFile | null>(null);
+  const selectedSystem = systems.find((r) => r.id === system);
+  const remote = selectedSystem?.provider === 'drive9-anonymous';
+  const listing = useRemoteFiles(system, path, remote);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [unavailableReason, setUnavailableReason] = useState('');
+  const previewRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => previewRequest.current?.abort(), []);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [previewTrigger, setPreviewTrigger] = useState<HTMLElement | null>(null);
   const dirty = !!editing && content !== (editing.content || '');
@@ -1094,7 +1118,41 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
     else action();
   }
   const upload = useRef<HTMLInputElement>(null);
-  const files = data.files.filter((f) => f.resourceId === system);
+  const files = remote ? listing.files : data.files.filter((f) => f.resourceId === system);
+  async function openFile(file: WorkspaceFile) {
+    previewRequest.current?.abort();
+    const controller = new AbortController();
+    previewRequest.current = controller;
+    setEditing(file);
+    setContent(file.content || '');
+    setError('');
+    setUnavailableReason('');
+    setPreviewLoading(remote);
+    if (!remote) return;
+    try {
+      const result = await fileRequest<RemotePreview>(contentUrl(file, true), {
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      setEditing({ ...file, content: result.content, size: result.size });
+      setContent(result.content || '');
+      setUnavailableReason(result.unavailableReason || '');
+    } catch (cause) {
+      if (!controller.signal.aborted)
+        setUnavailableReason(cause instanceof Error ? cause.message : 'Unable to load preview.');
+    } finally {
+      if (!controller.signal.aborted) setPreviewLoading(false);
+    }
+  }
+  function closePreview() {
+    previewRequest.current?.abort();
+    setPreviewLoading(false);
+    setEditing(null);
+  }
+  function downloadFile(file: WorkspaceFile) {
+    if (remote) downloadRemoteFile(file);
+    else download(file.path.split('/').pop()!, file.content || '');
+  }
   const children = files
     .filter(
       (f) =>
@@ -1113,6 +1171,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
         body: JSON.stringify({ resourceId, path: target, type, content: text }),
       });
       await refresh();
+      listing.refresh();
       notify(type === 'directory' ? 'Folder created' : 'File saved');
       setNewItem(null);
       setName('');
@@ -1126,6 +1185,29 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
     }
   }
   async function uploadFile(file: globalThis.File) {
+    if (remote) {
+      const target = (path === '/' ? '' : path) + '/' + file.name;
+      if (file.size > (selectedSystem?.uploadLimitBytes || 0)) {
+        notify('This file exceeds the current upload limit.');
+        return;
+      }
+      setBusy(true);
+      try {
+        await fileRequest(contentUrl({ resourceId: system, path: target }), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/octet-stream', 'If-None-Match': '*' },
+          body: file,
+        });
+        listing.refresh();
+        await refresh();
+        notify('File uploaded to Singapore');
+      } catch (cause) {
+        notify(cause instanceof Error ? cause.message : 'Upload failed.');
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     if (file.size > 256 * 1024) {
       notify('Choose a UTF-8 text file smaller than 256 KiB.');
       return;
@@ -1154,9 +1236,10 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
         body: JSON.stringify({ resourceId: system, path: deleting.path }),
       });
       await refresh();
+      listing.refresh();
       notify('Item deleted');
       if (editing?.id === deleting.id) {
-        setEditing(null);
+        closePreview();
         setPendingAction(null);
       }
       setDeleting(null);
@@ -1198,14 +1281,14 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
         ref={upload}
         type="file"
         hidden
-        aria-label="Upload a text file"
+        aria-label="Upload a file"
         onChange={(e) => {
           if (e.target.files?.[0]) void uploadFile(e.target.files[0]);
           e.target.value = '';
         }}
       />
       <div className="file-system-summary">
-        <div className="table-resource">
+        <div className="table-resource file-system-identity">
           <KindIcon kind="filesystem" />
           <div>
             <NativeSelect
@@ -1216,6 +1299,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               onChange={(e) => {
                 const nextSystem = e.target.value;
                 requestPreviewChange(() => {
+                  closePreview();
                   setSystem(nextSystem);
                   setPath('/');
                   setSearch('');
@@ -1233,20 +1317,38 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               {systems[0] ? region(systems.find((r) => r.id === system)!.region) : 'No file system'}
             </small>
           </div>
-          <Badge color="purple">Preview</Badge>
+          <Badge color={remote ? 'green' : 'purple'}>
+            {remote ? 'Live · Anonymous trial' : 'Local demo'}
+          </Badge>
         </div>
         <div className="file-stat">
-          <span>{files.filter((f) => f.type === 'file').length} files</span>
           <span>
-            {bytes(files.reduce((n, f) => n + new TextEncoder().encode(f.content || '').length, 0))}{' '}
-            / 2 GiB
+            {files.filter((f) => f.type === 'file').length} files{remote ? ' in folder' : ''}
+          </span>
+          <span>
+            {bytes(files.reduce((n, f) => n + fileSize(f), 0))}
+            {remote ? ' in folder' : ' / 2 GiB'}
           </span>
           <span>
             <span className="live-dot" />
-            Active
+            {selectedSystem?.status || 'Unavailable'}
           </span>
         </div>
       </div>
+      {(listing.error || selectedSystem?.connectionError) && (
+        <Alert color="red" mb={20}>
+          {listing.error || selectedSystem?.connectionError}
+          <Button
+            ml={16}
+            onClick={() => {
+              listing.refresh();
+              void refresh();
+            }}
+          >
+            Retry
+          </Button>
+        </Alert>
+      )}
       <div className="file-workspace" data-preview={editing ? true : undefined}>
         <Paper className="panel file-browser" withBorder>
           <div className="file-toolbar">
@@ -1290,6 +1392,18 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
+              {remote && (
+                <ActionIcon
+                  aria-label="Refresh files"
+                  onClick={() => {
+                    listing.refresh();
+                    void refresh();
+                  }}
+                  disabled={listing.loading}
+                >
+                  <RefreshCw size={18} />
+                </ActionIcon>
+              )}
               <Button
                 leftSection={React.createElement(FolderPlus, { size: 18 })}
                 disabled={!system || busy}
@@ -1312,6 +1426,11 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               </Button>
             </div>
           </div>
+          {listing.loading && remote && (
+            <Text p={24}>
+              <Loader size="sm" /> Loading files…
+            </Text>
+          )}
           {systems.length ? (
             <Table>
               <Table.Thead>
@@ -1351,9 +1470,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
                             const trigger = event.currentTarget;
                             requestPreviewChange(() => {
                               setPreviewTrigger(trigger);
-                              setEditing(f);
-                              setContent(f.content || '');
-                              setError('');
+                              void openFile(f);
                             });
                           }
                         }}
@@ -1368,19 +1485,13 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
                         <span>
                           <strong>{f.path.split('/').pop()}</strong>
                           <small className="file-cell-meta">
-                            {f.type === 'directory'
-                              ? 'Folder'
-                              : bytes(new TextEncoder().encode(f.content || '').length)}{' '}
-                            · {relative(f.updatedAt)}
+                            {f.type === 'directory' ? 'Folder' : bytes(fileSize(f))} ·{' '}
+                            {relative(f.updatedAt)}
                           </small>
                         </span>
                       </UnstyledButton>
                     </Table.Td>
-                    <Table.Td>
-                      {f.type === 'directory'
-                        ? '—'
-                        : bytes(new TextEncoder().encode(f.content || '').length)}
-                    </Table.Td>
+                    <Table.Td>{f.type === 'directory' ? '—' : bytes(fileSize(f))}</Table.Td>
                     <Table.Td>{relative(f.updatedAt)}</Table.Td>
                     <Table.Td>
                       <div className="row-actions">
@@ -1388,7 +1499,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
                           <ActionIcon
                             className="icon-button"
                             aria-label={`Download ${f.path}`}
-                            onClick={() => download(f.path.split('/').pop()!, f.content || '')}
+                            onClick={() => downloadFile(f)}
                           >
                             <ArrowDownToLine size={15} />
                           </ActionIcon>
@@ -1417,7 +1528,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               action={<Button onClick={onCreate}>Create resource</Button>}
             />
           )}
-          {systems.length > 0 && !children.length && (
+          {systems.length > 0 && !children.length && !listing.loading && !listing.error && (
             <Empty
               title={search ? 'No matching files' : 'An open canvas'}
               description={
@@ -1429,7 +1540,11 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           )}
           <div className="file-browser-footer">
             <span>{children.length} items</span>
-            <span>Local persistent storage · UTF-8 text files up to 256 KiB</span>
+            <span>
+              {remote
+                ? `Stored in Singapore · Upload up to ${bytes(selectedSystem?.uploadLimitBytes || 0)}`
+                : 'Local persistent storage · UTF-8 text files up to 256 KiB'}
+            </span>
           </div>
         </Paper>
         {editing && (
@@ -1445,25 +1560,36 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               path={editing.path}
               content={content}
               dirty={dirty}
+              size={editing.size}
+              loading={previewLoading}
+              unavailableReason={unavailableReason}
               busy={busy}
               error={error}
               pendingChange={!!pendingAction}
               trigger={previewTrigger}
               onChange={setContent}
-              onClose={() => requestPreviewChange(() => setEditing(null))}
+              onClose={() => requestPreviewChange(closePreview)}
               onKeepEditing={() => setPendingAction(null)}
               onDiscard={() => {
                 const action = pendingAction;
                 setPendingAction(null);
                 action?.();
               }}
-              onDownload={() => download(editing.path.split('/').pop()!, content)}
+              onDownload={() =>
+                dirty ? download(editing.path.split('/').pop()!, content) : downloadFile(editing)
+              }
               onSave={async () => {
                 const file = editing;
                 const savedContent = content;
                 if (await saveFile(file.path, 'file', savedContent, file.resourceId)) {
                   setEditing((current) =>
-                    current?.id === file.id ? { ...current, content: savedContent } : current,
+                    current?.id === file.id
+                      ? {
+                          ...current,
+                          content: savedContent,
+                          size: new TextEncoder().encode(savedContent).length,
+                        }
+                      : current,
                   );
                   setPendingAction(null);
                 }
@@ -1554,7 +1680,7 @@ function Connect({ data, copy }: Shared) {
   const snippet = `# Discover your workspace resources\ncurl ${apiOrigin}${base}/resources \\\n  -H "Authorization: Bearer $WORKSPACE_API_KEY"`;
   const python = `import os, json, urllib.request\n\nreq = urllib.request.Request(\n    "${apiOrigin}${base}/resources",\n    headers={"Authorization": "Bearer " + os.environ["WORKSPACE_API_KEY"]}\n)\nwith urllib.request.urlopen(req) as response:\n    print(json.load(response))`;
   const js = `const response = await fetch(\n  "${apiOrigin}${base}/resources",\n  { headers: { Authorization: \`Bearer \${process.env.WORKSPACE_API_KEY}\` } }\n);\nconsole.log(await response.json());`;
-  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiOrigin}/api/v1\nOpenAPI: ${apiOrigin}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for UTF-8 file operations and /queries for demo SQL.\nOnly call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local demo. Cloud provisioning and native DB connections are simulated.\nDo not upload credentials to the workspace or commit them to Git.\n`;
+  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiOrigin}/api/v1\nOpenAPI: ${apiOrigin}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for directory listings and UTF-8 writes; Drive9 listings contain metadata only. Use /files/content?resourceId=ID&path=PATH for binary upload/download and add preview=1 for bounded text previews. Use /queries for demo SQL.\nOnly call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local Workspace gateway. File Systems marked drive9-anonymous use real Singapore trial storage. Databases and cloud telemetry remain simulated.\nDo not upload credentials to the workspace or commit them to Git.\n`;
   return (
     <>
       <PageHeading
@@ -2084,11 +2210,13 @@ function Monitoring({ data }: Shared) {
                         </div>
                       </Table.Td>
                       <Table.Td>{kindLabel[r.kind]}</Table.Td>
-                      <Table.Td>Local demo</Table.Td>
+                      <Table.Td>
+                        {r.provider === 'drive9-anonymous' ? 'Live trial' : 'Local demo'}
+                      </Table.Td>
                       <Table.Td>
                         <span className="status">
                           <span className="live-dot" />
-                          Available
+                          {r.connectionError ? 'Connection unavailable' : r.status}
                         </span>
                       </Table.Td>
                     </Table.Tr>
@@ -2166,16 +2294,16 @@ function Billing({ data }: Shared) {
           <Badge>FREE PLAN</Badge>
           <Heading level={2}>Room to experiment.</Heading>
           <Text component="p">
-            This prototype keeps spending at $0. Cloud allowances are tracked separately for each
-            service.
+            Billing is not connected. Anonymous File Systems use the service’s trial limits;
+            database usage remains simulated.
           </Text>
         </div>
         <div className="billing-total">
-          <span>Estimated charges</span>
+          <span>Billing integration</span>
           <strong>
-            $0.00<small>/ month</small>
+            —<small>Not connected</small>
           </strong>
-          <span>Local demo · No cloud charges generated</span>
+          <span>No settled charges or cloud quota measurements available</span>
         </div>
       </Paper>
       <div className="section-title">
@@ -2213,13 +2341,23 @@ function Billing({ data }: Shared) {
                 </Table.Td>
                 <Table.Td>
                   <div className="usage-cell">
-                    <span>
-                      {bytes(u.storageBytes)} <small>/ {u.storageLimitBytes / 1024 ** 3} GiB</small>
-                    </span>
-                    <Progress
-                      value={Math.min((u.storageBytes / u.storageLimitBytes) * 100, 100)}
-                      aria-label={`${u.name} storage used`}
-                    />
+                    {u.measured === false ? (
+                      <span>Not measured · Service trial limits apply</span>
+                    ) : (
+                      <>
+                        <span>
+                          {bytes(u.storageBytes ?? 0)}{' '}
+                          <small>/ {(u.storageLimitBytes || 0) / 1024 ** 3} GiB</small>
+                        </span>
+                        <Progress
+                          value={Math.min(
+                            ((u.storageBytes ?? 0) / (u.storageLimitBytes || 1)) * 100,
+                            100,
+                          )}
+                          aria-label={`${u.name} storage used`}
+                        />
+                      </>
+                    )}
                   </div>
                 </Table.Td>
                 <Table.Td>
@@ -2234,7 +2372,11 @@ function Billing({ data }: Shared) {
                 </Table.Td>
                 <Table.Td>
                   <Badge color="carbon">
-                    {u.kind === 'mysql' ? 'Starter Free' : 'Free · Preview'}
+                    {u.measured === false
+                      ? 'Anonymous trial'
+                      : u.kind === 'mysql'
+                        ? 'Starter Free'
+                        : 'Free · Preview'}
                   </Badge>
                 </Table.Td>
               </Table.Tr>
@@ -2245,14 +2387,14 @@ function Billing({ data }: Shared) {
       <div className="two-column">
         <Paper className="panel info-panel" withBorder>
           <Folder size={22} />
-          <Heading level={3}>File System free tier</Heading>
+          <Heading level={3}>File System provider limits</Heading>
           <Text component="p">
-            $5 monthly allowance shared across the cloud organization. Without a credit card: one
-            file system per region, 2 GiB storage and 2,000 files per system.
+            Anonymous File Systems use service-enforced trial limits. This Console does not yet
+            measure total storage, file-count quotas, or cloud charges.
           </Text>
           <Text className="muted" component="p">
-            The $5 allowance reduces cloud charges; it is not a universal spend cap. This local demo
-            does not meter cloud spend.
+            TiDB Cloud account-bound allowances are separate from the anonymous trial. The file
+            browser shows the current upload limit.
           </Text>
           <a
             className="text-link"
@@ -2271,8 +2413,8 @@ function Billing({ data }: Shared) {
             PostgreSQL Preview can restrict usage at its allowance.
           </Text>
           <Text className="muted" component="p">
-            At a File System capacity limit, existing files remain readable and new writes stop.
-            Native cloud enforcement must be verified when connecting providers.
+            File System requests can be rejected when a trial quota is reached. Keep important files
+            backed up; anonymous trials are for evaluation.
           </Text>
         </Paper>
       </div>
@@ -2402,6 +2544,9 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
     [selectedRegion, setRegion] = useState(data.capabilities.mysql.regions[0]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
+  const createId = useRef(crypto.randomUUID());
+  const liveFiles =
+    kind === 'filesystem' && data.capabilities.filesystem.provider === 'drive9-anonymous';
   function changeKind(k: Kind) {
     setKind(k);
     setRegion(data.capabilities[k].regions[0]);
@@ -2414,11 +2559,11 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
     try {
       await api(base + '/resources', {
         method: 'POST',
-        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        headers: { 'Idempotency-Key': createId.current },
         body: JSON.stringify({ name, kind, region: selectedRegion }),
       });
       await refresh();
-      notify('Demo resource created');
+      notify(liveFiles ? 'Trial File System requested' : 'Demo resource created');
       onClose();
     } catch (e) {
       setError((e as Error).message);
@@ -2428,7 +2573,12 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
   }
   const existingFileSystem =
     kind === 'filesystem'
-      ? data.resources.find((r) => r.kind === kind && r.region === selectedRegion)
+      ? data.resources.find(
+          (r) =>
+            r.kind === kind &&
+            r.region === selectedRegion &&
+            (r.provider || 'local') === (data.capabilities.filesystem.provider || 'local'),
+        )
       : undefined;
   const limited = !!existingFileSystem;
   return (
@@ -2470,7 +2620,9 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
               {kind === 'postgresql'
                 ? 'PostgreSQL Preview is configured for N. Virginia in this prototype.'
                 : kind === 'filesystem'
-                  ? 'Defaults to AWS Singapore. The free-tier allowance applies per region.'
+                  ? liveFiles
+                    ? 'Anonymous trial hosted in AWS Singapore.'
+                    : 'Defaults to AWS Singapore. The free-tier allowance applies per region.'
                   : 'Available regions depend on the resource provider.'}
             </>
           }
@@ -2486,22 +2638,32 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
         <div className="plan-selection">
           <div>
             <Zap size={17} />
-            <strong>Free tier</strong>
+            <strong>{liveFiles ? 'Anonymous trial' : 'Free tier'}</strong>
             <Badge>{kind === 'mysql' ? 'Starter' : 'Preview'}</Badge>
           </div>
           <Text component="p">
-            {data.capabilities[kind].storageGiB} GiB storage
-            {kind === 'filesystem'
-              ? ' · 2,000 files'
-              : ` · ${data.capabilities[kind].monthlyRU! / 1000000}M RU / month`}
+            {liveFiles ? (
+              'Real file storage. Trial quotas are enforced by the service.'
+            ) : (
+              <>
+                {data.capabilities[kind].storageGiB} GiB storage
+                {kind === 'filesystem'
+                  ? ' · 2,000 files'
+                  : ` · ${data.capabilities[kind].monthlyRU! / 1000000}M RU / month`}
+              </>
+            )}
           </Text>
-          <small>Local simulation. No real cloud resource will be provisioned.</small>
+          <small>
+            {liveFiles
+              ? 'Creates a real trial File System. Internal credentials are managed by the Workspace service.'
+              : 'Local simulation. No real cloud resource will be provisioned.'}
+          </small>
         </div>
         {limited && (
           <Alert className="notice" color="peacock" icon={<CircleHelp size={17} />}>
             <span>
-              Your free file system already exists in this region. Use {existingFileSystem?.name} to
-              continue.
+              A file system for this provider already exists in this region. Use{' '}
+              {existingFileSystem?.name} to continue.
             </span>
           </Alert>
         )}
@@ -2572,8 +2734,8 @@ function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose:
           </div>
           <Alert className="notice" color="peacock" icon={<ShieldCheck size={17} />}>
             <span>
-              Save this in your agent’s environment as WORKSPACE_API_KEY. This demo key only works
-              against the local workspace API.
+              Save this in your agent’s environment as WORKSPACE_API_KEY. This Workspace Key only
+              works against the local workspace API.
             </span>
           </Alert>
           <div className="modal-actions">
@@ -2620,7 +2782,7 @@ function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose:
                           (
                             {
                               'resources:read': 'Discover workspace resources',
-                              'resources:write': 'Create demo resources',
+                              'resources:write': 'Create resources',
                               'files:read': 'Read files and context',
                               'files:write': 'Create, edit, and delete files',
                               'queries:execute': 'Run supported sample SQL',
@@ -2739,15 +2901,20 @@ function Connection({
       <ChoiceTabs value={tab} onChange={setTab} options={['REST API', 'JavaScript', 'Python']}>
         <Code
           copy={copy}
-          label="WORKSPACE API · LOCAL DEMO"
+          label={
+            r.provider === 'drive9-anonymous'
+              ? 'WORKSPACE API · LIVE FILE TRIAL'
+              : 'WORKSPACE API · LOCAL DEMO'
+          }
           value={tab === 'REST API' ? shell : tab === 'JavaScript' ? javascript : python}
         />
       </ChoiceTabs>
       <div className="connection-note">
         <ShieldCheck size={18} />
         <Text component="p">
-          Provider credentials are handled by the service. This preview uses a local provider;
-          native database connections and file mounts are not available yet.
+          {r.provider === 'drive9-anonymous'
+            ? 'Files are stored in the Singapore anonymous trial. Use the file content API for upload, preview, and download; provider credentials stay inside the service. Native file mounts are not available yet.'
+            : 'Provider credentials are handled by the service. This resource uses a local demo provider; native database connections and file mounts are not available yet.'}
         </Text>
       </div>
       <div className="modal-actions">

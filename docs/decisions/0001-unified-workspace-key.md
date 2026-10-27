@@ -43,7 +43,7 @@ requiring the customer to manage upstream credentials.
   Future streaming connections, cached grants, and delegated sessions need bounded lifetimes,
   revocation propagation, and their own integration tests before release.
 - Internal credential rotation is independent of the public key. Production broker/secret
-  storage and real providers are proposed work, not features implemented by this demo.
+  storage remains proposed work. [ADR 0004](0004-drive9-anonymous-provider.md) implements a real File System adapter with separate local private credential storage.
 - Exact resource selection plus common action scopes is implemented. Per-resource action
   differences and path-level rules can extend the policy later without changing key identity.
 

@@ -11,7 +11,16 @@ const schemas = {
       name: { type: 'string' },
       kind: { enum: ['mysql', 'postgresql', 'filesystem'] },
       region: { type: 'string' },
-      status: { enum: ['active'] },
+      status: { enum: ['active', 'provisioning', 'failed', 'suspended', 'deleting', 'deleted'] },
+      provider: {
+        enum: ['local', 'drive9-anonymous'],
+        description: 'Missing on legacy local resources.',
+      },
+      uploadLimitBytes: {
+        type: 'integer',
+        description: 'Negotiated gateway upload limit; zero means uploads are unavailable.',
+      },
+      connectionError: { type: 'string' },
       createdAt: { type: 'string', format: 'date-time' },
     },
   },
@@ -24,7 +33,7 @@ const schemas = {
       type: { enum: ['file', 'directory'] },
       content: { type: 'string' },
       size: { type: 'integer' },
-      updatedAt: { type: 'string', format: 'date-time' },
+      updatedAt: { type: ['string', 'null'], format: 'date-time' },
     },
   },
   Key: {
@@ -94,6 +103,11 @@ function operation(
       403: response(ref('Error'), 'Insufficient permission'),
       404: response(ref('Error'), 'Resource or endpoint not found'),
       409: response(ref('Error'), 'Conflict or free-tier limit'),
+      413: response(ref('Error'), 'Content too large'),
+      415: response(ref('Error'), 'Unsupported content type'),
+      429: response(ref('Error'), 'Provider quota or rate limit'),
+      502: response(ref('Error'), 'Provider unavailable or invalid response'),
+      503: response(ref('Error'), 'Provider binding needs operator recovery'),
       422: response(ref('Error'), 'Unsupported demo SQL'),
     },
   };
@@ -117,63 +131,80 @@ const paths = {
     get: operation('listResources', 'Discover databases and file systems', 'resources:read', {
       output: array(ref('Resource')),
     }),
-    post: operation('createResource', 'Create a simulated resource', 'resources:write', {
-      status: 201,
-      parameters: [
-        {
-          name: 'Idempotency-Key',
-          in: 'header',
-          schema: { type: 'string', maxLength: 128 },
-          description:
-            'Optional key for retry-safe creation. Reusing it with a different body returns 409.',
-        },
-      ],
-      input: {
-        type: 'object',
-        required: ['name', 'kind', 'region'],
-        properties: {
-          name: { type: 'string', pattern: '^[a-z][a-z0-9-]{2,39}$' },
-          kind: { enum: ['mysql', 'postgresql', 'filesystem'] },
-          region: {
-            enum: [...new Set(Object.values(capabilities).flatMap((value) => value.regions))],
-            description:
-              'Choose a region supported by the resource kind in capabilities. The first supported region is the Console default.',
-          },
-        },
-      },
-      output: { type: 'object', properties: { data: ref('Resource'), mode: { const: 'demo' } } },
-    }),
-  },
-  [ws + '/files']: {
-    get: operation('listFiles', 'List file metadata and UTF-8 contents', 'files:read', {
-      parameters: [{ name: 'resourceId', in: 'query', required: true, schema: str }],
-      output: array(ref('File')),
-    }),
-    put: operation(
-      'writeFile',
-      'Create or replace a local UTF-8 file or directory',
-      'files:write',
+    post: operation(
+      'createResource',
+      'Create a resource using the configured provider',
+      'resources:write',
       {
+        status: 201,
+        parameters: [
+          {
+            name: 'Idempotency-Key',
+            in: 'header',
+            schema: { type: 'string', maxLength: 128 },
+            description:
+              'Optional key for retry-safe creation. Reusing it with a different body returns 409.',
+          },
+        ],
         input: {
           type: 'object',
-          required: ['resourceId', 'path', 'type'],
+          required: ['name', 'kind', 'region'],
           properties: {
-            resourceId: str,
-            path: {
-              type: 'string',
+            name: { type: 'string', pattern: '^[a-z][a-z0-9-]{2,39}$' },
+            kind: { enum: ['mysql', 'postgresql', 'filesystem'] },
+            region: {
+              enum: [...new Set(Object.values(capabilities).flatMap((value) => value.regions))],
               description:
-                'Absolute virtual path. Parent directory must exist; traversal is rejected.',
-            },
-            type: { enum: ['file', 'directory'] },
-            content: {
-              type: 'string',
-              description: 'Required for files; maximum 256 KiB of UTF-8 text.',
+                'Choose a region supported by the resource kind in capabilities. The first supported region is the Console default.',
             },
           },
         },
-        output: { type: 'object', properties: { data: ref('File') } },
+        output: {
+          type: 'object',
+          properties: { data: ref('Resource'), mode: { enum: ['demo', 'live'] } },
+        },
       },
     ),
+  },
+  [ws + '/files']: {
+    get: operation(
+      'listFiles',
+      'List files (Drive9 metadata only; local files include UTF-8 contents)',
+      'files:read',
+      {
+        parameters: [
+          { name: 'resourceId', in: 'query', required: true, schema: str },
+          {
+            name: 'path',
+            in: 'query',
+            schema: str,
+            description: 'Directory to list. Drive9 defaults to root; omit for all local files.',
+          },
+        ],
+        output: array(ref('File')),
+      },
+    ),
+    put: operation('writeFile', 'Create or replace a UTF-8 file or directory', 'files:write', {
+      input: {
+        type: 'object',
+        required: ['resourceId', 'path', 'type'],
+        properties: {
+          resourceId: str,
+          path: {
+            type: 'string',
+            description:
+              'Absolute virtual path. Parent directory must exist; traversal is rejected.',
+          },
+          type: { enum: ['file', 'directory'] },
+          content: {
+            type: 'string',
+            description:
+              'Required for files; maximum 256 KiB of UTF-8 text and subject to the provider upload limit.',
+          },
+        },
+      },
+      output: { type: 'object', properties: { data: ref('File') } },
+    }),
     delete: operation('deleteFile', 'Delete a file or empty directory', 'files:write', {
       input: {
         type: 'object',
@@ -182,6 +213,76 @@ const paths = {
       },
       output: { type: 'object', properties: { deleted: { type: 'boolean' } } },
     }),
+  },
+  [ws + '/files/content']: {
+    get: {
+      ...operation(
+        'downloadFile',
+        'Download original bytes or request a bounded text preview (Drive9)',
+        'files:read',
+        {
+          parameters: [
+            { name: 'resourceId', in: 'query', required: true, schema: str },
+            { name: 'path', in: 'query', required: true, schema: str },
+            {
+              name: 'preview',
+              in: 'query',
+              schema: { enum: ['1'] },
+              description:
+                'Returns JSON content or an unavailableReason. Never reads files larger than 128 KiB for preview.',
+            },
+          ],
+        },
+      ),
+      responses: {
+        200: {
+          description:
+            'Attachment download, or JSON when preview=1. Local resources use /files instead.',
+          content: {
+            'application/octet-stream': { schema: { type: 'string', format: 'binary' } },
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { content: str, size: { type: 'integer' }, unavailableReason: str },
+              },
+            },
+          },
+        },
+        ...Object.fromEntries(
+          [400, 401, 403, 404, 502, 503].map((status) => [
+            status,
+            response(ref('Error'), 'Request failed'),
+          ]),
+        ),
+      },
+    },
+    put: {
+      ...operation(
+        'uploadFile',
+        'Upload original bytes to Drive9 (gateway maximum 1 MiB)',
+        'files:write',
+        {
+          parameters: [
+            { name: 'resourceId', in: 'query', required: true, schema: str },
+            { name: 'path', in: 'query', required: true, schema: str },
+            {
+              name: 'If-None-Match',
+              in: 'header',
+              schema: { const: '*' },
+              description: 'Only create a new file; fail if the path exists.',
+            },
+          ],
+          output: {
+            type: 'object',
+            properties: { saved: { type: 'boolean' }, size: { type: 'integer' } },
+          },
+        },
+      ),
+      requestBody: {
+        required: true,
+        content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+      },
+    },
   },
   [ws + '/queries']: {
     post: operation(
@@ -215,20 +316,29 @@ const paths = {
     ),
   },
   [ws + '/usage']: {
-    get: operation('getUsage', 'Get local usage and configured cloud allowances', 'usage:read', {
-      output: array({
-        type: 'object',
-        properties: {
-          resourceId: str,
-          kind: str,
-          storageBytes: { type: 'integer' },
-          storageLimitBytes: { type: 'integer' },
-          monthlyRU: { type: 'integer' },
-          monthlyRULimit: { type: ['integer', 'null'] },
-          fileCount: { type: 'integer' },
-        },
-      }),
-    }),
+    get: operation(
+      'getUsage',
+      'Get local usage; live trial usage and allowances are unmeasured',
+      'usage:read',
+      {
+        output: array({
+          type: 'object',
+          properties: {
+            resourceId: str,
+            kind: str,
+            storageBytes: { type: ['integer', 'null'] },
+            storageLimitBytes: { type: ['integer', 'null'] },
+            monthlyRU: { type: ['integer', 'null'] },
+            monthlyRULimit: { type: ['integer', 'null'] },
+            fileCount: { type: ['integer', 'null'] },
+            measured: {
+              type: 'boolean',
+              description: 'False for live trial usage; null counters are unknown, not zero.',
+            },
+          },
+        }),
+      },
+    ),
   },
   [ws + '/events']: {
     get: operation(

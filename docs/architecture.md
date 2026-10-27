@@ -2,7 +2,7 @@
 
 Design baseline: 2026-10-27. This is the proposed architecture for an independent developer
 and agent product. The repository currently implements a loopback-only interactive prototype
-with simulated cloud resources. See [ADR 0001](decisions/0001-unified-workspace-key.md) for the
+with simulated databases and an opt-in real Singapore Drive9 anonymous File System. See [ADR 0004](decisions/0004-drive9-anonymous-provider.md) for the implemented provider boundary. See [ADR 0001](decisions/0001-unified-workspace-key.md) for the
 accepted single-key authorization model.
 
 ## Product model
@@ -68,11 +68,11 @@ target, displayed database, and URL consistent when adding future database tools
 File System opens files in a non-modal reading panel beside the desktop file list. On narrow
 screens the panel has an explicit return to the list. Markdown is rendered by default;
 JSON, CSV, common source files, and plain text have text-based previews with an Edit source
-tab. Save keeps the current file open. The existing API still accepts only UTF-8 text up to
-256 KiB; automatic preview has a separate 128 KiB budget plus line/complexity limits.
+tab. Save keeps the current file open. The local JSON API accepts UTF-8 text up to
+256 KiB; live resources additionally support bounded binary transfers through the gateway; automatic preview has a separate 128 KiB budget plus line/complexity limits.
 Oversized, unsupported, invalid, or failed previews show a reason and retain Download and
 navigation. Text source editing remains available; correcting a draft can restore its preview.
-Binary images, PDFs, and rich media are not implemented. See the
+Binary files can be uploaded/downloaded on live resources, but image, PDF, and media rendering are not implemented. See the
 [file reading standard](standards/tiui-design-system.md#theme-responsive-behavior-and-interaction).
 
 File System creation and fresh demo workspaces default to AWS Singapore (`aws-ap-southeast-1`),

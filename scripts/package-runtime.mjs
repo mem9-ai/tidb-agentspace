@@ -17,6 +17,8 @@ export async function packageRuntime({ root, destination, sourceSha }) {
       'server/index.mjs',
       'server/store.mjs',
       'server/access-policy.mjs',
+      'server/file-transfer.mjs',
+      'server/providers/drive9.mjs',
       'public/openapi.json',
     ]) {
       const target = resolve(staged, path);
