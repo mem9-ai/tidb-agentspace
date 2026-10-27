@@ -148,6 +148,17 @@ verified, and record that as a remaining gap.
   Follow the [information architecture](../architecture.md#console-information-architecture)
   when adding tools; do not add a workspace-level SQL Editor entry. Verify valid, unavailable,
   and empty-resource paths; keep the resource context when extending the editor.
+- **File reading (accepted and implemented, owner correction 2026-10-27):** open files in
+  an inline right-hand panel, keeping the file list usable on desktop. Do not use a centered
+  modal or a backdrop for routine reading. On narrow screens show the reading panel with a
+  clear Back to files action. Default Markdown to rendered content and keep an explicit
+  source-editing tab; preserve unsaved drafts when switching files, changing file systems,
+  or closing the panel. Keep save failures recoverable in place. Reuse TiUI Paper, Tabs,
+  Textarea, Table, and CodeBlock; semantic document markup is appropriate for Markdown.
+  Treat content as untrusted: no raw HTML execution, unsafe links, or automatic remote image
+  fetches. Add new formats only when the storage contract supports them. Verify both themes,
+  desktop/narrow layouts, keyboard/focus, rendering boundaries, and save/discard flows; revisit
+  this policy when adding binary or streaming storage. See [verification](../file-preview-verification.md).
 - The selector offers Light, Dark, and System; map the visible System option to TiUI `auto`.
   Use the library's persistence/system support. Migrate the current `tidb-workspace-theme`
   preference once (`system` → `auto`) so integration does not reset a user's selection.

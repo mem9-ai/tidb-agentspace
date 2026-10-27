@@ -1,3 +1,4 @@
+import './features/files/file-preview.css';
 import {
   ActionIcon,
   Alert,
@@ -66,6 +67,7 @@ import { databaseEditorHash, parseWorkspaceRoute } from './features/navigation/w
 import type { Route, WorkspaceRoute } from './features/navigation/workspace-route';
 
 const WorkspaceSqlInput = lazy(() => import('./features/sql/WorkspaceSqlInput'));
+const FilePreviewPanel = lazy(() => import('./features/files/FilePreviewPanel'));
 type WorkspaceIcon = React.ComponentType<IconProps>;
 
 type Kind = 'mysql' | 'postgresql' | 'filesystem';
@@ -1085,6 +1087,14 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [deleting, setDeleting] = useState<WorkspaceFile | null>(null);
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+  const [previewTrigger, setPreviewTrigger] = useState<HTMLElement | null>(null);
+  const dirty = !!editing && content !== (editing.content || '');
+  function requestPreviewChange(action: () => void) {
+    if (busy) return;
+    if (dirty) setPendingAction(() => action);
+    else action();
+  }
   const upload = useRef<HTMLInputElement>(null);
   const files = data.files.filter((f) => f.resourceId === system);
   const children = files
@@ -1096,22 +1106,23 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
     .sort((a, b) =>
       a.type === b.type ? a.path.localeCompare(b.path) : a.type === 'directory' ? -1 : 1,
     );
-  async function saveFile(target: string, type: string, text = '') {
+  async function saveFile(target: string, type: string, text = '', resourceId = system) {
     setBusy(true);
     setError('');
     try {
       await api(base + '/files', {
         method: 'PUT',
-        body: JSON.stringify({ resourceId: system, path: target, type, content: text }),
+        body: JSON.stringify({ resourceId, path: target, type, content: text }),
       });
       await refresh();
       notify(type === 'directory' ? 'Folder created' : 'File saved');
       setNewItem(null);
-      setEditing(null);
       setName('');
+      return true;
     } catch (e) {
       setError((e as Error).message);
       notify((e as Error).message);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -1146,6 +1157,10 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
       });
       await refresh();
       notify('Item deleted');
+      if (editing?.id === deleting.id) {
+        setEditing(null);
+        setPendingAction(null);
+      }
       setDeleting(null);
     } catch (e) {
       setError((e as Error).message);
@@ -1199,9 +1214,15 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               aria-label="File system"
               className="heading-select"
               value={system}
+              disabled={busy}
               onChange={(e) => {
-                setSystem(e.target.value);
-                setPath('/');
+                const nextSystem = e.target.value;
+                requestPreviewChange(() => {
+                  setSystem(nextSystem);
+                  setPath('/');
+                  setSearch('');
+                  setEditing(null);
+                });
               }}
             >
               {systems.map((r) => (
@@ -1228,173 +1249,231 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           </span>
         </div>
       </div>
-      <Paper className="panel file-browser" withBorder>
-        <div className="file-toolbar">
-          <div className="path-crumb">
-            <ActionIcon aria-label="File system root" onClick={() => setPath('/')}>
-              <Folder size={16} />
-            </ActionIcon>
-            <UnstyledButton onClick={() => setPath('/')}>shared-files</UnstyledButton>
-            {path
-              .split('/')
-              .filter(Boolean)
-              .map((s, i) => (
-                <React.Fragment key={i}>
-                  <ChevronRight size={13} />
-                  <UnstyledButton
-                    onClick={() =>
-                      setPath(
-                        '/' +
-                          path
-                            .split('/')
-                            .filter(Boolean)
-                            .slice(0, i + 1)
-                            .join('/'),
-                      )
-                    }
-                  >
-                    {s}
-                  </UnstyledButton>
-                </React.Fragment>
-              ))}
-          </div>
-          <div className="inline-controls">
-            <div className="input-with-icon">
-              <Search size={14} />
-              <TextInput
-                aria-label="Search files"
-                placeholder="Filter files…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+      <div className="file-workspace" data-preview={editing ? true : undefined}>
+        <Paper className="panel file-browser" withBorder>
+          <div className="file-toolbar">
+            <div className="path-crumb">
+              <ActionIcon aria-label="File system root" onClick={() => setPath('/')}>
+                <Folder size={16} />
+              </ActionIcon>
+              <UnstyledButton onClick={() => setPath('/')}>
+                {systems.find((r) => r.id === system)?.name}
+              </UnstyledButton>
+              {path
+                .split('/')
+                .filter(Boolean)
+                .map((s, i) => (
+                  <React.Fragment key={i}>
+                    <ChevronRight size={13} />
+                    <UnstyledButton
+                      onClick={() =>
+                        setPath(
+                          '/' +
+                            path
+                              .split('/')
+                              .filter(Boolean)
+                              .slice(0, i + 1)
+                              .join('/'),
+                        )
+                      }
+                    >
+                      {s}
+                    </UnstyledButton>
+                  </React.Fragment>
+                ))}
             </div>
-            <Button
-              leftSection={React.createElement(FolderPlus, { size: 18 })}
-              disabled={!system}
-              onClick={() => {
-                setNewItem('directory');
-                setError('');
-              }}
-            >
-              New folder
-            </Button>
-            <Button
-              leftSection={React.createElement(Plus, { size: 18 })}
-              disabled={!system}
-              onClick={() => {
-                setNewItem('file');
-                setError('');
-              }}
-            >
-              New file
-            </Button>
+            <div className="inline-controls">
+              <div className="input-with-icon">
+                <Search size={14} />
+                <TextInput
+                  aria-label="Search files"
+                  placeholder="Filter files…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <Button
+                leftSection={React.createElement(FolderPlus, { size: 18 })}
+                disabled={!system || busy}
+                onClick={() => {
+                  setNewItem('directory');
+                  setError('');
+                }}
+              >
+                New folder
+              </Button>
+              <Button
+                leftSection={React.createElement(Plus, { size: 18 })}
+                disabled={!system || busy}
+                onClick={() => {
+                  setNewItem('file');
+                  setError('');
+                }}
+              >
+                New file
+              </Button>
+            </div>
           </div>
-        </div>
-        {systems.length ? (
-          <Table>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Name</Table.Th>
-                <Table.Th>Size</Table.Th>
-                <Table.Th>Last modified</Table.Th>
-                <Table.Th />
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {path !== '/' && (
+          {systems.length ? (
+            <Table>
+              <Table.Thead>
                 <Table.Tr>
-                  <Table.Td colSpan={4}>
-                    <UnstyledButton
-                      className="file-name"
-                      onClick={() => setPath(path.slice(0, path.lastIndexOf('/')) || '/')}
-                    >
-                      <Folder size={17} />
-                      ..
-                    </UnstyledButton>
-                  </Table.Td>
+                  <Table.Th>Name</Table.Th>
+                  <Table.Th>Size</Table.Th>
+                  <Table.Th>Last modified</Table.Th>
+                  <Table.Th />
                 </Table.Tr>
-              )}
-              {children.map((f) => (
-                <Table.Tr key={f.id}>
-                  <Table.Td>
-                    <UnstyledButton
-                      className="file-name"
-                      onClick={() => {
-                        if (f.type === 'directory') {
-                          setPath(f.path);
-                          setSearch('');
-                        } else {
-                          setEditing(f);
-                          setContent(f.content || '');
-                          setError('');
-                        }
-                      }}
-                    >
-                      {f.type === 'directory' ? (
-                        <Folder className="folder-icon" size={19} />
-                      ) : f.path.endsWith('.md') ? (
-                        <FileText size={18} />
-                      ) : (
-                        <FileCode2 size={18} />
-                      )}
-                      <strong>{f.path.split('/').pop()}</strong>
-                    </UnstyledButton>
-                  </Table.Td>
-                  <Table.Td>
-                    {f.type === 'directory'
-                      ? '—'
-                      : bytes(new TextEncoder().encode(f.content || '').length)}
-                  </Table.Td>
-                  <Table.Td>{relative(f.updatedAt)}</Table.Td>
-                  <Table.Td>
-                    <div className="row-actions">
-                      {f.type === 'file' && (
-                        <ActionIcon
-                          className="icon-button"
-                          aria-label={`Download ${f.path}`}
-                          onClick={() => download(f.path.split('/').pop()!, f.content || '')}
-                        >
-                          <ArrowDownToLine size={15} />
-                        </ActionIcon>
-                      )}
-                      <ActionIcon
-                        className="icon-button"
-                        aria-label={`Delete ${f.path}`}
-                        onClick={() => {
-                          setDeleting(f);
-                          setError('');
+              </Table.Thead>
+              <Table.Tbody>
+                {path !== '/' && (
+                  <Table.Tr>
+                    <Table.Td colSpan={4}>
+                      <UnstyledButton
+                        className="file-name"
+                        onClick={() => setPath(path.slice(0, path.lastIndexOf('/')) || '/')}
+                      >
+                        <Folder size={17} />
+                        ..
+                      </UnstyledButton>
+                    </Table.Td>
+                  </Table.Tr>
+                )}
+                {children.map((f) => (
+                  <Table.Tr key={f.id} data-selected={editing?.id === f.id || undefined}>
+                    <Table.Td>
+                      <UnstyledButton
+                        className="file-name"
+                        aria-current={editing?.id === f.id ? 'true' : undefined}
+                        onClick={(event) => {
+                          if (f.type === 'directory') {
+                            setPath(f.path);
+                            setSearch('');
+                          } else {
+                            if (editing?.id === f.id) return;
+                            const trigger = event.currentTarget;
+                            requestPreviewChange(() => {
+                              setPreviewTrigger(trigger);
+                              setEditing(f);
+                              setContent(f.content || '');
+                              setError('');
+                            });
+                          }
                         }}
                       >
-                        <Trash2 size={15} />
-                      </ActionIcon>
-                    </div>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        ) : (
-          <Empty
-            title="Add your first file system"
-            description="Keep agent context available across sessions."
-            action={<Button onClick={onCreate}>Create resource</Button>}
-          />
-        )}
-        {systems.length > 0 && !children.length && (
-          <Empty
-            title={search ? 'No matching files' : 'An open canvas'}
-            description={
-              search
-                ? 'Try another file name.'
-                : 'Create a file or upload some context to get started.'
+                        {f.type === 'directory' ? (
+                          <Folder className="folder-icon" size={19} />
+                        ) : f.path.endsWith('.md') ? (
+                          <FileText size={18} />
+                        ) : (
+                          <FileCode2 size={18} />
+                        )}
+                        <span>
+                          <strong>{f.path.split('/').pop()}</strong>
+                          <small className="file-cell-meta">
+                            {f.type === 'directory'
+                              ? 'Folder'
+                              : bytes(new TextEncoder().encode(f.content || '').length)}{' '}
+                            · {relative(f.updatedAt)}
+                          </small>
+                        </span>
+                      </UnstyledButton>
+                    </Table.Td>
+                    <Table.Td>
+                      {f.type === 'directory'
+                        ? '—'
+                        : bytes(new TextEncoder().encode(f.content || '').length)}
+                    </Table.Td>
+                    <Table.Td>{relative(f.updatedAt)}</Table.Td>
+                    <Table.Td>
+                      <div className="row-actions">
+                        {f.type === 'file' && (
+                          <ActionIcon
+                            className="icon-button"
+                            aria-label={`Download ${f.path}`}
+                            onClick={() => download(f.path.split('/').pop()!, f.content || '')}
+                          >
+                            <ArrowDownToLine size={15} />
+                          </ActionIcon>
+                        )}
+                        <ActionIcon
+                          className="icon-button"
+                          aria-label={`Delete ${f.path}`}
+                          disabled={busy}
+                          onClick={() => {
+                            setDeleting(f);
+                            setError('');
+                          }}
+                        >
+                          <Trash2 size={15} />
+                        </ActionIcon>
+                      </div>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          ) : (
+            <Empty
+              title="Add your first file system"
+              description="Keep agent context available across sessions."
+              action={<Button onClick={onCreate}>Create resource</Button>}
+            />
+          )}
+          {systems.length > 0 && !children.length && (
+            <Empty
+              title={search ? 'No matching files' : 'An open canvas'}
+              description={
+                search
+                  ? 'Try another file name.'
+                  : 'Create a file or upload some context to get started.'
+              }
+            />
+          )}
+          <div className="file-browser-footer">
+            <span>{children.length} items</span>
+            <span>Local persistent storage · UTF-8 text files up to 256 KiB</span>
+          </div>
+        </Paper>
+        {editing && (
+          <Suspense
+            fallback={
+              <Paper withBorder p={24}>
+                <Loader aria-label="Loading file preview" />
+              </Paper>
             }
-          />
+          >
+            <FilePreviewPanel
+              key={editing.id}
+              path={editing.path}
+              content={content}
+              dirty={dirty}
+              busy={busy}
+              error={error}
+              pendingChange={!!pendingAction}
+              trigger={previewTrigger}
+              onChange={setContent}
+              onClose={() => requestPreviewChange(() => setEditing(null))}
+              onKeepEditing={() => setPendingAction(null)}
+              onDiscard={() => {
+                const action = pendingAction;
+                setPendingAction(null);
+                action?.();
+              }}
+              onDownload={() => download(editing.path.split('/').pop()!, content)}
+              onSave={async () => {
+                const file = editing;
+                const savedContent = content;
+                if (await saveFile(file.path, 'file', savedContent, file.resourceId)) {
+                  setEditing((current) =>
+                    current?.id === file.id ? { ...current, content: savedContent } : current,
+                  );
+                  setPendingAction(null);
+                }
+              }}
+            />
+          </Suspense>
         )}
-        <div className="file-browser-footer">
-          <span>{children.length} items</span>
-          <span>Local persistent storage · UTF-8 text files up to 256 KiB</span>
-        </div>
-      </Paper>
+      </div>
       <Alert className="notice quiet" color="peacock" icon={<ShieldCheck size={17} />}>
         <span>
           Use the same Workspace Key for databases and files. File operations require access to this
@@ -1448,37 +1527,6 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               </Button>
             </div>
           </form>
-        </Modal>
-      )}
-      {editing && (
-        <Modal
-          wide
-          title={editing.path.split('/').pop()!}
-          description={editing.path + ' · Local file editor'}
-          onClose={() => setEditing(null)}
-        >
-          <Textarea
-            className="file-editor"
-            aria-label="File content"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            spellCheck={false}
-          />
-          {error && (
-            <Alert className="inline-error" color="red">
-              {error}
-            </Alert>
-          )}
-          <div className="modal-actions">
-            <Button onClick={() => setEditing(null)}>Cancel</Button>
-            <Button
-              variant="filled"
-              disabled={busy}
-              onClick={() => saveFile(editing.path, 'file', content)}
-            >
-              Save changes
-            </Button>
-          </div>
         </Modal>
       )}
       {deleting && (

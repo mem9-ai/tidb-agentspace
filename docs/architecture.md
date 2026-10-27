@@ -65,6 +65,13 @@ results/errors. An unavailable or non-database resource must never silently sele
 database. Legacy `#sql` links open the database list for explicit selection. Keep the query
 target, displayed database, and URL consistent when adding future database tools.
 
+File System opens files in a non-modal reading panel beside the desktop file list. On narrow
+screens the panel has an explicit return to the list. Markdown is rendered by default;
+JSON, CSV, common source files, and plain text have text-based previews with an Edit source
+tab. Save keeps the current file open. The existing API still accepts only UTF-8 text up to
+256 KiB; binary images, PDFs, and rich media are not implemented. See the
+[file reading standard](standards/tiui-design-system.md#theme-responsive-behavior-and-interaction).
+
 Use real TiUI components, its semantic palette and theme provider, with the Workspace's
 larger typography and spacing requirements. The [TiUI standard](standards/tiui-design-system.md)
 defines verified defaults, component selection, light/dark/system behavior, responsive

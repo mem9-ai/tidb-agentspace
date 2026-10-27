@@ -645,12 +645,6 @@ small {
   flex: 1;
   min-width: 0;
 }
-.file-editor {
-  font-family: var(--mono);
-}
-.file-editor textarea {
-  min-height: 360px;
-}
 .modal-actions {
   display: flex;
   align-items: center;
