@@ -58,6 +58,14 @@ Official references: [Codex instructions](https://developers.openai.com/codex/gu
 
 ## Change workflow
 
+Contributions can start with a user problem, detailed specification, acceptance case, code,
+or a harness improvement. An intent/specification contribution does not require implementing
+the feature. Read [intent driven contribution](docs/standards/intent-driven-development.md)
+for API-first and agent-experience principles, specification acceptance, and the proposed
+delivery harness. Use the [feature specification template](docs/templates/feature-spec.md)
+for new capabilities or consequential changes; a small fix can use a reproduction and
+regression test. Existing review and merge authority remains governed by the CI/CD policy.
+
 1. Read the task, `AGENTS.md`, relevant code/tests, and applicable standards/architecture notes.
 2. Inspect the working tree. Use a focused branch or checkout and preserve unrelated edits.
 3. State the intended result and scope. For multi-person work, agree on file ownership;

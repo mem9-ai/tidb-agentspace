@@ -62,6 +62,12 @@ hosting plan and repository configuration.
 
 ## CI contract
 
+The [intent driven development system](standards/intent-driven-development.md) proposes
+specification acceptance, independent evaluation, persistent run evidence, and a staged
+delivery harness. These extend the development model; the permissions and implemented
+checks in this policy remain authoritative. Specification metadata and an agent's success
+report do not grant merge or deployment rights.
+
 Local and remote validation both use `npm run check`. It checks runtime versions, repository
 configuration, formatting, lint, API generation, tests, strict types, and a production build.
 Checks run without cloud credentials. The test suite uses temporary directories and ephemeral
