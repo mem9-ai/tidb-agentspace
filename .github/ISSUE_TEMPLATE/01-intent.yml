@@ -1,0 +1,51 @@
+name: Intent or feature proposal
+description: Contribute a user problem and desired outcome without having to write code.
+title: '[Intent]: '
+labels: ['kind:intent', 'stage:triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe a useful outcome. Maintainers can help refine it into a specification,
+        and another contributor or agent can implement it. Code and detailed design are optional.
+        See the [GitHub contribution workflow](https://github.com/siddontang/tidb.ai/blob/main/docs/standards/github-contribution-workflow.md).
+        Keep credentials and private user data out of this Issue. Submission does not start an agent run.
+  - type: input
+    id: user
+    attributes:
+      label: Who needs this?
+      description: Identify the user or agent and the job they are trying to complete.
+      placeholder: An application agent reading context from one File System
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is the problem?
+      description: Describe the current obstacle and why solving it matters.
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Concrete scenario
+      description: Give one example with the relevant starting state and attempted action.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Explain the result you want and how someone could observe success.
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Boundaries or non-goals
+      description: Optional permission, compatibility, data, or operational constraints.
+  - type: textarea
+    id: references
+    attributes:
+      label: Related work or design ideas
+      description: Optional Issues, documentation, evidence, or an existing specification proposal.

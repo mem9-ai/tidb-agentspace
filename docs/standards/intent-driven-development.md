@@ -21,6 +21,12 @@ The target is **consistent observable behavior**, including permissions, failure
 and operational limits. Source code need not be identical. A finite test suite provides evidence
 for specified cases; it cannot prove two implementations equivalent in every circumstance.
 
+GitHub is the accepted collaboration interface for this model. Follow the
+[GitHub contribution workflow](github-contribution-workflow.md) for intent Issues, specification
+PRs, bounded task handoffs, implementation PRs, and delivery evidence. Accepted specifications
+live at Git revisions; ordinary Issue edits do not silently change the baseline. Native forms
+and manual coordination are the initial implementation; autonomous dispatch remains proposed.
+
 ## Contribution as a shared contract
 
 Recognize several first-class contributions:

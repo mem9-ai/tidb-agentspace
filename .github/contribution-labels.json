@@ -1,0 +1,52 @@
+[
+  {
+    "name": "kind:intent",
+    "color": "5319e7",
+    "description": "User problem or feature intent; implementation is optional"
+  },
+  {
+    "name": "kind:task",
+    "color": "1d76db",
+    "description": "Bounded implementation, evaluation, or workflow task"
+  },
+  {
+    "name": "kind:acceptance",
+    "color": "0e8a16",
+    "description": "Acceptance scenario, reproduction, or counterexample"
+  },
+  {
+    "name": "stage:triage",
+    "color": "ededed",
+    "description": "Awaiting assessment of fit, priority, or missing information"
+  },
+  {
+    "name": "stage:design",
+    "color": "d4c5f9",
+    "description": "Refining behavior, specification, or acceptance"
+  },
+  {
+    "name": "stage:ready",
+    "color": "bfdadc",
+    "description": "Scope, baseline, dependencies, and authority checked for assignment"
+  },
+  {
+    "name": "stage:implementing",
+    "color": "fbca04",
+    "description": "An owner is preparing the candidate change"
+  },
+  {
+    "name": "stage:review",
+    "color": "f9d0c4",
+    "description": "Evaluation, diff review, or integration in progress"
+  },
+  {
+    "name": "stage:done",
+    "color": "c2e0c6",
+    "description": "Promised delivery endpoint verified with evidence"
+  },
+  {
+    "name": "blocked",
+    "color": "b60205",
+    "description": "Waiting on a recorded dependency or decision; keep the active stage"
+  }
+]

@@ -68,6 +68,12 @@ delivery harness. These extend the development model; the permissions and implem
 checks in this policy remain authoritative. Specification metadata and an agent's success
 report do not grant merge or deployment rights.
 
+Use the [GitHub contribution workflow](standards/github-contribution-workflow.md) for Issue
+intake, specification/implementation PR links, and requirement evidence. A specification PR
+does not close its parent feature intent. Labels and future dispatch commands do not replace
+the review, latest-head checks, sign-offs, or hosting requirements in this policy. No automatic
+agent dispatcher is installed by the Issue templates.
+
 Local and remote validation both use `npm run check`. It checks runtime versions, repository
 configuration, formatting, lint, API generation, tests, strict types, and a production build.
 Checks run without cloud credentials. The test suite uses temporary directories and ephemeral

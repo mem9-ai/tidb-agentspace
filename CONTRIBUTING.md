@@ -66,6 +66,15 @@ delivery harness. Use the [feature specification template](docs/templates/featur
 for new capabilities or consequential changes; a small fix can use a reproduction and
 regression test. Existing review and merge authority remains governed by the CI/CD policy.
 
+Start on GitHub with an [intent](https://github.com/siddontang/tidb.ai/issues/new?template=01-intent.yml),
+[bounded task](https://github.com/siddontang/tidb.ai/issues/new?template=02-task.yml), or
+[acceptance case](https://github.com/siddontang/tidb.ai/issues/new?template=03-acceptance.yml).
+Follow the [GitHub contribution workflow](docs/standards/github-contribution-workflow.md):
+refine the intent, merge a specification PR, implement against that revision in a separate
+PR, evaluate the candidate, and complete the agreed delivery endpoint. A design PR references
+the parent Issue without closing it. Native templates and manual labels are available;
+agent dispatch commands and the automated controller remain proposed.
+
 1. Read the task, `AGENTS.md`, relevant code/tests, and applicable standards/architecture notes.
 2. Inspect the working tree. Use a focused branch or checkout and preserve unrelated edits.
 3. State the intended result and scope. For multi-person work, agree on file ownership;
