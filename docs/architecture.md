@@ -151,6 +151,33 @@ PG and Files management/credential/metering operation. Confirm public or interna
 contracts before implementing adapters; do not invent provider endpoints or scrape browser
 credentials. [TiDB API overview](https://docs.pingcap.com/api/)
 
+### TiDB Cloud integration policy
+
+**Accepted project rule, 2026-10-28:** the owner requires direct official API or database
+protocol integration by default, without Ti CLI as a product dependency. This applies to
+all contributors and coding agents adding or changing TiDB Cloud resource adapters.
+
+Use the documented service API for resource management and file operations, and a compatible
+driver for native database protocols. An SDK may wrap the official API if its contract and
+credential handling are verified. Keep these calls in backend provider adapters, with customer
+Workspace Key checks before provider access and upstream credentials managed internally.
+
+Do not shell out to Ti CLI, parse its output, or depend on its installation, login session,
+or local configuration for product operations, builds, CI, or deployment. Optional manual
+diagnostics may use the CLI when useful; they must not become a prerequisite for the product.
+If a required API or protocol capability is unverified, record the gap and verify the official
+contract rather than assuming CLI availability establishes a supported integration.
+
+Current implementation: Zero provisioning uses its HTTP API, SQL uses the mysql2 driver, and
+Drive9 file operations use its service API; see [ADR 0006](decisions/0006-zero-sql-gateway.md)
+and [ADR 0004](decisions/0004-drive9-anonymous-provider.md). This records implementation evidence,
+not a claim that every future TiDB Cloud feature has a verified API.
+
+Review adapter calls, dependency manifests, build/release scripts, and setup documentation for
+CLI prerequisites. Run the shared quality gate without requiring Ti CLI; current checks do not
+automatically prove every integration follows this rule. Revisit it only when the owner changes
+the integration requirement, documenting any accepted exception and its scope.
+
 ## Customer identity and single-key access
 
 Production customers sign in to this product. Human, agent, and service-account principals
