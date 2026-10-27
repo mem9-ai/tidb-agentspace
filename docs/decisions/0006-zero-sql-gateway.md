@@ -10,6 +10,9 @@ The owner explicitly chose TiDB Cloud Zero for the first real SQL integration an
 remove PG if no equivalent is available. The running product offers MySQL and Files. Persistent
 Starter and PG remain future integrations, not capabilities implied by the current Console.
 
+The implementation follows the shared [TiDB Cloud integration policy](../architecture.md#tidb-cloud-integration-policy):
+direct HTTP provisioning and native MySQL execution, with no Ti CLI product dependency.
+
 Verified on 2026-10-28:
 
 - [TiDB Cloud Zero](https://zero.tidbcloud.com/) documents anonymous
