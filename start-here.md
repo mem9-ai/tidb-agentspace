@@ -1,0 +1,142 @@
+# Start here with TiDB Agent Workspace
+
+This is the shared entry point for people and coding agents opening the repository for the
+first time. Follow the reading route, then inspect the sources for your task. The shared
+context lives in the repository; private chat history and personal agent settings are not
+prerequisites. Read an entry point once rather than following its links in a loop.
+
+This guide explains the project and routes to authoritative documents. Detailed rules remain
+in [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), and the linked standards.
+Explicit user instructions and higher-priority tool requirements still apply.
+
+## What we are building
+
+The project has two connected goals:
+
+1. Build an independent workspace for developers and agents using MySQL-compatible TiDB
+   Starter, PostgreSQL-compatible TiDB Starter, and File System resources. These are separate
+   resource types. Customers use a Workspace Key; backend services manage provider credentials.
+2. Make intent, specifications, and acceptance cases useful open source contributions.
+   Different agents should implement the same accepted behavior, with a harness supplying
+   bounded execution, independent evidence, and authorized delivery.
+
+The design direction is API-first and agent-experience-first. Console and agent interfaces
+share domain operations and backend authorization. Observable behavior, permissions, failures,
+and compatibility form the agreement between implementations; identical code is not required.
+Read the [architecture](docs/architecture.md) and
+[development system](docs/standards/intent-driven-development.md) for the full reasoning.
+
+## First reading route
+
+| Order | Read                                                                                                                                    | Understand                                                                                 |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 1     | [Shared instructions](AGENTS.md)                                                                                                        | Working together, coding, validation, and delivery rules; skip rereading if already loaded |
+| 2     | [What works](README.md#what-works) and [prototype boundaries](README.md#prototype-boundaries)                                           | Current capabilities, simulations, and limitations                                         |
+| 3     | [Architecture](docs/architecture.md) and [accepted decisions](docs/decisions/README.md)                                                 | Product goals and resource, credential, and design boundaries                              |
+| 4     | [Development system](docs/standards/intent-driven-development.md) and [GitHub workflow](docs/standards/github-contribution-workflow.md) | Intent, accepted specifications, implementation, evaluation, and delivery                  |
+| 5     | [Contribution guide](CONTRIBUTING.md) and [standards index](docs/standards/README.md)                                                   | Reproducible setup and the references required for your task                               |
+| 6     | Task Issue, accepted spec revision, affected code/tests, and nested instructions                                                        | Exact behavior, dependencies, authority, and required evidence                             |
+
+Complete this overview before implementation, then read the applicable references deeply.
+Load documents relevant to the task rather than every historical screenshot or verification
+note. An intent contribution can start with a user problem and a concrete example.
+
+## Understand the current state
+
+| Area                | Current interpretation                                                                                                                                                                  |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product runtime     | Loopback-only prototype with simulated databases/local files and an explicitly enabled live Drive9 File System adapter. The README owns current capabilities and limits.                |
+| Public API          | [Generated OpenAPI](public/openapi.json) describes implemented HTTP behavior; [its generator](server/generate-openapi.mjs) is the editable source.                                      |
+| Product target      | Identity, cloud database adapters, telemetry, billing, SDK/CLI/MCP, and production delivery include proposed work in the architecture.                                                  |
+| Contribution system | Native GitHub forms, labels, documents, and PR/CI procedures support manual coordination. Autonomous dispatch, isolated runs, and independent specification evaluation remain proposed. |
+| Delivery            | [CI/CD policy](docs/ci-cd.md) distinguishes accepted specs, passing checks, merged source, packaged artifacts, and verified deployments.                                                |
+
+Distinguish **verified implementation**, **accepted project rule**, and **proposal**. Check
+relevant behavior against current source, contracts, and tests. When documents disagree,
+inspect their status and evidence, explain the conflict, and correct the canonical source
+within the task's scope. A proposed architecture does not establish a runtime capability.
+
+## Read for your task
+
+| Task                                               | Required starting points                                                                                                                                                                                |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Intent, specification, or agent delivery           | [Development system](docs/standards/intent-driven-development.md), [GitHub workflow](docs/standards/github-contribution-workflow.md), and [feature template](docs/templates/feature-spec.md)            |
+| UI, theme, icons, layout, or frontend dependencies | [Frontend instructions](src/AGENTS.md) and [TiUI standard](docs/standards/tiui-design-system.md)                                                                                                        |
+| Public API, authorization, or credentials          | [Architecture](docs/architecture.md), [Workspace Key decision](docs/decisions/0001-unified-workspace-key.md), generator, and affected API tests                                                         |
+| File System providers or regions                   | [Regions and modes](docs/decisions/0003-filesystem-regions-and-modes.md), [Drive9 boundary](docs/decisions/0004-drive9-anonymous-provider.md), and [provider verification](docs/drive9-verification.md) |
+| Build, review, merge, artifacts, or deployment     | [Contribution guide](CONTRIBUTING.md), [CI/CD policy](docs/ci-cd.md), and [workflow sources](.github/workflows/)                                                                                        |
+| Reusable corrections or integration findings       | [Knowledge maintenance](docs/standards/knowledge-maintenance.md); update the canonical standard or ADR and its entry points                                                                             |
+
+Backend action/resource authorization, service-owned provider secrets, shared domain
+operations, and actual TiUI components/adapters are central project boundaries. Their detailed
+rules and verification stay in these linked sources.
+
+## Find the implementation
+
+| Location                                                                                                                                        | Responsibility                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| [src/](src/)                                                                                                                                    | React Console; feature modules in `src/features/`, shared TiUI adapters in `src/ui/` |
+| [server/index.mjs](server/index.mjs)                                                                                                            | Current API entry point and request handling                                         |
+| [Authorization](server/access-policy.mjs) and [store](server/store.mjs)                                                                         | Shared resource-grant rules and local persistence                                    |
+| [Providers](server/providers/) and [file transfer](server/file-transfer.mjs)                                                                    | Upstream File System integration and bounded transfers                               |
+| [Contract generator](server/generate-openapi.mjs) and [generated contract](public/openapi.json)                                                 | Editable description and generated public API artifact                               |
+| [API tests](server/api.test.mjs), [provider tests](server/drive9.test.mjs), and colocated feature tests                                         | Behavior, isolation, persistence, and regression evidence                            |
+| [scripts/](scripts/) and [.github/workflows/](.github/workflows/)                                                                               | Runtime/repository/sign-off checks, packaging, and CI                                |
+| [Standards](docs/standards/) and [decisions](docs/decisions/)                                                                                   | Reusable engineering rules and architectural decisions                               |
+| [Issue forms](.github/ISSUE_TEMPLATE/), [PR template](.github/PULL_REQUEST_TEMPLATE.md), and [feature template](docs/templates/feature-spec.md) | Intake, task handoffs, evidence, and specification authoring                         |
+
+Accepted feature specifications use `specs/gh-<parent-issue-number>/spec.md` when created through
+the GitHub workflow. Verify that a specification directory, interface, or integration actually
+exists in the checkout before relying on it. Search and inspect before editing.
+
+## Set up and verify
+
+Select Node from [.node-version](.node-version) and npm from [package.json](package.json),
+following [reproducible setup](CONTRIBUTING.md#reproducible-setup). Use the committed lockfile:
+
+```sh
+npm ci
+npm run check
+npm run dev
+```
+
+The README explains local addresses and optional provider behavior. Default development and
+tests need no cloud credentials. Live-adapter use can cause external effects and must stay
+within the task's authorization.
+
+Use focused checks during development, then `npm run check` before handoff. Public contract
+changes update the generator and run `npm run api:generate`, keeping implementation, clients,
+and tests aligned. Visible UI changes need browser inspection, viewports, and screenshots.
+Report the checks and results that actually ran.
+
+## Take a task through GitHub
+
+1. Find or open the relevant [Issue](https://github.com/siddontang/tidb.ai/issues), using the
+   [native forms](https://github.com/siddontang/tidb.ai/issues/new/choose). Check ownership
+   and preserve unrelated work.
+2. Read the accepted specification at its Git revision, or a sufficient small-fix reproduction.
+   Identify requirement IDs, dependencies, allowed changes, and the delivery endpoint.
+3. Use a focused branch/checkout. Propose material requirement changes through a specification
+   amendment; ordinary Issue edits do not replace the accepted baseline.
+4. Open a PR with task/parent/spec links and requirement-to-evidence mapping. A design PR
+   references its parent feature without prematurely closing it.
+5. Review the actual candidate, run applicable checks, preserve attribution and sign-offs,
+   and follow current merge policy. Record evidence before completing the promised endpoint.
+
+The [GitHub workflow](docs/standards/github-contribution-workflow.md) owns roles, labels,
+handoffs, and Issue closure. Its `/agent` commands describe a proposed controller and do not
+currently dispatch work. Deployment needs its own configured target and authority under CI/CD
+policy.
+
+## Confirm that you are ready to contribute
+
+Be able to identify the user problem, current implementation limits, accepted behavior and
+revision, applicable standards, relevant code/tests, required checks, and authorized delivery
+endpoint. Resolve missing facts from the linked sources before guessing. Bring material
+unresolved product or permission decisions to the responsible maintainer while continuing
+independent authorized work.
+
+Maintain this map when architecture, source layout, document locations, or delivery status
+changes. Update detailed rules in their canonical homes and adjust these links. Repository
+checks verify required routing and document availability; they cannot prove that a client
+loaded the documents or an agent understood them.
