@@ -1,50 +1,72 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Activity,
-  ArrowDownToLine,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUpRight,
-  BookOpen,
-  Check,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  CircleHelp,
-  Code2,
-  Command,
-  Copy,
-  CreditCard,
-  Database,
-  ExternalLink,
-  FileCode2,
-  FileText,
-  Folder,
-  FolderPlus,
-  KeyRound,
-  LayoutDashboard,
-  Loader2,
-  Menu,
-  MoreHorizontal,
-  Play,
-  Plus,
-  RefreshCw,
-  Search,
-  Settings,
-  ShieldCheck,
-  Sparkles,
-  Terminal,
-  Trash2,
-  Upload,
-  Workflow,
-  X,
-  Zap,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+  ActionIcon,
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Checkbox,
+  Loader,
+  NativeSelect,
+  NavLink,
+  Paper,
+  Progress,
+  SegmentedControl,
+  Table,
+  Text,
+  Textarea,
+  TextInput,
+  UnstyledButton,
+  Anchor,
+  Notification,
+  Fieldset,
+} from '@tidbcloud/uikit';
+import { WorkspaceModal as Modal } from './ui/WorkspaceModal';
+import { CodeExample as Code } from './ui/CodeExample';
+import { ChoiceTabs } from './ui/ChoiceTabs';
+import { Heading } from './ui/WorkspaceHeading';
+import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  IconActivity as Activity,
+  IconDownload01 as ArrowDownToLine,
+  IconArrowLeft as ArrowLeft,
+  IconArrowRight as ArrowRight,
+  IconArrowUpRight as ArrowUpRight,
+  IconCheck as Check,
+  IconCheckCircle as CheckCircle2,
+  IconChevronRight as ChevronRight,
+  IconHelpCircle as CircleHelp,
+  IconCode02 as Code2,
+  IconCommand as Command,
+  IconCopy03 as Copy,
+  IconCreditCard01 as CreditCard,
+  IconDatabase01 as Database,
+  IconFileCode01 as FileCode2,
+  IconFile01 as FileText,
+  IconFolder as Folder,
+  IconFolderPlus as FolderPlus,
+  IconKey01 as KeyRound,
+  IconLayoutGrid01 as LayoutDashboard,
+  IconPlay as Play,
+  IconPlus as Plus,
+  IconRefreshCw01 as RefreshCw,
+  IconSearchLg as Search,
+  IconSettings01 as Settings,
+  IconShieldTick as ShieldCheck,
+  IconStars01 as Sparkles,
+  IconTerminal as Terminal,
+  IconTrash01 as Trash2,
+  IconUpload01 as Upload,
+  IconGitBranch01 as Workflow,
+  IconZap as Zap,
+} from '@tidbcloud/uikit/icons';
+import type { IconProps } from '@tidbcloud/uikit/icons';
 import { ResourceAccessPicker } from './features/keys/ResourceAccessPicker';
-import { ThemePicker } from './features/theme/ThemePicker';
+import { WorkspaceLayout } from './ui/WorkspaceLayout';
 import { databaseEditorHash, parseWorkspaceRoute } from './features/navigation/workspace-route';
 import type { Route, WorkspaceRoute } from './features/navigation/workspace-route';
+
+const WorkspaceSqlInput = lazy(() => import('./features/sql/WorkspaceSqlInput'));
+type WorkspaceIcon = React.ComponentType<IconProps>;
 
 type Kind = 'mysql' | 'postgresql' | 'filesystem';
 type Resource = {
@@ -114,7 +136,7 @@ type QueryResult = {
   mode: 'demo';
   durationMs: number;
 };
-const routes: Record<Route, { label: string; icon: LucideIcon; group: string }> = {
+const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string }> = {
   overview: { label: 'Overview', icon: LayoutDashboard, group: 'Workspace' },
   databases: { label: 'Databases', icon: Database, group: 'Workspace' },
   files: { label: 'File System', icon: Folder, group: 'Workspace' },
@@ -191,29 +213,14 @@ function KindIcon({ kind, small = false }: { kind: Kind; small?: boolean }) {
     </span>
   );
 }
-function Badge({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: string }) {
-  return <span className={`badge ${tone}`}>{children}</span>;
-}
-function Button({
-  children,
-  variant = 'secondary',
-  icon: Icon,
-  className = '',
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string; icon?: LucideIcon }) {
-  return (
-    <button className={`button ${variant} ${className}`} {...props}>
-      {Icon && <Icon size={15} />} {children}
-    </button>
-  );
-}
+
 function Empty({
   icon: Icon = Folder,
   title,
   description,
   action,
 }: {
-  icon?: LucideIcon;
+  icon?: WorkspaceIcon;
   title: string;
   description: string;
   action?: React.ReactNode;
@@ -221,110 +228,13 @@ function Empty({
   return (
     <div className="empty">
       <Icon size={28} />
-      <h3>{title}</h3>
-      <p>{description}</p>
+      <Heading level={3}>{title}</Heading>
+      <Text component="p">{description}</Text>
       {action}
     </div>
   );
 }
-function Code({
-  value,
-  copy,
-  label,
-}: {
-  value: string;
-  copy: (value: string) => void;
-  label?: string;
-}) {
-  return (
-    <div className="code-block">
-      {label && (
-        <div className="code-label">
-          <span>{label}</span>
-          <button aria-label="Copy code" onClick={() => copy(value)}>
-            <Copy size={14} />
-          </button>
-        </div>
-      )}
-      <pre>{value}</pre>
-      {!label && (
-        <button className="code-copy" aria-label="Copy code" onClick={() => copy(value)}>
-          <Copy size={15} />
-        </button>
-      )}
-    </div>
-  );
-}
-function Modal({
-  title,
-  description,
-  children,
-  onClose,
-  wide = false,
-}: {
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-  onClose: () => void;
-  wide?: boolean;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const closeRef = useRef(onClose);
-  useEffect(() => {
-    closeRef.current = onClose;
-  }, [onClose]);
-  useEffect(() => {
-    const prev = document.activeElement as HTMLElement;
-    const focusable = () =>
-      Array.from(
-        ref.current?.querySelectorAll<HTMLElement>('button,input,select,textarea,a[href]') || [],
-      ).filter((e) => !e.hasAttribute('disabled'));
-    focusable()[0]?.focus();
-    function key(e: KeyboardEvent) {
-      if (e.key === 'Escape') closeRef.current();
-      if (e.key === 'Tab') {
-        const list = focusable(),
-          first = list[0],
-          last = list[list.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last?.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first?.focus();
-        }
-      }
-    }
-    document.addEventListener('keydown', key);
-    return () => {
-      document.removeEventListener('keydown', key);
-      prev?.focus();
-    };
-  }, []);
-  return (
-    <div
-      className="modal-overlay"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={ref}
-        className={`modal ${wide ? 'wide' : ''}`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="modal-title"
-      >
-        <button className="modal-close icon-button" aria-label="Close dialog" onClick={onClose}>
-          <X size={19} />
-        </button>
-        <h2 id="modal-title">{title}</h2>
-        {description && <p className="modal-description">{description}</p>}
-        {children}
-      </div>
-    </div>
-  );
-}
+
 function Sparkline({ large = false, range = '24h' }: { large?: boolean; range?: string }) {
   const values =
     range === '7d'
@@ -455,8 +365,7 @@ function App() {
     [error, setError] = useState(''),
     [toast, setToast] = useState(''),
     [modal, setModal] = useState<'resource' | 'key' | 'search' | null>(null),
-    [connection, setConnection] = useState<Resource | null>(null),
-    [sidebar, setSidebar] = useState(false);
+    [connection, setConnection] = useState<Resource | null>(null);
   const route = routeLocation.page;
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function notify(message: string) {
@@ -480,7 +389,6 @@ function App() {
     void start();
     const update = () => {
       setRouteLocation(currentRoute());
-      setSidebar(false);
     };
     window.addEventListener('hashchange', update);
     function key(e: KeyboardEvent) {
@@ -517,144 +425,29 @@ function App() {
         <div className="brand-mark">T</div>
         {error ? (
           <>
-            <h2>Couldn’t open your workspace</h2>
-            <p>{error}</p>
+            <Heading level={2}>Couldn’t open your workspace</Heading>
+            <Text component="p">{error}</Text>
             <Button onClick={start}>Try again</Button>
           </>
         ) : (
           <>
-            <Loader2 className="spin" />
-            <p>Opening your workspace…</p>
+            <Loader size="lg" />
+            <Text component="p">Opening your workspace…</Text>
           </>
         )}
       </div>
     );
   return (
-    <div className="app-shell">
-      <aside className={`sidebar ${sidebar ? 'open' : ''}`}>
-        <a href="#overview" className="brand">
-          <span className="brand-mark">
-            <svg width="21" height="24" viewBox="0 0 24 28">
-              <path
-                d="m12 1 11 6.5v13L12 27 1 20.5v-13Zm0 5-7 4v8l7 4 7-4v-8Z"
-                fill="currentColor"
-              />
-            </svg>
-          </span>
-          <strong>TiDB</strong>
-          <span className="brand-divider" />
-          <span className="brand-product">Workspace</span>
-        </a>
-        <button className="workspace-switch" onClick={() => go('settings')}>
-          <span className="workspace-avatar">S</span>
-          <span>
-            <strong>Personal workspace</strong>
-            <small>Free plan</small>
-          </span>
-          <ChevronDown size={14} />
-        </button>
-        <nav aria-label="Main navigation">
-          {['Workspace', 'Build', 'Manage'].map((group) => (
-            <div className="nav-group" key={group}>
-              <div className="nav-label">{group}</div>
-              {Object.entries(routes)
-                .filter(([, r]) => r.group === group)
-                .map(([key, r]) => (
-                  <a
-                    key={key}
-                    href={`#${key}`}
-                    className={`nav-item ${route === key ? 'active' : ''}`}
-                    aria-current={route === key ? 'page' : undefined}
-                  >
-                    <r.icon size={17} />
-                    <span>{r.label}</span>
-                    {key === 'connect' && <span className="new-dot" />}
-                  </a>
-                ))}
-            </div>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="free-plan">
-            <div>
-              <Zap size={14} />
-              <strong>Built to start free</strong>
-            </div>
-            <p>Your next idea starts here.</p>
-            <button onClick={() => go('billing')}>
-              View your usage <ArrowUpRight size={13} />
-            </button>
-          </div>
-          <a
-            className="nav-item"
-            href="https://docs.pingcap.com/tidbcloud/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            <BookOpen size={16} /> Documentation <ExternalLink size={12} />
-          </a>
-          <button className="profile" onClick={() => go('settings')}>
-            <span className="profile-avatar">{data.profile.name.slice(0, 1).toUpperCase()}</span>
-            <span>
-              <strong>{data.profile.name}</strong>
-              <small>Personal account</small>
-            </span>
-            <MoreHorizontal size={17} />
-          </button>
-        </div>
-      </aside>
-      {sidebar && <div className="sidebar-backdrop" onClick={() => setSidebar(false)} />}
-      <div className="main-shell">
-        <header className="topbar">
-          <button
-            className="mobile-menu icon-button"
-            aria-label="Open navigation"
-            onClick={() => setSidebar(!sidebar)}
-          >
-            <Menu size={19} />
-          </button>
-          <div className="breadcrumbs">
-            <span className="breadcrumb-icon">
-              <Workflow size={15} />
-            </span>
-            <span>{data.workspace.name}</span>
-            <ChevronRight size={13} />
-            {routeLocation.databaseId ? (
-              <>
-                <a href="#databases">Databases</a>
-                <ChevronRight className="resource-breadcrumb-separator" size={13} />
-                <strong>SQL editor</strong>
-              </>
-            ) : (
-              <strong>{routes[route].label}</strong>
-            )}
-          </div>
-          <div className="topbar-right">
-            <ThemePicker />
-            <button
-              className="search-button"
-              aria-label="Search workspace"
-              onClick={() => setModal('search')}
-            >
-              <Search size={14} />
-              <span>Search workspace</span>
-              <kbd>⌘ K</kbd>
-            </button>
-            <Badge tone="demo">
-              <span className="live-dot" /> Local demo
-            </Badge>
-            <button
-              className="icon-button help-button"
-              aria-label="Open documentation"
-              onClick={() =>
-                window.open('https://docs.pingcap.com/tidbcloud/', '_blank', 'noopener')
-              }
-            >
-              <CircleHelp size={18} />
-            </button>
-          </div>
-        </header>
-        <main key={route}>
+    <>
+      <WorkspaceLayout
+        workspaceName={data.workspace.name}
+        profileName={data.profile.name}
+        active={route}
+        databaseId={routeLocation.databaseId}
+        navigation={Object.entries(routes).map(([id, item]) => ({ id, ...item }))}
+        onSearch={() => setModal('search')}
+      >
+        <div key={route}>
           {route === 'overview' && <Overview {...shared} />}
           {route === 'databases' && <Databases {...shared} databaseId={routeLocation.databaseId} />}
           {route === 'files' && <Files {...shared} />}
@@ -664,24 +457,18 @@ function App() {
           {route === 'monitoring' && <Monitoring {...shared} />}
           {route === 'billing' && <Billing {...shared} />}
           {route === 'settings' && <WorkspaceSettings {...shared} />}
-        </main>
-        <footer className="footer">
-          <span>
-            <span className="live-dot" /> Local provider operational
-          </span>
-          <span>
-            Product prototype <span>·</span> Cloud resources & telemetry are simulated
-          </span>
-          <a href="https://docs.pingcap.com/tidbcloud/" target="_blank" rel="noreferrer">
-            TiDB documentation <ArrowUpRight size={12} />
-          </a>
-        </footer>
-      </div>
-      {toast && (
-        <div className="toast" role="status">
-          <CheckCircle2 size={17} />
-          {toast}
         </div>
+      </WorkspaceLayout>
+      {toast && (
+        <Notification
+          className="workspace-toast"
+          closeButtonProps={{ 'aria-label': 'Dismiss notification' }}
+          role="status"
+          onClose={() => setToast('')}
+          icon={<CheckCircle2 size={20} />}
+        >
+          {toast}
+        </Notification>
       )}
       {modal === 'resource' && <CreateResource {...shared} onClose={() => setModal(null)} />}
       {modal === 'key' && <CreateKey {...shared} onClose={() => setModal(null)} />}
@@ -691,7 +478,7 @@ function App() {
       {connection && (
         <Connection resource={connection} copy={copy} onClose={() => setConnection(null)} />
       )}
-    </div>
+    </>
   );
 }
 type Shared = {
@@ -717,8 +504,8 @@ function PageHeading({
     <div className="page-heading">
       <div>
         {eyebrow && <div className="eyebrow">{eyebrow}</div>}
-        <h1>{title}</h1>
-        <p>{description}</p>
+        <Heading level={1}>{title}</Heading>
+        <Text component="p">{description}</Text>
       </div>
       <div className="heading-actions">{actions}</div>
     </div>
@@ -736,10 +523,17 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
         description="Your data, files, and agents. All in one place."
         actions={
           <>
-            <Button icon={Workflow} onClick={() => go('connect')}>
+            <Button
+              leftSection={React.createElement(Workflow, { size: 18 })}
+              onClick={() => go('connect')}
+            >
               Connect an agent
             </Button>
-            <Button variant="primary" icon={Plus} onClick={onCreate}>
+            <Button
+              variant="filled"
+              leftSection={React.createElement(Plus, { size: 18 })}
+              onClick={onCreate}
+            >
               Create resource
             </Button>
           </>
@@ -747,50 +541,48 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
       />
       <section className="welcome-panel">
         <div className="welcome-copy">
-          <Badge tone="white">
+          <Badge color="carbon">
             <Sparkles size={12} /> BUILT FOR DEVELOPERS & AGENTS
           </Badge>
-          <h2>
+          <Heading level={2}>
             Give your next idea
             <br />a place to grow.
-          </h2>
-          <p>
+          </Heading>
+          <Text component="p">
             SQL for memory. Files for context.
             <br />
             One workspace for everything you build.
-          </p>
-          <button className="text-link" onClick={() => go('connect')}>
+          </Text>
+          <Button className="text-link" onClick={() => go('connect')} variant="subtle">
             Connect your first agent <ArrowRight size={15} />
-          </button>
+          </Button>
         </div>
         <WorkspaceIllustration />
       </section>
       <div className="section-title">
-        <h2>
+        <Heading level={2}>
           Your resources <span>{data.resources.length}</span>
-        </h2>
-        <button className="text-link subtle" onClick={onCreate}>
+        </Heading>
+        <Button className="text-link subtle" onClick={onCreate} variant="subtle">
           <Plus size={14} /> Add resource
-        </button>
+        </Button>
       </div>
       <section className="resource-grid">
         {(['mysql', 'postgresql', 'filesystem'] as Kind[]).map((kind) => {
           const items = data.resources.filter((r) => r.kind === kind),
             r = items[0];
           return (
-            <div className="resource-card" key={kind}>
+            <Card className="resource-card" key={kind}>
               <div className="resource-card-top">
                 <KindIcon kind={kind} />
-                <Badge tone={kind === 'mysql' ? 'neutral' : 'purple'}>
-                  {kind === 'mysql' ? 'Starter' : 'Preview'}
-                </Badge>
+                <Badge color="carbon">{kind === 'mysql' ? 'Starter' : 'Preview'}</Badge>
               </div>
-              <h3>
+              <Heading level={3}>
                 {kindLabel[kind]}
                 {kind !== 'filesystem' && <span className="resource-type">database</span>}
-              </h3>
-              <p>{kindDescription[kind]}</p>
-              <button
+              </Heading>
+              <Text component="p">{kindDescription[kind]}</Text>
+              <UnstyledButton
                 className="resource-name"
                 onClick={() => go(kind === 'filesystem' ? 'files' : 'databases')}
               >
@@ -798,35 +590,33 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
                 {r?.name || 'No resource yet'}
                 {items.length > 1 && <span className="count">+{items.length - 1}</span>}
                 <ChevronRight size={14} />
-              </button>
+              </UnstyledButton>
               <div className="resource-card-bottom">
                 <span>{r ? region(r.region) : 'Ready when you are'}</span>
-                <button onClick={() => (r ? onConnect(r) : onCreate())}>
+                <UnstyledButton onClick={() => (r ? onConnect(r) : onCreate())}>
                   {r ? 'Connect' : 'Create'} <ArrowUpRight size={13} />
-                </button>
+                </UnstyledButton>
               </div>
-            </div>
+            </Card>
           );
         })}
       </section>
       <div className="overview-grid">
-        <section className="panel activity-panel">
+        <Paper className="panel activity-panel" withBorder>
           <div className="panel-header">
             <div>
-              <h2>Workspace activity</h2>
-              <p>Illustrative activity · demo data</p>
+              <Heading level={2}>Workspace activity</Heading>
+              <Text component="p">Illustrative activity · demo data</Text>
             </div>
-            <div className="segmented">
-              {['24h', '7d'].map((r) => (
-                <button
-                  className={range === r ? 'selected' : ''}
-                  key={r}
-                  onClick={() => setRange(r)}
-                >
-                  {r === '24h' ? '24 hours' : '7 days'}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              aria-label="Activity time range"
+              value={range}
+              onChange={setRange}
+              data={[
+                { value: '24h', label: '24 hours' },
+                { value: '7d', label: '7 days' },
+              ]}
+            />
           </div>
           <div className="metrics-inline">
             <div>
@@ -862,10 +652,10 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
               ))}
             </div>
           </div>
-        </section>
-        <section className="panel spend-panel">
+        </Paper>
+        <Paper className="panel spend-panel" withBorder>
           <div className="panel-header">
-            <h2>Usage this month</h2>
+            <Heading level={2}>Usage this month</Heading>
             <Badge>Free plan</Badge>
           </div>
           <div className="spend-number">
@@ -881,29 +671,27 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
               <span>MySQL request units</span>
               <strong>0 / 50M per instance</strong>
             </div>
-            <div className="progress">
-              <i style={{ width: '0%' }} />
-            </div>
+            <Progress value={0} aria-label="MySQL request units used" />
             <div>
               <span>File System allowance</span>
               <strong>$5 / month</strong>
             </div>
             <small>Shared across the cloud organization.</small>
           </div>
-          <button className="text-link" onClick={() => go('billing')}>
+          <Button className="text-link" onClick={() => go('billing')} variant="subtle">
             View usage & limits <ArrowRight size={14} />
-          </button>
-        </section>
+          </Button>
+        </Paper>
       </div>
       <div className="overview-grid bottom-grid">
-        <section className="panel quickstart-panel">
+        <Paper className="panel quickstart-panel" withBorder>
           <div className="panel-header">
-            <h2>From workspace to workflow</h2>
+            <Heading level={2}>From workspace to workflow</Heading>
             <Terminal size={17} />
           </div>
-          <p className="section-description">
+          <Text className="section-description" component="p">
             Let your agent discover its resources through one API.
-          </p>
+          </Text>
           <Code
             copy={copy}
             label="WORKSPACE API"
@@ -918,17 +706,17 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
             <span>
               <KeyRound size={13} /> Create a scoped key to get started
             </span>
-            <button className="text-link" onClick={() => go('connect')}>
+            <Button className="text-link" onClick={() => go('connect')} variant="subtle">
               Setup guide <ArrowUpRight size={13} />
-            </button>
+            </Button>
           </div>
-        </section>
-        <section className="panel events-panel">
+        </Paper>
+        <Paper className="panel events-panel" withBorder>
           <div className="panel-header">
-            <h2>Recent activity</h2>
-            <button className="text-link subtle" onClick={() => go('monitoring')}>
+            <Heading level={2}>Recent activity</Heading>
+            <Button className="text-link subtle" onClick={() => go('monitoring')} variant="subtle">
               View all <ArrowUpRight size={13} />
-            </button>
+            </Button>
           </div>
           {data.events.slice(0, 3).map((e) => (
             <div className="activity-row" key={e.id}>
@@ -942,7 +730,7 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
               <time>{relative(e.at)}</time>
             </div>
           ))}
-        </section>
+        </Paper>
       </div>
     </>
   );
@@ -988,48 +776,51 @@ function Databases({ databaseId, ...shared }: Shared & { databaseId?: string }) 
         title="Databases"
         description="Persistent memory, structured data, and vectors for your agents."
         actions={
-          <Button variant="primary" icon={Plus} onClick={onCreate}>
+          <Button
+            variant="filled"
+            leftSection={React.createElement(Plus, { size: 18 })}
+            onClick={onCreate}
+          >
             Create database
           </Button>
         }
       />
-      <div className="notice">
-        <Database size={17} />
+      <Alert className="notice" color="peacock" icon={<Database size={17} />}>
         <span>
           MySQL and PostgreSQL are separate resources. Use one Workspace Key with access to the
           databases and actions your workflow needs.
         </span>
-      </div>
+      </Alert>
       {!databases.length ? (
-        <div className="panel">
+        <Paper className="panel" withBorder>
           <Empty
             icon={Database}
             title="Create your first database"
             description="Add a MySQL or PostgreSQL database, then open its SQL editor to start querying."
             action={
-              <Button variant="primary" onClick={onCreate}>
+              <Button variant="filled" onClick={onCreate}>
                 Create database
               </Button>
             }
           />
-        </div>
+        </Paper>
       ) : (
-        <div className="panel table-panel">
-          <table>
-            <thead>
-              <tr>
-                <th>Database</th>
-                <th>Compatibility</th>
-                <th>Region</th>
-                <th>Status</th>
-                <th>Plan</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
+        <Paper className="panel table-panel" withBorder>
+          <Table>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Database</Table.Th>
+                <Table.Th>Compatibility</Table.Th>
+                <Table.Th>Region</Table.Th>
+                <Table.Th>Status</Table.Th>
+                <Table.Th>Plan</Table.Th>
+                <Table.Th />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
               {databases.map((r) => (
-                <tr key={r.id}>
-                  <td>
+                <Table.Tr key={r.id}>
+                  <Table.Td>
                     <div className="table-resource">
                       <KindIcon small kind={r.kind} />
                       <div>
@@ -1039,23 +830,23 @@ function Databases({ databaseId, ...shared }: Shared & { databaseId?: string }) 
                         <small>{r.id}</small>
                       </div>
                     </div>
-                  </td>
-                  <td>
+                  </Table.Td>
+                  <Table.Td>
                     {kindLabel[r.kind]}{' '}
-                    {r.kind === 'postgresql' && <Badge tone="purple">Preview</Badge>}
-                  </td>
-                  <td>{region(r.region)}</td>
-                  <td>
+                    {r.kind === 'postgresql' && <Badge color="purple">Preview</Badge>}
+                  </Table.Td>
+                  <Table.Td>{region(r.region)}</Table.Td>
+                  <Table.Td>
                     <span className="status">
                       <span className="live-dot" />
                       Active
                     </span>
-                  </td>
-                  <td>Starter · Free</td>
-                  <td>
+                  </Table.Td>
+                  <Table.Td>Starter · Free</Table.Td>
+                  <Table.Td>
                     <div className="database-actions">
                       <Button
-                        icon={Code2}
+                        leftSection={React.createElement(Code2, { size: 18 })}
                         onClick={() => openDatabaseEditor(r.id)}
                         aria-label={`Open SQL editor for ${r.name}`}
                       >
@@ -1065,29 +856,29 @@ function Databases({ databaseId, ...shared }: Shared & { databaseId?: string }) 
                         Connect <ArrowUpRight size={13} />
                       </Button>
                     </div>
-                  </td>
-                </tr>
+                  </Table.Td>
+                </Table.Tr>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </Table.Tbody>
+          </Table>
+        </Paper>
       )}
       <div className="two-column">
-        <div className="panel info-panel">
+        <Paper className="panel info-panel" withBorder>
           <Code2 size={22} />
-          <h3>Start with a query</h3>
-          <p>
+          <Heading level={3}>Start with a query</Heading>
+          <Text component="p">
             Choose a database above and open its SQL editor. Queries run against that database; the
             demo provider supports two read-only query patterns.
-          </p>
-        </div>
-        <div className="panel info-panel">
+          </Text>
+        </Paper>
+        <Paper className="panel info-panel" withBorder>
           <Workflow size={22} />
-          <h3>Built for your existing tools</h3>
-          <p>
+          <Heading level={3}>Built for your existing tools</Heading>
+          <Text component="p">
             Use a single Workspace Key through the API. MySQL and PostgreSQL compatibility is
             handled by the database service; native client connections are a future integration.
-          </p>
+          </Text>
           <a
             className="text-link"
             href="https://docs.pingcap.com/tidbcloud/connect-to-tidb-cluster/"
@@ -1096,7 +887,7 @@ function Databases({ databaseId, ...shared }: Shared & { databaseId?: string }) 
           >
             Connection documentation <ArrowUpRight size={14} />
           </a>
-        </div>
+        </Paper>
       </div>
     </>
   );
@@ -1148,18 +939,18 @@ function SqlEditor({
           </Button>
         }
       />
-      <div className="notice">
-        <Sparkles size={17} />
+      <Alert className="notice" color="peacock" icon={<Sparkles size={17} />}>
         <span>
           Local query sandbox. Supports <code>SELECT 1</code> and{' '}
           <code>SELECT * FROM agent_events LIMIT n</code>. Cloud SQL execution is not connected.
         </span>
-      </div>
-      <div className="panel sql-panel">
+      </Alert>
+      <Paper className="panel sql-panel" withBorder>
         <div className="sql-toolbar">
           <div className="inline-controls">
             <Database size={16} />
-            <select
+            <NativeSelect
+              className="sql-database-select"
               aria-label="Database"
               value={resourceId}
               onChange={(e) => openDatabaseEditor(e.target.value)}
@@ -1169,55 +960,57 @@ function SqlEditor({
                   {r.name} · {kindLabel[r.kind]}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
             <Badge>Demo</Badge>
           </div>
           <Button
-            variant="primary"
-            icon={busy ? Loader2 : Play}
+            variant="filled"
+            loading={busy}
+            leftSection={<Play size={18} />}
             disabled={busy || !resourceId}
             onClick={run}
           >
             {busy ? 'Running…' : 'Run query'}
           </Button>
         </div>
-        <div className="editor">
-          <div className="line-numbers">
-            {sql.split('\n').map((_, i) => (
-              <div key={i}>{i + 1}</div>
-            ))}
-          </div>
-          <textarea
-            aria-label="SQL query"
+        <Suspense
+          fallback={
+            <div className="editor-loading">
+              <Loader size="md" />
+              <Text>Loading SQL editor…</Text>
+            </div>
+          }
+        >
+          <WorkspaceSqlInput
+            databaseId={database.id}
+            protocol={database.kind}
             value={sql}
-            spellCheck={false}
-            onChange={(e) => setSql(e.target.value)}
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                e.preventDefault();
-                void run();
-              }
-            }}
+            onChange={setSql}
+            onRun={() => void run()}
           />
-        </div>
+        </Suspense>
         <div className="editor-bottom">
           <span>SQL · {kindLabel[database.kind]}</span>
           <span>⌘ / Ctrl + Enter to run</span>
         </div>
-      </div>
+      </Paper>
       <div className="sample-queries">
         <span>Try a sample:</span>
-        <button onClick={() => setSql('SELECT 1 AS connected;')}>Test connection</button>
-        <button onClick={() => setSql('SELECT * FROM agent_events LIMIT 10;')}>
+        <UnstyledButton onClick={() => setSql('SELECT 1 AS connected;')}>
+          Test connection
+        </UnstyledButton>
+        <UnstyledButton onClick={() => setSql('SELECT * FROM agent_events LIMIT 10;')}>
           Read agent events
-        </button>
+        </UnstyledButton>
       </div>
-      <section className="panel result-panel">
+      <Paper className="panel result-panel" withBorder>
         <div className="panel-header">
-          <h2>Results {result && <Badge tone="green">{result.rowCount} rows</Badge>}</h2>
+          <Heading level={2}>
+            Results {result && <Badge color="green">{result.rowCount} rows</Badge>}
+          </Heading>
           {result && (
             <Button
-              icon={ArrowDownToLine}
+              leftSection={React.createElement(ArrowDownToLine, { size: 18 })}
               onClick={() => {
                 download(
                   'query-results.json',
@@ -1232,29 +1025,31 @@ function SqlEditor({
           )}
         </div>
         {error ? (
-          <div className="inline-error">{error}</div>
+          <Alert className="inline-error" color="red">
+            {error}
+          </Alert>
         ) : result ? (
           <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
+            <Table>
+              <Table.Thead>
+                <Table.Tr>
                   {result.columns.map((c: string) => (
-                    <th key={c}>{c}</th>
+                    <Table.Th key={c}>{c}</Table.Th>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
                 {result.rows.map((r: Record<string, unknown>, i: number) => (
-                  <tr key={i}>
+                  <Table.Tr key={i}>
                     {result.columns.map((c: string) => (
-                      <td key={c}>
+                      <Table.Td key={c}>
                         <code>{String(r[c])}</code>
-                      </td>
+                      </Table.Td>
                     ))}
-                  </tr>
+                  </Table.Tr>
                 ))}
-              </tbody>
-            </table>
+              </Table.Tbody>
+            </Table>
             <div className="result-footnote">
               <CheckCircle2 size={13} /> Demo query completed. Results are sample data.
             </div>
@@ -1266,7 +1061,7 @@ function SqlEditor({
             description="Run a sample query to see its results here."
           />
         )}
-      </section>
+      </Paper>
     </>
   );
 }
@@ -1367,7 +1162,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
         actions={
           <>
             <Button
-              icon={Terminal}
+              leftSection={React.createElement(Terminal, { size: 18 })}
               onClick={() => {
                 const r = systems.find((r) => r.id === system);
                 if (r) onConnect(r);
@@ -1376,8 +1171,8 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               Connect
             </Button>
             <Button
-              variant="primary"
-              icon={Upload}
+              variant="filled"
+              leftSection={React.createElement(Upload, { size: 18 })}
               onClick={() => upload.current?.click()}
               disabled={busy || !system}
             >
@@ -1400,7 +1195,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
         <div className="table-resource">
           <KindIcon kind="filesystem" />
           <div>
-            <select
+            <NativeSelect
               aria-label="File system"
               className="heading-select"
               value={system}
@@ -1414,12 +1209,12 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
                   {r.name}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
             <small>
               {systems[0] ? region(systems.find((r) => r.id === system)!.region) : 'No file system'}
             </small>
           </div>
-          <Badge tone="purple">Preview</Badge>
+          <Badge color="purple">Preview</Badge>
         </div>
         <div className="file-stat">
           <span>{files.filter((f) => f.type === 'file').length} files</span>
@@ -1433,20 +1228,20 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           </span>
         </div>
       </div>
-      <div className="panel file-browser">
+      <Paper className="panel file-browser" withBorder>
         <div className="file-toolbar">
           <div className="path-crumb">
-            <button aria-label="File system root" onClick={() => setPath('/')}>
+            <ActionIcon aria-label="File system root" onClick={() => setPath('/')}>
               <Folder size={16} />
-            </button>
-            <button onClick={() => setPath('/')}>shared-files</button>
+            </ActionIcon>
+            <UnstyledButton onClick={() => setPath('/')}>shared-files</UnstyledButton>
             {path
               .split('/')
               .filter(Boolean)
               .map((s, i) => (
                 <React.Fragment key={i}>
                   <ChevronRight size={13} />
-                  <button
+                  <UnstyledButton
                     onClick={() =>
                       setPath(
                         '/' +
@@ -1459,14 +1254,14 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
                     }
                   >
                     {s}
-                  </button>
+                  </UnstyledButton>
                 </React.Fragment>
               ))}
           </div>
           <div className="inline-controls">
             <div className="input-with-icon">
               <Search size={14} />
-              <input
+              <TextInput
                 aria-label="Search files"
                 placeholder="Filter files…"
                 value={search}
@@ -1474,7 +1269,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               />
             </div>
             <Button
-              icon={FolderPlus}
+              leftSection={React.createElement(FolderPlus, { size: 18 })}
               disabled={!system}
               onClick={() => {
                 setNewItem('directory');
@@ -1484,7 +1279,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               New folder
             </Button>
             <Button
-              icon={Plus}
+              leftSection={React.createElement(Plus, { size: 18 })}
               disabled={!system}
               onClick={() => {
                 setNewItem('file');
@@ -1496,33 +1291,33 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           </div>
         </div>
         {systems.length ? (
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Size</th>
-                <th>Last modified</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Name</Table.Th>
+                <Table.Th>Size</Table.Th>
+                <Table.Th>Last modified</Table.Th>
+                <Table.Th />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
               {path !== '/' && (
-                <tr>
-                  <td colSpan={4}>
-                    <button
+                <Table.Tr>
+                  <Table.Td colSpan={4}>
+                    <UnstyledButton
                       className="file-name"
                       onClick={() => setPath(path.slice(0, path.lastIndexOf('/')) || '/')}
                     >
                       <Folder size={17} />
                       ..
-                    </button>
-                  </td>
-                </tr>
+                    </UnstyledButton>
+                  </Table.Td>
+                </Table.Tr>
               )}
               {children.map((f) => (
-                <tr key={f.id}>
-                  <td>
-                    <button
+                <Table.Tr key={f.id}>
+                  <Table.Td>
+                    <UnstyledButton
                       className="file-name"
                       onClick={() => {
                         if (f.type === 'directory') {
@@ -1543,26 +1338,26 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
                         <FileCode2 size={18} />
                       )}
                       <strong>{f.path.split('/').pop()}</strong>
-                    </button>
-                  </td>
-                  <td>
+                    </UnstyledButton>
+                  </Table.Td>
+                  <Table.Td>
                     {f.type === 'directory'
                       ? '—'
                       : bytes(new TextEncoder().encode(f.content || '').length)}
-                  </td>
-                  <td>{relative(f.updatedAt)}</td>
-                  <td>
+                  </Table.Td>
+                  <Table.Td>{relative(f.updatedAt)}</Table.Td>
+                  <Table.Td>
                     <div className="row-actions">
                       {f.type === 'file' && (
-                        <button
+                        <ActionIcon
                           className="icon-button"
                           aria-label={`Download ${f.path}`}
                           onClick={() => download(f.path.split('/').pop()!, f.content || '')}
                         >
                           <ArrowDownToLine size={15} />
-                        </button>
+                        </ActionIcon>
                       )}
-                      <button
+                      <ActionIcon
                         className="icon-button"
                         aria-label={`Delete ${f.path}`}
                         onClick={() => {
@@ -1571,13 +1366,13 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
                         }}
                       >
                         <Trash2 size={15} />
-                      </button>
+                      </ActionIcon>
                     </div>
-                  </td>
-                </tr>
+                  </Table.Td>
+                </Table.Tr>
               ))}
-            </tbody>
-          </table>
+            </Table.Tbody>
+          </Table>
         ) : (
           <Empty
             title="Add your first file system"
@@ -1599,14 +1394,13 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           <span>{children.length} items</span>
           <span>Local persistent storage · UTF-8 text files up to 256 KiB</span>
         </div>
-      </div>
-      <div className="notice quiet">
-        <ShieldCheck size={17} />
+      </Paper>
+      <Alert className="notice quiet" color="peacock" icon={<ShieldCheck size={17} />}>
         <span>
           Use the same Workspace Key for databases and files. File operations require access to this
           File System and the corresponding read or write permission.
         </span>
-      </div>
+      </Alert>
       {newItem && (
         <Modal
           title={newItem === 'file' ? 'Create a file' : 'Create a folder'}
@@ -1631,23 +1425,25 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               void saveFile(target, newItem);
             }}
           >
-            <label>
-              Name
-              <input
-                autoFocus
-                required
-                maxLength={100}
-                placeholder={newItem === 'file' ? 'context.md' : 'research'}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </label>
-            {error && <p className="inline-error">{error}</p>}
+            <TextInput
+              label="Name"
+              autoFocus
+              required
+              maxLength={100}
+              placeholder={newItem === 'file' ? 'context.md' : 'research'}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            {error && (
+              <Alert className="inline-error" color="red">
+                {error}
+              </Alert>
+            )}
             <div className="modal-actions">
               <Button type="button" onClick={() => setNewItem(null)}>
                 Cancel
               </Button>
-              <Button variant="primary" disabled={busy}>
+              <Button variant="filled" loading={busy} disabled={busy} type="submit">
                 Create {newItem === 'file' ? 'file' : 'folder'}
               </Button>
             </div>
@@ -1661,18 +1457,22 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           description={editing.path + ' · Local file editor'}
           onClose={() => setEditing(null)}
         >
-          <textarea
+          <Textarea
             className="file-editor"
             aria-label="File content"
             value={content}
             onChange={(e) => setContent(e.target.value)}
             spellCheck={false}
           />
-          {error && <p className="inline-error">{error}</p>}
+          {error && (
+            <Alert className="inline-error" color="red">
+              {error}
+            </Alert>
+          )}
           <div className="modal-actions">
             <Button onClick={() => setEditing(null)}>Cancel</Button>
             <Button
-              variant="primary"
+              variant="filled"
               disabled={busy}
               onClick={() => saveFile(editing.path, 'file', content)}
             >
@@ -1687,10 +1487,14 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           description={`“${deleting.path}” will be removed from this local workspace. Non-empty folders cannot be deleted.`}
           onClose={() => setDeleting(null)}
         >
-          {error && <p className="inline-error">{error}</p>}
+          {error && (
+            <Alert className="inline-error" color="red">
+              {error}
+            </Alert>
+          )}
           <div className="modal-actions">
             <Button onClick={() => setDeleting(null)}>Cancel</Button>
-            <Button variant="danger" disabled={busy} onClick={remove}>
+            <Button variant="filled" color="red" disabled={busy} onClick={remove}>
               Delete {deleting.type}
             </Button>
           </div>
@@ -1716,12 +1520,14 @@ function Connect({ data, copy }: Shared) {
         <div className="connect-hero-icon">
           <Workflow size={32} />
         </div>
-        <h2>
+        <Heading level={2}>
           Your agent brings the intelligence.
           <br />
           Your workspace keeps the context.
-        </h2>
-        <p>Discover databases, work with files, and inspect usage through a scoped API.</p>
+        </Heading>
+        <Text component="p">
+          Discover databases, work with files, and inspect usage through a scoped API.
+        </Text>
         <div className="agent-clients">
           <span>
             <Terminal size={16} /> Claude Code
@@ -1738,17 +1544,20 @@ function Connect({ data, copy }: Shared) {
         </div>
       </section>
       <div className="setup-layout">
-        <section className="panel setup-steps">
-          <h2>Connect in three steps</h2>
+        <Paper className="panel setup-steps" withBorder>
+          <Heading level={2}>Connect in three steps</Heading>
           <div className="setup-step">
             <span>1</span>
             <div>
-              <h3>Create a workspace key</h3>
-              <p>
+              <Heading level={3}>Create a workspace key</Heading>
+              <Text component="p">
                 Grant only the permissions your agent needs. Keys expire automatically and can be
                 revoked anytime.
-              </p>
-              <Button onClick={() => go('keys')} icon={KeyRound}>
+              </Text>
+              <Button
+                onClick={() => go('keys')}
+                leftSection={React.createElement(KeyRound, { size: 18 })}
+              >
                 Manage API keys <ArrowUpRight size={13} />
               </Button>
             </div>
@@ -1756,13 +1565,16 @@ function Connect({ data, copy }: Shared) {
           <div className="setup-step">
             <span>2</span>
             <div>
-              <h3>Make your workspace discoverable</h3>
-              <p>
+              <Heading level={3}>Make your workspace discoverable</Heading>
+              <Text component="p">
                 Provide the OpenAPI schema or reference WORKSPACE.md from your project’s existing
                 agent instructions.
-              </p>
+              </Text>
               <div className="inline-controls">
-                <Button onClick={() => download('WORKSPACE.md', agents)} icon={ArrowDownToLine}>
+                <Button
+                  onClick={() => download('WORKSPACE.md', agents)}
+                  leftSection={React.createElement(ArrowDownToLine, { size: 18 })}
+                >
                   Download workspace instructions
                 </Button>
                 <a className="text-link" href="/openapi.json" target="_blank" rel="noreferrer">
@@ -1774,42 +1586,37 @@ function Connect({ data, copy }: Shared) {
           <div className="setup-step">
             <span>3</span>
             <div>
-              <h3>Build with persistent context</h3>
-              <p>
+              <Heading level={3}>Build with persistent context</Heading>
+              <Text component="p">
                 Call the REST API from an agent shell or your application. No custom SDK is required
                 for this prototype.
-              </p>
+              </Text>
             </div>
           </div>
-        </section>
-        <section className="panel connect-code-panel">
-          <div className="tabs">
-            {['Agent', 'JavaScript', 'Python'].map((t) => (
-              <button key={t} className={tab === t ? 'selected' : ''} onClick={() => setTab(t)}>
-                {t}
-              </button>
-            ))}
-          </div>
-          <Code
-            value={tab === 'Agent' ? snippet : tab === 'Python' ? python : js}
-            copy={copy}
-            label={tab === 'Agent' ? 'SHELL' : tab.toUpperCase()}
-          />
+        </Paper>
+        <Paper className="panel connect-code-panel" withBorder>
+          <ChoiceTabs value={tab} onChange={setTab} options={['Agent', 'JavaScript', 'Python']}>
+            <Code
+              value={tab === 'Agent' ? snippet : tab === 'Python' ? python : js}
+              copy={copy}
+              label={tab === 'Agent' ? 'SHELL' : tab.toUpperCase()}
+            />
+          </ChoiceTabs>
           <div className="connection-note">
             <ShieldCheck size={17} />
-            <p>
+            <Text component="p">
               Inject <code>WORKSPACE_API_KEY</code> through your environment. The full key is
               displayed once when created.
-            </p>
+            </Text>
           </div>
           <div className="capability-note">
             <Badge>REST API · Available locally</Badge>
-            <p>
+            <Text component="p">
               Native MCP support is part of the proposed next phase. These instructions use the
               working REST API.
-            </p>
+            </Text>
           </div>
-        </section>
+        </Paper>
       </div>
     </>
   );
@@ -1839,42 +1646,45 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
         title="API keys"
         description="Scoped access for every agent, application, and workflow."
         actions={
-          <Button variant="primary" icon={Plus} onClick={onNewKey}>
+          <Button
+            variant="filled"
+            leftSection={React.createElement(Plus, { size: 18 })}
+            onClick={onNewKey}
+          >
             Create API key
           </Button>
         }
       />
-      <div className="notice">
-        <ShieldCheck size={18} />
+      <Alert className="notice" color="peacock" icon={<ShieldCheck size={18} />}>
         <span>
           One Workspace Key can access MySQL, PostgreSQL, and files. Choose its allowed resources
           and actions; provider credentials are managed by the service.
         </span>
-      </div>
+      </Alert>
       <div className="section-title">
-        <h2>
+        <Heading level={2}>
           Workspace keys <span>{active.length} active</span>
-        </h2>
+        </Heading>
         <Badge>Workspace scoped</Badge>
       </div>
-      <div className="panel table-panel">
+      <Paper className="panel table-panel" withBorder>
         {data.keys.length ? (
-          <table>
-            <thead>
-              <tr>
-                <th>Name & key</th>
-                <th>Resource access</th>
-                <th>Permissions</th>
-                <th>Last used</th>
-                <th>Expires</th>
-                <th>Status</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Name & key</Table.Th>
+                <Table.Th>Resource access</Table.Th>
+                <Table.Th>Permissions</Table.Th>
+                <Table.Th>Last used</Table.Th>
+                <Table.Th>Expires</Table.Th>
+                <Table.Th>Status</Table.Th>
+                <Table.Th />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
               {data.keys.map((k) => (
-                <tr key={k.id}>
-                  <td>
+                <Table.Tr key={k.id}>
+                  <Table.Td>
                     <div className="key-name">
                       <KeyRound size={17} />
                       <div>
@@ -1882,8 +1692,8 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
                         <code>{k.prefix}…</code>
                       </div>
                     </div>
-                  </td>
-                  <td>
+                  </Table.Td>
+                  <Table.Td>
                     <div className="scope-chips">
                       {k.resourceIds.includes('*') ? (
                         <Badge>All current & future resources</Badge>
@@ -1897,80 +1707,77 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
                         <Badge>Reissue to grant access</Badge>
                       )}
                     </div>
-                  </td>
-                  <td>
+                  </Table.Td>
+                  <Table.Td>
                     <div className="scope-chips">
                       {k.scopes.map((s) => (
                         <Badge key={s}>{s}</Badge>
                       ))}
                     </div>
-                  </td>
-                  <td>{k.lastUsedAt ? relative(k.lastUsedAt) : 'Never'}</td>
-                  <td>{new Date(k.expiresAt).toLocaleDateString()}</td>
-                  <td>
-                    <Badge
-                      tone={
-                        k.revokedAt
-                          ? 'neutral'
-                          : Date.parse(k.expiresAt) <= Date.now()
-                            ? 'neutral'
-                            : 'green'
-                      }
-                    >
+                  </Table.Td>
+                  <Table.Td>{k.lastUsedAt ? relative(k.lastUsedAt) : 'Never'}</Table.Td>
+                  <Table.Td>{new Date(k.expiresAt).toLocaleDateString()}</Table.Td>
+                  <Table.Td>
+                    <Badge color="carbon">
                       {k.revokedAt
                         ? 'Revoked'
                         : Date.parse(k.expiresAt) <= Date.now()
                           ? 'Expired'
                           : 'Active'}
                     </Badge>
-                  </td>
-                  <td>
+                  </Table.Td>
+                  <Table.Td>
                     {!k.revokedAt && (
-                      <button
+                      <Button
                         className="text-link danger-link"
                         onClick={() => {
                           setRevoke(k);
                           setError('');
                         }}
+                        variant="subtle"
                       >
                         Revoke
-                      </button>
+                      </Button>
                     )}
-                  </td>
-                </tr>
+                  </Table.Td>
+                </Table.Tr>
               ))}
-            </tbody>
-          </table>
+            </Table.Tbody>
+          </Table>
         ) : (
           <Empty
             icon={KeyRound}
             title="A key for every workflow"
             description="Create your first API key to give an agent access to this workspace."
             action={
-              <Button variant="primary" icon={Plus} onClick={onNewKey}>
+              <Button
+                variant="filled"
+                leftSection={React.createElement(Plus, { size: 18 })}
+                onClick={onNewKey}
+              >
                 Create API key
               </Button>
             }
           />
         )}
-      </div>
+      </Paper>
       <div className="two-column">
-        <div className="panel info-panel">
+        <Paper className="panel info-panel" withBorder>
           <ShieldCheck size={22} />
-          <h3>Least privilege by default</h3>
-          <p>
+          <Heading level={3}>Least privilege by default</Heading>
+          <Text component="p">
             Use read-only access for exploration. Add write and query permissions only when your
             workflow needs them.
-          </p>
-        </div>
-        <div className="panel info-panel">
+          </Text>
+        </Paper>
+        <Paper className="panel info-panel" withBorder>
           <RefreshCw size={22} />
-          <h3>Rotate without surprises</h3>
-          <p>
+          <Heading level={3}>Rotate without surprises</Heading>
+          <Text component="p">
             Create a replacement key, update your agent’s environment, then revoke the old key. Full
             keys are never stored on the server.
-          </p>
-        </div>
+          </Text>
+        </Paper>
       </div>
       {revoke && (
         <Modal
@@ -1978,10 +1785,14 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
           description={`Agents using “${revoke.name}” will immediately lose access. Create a replacement first if the workflow should keep running.`}
           onClose={() => setRevoke(null)}
         >
-          {error && <p className="inline-error">{error}</p>}
+          {error && (
+            <Alert className="inline-error" color="red">
+              {error}
+            </Alert>
+          )}
           <div className="modal-actions">
             <Button onClick={() => setRevoke(null)}>Cancel</Button>
-            <Button variant="danger" disabled={busy} onClick={doRevoke}>
+            <Button variant="filled" color="red" disabled={busy} onClick={doRevoke}>
               Revoke key
             </Button>
           </div>
@@ -2021,50 +1832,52 @@ function ApiExplorer({ data, copy }: Shared) {
         title="API explorer"
         description="The same API powers your console and your agents."
         actions={
-          <a className="button secondary" href="/openapi.json" target="_blank" rel="noreferrer">
+          <Anchor href="/openapi.json" target="_blank" rel="noreferrer" className="schema-link">
             <ArrowUpRight size={15} />
             OpenAPI 3.1 schema
-          </a>
+          </Anchor>
         }
       />
       <div className="api-layout">
-        <section className="panel endpoint-list">
+        <Paper className="panel endpoint-list" withBorder>
           <div className="panel-header">
-            <h2>Workspace API</h2>
+            <Heading level={2}>Workspace API</Heading>
             <Badge>v1</Badge>
           </div>
           {endpoints.map((e) => (
-            <button
-              className={endpoint === e.path ? 'selected' : ''}
+            <NavLink
               key={e.path}
+              active={endpoint === e.path}
+              label={e.label}
+              description={e.path.split('?')[0]}
+              leftSection={<Badge color="green">GET</Badge>}
               onClick={() => {
                 setEndpoint(e.path);
                 setResult('');
                 setError('');
               }}
-            >
-              <span className="http-method">GET</span>
-              <span>
-                <strong>{e.label}</strong>
-                <code>{e.path.split('?')[0]}</code>
-              </span>
-              <ChevronRight size={14} />
-            </button>
+            />
           ))}
           <div className="endpoint-note">
             The schema also documents resource creation, file writes, queries, and key management.
           </div>
-        </section>
+        </Paper>
         <div className="api-main">
-          <section className="panel">
+          <Paper className="panel" withBorder>
             <div className="panel-header">
-              <h2>{endpoints.find((e) => e.path === endpoint)?.label}</h2>
+              <Heading level={2}>{endpoints.find((e) => e.path === endpoint)?.label}</Heading>
               <Badge>{endpoints.find((e) => e.path === endpoint)?.scope}</Badge>
             </div>
             <div className="api-url">
               <span className="http-method">GET</span>
               <code>{base + endpoint}</code>
-              <Button variant="dark" icon={busy ? Loader2 : Play} onClick={run} disabled={busy}>
+              <Button
+                variant="filled"
+                loading={busy}
+                leftSection={<Play size={18} />}
+                onClick={run}
+                disabled={busy}
+              >
                 Send request
               </Button>
             </div>
@@ -2077,14 +1890,16 @@ function ApiExplorer({ data, copy }: Shared) {
               copy={copy}
               value={`curl '${apiOrigin}${base + endpoint}' \\\n  -H "Authorization: Bearer $WORKSPACE_API_KEY"`}
             />
-          </section>
-          <section className="panel api-response">
+          </Paper>
+          <Paper className="panel api-response" withBorder>
             <div className="panel-header">
-              <h2>Response</h2>
-              {result && <Badge tone="green">200 OK</Badge>}
+              <Heading level={2}>Response</Heading>
+              {result && <Badge color="green">200 OK</Badge>}
             </div>
             {error ? (
-              <p className="inline-error">{error}</p>
+              <Alert className="inline-error" color="red">
+                {error}
+              </Alert>
             ) : result ? (
               <Code label="JSON" value={result} copy={copy} />
             ) : (
@@ -2094,7 +1909,7 @@ function ApiExplorer({ data, copy }: Shared) {
                 description="Send a request to inspect the real local response."
               />
             )}
-          </section>
+          </Paper>
         </div>
       </div>
     </>
@@ -2113,180 +1928,177 @@ function Monitoring({ data }: Shared) {
         title="Monitoring"
         description="Understand what your workspace is doing, and who is doing it."
         actions={
-          <div className="segmented">
-            {['24h', '7d'].map((r) => (
-              <button key={r} className={r === range ? 'selected' : ''} onClick={() => setRange(r)}>
-                {r === '24h' ? '24 hours' : '7 days'}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            aria-label="Activity time range"
+            value={range}
+            onChange={setRange}
+            data={[
+              { value: '24h', label: '24 hours' },
+              { value: '7d', label: '7 days' },
+            ]}
+          />
         }
       />
-      <div className="tabs standalone">
-        {['Metrics', 'Activity log'].map((t) => (
-          <button className={tab === t ? 'selected' : ''} key={t} onClick={() => setTab(t)}>
-            {t}
-          </button>
-        ))}
-      </div>
-      {tab === 'Metrics' ? (
-        <>
-          <div className="notice">
-            <Activity size={17} />
-            <span>
-              Charts below are illustrative. Resource counts and local action counts come from the
-              running prototype. Cloud QPS and latency are not connected.
-            </span>
-          </div>
-          <div className="metric-cards">
-            {[
-              {
-                name: 'Active resources',
-                value: data.resources.length,
-                unit: 'resources',
-                icon: Database,
-              },
-              {
-                name: 'Queries executed',
-                value: data.queryCount,
-                unit: 'local queries',
-                icon: Code2,
-              },
-              {
-                name: 'Active API keys',
-                value: data.keys.filter((k) => !k.revokedAt && Date.parse(k.expiresAt) > Date.now())
-                  .length,
-                unit: 'keys',
-                icon: KeyRound,
-              },
-              {
-                name: 'Activity events',
-                value: data.events.length,
-                unit: 'local events',
-                icon: Activity,
-              },
-            ].map((m) => (
-              <div className="panel metric-card" key={m.name}>
-                <div>
-                  <span>{m.name}</span>
-                  <m.icon size={16} />
-                </div>
-                <strong>{m.value}</strong>
-                <small>{m.unit}</small>
-              </div>
-            ))}
-          </div>
-          <div className="two-column">
-            <section className="panel monitoring-chart">
-              <div className="panel-header">
-                <h2>Request activity</h2>
-                <Badge>Illustrative</Badge>
-              </div>
-              <div className="chart-wrap">
-                <Sparkline large range={range} />
-                <div className="chart-axis">
-                  <span>{range === '7d' ? '7 days ago' : '24 hours ago'}</span>
-                  <span>Now</span>
-                </div>
-              </div>
-            </section>
-            <section className="panel monitoring-chart blue-chart">
-              <div className="panel-header">
-                <h2>Query duration</h2>
-                <Badge>Illustrative</Badge>
-              </div>
-              <div className="chart-wrap">
-                <Sparkline large range={range === '7d' ? '24h' : '7d'} />
-                <div className="chart-axis">
-                  <span>{range === '7d' ? '7 days ago' : '24 hours ago'}</span>
-                  <span>Now</span>
-                </div>
-              </div>
-            </section>
-          </div>
-          <div className="section-title">
-            <h2>Resource health</h2>
-          </div>
-          <div className="panel">
-            <table>
-              <thead>
-                <tr>
-                  <th>Resource</th>
-                  <th>Type</th>
-                  <th>Provider</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.resources.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <div className="table-resource">
-                        <KindIcon small kind={r.kind} />
-                        <strong>{r.name}</strong>
-                      </div>
-                    </td>
-                    <td>{kindLabel[r.kind]}</td>
-                    <td>Local demo</td>
-                    <td>
-                      <span className="status">
-                        <span className="live-dot" />
-                        Available
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="log-toolbar">
-            <div className="input-with-icon">
-              <Search size={15} />
-              <input
-                aria-label="Filter activity"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                placeholder="Filter by action, resource, or actor…"
-              />
+      <ChoiceTabs value={tab} onChange={setTab} options={['Metrics', 'Activity log']}>
+        {tab === 'Metrics' ? (
+          <>
+            <Alert className="notice" color="peacock" icon={<Activity size={17} />}>
+              <span>
+                Charts below are illustrative. Resource counts and local action counts come from the
+                running prototype. Cloud QPS and latency are not connected.
+              </span>
+            </Alert>
+            <div className="metric-cards">
+              {[
+                {
+                  name: 'Active resources',
+                  value: data.resources.length,
+                  unit: 'resources',
+                  icon: Database,
+                },
+                {
+                  name: 'Queries executed',
+                  value: data.queryCount,
+                  unit: 'local queries',
+                  icon: Code2,
+                },
+                {
+                  name: 'Active API keys',
+                  value: data.keys.filter(
+                    (k) => !k.revokedAt && Date.parse(k.expiresAt) > Date.now(),
+                  ).length,
+                  unit: 'keys',
+                  icon: KeyRound,
+                },
+                {
+                  name: 'Activity events',
+                  value: data.events.length,
+                  unit: 'local events',
+                  icon: Activity,
+                },
+              ].map((m) => (
+                <Paper className="panel metric-card" key={m.name} withBorder>
+                  <div>
+                    <span>{m.name}</span>
+                    <m.icon size={16} />
+                  </div>
+                  <strong>{m.value}</strong>
+                  <small>{m.unit}</small>
+                </Paper>
+              ))}
             </div>
-            <span>{events.length} events · Latest 200 local events</span>
-          </div>
-          <div className="panel table-panel">
-            <table>
-              <thead>
-                <tr>
-                  <th>Action</th>
-                  <th>Resource</th>
-                  <th>Actor</th>
-                  <th>Result</th>
-                  <th>Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {events.map((e) => (
-                  <tr key={e.id}>
-                    <td>
-                      <code>{e.action}</code>
-                    </td>
-                    <td>{e.resource}</td>
-                    <td>{e.actor}</td>
-                    <td>
-                      <Badge tone="green">Success</Badge>
-                    </td>
-                    <td>{new Date(e.at).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {!events.length && (
-              <Empty title="No matching events" description="Try a different filter." />
-            )}
-          </div>
-        </>
-      )}
+            <div className="two-column">
+              <Paper className="panel monitoring-chart" withBorder>
+                <div className="panel-header">
+                  <Heading level={2}>Request activity</Heading>
+                  <Badge>Illustrative</Badge>
+                </div>
+                <div className="chart-wrap">
+                  <Sparkline large range={range} />
+                  <div className="chart-axis">
+                    <span>{range === '7d' ? '7 days ago' : '24 hours ago'}</span>
+                    <span>Now</span>
+                  </div>
+                </div>
+              </Paper>
+              <Paper className="panel monitoring-chart blue-chart" withBorder>
+                <div className="panel-header">
+                  <Heading level={2}>Query duration</Heading>
+                  <Badge>Illustrative</Badge>
+                </div>
+                <div className="chart-wrap">
+                  <Sparkline large range={range === '7d' ? '24h' : '7d'} />
+                  <div className="chart-axis">
+                    <span>{range === '7d' ? '7 days ago' : '24 hours ago'}</span>
+                    <span>Now</span>
+                  </div>
+                </div>
+              </Paper>
+            </div>
+            <div className="section-title">
+              <Heading level={2}>Resource health</Heading>
+            </div>
+            <Paper className="panel" withBorder>
+              <Table>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Resource</Table.Th>
+                    <Table.Th>Type</Table.Th>
+                    <Table.Th>Provider</Table.Th>
+                    <Table.Th>Status</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {data.resources.map((r) => (
+                    <Table.Tr key={r.id}>
+                      <Table.Td>
+                        <div className="table-resource">
+                          <KindIcon small kind={r.kind} />
+                          <strong>{r.name}</strong>
+                        </div>
+                      </Table.Td>
+                      <Table.Td>{kindLabel[r.kind]}</Table.Td>
+                      <Table.Td>Local demo</Table.Td>
+                      <Table.Td>
+                        <span className="status">
+                          <span className="live-dot" />
+                          Available
+                        </span>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Paper>
+          </>
+        ) : (
+          <>
+            <div className="log-toolbar">
+              <div className="input-with-icon">
+                <Search size={15} />
+                <TextInput
+                  aria-label="Filter activity"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  placeholder="Filter by action, resource, or actor…"
+                />
+              </div>
+              <span>{events.length} events · Latest 200 local events</span>
+            </div>
+            <Paper className="panel table-panel" withBorder>
+              <Table>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Action</Table.Th>
+                    <Table.Th>Resource</Table.Th>
+                    <Table.Th>Actor</Table.Th>
+                    <Table.Th>Result</Table.Th>
+                    <Table.Th>Time</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {events.map((e) => (
+                    <Table.Tr key={e.id}>
+                      <Table.Td>
+                        <code>{e.action}</code>
+                      </Table.Td>
+                      <Table.Td>{e.resource}</Table.Td>
+                      <Table.Td>{e.actor}</Table.Td>
+                      <Table.Td>
+                        <Badge color="green">Success</Badge>
+                      </Table.Td>
+                      <Table.Td>{new Date(e.at).toLocaleString()}</Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+              {!events.length && (
+                <Empty title="No matching events" description="Try a different filter." />
+              )}
+            </Paper>
+          </>
+        )}
+      </ChoiceTabs>
     </>
   );
 }
@@ -2297,20 +2109,20 @@ function Billing({ data }: Shared) {
         title="Usage & billing"
         description="Start free. Know your limits before you reach them."
         actions={
-          <Badge tone="green">
+          <Badge color="green">
             <ShieldCheck size={13} />
             No payment method
           </Badge>
         }
       />
-      <div className="billing-overview panel">
+      <Paper className="billing-overview panel" withBorder>
         <div>
           <Badge>FREE PLAN</Badge>
-          <h2>Room to experiment.</h2>
-          <p>
+          <Heading level={2}>Room to experiment.</Heading>
+          <Text component="p">
             This prototype keeps spending at $0. Cloud allowances are tracked separately for each
             service.
-          </p>
+          </Text>
         </div>
         <div className="billing-total">
           <span>Estimated charges</span>
@@ -2319,9 +2131,9 @@ function Billing({ data }: Shared) {
           </strong>
           <span>Local demo · No cloud charges generated</span>
         </div>
-      </div>
+      </Paper>
       <div className="section-title">
-        <h2>Resource allowances</h2>
+        <Heading level={2}>Resource allowances</Heading>
         <a
           className="text-link"
           href="https://docs.pingcap.com/tidbcloud/select-cluster-tier/"
@@ -2331,20 +2143,20 @@ function Billing({ data }: Shared) {
           Current cloud limits <ArrowUpRight size={14} />
         </a>
       </div>
-      <div className="panel table-panel">
-        <table>
-          <thead>
-            <tr>
-              <th>Resource</th>
-              <th>Storage</th>
-              <th>Request units / month</th>
-              <th>Plan</th>
-            </tr>
-          </thead>
-          <tbody>
+      <Paper className="panel table-panel" withBorder>
+        <Table>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Resource</Table.Th>
+              <Table.Th>Storage</Table.Th>
+              <Table.Th>Request units / month</Table.Th>
+              <Table.Th>Plan</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
             {data.usage.map((u) => (
-              <tr key={u.resourceId}>
-                <td>
+              <Table.Tr key={u.resourceId}>
+                <Table.Td>
                   <div className="table-resource">
                     <KindIcon small kind={u.kind} />
                     <div>
@@ -2352,22 +2164,19 @@ function Billing({ data }: Shared) {
                       <small>{kindLabel[u.kind]}</small>
                     </div>
                   </div>
-                </td>
-                <td>
+                </Table.Td>
+                <Table.Td>
                   <div className="usage-cell">
                     <span>
                       {bytes(u.storageBytes)} <small>/ {u.storageLimitBytes / 1024 ** 3} GiB</small>
                     </span>
-                    <div className="progress">
-                      <i
-                        style={{
-                          width: `${Math.min((u.storageBytes / u.storageLimitBytes) * 100, 100)}%`,
-                        }}
-                      />
-                    </div>
+                    <Progress
+                      value={Math.min((u.storageBytes / u.storageLimitBytes) * 100, 100)}
+                      aria-label={`${u.name} storage used`}
+                    />
                   </div>
-                </td>
-                <td>
+                </Table.Td>
+                <Table.Td>
                   {u.monthlyRULimit ? (
                     <>
                       {u.kind === 'postgresql' ? 'Not metered in demo' : '0'}{' '}
@@ -2376,29 +2185,29 @@ function Billing({ data }: Shared) {
                   ) : (
                     'Read / write / storage / egress'
                   )}
-                </td>
-                <td>
-                  <Badge tone={u.kind === 'mysql' ? 'neutral' : 'purple'}>
+                </Table.Td>
+                <Table.Td>
+                  <Badge color="carbon">
                     {u.kind === 'mysql' ? 'Starter Free' : 'Free · Preview'}
                   </Badge>
-                </td>
-              </tr>
+                </Table.Td>
+              </Table.Tr>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </Table.Tbody>
+        </Table>
+      </Paper>
       <div className="two-column">
-        <section className="panel info-panel">
+        <Paper className="panel info-panel" withBorder>
           <Folder size={22} />
-          <h3>File System free tier</h3>
-          <p>
+          <Heading level={3}>File System free tier</Heading>
+          <Text component="p">
             $5 monthly allowance shared across the cloud organization. Without a credit card: one
             file system per region, 2 GiB storage and 2,000 files per system.
-          </p>
-          <p className="muted">
+          </Text>
+          <Text className="muted" component="p">
             The $5 allowance reduces cloud charges; it is not a universal spend cap. This local demo
             does not meter cloud spend.
-          </p>
+          </Text>
           <a
             className="text-link"
             href="https://docs.pingcap.com/tidbcloud-filesystem/manage-filesystem-limits/"
@@ -2407,27 +2216,26 @@ function Billing({ data }: Shared) {
           >
             File System limits <ArrowUpRight size={13} />
           </a>
-        </section>
-        <section className="panel info-panel">
+        </Paper>
+        <Paper className="panel info-panel" withBorder>
           <ShieldCheck size={22} />
-          <h3>Predictable limits</h3>
-          <p>
+          <Heading level={3}>Predictable limits</Heading>
+          <Text component="p">
             MySQL Starter with a $0 spending limit can throttle or reject connections at its quota.
             PostgreSQL Preview can restrict usage at its allowance.
-          </p>
-          <p className="muted">
+          </Text>
+          <Text className="muted" component="p">
             At a File System capacity limit, existing files remain readable and new writes stop.
             Native cloud enforcement must be verified when connecting providers.
-          </p>
-        </section>
+          </Text>
+        </Paper>
       </div>
-      <div className="notice quiet">
-        <CreditCard size={18} />
+      <Alert className="notice quiet" color="peacock" icon={<CreditCard size={18} />}>
         <span>
           Payments, invoices, and paid upgrades are deferred for this validation release. No payment
           information is collected.
         </span>
-      </div>
+      </Alert>
     </>
   );
 }
@@ -2458,94 +2266,87 @@ function WorkspaceSettings({ data, refresh, notify, copy }: Shared) {
     <>
       <PageHeading title="Settings" description="Make this workspace yours." />
       <form onSubmit={save} className="settings-form">
-        <section className="panel settings-panel">
+        <Paper className="panel settings-panel" withBorder>
           <div className="panel-header">
             <div>
-              <h2>Workspace details</h2>
-              <p>The home for your resources and agent workflows.</p>
+              <Heading level={2}>Workspace details</Heading>
+              <Text component="p">The home for your resources and agent workflows.</Text>
             </div>
           </div>
           <div className="settings-fields">
-            <label>
-              Workspace name
-              <input
-                value={workspaceName}
-                onChange={(e) => setWorkspaceName(e.target.value)}
-                required
-                minLength={2}
-                maxLength={50}
-              />
-            </label>
-            <label>
-              Description
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                maxLength={200}
-              />
-            </label>
-            <label>
-              Workspace ID
-              <div className="copy-input">
-                <code>{data.workspace.id}</code>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label="Copy workspace ID"
-                  onClick={() => copy(data.workspace.id)}
-                >
-                  <Copy size={15} />
-                </button>
-              </div>
-            </label>
+            <TextInput
+              label="Workspace name"
+              value={workspaceName}
+              onChange={(e) => setWorkspaceName(e.target.value)}
+              required
+              minLength={2}
+              maxLength={50}
+            />
+            <Textarea
+              label="Description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              maxLength={200}
+            />
+            <TextInput
+              label="Workspace ID"
+              readOnly
+              value={data.workspace.id}
+              rightSection={
+                <ActionIcon aria-label="Copy workspace ID" onClick={() => copy(data.workspace.id)}>
+                  <Copy size={18} />
+                </ActionIcon>
+              }
+            />
           </div>
-        </section>
-        <section className="panel settings-panel">
+        </Paper>
+        <Paper className="panel settings-panel" withBorder>
           <div className="panel-header">
             <div>
-              <h2>Personal account</h2>
-              <p>Your local developer profile.</p>
+              <Heading level={2}>Personal account</Heading>
+              <Text component="p">Your local developer profile.</Text>
             </div>
             <Badge>Local owner</Badge>
           </div>
           <div className="settings-fields">
-            <label>
-              Display name
-              <input
-                required
-                maxLength={50}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </label>
+            <TextInput
+              label="Display name"
+              required
+              maxLength={50}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
             <div className="account-row">
               <span className="profile-avatar">{name.slice(0, 1).toUpperCase()}</span>
               <div>
                 <strong>Guest session</strong>
-                <p>
+                <Text component="p">
                   Sign-in and account linking are deferred. Your local workspace is saved on this
                   machine.
-                </p>
+                </Text>
               </div>
-              <Badge tone="green">Active</Badge>
+              <Badge color="green">Active</Badge>
             </div>
           </div>
-        </section>
-        {error && <p className="inline-error">{error}</p>}
+        </Paper>
+        {error && (
+          <Alert className="inline-error" color="red">
+            {error}
+          </Alert>
+        )}
         <div className="settings-save">
-          <p>Changes apply to this local workspace.</p>
-          <Button variant="primary" disabled={busy}>
+          <Text component="p">Changes apply to this local workspace.</Text>
+          <Button variant="filled" loading={busy} disabled={busy} type="submit">
             {busy ? 'Saving…' : 'Save changes'}
           </Button>
         </div>
       </form>
-      <div className="notice quiet">
-        <KeyRound size={17} />
+      <Alert className="notice quiet" color="peacock" icon={<KeyRound size={17} />}>
         <span>
           For automation, create a scoped API key. The browser’s guest session cannot administer
           real TiDB Cloud accounts.
         </span>
-      </div>
+      </Alert>
     </>
   );
 }
@@ -2589,77 +2390,86 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
       onClose={onClose}
     >
       <form onSubmit={create}>
-        <label>Resource type</label>
-        <div className="resource-picker">
-          {(['mysql', 'postgresql', 'filesystem'] as Kind[]).map((k) => (
-            <button
-              key={k}
-              type="button"
-              className={k === kind ? 'selected' : ''}
-              onClick={() => changeKind(k)}
-            >
-              <KindIcon small kind={k} />
-              <span>{kindLabel[k]}</span>
-              {k === kind && <Check size={15} />}
-            </button>
+        <NativeSelect
+          label="Resource type"
+          value={kind}
+          onChange={(e) => {
+            const next = e.currentTarget.value;
+            if (next === 'mysql' || next === 'postgresql' || next === 'filesystem')
+              changeKind(next);
+          }}
+          data={[
+            { value: 'mysql', label: 'MySQL Starter' },
+            { value: 'postgresql', label: 'PostgreSQL Starter' },
+            { value: 'filesystem', label: 'File System' },
+          ]}
+        />
+        <TextInput
+          label="Resource name"
+          description={<>3–40 lowercase letters, numbers, and hyphens.</>}
+          required
+          pattern="[a-z][a-z0-9-]{2,39}"
+          minLength={3}
+          maxLength={40}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={kind === 'filesystem' ? 'agent-context' : 'agent-memory-dev'}
+        />
+        <NativeSelect
+          label="Region"
+          description={
+            <>
+              {kind === 'postgresql'
+                ? 'PostgreSQL Preview is configured for N. Virginia in this prototype.'
+                : 'Available regions depend on the resource provider.'}
+            </>
+          }
+          value={selectedRegion}
+          onChange={(e) => setRegion(e.target.value)}
+        >
+          {data.capabilities[kind].regions.map((r) => (
+            <option key={r} value={r}>
+              {region(r)}
+            </option>
           ))}
-        </div>
-        <label>
-          Resource name
-          <input
-            required
-            pattern="[a-z][a-z0-9-]{2,39}"
-            minLength={3}
-            maxLength={40}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={kind === 'filesystem' ? 'agent-context' : 'agent-memory-dev'}
-          />
-          <small>3–40 lowercase letters, numbers, and hyphens.</small>
-        </label>
-        <label>
-          Region
-          <select value={selectedRegion} onChange={(e) => setRegion(e.target.value)}>
-            {data.capabilities[kind].regions.map((r) => (
-              <option key={r} value={r}>
-                {region(r)}
-              </option>
-            ))}
-          </select>
-          <small>
-            {kind === 'postgresql'
-              ? 'PostgreSQL Preview is configured for N. Virginia in this prototype.'
-              : 'Available regions depend on the resource provider.'}
-          </small>
-        </label>
+        </NativeSelect>
         <div className="plan-selection">
           <div>
             <Zap size={17} />
             <strong>Free tier</strong>
             <Badge>{kind === 'mysql' ? 'Starter' : 'Preview'}</Badge>
           </div>
-          <p>
+          <Text component="p">
             {data.capabilities[kind].storageGiB} GiB storage
             {kind === 'filesystem'
               ? ' · 2,000 files'
               : ` · ${data.capabilities[kind].monthlyRU! / 1000000}M RU / month`}
-          </p>
+          </Text>
           <small>Local simulation. No real cloud resource will be provisioned.</small>
         </div>
         {limited && (
-          <div className="notice">
-            <CircleHelp size={17} />
+          <Alert className="notice" color="peacock" icon={<CircleHelp size={17} />}>
             <span>
               Your free file system already exists in this region. Use shared-files to continue.
             </span>
-          </div>
+          </Alert>
         )}
-        {error && <p className="inline-error">{error}</p>}
+        {error && (
+          <Alert className="inline-error" color="red">
+            {error}
+          </Alert>
+        )}
         <div className="modal-actions">
           <Button type="button" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" disabled={busy || limited} icon={busy ? Loader2 : Plus}>
+          <Button
+            variant="filled"
+            disabled={busy || limited}
+            loading={busy}
+            leftSection={<Plus size={18} />}
+            type="submit"
+          >
             {busy ? 'Creating…' : 'Create resource'}
           </Button>
         </div>
@@ -2709,35 +2519,35 @@ function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose:
             <KeyRound size={20} />
             <code>{secret}</code>
           </div>
-          <div className="notice">
-            <ShieldCheck size={17} />
+          <Alert className="notice" color="peacock" icon={<ShieldCheck size={17} />}>
             <span>
               Save this in your agent’s environment as WORKSPACE_API_KEY. This demo key only works
               against the local workspace API.
             </span>
-          </div>
+          </Alert>
           <div className="modal-actions">
-            <Button icon={Copy} onClick={() => copy(secret)}>
+            <Button
+              leftSection={React.createElement(Copy, { size: 18 })}
+              onClick={() => copy(secret)}
+            >
               Copy key
             </Button>
-            <Button variant="primary" onClick={onClose}>
+            <Button variant="filled" onClick={onClose}>
               Done
             </Button>
           </div>
         </>
       ) : (
         <form onSubmit={create}>
-          <label>
-            Key name
-            <input
-              required
-              minLength={2}
-              maxLength={60}
-              placeholder="e.g. coding-agent-dev"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </label>
+          <TextInput
+            label="Key name"
+            required
+            minLength={2}
+            maxLength={60}
+            placeholder="e.g. coding-agent-dev"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
           <ResourceAccessPicker
             resources={data.resources}
             resourceIds={resourceIds}
@@ -2747,55 +2557,65 @@ function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose:
                 setScopes((current) => current.filter((scope) => scope !== 'resources:write'));
             }}
           />
-          <label>Allowed actions</label>
-          <div className="scope-picker">
-            {allScopes.map((s) => (
-              <label key={s}>
-                <input
-                  type="checkbox"
+          <Fieldset legend="Allowed actions">
+            <div className="scope-picker">
+              {allScopes.map((s) => (
+                <Checkbox
+                  label={
+                    <span>
+                      <code>{s}</code>
+                      <small>
+                        {
+                          (
+                            {
+                              'resources:read': 'Discover workspace resources',
+                              'resources:write': 'Create demo resources',
+                              'files:read': 'Read files and context',
+                              'files:write': 'Create, edit, and delete files',
+                              'queries:execute': 'Run supported sample SQL',
+                              'usage:read': 'Read usage and allowances',
+                            } as Record<string, string>
+                          )[s]
+                        }
+                      </small>
+                    </span>
+                  }
+                  className="permission-choice"
+                  key={s}
+
                   checked={scopes.includes(s)}
                   disabled={s === 'resources:write' && !resourceIds.includes('*')}
                   onChange={(e) =>
                     setScopes(e.target.checked ? [...scopes, s] : scopes.filter((v) => v !== s))
                   }
                 />
-                <span>
-                  <code>{s}</code>
-                  <small>
-                    {
-                      (
-                        {
-                          'resources:read': 'Discover workspace resources',
-                          'resources:write': 'Create demo resources',
-                          'files:read': 'Read files and context',
-                          'files:write': 'Create, edit, and delete files',
-                          'queries:execute': 'Run supported sample SQL',
-                          'usage:read': 'Read usage and allowances',
-                        } as Record<string, string>
-                      )[s]
-                    }
-                  </small>
-                </span>
-              </label>
-            ))}
-          </div>
-          <label>
-            Expiration
-            <select value={expires} onChange={(e) => setExpires(Number(e.target.value))}>
-              <option value={7}>7 days</option>
-              <option value={30}>30 days</option>
-              <option value={90}>90 days</option>
-            </select>
-          </label>
-          {error && <p className="inline-error">{error}</p>}
+              ))}
+            </div>
+          </Fieldset>
+          <NativeSelect
+            label="Expiration"
+            value={expires}
+            onChange={(e) => setExpires(Number(e.target.value))}
+          >
+            <option value={7}>7 days</option>
+            <option value={30}>30 days</option>
+            <option value={90}>90 days</option>
+          </NativeSelect>
+          {error && (
+            <Alert className="inline-error" color="red">
+              {error}
+            </Alert>
+          )}
           <div className="modal-actions">
             <Button type="button" onClick={onClose}>
               Cancel
             </Button>
             <Button
-              variant="primary"
-              icon={KeyRound}
+              variant="filled"
+              leftSection={React.createElement(KeyRound, { size: 18 })}
+              loading={busy}
               disabled={busy || !scopes.length || !resourceIds.length}
+              type="submit"
             >
               {busy ? 'Creating…' : 'Create key'}
             </Button>
@@ -2858,36 +2678,26 @@ function Connection({
       description={`${kindLabel[r.kind]} · One Workspace Key`}
       onClose={onClose}
     >
-      <div className="notice">
-        <KeyRound size={17} />
+      <Alert className="notice" color="peacock" icon={<KeyRound size={17} />}>
         <span>
           Use a Workspace Key with access to <strong>{r.name}</strong> and{' '}
           <code>{isFileSystem ? 'files:read' : 'queries:execute'}</code>. The same key can access
           your other permitted resources.
         </span>
-      </div>
-      <div className="tabs standalone">
-        {['REST API', 'JavaScript', 'Python'].map((item) => (
-          <button
-            key={item}
-            className={tab === item ? 'selected' : ''}
-            onClick={() => setTab(item)}
-          >
-            {item}
-          </button>
-        ))}
-      </div>
-      <Code
-        copy={copy}
-        label="WORKSPACE API · LOCAL DEMO"
-        value={tab === 'REST API' ? shell : tab === 'JavaScript' ? javascript : python}
-      />
+      </Alert>
+      <ChoiceTabs value={tab} onChange={setTab} options={['REST API', 'JavaScript', 'Python']}>
+        <Code
+          copy={copy}
+          label="WORKSPACE API · LOCAL DEMO"
+          value={tab === 'REST API' ? shell : tab === 'JavaScript' ? javascript : python}
+        />
+      </ChoiceTabs>
       <div className="connection-note">
         <ShieldCheck size={18} />
-        <p>
+        <Text component="p">
           Provider credentials are handled by the service. This preview uses a local provider;
           native database connections and file mounts are not available yet.
-        </p>
+        </Text>
       </div>
       <div className="modal-actions">
         <Button
@@ -2899,7 +2709,7 @@ function Connection({
           Manage keys
         </Button>
         <Button
-          variant="dark"
+          variant="filled"
           onClick={() => {
             onClose();
             if (isFileSystem) go('files');
@@ -2932,7 +2742,7 @@ function SearchModal({
     <Modal title="Search workspace" onClose={onClose}>
       <div className="input-with-icon search-modal-input">
         <Search size={18} />
-        <input
+        <TextInput
           autoFocus
           placeholder="Search pages or resources…"
           aria-label="Search pages or resources"
@@ -2944,7 +2754,7 @@ function SearchModal({
       <div className="search-results">
         <div className="nav-label">Pages</div>
         {pages.map(([key, r]) => (
-          <button
+          <UnstyledButton
             key={key}
             onClick={() => {
               go(key as Route);
@@ -2954,11 +2764,11 @@ function SearchModal({
             <r.icon size={17} />
             <span>{r.label}</span>
             <ArrowUpRight size={14} />
-          </button>
+          </UnstyledButton>
         ))}
         <div className="nav-label">Resources</div>
         {resources.map((r) => (
-          <button
+          <UnstyledButton
             key={r.id}
             onClick={() => {
               onClose();
@@ -2968,9 +2778,9 @@ function SearchModal({
             <KindIcon small kind={r.kind} />
             <span>{r.name}</span>
             <Badge>{kindLabel[r.kind]}</Badge>
-          </button>
+          </UnstyledButton>
         ))}
-        {!pages.length && !resources.length && <p>No results for “{query}”.</p>}
+        {!pages.length && !resources.length && <Text component="p">No results for “{query}”.</Text>}
       </div>
     </Modal>
   );

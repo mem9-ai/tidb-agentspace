@@ -5,7 +5,19 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      react-runtime:
+        patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
     ignore:
+      # TiUI SQL Editor 0.0.6 requires React 18.3.1; revisit with an editor upgrade.
+      - dependency-name: react
+        versions: ['>=19.0.0']
+      - dependency-name: react-dom
+        versions: ['>=19.0.0']
+      - dependency-name: '@types/react'
+        versions: ['>=19.0.0']
+      - dependency-name: '@types/react-dom'
+        versions: ['>=19.0.0']
       # Revisit with a coordinated typescript-eslint upgrade; its current peer range is <6.1.
       - dependency-name: typescript
         versions: ['>=6.1.0']

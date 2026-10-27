@@ -76,7 +76,8 @@ and revisit the relevant rule when discovering contradictory evidence.
 ## Examples from this project
 
 - **TiUI correction:** visual similarity and a red logo were insufficient. The accepted rule
-  requires actual TiUI components/provider, while the status remains migration pending.
+  requires actual TiUI components/provider. The migration now supplies that integration;
+  versioned compatibility and style-composition findings are recorded in its standard.
   See [TiUI standard](tiui-design-system.md) and [ADR 0002](../decisions/0002-tiui-design-system.md).
 - **Readability:** the owner requested larger text and less crowding. Keep those targets as
   project overrides, separate from upstream typography defaults.

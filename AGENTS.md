@@ -12,8 +12,8 @@ changing repository policy.
   implementation. These are shared across tools and machines, not private agent memory.
 - For any UI, component, typography, layout, theme, icon, or frontend dependency change,
   read [the TiUI standard](docs/standards/tiui-design-system.md) and `src/AGENTS.md`.
-  Use real TiUI components and supported shared overrides. The custom prototype is still
-  awaiting migration; visual similarity does not establish TiUI integration.
+  Use the installed TiUI components and supported shared overrides in `src/ui/`.
+  Preserve the integration findings and verification requirements in the standard.
 - Capture reusable user corrections, integration findings, and conventions in the same PR
   using [knowledge maintenance](docs/standards/knowledge-maintenance.md). Update the canonical
   document and its entry points; distinguish verified facts, project choices, proposals,

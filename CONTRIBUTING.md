@@ -21,6 +21,9 @@ A different version manager is fine if it selects the same versions. The runtime
 fails with setup instructions when the selected versions differ. Do not change the pins
 just to match one machine. Dependencies use exact versions and the committed npm lockfile.
 Update the version pins, lockfile, and CI expectations together in a focused PR.
+`strict-peer-deps=true` makes incompatible peers fail installation locally and in CI.
+React/React DOM and their types stay on 18 while TiUI SQL Editor 0.0.6 requires React 18.3.1;
+upgrade the editor and runtime together after verifying every transitive peer.
 TypeScript 6.0.3 is paired with the supported range of the pinned typescript-eslint parser;
 upgrade the compiler and parser together rather than independently selecting `latest`.
 Keep `@types/node` on the pinned Node runtime's major. Review the compatibility holds in
@@ -78,7 +81,7 @@ recreating formatter output or introduce broad `eslint-disable` / `ts-ignore` es
 Keep new frontend features in focused modules rather than expanding `src/App.tsx` indefinitely.
 The existing prototype is a starting point, not the target module structure. Use the current
 TiUI standard for real components, semantic tokens, theme ownership, and shared readability
-overrides. The public TiUI package is available; the custom console's migration is pending.
+overrides. The console now uses TiUI; reuse its shared adapters instead of rebuilding controls.
 Preserve existing behavior during scoped migrations and update their status with evidence.
 Keep UI text, comments, and common engineering documentation in English.
 
