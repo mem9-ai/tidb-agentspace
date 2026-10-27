@@ -140,6 +140,12 @@ verified, and record that as a remaining gap.
 
 ## Theme, responsive behavior, and interaction
 
+- Resource-specific tools live under their resource, with context in the URL. The owner's
+  2026-10-27 navigation correction places SQL Editor inside Databases: choose a database,
+  open its editor, and keep that database selected through connection links and history.
+  Follow the [information architecture](../architecture.md#console-information-architecture)
+  when adding tools; do not add a workspace-level SQL Editor entry. Verify valid, unavailable,
+  and empty-resource paths. This navigation change does not complete the TiUI migration.
 - The selector offers Light, Dark, and System; map the visible System option to TiUI `auto`.
   Use the library's persistence/system support. Migrate the current `tidb-workspace-theme`
   preference once (`system` → `auto`) so integration does not reset a user's selection.

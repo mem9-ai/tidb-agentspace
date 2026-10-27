@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity,
   ArrowDownToLine,
+  ArrowLeft,
   ArrowRight,
   ArrowUpRight,
   BookOpen,
@@ -42,6 +43,8 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { ResourceAccessPicker } from './features/keys/ResourceAccessPicker';
 import { ThemePicker } from './features/theme/ThemePicker';
+import { databaseEditorHash, parseWorkspaceRoute } from './features/navigation/workspace-route';
+import type { Route, WorkspaceRoute } from './features/navigation/workspace-route';
 
 type Kind = 'mysql' | 'postgresql' | 'filesystem';
 type Resource = {
@@ -111,21 +114,9 @@ type QueryResult = {
   mode: 'demo';
   durationMs: number;
 };
-type Route =
-  | 'overview'
-  | 'databases'
-  | 'sql'
-  | 'files'
-  | 'connect'
-  | 'keys'
-  | 'api'
-  | 'monitoring'
-  | 'billing'
-  | 'settings';
 const routes: Record<Route, { label: string; icon: LucideIcon; group: string }> = {
   overview: { label: 'Overview', icon: LayoutDashboard, group: 'Workspace' },
   databases: { label: 'Databases', icon: Database, group: 'Workspace' },
-  sql: { label: 'SQL editor', icon: Code2, group: 'Workspace' },
   files: { label: 'File System', icon: Folder, group: 'Workspace' },
   connect: { label: 'Connect an agent', icon: Workflow, group: 'Build' },
   keys: { label: 'API keys', icon: KeyRound, group: 'Build' },
@@ -166,9 +157,11 @@ async function api<T = unknown>(path: string, init: RequestInit = {}): Promise<T
 function go(route: Route) {
   location.hash = route;
 }
-function currentRoute(): Route {
-  const value = location.hash.slice(1);
-  return value in routes ? (value as Route) : 'overview';
+function openDatabaseEditor(resourceId: string) {
+  location.hash = databaseEditorHash(resourceId);
+}
+function currentRoute(): WorkspaceRoute {
+  return parseWorkspaceRoute(location.hash);
 }
 function bytes(value: number) {
   if (!value) return '0 B';
@@ -458,12 +451,13 @@ function WorkspaceIllustration() {
 
 function App() {
   const [data, setData] = useState<Data | null>(null),
-    [route, setRoute] = useState<Route>(currentRoute),
+    [routeLocation, setRouteLocation] = useState<WorkspaceRoute>(currentRoute),
     [error, setError] = useState(''),
     [toast, setToast] = useState(''),
     [modal, setModal] = useState<'resource' | 'key' | 'search' | null>(null),
     [connection, setConnection] = useState<Resource | null>(null),
     [sidebar, setSidebar] = useState(false);
+  const route = routeLocation.page;
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function notify(message: string) {
     setToast(message);
@@ -485,7 +479,7 @@ function App() {
   useEffect(() => {
     void start();
     const update = () => {
-      setRoute(currentRoute());
+      setRouteLocation(currentRoute());
       setSidebar(false);
     };
     window.addEventListener('hashchange', update);
@@ -625,7 +619,15 @@ function App() {
             </span>
             <span>{data.workspace.name}</span>
             <ChevronRight size={13} />
-            <strong>{routes[route].label}</strong>
+            {routeLocation.databaseId ? (
+              <>
+                <a href="#databases">Databases</a>
+                <ChevronRight className="resource-breadcrumb-separator" size={13} />
+                <strong>SQL editor</strong>
+              </>
+            ) : (
+              <strong>{routes[route].label}</strong>
+            )}
           </div>
           <div className="topbar-right">
             <ThemePicker />
@@ -654,8 +656,7 @@ function App() {
         </header>
         <main key={route}>
           {route === 'overview' && <Overview {...shared} />}
-          {route === 'databases' && <Databases {...shared} />}
-          {route === 'sql' && <SqlEditor {...shared} />}
+          {route === 'databases' && <Databases {...shared} databaseId={routeLocation.databaseId} />}
           {route === 'files' && <Files {...shared} />}
           {route === 'connect' && <Connect {...shared} />}
           {route === 'keys' && <Keys {...shared} onNewKey={() => setModal('key')} />}
@@ -963,7 +964,23 @@ function eventLabel(action: string) {
     )[action] || action
   );
 }
-function Databases({ data, onCreate, onConnect }: Shared) {
+function Databases({ databaseId, ...shared }: Shared & { databaseId?: string }) {
+  const { data, onCreate, onConnect } = shared;
+  const databases = data.resources.filter((r) => r.kind !== 'filesystem');
+  if (databaseId) {
+    const database = databases.find((r) => r.id === databaseId);
+    if (!database) {
+      return (
+        <Empty
+          icon={Database}
+          title="Database unavailable"
+          description="This database is no longer available in your workspace. Choose another database to open its SQL editor."
+          action={<Button onClick={() => go('databases')}>Back to databases</Button>}
+        />
+      );
+    }
+    return <SqlEditor key={database.id} {...shared} database={database} />;
+  }
   return (
     <>
       <PageHeading
@@ -983,28 +1000,42 @@ function Databases({ data, onCreate, onConnect }: Shared) {
           databases and actions your workflow needs.
         </span>
       </div>
-      <div className="panel table-panel">
-        <table>
-          <thead>
-            <tr>
-              <th>Database</th>
-              <th>Compatibility</th>
-              <th>Region</th>
-              <th>Status</th>
-              <th>Plan</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {data.resources
-              .filter((r) => r.kind !== 'filesystem')
-              .map((r) => (
+      {!databases.length ? (
+        <div className="panel">
+          <Empty
+            icon={Database}
+            title="Create your first database"
+            description="Add a MySQL or PostgreSQL database, then open its SQL editor to start querying."
+            action={
+              <Button variant="primary" onClick={onCreate}>
+                Create database
+              </Button>
+            }
+          />
+        </div>
+      ) : (
+        <div className="panel table-panel">
+          <table>
+            <thead>
+              <tr>
+                <th>Database</th>
+                <th>Compatibility</th>
+                <th>Region</th>
+                <th>Status</th>
+                <th>Plan</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {databases.map((r) => (
                 <tr key={r.id}>
                   <td>
                     <div className="table-resource">
                       <KindIcon small kind={r.kind} />
                       <div>
-                        <strong>{r.name}</strong>
+                        <a className="text-link database-name" href={databaseEditorHash(r.id)}>
+                          {r.name}
+                        </a>
                         <small>{r.id}</small>
                       </div>
                     </div>
@@ -1022,26 +1053,33 @@ function Databases({ data, onCreate, onConnect }: Shared) {
                   </td>
                   <td>Starter · Free</td>
                   <td>
-                    <Button onClick={() => onConnect(r)}>
-                      Connect <ArrowUpRight size={13} />
-                    </Button>
+                    <div className="database-actions">
+                      <Button
+                        icon={Code2}
+                        onClick={() => openDatabaseEditor(r.id)}
+                        aria-label={`Open SQL editor for ${r.name}`}
+                      >
+                        SQL editor
+                      </Button>
+                      <Button onClick={() => onConnect(r)}>
+                        Connect <ArrowUpRight size={13} />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
-          </tbody>
-        </table>
-      </div>
+            </tbody>
+          </table>
+        </div>
+      )}
       <div className="two-column">
         <div className="panel info-panel">
           <Code2 size={22} />
           <h3>Start with a query</h3>
           <p>
-            Explore sample agent events in the SQL editor. The demo provider supports two read-only
-            query patterns.
+            Choose a database above and open its SQL editor. Queries run against that database; the
+            demo provider supports two read-only query patterns.
           </p>
-          <button className="text-link" onClick={() => go('sql')}>
-            Open SQL editor <ArrowRight size={14} />
-          </button>
         </div>
         <div className="panel info-panel">
           <Workflow size={22} />
@@ -1063,14 +1101,21 @@ function Databases({ data, onCreate, onConnect }: Shared) {
     </>
   );
 }
-function SqlEditor({ data, refresh, notify }: Shared) {
+function SqlEditor({
+  data,
+  database,
+  refresh,
+  notify,
+  onConnect,
+}: Shared & { database: Resource }) {
   const dbs = data.resources.filter((r) => r.kind !== 'filesystem');
-  const [resourceId, setResourceId] = useState(dbs[0]?.id || ''),
-    [sql, setSql] = useState('SELECT * FROM agent_events LIMIT 10;'),
+  const resourceId = database.id;
+  const [sql, setSql] = useState('SELECT * FROM agent_events LIMIT 10;'),
     [busy, setBusy] = useState(false),
     [result, setResult] = useState<QueryResult | null>(null),
     [error, setError] = useState('');
   async function run() {
+    if (busy) return;
     setBusy(true);
     setError('');
     try {
@@ -1090,7 +1135,19 @@ function SqlEditor({ data, refresh, notify }: Shared) {
   }
   return (
     <>
-      <PageHeading title="SQL editor" description="Explore your database, one query at a time." />
+      <a className="text-link database-back" href="#databases">
+        <ArrowLeft size={16} /> All databases
+      </a>
+      <PageHeading
+        eyebrow="SQL EDITOR"
+        title={database.name}
+        description={`${kindLabel[database.kind]} · Starter · ${region(database.region)}`}
+        actions={
+          <Button onClick={() => onConnect(database)}>
+            Connect <ArrowUpRight size={14} />
+          </Button>
+        }
+      />
       <div className="notice">
         <Sparkles size={17} />
         <span>
@@ -1105,10 +1162,7 @@ function SqlEditor({ data, refresh, notify }: Shared) {
             <select
               aria-label="Database"
               value={resourceId}
-              onChange={(e) => {
-                setResourceId(e.target.value);
-                setResult(null);
-              }}
+              onChange={(e) => openDatabaseEditor(e.target.value)}
             >
               {dbs.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -1147,7 +1201,7 @@ function SqlEditor({ data, refresh, notify }: Shared) {
           />
         </div>
         <div className="editor-bottom">
-          <span>SQL · {kindLabel[dbs.find((r) => r.id === resourceId)?.kind || 'mysql']}</span>
+          <span>SQL · {kindLabel[database.kind]}</span>
           <span>⌘ / Ctrl + Enter to run</span>
         </div>
       </div>
@@ -2848,7 +2902,8 @@ function Connection({
           variant="dark"
           onClick={() => {
             onClose();
-            go(isFileSystem ? 'files' : 'sql');
+            if (isFileSystem) go('files');
+            else openDatabaseEditor(r.id);
           }}
         >
           Open {isFileSystem ? 'file browser' : 'SQL editor'} <ArrowRight size={14} />
