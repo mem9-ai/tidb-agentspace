@@ -75,6 +75,12 @@ navigation. Text source editing remains available; correcting a draft can restor
 Binary images, PDFs, and rich media are not implemented. See the
 [file reading standard](standards/tiui-design-system.md#theme-responsive-behavior-and-interaction).
 
+File System creation and fresh demo workspaces default to AWS Singapore (`aws-ap-southeast-1`),
+with Oregon retained as another configured region. Persisted resources keep their existing
+regions and contents. Region availability, free-tier allowances, and Drive9 Anonymous versus
+TiDBCloud mode are separate provider properties; see [ADR 0003](decisions/0003-filesystem-regions-and-modes.md)
+for the verified configuration sources and integration boundaries.
+
 Use real TiUI components, its semantic palette and theme provider, with the Workspace's
 larger typography and spacing requirements. The [TiUI standard](standards/tiui-design-system.md)
 defines verified defaults, component selection, light/dark/system behavior, responsive

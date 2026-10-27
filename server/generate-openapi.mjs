@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { format, resolveConfig } from 'prettier';
+import { capabilities } from './store.mjs';
 const schemas = {
   Resource: {
     type: 'object',
@@ -133,7 +134,11 @@ const paths = {
         properties: {
           name: { type: 'string', pattern: '^[a-z][a-z0-9-]{2,39}$' },
           kind: { enum: ['mysql', 'postgresql', 'filesystem'] },
-          region: { enum: ['aws-us-east-1', 'aws-us-west-2'] },
+          region: {
+            enum: [...new Set(Object.values(capabilities).flatMap((value) => value.regions))],
+            description:
+              'Choose a region supported by the resource kind in capabilities. The first supported region is the Console default.',
+          },
         },
       },
       output: { type: 'object', properties: { data: ref('Resource'), mode: { const: 'demo' } } },

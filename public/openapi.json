@@ -231,7 +231,10 @@
                 "properties": {
                   "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,39}$" },
                   "kind": { "enum": ["mysql", "postgresql", "filesystem"] },
-                  "region": { "enum": ["aws-us-east-1", "aws-us-west-2"] }
+                  "region": {
+                    "enum": ["aws-us-east-1", "aws-us-west-2", "aws-ap-southeast-1"],
+                    "description": "Choose a region supported by the resource kind in capabilities. The first supported region is the Console default."
+                  }
                 }
               }
             }

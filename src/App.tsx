@@ -1,4 +1,5 @@
 import './features/files/file-preview.css';
+import { regionLabel as region } from './features/resources/regions';
 import {
   ActionIcon,
   Alert,
@@ -202,9 +203,6 @@ function relative(value: string) {
       : seconds < 86400
         ? `${Math.floor(seconds / 3600)}h ago`
         : new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-function region(value: string) {
-  return value === 'aws-us-east-1' ? 'AWS · N. Virginia' : 'AWS · Oregon';
 }
 function KindIcon({ kind, small = false }: { kind: Kind; small?: boolean }) {
   const Icon = kind === 'filesystem' ? Folder : Database;
@@ -2428,9 +2426,11 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
       setBusy(false);
     }
   }
-  const limited =
-    kind === 'filesystem' &&
-    data.resources.some((r) => r.kind === kind && r.region === selectedRegion);
+  const existingFileSystem =
+    kind === 'filesystem'
+      ? data.resources.find((r) => r.kind === kind && r.region === selectedRegion)
+      : undefined;
+  const limited = !!existingFileSystem;
   return (
     <Modal
       title="Create a resource"
@@ -2469,7 +2469,9 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
             <>
               {kind === 'postgresql'
                 ? 'PostgreSQL Preview is configured for N. Virginia in this prototype.'
-                : 'Available regions depend on the resource provider.'}
+                : kind === 'filesystem'
+                  ? 'Defaults to AWS Singapore. The free-tier allowance applies per region.'
+                  : 'Available regions depend on the resource provider.'}
             </>
           }
           value={selectedRegion}
@@ -2498,7 +2500,8 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
         {limited && (
           <Alert className="notice" color="peacock" icon={<CircleHelp size={17} />}>
             <span>
-              Your free file system already exists in this region. Use shared-files to continue.
+              Your free file system already exists in this region. Use {existingFileSystem?.name} to
+              continue.
             </span>
           </Alert>
         )}

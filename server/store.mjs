@@ -19,7 +19,8 @@ export const capabilities = {
   },
   filesystem: {
     label: 'TiDB Cloud File System',
-    regions: ['aws-us-west-2'],
+    // The first region is the Console default. See ADR 0003 for provider/mode evidence.
+    regions: ['aws-ap-southeast-1', 'aws-us-west-2'],
     storageGiB: 2,
     maxFiles: 2000,
     preview: true,
@@ -57,7 +58,7 @@ export function seed() {
         id: 'fs_shared',
         name: 'shared-files',
         kind: 'filesystem',
-        region: 'aws-us-west-2',
+        region: capabilities.filesystem.regions[0],
         status: 'active',
         createdAt: now,
       },

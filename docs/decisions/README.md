@@ -10,3 +10,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0001: Unified Workspace Key](0001-unified-workspace-key.md)
 - [0002: TiUI as the shared frontend foundation](0002-tiui-design-system.md) — implemented;
   see its linked standard for current integration and verification evidence.
+- [0003: File System regions and provider modes](0003-filesystem-regions-and-modes.md) —
+  Singapore default, additive API support, preserved existing regions, and mode boundaries.

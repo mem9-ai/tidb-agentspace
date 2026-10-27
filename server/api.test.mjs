@@ -4,6 +4,7 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from './index.mjs';
+import { capabilities, createStore, seed } from './store.mjs';
 import { createHash } from 'node:crypto';
 
 let server, address, cookie, directory, dataFile;
@@ -239,11 +240,99 @@ test('resource creation supports idempotency and respects protocol capabilities'
       await request(base + '/resources', 'POST', {
         name: 'second-files',
         kind: 'filesystem',
-        region: 'aws-us-west-2',
+        region: 'aws-ap-southeast-1',
       })
     ).status,
     409,
   );
+});
+test('File System defaults to Singapore, keeps Oregon, and enforces resource-specific regional limits', async () => {
+  const discovery = await request(base + '/resources');
+  assert.deepEqual(discovery.body.capabilities.filesystem.regions, [
+    'aws-ap-southeast-1',
+    'aws-us-west-2',
+  ]);
+  assert.equal(discovery.body.data.find((r) => r.id === 'fs_shared').region, 'aws-ap-southeast-1');
+  const existingNames = new Set(discovery.body.data.map((r) => r.name));
+  assert(!existingNames.has('oregon-files'));
+  const input = { name: 'oregon-files', kind: 'filesystem', region: 'aws-us-west-2' };
+  const oregon = await request(base + '/resources', 'POST', input);
+  assert.equal(oregon.status, 201);
+  assert.equal(oregon.body.data.region, 'aws-us-west-2');
+  const duplicate = await request(base + '/resources', 'POST', {
+    ...input,
+    name: 'oregon-files-again',
+  });
+  assert.equal(duplicate.status, 409);
+  assert.equal(duplicate.body.error.code, 'FREE_TIER_LIMIT');
+  for (const kind of ['mysql', 'postgresql']) {
+    const unsupported = await request(base + '/resources', 'POST', {
+      name: `singapore-${kind}`,
+      kind,
+      region: 'aws-ap-southeast-1',
+    });
+    assert.equal(unsupported.status, 400);
+    assert.equal(unsupported.body.error.code, 'UNSUPPORTED_REGION');
+  }
+  const unsupported = await request(base + '/resources', 'POST', {
+    name: 'unknown-files',
+    kind: 'filesystem',
+    region: 'unknown-region',
+  });
+  assert.equal(unsupported.status, 400);
+  const contract = (await request('/openapi.json')).body;
+  const documentedRegions =
+    contract.paths['/workspaces/{workspaceId}/resources'].post.requestBody.content[
+      'application/json'
+    ].schema.properties.region.enum;
+  assert.deepEqual(
+    new Set(documentedRegions),
+    new Set(Object.values(capabilities).flatMap((c) => c.regions)),
+  );
+});
+
+test('new default never relocates persisted File Systems or rewrites their files', async () => {
+  const legacy = seed();
+  legacy.resources.find((r) => r.id === 'fs_shared').region = 'aws-us-west-2';
+  const file = join(directory, 'legacy-region.json');
+  await writeFile(file, JSON.stringify(legacy));
+  const reopened = await createStore(file);
+  assert.deepEqual(reopened.read(), legacy);
+  await reopened.mutate((draft) => {
+    draft.workspace.description = 'Keep original resource location';
+  });
+  const persisted = JSON.parse(await readFile(file, 'utf8'));
+  assert.deepEqual(persisted.resources, legacy.resources);
+  assert.deepEqual(persisted.files, legacy.files);
+  const legacyServer = await createApp({ dataFile: file });
+  await new Promise((resolve) => legacyServer.listen(0, '127.0.0.1', resolve));
+  try {
+    const origin = `http://127.0.0.1:${legacyServer.address().port}`;
+    const session = await fetch(origin + '/api/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const response = await fetch(origin + base + '/resources', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: session.headers.get('set-cookie').split(';')[0],
+      },
+      body: JSON.stringify({
+        name: 'singapore-files',
+        kind: 'filesystem',
+        region: 'aws-ap-southeast-1',
+      }),
+    });
+    assert.equal(response.status, 201);
+    assert.equal((await response.json()).data.region, 'aws-ap-southeast-1');
+    const updated = JSON.parse(await readFile(file, 'utf8'));
+    assert.deepEqual(updated.files, legacy.files);
+    assert.equal(updated.resources.find((r) => r.id === 'fs_shared').region, 'aws-us-west-2');
+  } finally {
+    await new Promise((resolve) => legacyServer.close(resolve));
+  }
 });
 test('queries execute supported patterns and reject invented cloud behavior', async () => {
   let result = await request(base + '/queries', 'POST', {
