@@ -71,6 +71,12 @@ defines API-first and agent-experience principles and a staged design for safe a
 delivery. Start a specification with [the feature template](docs/templates/feature-spec.md).
 The autonomous harness remains proposed; existing quality and delivery policies apply.
 
+Use the [GitHub contribution workflow](docs/standards/github-contribution-workflow.md) to take
+an [intent Issue](https://github.com/siddontang/tidb.ai/issues/new?template=01-intent.yml)
+through a specification PR, bounded implementation tasks, evaluation, and delivery. Different
+agents can take successive roles against the same accepted Git revision. Native Issue forms
+support intent, tasks, and acceptance cases; automatic dispatch is not yet implemented.
+
 Every coding tool uses the shared [agent instructions](AGENTS.md), [contribution guide](CONTRIBUTING.md), and [standards index](docs/standards/README.md). The [knowledge-maintenance workflow](docs/standards/knowledge-maintenance.md) captures reusable user feedback and integration findings in repository docs, so future contributors can use them without this chat's history.
 
 `npm run check` is the common local/CI gate. It checks required standards and instruction links as well as application quality; it does not certify visual fidelity. The [CI/CD policy](docs/ci-cd.md) describes PR review, commit sign-off, immutable artifacts, and future protected deployments. GitHub CI runs in `siddontang/tidb.ai`; repository protections and a real deployment target are not configured.

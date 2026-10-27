@@ -14,6 +14,9 @@ changing repository policy.
   [intent driven contribution](docs/standards/intent-driven-development.md). Welcome intent,
   specification, and acceptance contributions; distinguish accepted direction from proposed
   automation and preserve the current delivery authority.
+- Coordinate intent, design, task handoffs, and implementation PRs through the
+  [GitHub contribution workflow](docs/standards/github-contribution-workflow.md). Pin accepted
+  specifications to Git revisions; a design PR must not prematurely close its parent intent.
 - For any UI, component, typography, layout, theme, icon, or frontend dependency change,
   read [the TiUI standard](docs/standards/tiui-design-system.md) and `src/AGENTS.md`.
   Use the installed TiUI components and supported shared overrides in `src/ui/`.

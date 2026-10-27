@@ -6,6 +6,10 @@ intent issue only needs the user, problem, example, and desired outcome. Maintai
 help complete the rest before implementation. Small fixes can use a reproduction and
 regression test instead.
 
+Use the [GitHub contribution workflow](../standards/github-contribution-workflow.md) to connect
+the parent intent, specification PR, task Issues, implementation PRs, and evaluation. For new
+GitHub-backed features, use `GH-<parent-issue-number>` and `specs/gh-<parent-issue-number>/spec.md`.
+
 Copy the relevant sections into `specs/<feature-id>/spec.md` when accepting a specification.
 Replace guidance with concrete behavior and remove inapplicable sections with a short reason.
 The metadata below is a proposed convention; no harness parser or validation command exists
@@ -13,15 +17,16 @@ yet. It must not contain credentials, personal machine paths, or executable shel
 
 ## Identity and status
 
-| Field                                 | Value to supply                                                      |
-| ------------------------------------- | -------------------------------------------------------------------- |
-| Feature ID and title                  | Stable identifier and a concrete title                               |
-| Specification status and revision     | Draft, accepted, or superseded; immutable revision at execution time |
-| Intent and specification contributors | Attribution and links to the originating issue or proposal           |
-| Accountable maintainer                | Assigned maintainer, or unassigned while refining                    |
-| Source baseline and dependencies      | Git revision, required features, contracts, standards, and ADRs      |
-| Proposed risk and reason              | Impact on users, data, permissions, billing, and operational systems |
-| Acceptance baseline                   | Reviewed cases, fixtures, test references, and revision              |
+| Field                                 | Value to supply                                                                                        |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Feature ID and title                  | Stable identifier and a concrete title                                                                 |
+| Specification status and revision     | Draft, accepted, or superseded; immutable revision at execution time                                   |
+| Intent and specification contributors | Attribution and links to the originating issue or proposal                                             |
+| Parent intent and design PR           | GitHub Issue URL and the specification PR; preserve the parent until its delivery endpoint is complete |
+| Accountable maintainer                | Assigned maintainer, or unassigned while refining                                                      |
+| Source baseline and dependencies      | Git revision, required features, contracts, standards, and ADRs                                        |
+| Proposed risk and reason              | Impact on users, data, permissions, billing, and operational systems                                   |
+| Acceptance baseline                   | Reviewed cases, fixtures, test references, and revision                                                |
 
 Risk classification and execution authority come from trusted policy and maintainer review.
 Specification acceptance does not grant merge, cloud-operation, or deployment permission.
