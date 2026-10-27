@@ -41,7 +41,7 @@ export async function bindStarter({
       );
   } else {
     const roles = await query(
-      "SELECT COUNT(*) AS unsafe_roles FROM pg_roles WHERE (rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls) AND pg_has_role(current_user, oid, 'MEMBER')",
+      "SELECT COUNT(*) AS unsafe_roles FROM pg_roles WHERE (rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls OR rolname IN ('pg_read_server_files', 'pg_write_server_files', 'pg_execute_server_program', 'pg_read_all_data', 'pg_write_all_data', 'pg_monitor', 'pg_read_all_stats', 'pg_signal_backend')) AND pg_has_role(current_user, oid, 'MEMBER')",
     );
     if (String(roles.rows[0]?.unsafe_roles) !== '0')
       throw new Error('Use a PostgreSQL role without membership in privileged roles.');

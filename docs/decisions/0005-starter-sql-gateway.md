@@ -41,7 +41,7 @@ Stop the local server and run `scripts/bind-starter.mjs` with an existing resour
 private connection JSON file. It checks a TLS connection and basic role restrictions before
 persisting the binding. MySQL grants must be limited to the selected database (plus global
 USAGE), without GRANT OPTION. PG rejects membership in superuser, role/database creation,
-replication, or RLS-bypass roles. Keep provider management credentials separate from SQL roles.
+replication, RLS-bypass, server-file/program, all-data, monitoring, or backend-signal roles. Keep provider management credentials separate from SQL roles.
 
 For the default state file, run this from the repository with the local server stopped:
 

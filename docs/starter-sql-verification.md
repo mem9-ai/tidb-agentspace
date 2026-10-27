@@ -7,7 +7,7 @@ Drive9 files remain unchanged. Do not merge this change until both real protocol
 ## Automated checks
 
 `npm run check` passes: runtime/repository policy, formatting, ESLint, generated OpenAPI,
-63 tests, strict frontend types, and production build. The existing dependency eval/build-size
+64 tests, strict frontend types, and production build. The existing dependency eval/build-size
 warnings remain. No cloud credentials are used by CI.
 
 New tests cover one Workspace Key across MySQL/PG, write results, restart, scope/resource/
