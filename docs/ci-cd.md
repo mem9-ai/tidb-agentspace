@@ -14,12 +14,31 @@
   dependency pins, and baseline workflow properties. It supplements CI review; it is not
   a sandbox or a comprehensive workflow security scanner.
 
-This folder currently has no Git remote. The workflow files have been validated locally;
-no remote run, repository ruleset, deployment environment, or hosting integration is implied.
+The private repository is [siddontang/tidb.ai](https://github.com/siddontang/tidb.ai).
+GitHub CI is running; branch protection, deployment environments, and hosting are not
+configured. At initial setup, GitHub reported that branch protection for this private
+repository requires a plan upgrade. Do not change repository visibility to work around it.
 
-## Required repository settings
+## Current early-iteration merge policy
 
-After creating the repository and running CI once, a repository maintainer should configure:
+The project owner has authorized rapid iteration during the prototype phase. Agents may
+mark completed draft PRs ready and merge task-scoped changes without another confirmation
+or a separate human approval after all of the following are true:
+
+- The diff has been reviewed for behavior, scope, compatibility, and credentials.
+- `Quality`, `Commit sign-off`, and any other CI checks pass on the latest PR head.
+- The PR has no merge conflict, and any enforced GitHub requirements are satisfied.
+- Contributor attribution is preserved, with the required sign-off on created commits.
+
+Use the reviewed head SHA as the merge precondition. Never use an administrator bypass,
+submit a self-approval, weaken a check, or merge a failing dependency update to save time.
+This authorization covers merging the requested work; it does not authorize unrelated
+features, real cloud operations, or deployment. After merging, verify the PR state and
+sync the local checkout with `main`.
+
+## Repository settings before shared production deployment
+
+Before shared production deployment, a repository maintainer should configure:
 
 1. Protect `main` with a ruleset: require PRs, an independent human approval, resolution of
    review conversations, and the `Quality` and `Commit sign-off` status checks.
