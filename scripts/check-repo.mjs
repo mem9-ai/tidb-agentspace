@@ -21,6 +21,33 @@ for (const path of [
 }
 assert.match(await read('CLAUDE.md'), /^@AGENTS\.md$/m);
 assert.match(await read('.cursor/rules/workspace.mdc'), /^alwaysApply: true$/m);
+// Check routing and document availability, not semantic or visual TiUI compliance.
+const instructionLinks = {
+  'AGENTS.md': [
+    'docs/standards/README.md',
+    'docs/standards/tiui-design-system.md',
+    'docs/standards/knowledge-maintenance.md',
+  ],
+  'src/AGENTS.md': [
+    '../AGENTS.md',
+    '../docs/standards/tiui-design-system.md',
+    '../docs/standards/knowledge-maintenance.md',
+  ],
+  'docs/standards/README.md': [
+    'tiui-design-system.md',
+    'knowledge-maintenance.md',
+    '../../src/AGENTS.md',
+  ],
+  'docs/standards/tiui-design-system.md': ['../decisions/0002-tiui-design-system.md'],
+};
+for (const [source, targets] of Object.entries(instructionLinks)) {
+  const contents = await read(source);
+  for (const target of targets) {
+    assert.ok(contents.includes(`](${target})`), `${source} must link to ${target}.`);
+    const destination = new URL(target, new URL(source, root));
+    assert.ok((await readFile(destination, 'utf8')).trim(), `${source}: ${target} is empty.`);
+  }
+}
 const names = await readdir(new URL('.github/workflows/', root));
 for (const name of names.filter((file) => /\.ya?ml$/.test(file))) {
   const workflow = parse(await read(`.github/workflows/${name}`));
@@ -50,5 +77,5 @@ for (const name of names.filter((file) => /\.ya?ml$/.test(file))) {
   }
 }
 console.log(
-  'Shared instruction entry points, dependency pins, toolchain, and workflow baseline verified.',
+  'Shared instruction/standard links, dependency pins, toolchain, and workflow baseline verified.',
 );
