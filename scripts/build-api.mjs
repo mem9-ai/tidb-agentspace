@@ -1,6 +1,7 @@
 import { cp, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { copySqlDependencies } from './sql-runtime-dependencies.mjs';
 
 export const runtimeFiles = [
   'server/index.mjs',
@@ -9,6 +10,9 @@ export const runtimeFiles = [
   'server/file-transfer.mjs',
   'server/http-policy.mjs',
   'server/providers/drive9.mjs',
+  'server/providers/zero.mjs',
+  'server/providers/sql-common.mjs',
+  'server/providers/sql-drivers.mjs',
   'public/openapi.json',
 ];
 
@@ -20,6 +24,7 @@ export async function buildApi({ root, destination = resolve(root, 'dist/api') }
     await mkdir(resolve(target, '..'), { recursive: true });
     await cp(resolve(root, path), target);
   }
+  await copySqlDependencies(root, destination);
   const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
   await writeFile(
     resolve(destination, 'package.json'),

@@ -150,6 +150,30 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/workspaces/{workspaceId}/resources/{resourceId}/setup': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+        resourceId: string;
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Resume setup on the same Zero instance; never create a replacement for an uncertain request
+     * @description Required workspace key scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint.
+     */
+    post: operations['retryDatabaseSetup'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/workspaces/{workspaceId}/queries': {
     parameters: {
       query?: never;
@@ -163,10 +187,10 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Execute supported demo SELECT patterns
+     * Execute one statement on a selected database; live SQL can read and write
      * @description Required workspace key scope: queries:execute. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint.
      */
-    post: operations['executeDemoQuery'];
+    post: operations['executeQuery'];
     delete?: never;
     options?: never;
     head?: never;
@@ -337,18 +361,24 @@ export interface components {
       id: string;
       name: string;
       /** @enum {unknown} */
-      kind: 'mysql' | 'postgresql' | 'filesystem';
+      kind: 'mysql' | 'filesystem';
       region: string;
       /** @enum {unknown} */
-      status: 'active' | 'provisioning' | 'failed' | 'suspended' | 'deleting' | 'deleted';
+      status:
+        'active' | 'provisioning' | 'failed' | 'suspended' | 'deleting' | 'deleted' | 'expired';
       /**
        * @description Missing on legacy local resources.
        * @enum {unknown}
        */
-      provider?: 'local' | 'drive9-anonymous';
+      provider?: 'local' | 'drive9-anonymous' | 'tidb-cloud-zero';
       /** @description Negotiated gateway upload limit; zero means uploads are unavailable. */
       uploadLimitBytes?: number;
       connectionError?: string;
+      /**
+       * Format: date-time
+       * @description Zero expiry reported by the provider. No automatic renewal or replacement.
+       */
+      expiresAt?: string;
       /** Format: date-time */
       createdAt: string;
     };
@@ -410,7 +440,7 @@ export interface components {
       resourceId: string;
       name: string;
       /** @enum {unknown} */
-      kind: 'mysql' | 'postgresql' | 'filesystem';
+      kind: 'mysql' | 'filesystem';
       storageBytes: number | null;
       storageLimitBytes: number | null;
       monthlyRU: number | null;
@@ -420,16 +450,15 @@ export interface components {
     };
     Capability: {
       label: string;
-      regions: ('aws-us-east-1' | 'aws-us-west-2' | 'aws-ap-southeast-1')[];
+      regions: ('aws-us-east-1' | 'aws-us-west-2' | 'aws-ap-southeast-1' | 'automatic')[];
       storageGiB: number | null;
-      monthlyRU?: number;
+      monthlyRU?: number | null;
       maxFiles?: number | null;
       preview: boolean;
       provider?: string;
     };
     Capabilities: {
       mysql: components['schemas']['Capability'];
-      postgresql: components['schemas']['Capability'];
       filesystem: components['schemas']['Capability'];
     };
     Bootstrap: {
@@ -519,6 +548,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -537,7 +575,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -566,6 +604,15 @@ export interface operations {
       };
       /** @description Provider binding needs operator recovery */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
         headers: {
           [name: string]: unknown;
         };
@@ -643,6 +690,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -661,7 +717,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -690,6 +746,15 @@ export interface operations {
       };
       /** @description Provider binding needs operator recovery */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
         headers: {
           [name: string]: unknown;
         };
@@ -765,6 +830,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -783,7 +857,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -812,6 +886,15 @@ export interface operations {
       };
       /** @description Provider binding needs operator recovery */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
         headers: {
           [name: string]: unknown;
         };
@@ -890,6 +973,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -908,7 +1000,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -944,6 +1036,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
     };
   };
   createResource: {
@@ -964,12 +1065,12 @@ export interface operations {
         'application/json': {
           name: string;
           /** @enum {unknown} */
-          kind: 'mysql' | 'postgresql' | 'filesystem';
+          kind: 'mysql' | 'filesystem';
           /**
-           * @description Choose a region supported by the resource kind in capabilities. The first supported region is the Console default.
+           * @description Choose a region supported by the resource kind in capabilities. Zero MySQL uses automatic provider assignment. The first supported region is the Console default.
            * @enum {string}
            */
-          region: 'aws-us-east-1' | 'aws-us-west-2' | 'aws-ap-southeast-1';
+          region: 'aws-us-east-1' | 'aws-us-west-2' | 'aws-ap-southeast-1' | 'automatic';
         };
       };
     };
@@ -1032,6 +1133,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -1050,7 +1160,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -1079,6 +1189,15 @@ export interface operations {
       };
       /** @description Provider binding needs operator recovery */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
         headers: {
           [name: string]: unknown;
         };
@@ -1160,6 +1279,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -1178,7 +1306,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -1207,6 +1335,15 @@ export interface operations {
       };
       /** @description Provider binding needs operator recovery */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
         headers: {
           [name: string]: unknown;
         };
@@ -1296,6 +1433,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -1314,7 +1460,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -1343,6 +1489,15 @@ export interface operations {
       };
       /** @description Provider binding needs operator recovery */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
         headers: {
           [name: string]: unknown;
         };
@@ -1427,6 +1582,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -1445,7 +1609,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -1474,6 +1638,15 @@ export interface operations {
       };
       /** @description Provider binding needs operator recovery */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
         headers: {
           [name: string]: unknown;
         };
@@ -1649,6 +1822,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -1667,7 +1849,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -1703,9 +1885,161 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
     };
   };
-  executeDemoQuery: {
+  retryDatabaseSetup: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+        resourceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            data?: components['schemas']['Resource'];
+          };
+        };
+      };
+      /** @description Invalid request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Missing, invalid, expired, or revoked credential */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Insufficient permission */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource or endpoint not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Conflict or free-tier limit */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Content too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Unsupported content type */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL syntax, result limit, or unsupported demo query */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider quota or rate limit */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider unavailable or invalid response */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider binding needs operator recovery */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  executeQuery: {
     parameters: {
       query?: never;
       header?: never;
@@ -1719,7 +2053,7 @@ export interface operations {
       content: {
         'application/json': {
           resourceId: string;
-          /** @description Only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n]. Other SQL returns 422. */
+          /** @description Live Zero: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n]. */
           sql: string;
         };
       };
@@ -1737,8 +2071,10 @@ export interface operations {
               [key: string]: unknown;
             }[];
             rowCount: number;
-            /** @constant */
-            mode: 'demo';
+            /** @enum {unknown} */
+            mode: 'demo' | 'live';
+            /** @description Live statement affected-row count; SELECT returns zero. */
+            affectedRows?: number;
             durationMs: number;
           };
         };
@@ -1788,6 +2124,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -1806,7 +2151,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -1835,6 +2180,15 @@ export interface operations {
       };
       /** @description Provider binding needs operator recovery */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
         headers: {
           [name: string]: unknown;
         };
@@ -1915,6 +2269,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -1933,7 +2296,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -1962,6 +2325,15 @@ export interface operations {
       };
       /** @description Provider binding needs operator recovery */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
         headers: {
           [name: string]: unknown;
         };
@@ -2039,6 +2411,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -2057,7 +2438,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -2086,6 +2467,15 @@ export interface operations {
       };
       /** @description Provider binding needs operator recovery */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
         headers: {
           [name: string]: unknown;
         };
@@ -2163,6 +2553,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -2181,7 +2580,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -2210,6 +2609,15 @@ export interface operations {
       };
       /** @description Provider binding needs operator recovery */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
         headers: {
           [name: string]: unknown;
         };
@@ -2307,6 +2715,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -2325,7 +2742,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -2354,6 +2771,15 @@ export interface operations {
       };
       /** @description Provider binding needs operator recovery */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
         headers: {
           [name: string]: unknown;
         };
@@ -2432,6 +2858,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -2450,7 +2885,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -2479,6 +2914,15 @@ export interface operations {
       };
       /** @description Provider binding needs operator recovery */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
         headers: {
           [name: string]: unknown;
         };
@@ -2564,6 +3008,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -2582,7 +3035,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -2611,6 +3064,15 @@ export interface operations {
       };
       /** @description Provider binding needs operator recovery */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
         headers: {
           [name: string]: unknown;
         };
@@ -2718,6 +3180,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Content too large */
       413: {
         headers: {
@@ -2736,7 +3207,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Unsupported demo SQL */
+      /** @description SQL syntax, result limit, or unsupported demo query */
       422: {
         headers: {
           [name: string]: unknown;
@@ -2765,6 +3236,15 @@ export interface operations {
       };
       /** @description Provider binding needs operator recovery */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
         headers: {
           [name: string]: unknown;
         };

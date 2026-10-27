@@ -13,7 +13,30 @@ const ajv = new Ajv2020({ strict: false, validateFormats: false, allErrors: true
 
 test('standalone API responses conform to every declared JSON operation, including denials', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'tidb-contract-'));
-  const app = await createApp({ dataFile: join(directory, 'state.json'), filesProvider: 'local' });
+  const app = await createApp({
+    dataFile: join(directory, 'state.json'),
+    filesProvider: 'local',
+    mysqlProvider: 'tidb-cloud-zero',
+    zeroTransport: async () =>
+      Response.json({
+        instance: {
+          id: 'contract-instance',
+          expiresAt: new Date(Date.now() + 86400000).toISOString(),
+          connection: {
+            host: 'contract.tidbcloud.com',
+            port: 4000,
+            username: 'prefix.root',
+            password: 'fixture-private',
+          },
+        },
+      }),
+    sqlExecute: async () => ({
+      columns: ['connected'],
+      rows: [{ connected: 1 }],
+      rowCount: 1,
+      affectedRows: 0,
+    }),
+  });
   await new Promise((resolve) => app.listen(0, '127.0.0.1', resolve));
   t.after(async () => {
     await new Promise((resolve) => app.close(resolve));
@@ -26,12 +49,15 @@ test('standalone API responses conform to every declared JSON operation, includi
     path,
     method = 'get',
     body,
-    { owner = true, suffix = '', status = 200, keyId = '' } = {},
+    { owner = true, suffix = '', status = 200, keyId = '', resourceId = '' } = {},
   ) {
     const operation = contract.paths[path][method];
     assert.ok(operation, `${method} ${path} is documented`);
     const root = contract.paths[path].servers?.[0].url || contract.servers[0].url;
-    const route = path.replace('{workspaceId}', 'ws_agentlab').replace('{keyId}', keyId);
+    const route = path
+      .replace('{workspaceId}', 'ws_agentlab')
+      .replace('{keyId}', keyId)
+      .replace('{resourceId}', resourceId);
     const response = await fetch(origin + root.replace(/\/$/, '') + route + suffix, {
       method: method.toUpperCase(),
       headers: {
@@ -58,10 +84,10 @@ test('standalone API responses conform to every declared JSON operation, includi
   await request(workspace + '/bootstrap');
   await request(workspace + '/resources');
   await request(workspace + '/resources', 'get', undefined, { owner: false, status: 401 });
-  await request(
+  const database = await request(
     workspace + '/resources',
     'post',
-    { name: 'contract-db', kind: 'mysql', region: 'aws-us-east-1' },
+    { name: 'contract-db', kind: 'mysql', region: 'automatic' },
     { status: 201 },
   );
   await request(
@@ -79,6 +105,14 @@ test('standalone API responses conform to every declared JSON operation, includi
   });
   await request(workspace + '/files', 'delete', { resourceId: 'fs_shared', path: '/contract.txt' });
   await request(workspace + '/queries', 'post', { resourceId: 'db_memory', sql: 'SELECT 1' });
+  await request(workspace + '/resources/{resourceId}/setup', 'post', undefined, {
+    resourceId: database.result.data.id,
+  });
+  await request(workspace + '/queries', 'post', {
+    resourceId: database.result.data.id,
+    sql: 'SELECT 1',
+  });
+  await request(workspace + '/bootstrap');
   await request(workspace + '/usage');
   await request(workspace + '/events');
   await request(workspace + '/keys');

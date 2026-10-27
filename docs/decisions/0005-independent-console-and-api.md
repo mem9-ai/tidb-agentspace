@@ -17,7 +17,9 @@ This made replacing or releasing one client depend on the other layer's runtime 
 
 Keep `src/` (Console), `server/` (API), and shared build/tooling in one repository. Each has
 an independent build/start command and artifact. The API never serves Console assets and
-runs on the pinned Node runtime without npm dependencies. The Console is static output
+runs on the pinned Node runtime without frontend dependencies. [ADR 0006](0006-zero-sql-gateway.md)
+extends the API artifact with pinned mysql2 dependencies for real SQL, without requiring an
+install when the artifact starts. The Console is static output
 that selects the API origin using `/config.json` before rendering. All API examples, schema
 links, file downloads, and JSON/binary operations use that origin.
 
@@ -70,6 +72,6 @@ not mean arbitrary breaking versions are compatible.
 - `src/api/transport.test.mjs` checks origin selection, structured errors, credentials, and
   byte-preserving binary uploads. Binary payloads explicitly bypass JSON serialization.
 - `scripts/package-runtime.test.mjs` builds the API without Console output, boots both extracted
-  artifacts independently, and checks that dependencies, secrets, and opposite-layer code
+  artifacts independently, and checks that frontend dependencies, secrets, and opposite-layer code
   are excluded.
 - Browser evidence and operating commands are in [independent delivery](../independent-delivery.md).

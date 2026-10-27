@@ -36,7 +36,9 @@ follow its task-specific references before implementation. Keep detailed rules c
   identifiers, comments, and shared engineering documentation use English.
 - Read `docs/architecture.md` for the proposed product. Distinguish proposed behavior from
   what the running prototype implements.
-- MySQL Starter, PostgreSQL Starter, and File System are separate resource types with their
+- MySQL and File System are currently available; PostgreSQL is planned but disabled. Read
+  [the Zero SQL boundary](docs/decisions/0006-zero-sql-gateway.md) before database work.
+  The proposed Starter protocols and File System are separate resource types with their
   own endpoints, credentials, regional availability, and capabilities.
 - Customers use one Workspace Key for the public product API, with both action and resource
   permissions. The service manages upstream cloud keys and native data credentials internally.

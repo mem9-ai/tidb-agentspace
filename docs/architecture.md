@@ -2,7 +2,7 @@
 
 Design baseline: 2026-10-27. This is the proposed architecture for an independent developer
 and agent product. The repository currently implements a loopback-only interactive prototype
-with simulated databases and an opt-in real Singapore Drive9 anonymous File System. See [ADR 0004](decisions/0004-drive9-anonymous-provider.md) for the implemented provider boundary. See [ADR 0001](decisions/0001-unified-workspace-key.md) for the
+with demo databases and an opt-in real Singapore Drive9 anonymous File System. Anonymous Zero MySQL provisioning and SQL execution are implemented and verified; PostgreSQL is temporarily disabled. Persistent Starter and PG support below remain proposals; see [ADR 0006](decisions/0006-zero-sql-gateway.md). See [ADR 0004](decisions/0004-drive9-anonymous-provider.md) for the implemented provider boundary. See [ADR 0001](decisions/0001-unified-workspace-key.md) for the
 accepted single-key authorization model.
 
 The [intent driven development system](standards/intent-driven-development.md) records the
@@ -13,7 +13,7 @@ or deployment authority.
 ## Product model
 
 A Workspace is the persistent context for one application, experiment, or agent workflow.
-Developers can add MySQL-compatible Starter databases, PostgreSQL-compatible Starter databases,
+The proposed full product lets developers add MySQL-compatible Starter databases, PostgreSQL-compatible Starter databases,
 and File Systems as needed. Resources have their own capabilities, regions, lifecycle, and
 internal provider bindings. MySQL and PG are separate instances; changing a connection string
 does not change an instance's protocol. Files can be used without creating a database.
@@ -41,8 +41,7 @@ customer.
 
 The first-run path is: create/open a Workspace, add one resource, create a scoped Workspace
 Key, complete a useful request from an agent, then inspect the resulting data and usage.
-A new workspace should not require provisioning all three resource types. The prototype
-preseeds them to demonstrate an established workspace.
+A new workspace should not require provisioning all three resource types. The prototype preseeds a MySQL demo and local File System; real resources are explicitly created. PG is not currently offered.
 
 Supabase's project-level grouping is a useful product reference; TiDB Workspace groups an
 optional mix of three distinct resource types. [Supabase Platform](https://supabase.com/docs/guides/platform)
