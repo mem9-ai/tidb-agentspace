@@ -37,6 +37,7 @@ const instructionLinks = {
     'AGENTS.md',
     'CONTRIBUTING.md',
     'docs/architecture.md',
+    'docs/independent-delivery.md',
     'docs/decisions/README.md',
     'docs/standards/README.md',
     'docs/standards/intent-driven-development.md',

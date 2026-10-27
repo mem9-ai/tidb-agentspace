@@ -26,6 +26,11 @@ and compatibility form the agreement between implementations; identical code is 
 Read the [architecture](docs/architecture.md) and
 [development system](docs/standards/intent-driven-development.md) for the full reasoning.
 
+The Console and API build, run, and package independently in this repository. The Console
+consumes generated API types and selects its API origin at runtime. This implemented boundary
+is documented in [independent delivery](docs/independent-delivery.md) and
+[ADR 0005](docs/decisions/0005-independent-console-and-api.md).
+
 ## First reading route
 
 | Order | Read                                                                                                                                    | Understand                                                                                 |
@@ -43,13 +48,13 @@ note. An intent contribution can start with a user problem and a concrete exampl
 
 ## Understand the current state
 
-| Area                | Current interpretation                                                                                                                                                                  |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Product runtime     | Loopback-only prototype with simulated databases/local files and an explicitly enabled live Drive9 File System adapter. The README owns current capabilities and limits.                |
-| Public API          | [Generated OpenAPI](public/openapi.json) describes implemented HTTP behavior; [its generator](server/generate-openapi.mjs) is the editable source.                                      |
-| Product target      | Identity, cloud database adapters, telemetry, billing, SDK/CLI/MCP, and production delivery include proposed work in the architecture.                                                  |
-| Contribution system | Native GitHub forms, labels, documents, and PR/CI procedures support manual coordination. Autonomous dispatch, isolated runs, and independent specification evaluation remain proposed. |
-| Delivery            | [CI/CD policy](docs/ci-cd.md) distinguishes accepted specs, passing checks, merged source, packaged artifacts, and verified deployments.                                                |
+| Area                | Current interpretation                                                                                                                                                                                                |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product runtime     | Independently runnable Console and API in a loopback-only prototype, with simulated databases/local files and an explicitly enabled live Drive9 File System adapter. The README owns current capabilities and limits. |
+| Public API          | [Generated OpenAPI](public/openapi.json) and [client types](src/api/schema.d.ts) describe the implemented HTTP surface. The [contract generator](server/generate-openapi.mjs) is the editable source.                 |
+| Product target      | Identity, cloud database adapters, telemetry, billing, SDK/CLI/MCP, and production delivery include proposed work in the architecture.                                                                                |
+| Contribution system | Native GitHub forms, labels, documents, and PR/CI procedures support manual coordination. Autonomous dispatch, isolated runs, and independent specification evaluation remain proposed.                               |
+| Delivery            | [CI/CD policy](docs/ci-cd.md) distinguishes accepted specs, passing checks, merged source, packaged artifacts, and verified deployments.                                                                              |
 
 Distinguish **verified implementation**, **accepted project rule**, and **proposal**. Check
 relevant behavior against current source, contracts, and tests. When documents disagree,
@@ -58,14 +63,15 @@ within the task's scope. A proposed architecture does not establish a runtime ca
 
 ## Read for your task
 
-| Task                                               | Required starting points                                                                                                                                                                                |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Intent, specification, or agent delivery           | [Development system](docs/standards/intent-driven-development.md), [GitHub workflow](docs/standards/github-contribution-workflow.md), and [feature template](docs/templates/feature-spec.md)            |
-| UI, theme, icons, layout, or frontend dependencies | [Frontend instructions](src/AGENTS.md) and [TiUI standard](docs/standards/tiui-design-system.md)                                                                                                        |
-| Public API, authorization, or credentials          | [Architecture](docs/architecture.md), [Workspace Key decision](docs/decisions/0001-unified-workspace-key.md), generator, and affected API tests                                                         |
-| File System providers or regions                   | [Regions and modes](docs/decisions/0003-filesystem-regions-and-modes.md), [Drive9 boundary](docs/decisions/0004-drive9-anonymous-provider.md), and [provider verification](docs/drive9-verification.md) |
-| Build, review, merge, artifacts, or deployment     | [Contribution guide](CONTRIBUTING.md), [CI/CD policy](docs/ci-cd.md), and [workflow sources](.github/workflows/)                                                                                        |
-| Reusable corrections or integration findings       | [Knowledge maintenance](docs/standards/knowledge-maintenance.md); update the canonical standard or ADR and its entry points                                                                             |
+| Task                                                     | Required starting points                                                                                                                                                                                |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Intent, specification, or agent delivery                 | [Development system](docs/standards/intent-driven-development.md), [GitHub workflow](docs/standards/github-contribution-workflow.md), and [feature template](docs/templates/feature-spec.md)            |
+| UI, theme, icons, layout, or frontend dependencies       | [Frontend instructions](src/AGENTS.md) and [TiUI standard](docs/standards/tiui-design-system.md)                                                                                                        |
+| Public API, authorization, or credentials                | [Architecture](docs/architecture.md), [Workspace Key decision](docs/decisions/0001-unified-workspace-key.md), generator, and affected API tests                                                         |
+| File System providers or regions                         | [Regions and modes](docs/decisions/0003-filesystem-regions-and-modes.md), [Drive9 boundary](docs/decisions/0004-drive9-anonymous-provider.md), and [provider verification](docs/drive9-verification.md) |
+| Build, review, merge, artifacts, or deployment           | [Contribution guide](CONTRIBUTING.md), [CI/CD policy](docs/ci-cd.md), and [workflow sources](.github/workflows/)                                                                                        |
+| Separate Console/API builds, configuration, or packaging | [Independent delivery](docs/independent-delivery.md) and [ADR 0005](docs/decisions/0005-independent-console-and-api.md)                                                                                 |
+| Reusable corrections or integration findings             | [Knowledge maintenance](docs/standards/knowledge-maintenance.md); update the canonical standard or ADR and its entry points                                                                             |
 
 Backend action/resource authorization, service-owned provider secrets, shared domain
 operations, and actual TiUI components/adapters are central project boundaries. Their detailed
@@ -76,11 +82,14 @@ rules and verification stay in these linked sources.
 | Location                                                                                                                                        | Responsibility                                                                       |
 | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | [src/](src/)                                                                                                                                    | React Console; feature modules in `src/features/`, shared TiUI adapters in `src/ui/` |
+| [src/api/](src/api/) and [Console configuration](console/public/config.json)                                                                    | Generated-type HTTP client, API transport, and runtime API-origin selection          |
 | [server/index.mjs](server/index.mjs)                                                                                                            | Current API entry point and request handling                                         |
 | [Authorization](server/access-policy.mjs) and [store](server/store.mjs)                                                                         | Shared resource-grant rules and local persistence                                    |
 | [Providers](server/providers/) and [file transfer](server/file-transfer.mjs)                                                                    | Upstream File System integration and bounded transfers                               |
 | [Contract generator](server/generate-openapi.mjs) and [generated contract](public/openapi.json)                                                 | Editable description and generated public API artifact                               |
+| [Client type generator](tools/api-contract/generate-client.mjs) and [client declarations](src/api/schema.d.ts)                                  | Isolated build-time generation of Console API types                                  |
 | [API tests](server/api.test.mjs), [provider tests](server/drive9.test.mjs), and colocated feature tests                                         | Behavior, isolation, persistence, and regression evidence                            |
+| [Contract tests](server/contract.test.mjs) and [deployment tests](server/deployment.test.mjs)                                                   | Actual HTTP schema checks, cross-origin behavior, and retained authorization         |
 | [scripts/](scripts/) and [.github/workflows/](.github/workflows/)                                                                               | Runtime/repository/sign-off checks, packaging, and CI                                |
 | [Standards](docs/standards/) and [decisions](docs/decisions/)                                                                                   | Reusable engineering rules and architectural decisions                               |
 | [Issue forms](.github/ISSUE_TEMPLATE/), [PR template](.github/PULL_REQUEST_TEMPLATE.md), and [feature template](docs/templates/feature-spec.md) | Intake, task handoffs, evidence, and specification authoring                         |
@@ -88,6 +97,8 @@ rules and verification stay in these linked sources.
 Accepted feature specifications use `specs/gh-<parent-issue-number>/spec.md` when created through
 the GitHub workflow. Verify that a specification directory, interface, or integration actually
 exists in the checkout before relying on it. Search and inspect before editing.
+
+An existing accepted example is the [independent Console/API specification](specs/independent-console-api/spec.md).
 
 ## Set up and verify
 
@@ -103,6 +114,9 @@ npm run dev
 The README explains local addresses and optional provider behavior. Default development and
 tests need no cloud credentials. Live-adapter use can cause external effects and must stay
 within the task's authorization.
+
+`npm run dev` starts both development servers. For separate builds/runs, runtime API-origin
+configuration, and the Console/API artifacts, follow [independent delivery](docs/independent-delivery.md).
 
 Use focused checks during development, then `npm run check` before handoff. Public contract
 changes update the generator and run `npm run api:generate`, keeping implementation, clients,
