@@ -10,16 +10,37 @@
   API contract, source SHA, and checksums. It does not deploy to a cloud provider.
 - Exact npm dependency versions, a committed lockfile, fixed Node/npm versions, editor
   settings, Prettier, ESLint, strict TypeScript, and a generated-contract drift check.
-- `scripts/check-repo.mjs` checks instruction entry points, toolchain consistency,
-  dependency pins, and baseline workflow properties. It supplements CI review; it is not
-  a sandbox or a comprehensive workflow security scanner.
+- `scripts/check-repo.mjs` checks instruction entry points, required standards and their
+  routing links, toolchain consistency, dependency pins, and baseline workflow properties.
+  It supplements CI review; it is not a sandbox or a comprehensive workflow security scanner.
+  Document presence does not prove an agent read the rule or that the UI conforms to TiUI;
+  the [design standard](standards/tiui-design-system.md) requires code and browser evidence.
 
-This folder currently has no Git remote. The workflow files have been validated locally;
-no remote run, repository ruleset, deployment environment, or hosting integration is implied.
+The private repository is [siddontang/tidb.ai](https://github.com/siddontang/tidb.ai).
+GitHub CI is running; branch protection, deployment environments, and hosting are not
+configured. At initial setup, GitHub reported that branch protection for this private
+repository requires a plan upgrade. Do not change repository visibility to work around it.
 
-## Required repository settings
+## Current early-iteration merge policy
 
-After creating the repository and running CI once, a repository maintainer should configure:
+The project owner has authorized rapid iteration during the prototype phase. Agents may
+mark completed draft PRs ready and merge task-scoped changes without another confirmation
+or a separate human approval after all of the following are true:
+
+- The diff has been reviewed for behavior, scope, compatibility, and credentials.
+- `Quality`, `Commit sign-off`, and any other CI checks pass on the latest PR head.
+- The PR has no merge conflict, and any enforced GitHub requirements are satisfied.
+- Contributor attribution is preserved, with the required sign-off on created commits.
+
+Use the reviewed head SHA as the merge precondition. Never use an administrator bypass,
+submit a self-approval, weaken a check, or merge a failing dependency update to save time.
+This authorization covers merging the requested work; it does not authorize unrelated
+features, real cloud operations, or deployment. After merging, verify the PR state and
+sync the local checkout with `main`.
+
+## Repository settings before shared production deployment
+
+Before shared production deployment, a repository maintainer should configure:
 
 1. Protect `main` with a ruleset: require PRs, an independent human approval, resolution of
    review conversations, and the `Quality` and `Commit sign-off` status checks.
@@ -57,10 +78,43 @@ receives deployment credentials, and checkout credentials are not persisted. Avo
 PR titles, branch names, or other untrusted event text into shell code; pass needed values
 through environment variables and validate them.
 
-DCO validation checks the actual Git trailer block for an author-or-committer-name/email sign-off on each
-introduced non-merge commit. It is an attestation convention, not a cryptographic signature or
-identity verification. Automated dependency updates are intentionally subject to the same
-rule; a maintainer must resolve missing attestations without falsely signing for a bot.
+## Commit sign-off
+
+DCO validation checks the actual Git trailer block for an author or committer sign-off on
+each introduced non-merge commit. Parse raw commit messages with `git interpret-trailers
+--parse --no-divider`: Dependabot's `---` metadata separator is message content, not a patch
+boundary. Only the final trailer block counts. Names and emails must match, with one explicit identity
+alias: `dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>` may sign with
+`Signed-off-by: dependabot[bot] <support@github.com>`. This pair was verified in the repository's
+Dependabot commits on 2026-10-27 and is documented in the
+[upstream report](https://github.com/dependabot/dependabot-core/issues/3480).
+
+This recognizes an existing attestation; it does not exempt bots or generate a sign-off for
+them. Unsigned messages, mismatched names, unknown aliases, unrelated bots, and sign-off text
+outside the trailer block must fail. Regression tests cover both acceptance and rejection.
+Preserve original author attribution. Revisit the alias only with evidence of an upstream
+identity change, not to allow an arbitrary failed PR. DCO is an attestation convention, not
+cryptographic signature or identity verification.
+
+## Dependency update triage
+
+Read the actual diff, failing step, release notes, runtime/peer requirements, and latest-head
+checks before choosing to fix, close, or merge a dependency PR. A green build alone does not
+establish that a new runtime API belongs in this project. Do not use `--force`,
+`--legacy-peer-deps`, an unsigned bot exemption, or a blanket major-update ban as a shortcut.
+
+The following compatibility holds are encoded in `.github/dependabot.yml`:
+
+- Keep `@types/node` on Node 24 while `.node-version` pins Node 24; the repository check
+  rejects a different major. Update the hold together with a deliberate runtime upgrade.
+- Keep TypeScript below 6.1 while `typescript-eslint@8.72.1` requires `>=4.8.4 <6.1.0`.
+  PR #4's clean install failed with `ERESOLVE` for TypeScript 7.0.2. Revisit this hold when
+  upgrading the parser/compiler together, with a clean install and the full quality gate.
+
+Other dependency updates remain enabled. For Actions upgrades, verify full-SHA pins and
+release changes against the workflow's actual inputs/events. After fixing shared CI logic,
+update affected PR branches and validate the new head before merging; rerunning an old
+head does not pick up a changed script. Record closure reasons and revisit conditions.
 
 ## Internal artifact delivery
 

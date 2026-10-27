@@ -57,15 +57,18 @@ optional mix of three distinct resource types. [Supabase Platform](https://supab
 | Usage & billing  | Understand allowances and charges             | Per-resource usage, customer allocation, upstream allowance attribution, estimated/settled spend, limits                |
 | Settings         | Manage the personal workspace                 | Names, profile and account/session status; future account claim, security, export and deletion                          |
 
-Use TiDB Cloud's visual direction: white surfaces, subtle borders, restrained red primary
-actions, and stable semantic labels for the three resource types. Preview status and limits
-need visible text. Use compact, readable layouts for SQL and file work.
+Use real TiUI components, its semantic palette and theme provider, with the Workspace's
+larger typography and spacing requirements. The [TiUI standard](standards/tiui-design-system.md)
+defines verified defaults, component selection, light/dark/system behavior, responsive
+interaction, and migration evidence. [ADR 0002](decisions/0002-tiui-design-system.md) records
+the accepted foundation. Preview status, limits, and the three resource types need text labels.
 
-The prototype is React/CSS; official TiUI packages were not available in this workspace.
-Production should use TiUI tokens and primitives behind shared UI components such as
-ResourceCard, QuotaMeter, ConnectionPanel, PermissionEditor, and ActivityTable. Organize
-new features into focused modules with shared API/domain types. Register navigation and
-capabilities for future services instead of adding global conditionals throughout the app.
+The prototype still uses custom React/CSS; TiUI migration is pending, and the public package
+is available. Build repeated domain compositions such as ResourceCard, QuotaMeter,
+ConnectionPanel, PermissionEditor, and ActivityTable from verified TiUI primitives/business
+components. Organize new features into focused modules with shared API/domain types. Register
+navigation and capabilities for future services instead of adding global conditionals
+throughout the app.
 
 ## Backend boundaries
 

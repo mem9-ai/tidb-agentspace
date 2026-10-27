@@ -5,6 +5,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # Revisit with a coordinated typescript-eslint upgrade; its current peer range is <6.1.
+      - dependency-name: typescript
+        versions: ['>=6.1.0']
+      # Keep type definitions on the runtime's major; revisit when upgrading Node.
+      - dependency-name: '@types/node'
+        versions: ['>=25.0.0']
   - package-ecosystem: github-actions
     directory: /
     schedule:

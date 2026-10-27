@@ -34,7 +34,9 @@ npm run preview
 
 Cloud instances, native connection addresses, and chart series are simulated and labeled in the UI. SQL supports only `SELECT 1 [AS connected]` and `SELECT * FROM agent_events [LIMIT n]`; this is not a MySQL or PostgreSQL server. Files are stored as text in a local JSON state file, not in TiDB Cloud File System. Database usage is not metered; filesystem allowance values are a configurable reference snapshot. One Workspace Key works across its permitted database and file APIs. Both action scopes and resource IDs are enforced; selected resources do not automatically expand to future resources. Path-level policies and native protocol gateways are not implemented.
 
-Real cloud adapters, internal credential management, native protocol gateways, real telemetry, MCP, sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). This loopback-only guest server is for local validation, not public deployment. The UI follows the visual direction of TiDB Cloud; official TiUI packages were not available in this empty workspace.
+Real cloud adapters, internal credential management, native protocol gateways, real telemetry, MCP, sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). This loopback-only guest server is for local validation, not public deployment.
+
+TiUI is the accepted frontend foundation, with shared overrides for larger text and more spacing. The current custom React/CSS console has not yet migrated to TiUI. The public package is available; see the verified references, component rules, theme guidance, and migration status in the [TiUI standard](docs/standards/tiui-design-system.md).
 
 ## Code map
 
@@ -51,6 +53,8 @@ No cloud credentials are configured and no real cloud resources or charges were 
 
 ## Collaboration and delivery
 
-Every coding tool uses the shared [agent instructions](AGENTS.md) and [contribution guide](CONTRIBUTING.md). `npm run check` is the common local/CI gate. The [CI/CD policy](docs/ci-cd.md) describes PR review, commit sign-off, immutable artifacts, and future protected deployments. Workflow files are prepared; repository protections and a real deployment target are not configured in this local folder.
+Every coding tool uses the shared [agent instructions](AGENTS.md), [contribution guide](CONTRIBUTING.md), and [standards index](docs/standards/README.md). The [knowledge-maintenance workflow](docs/standards/knowledge-maintenance.md) captures reusable user feedback and integration findings in repository docs, so future contributors can use them without this chat's history.
+
+`npm run check` is the common local/CI gate. It checks required standards and instruction links as well as application quality; it does not certify visual fidelity. The [CI/CD policy](docs/ci-cd.md) describes PR review, commit sign-off, immutable artifacts, and future protected deployments. GitHub CI runs in `siddontang/tidb.ai`; repository protections and a real deployment target are not configured.
 
 The product uses one customer-facing Workspace Key; upstream provider credentials are owned by internal services. See [ADR 0001](docs/decisions/0001-unified-workspace-key.md). Existing prototype keys without an explicit resource grant must be reissued.

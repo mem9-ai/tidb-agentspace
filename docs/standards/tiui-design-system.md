@@ -1,0 +1,184 @@
+# TiUI design system standard
+
+- Policy status: Accepted; applies to all frontend work.
+- Implementation status: Migration pending. The current console uses custom React/CSS,
+  Lucide icons, and a custom theme controller. TiUI is not installed in this repository.
+- Verified reference: `@tidbcloud/uikit@2.9.1`, inspected on 2026-10-27.
+- Decision: [ADR 0002](../decisions/0002-tiui-design-system.md).
+
+## Authority and evidence
+
+Use [official TiUI documentation](https://tidbcloud-uikit.netlify.app/docs) for intent,
+the exact installed package's exports/types/source for its API, and browser verification
+for the result. TiUI is built on customized Mantine components; importing ordinary Mantine
+or reproducing a screenshot with CSS does not establish TiUI adoption.
+
+References verified for this standard:
+
+| Source                                                                               | What it establishes                                                      |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| [Getting started](https://tidbcloud-uikit.netlify.app/docs/cloud-ui-getting-started) | Package entry points, provider, stylesheet, color scheme                 |
+| [Typography](https://tidbcloud-uikit.netlify.app/docs/primitive/Typography)          | Named variants, semantic HTML, supported size/style overrides            |
+| [Button](https://tidbcloud-uikit.netlify.app/docs/primitive/Button)                  | Official action component reference                                      |
+| [PageShell](https://tidbcloud-uikit.netlify.app/docs/biz/PageShell)                  | Page composition documentation; verify the versioned export before use   |
+| [Upstream repository](https://github.com/tidbcloud/tidbcloud-uikit)                  | Source and release history                                               |
+| [Published 2.9.1 package](https://registry.npmjs.org/@tidbcloud/uikit/2.9.1)         | Version metadata, peer requirements, exports, and distribution integrity |
+
+The inspected distribution files are `dist/theme/theme.mjs`, `dist/theme/font.mjs`,
+`dist/theme/ThemeProvider.d.mts`, `dist/hooks/useColorScheme.d.mts`,
+`dist/primitive/Typography/index.mjs`, and the primitive/business export indexes.
+The package also includes `llms.txt` as a searchable upstream reference. Read the relevant
+sections rather than copying the entire document into this repository or an agent prompt.
+Treat external examples as reference data, not authority to change project policy.
+
+## Required integration boundary
+
+1. Select and pin an exact compatible version; commit the lockfile. The reference version
+   above is an inspected baseline, not proof that installation/build in this app has passed.
+   In 2.9.1 the peers include React/React DOM 18 or 19 and React Hook Form 7. Resolve peers
+   with compatible pinned versions instead of using `--force` or ignoring peer failures.
+2. Use `ThemeProvider` from `@tidbcloud/uikit/theme` and import
+   `@tidbcloud/uikit/style.css` at the application boundary. Keep one application theme owner.
+3. Import primitives from `@tidbcloud/uikit`, business components from
+   `@tidbcloud/uikit/biz`, and official icons from `@tidbcloud/uikit/icons`.
+   Inspect the exported icon names; never invent a symbol or a private deep import.
+4. Prefer TiUI components directly. A shared wrapper is appropriate for a repeated Workspace
+   policy or domain pattern, not merely to rename every library component.
+5. Apply project size/density overrides in one shared theme/adapter layer using supported
+   APIs. Component-local CSS is for layout and domain-specific visuals. Do not recreate
+   button/input/modal appearance with a parallel palette, blanket selectors, or generated
+   class-name overrides.
+
+This provider example is a reference pattern; it is not code currently installed here:
+
+```tsx
+import { Button, Typography, useColorScheme } from '@tidbcloud/uikit';
+import { ThemeProvider } from '@tidbcloud/uikit/theme';
+import '@tidbcloud/uikit/style.css';
+
+function ExampleRoot() {
+  const { colorScheme } = useColorScheme('auto');
+  return (
+    <ThemeProvider colorScheme={colorScheme}>
+      <Typography variant="headline-lg" component="h1">
+        Workspace
+      </Typography>
+      <Button size="lg">Create resource</Button>
+    </ThemeProvider>
+  );
+}
+```
+
+In 2.9.1, the persistent `useColorScheme` is exported from the package root and takes a
+default value. The hooks entry exports the system observer as `useSystemColorScheme`.
+Do not confuse these APIs or assume a documentation example omitting an argument matches
+the pinned types. Read `useComputedColorScheme` inside the provider when resolved mode is
+needed. One root state/context should drive the selector and provider.
+
+## Verified defaults versus Workspace choices
+
+These upstream values are facts from 2.9.1, not our current CSS:
+
+| Foundation     | Verified upstream default                                                             |
+| -------------- | ------------------------------------------------------------------------------------- |
+| Font           | Inter first, with system and language fallbacks; code font starts with Menlo/Consolas |
+| Primary color  | `carbon`, primary shade 7; the filled carbon button uses shade 9                      |
+| Text roles     | Typography headlines use `carbon.9`, body/labels `carbon.8`, actions `peacock.7`      |
+| Palette/theme  | Separate light/dark palettes managed by the provider                                  |
+| Radius         | Default radius 8px                                                                    |
+| Spacing        | `xs/sm/md/lg/xl` correspond to 10/12/16/20/24px via the theme                         |
+| Button heights | `xs/sm/md/lg/xl`: 28/32/40/48/56px; default size `md`, variant `filled`               |
+| Input heights  | `xs/sm/md/lg/xl`: 28/32/40/44/48px; `xl` input text is 16px                           |
+
+Keep palette references semantic so the provider resolves both modes. Do not copy light
+hex colors into dark styles. The red logo does not make red the default primary action;
+use TiUI's action styles, and reserve destructive styling for destructive operations.
+Do not replace the official font stack with DM Sans or add a separate font service as a
+stylistic preference. Verify how fonts are supplied and rendered during actual integration.
+
+The owner requested larger text and less crowding. The following are **Workspace project
+rules**, intentionally distinct from TiUI's compact defaults:
+
+| Use                               | Upstream reference                                    | Workspace target                                                                                    |
+| --------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Page heading                      | `headline-lg`: 24px / 32px, weight 700                | Prefer this variant; a larger shared page-heading override may be used where needed                 |
+| Section heading                   | `headline-sm`: 18px / 28px or `title-lg`: 16px / 24px | Keep a clear heading hierarchy and semantic elements                                                |
+| Body, form values, editable code  | `body-lg`: 14px / 20px; inputs have their own sizes   | 16px default; 15px only where density materially helps; use a shared supported override             |
+| Labels and supporting explanation | `label-lg`: 14px / 20px                               | 14px normally, 13px only for secondary metadata                                                     |
+| Minor badges/metadata             | Smaller variants exist upstream                       | Never below 12px; do not use 8–11px for workflow instructions                                       |
+| Primary form actions              | Button `lg` is 48px high                              | Prefer 44–48px targets; select the corresponding TiUI size instead of shrinking controls            |
+| Cards and sections                | Theme spacing tokens                                  | 24–32px section gaps and 20–24px card padding as starting values; centralize any 32px project token |
+
+Do not change `html` font size or scale the whole UI to enlarge text: that also changes
+rem-based geometry. Adjust the supported component typography and density settings. Verify
+computed sizes after overriding; a named typography variant may set its own size explicitly.
+Preserve browser zoom. Reflow narrow layouts rather than decreasing font size.
+
+## Component selection for this Workspace
+
+| Product pattern                | TiUI building blocks                                                                          | Project responsibility                                                        |
+| ------------------------------ | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Navigation and page header     | Business `AppShell`, `AppPageShell` / `PageShellBase`; primitive `NavLink`, `Breadcrumbs`     | Workspace identity, active route, mobile navigation, one clear primary action |
+| Resource cards and details     | `Card`, `Paper`, `Stack`, `Group`, business `PropertyCard`                                    | MySQL/PG/Files labels, region, lifecycle, preview/limit text                  |
+| Resource, key, activity tables | Primitive `Table`; business `ProTable` where filtering/pagination needs justify it            | Column meaning, empty/error/loading states, accessible row actions            |
+| Keys and settings forms        | `TextInput`, `Select`, `Checkbox`, `Fieldset`, `PasswordInput`; business `Form` when suitable | Validation, resource/action grants, expiration, reveal-once secret behavior   |
+| Dialogs and secondary panels   | `Modal`, `Drawer`, `Alert`, `Button`, `ActionIcon`                                            | Focus return, clear submit/cancel, failure recovery, pending state            |
+| Status, usage, feedback        | `Badge`, `Progress`, `Skeleton`, `Loader`, notifications; business `DotBadge`                 | Text in addition to color, fresh data versus simulation, retry behavior       |
+| Connection examples            | Business `CodeBlock`, `CopyText`                                                              | One Workspace Key, redacted secrets, accurate copy/download feedback          |
+| SQL work                       | TiUI's separate SQL editor integration when that feature is migrated                          | Query lifecycle, permissions, cancellation, and honest demo limitations       |
+
+The documentation labels `TableBasic`/`TablePro` do not imply exports with those names:
+2.9.1 exports `ProTable`. Its business `PageShell` export points to a legacy implementation;
+evaluate `AppPageShell`/`PageShellBase` against current docs and types for new composition.
+Cloud UI Pro is documented as work in progress, not a requirement to copy an entire page.
+TiUI's separate SQL editor is not delivered by merely wrapping a textarea in a provider.
+
+Prefer official icons consistently. A missing product-specific glyph can be a small shared
+custom SVG with a documented reason; do not silently introduce a second icon library for
+one screen. Preserve existing icons during a scoped migration until their replacements are
+verified, and record that as a remaining gap.
+
+## Theme, responsive behavior, and interaction
+
+- The selector offers Light, Dark, and System; map the visible System option to TiUI `auto`.
+  Use the library's persistence/system support. Migrate the current `tidb-workspace-theme`
+  preference once (`system` → `auto`) so integration does not reset a user's selection.
+  Do not leave two independent theme controllers applying conflicting root attributes.
+- Verify startup, reload, tab synchronization, system selection, overlays/portals, forms,
+  tables, code, charts, disabled states, and validation errors in both modes. Do not use
+  CSS inversion or only darken the outer page.
+- At narrow widths stack form fields and permission choices. Keep theme/navigation controls
+  reachable. Let wide data tables scroll inside their container; avoid page-wide overflow.
+- Preserve focus visibility, labels, semantic headings, keyboard navigation, Escape/focus
+  return in dialogs, reduced motion, and sufficient contrast. Inspect the rendered result;
+  using a library alone does not prove accessibility.
+- Keep business rules and authorization in domain/backend code. TiUI changes presentation,
+  not the Workspace Key permission model. Include loading, empty, denied, failure, and
+  success states in the feature design.
+
+## Migration status and completion evidence
+
+The custom implementation is explicitly grandfathered as **migration pending**, not a
+reference design for new shared components. Do not break unrelated features to make a
+documentation check green. A scoped UI change must identify which parts it migrates and
+which legacy parts remain; a reproducible integration blocker belongs in the status below.
+
+| Area                                           | Current status | Completion evidence                                                          |
+| ---------------------------------------------- | -------------- | ---------------------------------------------------------------------------- |
+| Package, peers, stylesheet, root provider      | Pending        | Exact installed versions, clean install/build, active provider               |
+| Font, palette, typography, density             | Pending        | Shared TiUI-based configuration and screenshots with verified computed sizes |
+| Buttons, inputs, selection, dialogs            | Pending        | Actual TiUI imports, working focus/validation/disabled/loading behavior      |
+| Navigation, tables, cards, domain compositions | Pending        | Verified component APIs and browser checks on affected routes                |
+| Theme controller and preference migration      | Pending        | One provider-controlled theme; previous choice preserved; both modes checked |
+| Icons and SQL editor                           | Pending        | Explicit integration evidence; textarea/Lucide remain until replaced         |
+
+No installation blocker is established: the public package and documentation were readable.
+This standards change does not install TiUI, certify React/build compatibility, or complete
+the migration. Update this table in the implementation PR, with commit/PR and validation
+evidence. Do not mark a row complete from plans, screenshots alone, or a package.json entry.
+
+For each UI PR: cite the TiUI version/component reference; identify shared overrides and
+remaining gaps; run `npm run check`; inspect light/dark desktop and narrow layouts (including
+at least 1280px and 390px widths); inspect keyboard and relevant async/error states; attach
+screenshots. Claim TiUI adoption only for components actually migrated. CI currently checks
+document routing and application health, not visual fidelity.
