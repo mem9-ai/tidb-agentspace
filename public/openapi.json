@@ -3,7 +3,7 @@
   "info": {
     "title": "TiDB Agent Workspace · Local Prototype API",
     "version": "0.1.0",
-    "description": "A local demonstration API. Cloud provisioning, native database connections, and cloud telemetry are simulated. Files, API-key enforcement, and settings persist on this machine. Browser guest sessions are only suitable for loopback validation; production identity is deferred."
+    "description": "A loopback Workspace gateway with opt-in real TiDB Cloud Zero MySQL and Singapore Drive9 files. Existing local resources remain demos. Workspace Keys authorize actions and resources; upstream credentials stay internal. Zero trials expire; cloud usage is unmeasured. Production identity and public hosting are deferred."
   },
   "servers": [
     { "url": "/api/v1", "description": "Standalone Workspace API; resolve against the API origin" }
@@ -66,6 +66,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -79,7 +85,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -98,6 +104,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -156,6 +168,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -169,7 +187,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -188,6 +206,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -249,6 +273,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -262,7 +292,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -281,6 +311,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -354,6 +390,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -367,7 +409,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -386,6 +428,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -416,11 +464,11 @@
                 "required": ["name", "kind", "region"],
                 "properties": {
                   "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,39}$" },
-                  "kind": { "enum": ["mysql", "postgresql", "filesystem"] },
+                  "kind": { "enum": ["mysql", "filesystem"] },
                   "region": {
                     "type": "string",
-                    "enum": ["aws-us-east-1", "aws-us-west-2", "aws-ap-southeast-1"],
-                    "description": "Choose a region supported by the resource kind in capabilities. The first supported region is the Console default."
+                    "enum": ["aws-us-east-1", "aws-us-west-2", "aws-ap-southeast-1", "automatic"],
+                    "description": "Choose a region supported by the resource kind in capabilities. Zero MySQL uses automatic provider assignment. The first supported region is the Console default."
                   }
                 }
               }
@@ -472,6 +520,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -485,7 +539,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -504,6 +558,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -582,6 +642,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -595,7 +661,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -614,6 +680,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -692,6 +764,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -705,7 +783,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -724,6 +802,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -788,6 +872,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -801,7 +891,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -820,6 +910,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -969,6 +1065,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -982,7 +1084,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1001,6 +1103,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1023,10 +1131,121 @@
         }
       ]
     },
+    "/workspaces/{workspaceId}/resources/{resourceId}/setup": {
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "const": "ws_agentlab" },
+          "description": "This local prototype has one workspace."
+        },
+        { "name": "resourceId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "post": {
+        "operationId": "retryDatabaseSetup",
+        "summary": "Resume setup on the same Zero instance; never create a replacement for an uncertain request",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint.",
+        "x-required-scope": "resources:write",
+        "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "data": { "$ref": "#/components/schemas/Resource" } }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
     "/workspaces/{workspaceId}/queries": {
       "post": {
-        "operationId": "executeDemoQuery",
-        "summary": "Execute supported demo SELECT patterns",
+        "operationId": "executeQuery",
+        "summary": "Execute one statement on a selected database; live SQL can read and write",
         "tags": ["Workspace"],
         "description": "Required workspace key scope: queries:execute. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint.",
         "x-required-scope": "queries:execute",
@@ -1042,7 +1261,7 @@
                   "resourceId": { "type": "string" },
                   "sql": {
                     "type": "string",
-                    "description": "Only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n]. Other SQL returns 422."
+                    "description": "Live Zero: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n]."
                   }
                 }
               }
@@ -1064,7 +1283,11 @@
                       "items": { "type": "object", "additionalProperties": true }
                     },
                     "rowCount": { "type": "integer" },
-                    "mode": { "const": "demo" },
+                    "mode": { "enum": ["demo", "live"] },
+                    "affectedRows": {
+                      "type": "integer",
+                      "description": "Live statement affected-row count; SELECT returns zero."
+                    },
                     "durationMs": { "type": "number" }
                   }
                 }
@@ -1101,6 +1324,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -1114,7 +1343,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1133,6 +1362,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1204,6 +1439,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -1217,7 +1458,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1236,6 +1477,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1305,6 +1552,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -1318,7 +1571,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1337,6 +1590,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1406,6 +1665,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -1419,7 +1684,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1438,6 +1703,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1535,6 +1806,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -1548,7 +1825,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1567,6 +1844,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1640,6 +1923,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -1653,7 +1942,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1672,6 +1961,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1742,6 +2037,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -1755,7 +2056,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1774,6 +2075,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1876,6 +2183,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "413": {
             "description": "Content too large",
             "content": {
@@ -1889,7 +2202,7 @@
             }
           },
           "422": {
-            "description": "Unsupported demo SQL",
+            "description": "SQL syntax, result limit, or unsupported demo query",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1908,6 +2221,12 @@
           },
           "503": {
             "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1937,13 +2256,21 @@
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
-          "kind": { "enum": ["mysql", "postgresql", "filesystem"] },
+          "kind": { "enum": ["mysql", "filesystem"] },
           "region": { "type": "string" },
           "status": {
-            "enum": ["active", "provisioning", "failed", "suspended", "deleting", "deleted"]
+            "enum": [
+              "active",
+              "provisioning",
+              "failed",
+              "suspended",
+              "deleting",
+              "deleted",
+              "expired"
+            ]
           },
           "provider": {
-            "enum": ["local", "drive9-anonymous"],
+            "enum": ["local", "drive9-anonymous", "tidb-cloud-zero"],
             "description": "Missing on legacy local resources."
           },
           "uploadLimitBytes": {
@@ -1951,6 +2278,11 @@
             "description": "Negotiated gateway upload limit; zero means uploads are unavailable."
           },
           "connectionError": { "type": "string" },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Zero expiry reported by the provider. No automatic renewal or replacement."
+          },
           "createdAt": { "type": "string", "format": "date-time" }
         }
       },
@@ -2060,7 +2392,7 @@
         "properties": {
           "resourceId": { "type": "string" },
           "name": { "type": "string" },
-          "kind": { "enum": ["mysql", "postgresql", "filesystem"] },
+          "kind": { "enum": ["mysql", "filesystem"] },
           "storageBytes": { "type": ["integer", "null"] },
           "storageLimitBytes": { "type": ["integer", "null"] },
           "monthlyRU": { "type": ["integer", "null"] },
@@ -2078,11 +2410,11 @@
             "type": "array",
             "items": {
               "type": "string",
-              "enum": ["aws-us-east-1", "aws-us-west-2", "aws-ap-southeast-1"]
+              "enum": ["aws-us-east-1", "aws-us-west-2", "aws-ap-southeast-1", "automatic"]
             }
           },
           "storageGiB": { "type": ["number", "null"] },
-          "monthlyRU": { "type": "number" },
+          "monthlyRU": { "type": ["number", "null"] },
           "maxFiles": { "type": ["integer", "null"] },
           "preview": { "type": "boolean" },
           "provider": { "type": "string" }
@@ -2090,10 +2422,9 @@
       },
       "Capabilities": {
         "type": "object",
-        "required": ["mysql", "postgresql", "filesystem"],
+        "required": ["mysql", "filesystem"],
         "properties": {
           "mysql": { "$ref": "#/components/schemas/Capability" },
-          "postgresql": { "$ref": "#/components/schemas/Capability" },
           "filesystem": { "$ref": "#/components/schemas/Capability" }
         }
       },

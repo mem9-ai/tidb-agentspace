@@ -6,8 +6,8 @@ not implemented. [ADR 0005](decisions/0005-independent-console-and-api.md) recor
 ## Repository and commands
 
 Use the pinned Node/npm versions and `npm ci` from the repository root. One npm lockfile owns
-all dependencies, including the isolated contract generator workspace. The backend itself
-has no third-party runtime dependencies.
+all dependencies, including the isolated contract generator workspace. The backend includes only mysql2 and its pinned runtime dependency closure for real SQL;
+frontend and contract-generator dependencies are excluded. See [ADR 0006](decisions/0006-zero-sql-gateway.md).
 
 | Component | Source                           | Build                                     | Run from source / serve output                  |
 | --------- | -------------------------------- | ----------------------------------------- | ----------------------------------------------- |
@@ -44,8 +44,10 @@ Console. To run the built backend independently, copy `dist/api/` anywhere and e
 | `WORKSPACE_CONSOLE_DIRECTORY`        | `dist/console/`                                               | Optional static runner's content directory.                                                                                                                                                                 |
 | `WORKSPACE_API_PORT`                 | `4318`                                                        | API listen port; binding remains loopback.                                                                                                                                                                  |
 | `WORKSPACE_CONSOLE_ORIGINS`          | HTTP `localhost` and `127.0.0.1` on ports `5173` and `4173`   | Comma-separated exact allowed browser origins; an empty value allows no separate Console origins. The API's own origin is always accepted. Only HTTP loopback origins are accepted in this guest prototype. |
-| `WORKSPACE_DATA_FILE`                | `.data/workspace.json` relative to the API source/output root | Use an absolute path on persistent storage across artifact replacement. Provider credentials stay in the sibling `.providers.json` file.                                                                    |
+| `WORKSPACE_DATA_FILE`                | `.data/workspace.json` relative to the API source/output root | Use an absolute path on persistent storage across artifact replacement. Provider credentials stay in sibling `.providers.json` (Files) and `.databases.json` (Zero) files.                                  |
 | `WORKSPACE_FILES_PROVIDER`           | `local`                                                       | Existing explicit `drive9-anonymous` opt-in remains unchanged.                                                                                                                                              |
+
+`WORKSPACE_MYSQL_PROVIDER=tidb-cloud-zero` enables real anonymous MySQL creation; default `local` retains demos. Trials expire and existing bindings are preserved.
 
 Use the same hostname for Console and API (`127.0.0.1` for both, or `localhost` for both).
 They can use different ports. The HttpOnly SameSite=Strict cookie is not shared between
@@ -89,7 +91,7 @@ After checks, run `npm run package -- <full-source-sha>`. Packaging does not dep
 The manual internal-artifact workflow uses the same packager. It produces:
 
 - `release/workspace-api.tar.gz`: `api/server/`, `api/public/openapi.json`, a minimal package
-  manifest, runtime instructions, and source metadata. No Console, npm dependencies, or tests.
+  manifest, bundled SQL runtime dependencies, instructions, and source metadata. No Console, frontend dependencies, or tests.
 - `release/workspace-console.tar.gz`: `console/static/`, an optional local static runner,
   instructions, and source metadata. No backend or local data.
 - `release/SHA256SUMS` and `release/build-info.json`: component hashes and exact source identity.

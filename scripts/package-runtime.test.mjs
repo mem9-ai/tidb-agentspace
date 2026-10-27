@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { copySqlDependencies } from './sql-runtime-dependencies.mjs';
 import { buildApi } from './build-api.mjs';
 import { packageRuntime } from './package-runtime.mjs';
 
@@ -14,7 +16,7 @@ async function listen(app) {
   return `http://127.0.0.1:${app.address().port}`;
 }
 
-test('API builds without a frontend; separate archives boot independently without dependencies or secrets', async (t) => {
+test('API builds without a frontend; separate archives boot independently without installs or secrets', async (t) => {
   const root = await mkdtemp(resolve(tmpdir(), 'tidb-package-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await cp(new URL('../server/', import.meta.url), resolve(root, 'server'), { recursive: true });
@@ -25,6 +27,7 @@ test('API builds without a frontend; separate archives boot independently withou
   );
   await writeFile(resolve(root, 'package.json'), JSON.stringify({ version: '0.0.0-test' }));
   await writeFile(resolve(root, '.node-version'), '24.22.1\n');
+  await copySqlDependencies(fileURLToPath(new URL('../', import.meta.url)), root);
   await buildApi({ root });
   const apiPackage = JSON.parse(await readFile(resolve(root, 'dist/api/package.json'), 'utf8'));
   assert.equal(apiPackage.dependencies, undefined);
@@ -55,7 +58,7 @@ test('API builds without a frontend; separate archives boot independently withou
   for (const artifact of artifacts) {
     const { component } = artifact.info;
     const entries = execFileSync('tar', ['-tzf', artifact.archive], { encoding: 'utf8' });
-    for (const excluded of ['.data', '.env', '.test.mjs', 'node_modules', 'generate-openapi'])
+    for (const excluded of ['.data', '.env', '.test.mjs', 'generate-openapi'])
       assert.ok(!entries.includes(excluded));
     assert.equal(artifact.info.sourceSha, 'a'.repeat(40));
     assert.equal(artifact.info.deployed, false);
@@ -72,12 +75,17 @@ test('API builds without a frontend; separate archives boot independently withou
     let app;
     if (component === 'api') {
       assert.ok(entries.includes('api/public/openapi.json'));
+      assert.ok(entries.includes('api/node_modules/mysql2/package.json'));
+      assert.ok(!entries.includes('api/node_modules/pg/package.json'));
+      assert.ok(!entries.includes('api/node_modules/react/'));
+      const runtimeRequire = createRequire(resolve(unpacked, 'api/server/index.mjs'));
+      assert.equal(typeof runtimeRequire('mysql2').createConnection, 'function');
       assert.ok(entries.includes('api/server/providers/drive9.mjs'));
       assert.ok(!entries.includes('index.html') && !entries.includes('console'));
       const { createApp } = await import(
         pathToFileURL(resolve(unpacked, 'api/server/index.mjs')).href
       );
-      app = await createApp({ filesProvider: 'local' });
+      app = await createApp({ filesProvider: 'local', mysqlProvider: 'local' });
       const origin = await listen(app);
       try {
         assert.equal((await fetch(origin + '/api/health')).status, 200);
@@ -88,6 +96,7 @@ test('API builds without a frontend; separate archives boot independently withou
         await new Promise((resolve) => app.close(resolve));
       }
     } else {
+      assert.ok(!entries.includes('node_modules'));
       assert.ok(!entries.includes('/server/') && !entries.includes('openapi.json'));
       const { createConsoleServer } = await import(
         pathToFileURL(resolve(unpacked, 'console/serve-console.mjs')).href

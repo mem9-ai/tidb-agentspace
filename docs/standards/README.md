@@ -36,3 +36,5 @@ Tool-specific entry files should route here rather than maintain competing polic
 
 The repository check validates that required documents and instruction links exist. It does
 not prove that a model read them or that the UI conforms to TiUI; code and browser review do.
+
+For database integration, read [the Zero SQL boundary](../decisions/0006-zero-sql-gateway.md): anonymous provisioning, private database-scoped credentials, expiry and recovery, verified TLS, bounded sessions, and no automatic SQL retries.

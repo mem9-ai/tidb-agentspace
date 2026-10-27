@@ -6,7 +6,7 @@ export type ApiKey = components['schemas']['Key'];
 export type Data = components['schemas']['Bootstrap'];
 export type WorkspaceFile = components['schemas']['File'];
 export type QueryResult =
-  operations['executeDemoQuery']['responses'][200]['content']['application/json'];
+  operations['executeQuery']['responses'][200]['content']['application/json'];
 type JsonBody<T extends { requestBody: { content: { 'application/json': unknown } } }> =
   T['requestBody']['content']['application/json'];
 export type CreateKeyInput = JsonBody<operations['createKey']>;
@@ -37,7 +37,13 @@ export const workspaceApi = {
         body,
       }),
     ),
-  query: (body: JsonBody<operations['executeDemoQuery']>) =>
+  retryDatabaseSetup: (resourceId: string) =>
+    responseData(
+      client.POST('/workspaces/{workspaceId}/resources/{resourceId}/setup', {
+        params: { path: { workspaceId, resourceId } },
+      }),
+    ),
+  query: (body: JsonBody<operations['executeQuery']>) =>
     responseData(client.POST('/workspaces/{workspaceId}/queries', { params, body })),
   saveFile: (body: WriteFileInput) =>
     responseData(client.PUT('/workspaces/{workspaceId}/files', { params, body })),
