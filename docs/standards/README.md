@@ -1,0 +1,32 @@
+# Shared engineering standards
+
+These versioned documents are the project's shared memory for humans and coding agents.
+Read the applicable standard before implementation. They apply to Codex, Claude Code,
+Cursor, Copilot, and other tools through the root [AGENTS.md](../../AGENTS.md); no personal
+plugin, skill, or conversation history is required.
+
+| Task                                                                                       | Required reference                                                                           |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Any UI, component, typography, theme, layout, icon, or frontend dependency change          | [TiUI design system](tiui-design-system.md) and [frontend instructions](../../src/AGENTS.md) |
+| Capturing user feedback, reusable conventions, integration findings, or recurring mistakes | [Knowledge maintenance](knowledge-maintenance.md)                                            |
+| Product boundaries, resources, or provider integration                                     | [Architecture](../architecture.md) and relevant [ADRs](../decisions/README.md)               |
+| Public authorization or credentials                                                        | [Workspace Key decision](../decisions/0001-unified-workspace-key.md)                         |
+| Build, review, merge, release, or environment behavior                                     | [Contribution guide](../../CONTRIBUTING.md) and [CI/CD policy](../ci-cd.md)                  |
+
+## How to interpret a standard
+
+- **Verified upstream fact:** includes an official source and version/date. Recheck when
+  upgrading or when the installed API disagrees with the document.
+- **Accepted project rule:** follows a user decision or reviewed project decision. Apply it
+  within its stated scope; it is not necessarily an upstream default.
+- **Proposed / unverified:** an option to investigate, not an implemented feature or binding
+  requirement. State the evidence needed to resolve it.
+- **Implementation status:** records what the code actually does. An accepted design can
+  still be awaiting implementation.
+
+Explicit user instructions and higher-priority tool instructions take precedence. Resolve
+conflicts in the affected canonical document and record meaningful tradeoffs in an ADR.
+Tool-specific entry files should route here rather than maintain competing policy copies.
+
+The repository check validates that required documents and instruction links exist. It does
+not prove that a model read them or that the UI conforms to TiUI; code and browser review do.

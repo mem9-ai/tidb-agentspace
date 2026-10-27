@@ -23,6 +23,9 @@ just to match one machine. Dependencies use exact versions and the committed npm
 Update the version pins, lockfile, and CI expectations together in a focused PR.
 TypeScript 6.0.3 is paired with the supported range of the pinned typescript-eslint parser;
 upgrade the compiler and parser together rather than independently selecting `latest`.
+Keep `@types/node` on the pinned Node runtime's major. Review the compatibility holds in
+`.github/dependabot.yml` when upgrading Node or typescript-eslint; see
+[dependency update triage](docs/ci-cd.md#dependency-update-triage).
 
 ## Agent entry points
 
@@ -39,6 +42,12 @@ An agent's personal memory is not a substitute for repository policy. Keep local
 settings untracked. The product's downloadable agent connection instructions are for
 API consumers and are separate from these source-code collaboration instructions.
 
+Read the applicable documents in the [shared standards index](docs/standards/README.md).
+All frontend work follows the [TiUI standard](docs/standards/tiui-design-system.md), also
+linked by `src/AGENTS.md`. Follow [knowledge maintenance](docs/standards/knowledge-maintenance.md)
+to preserve reusable user corrections and verified conventions in the same PR. Keep one
+canonical rule and link it from agent entry points instead of copying it into each tool.
+
 Official references: [Codex instructions](https://developers.openai.com/codex/guides/agents-md/),
 [Claude memory/imports](https://code.claude.com/docs/en/memory),
 [Cursor rules](https://cursor.com/docs/rules), and
@@ -46,12 +55,13 @@ Official references: [Codex instructions](https://developers.openai.com/codex/gu
 
 ## Change workflow
 
-1. Read the task, `AGENTS.md`, relevant code/tests, and applicable architecture notes.
+1. Read the task, `AGENTS.md`, relevant code/tests, and applicable standards/architecture notes.
 2. Inspect the working tree. Use a focused branch or checkout and preserve unrelated edits.
 3. State the intended result and scope. For multi-person work, agree on file ownership;
    use separate checkouts instead of letting agents rewrite the same files simultaneously.
 4. Implement the smallest complete change. Record important architectural decisions in
-   `docs/decisions/`; do not invent future APIs or label simulated behavior as integrated.
+   `docs/decisions/` and reusable practices in the applicable standard; do not invent future
+   APIs or label simulated behavior as integrated.
 5. Run targeted checks while working, then `npm run check` before handoff.
 6. Review the diff for unrelated changes, secrets, generated-file drift, and compatibility.
 7. Open a focused PR using the template, with validation evidence and relevant screenshots.
@@ -67,8 +77,10 @@ recreating formatter output or introduce broad `eslint-disable` / `ts-ignore` es
 
 Keep new frontend features in focused modules rather than expanding `src/App.tsx` indefinitely.
 The existing prototype is a starting point, not the target module structure. Use the current
-shared primitives and semantic design tokens; integrate official TiUI components as they
-become available. Keep UI text, comments, and common engineering documentation in English.
+TiUI standard for real components, semantic tokens, theme ownership, and shared readability
+overrides. The public TiUI package is available; the custom console's migration is pending.
+Preserve existing behavior during scoped migrations and update their status with evidence.
+Keep UI text, comments, and common engineering documentation in English.
 
 A customer uses one Workspace Key for the public REST/SDK/MCP surface. Key permissions
 combine allowed actions with allowed components/resources. Backend services own the upstream
@@ -108,18 +120,26 @@ Use `git commit --signoff` with your own identity. When an agent acts for Siddon
 `siddontang@gmail.com` for the sign-off while preserving the configured name and existing
 attribution. Do not configure a shared identity for other contributors.
 
-CI checks sign-offs on introduced non-merge commits. There is no bot identity bypass:
-dependency-update commits also need a valid author sign-off before merge. GitHub-generated
-merge commits are excluded; a squash commit is an ordinary commit and needs its own sign-off.
+CI checks sign-offs on introduced non-merge commits, including dependency-update commits.
+The [CI/CD policy](docs/ci-cd.md#commit-sign-off) documents the exact Dependabot email alias
+accepted for its existing trailer; unsigned bots and unrelated identities still fail.
+Merge commits are excluded from the checker; commits created on a contributor's behalf
+still require their sign-off. A squash commit is an ordinary commit and needs its own sign-off.
 
 A reviewer checks product behavior, API compatibility, authorization, credential boundaries,
-and the quality of the tests. The PR author reviews the agent's output before requesting
-review and cannot satisfy the independent review requirement themselves. Do not bundle
-unrelated formatting with a feature; this initial repository-wide formatting baseline is
-explicitly part of establishing the shared standard.
+and the quality of the tests. During early prototyping, the project owner has authorized
+agents to merge task-scoped PRs after reviewing the diff, verifying sign-offs, and confirming
+all CI checks pass on the latest PR head. A completed draft can be marked ready and merged
+without another confirmation or a separate human approval. Do not submit a self-approval,
+bypass enforced GitHub protections, or merge failing/conflicting changes. Maintainers remain
+responsible for the code; CI does not replace review. Before shared production deployment,
+adopt the independent review policy in `docs/ci-cd.md`.
+
+Do not bundle unrelated formatting with a feature; the initial repository-wide formatting
+baseline was explicitly part of establishing the shared standard.
 
 ## Delivery
 
-See [CI/CD policy](docs/ci-cd.md). CI and artifact packaging are checked in. GitHub rulesets,
-required reviewers, environments, and a real hosting target must be configured after this
-folder is attached to a remote repository. None are enabled by writing these files alone.
+See [CI/CD policy](docs/ci-cd.md). The repository is hosted at `siddontang/tidb.ai` and GitHub
+CI is running. Branch protections, required reviewers, deployment environments, and a real
+hosting target are not configured by the workflow files themselves.
