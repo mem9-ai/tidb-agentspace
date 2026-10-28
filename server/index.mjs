@@ -338,6 +338,10 @@ export async function createApp({
             'SSO_REQUIRED',
             'Sign in with your TiDB Account. The anonymous demo session is disabled.',
           );
+        // Host and forwarded headers are caller-controlled. Only the actual
+        // loopback peer may acquire the anonymous local owner's credentials.
+        if (!['127.0.0.1', '::1'].includes(clientSource(req)))
+          fail(403, 'LOCAL_ONLY', 'The anonymous demo session requires a loopback connection.');
         const token = mintSession({
           principal: 'You',
           principalId: 'local-owner',

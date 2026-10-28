@@ -31,6 +31,12 @@ export function devResources({ namespace, deployment, container, image, storageC
   };
   return [
     {
+      apiVersion: 'networking.k8s.io/v1',
+      kind: 'NetworkPolicy',
+      metadata: metadata(deployment),
+      spec: { podSelector: { matchLabels: labels }, policyTypes: ['Ingress'], ingress: [] },
+    },
+    {
       apiVersion: 'v1',
       kind: 'PersistentVolumeClaim',
       metadata: metadata(`${deployment}-data`),

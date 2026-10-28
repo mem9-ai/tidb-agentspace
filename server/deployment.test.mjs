@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { networkInterfaces, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { get } from 'node:http';
+import { get, request } from 'node:http';
 import test from 'node:test';
 import { createApp, startServer } from './index.mjs';
-import { consoleOrigins } from './http-policy.mjs';
+import { consoleOrigins, trustedProxies } from './http-policy.mjs';
 
 const workspace = '/api/v1/workspaces/ws_agentlab';
 
@@ -15,6 +15,31 @@ function statusWithHost(url, host) {
       response.resume();
       response.once('end', () => resolve(response.statusCode));
     }).once('error', reject);
+  });
+}
+
+function demoSession(url) {
+  return new Promise((resolve, reject) => {
+    const req = request(
+      url + '/api/session',
+      {
+        method: 'POST',
+        headers: {
+          Host: '127.0.0.1',
+          Origin: 'http://127.0.0.1',
+          'X-Forwarded-For': '127.0.0.1',
+          'X-Real-IP': '127.0.0.1',
+          Forwarded: 'for=127.0.0.1;host=localhost;proto=http',
+          'Content-Type': 'application/json',
+        },
+      },
+      (response) => {
+        response.resume();
+        response.once('end', () => resolve(response));
+      },
+    );
+    req.once('error', reject);
+    req.end('{}');
   });
 }
 
@@ -44,6 +69,14 @@ test('API listener stays local by default and explicitly supports the Pod networ
       assert.equal(await statusWithHost(base + '/api/health', '127.0.0.1'), 200);
       assert.equal(await statusWithHost(base + workspace + '/resources', '127.0.0.1'), 401);
       assert.equal(await statusWithHost(base + '/api/health', 'untrusted.invalid'), 403);
+      const session = await demoSession(base);
+      assert.equal(session.statusCode, host === '0.0.0.0' ? 403 : 200);
+      if (host === '0.0.0.0') {
+        assert.equal(session.headers['set-cookie'], undefined);
+        const local = await demoSession(`http://127.0.0.1:${app.address().port}`);
+        assert.equal(local.statusCode, 200);
+        assert.match(local.headers['set-cookie'][0], /^aw_session=/);
+      } else assert.match(session.headers['set-cookie'][0], /^aw_session=/);
     } finally {
       await new Promise((resolve) => app.close(resolve));
     }
@@ -53,6 +86,39 @@ test('API listener stays local by default and explicitly supports the Pod networ
 test('invalid and empty listener configuration fails before starting the app', async () => {
   for (const host of ['', ' ', 'localhost', '127.0.0.1:4318', 'bad-host', '::', '10.0.0.1'])
     await assert.rejects(startServer({ host, port: 0 }), /WORKSPACE_API_HOST/);
+});
+
+test('demo owner admission uses the socket peer across IPv6 and trusted proxies', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tidb-peer-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const app = await createApp({
+    dataFile: join(directory, 'data.json'),
+    trustedProxyList: trustedProxies('0.0.0.0/0,::1'),
+  });
+  await new Promise((resolve, reject) => {
+    app.once('error', reject);
+    app.listen(0, '::', resolve);
+  });
+  t.after(() => new Promise((resolve) => app.close(resolve)));
+  let peer;
+  app.on('request', (req) => {
+    peer = req.socket.remoteAddress;
+  });
+  for (const [address, expectedPeer] of [
+    ['[::1]', '::1'],
+    ['127.0.0.1', '::ffff:127.0.0.1'],
+  ]) {
+    const session = await demoSession(`http://${address}:${app.address().port}`);
+    assert.equal(peer, expectedPeer);
+    assert.equal(session.statusCode, 200);
+  }
+  const network = Object.values(networkInterfaces())
+    .flat()
+    .find((entry) => entry.family === 'IPv4' && !entry.internal);
+  assert.ok(network);
+  const denied = await demoSession(`http://${network.address}:${app.address().port}`);
+  assert.equal(denied.statusCode, 403);
+  assert.equal(denied.headers['set-cookie'], undefined);
 });
 
 test('separate Console origins support credentialed sessions and retain API authorization', async (t) => {

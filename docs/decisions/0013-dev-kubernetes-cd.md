@@ -35,7 +35,7 @@ They require an existing namespace and an explicit `storage_class` input. The cl
 must use the EBS CSI driver; there is no fallback to a default class or ephemeral data.
 `bootstrap-preview` performs Kubernetes server-side dry-run only, then ends without
 rollout or rollback. `bootstrap` first repeats that validation and then **creates**
-the PVC, private Service and Deployment. It refuses existing objects rather than
+an API-scoped deny-ingress NetworkPolicy, PVC, private Service and Deployment. It refuses existing objects rather than
 adopting or overwriting them. Errors are surfaced; a partial creation or readiness
 failure leaves resources and the PVC for inspection, never deletes persisted data,
 and never pretends there is a previous release to roll back to.
@@ -54,13 +54,24 @@ host port or host network. This is a **private dev/demo API**, not public SSO de
 It uses the existing local/demo providers and does not invent provider credentials.
 API networking explicitly sets `WORKSPACE_API_HOST=0.0.0.0`; the application default
 remains `127.0.0.1`. Only these two values are accepted; empty/invalid values fail
-startup. Host/origin and authorization checks do not change. HTTP probes connect to
+startup. Host/origin and SSO authorization checks stay in place. Anonymous demo sessions now
+require an actual loopback socket peer; a spoofed Host or forwarded header cannot
+acquire an owner session over the Pod network. HTTP probes connect to
 the Pod IP and send `Host: 127.0.0.1`; they do not connect to the kubelet's loopback.
 The Pod runs as UID/GID 1000 with a read-only root filesystem, dropped capabilities,
 no privilege escalation, no service-account token, resource limits and bounded scratch
 storage. Workspace state and sibling credential files live on `/data`, never `/tmp`.
 
-Before exposing the Service through a public gateway, separately configure the
+The NetworkPolicy is created before the API and denies inbound Pod traffic by default.
+It requires a network plugin that enforces policy; policy objects alone do not prove
+isolation, and other policies selecting the same Pods can add permissions. Node-origin
+traffic (including kubelet probes) and privileged API-server port-forward access have
+different enforcement rules. Verify denial from an unrelated Pod before reporting
+network isolation. The application-level demo-session restriction remains effective
+even if the network plugin does not enforce policy.
+
+Before exposing the Service through a public gateway, separately allow the intended
+gateway in network policy and configure the
 reviewed public origin, proxy and SSO runtime settings below. Normal image releases
 preserve that configuration; they do not reapply the bootstrap template.
 
@@ -104,14 +115,15 @@ Public gateway configuration is injected via Secret/ConfigMap/volume, never Git:
 ## First installation and verification
 
 1. Confirm the configured namespace is the intended dev namespace and already exists.
-   Confirm its Deployment, Service and `<deployment>-data` PVC do not yet exist.
+   Confirm its NetworkPolicy, Deployment, Service and `<deployment>-data` PVC do not yet exist.
 2. Run the workflow manually on the candidate branch with its full SHA as `deploy_ref`,
    `deployment_mode=bootstrap-preview`, and the actual EBS CSI `storage_class` name.
    Inspect the full diff and server-side dry-run result before creating resources.
 3. Run `deployment_mode=bootstrap` on that same reviewed SHA and storage class.
    Wait for rollout; a successful preview alone is not a deployment.
 4. Verify the PVC is Bound, Pod is Ready, image digest matches, and `/api/health`
-   works through the private Service (port-forward is sufficient). Verify state survives
+   works through the private Service (port-forward is sufficient), and an unrelated Pod
+   cannot obtain a demo owner session even with forged loopback headers. Verify state survives
    replacement of the Pod. With no public runtime configuration, use loopback HTTP
    through port-forward; do not publish the anonymous demo to the internet.
 5. Subsequent main pushes/manual `deploy` operations update only the image. If such a
@@ -120,6 +132,7 @@ Public gateway configuration is injected via Secret/ConfigMap/volume, never Git:
 
 See Kubernetes documentation for [single-instance stateful applications](https://kubernetes.io/docs/tasks/run-application/run-single-instance-stateful-application/),
 [ReadWriteOncePod](https://kubernetes.io/docs/tasks/administer-cluster/change-pv-access-mode-readwriteoncepod/),
+[NetworkPolicy enforcement](https://kubernetes.io/docs/concepts/services-networking/network-policies/),
 and [HTTP probe Host headers](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/).
 
 Concurrency is split by whether a run can deploy. Pull-request runs use a per-PR group with

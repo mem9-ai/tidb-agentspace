@@ -13,7 +13,11 @@ const config = {
 };
 
 test('initial API preserves state and admits only a single writer', () => {
-  const [pvc, service, deployment] = devResources(config);
+  const [policy, pvc, service, deployment] = devResources(config);
+  assert.equal(policy.kind, 'NetworkPolicy');
+  assert.deepEqual(policy.spec.podSelector.matchLabels, deployment.spec.template.metadata.labels);
+  assert.deepEqual(policy.spec.policyTypes, ['Ingress']);
+  assert.deepEqual(policy.spec.ingress, []);
   assert.deepEqual(pvc.spec.accessModes, ['ReadWriteOncePod']);
   assert.equal(pvc.spec.storageClassName, config.storageClass);
   assert.equal(pvc.spec.resources.requests.storage, '10Gi');
@@ -113,7 +117,7 @@ test('bootstrap creates exactly the validated manifest and never deletes storage
 });
 
 test('existing resources, unsupported storage, and failed preflight prevent creation', () => {
-  for (const existingKind of ['PersistentVolumeClaim', 'Service', 'Deployment']) {
+  for (const existingKind of ['NetworkPolicy', 'PersistentVolumeClaim', 'Service', 'Deployment']) {
     const f = fixture({ existingKind });
     assert.throws(() => bootstrapDev(config, 'bootstrap', f.kubectl), /already exists/);
     assert.ok(f.calls.every(({ args }) => args[0] === 'get'));
