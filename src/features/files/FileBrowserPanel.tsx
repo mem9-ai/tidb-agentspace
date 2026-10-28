@@ -1,7 +1,6 @@
 import { Fragment, useRef, useState, type ReactNode } from 'react';
-import { ActionIcon, Anchor, Menu, Paper, TextInput } from '@tidbcloud/uikit';
+import { ActionIcon, Anchor, Menu, TextInput } from '@tidbcloud/uikit';
 import {
-  IconChevronLeft,
   IconChevronRight,
   IconFilePlus01,
   IconFolder,
@@ -10,6 +9,7 @@ import {
   IconRefreshCw01,
   IconSearchLg,
 } from '@tidbcloud/uikit/icons';
+import { WorkspaceBrowserPanel } from '../../ui/WorkspaceBrowserPanel';
 
 export function FileBrowserPanel({
   systemName,
@@ -52,16 +52,17 @@ export function FileBrowserPanel({
   }
   const parts = path.split('/').filter(Boolean);
   return (
-    <Paper
-      component="aside"
-      className="panel file-browser"
-      style={{ display: 'var(--workspace-file-browser-display, flex)' }}
-      withBorder
-      aria-label="File browser"
-      data-collapsed={collapsed || undefined}
-    >
-      <div className="file-browser-heading">
-        <nav className="path-crumb" aria-label="File path" hidden={collapsed}>
+    <WorkspaceBrowserPanel
+      className="file-browser"
+      label="File browser"
+      railLabel="Files"
+      listLabel="Files"
+      collapsible={collapsible}
+      collapsed={collapsed}
+      onToggle={onToggle}
+      footer={footer}
+      heading={
+        <nav className="path-crumb" aria-label="File path">
           <ActionIcon
             aria-label="File system root"
             title={systemName}
@@ -95,24 +96,9 @@ export function FileBrowserPanel({
             ))}
           </div>
         </nav>
-        {collapsible && (
-          <ActionIcon
-            className="file-browser-toggle"
-            aria-label={collapsed ? 'Expand file browser' : 'Collapse file browser'}
-            title={collapsed ? 'Expand file browser' : 'Collapse file browser'}
-            aria-expanded={!collapsed}
-            aria-controls="file-browser-content"
-            onClick={onToggle}
-          >
-            {collapsed ? <IconChevronRight size={20} /> : <IconChevronLeft size={20} />}
-          </ActionIcon>
-        )}
-      </div>
-      <span className="file-browser-rail-label" aria-hidden hidden={!collapsed}>
-        Files
-      </span>
-      <div id="file-browser-content" className="file-browser-content" hidden={collapsed}>
-        <div className="file-toolbar">
+      }
+      toolbar={
+        <>
           <TextInput
             aria-label="Search files"
             placeholder="Filter files…"
@@ -163,12 +149,10 @@ export function FileBrowserPanel({
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>
-        </div>
-        <div className="file-browser-list" role="region" aria-label="Files" tabIndex={0}>
-          {children}
-        </div>
-        <footer className="file-browser-footer">{footer}</footer>
-      </div>
-    </Paper>
+        </>
+      }
+    >
+      {children}
+    </WorkspaceBrowserPanel>
   );
 }

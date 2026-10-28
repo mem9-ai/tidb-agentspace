@@ -4,6 +4,7 @@ import {
   Alert,
   Badge,
   Button,
+  Group,
   Loader,
   NavLink,
   Paper,
@@ -11,11 +12,13 @@ import {
   Table,
   Text,
   TextInput,
+  Typography,
 } from '@tidbcloud/uikit';
-import { IconCode02, IconRefreshCw01, IconSearchLg } from '@tidbcloud/uikit/icons';
+import { IconCode02, IconRefreshCw01, IconSearchLg, IconDatabase01 } from '@tidbcloud/uikit/icons';
 import { workspaceApi, type Resource, type TableDetail } from '../../api/client';
 import { ChoiceTabs } from '../../ui/ChoiceTabs';
 import { Heading } from '../../ui/WorkspaceHeading';
+import { WorkspaceBrowserPanel } from '../../ui/WorkspaceBrowserPanel';
 import { databaseEditorHash } from '../navigation/workspace-route';
 import './database-browser.css';
 
@@ -281,12 +284,16 @@ export function TableInspector({
 export function DatabaseTableList({
   database,
   tableName,
+  collapsed,
+  onToggle,
   onSelect,
   onRefresh,
   onLoadingChange,
 }: {
   database: Resource;
   tableName?: string;
+  collapsed: boolean;
+  onToggle: () => void;
   onSelect: () => void;
   onRefresh: () => void;
   onLoadingChange: (loading: boolean) => void;
@@ -305,15 +312,32 @@ export function DatabaseTableList({
       table.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
     ) ?? [];
   return (
-    <Paper className="panel database-table-list" p="xl" withBorder>
-      <Stack gap="md">
-        <div className="database-section-header">
-          <Heading level={2}>
-            Tables <Badge>{listing.data?.data.length ?? '…'}</Badge>
-          </Heading>
+    <WorkspaceBrowserPanel
+      className="database-table-list"
+      label="Table browser"
+      railLabel="Tables"
+      listLabel="Table list"
+      collapsed={collapsed}
+      onToggle={onToggle}
+      heading={
+        <Group gap="sm" wrap="nowrap">
+          <IconDatabase01 size={20} aria-hidden />
+          <Typography component="h2" variant="title-lg" fz={16}>
+            Tables
+          </Typography>
+          <Badge>{listing.data?.data.length ?? '…'}</Badge>
+        </Group>
+      }
+      toolbar={
+        <>
+          <TextInput
+            aria-label="Find a table"
+            placeholder="Filter tables…"
+            value={search}
+            onChange={(event) => setSearch(event.currentTarget.value)}
+            leftSection={<IconSearchLg size={18} />}
+          />
           <ActionIcon
-            size={48}
-            variant="subtle"
             aria-label="Refresh tables"
             title="Refresh tables"
             onClick={() => {
@@ -324,14 +348,10 @@ export function DatabaseTableList({
           >
             <IconRefreshCw01 size={20} />
           </ActionIcon>
-        </div>
-        <TextInput
-          aria-label="Find a table"
-          placeholder="Search tables…"
-          value={search}
-          onChange={(event) => setSearch(event.currentTarget.value)}
-          leftSection={<IconSearchLg size={18} />}
-        />
+        </>
+      }
+    >
+      <Stack gap="sm" p="sm">
         {!['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
           database.provider || '',
         ) && <Badge>Local demo</Badge>}
@@ -363,12 +383,13 @@ export function DatabaseTableList({
                   onClick={onSelect}
                   label={table.name}
                   description={table.type === 'VIEW' ? 'View' : undefined}
+                  title={table.name}
                 />
               ))}
             </nav>
           </>
         )}
       </Stack>
-    </Paper>
+    </WorkspaceBrowserPanel>
   );
 }

@@ -52,6 +52,7 @@ export function DatabaseWorkspace({
   const [busy, setBusy] = useState(false);
   const [listingBusy, setListingBusy] = useState(true);
   const [inspectionBusy, setInspectionBusy] = useState(false);
+  const [browserCollapsed, setBrowserCollapsed] = useState(false);
   const [sources, setSources] = useState<QuerySource[]>([]);
   const [sourceRevision, setSourceRevision] = useState(0);
   const editor = useRef<HTMLDivElement>(null);
@@ -63,10 +64,12 @@ export function DatabaseWorkspace({
       ?.focus({ preventScroll: true });
   };
   return (
-    <div className="database-workspace">
+    <div className="database-workspace" data-browser-collapsed={browserCollapsed || undefined}>
       <DatabaseTableList
         database={database}
         tableName={tableName}
+        collapsed={browserCollapsed}
+        onToggle={() => setBrowserCollapsed((value) => !value)}
         onSelect={() => setOutputView('Table details')}
         onLoadingChange={setListingBusy}
         onRefresh={() => {

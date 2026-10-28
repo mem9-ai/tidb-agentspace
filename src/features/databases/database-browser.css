@@ -1,6 +1,6 @@
 .database-workspace {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   align-items: start;
   gap: 16px;
 }
@@ -10,9 +10,14 @@
   gap: 24px;
   min-width: 0;
 }
+.database-workspace[data-browser-collapsed] {
+  grid-template-columns: 56px minmax(0, 1fr);
+}
 .database-table-list nav {
-  max-height: 600px;
-  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.database-table-list .workspace-browser-identity svg {
+  flex-shrink: 0;
 }
 .database-section-header {
   display: flex;
@@ -40,11 +45,20 @@
   overflow: auto;
 }
 @media (max-width: 1000px) {
-  .database-workspace {
+  .database-workspace,
+  .database-workspace[data-browser-collapsed] {
     grid-template-columns: minmax(0, 1fr);
   }
-  .database-table-list nav {
-    max-height: 240px;
+  .database-table-list[data-collapsed] {
+    flex-direction: row;
+    align-items: center;
+  }
+  .database-table-list[data-collapsed] .workspace-browser-rail-label {
+    writing-mode: horizontal-tb;
+    margin: 0;
+  }
+  .database-table-list .workspace-browser-toggle svg {
+    transform: rotate(90deg);
   }
 }
 
@@ -55,6 +69,7 @@
 .database-workspace > .database-table-list {
   position: sticky;
   top: 104px;
+  max-height: calc(100dvh - 220px);
 }
 .database-workspace .sql-database-select {
   min-width: 0;
@@ -63,6 +78,10 @@
 @media (max-width: 1000px) {
   .database-workspace > .database-table-list {
     position: static;
+    max-height: none;
+  }
+  .database-table-list .workspace-browser-list {
+    max-height: 160px;
   }
 }
 
@@ -124,14 +143,6 @@
 }
 .database-workspace .result-footnote {
   padding: 10px 20px;
-}
-.database-workspace .database-table-list nav {
-  max-height: min(600px, calc(100dvh - 370px));
-}
-@media (max-width: 1000px) {
-  .database-workspace .database-table-list nav {
-    max-height: 160px;
-  }
 }
 @media (max-width: 700px) {
   .database-workspace-header {

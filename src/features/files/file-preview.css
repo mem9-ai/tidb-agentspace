@@ -55,26 +55,12 @@
   gap: 0;
   flex-wrap: nowrap;
 }
-.file-browser {
-  display: flex;
-  flex-direction: column;
-}
-.file-browser-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  min-height: 60px;
-  flex-shrink: 0;
-}
 .file-browser .path-crumb {
-  flex: 1;
   min-width: 0;
   flex-wrap: nowrap;
   gap: 4px;
 }
-.file-browser .path-crumb > button,
-.file-browser-toggle {
+.file-browser .path-crumb > button {
   flex-shrink: 0;
 }
 .file-path-segments {
@@ -90,53 +76,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.file-browser[data-collapsed] .file-browser-heading {
-  padding: 8px 4px;
-  justify-content: center;
-}
-.file-browser-content {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-}
-.file-browser [hidden] {
-  display: none;
-}
-.file-browser .file-toolbar {
-  padding: 0 12px 12px;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-.file-toolbar > :first-child {
-  flex: 1;
-  min-width: 0;
-}
-.file-toolbar > button {
-  flex-shrink: 0;
-}
-.file-browser-list {
-  min-height: 0;
-  overflow: auto;
-}
 .file-browser .file-name {
   min-height: 44px;
-}
-.file-browser .file-browser-footer {
-  margin: 0;
-  padding: 12px;
-  gap: 8px;
-  flex-shrink: 0;
-  border-top: 1px solid var(--border);
-}
-.file-browser-rail-label {
-  writing-mode: vertical-rl;
-  align-self: center;
-  margin: 12px 0;
-  color: var(--muted);
 }
 .file-preview-panel {
   position: sticky;
@@ -318,9 +259,9 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .file-workspace[data-preview] .file-browser {
-    --workspace-file-browser-display: none;
+    --workspace-browser-display: none;
   }
-  .file-browser-toggle {
+  .file-browser .workspace-browser-toggle {
     display: none;
   }
   .file-preview-panel {
