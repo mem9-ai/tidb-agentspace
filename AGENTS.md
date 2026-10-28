@@ -21,6 +21,8 @@ follow its task-specific references before implementation. Keep detailed rules c
 - Coordinate intent, design, task handoffs, and implementation PRs through the
   [GitHub contribution workflow](docs/standards/github-contribution-workflow.md). Pin accepted
   specifications to Git revisions; a design PR must not prematurely close its parent intent.
+  Use the already running local agent for execution and GitHub for shared records and CI.
+  Follow the workflow's local-agent boundary before proposing additional execution machinery.
 - For any UI, component, typography, layout, theme, icon, or frontend dependency change,
   read [the TiUI standard](docs/standards/tiui-design-system.md) and `src/AGENTS.md`.
   Use the installed TiUI components and supported shared overrides in `src/ui/`.
