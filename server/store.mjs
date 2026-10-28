@@ -10,6 +10,14 @@ export const capabilities = {
     monthlyRU: 50_000_000,
     preview: false,
   },
+  postgresql: {
+    label: 'PostgreSQL · db9',
+    regions: ['automatic'],
+    storageGiB: null,
+    monthlyRU: null,
+    preview: true,
+    available: false,
+  },
   duckdb: {
     label: 'DuckDB',
     regions: ['aws-ap-southeast-1'],
@@ -143,39 +151,51 @@ export async function createStore(file, initialState = seed) {
 }
 export function usage(state) {
   return state.resources
-    .filter((resource) => Object.hasOwn(capabilities, resource.kind))
+    .filter(
+      (resource) =>
+        Object.hasOwn(capabilities, resource.kind) &&
+        (resource.kind !== 'postgresql' || resource.provider === 'db9-anonymous'),
+    )
     .map((resource) => ({
       resourceId: resource.id,
       name: resource.name,
       kind: resource.kind,
-      storageBytes: ['drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9'].includes(
-        resource.provider,
-      )
+      storageBytes: [
+        'drive9-anonymous',
+        'tidb-cloud-zero',
+        'duckdb-drive9',
+        'db9-anonymous',
+      ].includes(resource.provider)
         ? null
         : resource.kind === 'filesystem'
           ? state.files
               .filter((f) => f.resourceId === resource.id)
               .reduce((n, f) => n + Buffer.byteLength(f.content || ''), 0)
           : 0,
-      storageLimitBytes: ['drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9'].includes(
-        resource.provider,
-      )
+      storageLimitBytes: [
+        'drive9-anonymous',
+        'tidb-cloud-zero',
+        'duckdb-drive9',
+        'db9-anonymous',
+      ].includes(resource.provider)
         ? null
         : capabilities[resource.kind].storageGiB * 1024 ** 3,
-      measured: !['drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9'].includes(
+      measured: !['drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
         resource.provider,
       ),
-      fileCount: ['drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9'].includes(
+      fileCount: ['drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
         resource.provider,
       )
         ? null
         : state.files.filter((f) => f.resourceId === resource.id && f.type === 'file').length,
-      monthlyRU: ['drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9'].includes(
+      monthlyRU: ['drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
         resource.provider,
       )
         ? null
         : 0,
-      monthlyRULimit: ['tidb-cloud-zero', 'duckdb-drive9'].includes(resource.provider)
+      monthlyRULimit: ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
+        resource.provider,
+      )
         ? null
         : (capabilities[resource.kind].monthlyRU ?? null),
     }));

@@ -1,7 +1,7 @@
 # ADR 0011: Anonymous db9 PostgreSQL behind Workspace Keys
 
-- Status: proposed for owner-requested integration, 2026-10-28; merge accepts this boundary.
-- Parent: [GH-40](../../specs/gh-40/spec.md). Implementation/evidence will be recorded separately.
+- Status: accepted in PR #41; implemented for owner-requested integration, 2026-10-28.
+- Parent: [GH-40](../../specs/gh-40/spec.md). See [runtime guide](../db9-postgres.md) and [verification](../db9-verification.md).
 
 The owner supplied db9 as a free PostgreSQL service. Add it as an independent PostgreSQL
 provider; it is not TiDB Cloud PG Starter. The existing single Workspace Key continues to
@@ -41,3 +41,11 @@ Read the actual provider response rather than relying on illustrative connection
 Revisit for persistent production identity, tenant-scale account ownership, connection pools,
 read-only roles, multiple schemas or another PostgreSQL provider. Existing prototype local
 identity, owner-only credential files and rollback limitations still apply.
+
+Verified deployment compatibility: db9 documents NUMERIC as limited to 28–29 significant
+digits ([data types](https://db9.ai/docs/sql/data-types/)). Live testing confirmed loss of the
+30th digit in a cast. The gateway preserves native text values, but cannot restore precision
+the provider already removed. Surface this in Details and API/agent documentation; do not
+advertise unrestricted PostgreSQL type compatibility. Timestamp text, JSON, bigint and numeric
+wire values bypass JavaScript number/date coercion. Expression index parts without a catalog
+column name are labeled as expressions, rather than inventing a column identity.

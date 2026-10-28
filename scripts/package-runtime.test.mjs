@@ -76,7 +76,8 @@ test('API builds without a frontend; separate archives boot independently withou
     if (component === 'api') {
       assert.ok(entries.includes('api/public/openapi.json'));
       assert.ok(entries.includes('api/node_modules/mysql2/package.json'));
-      assert.ok(!entries.includes('api/node_modules/pg/package.json'));
+      assert.ok(entries.includes('api/node_modules/pg/package.json'));
+      await import(pathToFileURL(resolve(unpacked, 'api/node_modules/pg/esm/index.mjs')).href);
       assert.ok(!entries.includes('api/node_modules/react/'));
       const runtimeRequire = createRequire(resolve(unpacked, 'api/server/index.mjs'));
       assert.equal(typeof runtimeRequire('mysql2').createConnection, 'function');

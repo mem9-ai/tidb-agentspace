@@ -299,7 +299,7 @@ test('PG is retired from discovery, creation, key grants and SQL without deletin
     bootstrap.body.resources.some((r) => r.kind === 'postgresql'),
     false,
   );
-  assert.equal(bootstrap.body.capabilities.postgresql, undefined);
+  assert.equal(bootstrap.body.capabilities.postgresql.available, false);
   assert.equal(
     (
       await f.request(base + '/resources', 'POST', {

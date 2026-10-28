@@ -26,11 +26,16 @@ const WorkspaceSqlInput = lazy(() => import('./WorkspaceSqlInput'));
 type DatabaseResource = {
   id: string;
   name: string;
-  kind: 'mysql' | 'duckdb' | 'filesystem';
+  kind: 'mysql' | 'postgresql' | 'duckdb' | 'filesystem';
   provider?: string;
   status: string;
 };
-const kindLabel = { mysql: 'MySQL', duckdb: 'DuckDB', filesystem: 'File System' };
+const kindLabel = {
+  mysql: 'MySQL',
+  postgresql: 'PostgreSQL',
+  duckdb: 'DuckDB',
+  filesystem: 'File System',
+};
 type Props = {
   sql: string;
   onSqlChange: (sql: string) => void;
@@ -65,7 +70,9 @@ export function SqlQueryPanel({
 }: Props) {
   const dbs = databases;
   const resourceId = database.id;
-  const live = ['tidb-cloud-zero', 'duckdb-drive9'].includes(database.provider || '');
+  const live = ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
+    database.provider || '',
+  );
   const [busy, setBusy] = useState(false),
     [storedResult, setResult] = useState<QueryResult | null>(null),
     [storedError, setError] = useState(''),
@@ -221,7 +228,13 @@ export function SqlQueryPanel({
         >
           <WorkspaceSqlInput
             databaseId={database.id}
-            dialect={database.kind === 'duckdb' ? 'duckdb' : 'mysql'}
+            dialect={
+              database.kind === 'duckdb'
+                ? 'duckdb'
+                : database.kind === 'postgresql'
+                  ? 'postgresql'
+                  : 'mysql'
+            }
             value={sql}
             onChange={setSql}
             onRun={() => void run()}
@@ -245,7 +258,16 @@ export function SqlQueryPanel({
               </Menu.Target>
               <Menu.Dropdown>
                 {live && (
-                  <Menu.Item disabled={busy} onClick={() => setSql('SHOW TABLES;')}>
+                  <Menu.Item
+                    disabled={busy}
+                    onClick={() =>
+                      setSql(
+                        database.kind === 'postgresql'
+                          ? "SELECT table_name FROM information_schema.tables WHERE table_schema = 'workspace';"
+                          : 'SHOW TABLES;',
+                      )
+                    }
+                  >
                     List tables
                   </Menu.Item>
                 )}

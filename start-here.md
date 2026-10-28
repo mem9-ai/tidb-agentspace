@@ -13,8 +13,8 @@ Explicit user instructions and higher-priority tool requirements still apply.
 
 The project has two connected goals:
 
-1. Build an independent TiDB workspace for developers and agents. MySQL, DuckDB and File System are
-   currently available; PostgreSQL and persistent Starter integrations remain planned. Resource
+1. Build an independent TiDB workspace for developers and agents. MySQL, opt-in db9 PostgreSQL, DuckDB and File System are
+   currently available; persistent TiDB Cloud Starter integrations remain planned. Resource
    types have distinct capabilities. Customers use a Workspace Key; backend services manage
    provider credentials. The README and accepted decisions own current provider availability.
 2. Make intent, specifications, and acceptance cases useful open source contributions.
@@ -49,13 +49,13 @@ note. An intent contribution can start with a user problem and a concrete exampl
 
 ## Understand the current state
 
-| Area                | Current interpretation                                                                                                                                                                                                                                                   |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Product runtime     | Independently runnable Console and API in a loopback-only prototype. MySQL, DuckDB and Files support explicit live-provider modes; labeled local demo behavior also exists. PostgreSQL is disabled. Read the README for current availability, limits, and configuration. |
-| Public API          | [Generated OpenAPI](public/openapi.json) and [client types](src/api/schema.d.ts) describe the implemented HTTP surface. The [contract generator](server/generate-openapi.mjs) is the editable source.                                                                    |
-| Product target      | Persistent Starter/PG, production identity, telemetry, billing, SDK/CLI/MCP, and public delivery include proposed work. Use the architecture, README, and accepted decisions to assess each capability.                                                                  |
-| Contribution system | GitHub forms, labels, versioned specs, local checks and PR/CI procedures support the current local agent. `/agent` comments are handoff requests; execution stays in the already running session.                                                                        |
-| Delivery            | [CI/CD policy](docs/ci-cd.md) distinguishes accepted specs, passing checks, merged source, packaged artifacts, and verified deployments.                                                                                                                                 |
+| Area                | Current interpretation                                                                                                                                                                                                                                                                                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product runtime     | Independently runnable Console and API in a loopback-only prototype. MySQL, PostgreSQL, DuckDB and Files support explicit live-provider modes; labeled local demo behavior also exists. PostgreSQL is available through opt-in db9; retired simulated PG remains hidden. Read the README for current availability, limits, and configuration. |
+| Public API          | [Generated OpenAPI](public/openapi.json) and [client types](src/api/schema.d.ts) describe the implemented HTTP surface. The [contract generator](server/generate-openapi.mjs) is the editable source.                                                                                                                                         |
+| Product target      | Persistent Starter/PG, production identity, telemetry, billing, SDK/CLI/MCP, and public delivery include proposed work. Use the architecture, README, and accepted decisions to assess each capability.                                                                                                                                       |
+| Contribution system | GitHub forms, labels, versioned specs, local checks and PR/CI procedures support the current local agent. `/agent` comments are handoff requests; execution stays in the already running session.                                                                                                                                             |
+| Delivery            | [CI/CD policy](docs/ci-cd.md) distinguishes accepted specs, passing checks, merged source, packaged artifacts, and verified deployments.                                                                                                                                                                                                      |
 
 Distinguish **verified implementation**, **accepted project rule**, and **proposal**. Check
 relevant behavior against current source, contracts, and tests. When documents disagree,
@@ -85,6 +85,10 @@ For implemented DuckDB database queries over CSV/JSON/Parquet, read [file source
 For CSV/Parquet SQL and text/log analysis, read [ADR 0010](docs/decisions/0010-read-only-file-analysis.md)
 and [verification](docs/file-analysis-verification.md). The Console/API implement selected-file
 snapshot workers; provider-hosted Exec, large remote scans and public compute isolation remain future work.
+
+For db9 PostgreSQL, read [setup/recovery](docs/db9-postgres.md) and
+[ADR 0011](docs/decisions/0011-db9-postgres.md) for anonymous account ownership, native role/TLS
+boundaries, creation recovery and provider compatibility limits.
 
 ## Find the implementation
 
