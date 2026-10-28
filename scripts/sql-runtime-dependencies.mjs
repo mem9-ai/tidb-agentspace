@@ -42,4 +42,5 @@ export async function copySqlDependencies(root, staged) {
   await copy('pg', root);
   await copy('@duckdb/node-api', root);
   await copy('just-bash', root);
+  await copy('jose', root); // TiDB SSO: JWKS fetch + ID-token verification.
 }

@@ -14,7 +14,24 @@ import { readUpload, previewFile, downloadFile } from './file-transfer.mjs';
 import { canAccessResource, normalizeResourceGrant } from './access-policy.mjs';
 import { createFileAnalysis } from './file-analysis.mjs';
 import { createAnalysisSnapshot } from './file-analysis-snapshot.mjs';
-import { applyHttpPolicy, consoleOrigins } from './http-policy.mjs';
+import {
+  applyHttpPolicy,
+  consoleOrigins,
+  trustedOrigins,
+  trustedProxies,
+  clientSource,
+} from './http-policy.mjs';
+import {
+  loadSsoConfig,
+  resolveEndpoints,
+  buildAuthorizeUrl,
+  exchangeCode,
+  verifyIdToken,
+  resolveIdentity,
+  createPkcePair,
+  randomToken,
+  publicSsoInfo,
+} from './sso.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 export const allowedScopes = [
@@ -81,6 +98,8 @@ async function body(req) {
 export async function createApp({
   dataFile = process.env.WORKSPACE_DATA_FILE || resolve(root, '.data/workspace.json'),
   allowedOrigins = consoleOrigins(),
+  publicOrigins = trustedOrigins(),
+  trustedProxyList = trustedProxies(),
   filesProvider = process.env.WORKSPACE_FILES_PROVIDER || 'local',
   drive9Transport,
   analysisRunner,
@@ -96,6 +115,8 @@ export async function createApp({
   duckdbExtensionSha256,
   duckdbExecute,
   duckdbSourceDirectory,
+  ssoConfig = loadSsoConfig(),
+  ssoFetch = fetch,
 } = {}) {
   if (!['local', drive9Provider].includes(filesProvider))
     throw new Error('Unknown File System provider.');
@@ -148,7 +169,69 @@ export async function createApp({
     availableCapabilities.filesystem.maxFiles = null;
   }
   const store = await createStore(dataFile);
+  // Session store. Value: { expiresAt, principal, principalId, kind }. `kind` is 'demo' for the
+  // local demo session and 'sso' for a verified TiDB Account session (distinct principal id).
   const sessions = new Map();
+  const SESSION_TTL = 28800000; // 8 hours
+  const liveSession = (token) => {
+    const session = token && sessions.get(token);
+    if (!session) return null;
+    if (session.expiresAt <= Date.now()) {
+      sessions.delete(token);
+      return null;
+    }
+    return session;
+  };
+  const mintSession = ({ principal, principalId, kind }) => {
+    const token = randomBytes(32).toString('hex');
+    sessions.set(token, { expiresAt: Date.now() + SESSION_TTL, principal, principalId, kind });
+    for (const [id, session] of sessions) if (session.expiresAt <= Date.now()) sessions.delete(id);
+    return token;
+  };
+  // Transient OIDC login flows keyed by an opaque id carried in a short-lived cookie.
+  // Each entry holds { state, nonce, verifier, expiresAt }; pruned on use and on expiry.
+  // Bounded to resist unauthenticated memory growth: TTL eviction + a hard capacity cap +
+  // a coarse per-window rate limit on login initiation.
+  const loginFlows = new Map();
+  const LOGIN_FLOW_TTL = 600000; // 10 minutes
+  const MAX_LOGIN_FLOWS = 500; // hard cap on concurrent pending logins
+  const LOGIN_RATE_WINDOW = 60000; // 1 minute
+  const LOGIN_RATE_MAX = 60; // max login initiations per window, PER SOURCE (not global)
+  const MAX_RATE_SOURCES = 10000; // bounded memory: cap on distinct tracked sources
+  // Per-source sliding window: source address -> { windowStart, count }. A single abusive source
+  // can only 429 itself; it cannot lock out other clients (no process-global counter).
+  const loginRate = new Map();
+  const pruneLoginFlows = () => {
+    for (const [id, flow] of loginFlows) if (flow.expiresAt <= Date.now()) loginFlows.delete(id);
+  };
+  const loginRateLimited = (source) => {
+    const now = Date.now();
+    // Drop windows that have fully elapsed, then bound the map size (evict oldest sources).
+    for (const [key, entry] of loginRate)
+      if (now - entry.windowStart >= LOGIN_RATE_WINDOW) loginRate.delete(key);
+    while (loginRate.size >= MAX_RATE_SOURCES) {
+      const oldest = loginRate.keys().next().value;
+      if (oldest === undefined) break;
+      loginRate.delete(oldest);
+    }
+    let entry = loginRate.get(source);
+    if (!entry || now - entry.windowStart >= LOGIN_RATE_WINDOW) {
+      entry = { windowStart: now, count: 0 };
+      loginRate.set(source, entry);
+    }
+    entry.count += 1;
+    return entry.count > LOGIN_RATE_MAX;
+  };
+  const admitLoginFlow = (id, flow) => {
+    pruneLoginFlows();
+    // Evict oldest entries until there is room, so the map can never exceed the cap.
+    while (loginFlows.size >= MAX_LOGIN_FLOWS) {
+      const oldest = loginFlows.keys().next().value;
+      if (oldest === undefined) break;
+      loginFlows.delete(oldest);
+    }
+    loginFlows.set(id, flow);
+  };
   const fileAnalysis = createFileAnalysis({
     snapshot: analysisSnapshot || createAnalysisSnapshot({ store, drive9 }),
     runner: analysisRunner,
@@ -221,7 +304,7 @@ export async function createApp({
       res.end(JSON.stringify(data));
     };
     try {
-      if (applyHttpPolicy(req, res, allowedOrigins, fail)) return;
+      if (applyHttpPolicy(req, res, allowedOrigins, fail, publicOrigins)) return;
       const url = new URL(req.url, `http://${req.headers.host}`),
         path = url.pathname;
       if (path === '/api/health' && req.method === 'GET')
@@ -244,22 +327,143 @@ export async function createApp({
       }
       if (path === '/api/session' && req.method === 'POST') {
         await body(req);
-        const token = randomBytes(32).toString('hex');
-        sessions.set(token, Date.now() + 28800000);
-        for (const [id, expiresAt] of sessions) if (expiresAt <= Date.now()) sessions.delete(id);
+        // When SSO is configured, the anonymous demo session is disabled so it cannot bypass
+        // authentication. The demo session exists ONLY in local demo mode (SSO unconfigured).
+        if (ssoConfig)
+          fail(
+            403,
+            'SSO_REQUIRED',
+            'Sign in with your TiDB Account. The anonymous demo session is disabled.',
+          );
+        const token = mintSession({
+          principal: 'You',
+          principalId: 'local-owner',
+          kind: 'demo',
+        });
         res.setHeader(
           'Set-Cookie',
           `aw_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800`,
         );
         return send(200, { workspaceId, mode: 'demo' });
       }
+      // ---- TiDB Cloud SSO (OAuth2 / OIDC authorization-code + PKCE) ----
+      // These endpoints sit before the owner gate, like /api/session. They mint the SAME
+      // aw_session cookie on success, so all owner-gated logic works unchanged.
+      if (path === '/api/auth/config' && req.method === 'GET')
+        return send(200, publicSsoInfo(ssoConfig));
+      if (path === '/api/auth/tidbcloud/login' && req.method === 'GET') {
+        if (!ssoConfig) fail(404, 'SSO_NOT_CONFIGURED', 'TiDB Cloud SSO is not configured.');
+        if (loginRateLimited(clientSource(req, trustedProxyList)))
+          fail(429, 'SSO_RATE_LIMITED', 'Too many sign-in attempts. Try again shortly.');
+        const endpoints = await resolveEndpoints(ssoConfig, ssoFetch);
+        const { verifier, challenge } = createPkcePair();
+        const state = randomToken(),
+          nonce = randomToken(),
+          flowId = randomToken();
+        admitLoginFlow(flowId, { state, nonce, verifier, expiresAt: Date.now() + LOGIN_FLOW_TTL });
+        const authorizeUrl = buildAuthorizeUrl(ssoConfig, endpoints, {
+          state,
+          nonce,
+          codeChallenge: challenge,
+        });
+        res.setHeader(
+          'Set-Cookie',
+          `aw_sso_flow=${flowId}; HttpOnly; SameSite=Lax;${ssoConfig.cookieSecure ? ' Secure;' : ''} Path=/api/auth/tidbcloud; Max-Age=600`,
+        );
+        res.writeHead(302, { Location: authorizeUrl });
+        res.end();
+        return;
+      }
+      if (path === '/api/auth/tidbcloud/callback' && req.method === 'GET') {
+        if (!ssoConfig) fail(404, 'SSO_NOT_CONFIGURED', 'TiDB Cloud SSO is not configured.');
+        const clearFlowCookie = `aw_sso_flow=; HttpOnly; SameSite=Lax;${ssoConfig.cookieSecure ? ' Secure;' : ''} Path=/api/auth/tidbcloud; Max-Age=0`;
+        const flowId = /(?:^|; )aw_sso_flow=([^;]+)/.exec(req.headers.cookie || '')?.[1];
+        pruneLoginFlows();
+        const flow = flowId && loginFlows.get(flowId);
+        if (flowId) loginFlows.delete(flowId); // single-use
+        // A provider that reports an error (e.g. access_denied) surfaces it on the callback.
+        const providerError = url.searchParams.get('error');
+        if (providerError) {
+          res.setHeader('Set-Cookie', clearFlowCookie);
+          fail(400, 'SSO_PROVIDER_ERROR', 'The identity provider reported an error.');
+        }
+        if (!flow || flow.expiresAt <= Date.now()) {
+          res.setHeader('Set-Cookie', clearFlowCookie);
+          fail(400, 'SSO_STATE_INVALID', 'No active login request; start sign-in again.');
+        }
+        const returnedState = url.searchParams.get('state');
+        if (!returnedState || returnedState !== flow.state) {
+          res.setHeader('Set-Cookie', clearFlowCookie);
+          fail(400, 'SSO_STATE_MISMATCH', 'The login state did not match.');
+        }
+        const code = url.searchParams.get('code');
+        if (!code) {
+          res.setHeader('Set-Cookie', clearFlowCookie);
+          fail(400, 'SSO_CODE_MISSING', 'The provider did not return an authorization code.');
+        }
+        const endpoints = await resolveEndpoints(ssoConfig, ssoFetch);
+        let identity;
+        try {
+          const tokens = await exchangeCode(
+            ssoConfig,
+            endpoints,
+            { code, codeVerifier: flow.verifier },
+            ssoFetch,
+          );
+          const idClaims = await verifyIdToken(ssoConfig, endpoints, tokens.id_token, flow.nonce);
+          // Signature/issuer/audience/nonce verification is complete here. resolveIdentity then
+          // derives the auditable subject and applies DEFAULT-DENY owner authorization: it throws
+          // (no session minted) for an unverified user-id claim, an org-filter miss, or a subject
+          // absent from TIDB_SSO_OWNER_SUBJECTS.
+          identity = resolveIdentity(ssoConfig, idClaims);
+        } catch (error) {
+          res.setHeader('Set-Cookie', clearFlowCookie);
+          // A valid-but-unauthorized account gets a distinct, clear error from a bad credential.
+          if (error.ssoError === 'not_authorized' || error.ssoError === 'org_not_allowed')
+            fail(403, 'SSO_NOT_AUTHORIZED', 'This account is not authorized for this workspace.');
+          fail(401, 'SSO_VERIFICATION_FAILED', 'Could not verify the TiDB Account sign-in.');
+        }
+        // Mint an owner session bound to the distinct, auditable SSO principal (never local-owner).
+        const token = mintSession({
+          principal: identity.principal,
+          principalId: identity.principalId,
+          kind: 'sso',
+        });
+        // Redirect allowlist: only the configured, same-origin post-login URL is permitted.
+        res.writeHead(302, {
+          Location: ssoConfig.postLoginUrl,
+          'Set-Cookie': [
+            `aw_session=${token}; HttpOnly; SameSite=Strict;${ssoConfig.cookieSecure ? ' Secure;' : ''} Path=/; Max-Age=28800`,
+            clearFlowCookie,
+          ],
+        });
+        res.end();
+        return;
+      }
+      if (path === '/api/auth/tidbcloud/logout' && ['GET', 'POST'].includes(req.method)) {
+        const sessionToken = /(?:^|; )aw_session=([^;]+)/.exec(req.headers.cookie || '')?.[1];
+        if (sessionToken) sessions.delete(sessionToken);
+        res.setHeader(
+          'Set-Cookie',
+          `aw_session=; HttpOnly; SameSite=Strict;${ssoConfig?.cookieSecure ? ' Secure;' : ''} Path=/; Max-Age=0`,
+        );
+        if (req.method === 'GET' && ssoConfig) {
+          res.writeHead(302, { Location: ssoConfig.postLoginUrl });
+          res.end();
+          return;
+        }
+        return send(200, { loggedOut: true });
+      }
       if (!path.startsWith('/api/'))
         fail(404, 'NOT_FOUND', 'This service provides the Workspace API only.');
       let state = visibleState();
       const sessionToken = /(?:^|; )aw_session=([^;]+)/.exec(req.headers.cookie || '')?.[1];
-      let isOwner = !!sessionToken && (sessions.get(sessionToken) || 0) > Date.now();
-      let principal = 'You',
-        principalId = 'local-owner',
+      const session = liveSession(sessionToken);
+      let isOwner = !!session;
+      // Owner identity comes from the session: the generic local-owner for a demo session, or the
+      // distinct, auditable SSO principal for a TiDB Account session. API keys override below.
+      let principal = session?.principal || 'You',
+        principalId = session?.principalId || 'local-owner',
         resourceIds = ['*'],
         scopes = ['*'];
       if (req.headers.authorization) {
@@ -663,7 +867,7 @@ export async function createApp({
           const key = isOwner ? undefined : current.keys.find((key) => key.id === principalId);
           if (
             isOwner
-              ? (sessions.get(sessionToken) || 0) <= Date.now()
+              ? !liveSession(sessionToken)
               : !key || key.revokedAt || Date.parse(key.expiresAt) <= Date.now()
           )
             fail(401, 'INVALID_KEY', 'The session or key is invalid, expired, or revoked.');
