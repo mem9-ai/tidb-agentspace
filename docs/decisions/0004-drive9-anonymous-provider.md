@@ -95,3 +95,7 @@ revokes its test keys. It never provisions another tenant. Live verification and
 are recorded in [Drive9 verification](../drive9-verification.md); they are separate from CI.
 Revalidate on upstream changes, new transfer formats, production hosting, billing integration,
 or changes to the public key model.
+
+The [file analysis discovery](../file-analysis-discovery.md) records later live DuckDB/Just Bash
+proofs and the checked service's unavailable remote Exec routes. These findings do not add
+analysis or generic command execution to the current Workspace API.
