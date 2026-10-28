@@ -580,6 +580,344 @@
         }
       ]
     },
+    "/workspaces/{workspaceId}/file-analyses/capabilities": {
+      "get": {
+        "operationId": "fileAnalysisCapabilities",
+        "summary": "Discover read-only analysis for a selected file",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint.",
+        "x-required-scope": "files:read",
+        "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
+        "parameters": [
+          { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "path", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "engine",
+                    "format",
+                    "available",
+                    "reason",
+                    "size",
+                    "readOnly",
+                    "limits"
+                  ],
+                  "properties": {
+                    "engine": { "type": ["string", "null"], "enum": ["duckdb", "bash", null] },
+                    "format": { "type": ["string", "null"] },
+                    "available": { "type": "boolean" },
+                    "reason": { "type": "string" },
+                    "size": { "type": "integer" },
+                    "readOnly": { "const": true },
+                    "limits": {
+                      "type": "object",
+                      "required": [
+                        "inputBytes",
+                        "scriptBytes",
+                        "outputBytes",
+                        "rows",
+                        "timeoutMs",
+                        "concurrency",
+                        "workerHeapMiB",
+                        "duckdbMemoryMB"
+                      ],
+                      "properties": {
+                        "inputBytes": { "type": "integer", "const": 16777216 },
+                        "scriptBytes": { "type": "integer", "const": 65536 },
+                        "outputBytes": { "type": "integer", "const": 1048576 },
+                        "rows": { "type": "integer", "const": 1000 },
+                        "timeoutMs": { "type": "integer", "const": 15000 },
+                        "concurrency": { "type": "integer", "const": 2 },
+                        "workerHeapMiB": { "type": "integer", "const": 128 },
+                        "duckdbMemoryMB": { "type": "integer", "const": 128 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "const": "ws_agentlab" },
+          "description": "This local prototype has one workspace."
+        }
+      ]
+    },
+    "/workspaces/{workspaceId}/file-analyses": {
+      "post": {
+        "operationId": "analyzeFile",
+        "summary": "Run bounded read-only DuckDB SQL or Just Bash on one selected file",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Also requires files:read. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.",
+        "x-required-scope": "files:analyze",
+        "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["resourceId", "path", "engine"],
+                "properties": {
+                  "resourceId": { "type": "string" },
+                  "path": { "type": "string" },
+                  "engine": { "enum": ["duckdb", "bash"] },
+                  "sql": { "type": "string", "maxLength": 65536 },
+                  "command": { "type": "string", "maxLength": 65536 }
+                },
+                "oneOf": [
+                  {
+                    "required": ["sql"],
+                    "properties": { "engine": { "const": "duckdb" } },
+                    "not": { "required": ["command"] }
+                  },
+                  {
+                    "required": ["command"],
+                    "properties": { "engine": { "const": "bash" } },
+                    "not": { "required": ["sql"] }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "engine",
+                    "resourceId",
+                    "path",
+                    "readOnly",
+                    "inputBytes",
+                    "durationMs",
+                    "columns",
+                    "schema",
+                    "columnTypes",
+                    "rows",
+                    "rowCount",
+                    "stdout",
+                    "stderr",
+                    "exitCode"
+                  ],
+                  "properties": {
+                    "engine": { "enum": ["duckdb", "bash"] },
+                    "resourceId": { "type": "string" },
+                    "path": { "type": "string" },
+                    "readOnly": { "const": true },
+                    "inputBytes": { "type": "integer" },
+                    "durationMs": { "type": "integer" },
+                    "columns": { "type": "array", "items": { "type": "string" } },
+                    "schema": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["column_name", "column_type"],
+                        "properties": {
+                          "column_name": { "type": "string" },
+                          "column_type": { "type": "string" }
+                        }
+                      }
+                    },
+                    "columnTypes": { "type": "array", "items": { "type": "string" } },
+                    "rows": {
+                      "type": "array",
+                      "items": { "type": "object", "additionalProperties": true }
+                    },
+                    "rowCount": { "type": "integer" },
+                    "stdout": { "type": "string" },
+                    "stderr": { "type": "string" },
+                    "exitCode": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "const": "ws_agentlab" },
+          "description": "This local prototype has one workspace."
+        }
+      ]
+    },
     "/workspaces/{workspaceId}/files": {
       "get": {
         "operationId": "listFiles",
@@ -2078,8 +2416,8 @@
                         "resources:read",
                         "resources:write",
                         "files:read",
-                        "files:analyze",
                         "files:write",
+                        "files:analyze",
                         "queries:execute",
                         "usage:read"
                       ]

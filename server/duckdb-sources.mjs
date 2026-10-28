@@ -146,7 +146,12 @@ export async function stageSources(
       const bytes =
         source.resource.provider === 'drive9-anonymous'
           ? await readBounded(
-              await drive9.read(source.resourceId, source.path, { signal }),
+              await drive9.read(source.resourceId, source.path, {
+                signal,
+                ...(metadata[index].revision
+                  ? { headers: { 'If-Match': metadata[index].revision } }
+                  : {}),
+              }),
               sourceLimits.bytes - received,
               signal,
             )
@@ -158,7 +163,7 @@ export async function stageSources(
         after.size !== before.size ||
         after.directory ||
         after.revision !== before.revision ||
-        after.etag !== before.etag ||
+        after.dataRevision !== before.dataRevision ||
         after.resourceIdentity !== before.resourceIdentity
       )
         throw sqlError(

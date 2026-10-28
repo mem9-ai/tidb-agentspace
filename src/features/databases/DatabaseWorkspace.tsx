@@ -108,6 +108,7 @@ export function DatabaseWorkspace({
           onRunStart={() => setOutputView('Query results')}
           renderResults={(results) => (
             <ChoiceTabs
+              panelSpacing={12}
               value={outputView}
               onChange={setOutputView}
               options={['Query results', 'Table details']}

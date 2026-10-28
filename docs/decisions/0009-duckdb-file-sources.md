@@ -30,7 +30,7 @@ This trades remote scan/pruning for a bounded 16 MiB snapshot and an explicit pe
 list. Validate size and metadata changes where observable; no multi-file transactional snapshot
 is promised. Existing ordinary database SQL stays unchanged. Source queries cannot persist
 data, mounts, credentials or new file permissions. Read/write operations on standalone Files
-remain governed by their existing actions. GH-26's separate analysis/Just Bash UI remains pending.
+remain governed by their existing actions. GH-26's separate single-file analysis/Just Bash UI is implemented in [ADR 0010](0010-read-only-file-analysis.md); query-scoped database sources are implemented separately by GH-34.
 
 ## Verification and recovery
 

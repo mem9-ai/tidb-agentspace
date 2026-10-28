@@ -182,7 +182,9 @@ export function WorkspaceLayout({
         </Button>
       </Drawer>
       <AppShell.Main>
-        <div className="workspace-content">{children}</div>
+        <div className={`workspace-content${databaseId ? ' database-content' : ''}`}>
+          {children}
+        </div>
         <footer className="footer">
           <Text size="sm">Local Workspace gateway</Text>
           <Text size="sm">

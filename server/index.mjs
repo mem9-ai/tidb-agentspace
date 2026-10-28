@@ -11,6 +11,8 @@ import { parseSources, stageSources } from './duckdb-sources.mjs';
 import { browseDatabase, demoColumns, demoRows } from './database-browser.mjs';
 import { readUpload, previewFile, downloadFile } from './file-transfer.mjs';
 import { canAccessResource, normalizeResourceGrant } from './access-policy.mjs';
+import { createFileAnalysis } from './file-analysis.mjs';
+import { createAnalysisSnapshot } from './file-analysis-snapshot.mjs';
 import { applyHttpPolicy, consoleOrigins } from './http-policy.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -18,8 +20,8 @@ export const allowedScopes = [
   'resources:read',
   'resources:write',
   'files:read',
-  'files:analyze',
   'files:write',
+  'files:analyze',
   'queries:execute',
   'usage:read',
 ];
@@ -80,6 +82,9 @@ export async function createApp({
   allowedOrigins = consoleOrigins(),
   filesProvider = process.env.WORKSPACE_FILES_PROVIDER || 'local',
   drive9Transport,
+  analysisRunner,
+  analysisSnapshot,
+  analysisOptions,
   sqlExecute,
   zeroTransport,
   mysqlProvider = process.env.WORKSPACE_MYSQL_PROVIDER || 'local',
@@ -126,6 +131,11 @@ export async function createApp({
   }
   const store = await createStore(dataFile);
   const sessions = new Map();
+  const fileAnalysis = createFileAnalysis({
+    snapshot: analysisSnapshot || createAnalysisSnapshot({ store, drive9 }),
+    runner: analysisRunner,
+    ...analysisOptions,
+  });
   function visibleState() {
     const state = store.read();
     const retired = new Set(
@@ -392,6 +402,35 @@ export async function createApp({
         if (![zeroProvider, duckdbProvider].includes(resource.provider))
           fail(400, 'UNSUPPORTED_PROVIDER', 'Setup is available only for managed databases.');
         return send(200, { data: await updateProvider(resource, true) });
+      }
+      if (
+        (route === '/file-analyses/capabilities' && req.method === 'GET') ||
+        (route === '/file-analyses' && req.method === 'POST')
+      ) {
+        requireScope('files:read');
+        const execute = req.method === 'POST';
+        if (execute) requireScope('files:analyze');
+        const input = execute ? await body(req) : Object.fromEntries(url.searchParams);
+        const resource = requireResource(input.resourceId, 'filesystem');
+        input.path = cleanPath(input.path);
+        if (resource.status !== 'active')
+          fail(409, 'FILESYSTEM_UNAVAILABLE', 'This File System is not active.');
+        const controller = new AbortController();
+        const onClose = () => controller.abort();
+        res.on('close', onClose);
+        try {
+          const result = execute
+            ? await fileAnalysis.execute(resource, input, controller.signal)
+            : await fileAnalysis.capabilities(
+                resource,
+                input.path,
+                AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
+              );
+          if (execute) await recordFile('file.analyzed', resource.id, input.path, principal);
+          return send(200, result);
+        } finally {
+          res.off('close', onClose);
+        }
       }
       if (route === '/files' && req.method === 'GET') {
         requireScope('files:read');

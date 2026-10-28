@@ -89,6 +89,9 @@ test('API builds without a frontend; separate archives boot independently withou
       );
       nativeConnection.closeSync();
       native.closeSync();
+      assert.ok(entries.includes('api/node_modules/@duckdb/node-api/package.json'));
+      assert.ok(entries.includes('api/node_modules/just-bash/package.json'));
+
       assert.ok(entries.includes('api/server/providers/drive9.mjs'));
       const { parseSources, stageSources } = await import(
         pathToFileURL(resolve(unpacked, 'api/server/duckdb-sources.mjs')).href
@@ -127,7 +130,12 @@ test('API builds without a frontend; separate archives boot independently withou
         packaged?.close();
         await snapshot.cleanup();
       }
-      assert.ok(!entries.includes('index.html') && !entries.includes('console'));
+      assert.ok(
+        !entries
+          .split('\n')
+          .some((entry) => /^(?:api\/)?(?:console\/|index\.html$|src\/)/.test(entry)),
+      );
+      assert.ok(!entries.includes('api/assets/'));
       const { createApp } = await import(
         pathToFileURL(resolve(unpacked, 'api/server/index.mjs')).href
       );
@@ -135,6 +143,51 @@ test('API builds without a frontend; separate archives boot independently withou
       const origin = await listen(app);
       try {
         assert.equal((await fetch(origin + '/api/health')).status, 200);
+        const session = await fetch(origin + '/api/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        const cookie = session.headers.get('set-cookie')?.split(';')[0];
+        const headers = { 'Content-Type': 'application/json', Cookie: cookie };
+        const base = '/api/v1/workspaces/ws_agentlab';
+        const saved = await fetch(origin + base + '/files', {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            resourceId: 'fs_shared',
+            path: '/package.csv',
+            type: 'file',
+            content: 'id,amount\n1,10\n2,20\n',
+          }),
+        });
+        assert.equal(saved.status, 200);
+        for (const input of [
+          { path: '/package.csv', engine: 'duckdb', sql: 'SELECT COUNT(*) AS n FROM file' },
+          { path: '/package.csv.log', engine: 'bash', command: 'echo packaged' },
+        ]) {
+          if (input.engine === 'bash')
+            await fetch(origin + base + '/files', {
+              method: 'PUT',
+              headers,
+              body: JSON.stringify({
+                resourceId: 'fs_shared',
+                path: input.path,
+                type: 'file',
+                content: 'package log',
+              }),
+            });
+          const analyzed = await fetch(origin + base + '/file-analyses', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ resourceId: 'fs_shared', ...input }),
+          });
+          assert.equal(analyzed.status, 200);
+          const result = await analyzed.json();
+          assert.equal(result.readOnly, true);
+          if (input.engine === 'duckdb') assert.equal(result.rows[0].n, '2');
+          else assert.equal(result.stdout, 'packaged\n');
+        }
         assert.equal((await (await fetch(origin + '/openapi.json')).json()).openapi, '3.1.0');
         assert.equal((await fetch(origin + '/')).status, 404);
         assert.equal((await fetch(origin + '/api/v1/workspaces')).status, 401);

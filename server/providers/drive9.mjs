@@ -53,6 +53,10 @@ export async function createDrive9({ credentialsFile, transport = fetch }) {
         'File System service is unavailable. Retry reading its status before repeating a write.',
       );
     }
+    if (response.status === 412) {
+      await response.body?.cancel();
+      throw fileError(409, 'FILE_CHANGED', 'The file changed. Refresh it before trying again.');
+    }
     if (!response.ok) {
       await response.body?.cancel();
       const messages = {
@@ -198,12 +202,17 @@ export async function createDrive9({ credentialsFile, transport = fetch }) {
       const size = raw === null ? NaN : Number(raw);
       if (!Number.isSafeInteger(size) || size < 0)
         throw fileError(502, 'INVALID_PROVIDER_RESPONSE', 'File size is unavailable.');
+      const revision = response.headers.get('etag');
       return {
         size,
         directory: response.headers.get('x-dat9-isdir') === 'true',
-        revision: response.headers.get('x-dat9-revision'),
-        etag: response.headers.get('etag'),
-        resourceIdentity: response.headers.get('x-dat9-resource-id'),
+        ...(revision ? { revision } : {}),
+        ...(response.headers.get('x-dat9-revision')
+          ? { dataRevision: response.headers.get('x-dat9-revision') }
+          : {}),
+        ...(response.headers.get('x-dat9-resource-id')
+          ? { resourceIdentity: response.headers.get('x-dat9-resource-id') }
+          : {}),
       };
     },
     read(resourceId, path, options = {}) {

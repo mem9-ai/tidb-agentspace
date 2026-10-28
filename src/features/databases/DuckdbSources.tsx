@@ -65,8 +65,8 @@ export function DuckdbSources({ fileSystems, sources, busy, onChange, onQuery }:
   const valid =
     /^[a-z][a-z0-9_]{0,31}$/.test(name) && !sources.some((source) => source.name === name);
   return (
-    <Paper className="panel" withBorder p="xl" mb="xl">
-      <Stack gap="lg">
+    <Paper className="panel" withBorder p="md" mb="md">
+      <Stack gap="sm">
         <Group justify="space-between">
           <Heading level={2}>
             Workspace files <Badge>{sources.length} / 4</Badge>
@@ -75,13 +75,15 @@ export function DuckdbSources({ fileSystems, sources, busy, onChange, onQuery }:
             {opened ? 'Hide file picker' : 'Add file source'}
           </Button>
         </Group>
-        <Text>
-          Query selected CSV, JSON and Parquet as files.name. Sources last for one read-only query ·
-          16 MiB total.
-        </Text>
+        {opened && (
+          <Text>
+            Query selected CSV, JSON and Parquet as files.name. Sources last for one read-only query
+            · 16 MiB total.
+          </Text>
+        )}
         {sources.map((source) => (
-          <Stack gap="xs" key={source.name}>
-            <Text style={{ overflowWrap: 'anywhere' }}>
+          <Group align="center" justify="space-between" key={source.name}>
+            <Text style={{ overflowWrap: 'anywhere', flex: '1 1 220px', minWidth: 0 }}>
               <code>files.{source.name}</code> ·{' '}
               {fileSystems.find((resource) => resource.id === source.resourceId)?.name} ·{' '}
               {source.path}
@@ -98,7 +100,7 @@ export function DuckdbSources({ fileSystems, sources, busy, onChange, onQuery }:
                 Remove
               </Button>
             </Group>
-          </Stack>
+          </Group>
         ))}
         {opened &&
           (!fileSystems.length ? (

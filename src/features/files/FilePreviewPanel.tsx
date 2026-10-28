@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import {
   ActionIcon,
   Alert,
@@ -15,9 +15,15 @@ import { IconArrowLeft, IconDownload01, IconXClose } from '@tidbcloud/uikit/icon
 import { Heading } from '../../ui/WorkspaceHeading';
 import { FileContent, FilePreviewBoundary } from './FileContent';
 import { fileFormat } from './file-preview';
+import type { FileView } from './file-location';
+
+const FileAnalysisPanel = lazy(() => import('./FileAnalysisPanel'));
 
 export default function FilePreviewPanel({
   path,
+  resourceId,
+  initialView,
+  onViewChange,
   content,
   size,
   loading = false,
@@ -35,6 +41,9 @@ export default function FilePreviewPanel({
   onDiscard,
 }: {
   path: string;
+  resourceId: string;
+  initialView: FileView;
+  onViewChange: (view: FileView) => void;
   content: string;
   size?: number;
   loading?: boolean;
@@ -51,7 +60,7 @@ export default function FilePreviewPanel({
   onKeepEditing: () => void;
   onDiscard: () => void;
 }) {
-  const [mode, setMode] = useState<string | null>('preview');
+  const [mode, setMode] = useState<string | null>(initialView);
   const title = useRef<HTMLSpanElement>(null);
   const header = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -79,6 +88,7 @@ export default function FilePreviewPanel({
       style={{ display: 'flex' }}
       withBorder
       className="file-preview-panel"
+      data-analysis={mode === 'analyze' || undefined}
       aria-labelledby="file-preview-title"
       onKeyDown={(event) => {
         if (event.key === 'Escape' && !event.defaultPrevented) {
@@ -141,17 +151,32 @@ export default function FilePreviewPanel({
       )}
       <Tabs
         value={mode}
-        onChange={setMode}
+        onChange={(value) => {
+          setMode(value);
+          if (value === 'preview' || value === 'source' || value === 'analyze') onViewChange(value);
+        }}
         className="file-preview-tabs"
         style={{ display: 'flex', flexDirection: 'column' }}
         keepMounted={false}
       >
         <Tabs.List px={24}>
           <Tabs.Tab value="preview">Preview</Tabs.Tab>
+          <Tabs.Tab value="analyze">Analyze</Tabs.Tab>
           <Tabs.Tab value="source" disabled={loading || !!unavailableReason}>
             Edit source
           </Tabs.Tab>
         </Tabs.List>
+        <Tabs.Panel value="analyze" className="file-preview-content">
+          {dirty ? (
+            <Alert color="yellow">
+              Save or discard your draft before analyzing the saved file.
+            </Alert>
+          ) : (
+            <Suspense fallback={<Loader aria-label="Loading analysis" />}>
+              <FileAnalysisPanel key={resourceId + path} resourceId={resourceId} path={path} />
+            </Suspense>
+          )}
+        </Tabs.Panel>
         <Tabs.Panel value="preview" className="file-preview-content">
           {loading ? (
             <Loader aria-label="Loading file content" />

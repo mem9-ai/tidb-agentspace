@@ -2,9 +2,9 @@
 
 Date: 2026-10-28. Baseline: [GH-34 revision 1](../specs/gh-34/spec.md), accepted at
 `8fcab93ef90843fc3b80cba4743f4ee963871c00`. Uses the existing pinned DuckDB 2.0.0 native
-runtime, Node API 2.0.0-r.1, TiUI 2.9.1 and SQL Editor 0.0.6. No dependency/CI-policy change.
+runtime, Node API 2.0.0-r.1, TiUI 2.9.1 and SQL Editor 0.0.6. No new dependency or CI-policy change in this feature; synchronized with the existing analysis runtime and compact database workspace on main.
 
-Status: implementation acceptance complete. The shared gate passed 91 tests, including native
+Status: implementation acceptance complete. The shared gate passed 99 tests, including native
 formats/authorization/cleanup and the extracted API file-query check, plus repository/runtime
 policy, formatting, lint, generated contract/client, strict types and both production builds.
 Existing TiUI transitive eval and bundle-size warnings remain; checks were not weakened.
@@ -40,10 +40,15 @@ bytes and revocation. All verification Keys were revoked in cleanup. Examples re
 real File System. Anonymous native storage remains experimental; this is loopback verification,
 not public untrusted-SQL isolation or large-file scan/performance acceptance.
 
+After synchronization with main `779072054e2188c61ea98a7bc29663097e46025e`, a fresh backend and
+a scoped Workspace Key repeated the real three-format join successfully (4 matches, 11,408 ms),
+including canonical ETag/If-Match reads. The final compact Console also repeated the real
+Parquet aggregate (7,719 ms). The integrated shared gate passed all 99 tests.
+
 ## Browser and integration findings
 
 Production-built independent Console on 5174, source API on 4319 with real providers. Checked
-1280×900 and 390×844, Light/Dark. The source picker exposes only public Files, exact paths and
+1280×800/900 and 390×844, Light/Dark. Computed SQL text remained 16px; the narrow document width and scroll width were both 390px. The source picker exposes only public Files, exact paths and
 table names. It never executes SQL automatically; source selection/removal retains the draft
 while invalidating results. Removing and re-adding the same source did not revive old results; edited SQL retained the
 replace/keep confirmation. Cancel query returned a clear canceled state, restored editing, and
@@ -59,7 +64,9 @@ error into an unrelated 502.
 
 Drive9 source `018389c81ac037c83e9311a6608ffd6cd35aa57d`, `pkg/server/server.go`, reports
 `X-Dat9-Revision` and `X-Dat9-Resource-ID` on HEAD. Snapshot checks compare both where supplied,
-so same-size replacement with a reset revision can still be detected. No multi-file transaction
+so same-size replacement with a reset revision can still be detected. Preserve the provider
+adapter’s revision field as the canonical ETag for existing analysis If-Match reads; the
+additional data revision and identity fields supplement source checks. No multi-file transaction
 or atomic snapshot is claimed when upstream metadata cannot establish one.
 
 ![Key actions and resources, Dark](screenshots/duckdb-sources/key-permissions-dark.png)
@@ -68,9 +75,12 @@ or atomic snapshot is claimed when upstream metadata cannot establish one.
 ![Narrow SQL/source context, Light](screenshots/duckdb-sources/mobile-light.png)
 ![Narrow duplicate-name validation, Dark](screenshots/duckdb-sources/mobile-dark.png)
 
+The integrated Console preserves main’s compact database header, editor sizing, Samples and
+Limits controls. File-source controls use a compact summary with an explicit picker; source
+budgets are in Limits and the footer keeps read-only status visible.
+
 ## Delivery
 
 The implementation PR and intent record the exact candidate, latest-head CI, merged source
-and local preview outcome. Close #34 only after its merged preview is verified. GH-26 remains open for
-its separate File System/Just Bash experience. Rollback disables source queries without changing
+and local preview outcome. Close #34 only after its merged preview is verified. The separate File System/Just Bash experience from GH-26 is preserved from main (#36); this change does not replace it. Rollback disables source queries without changing
 source files or private DuckDB storage. No paid account, public deployment or community submission.
