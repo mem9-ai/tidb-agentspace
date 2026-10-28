@@ -9,6 +9,11 @@ import { createStore, seed } from './store.mjs';
 import { createFileAnalysis } from './file-analysis.mjs';
 import { createAnalysisSnapshot } from './file-analysis-snapshot.mjs';
 import { analysisLimits, analysisError } from './file-analysis-contract.mjs';
+import {
+  bashInputPath,
+  bashPreviewCommand,
+  bashSamples,
+} from '../src/features/files/bash-analysis.ts';
 const csv = Buffer.from('id,region,amount\n1,APAC,10\n2,APAC,20\n3,EU,5\n4,EU,15\n');
 const log = Buffer.from('INFO started\nERROR timeout\nINFO retry\nERROR unavailable\n');
 const resource = { id: 'fs_shared', kind: 'filesystem', status: 'active' };
@@ -119,6 +124,21 @@ test('DuckDB enforces statement semantics, disabled external access and no secre
     engine(Buffer.from('not parquet')).execute(resource, sql('SELECT * FROM file', '/bad.parquet')),
     { code: 'ANALYSIS_FAILED' },
   );
+});
+
+test('Just Bash Console examples use the actual input path for a selected Markdown snapshot', async () => {
+  const text = '# Selected README\n\nERROR example\n';
+  const a = engine(Buffer.from(text));
+  const run = (value) => a.execute(resource, { ...command(value), path: '/docs/README.md' });
+  const wrong = await run('head ./README.md');
+  assert.equal(wrong.exitCode, 1);
+  assert.match(wrong.stderr, /No such file or directory/);
+  for (const example of bashSamples) assert.equal((await run(example.value)).exitCode, 0);
+  const preview = await run(bashPreviewCommand);
+  assert.equal(preview.stdout, text);
+  assert.equal((await run('head -20 input.log')).stdout, text);
+  assert.equal((await run(`head -20 ${bashInputPath}`)).stdout, text);
+  assert.equal((await run('cat /workspace/other.md')).exitCode, 1);
 });
 
 test('Just Bash executes actual grep/awk/pipelines without host files, network, credentials or writes', async () => {

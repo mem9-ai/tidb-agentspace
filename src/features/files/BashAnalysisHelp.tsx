@@ -1,0 +1,69 @@
+import { ActionIcon, Button, Code, CopyButton, Group, Text } from '@tidbcloud/uikit';
+import { IconCheck, IconCopy03 } from '@tidbcloud/uikit/icons';
+import { bashInputPath, bashSamples } from './bash-analysis';
+
+export function BashAnalysisHelp({
+  id,
+  busy,
+  onSample,
+}: {
+  id: string;
+  busy: boolean;
+  onSample: (command: string) => void;
+}) {
+  return (
+    <div id={id} className="bash-analysis-help">
+      <Group gap="xs" wrap="wrap">
+        <Text component="span" size="sm" fw={600}>
+          Input file
+        </Text>
+        <Code fz="md">{bashInputPath}</Code>
+        <CopyButton value={bashInputPath}>
+          {({ copied, copy }) => (
+            <ActionIcon
+              aria-label={copied ? 'Input path copied' : 'Copy input file path'}
+              title={copied ? 'Input path copied' : 'Copy input file path'}
+              onClick={copy}
+            >
+              {copied ? <IconCheck size={18} /> : <IconCopy03 size={18} />}
+            </ActionIcon>
+          )}
+        </CopyButton>
+      </Group>
+      <Text size="sm" c="carbon.7">
+        Use this path for the selected file, regardless of its original name. Other Workspace files
+        are not mounted.
+      </Text>
+      <details className="bash-usage">
+        <summary>How to use Just Bash</summary>
+        <Text size="sm">
+          Choose an example below, then select Run command or press ⌘ / Ctrl + Enter. Examples
+          replace the command without running it. Read Standard output for results and Standard
+          error for problems.
+        </Text>
+        <Group gap="xs" mt="sm">
+          {bashSamples.map((example) => (
+            <Button
+              key={example.label}
+              variant="subtle"
+              disabled={busy}
+              onClick={() => onSample(example.value)}
+            >
+              {example.label}
+            </Button>
+          ))}
+        </Group>
+        <Text size="sm" mt="sm">
+          Working directory: <Code fz="inherit">/workspace</Code>. Both{' '}
+          <Code fz="inherit">input.log</Code> and the full input path work. Use head, tail, grep,
+          wc, awk, sed, sort and uniq, including pipes, on this read-only saved-file snapshot.
+          Writes, network access, installs and arbitrary programs are unavailable.
+        </Text>
+        <Text size="sm" c="carbon.7" mt="sm">
+          Each run reads a fresh saved snapshot. A grep exit code of 1 can simply mean no matching
+          lines; check Standard error before treating a nonzero exit as a failure.
+        </Text>
+      </details>
+    </div>
+  );
+}

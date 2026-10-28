@@ -39,6 +39,54 @@ POST this body to `/api/v1/workspaces/{workspaceId}/file-analyses`. For text, us
 Inspect GET `/file-analyses/capabilities?resourceId=…&path=…` first for availability and limits.
 No provider credential or runtime destination is a public input.
 
+### Just Bash input guidance
+
+Just Bash runs supported text commands on the **selected saved file**, which the worker
+exposes as `/workspace/input.log`. This is a virtual input name even for `README.md`; it does
+not convert the contents into a log. The working directory is `/workspace`, so `input.log`
+also works. The original Workspace path (for example `./README.md` or `/docs/README.md`),
+other Workspace files and host files are not mounted.
+
+1. Open a text or Markdown file and select **Analyze**.
+2. Copy the displayed **Input file** path or expand **How to use Just Bash** and choose an
+   example. An example only fills the command; it does not execute it.
+3. Select **Run command** or press Cmd/Ctrl+Enter in the editor.
+4. Read **Standard output**, **Standard error** and the exit code. `grep` exit 1 can mean no
+   matching lines. A missing-file error includes a button to fill a working preview command;
+   the next execution still requires an explicit Run.
+
+```bash
+head -20 /workspace/input.log
+grep -n 'ERROR' /workspace/input.log | head -20
+wc -l /workspace/input.log
+```
+
+The default preview is `head`, suitable for Markdown and general text. Commands such as
+head, tail, grep, wc, awk, sed, sort and uniq support read-only text processing and pipelines.
+Each run reads a fresh saved snapshot. Writes, network access, installs and arbitrary
+programs are unavailable; use Download for work in another environment. See [ADR 0010](decisions/0010-read-only-file-analysis.md)
+for the isolation boundary and limits.
+
+Verified for [GH-63](https://github.com/siddontang/tidb.ai/issues/63) on 2026-10-28, source
+base `c1ffc10751aeb0f22d8f164b6710789e0fdfeac2`:
+
+- Real worker regression reproduces `head ./README.md` failing for a nested Markdown file,
+  runs every displayed example, checks full/relative input paths, and rejects another file.
+- The Console reproduces the missing-file error, keeps its stderr and exit code, fills the
+  recovery command without executing, then returns the selected README with Exit 0.
+- Path copying was verified against clipboard text. The disclosure works with Enter;
+  the sample buttons clear old results without executing, and Cmd/Ctrl+Enter runs the command.
+- Light/Dark at 1280×800 and 390×844 retain 16px editor text with no page-wide horizontal
+  overflow. The long help is collapsed initially; screenshots expand it for inspection.
+- CSV still opens the SQL editor without Bash guidance and returns the expected two fixture
+  rows. These checks use isolated local fixtures and the real analysis engines; no new cloud
+  integration, credentials, API contract or permission changes are claimed.
+
+![Bash guidance, desktop Dark](screenshots/bash-guidance/desktop-dark.jpg)
+![Bash guidance, desktop Light](screenshots/bash-guidance/desktop-light.jpg)
+![Bash guidance, mobile Dark](screenshots/bash-guidance/mobile-dark.jpg)
+![Bash guidance, mobile Light](screenshots/bash-guidance/mobile-light.jpg)
+
 ## Requirement evidence
 
 | ID    | Verification                                                                                                                                                                                                                                                                                                                                     |

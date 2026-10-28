@@ -1,8 +1,9 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
 import {
   Alert,
   Badge,
   Button,
+  Code,
   Group,
   Loader,
   Paper,
@@ -17,10 +18,11 @@ import {
 } from '../../api/client';
 import { WorkspaceExecutionPanel } from '../../ui/WorkspaceExecutionPanel';
 import { WorkspaceQueryResults, WorkspaceResultPanel } from '../../ui/WorkspaceQueryResults';
+import { BashAnalysisHelp } from './BashAnalysisHelp';
+import { bashInputPath, bashPreviewCommand, bashSamples } from './bash-analysis';
 import './file-analysis.css';
 const WorkspaceSqlInput = lazy(() => import('../sql/WorkspaceSqlInput'));
 const sqlSample = 'SELECT * FROM file LIMIT 100;';
-const bashSample = "grep -n 'ERROR' /workspace/input.log | head -20";
 export default function FileAnalysisPanel({
   resourceId,
   path,
@@ -32,6 +34,7 @@ export default function FileAnalysisPanel({
   onRunningChange: (running: boolean) => void;
   onExportSaved: () => Promise<void>;
 }) {
+  const bashHelpId = useId();
   const [cap, setCap] = useState<FileAnalysisCapabilities | null>(null);
   const [script, setScript] = useState('');
   const [result, setResult] = useState<FileAnalysisResult | null>(null);
@@ -53,7 +56,7 @@ export default function FileAnalysisPanel({
       .then((value) => {
         if (!controller.signal.aborted) {
           setCap(value);
-          setScript(value.engine === 'duckdb' ? sqlSample : bashSample);
+          setScript(value.engine === 'duckdb' ? sqlSample : bashPreviewCommand);
         }
       })
       .catch((cause: unknown) => {
@@ -152,7 +155,7 @@ export default function FileAnalysisPanel({
                 output.
                 {sql
                   ? ' SELECT only · Up to 1,000 rows. Query this file as the table file.'
-                  : ' Search the saved text at /workspace/input.log.'}
+                  : ' Just Bash runs supported text commands on one saved file at /workspace/input.log, with working directory /workspace. Other Workspace paths, writes, network access and native programs are unavailable.'}
               </>
             }
             samples={
@@ -161,11 +164,7 @@ export default function FileAnalysisPanel({
                     { label: 'Preview rows', value: sqlSample },
                     { label: 'Count rows', value: 'SELECT COUNT(*) AS row_count FROM file;' },
                   ]
-                : [
-                    { label: 'Find errors', value: bashSample },
-                    { label: 'First lines', value: 'head -20 /workspace/input.log' },
-                    { label: 'Count lines', value: 'wc -l /workspace/input.log' },
-                  ]
+                : bashSamples
             }
             onSample={sample}
           >
@@ -188,29 +187,33 @@ export default function FileAnalysisPanel({
                 />
               </Suspense>
             ) : (
-              <Textarea
-                aria-label="Bash command"
-                className="workspace-command-input"
-                value={script}
-                onChange={(event) => setScript(event.currentTarget.value)}
-                disabled={busy}
-                spellCheck={false}
-                onKeyDown={(event) => {
-                  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                    event.preventDefault();
-                    void run();
-                  }
-                }}
-                styles={{
-                  input: {
-                    fontFamily: 'var(--mantine-font-family-monospace)',
-                    border: 0,
-                    borderRadius: 0,
-                    height: 'var(--workspace-sql-editor-height)',
-                    padding: '12px 20px',
-                  },
-                }}
-              />
+              <>
+                <BashAnalysisHelp id={bashHelpId} busy={busy} onSample={sample} />
+                <Textarea
+                  aria-label="Bash command"
+                  aria-describedby={bashHelpId}
+                  className="workspace-command-input"
+                  value={script}
+                  onChange={(event) => setScript(event.currentTarget.value)}
+                  disabled={busy}
+                  spellCheck={false}
+                  onKeyDown={(event) => {
+                    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                      event.preventDefault();
+                      void run();
+                    }
+                  }}
+                  styles={{
+                    input: {
+                      fontFamily: 'var(--mantine-font-family-monospace)',
+                      border: 0,
+                      borderRadius: 0,
+                      height: 'var(--workspace-sql-editor-height)',
+                      padding: '12px 20px',
+                    },
+                  }}
+                />
+              </>
             )}
           </WorkspaceExecutionPanel>
           {sql ? (
@@ -237,6 +240,15 @@ export default function FileAnalysisPanel({
                 </Alert>
               ) : result?.engine === 'bash' ? (
                 <div className="analysis-command-result">
+                  {result.exitCode !== 0 && /No such file or directory/.test(result.stderr) && (
+                    <Alert color="yellow" title="Use the selected file’s input path" mb="md">
+                      The selected file is mounted at <Code fz="inherit">{bashInputPath}</Code>. Its
+                      original Workspace path is not mounted in Just Bash.
+                      <Button variant="subtle" onClick={() => sample(bashPreviewCommand)} mt="sm">
+                        Use a working preview command
+                      </Button>
+                    </Alert>
+                  )}
                   <Text fw={600}>Standard output</Text>
                   <Paper withBorder p="md" component="pre" className="analysis-output">
                     {result.stdout || '(empty)'}
