@@ -8,7 +8,7 @@ import {
 import { WorkspaceExecutionPanel } from '../../ui/WorkspaceExecutionPanel';
 import { WorkspaceQueryResults, WorkspaceResultPanel } from '../../ui/WorkspaceQueryResults';
 import { BashAnalysisHelp } from './BashAnalysisHelp';
-import { bashInputPath, bashPreviewCommand, bashSamples } from './bash-analysis';
+import { legacyBashInput, bashPreviewCommand, bashSamples } from './bash-analysis';
 import './file-analysis.css';
 const WorkspaceSqlInput = lazy(() => import('../sql/WorkspaceSqlInput'));
 const sqlSample = 'SELECT * FROM file LIMIT 100;';
@@ -26,7 +26,9 @@ export function FileAnalysisEditor({
   onExportSaved: () => Promise<void>;
 }) {
   const bashHelpId = useId();
-  const [script, setScript] = useState(cap.engine === 'duckdb' ? sqlSample : bashPreviewCommand);
+  const bashInput = cap.input ?? legacyBashInput;
+  const previewCommand = bashPreviewCommand(bashInput.path);
+  const [script, setScript] = useState(cap.engine === 'duckdb' ? sqlSample : previewCommand);
   const [result, setResult] = useState<FileAnalysisResult | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -103,9 +105,19 @@ export function FileAnalysisEditor({
               <>
                 One saved file · Fresh snapshot per run · Up to 16 MiB input · 15 seconds · 1 MiB
                 output.
-                {sql
-                  ? ' SELECT only · Up to 1,000 rows. Query this file as the table file.'
-                  : ' Just Bash runs supported text commands on one saved file at /workspace/input.log, with working directory /workspace. Other Workspace paths, writes, network access and native programs are unavailable.'}
+                {sql ? (
+                  ' SELECT only · Up to 1,000 rows. Query this file as the table file.'
+                ) : (
+                  <>
+                    {' '}
+                    Just Bash runs supported text commands on the selected saved file at{' '}
+                    <Code className="analysis-input-path" fz="inherit">
+                      {bashInput.path}
+                    </Code>
+                    , with working directory <Code fz="inherit">{bashInput.workingDirectory}</Code>.
+                    Other files, writes, network access and native programs are unavailable.
+                  </>
+                )}
               </>
             }
             samples={
@@ -114,7 +126,7 @@ export function FileAnalysisEditor({
                     { label: 'Preview rows', value: sqlSample },
                     { label: 'Count rows', value: 'SELECT COUNT(*) AS row_count FROM file;' },
                   ]
-                : bashSamples
+                : bashSamples(bashInput.path)
             }
             onSample={sample}
           >
@@ -138,7 +150,7 @@ export function FileAnalysisEditor({
               </Suspense>
             ) : (
               <>
-                <BashAnalysisHelp id={bashHelpId} busy={busy} onSample={sample} />
+                <BashAnalysisHelp id={bashHelpId} input={bashInput} busy={busy} onSample={sample} />
                 <Textarea
                   aria-label="Bash command"
                   aria-describedby={bashHelpId}
@@ -192,9 +204,13 @@ export function FileAnalysisEditor({
                 <div className="analysis-command-result">
                   {result.exitCode !== 0 && /No such file or directory/.test(result.stderr) && (
                     <Alert color="yellow" title="Use the selected file’s input path" mb="md">
-                      The selected file is mounted at <Code fz="inherit">{bashInputPath}</Code>. Its
-                      original Workspace path is not mounted in Just Bash.
-                      <Button variant="subtle" onClick={() => sample(bashPreviewCommand)} mt="sm">
+                      The selected saved file is available at{' '}
+                      <Code className="analysis-input-path" fz="inherit">
+                        {bashInput.path}
+                      </Code>
+                      . Check the full path and quote spaces or special characters. Other files are
+                      not mounted.
+                      <Button variant="subtle" onClick={() => sample(previewCommand)} mt="sm">
                         Use a working preview command
                       </Button>
                     </Alert>

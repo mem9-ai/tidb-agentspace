@@ -120,14 +120,24 @@ test('standalone API responses conform to every declared JSON operation, includi
     type: 'file',
     content: 'hello',
   });
-  await request(workspace + '/file-analyses/capabilities', 'get', undefined, {
-    suffix: '?resourceId=fs_shared&path=/contract.txt',
+  const textCapabilities = await request(
+    workspace + '/file-analyses/capabilities',
+    'get',
+    undefined,
+    {
+      suffix: '?resourceId=fs_shared&path=/contract.txt',
+    },
+  );
+  assert.deepEqual(textCapabilities.result.engines[0].input, {
+    path: '/contract.txt',
+    workingDirectory: '/workspace',
+    aliases: ['/workspace/input.log'],
   });
   await request(workspace + '/file-analyses', 'post', {
     resourceId: 'fs_shared',
     path: '/contract.txt',
     engine: 'bash',
-    command: 'cat /workspace/input.log',
+    command: 'cat /contract.txt',
   });
   await request(workspace + '/files', 'put', {
     resourceId: 'fs_shared',
@@ -149,7 +159,7 @@ test('standalone API responses conform to every declared JSON operation, includi
   );
   for (const query of [
     { engine: 'duckdb', sql: 'SELECT * FROM file' },
-    { engine: 'bash', command: 'cat /workspace/input.log' },
+    { engine: 'bash', command: 'cat /contract.csv' },
   ])
     await request(workspace + '/file-analyses', 'post', {
       resourceId: 'fs_shared',

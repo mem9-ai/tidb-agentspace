@@ -1,6 +1,6 @@
 // Disposable child: receives only one snapshot and a script, never provider/session credentials.
 import { readFile } from 'node:fs/promises';
-import { analysisCommands, analysisError } from './file-analysis-contract.mjs';
+import { analysisBashInput, analysisCommands, analysisError } from './file-analysis-contract.mjs';
 
 async function duckdb({ sourcePath, format, script, limits }) {
   const { DuckDBInstance, StatementType, JsonDuckDBValueConverter } =
@@ -67,7 +67,7 @@ async function duckdb({ sourcePath, format, script, limits }) {
     db.closeSync();
   }
 }
-async function bash({ sourcePath, script, limits }) {
+async function bash({ sourcePath, workspacePath, script, limits }) {
   const { Bash, InMemoryFs } = await import('just-bash');
   const bytes = await readFile(sourcePath);
   let text;
@@ -81,7 +81,11 @@ async function bash({ sourcePath, script, limits }) {
       'Just Bash requires a UTF-8 text file. Download binary files to open them elsewhere.',
     );
   }
-  const memory = new InMemoryFs({ '/workspace/input.log': text });
+  const input = analysisBashInput(workspacePath);
+  const memory = new InMemoryFs({ [input.path]: text });
+  await memory.mkdir(input.workingDirectory, { recursive: true });
+  // An internal symlink preserves old commands without retaining a second file body.
+  for (const alias of input.aliases) await memory.symlink(input.path, alias);
   const mutations = new Set([
     'writeFile',
     'appendFile',
@@ -109,7 +113,7 @@ async function bash({ sourcePath, script, limits }) {
   });
   const shell = new Bash({
     fs,
-    cwd: '/workspace',
+    cwd: input.workingDirectory,
     env: {},
     commands: analysisCommands,
     python: false,
