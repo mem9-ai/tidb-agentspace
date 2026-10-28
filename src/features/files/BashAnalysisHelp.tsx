@@ -37,19 +37,16 @@ export function BashAnalysisHelp({
       <Text size="sm" c="carbon.7">
         {input.fileVariable === 'FILE' ? (
           <>
-            Use this path directly or <Code fz="inherit">"$FILE"</Code> for the selected saved file.
+            Read-only access to this file. Use its full path or <Code fz="inherit">"$FILE"</Code>.
           </>
         ) : (
-          'Only the selected saved file is available at this path.'
-        )}{' '}
-        Other Workspace files are not mounted.
+          'Read-only access to this file. Use its full path.'
+        )}
       </Text>
       <details className="bash-usage">
         <summary>How to use Just Bash</summary>
         <Text size="sm">
-          Choose an example below, then select Run command or press ⌘ / Ctrl + Enter. Examples
-          replace the command without running it. Read Standard output for results and Standard
-          error for problems.
+          Examples only fill the editor. Click Run command or press ⌘ / Ctrl + Enter to execute.
         </Text>
         <Group gap="xs" mt="sm">
           {bashSamples(input.path, input.fileVariable).map((example) => (
@@ -65,32 +62,46 @@ export function BashAnalysisHelp({
         </Group>
         {input.fileVariable === 'FILE' && (
           <Text size="sm" mt="sm">
-            Workspace sets <Code fz="inherit">FILE</Code> to this path on every run. Always quote{' '}
-            <Code fz="inherit">"$FILE"</Code> to preserve spaces and special characters. This is a
-            Workspace variable, not a Bash built-in.
+            Workspace sets <Code fz="inherit">FILE</Code> to the full path above on each run. Keep
+            the double quotes in <Code fz="inherit">"$FILE"</Code> for spaces and special
+            characters.
           </Text>
         )}
-        <Text size="sm" mt="sm">
-          Working directory: <Code fz="inherit">{input.workingDirectory}</Code>. Absolute-path
-          examples quote spaces and special characters safely. Use head, tail, grep, wc, awk, sed,
-          sort and uniq, including pipes, on this read-only saved-file snapshot. Writes, network
-          access, installs and arbitrary programs are unavailable.
-        </Text>
-        {input.aliases.length > 0 && (
+        <details className="bash-usage">
+          <summary>Runtime and compatibility details</summary>
           <Text size="sm" mt="sm">
-            Compatibility input:{' '}
-            {input.aliases.map((alias) => (
-              <Code key={alias} fz="inherit">
-                {alias}
-              </Code>
-            ))}
-            . These names refer to the same selected snapshot.
+            Each run reads a fresh copy of this saved file. Other files are unavailable, and
+            commands cannot modify the original. Network access, installations and arbitrary
+            programs are unavailable.
           </Text>
-        )}
-        <Text size="sm" c="carbon.7" mt="sm">
-          Each run reads a fresh saved snapshot. A grep exit code of 1 can simply mean no matching
-          lines; check Standard error before treating a nonzero exit as a failure.
-        </Text>
+          <Text size="sm" mt="sm">
+            Relative paths start at <Code fz="inherit">{input.workingDirectory}</Code> in this
+            analysis environment. Supported commands include head, tail, grep, wc, awk and sed, with
+            pipes. See Editor tools → Limits for execution limits.
+          </Text>
+          <Text size="sm" mt="sm">
+            Read Standard output for results and Standard error for command errors. A grep exit code
+            of 1 can mean no matching lines.
+          </Text>
+          {input.aliases.length > 0 && (
+            <>
+              <Text size="sm" fw={600} mt="sm">
+                Legacy alias for older commands
+              </Text>
+              <Group gap="xs" mt="xs">
+                {input.aliases.map((alias) => (
+                  <Code key={alias} fz="inherit">
+                    {alias}
+                  </Code>
+                ))}
+              </Group>
+              <Text size="sm" mt="xs">
+                This temporary alias always points to the selected file shown above. It does not
+                create or overwrite a file in your File System.
+              </Text>
+            </>
+          )}
+        </details>
       </details>
     </div>
   );

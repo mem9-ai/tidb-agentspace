@@ -206,6 +206,34 @@ recorded in the implementation PR. No new cloud integration or write capability 
 | Variable example, mobile Light, 390×844                   | [Screenshot](screenshots/bash-file-variable/mobile-light.jpg)               |
 | Variable example, mobile Dark, 390×844                    | [Screenshot](screenshots/bash-file-variable/mobile-dark.jpg)                |
 
+### Bash help hierarchy
+
+[GH-71](https://github.com/siddontang/tidb.ai/issues/71) is a Console copy/layout correction
+against `f9c221c020cec26dfbe1190aa3315b3396dd182a`, verified on 2026-10-28. The compact visible
+caption identifies read-only input and the full-path/quoted-FILE choices. The main usage
+disclosure contains only example prefill, explicit Run/shortcut and Workspace's FILE binding.
+Runtime details, relative-path context, supported commands, output/exit-code notes and legacy
+compatibility are in a secondary disclosure that starts collapsed. The alias is explicitly
+described as a temporary name for the selected file that does not create/overwrite a file in
+the customer's File System. This presentation changes no worker, alias, API or authorization
+contract; ADRs 0015/0016 remain authoritative.
+
+Browser checks on isolated local CSV fixtures with the real worker verify the secondary
+details are hidden initially, native Enter toggles both disclosures, opening/closing help
+preserves the command and completed result, and a sample only prefills before explicit
+Cmd/Ctrl+Enter execution. Light/Dark at 1280×800 and 390×844 retain 16px command text, 44px
+disclosure targets and no page-wide horizontal overflow. Existing TiUI controls and semantic
+colors are preserved. No tests merely assert copy strings; the implementation PR records
+the full quality gate/CI and the refreshed main preview with its existing API left running.
+
+| Evidence                              | Screenshot                                                   |
+| ------------------------------------- | ------------------------------------------------------------ |
+| Primary help, desktop Light, 1280×800 | [Screenshot](screenshots/bash-help-copy/desktop-light.jpg)   |
+| Primary help, desktop Dark, 1280×800  | [Screenshot](screenshots/bash-help-copy/desktop-dark.jpg)    |
+| Primary help, mobile Light, 390×844   | [Screenshot](screenshots/bash-help-copy/mobile-light.jpg)    |
+| Primary help, mobile Dark, 390×844    | [Screenshot](screenshots/bash-help-copy/mobile-dark.jpg)     |
+| Optional runtime/legacy explanation   | [Screenshot](screenshots/bash-help-copy/runtime-details.jpg) |
+
 ### Just Bash input guidance
 
 Just Bash runs supported commands on the **selected saved file**, exposed at its original

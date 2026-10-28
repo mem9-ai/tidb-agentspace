@@ -256,7 +256,11 @@ verified, and record that as a remaining gap.
   for discovered input metadata, safe shell quoting and legacy aliases. Show the actual path
   beside the editor with a copy action; explain that it names only the selected snapshot,
   not the provider or host filesystem. Keep the common path visible and put longer usage guidance
-  in a disclosure. Start with a generic, executable preview sample and explain that examples
+  in a disclosure. Keep everyday steps focused on selecting input, filling a command and running
+  it explicitly. Put runtime limits, debugging and legacy compatibility details in a secondary
+  collapsed disclosure. Explain that legacy aliases are temporary names for the selected input
+  and do not create or overwrite provider files; do not present them as another customer resource.
+  Preserve readable keyboard-accessible disclosure targets. Start with a generic, executable preview sample and explain that examples
   fill the editor without running. The first Bash sample must already contain the safely quoted
   absolute input path. Offer `"$FILE"` as a reusable current-file reference only when capability
   discovery reports support, and identify it as a Workspace convention rather than a Bash built-in;
