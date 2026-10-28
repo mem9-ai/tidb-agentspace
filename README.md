@@ -91,6 +91,9 @@ See [runtime setup and recovery](docs/duckdb-databases.md) and
 
 ## What works
 
+- Databases and File System open global resource lists. Choose a File System explicitly to
+  browse its files; resource/file links preserve context on reload. See [File System navigation](docs/filesystem-list-verification.md).
+
 - The optional DuckDB query-source API can use selected CSV, JSON/NDJSON and Parquet from public File Systems as query-scoped `files.name` tables, including joins. This is separate from the Console's native database workspace; Console file analysis is under File System Analyze. Require query/read/analyze actions and both database/File System grants. Four sources / 16 MiB input, read-only SELECT and the existing bounded worker. See [file sources](docs/duckdb-databases.md#workspace-file-sources).
 
 - Nine top-level destinations: overview, databases, files, agent connection, keys, API explorer, monitoring, billing, settings. Each database has one SQL workspace with a persistent table list, editor, query results, columns, indexes and up to 100 preview rows at `#databases/<resource-id>/sql`, preserving the selected database on reload and browser history navigation.

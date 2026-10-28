@@ -1,5 +1,24 @@
 export type FileView = 'preview' | 'source' | 'analyze';
 export type FileLocation = { resourceId: string; path: string; view: FileView };
+export function fileSystemHash(resourceId: string): string {
+  return '#files?' + new URLSearchParams({ resourceId }).toString();
+}
+export function parseFileSystemLocation(hash: string): {
+  resourceId: string;
+  file: FileLocation | null;
+  invalidFile: boolean;
+} | null {
+  if (!hash.startsWith('#files?')) return null;
+  const query = new URLSearchParams(hash.slice(7));
+  const resourceId = query.get('resourceId');
+  if (!resourceId) return null;
+  const file = parseFileLocation(hash);
+  return {
+    resourceId,
+    file,
+    invalidFile: !file && (query.has('path') || query.has('view')),
+  };
+}
 export function fileHash(resourceId: string, path: string, view: FileView): string {
   return (
     '#files?' +

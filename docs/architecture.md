@@ -73,6 +73,15 @@ results/errors. An unavailable or non-database resource must never silently sele
 database. Legacy `#sql` links open the database list for explicit selection. Keep the query
 target, displayed database, and URL consistent when adding future database tools.
 
+Resource collection entry points are explicit: `#databases` lists databases and `#files`
+lists public File Systems, including the zero- and single-resource cases. The Console does
+not auto-select a live/first resource. `#files?resourceId=<id>` opens one File System; existing
+`path`/`view` query links still open the selected file directly. Resource names and connection
+dialogs retain that ID, closing a file stays in the resource, and All file systems returns to
+the collection with the unsaved-draft guard. Unknown/non-File-System IDs cannot fall back to
+another resource. The list does not mount the file browser or fetch a directory before
+selection. See [verification](filesystem-list-verification.md).
+
 Database and File System workspaces share the same hierarchy (owner correction, 2026-10-28):
 one compact resource selector/status/actions toolbar, then a browser
 beside the working panel. The database selector is above both Tables and SQL Editor; it must
