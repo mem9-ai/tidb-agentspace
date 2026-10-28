@@ -257,7 +257,10 @@ verified, and record that as a remaining gap.
   beside the editor with a copy action; explain that it names only the selected snapshot,
   not the provider or host filesystem. Keep the common path visible and put longer usage guidance
   in a disclosure. Start with a generic, executable preview sample and explain that examples
-  fill the editor without running. Check samples against the real worker and provide recovery
+  fill the editor without running. The first Bash sample must already contain the safely quoted
+  absolute input path. Offer `"$FILE"` as a reusable current-file reference only when capability
+  discovery reports support, and identify it as a Workspace convention rather than a Bash built-in;
+  follow [ADR 0016](../decisions/0016-bash-selected-file-variable.md). Check samples against the real worker and provide recovery
   guidance for missing-file errors without changing access boundaries. This owner correction
   is implemented for Just Bash in [usage verification](../file-analysis-verification.md#workspace-path-identity),
   superseding GH-63's fixed-path-only guidance.

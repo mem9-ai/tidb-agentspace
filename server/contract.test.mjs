@@ -132,12 +132,13 @@ test('standalone API responses conform to every declared JSON operation, includi
     path: '/contract.txt',
     workingDirectory: '/workspace',
     aliases: ['/workspace/input.log'],
+    fileVariable: 'FILE',
   });
   await request(workspace + '/file-analyses', 'post', {
     resourceId: 'fs_shared',
     path: '/contract.txt',
     engine: 'bash',
-    command: 'cat /contract.txt',
+    command: 'cat "$FILE"',
   });
   await request(workspace + '/files', 'put', {
     resourceId: 'fs_shared',

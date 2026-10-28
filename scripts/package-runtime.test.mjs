@@ -165,7 +165,7 @@ test('API builds without a frontend; separate archives boot independently withou
         assert.equal(saved.status, 200);
         for (const input of [
           { path: '/package.csv', engine: 'duckdb', sql: 'SELECT COUNT(*) AS n FROM file' },
-          { path: '/package.csv.log', engine: 'bash', command: 'echo packaged' },
+          { path: '/package.csv.log', engine: 'bash', command: 'cat "$FILE"' },
         ]) {
           if (input.engine === 'bash')
             await fetch(origin + base + '/files', {
@@ -187,7 +187,7 @@ test('API builds without a frontend; separate archives boot independently withou
           const result = await analyzed.json();
           assert.equal(result.readOnly, true);
           if (input.engine === 'duckdb') assert.equal(result.rows[0].n, '2');
-          else assert.equal(result.stdout, 'packaged\n');
+          else assert.equal(result.stdout, 'package log');
         }
         assert.equal((await (await fetch(origin + '/openapi.json')).json()).openapi, '3.1.0');
         assert.equal((await fetch(origin + '/')).status, 404);

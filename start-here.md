@@ -107,6 +107,7 @@ query-source API over CSV/JSON/Parquet, read [file sources](docs/duckdb-database
 For CSV/Parquet SQL and text/log analysis, read [ADR 0010](docs/decisions/0010-read-only-file-analysis.md),
 [engine options](docs/decisions/0014-file-analysis-engine-options.md)
 and [Bash input paths](docs/decisions/0015-bash-workspace-paths.md), plus
+[the selected-file variable](docs/decisions/0016-bash-selected-file-variable.md) and
 [verification](docs/file-analysis-verification.md). The Console/API implement selected-file
 snapshot workers; provider-hosted Exec, large remote scans and public compute isolation remain future work.
 

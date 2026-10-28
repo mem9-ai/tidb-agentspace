@@ -50,6 +50,7 @@ test('analysis capabilities separate file format, default engine and individual 
         path: '/ORDERS.CSV',
         workingDirectory: '/workspace',
         aliases: ['/workspace/input.log'],
+        fileVariable: 'FILE',
       },
     },
   ]);
@@ -81,6 +82,7 @@ test('analysis capabilities separate file format, default engine and individual 
       path: '/empty.csv',
       workingDirectory: '/workspace',
       aliases: ['/workspace/input.log'],
+      fileVariable: 'FILE',
     },
   });
   for (const info of [
@@ -146,6 +148,7 @@ test('the same CSV supports real SQL and raw-text Bash without broadening format
     { ...bashCsv('cat input.log'), command: undefined, sql: 'SELECT 1' },
     { ...bashCsv('cat input.log'), input: { path: '/etc/passwd' } },
     { ...bashCsv('cat input.log'), workspacePath: '/etc/passwd' },
+    { ...bashCsv('cat "$FILE"'), env: { FILE: '/other.log' } },
   ])
     await assert.rejects(guarded.execute(resource, input), { code: 'INVALID_ANALYSIS' });
   assert.equal(snapshots, 0);
@@ -277,10 +280,14 @@ test('Bash exposes the selected Workspace path, quotes samples safely and keeps 
       path,
       workingDirectory: '/workspace',
       aliases: ['/workspace/input.log'],
+      fileVariable: 'FILE',
     });
     assert.equal((await run(`cat ${quoteBashPath(path)}`)).stdout, text);
     if (path === nested) assert.equal((await run(`cat ${path}`)).stdout, text);
-    for (const example of bashSamples(path)) assert.equal((await run(example.value)).exitCode, 0);
+    for (const example of bashSamples(path, cap.engines[0].input.fileVariable))
+      assert.equal((await run(example.value)).exitCode, 0);
+    assert.equal((await run('cat "$FILE"')).stdout, text);
+    assert.equal((await run('cat "${FILE}"')).stdout, text);
     assert.equal((await run(bashPreviewCommand(path))).stdout, text);
     assert.equal((await run('pwd')).stdout, '/workspace\n');
     assert.equal((await run('cat /workspace/input.log')).stdout, text);
@@ -303,14 +310,53 @@ test('Bash alias collisions never shadow the selected file or its parent directo
   const a = engine(Buffer.from(text));
   for (const path of ['/workspace/input.log', '/workspace/input.log/nested.log']) {
     const cap = await a.capabilities(resource, path);
-    assert.deepEqual(cap.engines[0].input, { path, workingDirectory: '/workspace', aliases: [] });
+    assert.deepEqual(cap.engines[0].input, {
+      path,
+      workingDirectory: '/workspace',
+      aliases: [],
+      fileVariable: 'FILE',
+    });
     const run = (script) => a.execute(resource, { ...command(script), path });
+    assert.equal((await run('cat "$FILE"')).stdout, text);
     assert.equal((await run(bashPreviewCommand(path))).stdout, text);
     assert.equal((await run(`cat ${quoteBashPath(path)}`)).stdout, text);
     if (path === '/workspace/input.log') assert.equal((await run('cat input.log')).stdout, text);
     else assert.notEqual((await run('cat /workspace/input.log')).exitCode, 0);
     assert.notEqual((await run('cat /workspace/input.log/other.log')).exitCode, 0);
   }
+});
+
+test('FILE is bound to the selected path on each fresh run without inheriting private environment', async () => {
+  const path = '/context/selected.log';
+  const a = engine(log);
+  const run = (script) => a.execute(resource, { ...command(script), path });
+  const previousFile = process.env.FILE;
+  const previousPrivate = process.env.ANALYSIS_FILE_PRIVATE_SENTINEL;
+  process.env.FILE = '/private/parent-secret.log';
+  process.env.ANALYSIS_FILE_PRIVATE_SENTINEL = 'do-not-forward';
+  try {
+    assert.equal((await run('cat "$FILE"')).stdout, log.toString());
+    assert.equal((await run('printf "%s" "$FILE"')).stdout, path);
+    assert.equal((await run('echo "$ANALYSIS_FILE_PRIVATE_SENTINEL"')).stdout, '\n');
+    assert.notEqual((await run('FILE=/other.log; cat "$FILE"')).exitCode, 0);
+    assert.equal((await run('unset FILE; printf "%s" "$FILE"')).stdout, '');
+    assert.equal((await run('cat "$FILE"')).stdout, log.toString());
+    try {
+      assert.notEqual((await run('printf changed > "$FILE"')).exitCode, 0);
+    } catch (error) {
+      assert.equal(error.status, 422);
+    }
+    assert.equal((await run('cat "$FILE"')).stdout, log.toString());
+  } finally {
+    if (previousFile === undefined) delete process.env.FILE;
+    else process.env.FILE = previousFile;
+    if (previousPrivate === undefined) delete process.env.ANALYSIS_FILE_PRIVATE_SENTINEL;
+    else process.env.ANALYSIS_FILE_PRIVATE_SENTINEL = previousPrivate;
+  }
+  assert.equal(
+    bashSamples(legacyBashInput.path).some((sample) => sample.value.includes('$FILE')),
+    false,
+  );
 });
 
 test('Just Bash executes actual grep/awk/pipelines without host files, network, credentials or writes', async () => {
@@ -550,7 +596,7 @@ test('Workspace analysis checks actions, resources, workspace, expiration and re
       resourceId: 'fs_shared',
       path: '/orders.csv',
       engine: 'bash',
-      command: 'cat /orders.csv',
+      command: 'cat "$FILE"',
     },
   ];
   for (const [scopes, ids] of [

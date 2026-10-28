@@ -366,11 +366,19 @@ const paths = {
                 available: { type: 'boolean' },
                 reason: str,
                 input: {
-                  ...object({
-                    path: str,
-                    workingDirectory: { const: '/workspace' },
-                    aliases: { type: 'array', items: str },
-                  }),
+                  ...object(
+                    {
+                      path: str,
+                      workingDirectory: { const: '/workspace' },
+                      aliases: { type: 'array', items: str },
+                      fileVariable: {
+                        const: 'FILE',
+                        description:
+                          'When present, Workspace sets FILE to input.path for each fresh Bash run. Use quoted "$FILE" or "${FILE}"; this is a Workspace convention, not a Bash built-in. Script assignments do not persist.',
+                      },
+                    },
+                    ['path', 'workingDirectory', 'aliases'],
+                  ),
                   description:
                     'Bash only: the selected absolute Workspace path in its read-only virtual snapshot, working directory, and compatible aliases. The legacy alias is omitted when it would shadow the selected path or a parent directory. Not a host path or a mount of other files.',
                 },
