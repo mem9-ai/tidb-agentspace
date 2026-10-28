@@ -19,7 +19,7 @@ public hosting, direct native credential export or cross-schema browsing is incl
 
 ## Observable contract
 
-- Opt in with `WORKSPACE_POSTGRES_PROVIDER=db9-anonymous`. `/resources` accepts kind `postgres`
+- Opt in with `WORKSPACE_POSTGRES_PROVIDER=db9-anonymous`. `/resources` accepts kind `postgresql`
   with `automatic` region, existing name and idempotency rules, `resources:write` and wildcard
   resource access (or local owner). Disabled mode rejects PG creation before provider I/O.
 - Capabilities describe actual availability. Native PostgreSQL and official REST provisioning
