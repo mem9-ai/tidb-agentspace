@@ -69,6 +69,12 @@ results/errors. An unavailable or non-database resource must never silently sele
 database. Legacy `#sql` links open the database list for explicit selection. Keep the query
 target, displayed database, and URL consistent when adding future database tools.
 
+File System analysis is implemented as bounded server-side snapshot workers: CSV/Parquet use
+DuckDB SQL, while UTF-8 logs and text use Just Bash. It requires `files:read`, `files:analyze`
+and the resource grant. Provider credentials never enter workers. This is a read-only local
+prototype; public compute isolation and larger remote scans remain future work. See
+[ADR 0009](decisions/0009-read-only-file-analysis.md).
+
 File System opens files in a non-modal reading panel beside the desktop file list. On narrow
 screens the panel has an explicit return to the list. Markdown is rendered by default;
 JSON, CSV, common source files, and plain text have text-based previews with an Edit source

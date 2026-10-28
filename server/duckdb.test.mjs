@@ -156,7 +156,7 @@ test('DuckDB owns hidden storage; all public surfaces and wildcard file/key acce
     assert.ok(!JSON.stringify(r.body).includes('private-duck-'));
   }
   const all = await f.key(
-    ['resources:read', 'files:read', 'files:write', 'queries:execute'],
+    ['resources:read', 'files:read', 'files:write', 'files:analyze', 'queries:execute'],
     ['*'],
   );
   for (const token of [undefined, all.secret]) {
@@ -186,6 +186,31 @@ test('DuckDB owns hidden storage; all public surfaces and wildcard file/key acce
       ).status,
       404,
     );
+    const beforeAnalysis = f.calls.length;
+    assert.equal(
+      (
+        await f.request(
+          base + `/file-analyses/capabilities?resourceId=${storageId}&path=/workspace.duckdb`,
+          'GET',
+          undefined,
+          token,
+        )
+      ).status,
+      404,
+    );
+    for (const resourceId of [storageId, id])
+      assert.equal(
+        (
+          await f.request(
+            base + '/file-analyses',
+            'POST',
+            { resourceId, path: '/orders.csv', engine: 'duckdb', sql: 'SELECT * FROM file' },
+            token,
+          )
+        ).status,
+        404,
+      );
+    assert.equal(f.calls.length, beforeAnalysis);
     assert.equal((await f.query(storageId, 'SELECT 1', token)).status, 404);
   }
   assert.equal(

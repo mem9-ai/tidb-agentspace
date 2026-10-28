@@ -12,6 +12,11 @@ export type QueryResult =
 type JsonBody<T extends { requestBody: { content: { 'application/json': unknown } } }> =
   T['requestBody']['content']['application/json'];
 export type CreateKeyInput = JsonBody<operations['createKey']>;
+export type FileAnalysisResult =
+  operations['analyzeFile']['responses'][200]['content']['application/json'];
+export type FileAnalysisInput = JsonBody<operations['analyzeFile']>;
+export type FileAnalysisCapabilities =
+  operations['fileAnalysisCapabilities']['responses'][200]['content']['application/json'];
 export type WriteFileInput = JsonBody<operations['writeFile']>;
 export const workspaceId = 'ws_agentlab';
 export const base = `/api/v1/workspaces/${workspaceId}`;
@@ -27,6 +32,15 @@ export function configureApi(config: unknown) {
 }
 
 export const workspaceApi = {
+  fileAnalysisCapabilities: (resourceId: string, path: string, signal?: AbortSignal) =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/file-analyses/capabilities', {
+        params: { path: { workspaceId }, query: { resourceId, path } },
+        signal,
+      }),
+    ),
+  analyzeFile: (body: FileAnalysisInput, signal?: AbortSignal) =>
+    responseData(client.POST('/workspaces/{workspaceId}/file-analyses', { params, body, signal })),
   startSession: () => responseData(sessionClient.POST('/api/session', { body: {} })),
   bootstrap: () => responseData(client.GET('/workspaces/{workspaceId}/bootstrap', { params })),
   resources: () => responseData(client.GET('/workspaces/{workspaceId}/resources', { params })),

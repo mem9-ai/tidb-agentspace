@@ -16,6 +16,7 @@ export type WorkspaceRoute = {
   databaseId?: string;
   databaseView?: 'tables' | 'sql';
   tableName?: string;
+  fileLink?: string;
 };
 
 function databaseHash(resourceId: string, view: 'tables' | 'sql', tableName?: string): string {
@@ -34,6 +35,7 @@ export function tableSelectSql(name: string, dialect: 'mysql' | 'duckdb' = 'mysq
 }
 export function parseWorkspaceRoute(hash: string): WorkspaceRoute {
   const value = hash.replace(/^#/, '');
+  if (value.startsWith('files?')) return { page: 'files', fileLink: value };
   if (value === 'sql') return { page: 'databases' };
   const database = /^databases\/([^/]+)\/(tables|sql)(?:\?table=([^&]*))?$/.exec(value);
   if (database) {

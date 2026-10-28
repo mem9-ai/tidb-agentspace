@@ -55,6 +55,7 @@ follow its task-specific references before implementation. Keep detailed rules c
   Follow [independent delivery](docs/independent-delivery.md) and [ADR 0005](docs/decisions/0005-independent-console-and-api.md); the API must not serve Console assets.
 - Reuse domain operations across the Console and agent APIs. Keep provider-specific behavior
   behind adapters when adding real cloud integrations.
+- For File System SQL/shell analysis, follow [ADR 0009](docs/decisions/0009-read-only-file-analysis.md): selected-file snapshots, explicit read/analyze grants, bounded disposable workers, and no provider credentials in user execution.
 - Integrate TiDB Cloud through official APIs or database protocols by default; do not make
   Ti CLI a product dependency. Follow [the integration policy](docs/architecture.md#tidb-cloud-integration-policy).
 

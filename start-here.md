@@ -80,26 +80,27 @@ Backend action/resource authorization, service-owned provider secrets, shared do
 operations, and actual TiUI components/adapters are central project boundaries. Their detailed
 rules and verification stay in these linked sources.
 
-For proposed CSV/Parquet and log analysis, read [the capability discovery](docs/file-analysis-discovery.md)
-and [GH-26 baseline](specs/gh-26/spec.md). Live engine proofs are recorded separately from the
-analysis Console/API implementation, which remains pending.
+For CSV/Parquet SQL and text/log analysis, read [ADR 0009](docs/decisions/0009-read-only-file-analysis.md)
+and [verification](docs/file-analysis-verification.md). The Console/API implement selected-file
+snapshot workers; provider-hosted Exec, large remote scans and public compute isolation remain future work.
 
 ## Find the implementation
 
-| Location                                                                                                                                        | Responsibility                                                                       |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [src/](src/)                                                                                                                                    | React Console; feature modules in `src/features/`, shared TiUI adapters in `src/ui/` |
-| [src/api/](src/api/) and [Console configuration](console/public/config.json)                                                                    | Generated-type HTTP client, API transport, and runtime API-origin selection          |
-| [server/index.mjs](server/index.mjs)                                                                                                            | Current API entry point and request handling                                         |
-| [Authorization](server/access-policy.mjs) and [store](server/store.mjs)                                                                         | Shared resource-grant rules and local persistence                                    |
-| [Providers](server/providers/) and [file transfer](server/file-transfer.mjs)                                                                    | Upstream resource adapters, SQL drivers, and bounded file transfers                  |
-| [Contract generator](server/generate-openapi.mjs) and [generated contract](public/openapi.json)                                                 | Editable description and generated public API artifact                               |
-| [Client type generator](tools/api-contract/generate-client.mjs) and [client declarations](src/api/schema.d.ts)                                  | Isolated build-time generation of Console API types                                  |
-| [API tests](server/api.test.mjs), [provider tests](server/drive9.test.mjs), and colocated feature tests                                         | Behavior, isolation, persistence, and regression evidence                            |
-| [Contract tests](server/contract.test.mjs) and [deployment tests](server/deployment.test.mjs)                                                   | Actual HTTP schema checks, cross-origin behavior, and retained authorization         |
-| [scripts/](scripts/) and [.github/workflows/](.github/workflows/)                                                                               | Runtime/repository/sign-off checks, packaging, and CI                                |
-| [Standards](docs/standards/) and [decisions](docs/decisions/)                                                                                   | Reusable engineering rules and architectural decisions                               |
-| [Issue forms](.github/ISSUE_TEMPLATE/), [PR template](.github/PULL_REQUEST_TEMPLATE.md), and [feature template](docs/templates/feature-spec.md) | Intake, task handoffs, evidence, and specification authoring                         |
+| Location                                                                                                                                        | Responsibility                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| [src/](src/)                                                                                                                                    | React Console; feature modules in `src/features/`, shared TiUI adapters in `src/ui/`           |
+| [src/api/](src/api/) and [Console configuration](console/public/config.json)                                                                    | Generated-type HTTP client, API transport, and runtime API-origin selection                    |
+| [server/index.mjs](server/index.mjs)                                                                                                            | Current API entry point and request handling                                                   |
+| [Authorization](server/access-policy.mjs) and [store](server/store.mjs)                                                                         | Shared resource-grant rules and local persistence                                              |
+| [File analysis](server/file-analysis.mjs) and [Console panel](src/features/files/FileAnalysisPanel.tsx)                                         | Selected-file snapshot workers, permissions, DuckDB/Just Bash analysis and result presentation |
+| [Providers](server/providers/) and [file transfer](server/file-transfer.mjs)                                                                    | Upstream resource adapters, SQL drivers, and bounded file transfers                            |
+| [Contract generator](server/generate-openapi.mjs) and [generated contract](public/openapi.json)                                                 | Editable description and generated public API artifact                                         |
+| [Client type generator](tools/api-contract/generate-client.mjs) and [client declarations](src/api/schema.d.ts)                                  | Isolated build-time generation of Console API types                                            |
+| [API tests](server/api.test.mjs), [provider tests](server/drive9.test.mjs), and colocated feature tests                                         | Behavior, isolation, persistence, and regression evidence                                      |
+| [Contract tests](server/contract.test.mjs) and [deployment tests](server/deployment.test.mjs)                                                   | Actual HTTP schema checks, cross-origin behavior, and retained authorization                   |
+| [scripts/](scripts/) and [.github/workflows/](.github/workflows/)                                                                               | Runtime/repository/sign-off checks, packaging, and CI                                          |
+| [Standards](docs/standards/) and [decisions](docs/decisions/)                                                                                   | Reusable engineering rules and architectural decisions                                         |
+| [Issue forms](.github/ISSUE_TEMPLATE/), [PR template](.github/PULL_REQUEST_TEMPLATE.md), and [feature template](docs/templates/feature-spec.md) | Intake, task handoffs, evidence, and specification authoring                                   |
 
 Accepted feature specifications use `specs/gh-<parent-issue-number>/spec.md` when created through
 the GitHub workflow. Verify that a specification directory, interface, or integration actually

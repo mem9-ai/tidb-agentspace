@@ -38,6 +38,7 @@
     "@tidbcloud/codemirror-extension-themes": "0.0.6",
     "@tidbcloud/tisqleditor-react": "0.0.6",
     "@tidbcloud/uikit": "2.9.1",
+    "just-bash": "3.6.0",
     "mysql2": "3.24.6",
     "openapi-fetch": "0.17.0",
     "react": "18.3.1",
@@ -69,5 +70,10 @@
   "packageManager": "npm@11.6.2",
   "workspaces": [
     "tools/api-contract"
-  ]
+  ],
+  "overrides": {
+    "guarded-fetch": {
+      "undici": "7.30.1"
+    }
+  }
 }
