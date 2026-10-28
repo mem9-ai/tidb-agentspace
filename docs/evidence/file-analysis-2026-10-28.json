@@ -1,0 +1,44 @@
+{
+  "verifiedAt": "2026-10-27T23:53:12.832Z",
+  "provider": "Drive9 Singapore anonymous",
+  "remoteExec": {
+    "capabilitiesHttpStatus": 404,
+    "execHttpStatus": 404,
+    "executionProbe": "duckdb --version, read-only workspace, 5000 ms request timeout"
+  },
+  "duckdb": "2.0.0 with local tidbfs extension",
+  "root": "/file-analysis-demo-9de2ebb1",
+  "queries": {
+    "csv": [
+      {
+        "region": "APAC",
+        "total": 30
+      },
+      {
+        "region": "EU",
+        "total": 20
+      }
+    ],
+    "parquet": [
+      {
+        "region": "APAC",
+        "total": 30
+      },
+      {
+        "region": "EU",
+        "total": 20
+      }
+    ]
+  },
+  "justBash": {
+    "version": "3.6.0",
+    "grep": "2:2026-10-28T01:00:01Z ERROR request timed out\n4:2026-10-28T01:00:03Z ERROR upstream unavailable\n",
+    "errorCount": 2,
+    "readOnlyMutation": "denied"
+  },
+  "scope": "Capability proof only; Console analysis UI not implemented",
+  "artifacts": {
+    "duckdb-2.0.0-osx-arm64": "432e9c8012d0259e7c4630fa2136bf59fb832769ca7e0f6e374b8af2d2cebed9",
+    "tidbfs-local-extension": "9808d858f8874266315f7b39f0e1b1362ffb80e937cc7ec4a30cf388673cec6c"
+  }
+}

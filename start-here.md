@@ -80,6 +80,10 @@ Backend action/resource authorization, service-owned provider secrets, shared do
 operations, and actual TiUI components/adapters are central project boundaries. Their detailed
 rules and verification stay in these linked sources.
 
+For proposed CSV/Parquet and log analysis, read [the capability discovery](docs/file-analysis-discovery.md)
+and [GH-26 baseline](specs/gh-26/spec.md). Live engine proofs are recorded separately from the
+analysis Console/API implementation, which remains pending.
+
 ## Find the implementation
 
 | Location                                                                                                                                        | Responsibility                                                                       |
