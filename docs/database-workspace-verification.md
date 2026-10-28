@@ -1,5 +1,8 @@
 # Unified database workspace verification
 
+The later [density correction](database-density-verification.md) compacts the header and
+editor while retaining the behavior verified below. Its screenshots show the current layout.
+
 Owner-requested UI correction to [DB-BROWSER](../specs/database-browser/spec.md), 2026-10-28.
 
 Reference: [TiDB Cloud SQL Editor](https://docs.pingcap.com/tidbcloud/explore-data-with-sql-editor/)

@@ -82,6 +82,7 @@ export const workspaceTheme: NonNullable<ComponentProps<typeof ThemeProvider>['t
       },
     },
     Tabs: { styles: { tab: { minHeight: 48, fontSize: 15 } } },
+    Menu: { styles: { item: { minHeight: 44, fontSize: 16 } } },
     Alert: { styles: { message: { fontSize: 15, lineHeight: 1.65 }, title: { fontSize: 16 } } },
     Notification: { styles: { description: { fontSize: 15 } } },
     Fieldset: {

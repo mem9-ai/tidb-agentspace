@@ -1,20 +1,23 @@
 import type { QueryResult } from '../../api/client';
 import React, { lazy, Suspense, useRef, useState } from 'react';
 import {
+  ActionIcon,
   Alert,
   Badge,
   Button,
   Loader,
   NativeSelect,
+  Menu,
+  Popover,
   Paper,
   Table,
   Text,
-  UnstyledButton,
 } from '@tidbcloud/uikit';
 import {
   IconDatabase01 as Database,
   IconPlay as Play,
-  IconStars01 as Sparkles,
+  IconMaximize02,
+  IconMinimize02,
   IconDownload01 as ArrowDownToLine,
   IconCheckCircle as CheckCircle2,
 } from '@tidbcloud/uikit/icons';
@@ -64,6 +67,7 @@ export function SqlQueryPanel({
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
   const running = useRef(false);
+  const [expanded, setExpanded] = useState(false);
   async function run() {
     if (running.current || readBusy || database.status !== 'active') return;
     running.current = true;
@@ -116,8 +120,8 @@ export function SqlQueryPanel({
           {error}
         </Alert>
       ) : result ? (
-        <div className="table-scroll">
-          <Table>
+        <div className="table-scroll" role="region" aria-label="Query result data" tabIndex={0}>
+          <Table verticalSpacing={12} stickyHeader>
             <Table.Thead>
               <Table.Tr>
                 {result.columns.map((c: string) => (
@@ -152,27 +156,14 @@ export function SqlQueryPanel({
         </div>
       ) : (
         <div className="empty-state">
-          <Text>Run a query to see its results here.</Text>
+          <Text>{busy ? 'Running query…' : 'Run a query to see its results here.'}</Text>
         </div>
       )}
     </Paper>
   );
   return (
     <>
-      <Alert className="notice" color="peacock" icon={<Sparkles size={17} />}>
-        <span>
-          {live ? (
-            'Live SQL · Writes change real data. One statement at a time · 1,000 rows / 1 MiB · 15-second timeout.'
-          ) : (
-            <>
-              Local demo. Supports <code>SELECT 1</code> and{' '}
-              <code>SELECT * FROM agent_events LIMIT n</code>. This resource is not connected to a
-              cloud database.
-            </>
-          )}
-        </span>
-      </Alert>
-      <Paper className="panel sql-panel" withBorder>
+      <Paper className={`panel sql-panel${expanded ? ' sql-panel-expanded' : ''}`} withBorder>
         <div className="sql-toolbar">
           <div className="inline-controls">
             <Database size={16} />
@@ -218,30 +209,60 @@ export function SqlQueryPanel({
           />
         </Suspense>
         <div className="editor-bottom">
-          <span>SQL · {kindLabel[database.kind]}</span>
-          <span>⌘ / Ctrl + Enter to run</span>
+          <Text size="sm">
+            {live ? 'Live SQL · Writes change data' : 'Local demo · Sample data only'}
+          </Text>
+          <div className="sql-editor-tools">
+            <Menu position="bottom-end" withinPortal>
+              <Menu.Target>
+                <Button variant="subtle">Samples</Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                {live && <Menu.Item onClick={() => setSql('SHOW TABLES;')}>List tables</Menu.Item>}
+                <Menu.Item onClick={() => setSql('SELECT 1 AS connected;')}>
+                  Test connection
+                </Menu.Item>
+                <Menu.Item
+                  onClick={() =>
+                    setSql(
+                      live
+                        ? 'SELECT CURRENT_TIMESTAMP AS current_time;'
+                        : 'SELECT * FROM agent_events LIMIT 10;',
+                    )
+                  }
+                >
+                  {live ? 'Server time' : 'Read agent events'}
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+            <Popover width={320} position="bottom-end" withinPortal trapFocus returnFocus>
+              <Popover.Target>
+                <Button variant="subtle">Limits</Button>
+              </Popover.Target>
+              <Popover.Dropdown maw="calc(100vw - 32px)">
+                <Text>
+                  {live
+                    ? 'One statement at a time · 1,000 rows / 1 MiB · 15-second timeout. Writes change real data.'
+                    : 'This resource is not connected to a cloud database. Supports SELECT 1 and SELECT * FROM agent_events LIMIT n.'}
+                </Text>
+                <Text size="sm" mt="sm">
+                  ⌘ / Ctrl + Enter to run
+                </Text>
+              </Popover.Dropdown>
+            </Popover>
+            <ActionIcon
+              variant="subtle"
+              size={48}
+              aria-label={expanded ? 'Collapse editor' : 'Expand editor'}
+              title={expanded ? 'Collapse editor' : 'Expand editor'}
+              aria-expanded={expanded}
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? <IconMinimize02 size={20} /> : <IconMaximize02 size={20} />}
+            </ActionIcon>
+          </div>
         </div>
       </Paper>
-      <div className="sample-queries">
-        <span>Try a sample:</span>
-        {live && (
-          <UnstyledButton onClick={() => setSql('SHOW TABLES;')}>List tables</UnstyledButton>
-        )}
-        <UnstyledButton onClick={() => setSql('SELECT 1 AS connected;')}>
-          Test connection
-        </UnstyledButton>
-        <UnstyledButton
-          onClick={() =>
-            setSql(
-              live
-                ? 'SELECT CURRENT_TIMESTAMP AS current_time;'
-                : 'SELECT * FROM agent_events LIMIT 10;',
-            )
-          }
-        >
-          {live ? 'Server time' : 'Read agent events'}
-        </UnstyledButton>
-      </div>
       {notice && <Alert color="yellow">{notice}</Alert>}
       {renderResults(results)}
     </>

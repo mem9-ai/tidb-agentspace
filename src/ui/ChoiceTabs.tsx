@@ -6,11 +6,13 @@ export function ChoiceTabs({
   onChange,
   options,
   children,
+  panelSpacing = 24,
 }: {
   value: string;
   onChange: (value: string) => void;
   options: string[];
   children: ReactNode;
+  panelSpacing?: number;
 }) {
   return (
     <Tabs
@@ -29,7 +31,7 @@ export function ChoiceTabs({
         ))}
       </Tabs.List>
       {options.map((option) => (
-        <Tabs.Panel value={encodeURIComponent(option)} key={option} pt={24}>
+        <Tabs.Panel value={encodeURIComponent(option)} key={option} pt={panelSpacing}>
           {option === value ? children : null}
         </Tabs.Panel>
       ))}

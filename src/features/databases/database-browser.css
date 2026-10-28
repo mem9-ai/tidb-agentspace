@@ -2,7 +2,7 @@
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
   align-items: start;
-  gap: 24px;
+  gap: 16px;
 }
 .database-data {
   display: flex;
@@ -66,13 +66,83 @@
   }
 }
 
-.database-page .page-heading {
-  flex-direction: row;
+.workspace-content.database-content {
+  padding-top: 20px;
+  padding-bottom: 20px;
+}
+.database-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.database-workspace-identity {
+  min-width: 0;
+}
+.database-workspace-identity > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.database-workspace-actions {
+  flex-shrink: 0;
+}
+.database-workspace .panel {
+  margin-bottom: 0;
+}
+.database-workspace .sql-panel {
+  margin-bottom: 12px;
+  --workspace-sql-editor-height: clamp(120px, calc(35dvh - 130px), 180px);
+}
+.database-workspace .sql-panel-expanded {
+  --workspace-sql-editor-height: 420px;
+}
+.database-workspace .sql-input {
+  min-height: 0;
+}
+.database-workspace .sql-toolbar {
+  padding: 12px 16px;
+}
+.database-workspace .editor-bottom {
+  padding: 0 12px 0 16px;
+  gap: 4px 12px;
   align-items: center;
 }
+.sql-editor-tools {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.database-workspace .panel-header {
+  padding: 12px 20px;
+}
+.database-workspace .result-panel .table-scroll {
+  max-height: clamp(220px, calc(100dvh - 590px), 420px);
+  overflow: auto;
+}
+.database-workspace .result-footnote {
+  padding: 10px 20px;
+}
+.database-workspace .database-table-list nav {
+  max-height: min(600px, calc(100dvh - 370px));
+}
+@media (max-width: 1000px) {
+  .database-workspace .database-table-list nav {
+    max-height: 160px;
+  }
+}
 @media (max-width: 700px) {
-  .database-page .page-heading {
-    flex-direction: column;
-    align-items: stretch;
+  .database-workspace-header {
+    flex-wrap: wrap;
+  }
+  .database-workspace-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .database-workspace .sql-panel {
+    --workspace-sql-editor-height: 180px;
+  }
+  .database-workspace .sql-panel-expanded {
+    --workspace-sql-editor-height: 360px;
   }
 }

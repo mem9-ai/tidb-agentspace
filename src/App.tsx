@@ -46,7 +46,6 @@ import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 
 import {
   IconActivity as Activity,
   IconDownload01 as ArrowDownToLine,
-  IconArrowLeft as ArrowLeft,
   IconArrowRight as ArrowRight,
   IconArrowUpRight as ArrowUpRight,
   IconCheck as Check,
@@ -80,6 +79,7 @@ import {
 import type { IconProps } from '@tidbcloud/uikit/icons';
 import { ResourceAccessPicker } from './features/keys/ResourceAccessPicker';
 import { WorkspaceLayout } from './ui/WorkspaceLayout';
+import { DatabaseWorkspaceHeader } from './features/databases/DatabaseWorkspaceHeader';
 import { DatabaseWorkspace } from './features/databases/DatabaseWorkspace';
 import { databaseEditorHash, parseWorkspaceRoute } from './features/navigation/workspace-route';
 import type { Route, WorkspaceRoute } from './features/navigation/workspace-route';
@@ -890,45 +890,18 @@ function DatabaseDetail({
 }: Shared & { database: Resource; routeLocation: WorkspaceRoute }) {
   return (
     <section className="database-page">
-      <a className="text-link database-back" href="#databases">
-        <ArrowLeft size={16} /> All databases
-      </a>
-      <PageHeading
-        eyebrow="DATABASE"
-        title={database.name}
-        description={`${kindLabel[database.kind]} · ${database.provider === 'duckdb-drive9' ? 'Managed DuckDB' : database.provider === 'tidb-cloud-zero' ? 'TiDB Cloud Zero' : 'Local demo'} · ${region(database.region)}`}
-        actions={
-          <Button onClick={() => onConnect(database)}>
-            Connect <ArrowUpRight size={14} />
-          </Button>
-        }
+      <DatabaseWorkspaceHeader
+        database={database}
+        onConnect={() => onConnect(database)}
+        onRetry={async () => {
+          try {
+            await workspaceApi.retryDatabaseSetup(database.id);
+            await refresh();
+          } catch (error) {
+            notify((error as Error).message);
+          }
+        }}
       />
-      {['tidb-cloud-zero', 'duckdb-drive9'].includes(database.provider || '') && (
-        <Alert mb={24} color={database.status === 'expired' ? 'yellow' : 'peacock'}>
-          {database.kind === 'duckdb' && <>Persistent DuckDB · Experimental. </>}
-          {database.expiresAt && (
-            <>
-              Temporary database · Expires {new Date(database.expiresAt).toLocaleString()}. Export
-              important data before expiry.{' '}
-            </>
-          )}
-          {database.connectionError}
-          {database.status === 'provisioning' && (
-            <Button
-              onClick={async () => {
-                try {
-                  await workspaceApi.retryDatabaseSetup(database.id);
-                  await refresh();
-                } catch (error) {
-                  notify((error as Error).message);
-                }
-              }}
-            >
-              Retry setup
-            </Button>
-          )}
-        </Alert>
-      )}
       <DatabaseWorkspace
         database={database}
         databases={data.resources.filter((resource) => resource.kind !== 'filesystem')}

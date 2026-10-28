@@ -159,6 +159,18 @@ verified, and record that as a remaining gap.
   retention, keyboard behavior, both themes and sizes; see [ADR 0007](../decisions/0007-database-browser.md)
   and [unified workspace verification](../database-workspace-verification.md). Revisit for
   multiple query documents, multiple schemas or durable draft persistence.
+- **Database work area density (owner correction 2026-10-28):** prioritize the table list,
+  editor and first query rows within a typical desktop viewport. Keep the database name,
+  protocol/provider and brief expiry in a compact header; move full region/expiry guidance
+  into TiUI Details and SQL budgets into Limits. Keep live-write/demo labels visible and
+  show expired/provisioning/connection errors inline. Collapse optional sample queries into
+  a menu; let users expand the editor without losing SQL or results. Reduce repeated chrome
+  and vertical whitespace, not font size or primary action targets. Use supported component
+  spacing and the shared CodeMirror theme for bounded scrolling. Verify 1280×800/900 and
+  390×844, both themes, keyboard access to disclosures and state retention. Narrow screens,
+  expanded editors, long names and error messages may need page scrolling. See
+  [density verification](../database-density-verification.md); revisit when adding query tabs
+  or resizeable panes.
 - **File reading (accepted and implemented, owner correction 2026-10-27):** open files in
   an inline right-hand panel, keeping the file list usable on desktop. Do not use a centered
   modal or a backdrop for routine reading. On narrow screens show the reading panel with a
