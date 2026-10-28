@@ -6,17 +6,18 @@ import {
   useEditorCacheContext,
 } from '@tidbcloud/tisqleditor-react';
 import { bbedit, oneDark } from '@tidbcloud/codemirror-extension-themes';
-import { MySQL } from '@codemirror/lang-sql';
+import { MySQL, StandardSQL } from '@codemirror/lang-sql';
 import { Prec } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 
 type Props = {
   databaseId: string;
+  dialect: 'mysql' | 'duckdb';
   value: string;
   onChange: (value: string) => void;
   onRun: () => void;
 };
-function Editor({ databaseId, value, onChange, onRun }: Props) {
+function Editor({ databaseId, dialect, value, onChange, onRun }: Props) {
   const cache = useEditorCacheContext();
   const callbacks = useRef({ onChange, onRun });
   useEffect(() => {
@@ -24,7 +25,10 @@ function Editor({ databaseId, value, onChange, onRun }: Props) {
   }, [onChange, onRun]);
   const scheme = useComputedColorScheme('light');
   const palette = useMantineTheme();
-  const sqlConfig = useMemo(() => ({ dialect: MySQL, upperCaseKeywords: true }), []);
+  const sqlConfig = useMemo(
+    () => ({ dialect: dialect === 'duckdb' ? StandardSQL : MySQL, upperCaseKeywords: true }),
+    [dialect],
+  );
   const theme = useMemo(
     () => [
       EditorView.theme({

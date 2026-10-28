@@ -29,8 +29,8 @@ export function DatabaseWorkspace({
   const [draft, dispatch] = useReducer(
     queryDraftReducer,
     tableName
-      ? tableSelectSql(tableName)
-      : database.provider === 'tidb-cloud-zero'
+      ? tableSelectSql(tableName, database.kind === 'duckdb' ? 'duckdb' : 'mysql')
+      : ['tidb-cloud-zero', 'duckdb-drive9'].includes(database.provider || '')
         ? 'SELECT 1 AS connected;'
         : 'SELECT * FROM agent_events LIMIT 10;',
     createQueryDraft,
@@ -40,6 +40,8 @@ export function DatabaseWorkspace({
   );
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [listingBusy, setListingBusy] = useState(true);
+  const [inspectionBusy, setInspectionBusy] = useState(false);
   const editor = useRef<HTMLDivElement>(null);
   const showEditor = () => {
     setOutputView('Query results');
@@ -54,13 +56,18 @@ export function DatabaseWorkspace({
         database={database}
         tableName={tableName}
         onSelect={() => setOutputView('Table details')}
-        onRefresh={() => setRevision((value) => value + 1)}
+        onLoadingChange={setListingBusy}
+        onRefresh={() => {
+          setListingBusy(true);
+          setRevision((value) => value + 1);
+        }}
       />
       <div className="database-editor-area" ref={editor}>
         <SqlQueryPanel
           sql={draft.sql}
           onSqlChange={(sql) => dispatch({ type: 'edit', sql })}
           database={database}
+          readBusy={database.kind === 'duckdb' && (listingBusy || inspectionBusy)}
           databases={databases}
           execute={(sql) => workspaceApi.query({ resourceId: database.id, sql })}
           onComplete={refresh}
@@ -76,14 +83,25 @@ export function DatabaseWorkspace({
             >
               {outputView === 'Query results' ? (
                 results
+              ) : tableName && (listingBusy || busy) ? (
+                <Paper className="panel" p="xl" withBorder>
+                  <Text>Loading database…</Text>
+                </Paper>
               ) : tableName ? (
                 <TableInspector
                   key={`${tableName}:${revision}`}
                   resourceId={database.id}
                   name={tableName}
                   busy={busy}
+                  onLoadingChange={setInspectionBusy}
                   onQuery={() => {
-                    dispatch({ type: 'queryTable', sql: tableSelectSql(tableName) });
+                    dispatch({
+                      type: 'queryTable',
+                      sql: tableSelectSql(
+                        tableName,
+                        database.kind === 'duckdb' ? 'duckdb' : 'mysql',
+                      ),
+                    });
                     showEditor();
                   }}
                 />

@@ -31,7 +31,13 @@ export function ResourceAccessPicker({
             disabled={allResources}
             checked={allResources || resourceIds.includes(resource.id)}
             label={resource.name}
-            description={resource.kind === 'mysql' ? 'MySQL' : 'File System'}
+            description={
+              resource.kind === 'mysql'
+                ? 'MySQL'
+                : resource.kind === 'duckdb'
+                  ? 'DuckDB'
+                  : 'File System'
+            }
             onChange={(event) =>
               onChange(
                 event.currentTarget.checked

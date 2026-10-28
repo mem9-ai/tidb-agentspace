@@ -10,8 +10,13 @@ export async function copySqlDependencies(root, staged) {
     try {
       entry = createRequire(resolve(from, 'package.json')).resolve(name);
     } catch (error) {
-      if (optional && error.code === 'MODULE_NOT_FOUND') return;
-      throw error;
+      // Platform bindings have no root JS entry; their package contains a native .node file.
+      try {
+        entry = createRequire(resolve(from, 'package.json')).resolve(name + '/package.json');
+      } catch {
+        if (optional && error.code === 'MODULE_NOT_FOUND') return;
+        throw error;
+      }
     }
     let directory = dirname(entry),
       pkg;
@@ -37,4 +42,5 @@ export async function copySqlDependencies(root, staged) {
       await copy(dependency, directory, true);
   }
   await copy('mysql2', root);
+  await copy('@duckdb/node-api', root);
 }

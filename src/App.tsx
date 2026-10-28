@@ -101,10 +101,12 @@ const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string 
 };
 const kindLabel: Record<Kind, string> = {
   mysql: 'MySQL',
+  duckdb: 'DuckDB',
   filesystem: 'File System',
 };
 const kindDescription: Record<Kind, string> = {
   mysql: 'Relational memory for your agents.',
+  duckdb: 'Analytics in a persistent DuckDB database.',
   filesystem: 'Persistent context, across sessions.',
 };
 const allScopes: CreateKeyInput['scopes'] = [
@@ -377,7 +379,9 @@ function App() {
     <>
       <WorkspaceLayout
         liveFiles={data.resources.some((r) => r.provider === 'drive9-anonymous')}
-        liveDatabases={data.resources.some((r) => r.provider === 'tidb-cloud-zero')}
+        liveDatabases={data.resources.some((r) =>
+          ['tidb-cloud-zero', 'duckdb-drive9'].includes(r.provider || ''),
+        )}
         workspaceName={data.workspace.name}
         profileName={data.profile.name}
         active={route}
@@ -507,11 +511,11 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
         </Button>
       </div>
       <section className="resource-grid">
-        {(['mysql', 'filesystem'] as Kind[]).map((kind) => {
+        {(['mysql', 'duckdb', 'filesystem'] as Kind[]).map((kind) => {
           const items = data.resources.filter((r) => r.kind === kind),
             r =
               items.find((r) =>
-                ['tidb-cloud-zero', 'drive9-anonymous'].includes(r.provider || ''),
+                ['tidb-cloud-zero', 'drive9-anonymous', 'duckdb-drive9'].includes(r.provider || ''),
               ) || items[0];
           return (
             <Card className="resource-card" key={kind}>
@@ -754,8 +758,8 @@ function Databases({ routeLocation, ...shared }: Shared & { routeLocation: Works
       />
       <Alert className="notice" color="peacock" icon={<Database size={17} />}>
         <span>
-          Use one Workspace Key for your MySQL databases and files. Each key has its own resource
-          and action permissions.
+          Use one Workspace Key for your MySQL and DuckDB databases and files. Each key has its own
+          resource and action permissions.
         </span>
       </Alert>
       {!databases.length ? (
@@ -814,7 +818,9 @@ function Databases({ routeLocation, ...shared }: Shared & { routeLocation: Works
                     </Badge>
                   </Table.Td>
                   <Table.Td>
-                    {r.provider === 'tidb-cloud-zero' ? (
+                    {r.provider === 'duckdb-drive9' ? (
+                      <Badge color="peacock">DuckDB · Experimental</Badge>
+                    ) : r.provider === 'tidb-cloud-zero' ? (
                       <>
                         <Badge color="green">Zero trial</Badge>
                         {r.expiresAt && (
@@ -851,14 +857,14 @@ function Databases({ routeLocation, ...shared }: Shared & { routeLocation: Works
           <Heading level={3}>Start with a query</Heading>
           <Text component="p">
             Choose a database to browse tables, inspect columns and indexes, and preview data. Live
-            databases execute SQL on TiDB Cloud Zero. Resources marked Local demo show sample data.
+            databases use TiDB Cloud Zero or DuckDB. Resources marked Local demo show sample data.
           </Text>
         </Paper>
         <Paper className="panel info-panel" withBorder>
           <Workflow size={22} />
           <Heading level={3}>Built for your existing tools</Heading>
           <Text component="p">
-            Use a single Workspace Key through the API. MySQL connections are handled inside the
+            Use a single Workspace Key through the API. Database connections are handled inside the
             backend. Internal connection credentials stay private.
           </Text>
           <a
@@ -890,15 +896,16 @@ function DatabaseDetail({
       <PageHeading
         eyebrow="DATABASE"
         title={database.name}
-        description={`${kindLabel[database.kind]} · ${database.provider === 'tidb-cloud-zero' ? 'TiDB Cloud Zero' : 'Local demo'} · ${region(database.region)}`}
+        description={`${kindLabel[database.kind]} · ${database.provider === 'duckdb-drive9' ? 'Managed DuckDB' : database.provider === 'tidb-cloud-zero' ? 'TiDB Cloud Zero' : 'Local demo'} · ${region(database.region)}`}
         actions={
           <Button onClick={() => onConnect(database)}>
             Connect <ArrowUpRight size={14} />
           </Button>
         }
       />
-      {database.provider === 'tidb-cloud-zero' && (
+      {['tidb-cloud-zero', 'duckdb-drive9'].includes(database.provider || '') && (
         <Alert mb={24} color={database.status === 'expired' ? 'yellow' : 'peacock'}>
+          {database.kind === 'duckdb' && <>Persistent DuckDB · Experimental. </>}
           {database.expiresAt && (
             <>
               Temporary database · Expires {new Date(database.expiresAt).toLocaleString()}. Export
@@ -1530,7 +1537,7 @@ function Connect({ data, copy }: Shared) {
   const snippet = `# Discover your workspace resources\ncurl ${apiOrigin}${base}/resources \\\n  -H "Authorization: Bearer $WORKSPACE_API_KEY"`;
   const python = `import os, json, urllib.request\n\nreq = urllib.request.Request(\n    "${apiOrigin}${base}/resources",\n    headers={"Authorization": "Bearer " + os.environ["WORKSPACE_API_KEY"]}\n)\nwith urllib.request.urlopen(req) as response:\n    print(json.load(response))`;
   const js = `const response = await fetch(\n  "${apiOrigin}${base}/resources",\n  { headers: { Authorization: \`Bearer \${process.env.WORKSPACE_API_KEY}\` } }\n);\nconsole.log(await response.json());`;
-  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiOrigin}/api/v1\nOpenAPI: ${apiOrigin}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for directory listings and UTF-8 writes; Drive9 listings contain metadata only. Use /files/content?resourceId=ID&path=PATH for binary upload/download and add preview=1 for bounded text previews. Use /resources/{resourceId}/tables to list tables, /resources/{resourceId}/table?name=NAME for columns and indexes, and /resources/{resourceId}/table/rows?name=NAME for up to 100 preview rows. Encode the exact table name as a query parameter. These reads require queries:execute and resource access, just like /queries for SQL on the selected database. Resources marked tidb-cloud-zero execute real SQL; queries:execute permits reads and writes within the database role. Run one statement per request; results are limited to 1,000 rows / 1 MiB and queries to 15 seconds. A timeout can leave a write outcome unknown; verify before retrying.\nOnly call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local Workspace gateway. File Systems marked drive9-anonymous use real Singapore trial storage. Databases marked tidb-cloud-zero connect to real temporary MySQL databases. Check expiresAt and export important data before expiration. Other databases remain demos. Cloud telemetry is not measured.\nDo not upload credentials to the workspace or commit them to Git.\n`;
+  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiOrigin}/api/v1\nOpenAPI: ${apiOrigin}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for directory listings and UTF-8 writes; Drive9 listings contain metadata only. Use /files/content?resourceId=ID&path=PATH for binary upload/download and add preview=1 for bounded text previews. Use /resources/{resourceId}/tables to list tables, /resources/{resourceId}/table?name=NAME for columns and indexes, and /resources/{resourceId}/table/rows?name=NAME for up to 100 preview rows. Encode the exact table name as a query parameter. These reads require queries:execute and resource access, just like /queries for SQL on the selected database. Resources marked tidb-cloud-zero or duckdb-drive9 execute real SQL; queries:execute permits reads and writes within the database role. Run one statement per request; results are limited to 1,000 rows / 1 MiB and queries to 15 seconds. A timeout can leave a write outcome unknown; verify before retrying.\nOnly call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local Workspace gateway. File Systems marked drive9-anonymous use real Singapore trial storage. Databases marked tidb-cloud-zero connect to real temporary MySQL databases. Check expiresAt and export important data before expiration. Databases marked duckdb-drive9 use native DuckDB with service-managed storage. Other databases remain demos. Cloud telemetry is not measured.\nDo not upload credentials to the workspace or commit them to Git.\n`;
   return (
     <>
       <PageHeading
@@ -1684,8 +1691,8 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
       />
       <Alert className="notice" color="peacock" icon={<ShieldCheck size={18} />}>
         <span>
-          One Workspace Key can access MySQL and files. Choose its allowed resources and actions;
-          provider credentials are managed by the service.
+          One Workspace Key can access MySQL, DuckDB and files. Choose its allowed resources and
+          actions; provider credentials are managed by the service.
         </span>
       </Alert>
       <div className="section-title">
@@ -2081,9 +2088,11 @@ function Monitoring({ data }: Shared) {
                       <Table.Td>
                         {r.provider === 'drive9-anonymous'
                           ? 'Live trial'
-                          : r.provider === 'tidb-cloud-zero'
-                            ? 'Zero trial'
-                            : 'Local demo'}
+                          : r.provider === 'duckdb-drive9'
+                            ? 'DuckDB'
+                            : r.provider === 'tidb-cloud-zero'
+                              ? 'Zero trial'
+                              : 'Local demo'}
                       </Table.Td>
                       <Table.Td>
                         <span className="status">
@@ -2416,6 +2425,8 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
   const liveFiles =
     kind === 'filesystem' && data.capabilities.filesystem.provider === 'drive9-anonymous';
   const liveMysql = kind === 'mysql' && data.capabilities.mysql.provider === 'tidb-cloud-zero';
+  const isDuckdb = kind === 'duckdb';
+  const unavailable = isDuckdb && data.capabilities.duckdb.available === false;
   function changeKind(k: Kind) {
     setKind(k);
     setRegion(data.capabilities[k].regions[0]);
@@ -2429,11 +2440,13 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
       await workspaceApi.createResource({ name, kind, region: selectedRegion }, createId.current);
       await refresh();
       notify(
-        liveMysql
-          ? 'Zero database requested'
-          : liveFiles
-            ? 'Trial File System requested'
-            : 'Demo resource created',
+        isDuckdb
+          ? 'DuckDB database requested'
+          : liveMysql
+            ? 'Zero database requested'
+            : liveFiles
+              ? 'Trial File System requested'
+              : 'Demo resource created',
       );
       onClose();
     } catch (e) {
@@ -2464,7 +2477,7 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
           value={kind}
           onChange={(e) => {
             const next = e.currentTarget.value;
-            if (next === 'mysql' || next === 'filesystem') changeKind(next);
+            if (next === 'mysql' || next === 'duckdb' || next === 'filesystem') changeKind(next);
           }}
           data={[
             {
@@ -2474,6 +2487,7 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
                   ? 'MySQL · TiDB Cloud Zero'
                   : 'MySQL demo',
             },
+            { value: 'duckdb', label: 'DuckDB' },
             { value: 'filesystem', label: 'File System' },
           ]}
         />
@@ -2492,13 +2506,15 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
           label="Region"
           description={
             <>
-              {liveMysql
-                ? 'TiDB Cloud Zero assigns the database region automatically.'
-                : kind === 'filesystem'
-                  ? liveFiles
-                    ? 'Anonymous trial hosted in AWS Singapore.'
-                    : 'Defaults to AWS Singapore. The free-tier allowance applies per region.'
-                  : 'Available regions depend on the resource provider.'}
+              {isDuckdb
+                ? 'Your DuckDB database runs in AWS Singapore.'
+                : liveMysql
+                  ? 'TiDB Cloud Zero assigns the database region automatically.'
+                  : kind === 'filesystem'
+                    ? liveFiles
+                      ? 'Anonymous trial hosted in AWS Singapore.'
+                      : 'Defaults to AWS Singapore. The free-tier allowance applies per region.'
+                    : 'Available regions depend on the resource provider.'}
             </>
           }
           value={selectedRegion}
@@ -2519,12 +2535,28 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
           <div>
             <Zap size={17} />
             <strong>
-              {liveMysql ? 'Temporary MySQL database' : liveFiles ? 'Anonymous trial' : 'Free tier'}
+              {isDuckdb
+                ? 'DuckDB database'
+                : liveMysql
+                  ? 'Temporary MySQL database'
+                  : liveFiles
+                    ? 'Anonymous trial'
+                    : 'Free tier'}
             </strong>
-            <Badge>{liveMysql ? 'Zero' : kind === 'mysql' ? 'Demo' : 'Preview'}</Badge>
+            <Badge>
+              {isDuckdb
+                ? 'Experimental'
+                : liveMysql
+                  ? 'Zero'
+                  : kind === 'mysql'
+                    ? 'Demo'
+                    : 'Preview'}
+            </Badge>
           </div>
           <Text component="p">
-            {liveMysql ? (
+            {isDuckdb ? (
+              'A persistent DuckDB database for SQL analytics. Workspace Keys control access; trial service limits apply.'
+            ) : liveMysql ? (
               'No cloud account required. This real database expires within 30 days; export data before it expires.'
             ) : liveFiles ? (
               'Real file storage. Trial quotas are enforced by the service.'
@@ -2538,13 +2570,20 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
             )}
           </Text>
           <small>
-            {liveMysql
-              ? 'Creates a real TiDB Cloud Zero database. Internal credentials stay in the backend. Use Workspace Keys for access.'
-              : liveFiles
-                ? 'Creates a real trial File System. Internal credentials are managed by the Workspace service.'
-                : 'Local simulation. No real cloud resource will be provisioned.'}
+            {isDuckdb
+              ? 'Create tables, run SQL and browse your data from this database.'
+              : liveMysql
+                ? 'Creates a real TiDB Cloud Zero database. Internal credentials stay in the backend. Use Workspace Keys for access.'
+                : liveFiles
+                  ? 'Creates a real trial File System. Internal credentials are managed by the Workspace service.'
+                  : 'Local simulation. No real cloud resource will be provisioned.'}
           </small>
         </div>
+        {unavailable && (
+          <Alert color="yellow">
+            DuckDB is not configured on this server. Contact your workspace operator.
+          </Alert>
+        )}
         {limited && (
           <Alert className="notice" color="peacock" icon={<CircleHelp size={17} />}>
             <span>
@@ -2564,7 +2603,7 @@ function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: 
           </Button>
           <Button
             variant="filled"
-            disabled={busy || limited}
+            disabled={busy || limited || unavailable}
             loading={busy}
             leftSection={<Plus size={18} />}
             type="submit"
@@ -2799,9 +2838,11 @@ function Connection({
           label={
             r.provider === 'drive9-anonymous'
               ? 'WORKSPACE API · LIVE FILE TRIAL'
-              : r.provider === 'tidb-cloud-zero'
-                ? 'WORKSPACE API · LIVE ZERO'
-                : 'WORKSPACE API · LOCAL DEMO'
+              : r.provider === 'duckdb-drive9'
+                ? 'WORKSPACE API · DUCKDB'
+                : r.provider === 'tidb-cloud-zero'
+                  ? 'WORKSPACE API · LIVE ZERO'
+                  : 'WORKSPACE API · LOCAL DEMO'
           }
           value={tab === 'REST API' ? shell : tab === 'JavaScript' ? javascript : python}
         />
@@ -2811,9 +2852,11 @@ function Connection({
         <Text component="p">
           {r.provider === 'drive9-anonymous'
             ? 'Files are stored in the Singapore anonymous trial. Use the file content API for upload, preview, and download; provider credentials stay inside the service. Native file mounts are not available yet.'
-            : r.provider === 'tidb-cloud-zero'
-              ? 'SQL runs on a temporary TiDB Cloud Zero database through the Workspace API. This key action permits reads and writes within the internal database role; connection credentials remain private.'
-              : 'Provider credentials are handled by the service. This resource uses a local demo provider; native database connections and file mounts are not available yet.'}
+            : r.provider === 'duckdb-drive9'
+              ? 'SQL runs in your persistent DuckDB database through the Workspace API. Use this database resource and queries:execute; internal storage and credentials are managed by the service.'
+              : r.provider === 'tidb-cloud-zero'
+                ? 'SQL runs on a temporary TiDB Cloud Zero database through the Workspace API. This key action permits reads and writes within the internal database role; connection credentials remain private.'
+                : 'Provider credentials are handled by the service. This resource uses a local demo provider; native database connections and file mounts are not available yet.'}
         </Text>
       </div>
       <div className="modal-actions">

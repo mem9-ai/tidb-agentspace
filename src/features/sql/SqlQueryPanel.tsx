@@ -23,11 +23,11 @@ const WorkspaceSqlInput = lazy(() => import('./WorkspaceSqlInput'));
 type DatabaseResource = {
   id: string;
   name: string;
-  kind: 'mysql' | 'filesystem';
+  kind: 'mysql' | 'duckdb' | 'filesystem';
   provider?: string;
   status: string;
 };
-const kindLabel = { mysql: 'MySQL', filesystem: 'File System' };
+const kindLabel = { mysql: 'MySQL', duckdb: 'DuckDB', filesystem: 'File System' };
 type Props = {
   sql: string;
   onSqlChange: (sql: string) => void;
@@ -35,6 +35,7 @@ type Props = {
   onRunningChange: (running: boolean) => void;
   renderResults: (results: React.ReactNode) => React.ReactNode;
   database: DatabaseResource;
+  readBusy: boolean;
   databases: DatabaseResource[];
   execute: (sql: string) => Promise<QueryResult>;
   onComplete: () => Promise<void>;
@@ -48,6 +49,7 @@ export function SqlQueryPanel({
   onRunningChange,
   renderResults,
   database,
+  readBusy,
   databases,
   execute,
   onComplete,
@@ -56,14 +58,14 @@ export function SqlQueryPanel({
 }: Props) {
   const dbs = databases;
   const resourceId = database.id;
-  const live = database.provider === 'tidb-cloud-zero';
+  const live = ['tidb-cloud-zero', 'duckdb-drive9'].includes(database.provider || '');
   const [busy, setBusy] = useState(false),
     [result, setResult] = useState<QueryResult | null>(null),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
   const running = useRef(false);
   async function run() {
-    if (running.current || database.status !== 'active') return;
+    if (running.current || readBusy || database.status !== 'active') return;
     running.current = true;
     setBusy(true);
     onRunningChange(true);
@@ -193,7 +195,7 @@ export function SqlQueryPanel({
             variant="filled"
             loading={busy}
             leftSection={<Play size={18} />}
-            disabled={busy || !resourceId || database.status !== 'active'}
+            disabled={busy || readBusy || !resourceId || database.status !== 'active'}
             onClick={run}
           >
             {busy ? 'Running…' : 'Run query'}
@@ -209,6 +211,7 @@ export function SqlQueryPanel({
         >
           <WorkspaceSqlInput
             databaseId={database.id}
+            dialect={database.kind === 'duckdb' ? 'duckdb' : 'mysql'}
             value={sql}
             onChange={setSql}
             onRun={() => void run()}

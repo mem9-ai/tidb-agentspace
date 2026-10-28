@@ -164,7 +164,7 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Resume setup on the same Zero instance; never create a replacement for an uncertain request
+     * Resume managed database setup on the same saved storage/instance; never replace an uncertain request
      * @description Required workspace key scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint.
      */
     post: operations['retryDatabaseSetup'];
@@ -433,7 +433,7 @@ export interface components {
       id: string;
       name: string;
       /** @enum {unknown} */
-      kind: 'mysql' | 'filesystem';
+      kind: 'mysql' | 'duckdb' | 'filesystem';
       region: string;
       /** @enum {unknown} */
       status:
@@ -442,7 +442,7 @@ export interface components {
        * @description Missing on legacy local resources.
        * @enum {unknown}
        */
-      provider?: 'local' | 'drive9-anonymous' | 'tidb-cloud-zero';
+      provider?: 'local' | 'drive9-anonymous' | 'tidb-cloud-zero' | 'duckdb-drive9';
       /** @description Negotiated gateway upload limit; zero means uploads are unavailable. */
       uploadLimitBytes?: number;
       connectionError?: string;
@@ -558,7 +558,7 @@ export interface components {
       resourceId: string;
       name: string;
       /** @enum {unknown} */
-      kind: 'mysql' | 'filesystem';
+      kind: 'mysql' | 'duckdb' | 'filesystem';
       storageBytes: number | null;
       storageLimitBytes: number | null;
       monthlyRU: number | null;
@@ -574,9 +574,12 @@ export interface components {
       maxFiles?: number | null;
       preview: boolean;
       provider?: string;
+      /** @description False when the operator has not configured a verified native DuckDB runtime. */
+      available?: boolean;
     };
     Capabilities: {
       mysql: components['schemas']['Capability'];
+      duckdb: components['schemas']['Capability'];
       filesystem: components['schemas']['Capability'];
     };
     Bootstrap: {
@@ -1183,7 +1186,7 @@ export interface operations {
         'application/json': {
           name: string;
           /** @enum {unknown} */
-          kind: 'mysql' | 'filesystem';
+          kind: 'mysql' | 'duckdb' | 'filesystem';
           /**
            * @description Choose a region supported by the resource kind in capabilities. Zero MySQL uses automatic provider assignment. The first supported region is the Console default.
            * @enum {string}
@@ -2599,7 +2602,7 @@ export interface operations {
       content: {
         'application/json': {
           resourceId: string;
-          /** @description Live Zero: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n]. */
+          /** @description Live Zero/DuckDB: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n]. */
           sql: string;
         };
       };

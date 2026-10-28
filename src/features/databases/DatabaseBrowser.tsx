@@ -131,12 +131,24 @@ function Indexes({ detail }: { detail: TableDetail }) {
     </div>
   );
 }
-function Rows({ resourceId, name }: { resourceId: string; name: string }) {
+function Rows({
+  resourceId,
+  name,
+  onLoadingChange,
+}: {
+  resourceId: string;
+  name: string;
+  onLoadingChange: (loading: boolean) => void;
+}) {
   const load = useCallback(
     (signal: AbortSignal) => workspaceApi.tableRows(resourceId, name, signal),
     [resourceId, name],
   );
   const rows = useRead(load);
+  useEffect(() => {
+    onLoadingChange(rows.loading);
+    return () => onLoadingChange(false);
+  }, [rows.loading, onLoadingChange]);
   return (
     <div className="database-data">
       <div className="database-section-header">
@@ -203,17 +215,23 @@ export function TableInspector({
   name,
   onQuery,
   busy,
+  onLoadingChange,
 }: {
   resourceId: string;
   name: string;
   onQuery: () => void;
   busy: boolean;
+  onLoadingChange: (loading: boolean) => void;
 }) {
   const load = useCallback(
     (signal: AbortSignal) => workspaceApi.table(resourceId, name, signal),
     [resourceId, name],
   );
   const detail = useRead(load);
+  useEffect(() => {
+    onLoadingChange(detail.loading);
+    return () => onLoadingChange(false);
+  }, [detail.loading, onLoadingChange]);
   const [tab, setTab] = useState('Columns');
   return (
     <Paper className="panel database-detail" p="xl" withBorder>
@@ -250,7 +268,7 @@ export function TableInspector({
               ) : tab === 'Indexes' ? (
                 <Indexes detail={detail.data} />
               ) : (
-                <Rows resourceId={resourceId} name={name} />
+                <Rows resourceId={resourceId} name={name} onLoadingChange={onLoadingChange} />
               )}
             </ChoiceTabs>
           )
@@ -264,17 +282,22 @@ export function DatabaseTableList({
   tableName,
   onSelect,
   onRefresh,
+  onLoadingChange,
 }: {
   database: Resource;
   tableName?: string;
   onSelect: () => void;
   onRefresh: () => void;
+  onLoadingChange: (loading: boolean) => void;
 }) {
   const load = useCallback(
     (signal: AbortSignal) => workspaceApi.tables(database.id, signal),
     [database.id],
   );
   const listing = useRead(load);
+  useEffect(() => {
+    onLoadingChange(listing.loading);
+  }, [listing.loading, onLoadingChange]);
   const [search, setSearch] = useState('');
   const matches =
     listing.data?.data.filter((table) =>
@@ -304,7 +327,9 @@ export function DatabaseTableList({
         >
           Refresh tables
         </Button>
-        {database.provider !== 'tidb-cloud-zero' && <Badge>Local demo</Badge>}
+        {!['tidb-cloud-zero', 'duckdb-drive9'].includes(database.provider || '') && (
+          <Badge>Local demo</Badge>
+        )}
         {listing.loading ? (
           <Loading>Loading tables…</Loading>
         ) : listing.error ? (

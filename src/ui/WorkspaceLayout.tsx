@@ -187,7 +187,7 @@ export function WorkspaceLayout({
           <Text size="sm">Local Workspace gateway</Text>
           <Text size="sm">
             {liveDatabases
-              ? 'Live Zero databases · Cloud usage is not measured'
+              ? 'Live databases · Cloud usage is not measured'
               : liveFiles
                 ? 'Drive9 files are live · Databases & telemetry are simulated'
                 : 'Product prototype · Cloud resources & telemetry are simulated'}

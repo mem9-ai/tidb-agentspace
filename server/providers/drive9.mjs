@@ -138,6 +138,17 @@ export async function createDrive9({ credentialsFile, transport = fetch }) {
     return status(resourceId);
   }
   return {
+    // Backend-only binding for private database workers; never serialize through the product API.
+    internalConnection(resourceId) {
+      const binding = vault.read().bindings[resourceId];
+      if (!binding?.apiKey)
+        throw fileError(
+          503,
+          'PROVIDER_BINDING_MISSING',
+          'Database storage needs operator recovery.',
+        );
+      return { endpoint, apiKey: binding.apiKey };
+    },
     status,
     provision(resourceId) {
       if (!provisioning.has(resourceId)) {

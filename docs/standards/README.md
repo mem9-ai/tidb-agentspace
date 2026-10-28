@@ -46,3 +46,5 @@ For database integration, read [the Zero SQL boundary](../decisions/0006-zero-sq
 For File System analytics or shell tooling, read [the capability discovery](../file-analysis-discovery.md)
 and [GH-26 design baseline](../../specs/gh-26/spec.md). Verify deployed Exec availability separately
 from DuckDB/Just Bash library support; preserve the Workspace credential and selected-file boundaries.
+
+For DuckDB integrations, read [private database storage](../decisions/0008-duckdb-private-storage.md) and [the runtime guide](../duckdb-databases.md). Backing filesystems are internal bindings, not public resources or Key targets.

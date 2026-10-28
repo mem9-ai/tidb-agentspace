@@ -16,13 +16,13 @@ const schemas = {
     properties: {
       id: { type: 'string' },
       name: { type: 'string' },
-      kind: { enum: ['mysql', 'filesystem'] },
+      kind: { enum: ['mysql', 'duckdb', 'filesystem'] },
       region: { type: 'string' },
       status: {
         enum: ['active', 'provisioning', 'failed', 'suspended', 'deleting', 'deleted', 'expired'],
       },
       provider: {
-        enum: ['local', 'drive9-anonymous', 'tidb-cloud-zero'],
+        enum: ['local', 'drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9'],
         description: 'Missing on legacy local resources.',
       },
       uploadLimitBytes: {
@@ -186,7 +186,7 @@ Object.assign(schemas, {
   Usage: object({
     resourceId: str,
     name: str,
-    kind: { enum: ['mysql', 'filesystem'] },
+    kind: { enum: ['mysql', 'duckdb', 'filesystem'] },
     storageBytes: { type: ['integer', 'null'] },
     storageLimitBytes: { type: ['integer', 'null'] },
     monthlyRU: { type: ['integer', 'null'] },
@@ -203,11 +203,15 @@ Object.assign(schemas, {
       maxFiles: { type: ['integer', 'null'] },
       preview: { type: 'boolean' },
       provider: str,
+      available: {
+        type: 'boolean',
+        description: 'False when the operator has not configured a verified native DuckDB runtime.',
+      },
     },
     ['label', 'regions', 'storageGiB', 'preview'],
   ),
   Capabilities: object(
-    Object.fromEntries(['mysql', 'filesystem'].map((kind) => [kind, ref('Capability')])),
+    Object.fromEntries(['mysql', 'duckdb', 'filesystem'].map((kind) => [kind, ref('Capability')])),
   ),
   Bootstrap: object({
     workspace: ref('Workspace'),
@@ -315,7 +319,7 @@ const paths = {
           required: ['name', 'kind', 'region'],
           properties: {
             name: { type: 'string', pattern: '^[a-z][a-z0-9-]{2,39}$' },
-            kind: { enum: ['mysql', 'filesystem'] },
+            kind: { enum: ['mysql', 'duckdb', 'filesystem'] },
             region: {
               ...regionSchema,
               description:
@@ -453,7 +457,7 @@ const paths = {
     parameters: [{ name: 'resourceId', in: 'path', required: true, schema: str }],
     post: operation(
       'retryDatabaseSetup',
-      'Resume setup on the same Zero instance; never create a replacement for an uncertain request',
+      'Resume managed database setup on the same saved storage/instance; never replace an uncertain request',
       'resources:write',
       {
         output: { type: 'object', properties: { data: { $ref: '#/components/schemas/Resource' } } },
@@ -523,7 +527,7 @@ const paths = {
             sql: {
               type: 'string',
               description:
-                'Live Zero: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n].',
+                'Live Zero/DuckDB: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n].',
             },
           },
         },

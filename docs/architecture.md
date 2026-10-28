@@ -2,7 +2,7 @@
 
 Design baseline: 2026-10-27. This is the proposed architecture for an independent developer
 and agent product. The repository currently implements a loopback-only interactive prototype
-with demo databases and an opt-in real Singapore Drive9 anonymous File System. Anonymous Zero MySQL provisioning and SQL execution are implemented and verified; PostgreSQL is temporarily disabled. Persistent Starter and PG support below remain proposals; see [ADR 0006](decisions/0006-zero-sql-gateway.md). See [ADR 0004](decisions/0004-drive9-anonymous-provider.md) for the implemented provider boundary. See [ADR 0001](decisions/0001-unified-workspace-key.md) for the
+with demo databases and an opt-in real Singapore Drive9 anonymous File System. Anonymous Zero MySQL and native DuckDB with private dedicated storage are implemented; PostgreSQL is temporarily disabled. Persistent Starter and PG support below remain proposals; see [ADR 0006](decisions/0006-zero-sql-gateway.md). See [ADR 0004](decisions/0004-drive9-anonymous-provider.md) for the implemented provider boundary. See [ADR 0001](decisions/0001-unified-workspace-key.md) for the
 accepted single-key authorization model.
 
 The [intent driven development system](standards/intent-driven-development.md) records the
@@ -177,6 +177,8 @@ Review adapter calls, dependency manifests, build/release scripts, and setup doc
 CLI prerequisites. Run the shared quality gate without requiring Ti CLI; current checks do not
 automatically prove every integration follows this rule. Revisit it only when the owner changes
 the integration requirement, documenting any accepted exception and its scope.
+
+DuckDB uses a dedicated hidden backing File System and native worker runtime. Only its database resource is public; read [ADR 0008](decisions/0008-duckdb-private-storage.md) and [runtime operations](duckdb-databases.md).
 
 ## Customer identity and single-key access
 
