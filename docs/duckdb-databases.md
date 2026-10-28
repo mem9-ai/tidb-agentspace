@@ -10,6 +10,20 @@ with its own Tables and SQL Editor. Use `queries:execute` and that database's re
 the same Workspace Key can separately permit MySQL and standalone Files. Creating DuckDB
 requires the existing `resources:write` action and workspace-wide resource grant.
 
+DuckDB is a native persistent database through tidbfs **native database mode**, not a set of
+selected source files. The service loads the extension, attaches
+`tidbfs+db:///workspace.duckdb` as `workspace`, and makes that catalog current. Tables, views,
+SQL execution, WAL and checkpoints use DuckDB's own engine. Customers use normal DuckDB SQL
+such as `CREATE TABLE`, `INSERT`, `SELECT` and `CHECKPOINT`; they do not configure storage
+secrets or attach the backing file themselves. See the plugin's
+[native database guide](https://github.com/drive9-ai/duckdb/blob/main/docs/native-database.md).
+
+The Console uses the same resource selector, Tables, SQL Editor and results layout as the
+other databases. Following the owner correction in [GH-50](https://github.com/siddontang/tidb.ai/issues/50),
+it does not show the custom File sources picker/counter or send snapshot sources with editor
+queries. File System Analyze and the separate query-source API described below are optional
+file-analysis capabilities; neither defines DuckDB storage or is needed for database SQL.
+
 The backend creates a dedicated anonymous File System and keeps the binding private. The
 backing store is absent from resource lists, File System pages, Key targets, usage and events.
 File APIs cannot address it, even with a wildcard key. Customers cannot supply/select a
@@ -19,7 +33,8 @@ public file interface.
 
 ## Operator runtime setup
 
-For CSV, JSON and Parquet in public File Systems, see [Workspace file sources](#workspace-file-sources).
+For the optional API for CSV, JSON and Parquet in public File Systems, see
+[Workspace file sources](#workspace-file-sources).
 
 Use Node/npm from the repository pins and `npm ci`. The pinned `@duckdb/node-api@2.0.0-r.1`
 provides DuckDB 2.0.0. Supply the exact matching platform/version of the native tidbfs artifact
@@ -103,12 +118,12 @@ not MySQL or PG protocol support. Cloud usage/allowances are unmeasured (null).
 
 ## Workspace file sources
 
-In the DuckDB workspace, choose **Add file source**, select a File System and file, and give
-it a unique table name. Browse folders or enter a directory. CSV, JSON, JSONL/NDJSON and Parquet
-are supported. **Query orders** prepares `SELECT * FROM files."orders" LIMIT 100;`; it does
-not run it. Existing edited SQL requires a replace/keep choice. Add multiple named sources
-to join them and existing database tables. Removing/changing sources clears prior results.
-Source selections stay in this page's memory; every execution reads fresh snapshots.
+This optional snapshot API is retained for compatibility. It is separate from native database
+mode and is no longer exposed in the Console database workspace. The earlier Add file source /
+Query controls are historical; [GH-50](https://github.com/siddontang/tidb.ai/issues/50) supersedes
+that Console presentation. Use File System **Analyze** for selected-file analysis in the Console.
+CSV, JSON, JSONL/NDJSON and Parquet sources can still be joined with native database tables
+through explicit API requests; every execution reads fresh snapshots.
 
 Agents use the same query API, with **all** of `queries:execute`, `files:read`, `files:analyze`,
 the DuckDB resource grant and each source File System grant. Existing Keys do not gain the

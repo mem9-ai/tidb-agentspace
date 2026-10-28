@@ -78,7 +78,9 @@ page heading/actions, a resource selector with provider/region/status context, t
 beside the working panel. The database selector is above both Tables and SQL Editor; it must
 not live inside the editor it controls. File System uses the same layout even before selecting
 a file, with an explicit unselected-file panel on desktop. Tables and Files share item chrome,
-browser width and collapse behavior; DuckDB file sources remain inside the SQL working panel.
+browser width and collapse behavior. DuckDB uses tidbfs native database mode and the same
+Tables/SQL experience; its workspace has no custom file-source picker. Optional snapshot
+queries remain a separate API capability, with File System Analyze for Console file analysis.
 Existing resource/table/file URLs and busy/draft protections remain authoritative. See
 [resource workspace verification](resource-workspace-verification.md).
 

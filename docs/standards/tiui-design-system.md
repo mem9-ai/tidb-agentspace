@@ -315,11 +315,13 @@ document routing and application health, not visual fidelity.
 
 DuckDB is a customer database type with internal storage. Its create form, database pages and Key targets show DuckDB only; do not add its backing File System to Console navigation or permissions. Native worker/runtime configuration belongs in operator docs, not customer workflows. See [ADR 0008](../decisions/0008-duckdb-private-storage.md).
 
-DuckDB file sources use TiUI forms inside the database workspace, with each public File System,
-path and table alias visible. Selection prepares SQL only on explicit action, preserving edited
-drafts and the unified table/editor layout. Invalidate file-derived results whenever source
-selection changes, including removing and re-adding the same path. Keep source edits disabled
-while running and explain read-only/query lifetime and input limits. See [ADR 0009](../decisions/0009-duckdb-file-sources.md).
+Following the owner's native-database correction in [GH-50](https://github.com/siddontang/tidb.ai/issues/50),
+DuckDB uses the ordinary database workspace: Tables, SQL Editor and results. Do not present
+selected-file snapshots as the database model or add a file-source picker/counter to its SQL
+Editor. The retained query-source API is an optional analysis capability; Console file analysis
+belongs under File System Analyze. This supersedes the earlier Console picker guidance in
+[ADR 0009](../decisions/0009-duckdb-file-sources.md). Revisit when explicitly designing native
+file import/access with its own authorization boundary; a UI shortcut cannot imply that support.
 
 For db9 PostgreSQL resources, use the existing database page and PostgreSQL dialect. Show the
 actual db9 provider, anonymous availability and its NUMERIC precision boundary in Details.

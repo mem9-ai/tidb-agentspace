@@ -83,7 +83,9 @@ Backend action/resource authorization, service-owned provider secrets, shared do
 operations, and actual TiUI components/adapters are central project boundaries. Their detailed
 rules and verification stay in these linked sources.
 
-For implemented DuckDB database queries over CSV/JSON/Parquet, read [file sources](docs/duckdb-databases.md#workspace-file-sources),
+DuckDB uses tidbfs native database mode, with ordinary Tables and SQL in the Console; see
+[customer experience](docs/duckdb-databases.md#customer-experience). For the separate optional
+query-source API over CSV/JSON/Parquet, read [file sources](docs/duckdb-databases.md#workspace-file-sources),
 [ADR 0009](docs/decisions/0009-duckdb-file-sources.md) and [GH-34](specs/gh-34/spec.md).
 For CSV/Parquet SQL and text/log analysis, read [ADR 0010](docs/decisions/0010-read-only-file-analysis.md)
 and [verification](docs/file-analysis-verification.md). The Console/API implement selected-file

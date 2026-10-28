@@ -25,9 +25,11 @@ Browser and file-preview height budgets are shared (500px at an 800px-tall deskt
 600px at 900px); long preview content scrolls inside while header/footer actions remain
 reachable. Analyze retains its existing page-flow expansion rather than clipping controls.
 
-DuckDB file sources are inside SQL Editor. They retain the same selection, explicit Add/Query,
-read-only snapshot and result-invalidation rules. The editor toolbar now identifies the tool
-and its Run action; resource identity belongs to the outer resource bar. Existing database,
+At the GH-48 baseline, DuckDB file sources were inside SQL Editor. The later native-database
+correction in [GH-50](https://github.com/siddontang/tidb.ai/issues/50) removes that picker/counter;
+see [current verification](duckdb-verification.md#native-database-workspace-correction).
+The editor toolbar identifies the tool and its Run action; resource identity belongs to the
+outer resource bar. Existing database,
 table and file URLs, route keys, data permissions and draft lifetimes remain unchanged.
 
 On narrow screens the work area stacks. Tables can collapse to a horizontal disclosure;
@@ -35,6 +37,8 @@ selected files retain the existing Back to files flow. A file browser/placeholde
 shown alongside a narrow selected-file panel. Wide query/preview tables scroll internally.
 
 ## Observed verification
+
+These observations and screenshots describe the GH-48 candidate before the GH-50 correction.
 
 | Case                       | Result                                                                                                                                                                                                                                                                                                              |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

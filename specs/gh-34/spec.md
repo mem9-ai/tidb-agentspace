@@ -7,6 +7,13 @@
 - Relation: Extends database SQL with selected file inputs. The separate File System analysis
   and Just Bash surface in GH-26 remains pending; this does not close that parent.
 
+Current implementation note, 2026-10-28: this baseline was implemented; see
+[verification](../../docs/duckdb-sources-verification.md). The Console picker requirement is
+superseded by the owner's native-database correction in [GH-50](https://github.com/siddontang/tidb.ai/issues/50)
+and the [ADR 0009 amendment](../../docs/decisions/0009-duckdb-file-sources.md#console-presentation-amendment).
+The query-source API and its permission/snapshot boundary remain supported. The earlier
+Console requirements below are historical; File System Analyze is implemented separately.
+
 ## Outcome and API
 
 In a DuckDB database workspace, choose public File System files, name each source, then query

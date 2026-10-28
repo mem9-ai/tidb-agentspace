@@ -914,7 +914,6 @@ function DatabaseDetail({
         }}
         database={database}
         databases={data.resources.filter((resource) => resource.kind !== 'filesystem')}
-        fileSystems={data.resources.filter((resource) => resource.kind === 'filesystem')}
         routeLocation={routeLocation}
         refresh={refresh}
         onSelect={openDatabaseEditor}

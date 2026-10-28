@@ -84,13 +84,14 @@ larger precision range. See [setup and recovery](docs/db9-postgres.md),
 Select DuckDB in Databases to create an analytical database with dedicated service-managed
 storage in Singapore. Customers see only the database; its backing File System and credentials
 remain internal. The same scoped Workspace Key works with MySQL, DuckDB and standalone Files.
-The operator supplies a verified DuckDB 2.0 tidbfs artifact; without it, creation is unavailable.
+The operator supplies a verified DuckDB 2.0 tidbfs artifact and uses its native database mode;
+tables and writes persist in DuckDB's database/WAL. Without the artifact, creation is unavailable.
 See [runtime setup and recovery](docs/duckdb-databases.md) and
 [verification](docs/duckdb-verification.md). Native remote storage is experimental.
 
 ## What works
 
-- DuckDB queries can use selected CSV, JSON/NDJSON and Parquet from public File Systems as query-scoped `files.name` tables, including joins. Require query/read/analyze actions and both database/File System grants. Four sources / 16 MiB input, read-only SELECT and the existing bounded worker. See [file sources](docs/duckdb-databases.md#workspace-file-sources).
+- The optional DuckDB query-source API can use selected CSV, JSON/NDJSON and Parquet from public File Systems as query-scoped `files.name` tables, including joins. This is separate from the Console's native database workspace; Console file analysis is under File System Analyze. Require query/read/analyze actions and both database/File System grants. Four sources / 16 MiB input, read-only SELECT and the existing bounded worker. See [file sources](docs/duckdb-databases.md#workspace-file-sources).
 
 - Nine top-level destinations: overview, databases, files, agent connection, keys, API explorer, monitoring, billing, settings. Each database has one SQL workspace with a persistent table list, editor, query results, columns, indexes and up to 100 preview rows at `#databases/<resource-id>/sql`, preserving the selected database on reload and browser history navigation.
 - Table links preserve exact names and keep the SQL editor visible. Table selection retains drafts; Query table explicitly prepares a SELECT. Agents use the same scoped table APIs; see [unified workspace verification](docs/database-workspace-verification.md) and [database API evidence](docs/database-browser-verification.md).

@@ -105,8 +105,3 @@
     --workspace-sql-editor-height: 360px;
   }
 }
-
-.database-file-sources {
-  padding: 8px 20px;
-  border-bottom: 1px solid var(--border);
-}

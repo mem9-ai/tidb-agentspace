@@ -1,5 +1,5 @@
 import type { QueryResult } from '../../api/client';
-import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useRef, useState } from 'react';
 import {
   ActionIcon,
   Alert,
@@ -36,10 +36,7 @@ type Props = {
   renderResults: (results: React.ReactNode) => React.ReactNode;
   database: DatabaseResource;
   readBusy: boolean;
-  queryContext: string;
-  hasFileSources: boolean;
-  fileSources?: React.ReactNode;
-  execute: (sql: string, signal?: AbortSignal) => Promise<QueryResult>;
+  execute: (sql: string) => Promise<QueryResult>;
   onComplete: () => Promise<void>;
   onExport: (result: QueryResult) => void;
 };
@@ -51,9 +48,6 @@ export function SqlQueryPanel({
   renderResults,
   database,
   readBusy,
-  queryContext,
-  hasFileSources,
-  fileSources,
   execute,
   onComplete,
   onExport,
@@ -63,29 +57,22 @@ export function SqlQueryPanel({
     database.provider || '',
   );
   const [busy, setBusy] = useState(false),
-    [storedResult, setResult] = useState<QueryResult | null>(null),
-    [storedError, setError] = useState(''),
-    [resultContext, setResultContext] = useState(queryContext),
+    [result, setResult] = useState<QueryResult | null>(null),
+    [error, setError] = useState(''),
     [notice, setNotice] = useState('');
-  const result = resultContext === queryContext ? storedResult : null;
-  const error = resultContext === queryContext ? storedError : '';
   const running = useRef(false);
-  const request = useRef<AbortController | null>(null);
-  useEffect(() => () => request.current?.abort(), []);
   const [expanded, setExpanded] = useState(false);
   async function run() {
     if (running.current || readBusy || database.status !== 'active') return;
     running.current = true;
-    request.current = hasFileSources ? new AbortController() : null;
     setBusy(true);
     onRunningChange(true);
     onRunStart();
     setError('');
-    setResultContext(queryContext);
     setNotice('');
     setResult(null);
     try {
-      setResult(await execute(sql, request.current?.signal));
+      setResult(await execute(sql));
       await onComplete().catch(() =>
         setNotice(
           'Statement completed, but the workspace summary could not refresh. Do not repeat the statement to refresh the page.',
@@ -93,14 +80,9 @@ export function SqlQueryPanel({
       );
     } catch (e) {
       setResult(null);
-      setError(
-        e instanceof Error && e.name === 'AbortError'
-          ? 'Read-only file query canceled.'
-          : (e as Error).message,
-      );
+      setError(e instanceof Error ? e.message : 'Query failed.');
     } finally {
       running.current = false;
-      request.current = null;
       setBusy(false);
       onRunningChange(false);
     }
@@ -187,11 +169,7 @@ export function SqlQueryPanel({
           >
             {busy ? 'Running…' : 'Run query'}
           </Button>
-          {busy && hasFileSources && (
-            <Button onClick={() => request.current?.abort()}>Cancel query</Button>
-          )}
         </div>
-        {fileSources}
         <Suspense
           fallback={
             <div className="editor-loading">
@@ -217,11 +195,7 @@ export function SqlQueryPanel({
         </Suspense>
         <div className="editor-bottom">
           <Text size="sm">
-            {hasFileSources
-              ? 'Read-only files · Query snapshots'
-              : live
-                ? 'Live SQL · Writes change data'
-                : 'Local demo · Sample data only'}
+            {live ? 'Live SQL · Writes change data' : 'Local demo · Sample data only'}
           </Text>
           <div className="sql-editor-tools">
             <Menu position="bottom-end" withinPortal>
@@ -268,11 +242,9 @@ export function SqlQueryPanel({
               </Popover.Target>
               <Popover.Dropdown maw="calc(100vw - 32px)">
                 <Text>
-                  {hasFileSources
-                    ? 'Up to four CSV/JSON/NDJSON/Parquet sources · 16 MiB combined input · SELECT only · 1,000 rows / 1 MiB output · 15 seconds including file loading.'
-                    : live
-                      ? 'One statement at a time · 1,000 rows / 1 MiB · 15-second timeout. Writes change real data.'
-                      : 'This resource is not connected to a cloud database. Supports SELECT 1 and SELECT * FROM agent_events LIMIT n.'}
+                  {live
+                    ? 'One statement at a time · 1,000 rows / 1 MiB · 15-second timeout. Writes change real data.'
+                    : 'This resource is not connected to a cloud database. Supports SELECT 1 and SELECT * FROM agent_events LIMIT n.'}
                 </Text>
                 <Text size="sm" mt="sm">
                   ⌘ / Ctrl + Enter to run
@@ -292,7 +264,7 @@ export function SqlQueryPanel({
           </div>
         </div>
       </Paper>
-      {notice && resultContext === queryContext && <Alert color="yellow">{notice}</Alert>}
+      {notice && <Alert color="yellow">{notice}</Alert>}
       {renderResults(results)}
     </>
   );
