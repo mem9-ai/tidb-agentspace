@@ -1,3 +1,4 @@
+import { publicPathPrefix } from './http-policy.mjs';
 import { randomBytes, createHash } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
@@ -103,6 +104,11 @@ export function loadSsoConfig(env = process.env) {
   if (userinfoUrl) requireHttpsUrl('TIDB_SSO_USERINFO_URL', userinfoUrl);
   requireHttpsUrl('TIDB_SSO_ISSUER', issuer);
 
+  const publicPath = publicPathPrefix(get('WORKSPACE_PUBLIC_PATH') || '');
+  if (publicPath && redirect.pathname !== publicPath + '/api/auth/tidbcloud/callback')
+    throw new Error(
+      'TIDB_SSO_REDIRECT_URI must match WORKSPACE_PUBLIC_PATH and the callback route.',
+    );
   const postLoginUrl = get('TIDB_SSO_POST_LOGIN_URL');
   if (postLoginUrl) {
     const target = requireHttpsUrl('TIDB_SSO_POST_LOGIN_URL', postLoginUrl, {
@@ -110,6 +116,12 @@ export function loadSsoConfig(env = process.env) {
     });
     if (target.origin !== redirect.origin)
       throw new Error('TIDB_SSO_POST_LOGIN_URL must share the origin of TIDB_SSO_REDIRECT_URI.');
+    if (
+      publicPath &&
+      target.pathname !== publicPath &&
+      !target.pathname.startsWith(publicPath + '/')
+    )
+      throw new Error('TIDB_SSO_POST_LOGIN_URL must stay inside WORKSPACE_PUBLIC_PATH.');
   }
 
   const csv = (name) =>
@@ -145,7 +157,8 @@ export function loadSsoConfig(env = process.env) {
     allowedOrgs: csv('TIDB_SSO_ALLOWED_ORGS'),
     ownerSubjects: csv('TIDB_SSO_OWNER_SUBJECTS'),
     cookieSecure,
-    postLoginUrl: postLoginUrl || redirect.origin + '/',
+    publicPath,
+    postLoginUrl: postLoginUrl || redirect.origin + publicPath + '/',
   };
 }
 

@@ -1,4 +1,4 @@
-import { createWorkspaceClient, resolveApiOrigin, responseData } from './transport';
+import { createWorkspaceClient, resolveApiBaseUrl, responseData } from './transport';
 import type { components, operations } from './schema';
 
 export type Resource = components['schemas']['Resource'];
@@ -29,14 +29,14 @@ export type SsoAuthConfig = {
 export const workspaceId = 'ws_agentlab';
 export const base = `/api/v1/workspaces/${workspaceId}`;
 const params = { path: { workspaceId } } as const;
-export let apiOrigin = window.location.origin;
-let client = createWorkspaceClient(apiOrigin);
-let sessionClient = createWorkspaceClient(apiOrigin, fetch, '');
+export let apiBaseUrl = window.location.origin;
+let client = createWorkspaceClient(apiBaseUrl);
+let sessionClient = createWorkspaceClient(apiBaseUrl, fetch, '');
 
 export function configureApi(config: unknown) {
-  apiOrigin = resolveApiOrigin(config, window.location.origin);
-  client = createWorkspaceClient(apiOrigin);
-  sessionClient = createWorkspaceClient(apiOrigin, fetch, '');
+  apiBaseUrl = resolveApiBaseUrl(config, window.location.origin);
+  client = createWorkspaceClient(apiBaseUrl);
+  sessionClient = createWorkspaceClient(apiBaseUrl, fetch, '');
 }
 
 export const workspaceApi = {
@@ -51,7 +51,7 @@ export const workspaceApi = {
     responseData(client.POST('/workspaces/{workspaceId}/file-analyses', { params, body, signal })),
   startSession: () => responseData(sessionClient.POST('/api/session', { body: {} })),
   authConfig: async (): Promise<SsoAuthConfig> => {
-    const response = await fetch(apiOrigin + '/api/auth/config', { credentials: 'include' });
+    const response = await fetch(apiBaseUrl + '/api/auth/config', { credentials: 'include' });
     if (!response.ok) return { enabled: false };
     return (await response.json()) as SsoAuthConfig;
   },
@@ -138,5 +138,5 @@ export const workspaceApi = {
 };
 
 export function contentUrl(file: Pick<WorkspaceFile, 'resourceId' | 'path'>) {
-  return apiOrigin + base + '/files/content?' + new URLSearchParams(file);
+  return apiBaseUrl + base + '/files/content?' + new URLSearchParams(file);
 }

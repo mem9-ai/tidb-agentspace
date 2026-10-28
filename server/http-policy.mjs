@@ -199,3 +199,11 @@ export function applyHttpPolicy(req, res, origins, fail, trusted = []) {
   res.end();
   return true;
 }
+
+export function publicPathPrefix(value = process.env.WORKSPACE_PUBLIC_PATH || '') {
+  if (typeof value !== 'string' || !/^(?:\/[A-Za-z0-9_-]+)*$/.test(value))
+    throw new Error(
+      'WORKSPACE_PUBLIC_PATH must be empty or an absolute path without a trailing slash.',
+    );
+  return value;
+}

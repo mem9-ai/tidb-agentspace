@@ -83,3 +83,44 @@ test('transport exposes structured errors and handles a proxy returning non-JSON
     );
   }
 });
+
+test('subpath API configuration preserves the origin boundary and binary requests', async () => {
+  const { resolveApiBaseUrl } = await import('./transport.ts');
+  const origin = 'https://console.example.com';
+  assert.equal(resolveApiBaseUrl({ apiOrigin: '' }, origin), origin);
+  assert.equal(
+    resolveApiBaseUrl({ apiOrigin: '', apiPathPrefix: '/studio' }, origin),
+    origin + '/studio',
+  );
+  for (const prefix of [
+    '/studio/',
+    '//evil.invalid',
+    '/..',
+    '/a/../b',
+    '/a%2fb',
+    '/a?b',
+    '/a#b',
+    '/a\\b',
+    1,
+  ])
+    assert.throws(() => resolveApiBaseUrl({ apiOrigin: '', apiPathPrefix: prefix }, origin));
+  const requests = [];
+  const client = createWorkspaceClient(origin + '/studio', async (request) => {
+    requests.push(request);
+    return Response.json({ saved: true, size: 3 });
+  });
+  await client.PUT('/workspaces/{workspaceId}/files/content', {
+    params: {
+      path: { workspaceId: 'ws_agentlab' },
+      query: { resourceId: 'fs_shared', path: '/a.bin' },
+    },
+    body: new Blob([new Uint8Array([0, 127, 255])]),
+    bodySerializer: (body) => body,
+  });
+  assert.equal(
+    new URL(requests[0].url).pathname,
+    '/studio/api/v1/workspaces/ws_agentlab/files/content',
+  );
+  assert.equal(requests[0].credentials, 'include');
+  assert.deepEqual([...new Uint8Array(await requests[0].arrayBuffer())], [0, 127, 255]);
+});

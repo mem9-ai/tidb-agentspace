@@ -20,6 +20,15 @@ export function resolveApiOrigin(config: unknown, pageOrigin: string): string {
   return url.origin;
 }
 
+export function resolveApiBaseUrl(config: unknown, pageOrigin: string): string {
+  const origin = resolveApiOrigin(config, pageOrigin);
+  const prefix =
+    config && typeof config === 'object' && 'apiPathPrefix' in config ? config.apiPathPrefix : '';
+  if (typeof prefix !== 'string' || !/^(?:\/[A-Za-z0-9_-]+)*$/.test(prefix))
+    throw new Error('apiPathPrefix must be empty or an absolute path without a trailing slash.');
+  return origin + prefix;
+}
+
 export class WorkspaceApiError extends Error {
   status: number;
   code?: string;

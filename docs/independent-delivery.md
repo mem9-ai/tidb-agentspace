@@ -146,3 +146,29 @@ and UIKit's transitive phone-number parser; no checks or warnings were suppresse
 ![Dark desktop API explorer, 1280×900](images/independent-console-dark.jpg)
 
 ![Narrow API explorer, 390px viewport](images/independent-console-narrow.jpg)
+
+## Hosting below a path
+
+The Console can be built with `npm run build:console -- --base=/studio/`.
+It loads `config.json` relative to the Vite base. Set that file to
+`{"apiOrigin":"","apiPathPrefix":"/studio"}` for a same-origin gateway.
+`apiOrigin` remains an exact origin; the optional `apiPathPrefix` is empty by
+default, or an absolute path made of alphanumeric, underscore and hyphen
+segments, without a trailing slash. All API calls, schema links and generated
+instructions use the resulting base URL.
+
+Set `WORKSPACE_PUBLIC_PATH=/studio` on the API. A gateway forwards
+`/studio/api/*` to `/api/*` and `/studio/openapi.json` to `/openapi.json`,
+without changing methods, request bodies or authentication headers. The API
+still serves no Console assets. Keep API rules before any static SPA fallback;
+API errors must never become successful HTML responses.
+
+For SSO, register `https://console.example.com/studio/api/auth/tidbcloud/callback`.
+The flow cookie uses `/studio/api/auth/tidbcloud`; session creation and logout
+use `/studio/`. Thedefault post-login URL becomes `/studio/`, and explicit
+post-login URLs must remain inside that prefix on the callback origin. Public
+origin/proxy trust and authorization settings remain independently required.
+This is path mounting, not a tenant/security isolation boundary between apps
+sharing one browser origin. Default root hosting is unchanged.
+
+See [ADR 0013](decisions/0013-console-path-mount.md) for the deployment boundary.
