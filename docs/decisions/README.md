@@ -19,3 +19,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0006: Zero SQL gateway](0006-zero-sql-gateway.md) — real anonymous MySQL, backend credentials, scoped Workspace Keys, expiry/recovery, and temporary PG withdrawal.
 
 - [0007: Database browsing](0007-database-browser.md) — scoped schema reads, bounded data preview, and table-to-editor navigation.
+
+- [0008: DuckDB private storage](0008-duckdb-private-storage.md) — accepted design; implementation pending, dedicated backing files hidden behind each DuckDB database.
