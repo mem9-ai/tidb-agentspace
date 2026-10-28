@@ -28,7 +28,7 @@ export function WorkspaceBrowserItem({
     p: 'sm',
     className: 'workspace-browser-item',
     classNames: { label: 'workspace-browser-item-label' },
-    styles: { description: { color: 'inherit' } },
+    styles: { description: { color: 'inherit' }, root: { paddingRight: actions ? 60 : undefined } },
     'aria-current': active ? ('true' as const) : undefined,
   };
   return (

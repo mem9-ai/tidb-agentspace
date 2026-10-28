@@ -12,7 +12,11 @@ import './features/files/file-preview.css';
 import { FileBrowserPanel } from './features/files/FileBrowserPanel';
 import { FileBrowserList } from './features/files/FileBrowserList';
 import { ResourceKindIcon as KindIcon } from './ui/ResourceKindIcon';
-import { ResourceWorkspaceBar, ResourceWorkspaceHeader } from './ui/ResourceWorkspaceHeader';
+import {
+  ResourceConnectButton,
+  ResourceWorkspaceBar,
+  ResourceWorkspaceHeader,
+} from './ui/ResourceWorkspaceHeader';
 import {
   useRemoteFiles,
   downloadRemoteFile,
@@ -981,6 +985,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
   const remote = selectedSystem?.provider === 'drive9-anonymous';
   const listing = useRemoteFiles(system, path, remote);
   const [browserCollapsed, setBrowserCollapsed] = useState(false);
+  const [analysisBusy, setAnalysisBusy] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [unavailableReason, setUnavailableReason] = useState('');
   const previewRequest = useRef<AbortController | null>(null);
@@ -1033,17 +1038,17 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
     previewRequest.current?.abort();
     setPreviewLoading(false);
     setEditing(null);
+    setBrowserCollapsed(false);
   }
   function downloadFile(file: WorkspaceFile) {
     if (remote) downloadRemoteFile(file);
     else download(file.path.split('/').pop()!, file.content || '');
   }
-  const children = files
-    .filter(
-      (f) =>
-        (f.path.slice(0, f.path.lastIndexOf('/')) || '/') === path &&
-        f.path.split('/').pop()!.toLowerCase().includes(search.toLowerCase()),
-    )
+  const directoryFiles = files.filter(
+    (file) => (file.path.slice(0, file.path.lastIndexOf('/')) || '/') === path,
+  );
+  const children = directoryFiles
+    .filter((file) => file.path.split('/').pop()!.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) =>
       a.type === b.type ? a.path.localeCompare(b.path) : a.type === 'directory' ? -1 : 1,
     );
@@ -1136,20 +1141,17 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
         description="Browse files, preview content and analyze data."
         actions={
           <>
-            <Button
-              leftSection={React.createElement(Terminal, { size: 18 })}
+            <ResourceConnectButton
               onClick={() => {
                 const r = systems.find((r) => r.id === system);
                 if (r) onConnect(r);
               }}
-            >
-              Connect
-            </Button>
+            />
             <Button
               variant="filled"
               leftSection={React.createElement(Upload, { size: 18 })}
               onClick={() => upload.current?.click()}
-              disabled={busy || !system}
+              disabled={busy || analysisBusy || !system}
             >
               Upload file
             </Button>
@@ -1173,7 +1175,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
         description={selectedSystem ? region(selectedSystem.region) : 'No file system'}
         live={remote}
         mode={remote ? 'Live · Anonymous trial' : 'Local demo'}
-        disabled={busy}
+        disabled={busy || analysisBusy}
         onSelect={(nextSystem) =>
           requestPreviewChange(() => {
             closePreview();
@@ -1209,31 +1211,26 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
       <div
         className="resource-workspace file-workspace"
         data-preview={editing ? true : undefined}
-        data-browser-collapsed={editing && browserCollapsed ? true : undefined}
+        data-browser-collapsed={browserCollapsed || undefined}
       >
         <FileBrowserPanel
           systemName={selectedSystem?.name || 'Files'}
-          count={children.length}
+          count={directoryFiles.length}
           path={path}
           search={search}
           onSearch={setSearch}
           onNavigate={setPath}
-          onRefresh={
-            remote
-              ? () => {
-                  listing.refresh();
-                  void refresh();
-                }
-              : undefined
-          }
-          refreshing={listing.loading}
-          canCreate={!!system && !busy}
+          onRefresh={() => {
+            listing.refresh();
+            void refresh();
+          }}
+          refreshing={listing.loading || analysisBusy}
+          canCreate={!!system && !busy && !analysisBusy}
           onCreate={(type) => {
             setNewItem(type);
             setError('');
           }}
-          collapsible={!!editing}
-          collapsed={!!editing && browserCollapsed}
+          collapsed={browserCollapsed}
           onToggle={() => setBrowserCollapsed((value) => !value)}
           footer={
             <>
@@ -1256,7 +1253,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               files={children}
               path={path}
               selectedId={editing?.id}
-              busy={busy}
+              busy={busy || analysisBusy}
               describeFile={(file) =>
                 `${file.type === 'directory' ? 'Folder' : bytes(fileSize(file))} · ${relative(file.updatedAt)}`
               }
@@ -1321,6 +1318,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               pendingChange={!!pendingAction}
               trigger={previewTrigger}
               onChange={setContent}
+              onAnalysisRunningChange={setAnalysisBusy}
               onClose={() => requestPreviewChange(closePreview)}
               onKeepEditing={() => setPendingAction(null)}
               onDiscard={() => {
@@ -1416,7 +1414,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
       {deleting && (
         <Modal
           title={`Delete ${deleting.type === 'directory' ? 'folder' : 'file'}?`}
-          description={`“${deleting.path}” will be removed from this local workspace. Non-empty folders cannot be deleted.`}
+          description={`“${deleting.path}” will be removed from this File System. Non-empty folders cannot be deleted.`}
           onClose={() => setDeleting(null)}
         >
           {error && (

@@ -1,8 +1,12 @@
 import { Alert, Anchor, Button, Group, Popover, Stack, Text } from '@tidbcloud/uikit';
-import { IconArrowLeft, IconArrowUpRight } from '@tidbcloud/uikit/icons';
+import { IconArrowLeft } from '@tidbcloud/uikit/icons';
 import type { Resource } from '../../api/client';
 import { Heading } from '../../ui/WorkspaceHeading';
-import { ResourceWorkspaceBar, ResourceWorkspaceHeader } from '../../ui/ResourceWorkspaceHeader';
+import {
+  ResourceConnectButton,
+  ResourceWorkspaceBar,
+  ResourceWorkspaceHeader,
+} from '../../ui/ResourceWorkspaceHeader';
 import { regionLabel } from '../resources/regions';
 
 export function DatabaseWorkspaceHeader({
@@ -80,9 +84,7 @@ export function DatabaseWorkspaceHeader({
                 </Stack>
               </Popover.Dropdown>
             </Popover>
-            <Button onClick={onConnect} rightSection={<IconArrowUpRight size={16} />}>
-              Connect
-            </Button>
+            <ResourceConnectButton onClick={onConnect} />
           </>
         }
       />

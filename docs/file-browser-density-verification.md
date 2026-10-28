@@ -4,6 +4,10 @@ This records the GH-43/GH-46 browser baseline. The current page hierarchy and sh
 layout are verified in [resource workspaces](resource-workspace-verification.md) following
 the owner's broader GH-48 correction; the original table-layout evidence below is historical.
 
+The [GH-52 interaction audit](resource-workspace-verification.md#shared-interaction-audit)
+supersedes mobile browser hiding with the shared disclosure, enables collapse before file
+selection, and moves row actions into a full-row overflow menu.
+
 - Owner correction and reproduction: [GH-43](https://github.com/siddontang/tidb.ai/issues/43).
 - Reproduction baseline: `c1be992fd8ee417d2a470af939ac855c6601c5af`.
 - Integrated source baseline: `ab65ddfdf64bff92de058b67bb5d7b67f511e8af`.

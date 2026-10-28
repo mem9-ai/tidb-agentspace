@@ -83,6 +83,11 @@ Backend action/resource authorization, service-owned provider secrets, shared do
 operations, and actual TiUI components/adapters are central project boundaries. Their detailed
 rules and verification stay in these linked sources.
 
+Database SQL and File System Analyze share execution/result adapters in `src/ui/`, alongside
+the resource header, browser and item adapters. Follow the
+[shared interaction audit](docs/resource-workspace-verification.md#shared-interaction-audit)
+for Run query, samples/limits, expansion, row actions and desktop/mobile collapse behavior.
+
 DuckDB uses tidbfs native database mode, with ordinary Tables and SQL in the Console; see
 [customer experience](docs/duckdb-databases.md#customer-experience). For the separate optional
 query-source API over CSV/JSON/Parquet, read [file sources](docs/duckdb-databases.md#workspace-file-sources),

@@ -79,6 +79,7 @@ export function DatabaseWorkspace({
       >
         <DatabaseTableList
           database={database}
+          busy={busy}
           tableName={tableName}
           collapsed={browserCollapsed}
           onToggle={() => setBrowserCollapsed((value) => !value)}

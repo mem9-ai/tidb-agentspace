@@ -38,6 +38,10 @@
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
 }
+.workspace-browser-context {
+  padding: 0 12px 12px;
+  flex-shrink: 0;
+}
 .workspace-browser-toolbar > :first-child {
   flex: 1;
   min-width: 0;
@@ -67,6 +71,7 @@
   color: var(--muted);
 }
 .workspace-browser-row {
+  position: relative;
   display: flex;
   align-items: center;
   min-width: 0;
@@ -85,7 +90,27 @@
 .workspace-browser-row-actions {
   display: flex;
   flex-shrink: 0;
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 .workspace-browser-entries {
   padding: 8px;
+}
+@media (max-width: 1099px) {
+  .workspace-browser[data-collapsed] {
+    flex-direction: row;
+    align-items: center;
+  }
+  .workspace-browser[data-collapsed] .workspace-browser-rail-label {
+    writing-mode: horizontal-tb;
+    margin: 0;
+  }
+  .workspace-browser-toggle svg {
+    transform: rotate(90deg);
+  }
+  .workspace-browser-list {
+    max-height: 160px;
+  }
 }

@@ -1,0 +1,133 @@
+import type { ReactNode } from 'react';
+import { Alert, Badge, Button, Paper, Table, Text } from '@tidbcloud/uikit';
+import { IconCheckCircle, IconDownload01 } from '@tidbcloud/uikit/icons';
+import { Heading } from './WorkspaceHeading';
+import './workspace-execution.css';
+
+type Rows = {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  rowCount: number;
+  affectedRows?: number;
+};
+
+export function WorkspaceResultPanel({
+  badge,
+  actions,
+  footnote,
+  children,
+}: {
+  badge?: ReactNode;
+  actions?: ReactNode;
+  footnote?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <Paper className="panel workspace-results" withBorder>
+      <div className="panel-header">
+        <Heading level={2}>Results {badge}</Heading>
+        {actions}
+      </div>
+      {children}
+      {footnote && (
+        <div className="result-footnote">
+          <IconCheckCircle size={16} /> {footnote}
+        </div>
+      )}
+    </Paper>
+  );
+}
+
+export function WorkspaceQueryResults({
+  result,
+  busy,
+  error,
+  footnote,
+  onExport,
+}: {
+  result: Rows | null;
+  busy: boolean;
+  error: string;
+  footnote?: ReactNode;
+  onExport?: () => void;
+}) {
+  function exportRows() {
+    if (!result) return;
+    if (onExport) return onExport();
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(result.rows, null, 2)], { type: 'application/json' }),
+    );
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'query-results.json';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  return (
+    <WorkspaceResultPanel
+      badge={
+        result && (
+          <Badge color="green">
+            {result.columns.length
+              ? `${result.rowCount} ${result.rowCount === 1 ? 'row' : 'rows'}`
+              : `${result.affectedRows ?? 0} affected`}
+          </Badge>
+        )
+      }
+      actions={
+        result &&
+        result.columns.length > 0 && (
+          <Button leftSection={<IconDownload01 size={18} />} onClick={exportRows}>
+            Export JSON
+          </Button>
+        )
+      }
+      footnote={result ? footnote : undefined}
+    >
+      {error ? (
+        <Alert className="workspace-result-message" color="red" role="alert">
+          {error}
+        </Alert>
+      ) : result ? (
+        <div
+          className="table-scroll workspace-result-table"
+          role="region"
+          aria-label="Query result data"
+          tabIndex={0}
+        >
+          <Table verticalSpacing={12} stickyHeader>
+            <Table.Thead>
+              <Table.Tr>
+                {result.columns.map((column) => (
+                  <Table.Th key={column}>{column}</Table.Th>
+                ))}
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {result.rows.map((row, index) => (
+                <Table.Tr key={index}>
+                  {result.columns.map((column) => (
+                    <Table.Td key={column}>
+                      <code>
+                        {row[column] === null
+                          ? 'NULL'
+                          : typeof row[column] === 'object'
+                            ? JSON.stringify(row[column])
+                            : String(row[column])}
+                      </code>
+                    </Table.Td>
+                  ))}
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+          {!result.rowCount && result.columns.length > 0 && <Text p="lg">No rows returned.</Text>}
+        </div>
+      ) : (
+        <Text className="workspace-result-message" role="status">
+          {busy ? 'Running query…' : 'Run a query to see its results here.'}
+        </Text>
+      )}
+    </WorkspaceResultPanel>
+  );
+}

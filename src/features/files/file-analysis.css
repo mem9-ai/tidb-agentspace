@@ -4,10 +4,16 @@
   max-height: none;
   overflow: visible;
 }
+.file-preview-panel[data-analysis] .file-preview-header {
+  padding: 16px 0;
+}
+.file-preview-panel[data-analysis] .file-preview-analysis {
+  padding: 20px 0;
+}
+.file-preview-panel[data-analysis] .file-preview-footer {
+  padding: 12px 0;
+}
 .file-analysis {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
   min-width: 0;
 }
 .file-analysis p {
@@ -32,6 +38,9 @@
   max-height: 360px;
   overflow: auto;
   font-size: 16px;
+}
+.analysis-command-result {
+  padding: 20px;
 }
 .file-analysis summary {
   cursor: pointer;

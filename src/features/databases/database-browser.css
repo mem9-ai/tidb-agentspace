@@ -35,73 +35,10 @@
   max-height: 240px;
   overflow: auto;
 }
-@media (max-width: 1099px) {
-  .database-table-list[data-collapsed] {
-    flex-direction: row;
-    align-items: center;
-  }
-  .database-table-list[data-collapsed] .workspace-browser-rail-label {
-    writing-mode: horizontal-tb;
-    margin: 0;
-  }
-  .database-table-list .workspace-browser-toggle svg {
-    transform: rotate(90deg);
-  }
-}
-
 .database-editor-area {
   min-width: 0;
   scroll-margin-top: 100px;
 }
-@media (max-width: 1099px) {
-  .database-table-list .workspace-browser-list {
-    max-height: 160px;
-  }
-}
-
-.database-workspace .panel {
+.database-detail {
   margin-bottom: 0;
-}
-.database-workspace .sql-panel {
-  margin-bottom: 12px;
-  --workspace-sql-content-min-height: 100%;
-  --workspace-sql-content-padding: 12px 0;
-  --workspace-sql-editor-height: clamp(120px, calc(35dvh - 130px), 180px);
-}
-.database-workspace .sql-panel-expanded {
-  --workspace-sql-editor-height: 420px;
-}
-.database-workspace .sql-input {
-  min-height: 0;
-}
-.database-workspace .sql-toolbar {
-  padding: 16px 20px;
-}
-.database-workspace .editor-bottom {
-  padding: 0 12px 0 16px;
-  gap: 4px 12px;
-  align-items: center;
-}
-.sql-editor-tools {
-  display: flex;
-  align-items: center;
-  gap: 0;
-}
-.database-workspace .panel-header {
-  padding: 12px 20px;
-}
-.database-workspace .result-panel .table-scroll {
-  max-height: clamp(220px, calc(100dvh - 590px), 420px);
-  overflow: auto;
-}
-.database-workspace .result-footnote {
-  padding: 10px 20px;
-}
-@media (max-width: 700px) {
-  .database-workspace .sql-panel {
-    --workspace-sql-editor-height: 180px;
-  }
-  .database-workspace .sql-panel-expanded {
-    --workspace-sql-editor-height: 360px;
-  }
 }

@@ -1,5 +1,10 @@
 # Read-only File System analysis verification
 
+Current Console controls follow [GH-52's shared interaction audit](resource-workspace-verification.md#shared-interaction-audit):
+SQL uses Run query and Bash uses Run command in the same top-right toolbar as database SQL,
+with Samples, Limits, expansion and shared result panels. Earlier screenshots below describe
+the original GH-26 controls. The read-only/API boundary remains unchanged.
+
 - Date: 2026-10-28. Implementation against the owner-approved
   [GH-26 baseline at b76e1d](https://github.com/siddontang/tidb.ai/blob/b76e1dde2a02355552fcba50cb8299ec625ebeff/specs/gh-26/spec.md),
   source base `8fcab93` (including DuckDB databases, the unified database UI and local-agent workflow).
@@ -15,7 +20,7 @@ Open File System, choose the existing Singapore trial, and open
 The CSV/Parquet editor queries table `file`; Bash reads `/workspace/input.log`.
 The file/resource and analysis tab remain in the URL for reload and direct links; scripts
 and results are not serialized into links. Browser Download returned the original 176-byte log. Run explicitly or use Cmd/Ctrl+Enter. Each execution starts fresh. Download retains the
-original file. Navigation or Cancel analysis aborts abandoned work; results are not persisted.
+original file. Navigation or Cancel query / Cancel command aborts abandoned work; results are not persisted.
 
 Agents use the generated OpenAPI operations with a Workspace Key granting `files:read`,
 `files:analyze` and this File System. Existing keys do not gain the new permission.

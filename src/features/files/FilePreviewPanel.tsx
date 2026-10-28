@@ -39,6 +39,7 @@ export default function FilePreviewPanel({
   onDownload,
   onKeepEditing,
   onDiscard,
+  onAnalysisRunningChange,
 }: {
   path: string;
   resourceId: string;
@@ -59,6 +60,7 @@ export default function FilePreviewPanel({
   onDownload: () => void;
   onKeepEditing: () => void;
   onDiscard: () => void;
+  onAnalysisRunningChange: (running: boolean) => void;
 }) {
   const [mode, setMode] = useState<string | null>(initialView);
   const title = useRef<HTMLSpanElement>(null);
@@ -86,12 +88,17 @@ export default function FilePreviewPanel({
     <Paper
       component="aside"
       style={{ display: 'flex' }}
-      withBorder
+      withBorder={mode !== 'analyze'}
       className="file-preview-panel"
       data-analysis={mode === 'analyze' || undefined}
       aria-labelledby="file-preview-title"
       onKeyDown={(event) => {
-        if (event.key === 'Escape' && !event.defaultPrevented) {
+        if (
+          event.key === 'Escape' &&
+          !event.defaultPrevented &&
+          event.target instanceof Node &&
+          event.currentTarget.contains(event.target)
+        ) {
           event.preventDefault();
           event.stopPropagation();
           onClose();
@@ -111,7 +118,7 @@ export default function FilePreviewPanel({
                 {path.split('/').pop()}
               </span>
             </Heading>
-            <Text size="sm" c="carbon.7" mt={8} className="file-preview-path">
+            <Text size="sm" c="carbon.7" mt={4} className="file-preview-path">
               {path}
             </Text>
           </div>
@@ -119,7 +126,7 @@ export default function FilePreviewPanel({
             <IconXClose size={20} />
           </ActionIcon>
         </Group>
-        <Group gap={10} mt={16}>
+        <Group gap={10} mt={8}>
           <Badge>
             {fileFormat(path).kind === 'code' ? 'Code' : fileFormat(path).kind.toUpperCase()}
           </Badge>
@@ -159,21 +166,26 @@ export default function FilePreviewPanel({
         style={{ display: 'flex', flexDirection: 'column' }}
         keepMounted={false}
       >
-        <Tabs.List px={24}>
+        <Tabs.List px={mode === 'analyze' ? 0 : 20}>
           <Tabs.Tab value="preview">Preview</Tabs.Tab>
           <Tabs.Tab value="analyze">Analyze</Tabs.Tab>
           <Tabs.Tab value="source" disabled={loading || !!unavailableReason}>
             Edit source
           </Tabs.Tab>
         </Tabs.List>
-        <Tabs.Panel value="analyze" className="file-preview-content">
+        <Tabs.Panel value="analyze" className="file-preview-content file-preview-analysis">
           {dirty ? (
             <Alert color="yellow">
               Save or discard your draft before analyzing the saved file.
             </Alert>
           ) : (
             <Suspense fallback={<Loader aria-label="Loading analysis" />}>
-              <FileAnalysisPanel key={resourceId + path} resourceId={resourceId} path={path} />
+              <FileAnalysisPanel
+                key={resourceId + path}
+                resourceId={resourceId}
+                path={path}
+                onRunningChange={onAnalysisRunningChange}
+              />
             </Suspense>
           )}
         </Tabs.Panel>
@@ -209,14 +221,16 @@ export default function FilePreviewPanel({
         <Button leftSection={<IconDownload01 size={18} />} onClick={onDownload}>
           {dirty ? 'Download draft' : 'Download'}
         </Button>
-        <Button
-          variant="filled"
-          loading={busy}
-          disabled={!dirty || busy || loading || !!unavailableReason}
-          onClick={onSave}
-        >
-          Save changes
-        </Button>
+        {(mode === 'source' || dirty) && (
+          <Button
+            variant="filled"
+            loading={busy}
+            disabled={!dirty || busy || loading || !!unavailableReason}
+            onClick={onSave}
+          >
+            Save changes
+          </Button>
+        )}
       </footer>
     </Paper>
   );

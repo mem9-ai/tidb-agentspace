@@ -1,9 +1,24 @@
 import type { ReactNode } from 'react';
-import { Badge, NativeSelect, Text } from '@tidbcloud/uikit';
+import { Badge, Button, NativeSelect, Text } from '@tidbcloud/uikit';
+import { IconArrowUpRight } from '@tidbcloud/uikit/icons';
 import type { Resource } from '../api/client';
 import { Heading } from './WorkspaceHeading';
 import { ResourceKindIcon } from './ResourceKindIcon';
 import './resource-workspace.css';
+
+export function ResourceConnectButton({
+  onClick,
+  disabled,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Button onClick={onClick} disabled={disabled} rightSection={<IconArrowUpRight size={16} />}>
+      Connect
+    </Button>
+  );
+}
 
 export function ResourceWorkspaceHeader({
   title,

@@ -178,8 +178,9 @@ verified, and record that as a remaining gap.
   and collapse behavior. Collapse to a 56px desktop rail without unmounting the list, inspector
   or editor, clearing filters/drafts/results, changing selection or canceling active work.
   Keep the same labeled toggle focused, expose expanded/controls state, and remove hidden
-  controls from keyboard navigation. On narrow database screens use a compact horizontal
-  disclosure; File System keeps its Back to files flow. Preserve readable text and 44px controls.
+  controls from keyboard navigation. Both browsers use the same compact horizontal disclosure
+  on narrow screens, before and after selection. File System also keeps Back to files and its
+  unsaved-change guard; opening a file does not hide the browser. Preserve readable text and 44px controls.
   Check both themes at 1280×800/900 and 390×844, including keyboard toggling, active queries,
   filtering and File System regression. Evidence is in [density verification](../database-density-verification.md#compact-table-browser).
   Revisit for resizable navigation or multiple database documents.
@@ -190,11 +191,25 @@ verified, and record that as a remaining gap.
   preview/edit/analysis. Do not put the database selector inside SQL Editor while Tables sits
   outside. Use the shared 320px/56px browser layout, heading/metadata spacing and
   `WorkspaceBrowserItem` (TiUI NavLink) for icons, names, secondary text, selection and row
-  actions. File System keeps a desktop unselected-file panel and its narrow Back to files flow.
-  Keep DuckDB sources inside SQL Editor, preserve exact URLs and existing draft/resource
+  actions. File System keeps a desktop unselected-file panel, shared narrow disclosure and
+  Back to files flow. DuckDB uses its native database workspace without a file-source picker.
+  Preserve exact URLs and existing draft/resource
   lifetimes, and disable resource selection during active operations. Verify both themes at
   1280×800/900 and 390×844, resource switching, busy states, keyboard and draft guards. See
   [verification](../resource-workspace-verification.md); revisit for tabs or resizable panes.
+- **Shared execution and item interactions (owner correction, GH-52):** use
+  `WorkspaceExecutionPanel` for Database SQL and File System Analyze. SQL uses the same
+  top-right Run query button, Play icon, 48px target, loading/disabled behavior, Samples,
+  Limits and editor expansion. Bash uses Run command with the same chrome. Keep database
+  write/demo context and file read-only/table context visible; retain separate execution and
+  authorization rules. Use `WorkspaceQueryResults` for result headers, counts, export, table
+  scrolling, errors, empty/running states and completion metadata. Scope shared spacing so
+  generic panel margins cannot add extra gaps. File rows use one overflow menu and the same
+  full-width NavLink selection surface as table rows, with sibling action controls and no
+  nested buttons. Keep primary text readable and menus outside the scrolling list. Check
+  both themes, desktop/narrow sizes, cancel/recovery, keyboard focus and draft/result retention.
+  See [interaction verification](../resource-workspace-verification.md#shared-interaction-audit).
+  Revisit when adding a new execution tool or changing the installed UI packages.
 - **File analysis (accepted and implemented, 2026-10-28):** keep Analyze in the selected
   file's side panel. CSV/Parquet use the official SQL Editor with Standard SQL dialect;
   UTF-8 logs/text use TiUI Textarea and read-only Just Bash. Fetch capabilities, but run only
@@ -289,6 +304,11 @@ viewports, exact workflows, and limitations. Backend/cloud integration remains u
   before mounting it and suppress the menu's delayed return-focus handoff; ordinary menu Escape
   should still return focus. The file browser verifies both paths. Preserve focus trapping,
   Escape, labels, and keyboard verification.
+- **Portal Escape (2.9.1):** a Popover closes on Escape without marking the React event
+  handled; portal keyboard events can bubble through their React parent. The inline file
+  panel handles its own Escape only when the event target belongs to its physical DOM.
+  This keeps Limits/Samples Escape from closing the file or canceling work. Recheck nested
+  popup focus return and direct-panel Escape when changing TiUI or shared tool components.
 - **Browser item contrast (2.9.1):** the active NavLink description used a dark text color
   against the dark selected-row background during browser inspection. The shared browser
   item uses the supported `styles.description.color = 'inherit'` override so metadata follows

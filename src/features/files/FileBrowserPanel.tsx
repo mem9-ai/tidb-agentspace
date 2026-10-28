@@ -1,5 +1,5 @@
 import { Fragment, useRef, useState, type ReactNode } from 'react';
-import { ActionIcon, Anchor, Badge, Menu, TextInput } from '@tidbcloud/uikit';
+import { ActionIcon, Anchor, Badge, Group, Menu, TextInput, Typography } from '@tidbcloud/uikit';
 import {
   IconChevronRight,
   IconFilePlus01,
@@ -22,7 +22,6 @@ export function FileBrowserPanel({
   refreshing,
   canCreate,
   onCreate,
-  collapsible,
   collapsed,
   onToggle,
   footer,
@@ -38,7 +37,6 @@ export function FileBrowserPanel({
   refreshing: boolean;
   canCreate: boolean;
   onCreate: (type: 'file' | 'directory') => void;
-  collapsible: boolean;
   collapsed: boolean;
   onToggle: () => void;
   footer: ReactNode;
@@ -59,27 +57,32 @@ export function FileBrowserPanel({
       label="File browser"
       railLabel="Files"
       listLabel="Files"
-      collapsible={collapsible}
       collapsed={collapsed}
       onToggle={onToggle}
       footer={footer}
       heading={
-        <nav className="file-browser-path" aria-label="File path">
-          <Anchor
-            component="button"
-            type="button"
-            c="carbon.8"
-            fw={600}
-            className="file-browser-root"
-            aria-label="File system root"
-            title={systemName}
-            onClick={() => onNavigate('/')}
-          >
-            <IconFolder size={20} />
-            Files
-          </Anchor>
+        <Group gap="sm" wrap="nowrap">
+          <IconFolder size={20} aria-hidden />
+          <Typography component="h2" variant="title-lg" fz={16}>
+            <Anchor
+              component="button"
+              type="button"
+              c="carbon.8"
+              fw={600}
+              className="file-browser-root"
+              aria-label="File system root"
+              title={systemName}
+              onClick={() => onNavigate('/')}
+            >
+              Files
+            </Anchor>
+          </Typography>
           <Badge>{count}</Badge>
-          <div className="file-path-segments">
+        </Group>
+      }
+      context={
+        parts.length > 0 && (
+          <nav className="file-path-segments" aria-label="File path">
             {parts.map((part, index) => (
               <Fragment key={index}>
                 <IconChevronRight size={14} aria-hidden />
@@ -94,8 +97,8 @@ export function FileBrowserPanel({
                 </Anchor>
               </Fragment>
             ))}
-          </div>
-        </nav>
+          </nav>
+        )
       }
       toolbar={
         <>

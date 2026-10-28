@@ -81,6 +81,10 @@ a file, with an explicit unselected-file panel on desktop. Tables and Files shar
 browser width and collapse behavior. DuckDB uses tidbfs native database mode and the same
 Tables/SQL experience; its workspace has no custom file-source picker. Optional snapshot
 queries remain a separate API capability, with File System Analyze for Console file analysis.
+Database SQL and File System analysis share their execution toolbar, editor sizing, samples,
+limits, expansion and result presentation. Both browsers have the same mobile disclosure;
+file preview keeps its explicit return and unsaved-change protections. File analysis remains
+read-only and cancelable, while database SQL preserves its live-write boundary.
 Existing resource/table/file URLs and busy/draft protections remain authoritative. See
 [resource workspace verification](resource-workspace-verification.md).
 

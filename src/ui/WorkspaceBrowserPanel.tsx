@@ -9,9 +9,9 @@ export function WorkspaceBrowserPanel({
   label,
   heading,
   toolbar,
+  context,
   listLabel,
   railLabel,
-  collapsible = true,
   collapsed,
   onToggle,
   footer,
@@ -21,9 +21,9 @@ export function WorkspaceBrowserPanel({
   label: string;
   heading: ReactNode;
   toolbar: ReactNode;
+  context?: ReactNode;
   listLabel: string;
   railLabel: string;
-  collapsible?: boolean;
   collapsed: boolean;
   onToggle: () => void;
   footer?: ReactNode;
@@ -43,26 +43,25 @@ export function WorkspaceBrowserPanel({
         <div className="workspace-browser-identity" hidden={collapsed}>
           {heading}
         </div>
-        {collapsible && (
-          <ActionIcon
-            className="workspace-browser-toggle"
-            aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${label.toLowerCase()}`}
-            title={`${collapsed ? 'Expand' : 'Collapse'} ${label.toLowerCase()}`}
-            aria-expanded={!collapsed}
-            aria-controls={contentId}
-            onClick={(event) => {
-              event.currentTarget.focus({ preventScroll: true });
-              onToggle();
-            }}
-          >
-            {collapsed ? <IconChevronRight size={20} /> : <IconChevronLeft size={20} />}
-          </ActionIcon>
-        )}
+        <ActionIcon
+          className="workspace-browser-toggle"
+          aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${label.toLowerCase()}`}
+          title={`${collapsed ? 'Expand' : 'Collapse'} ${label.toLowerCase()}`}
+          aria-expanded={!collapsed}
+          aria-controls={contentId}
+          onClick={(event) => {
+            event.currentTarget.focus({ preventScroll: true });
+            onToggle();
+          }}
+        >
+          {collapsed ? <IconChevronRight size={20} /> : <IconChevronLeft size={20} />}
+        </ActionIcon>
       </div>
       <span className="workspace-browser-rail-label" aria-hidden hidden={!collapsed}>
         {railLabel}
       </span>
       <div id={contentId} className="workspace-browser-content" hidden={collapsed}>
+        {context && <div className="workspace-browser-context">{context}</div>}
         <div className="workspace-browser-toolbar">{toolbar}</div>
         <div className="workspace-browser-list" role="region" aria-label={listLabel} tabIndex={0}>
           {children}

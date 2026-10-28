@@ -1,5 +1,12 @@
-import { ActionIcon } from '@tidbcloud/uikit';
-import { IconDownload01, IconFile01, IconFolder, IconTrash01 } from '@tidbcloud/uikit/icons';
+import { useRef, useState } from 'react';
+import { ActionIcon, Menu } from '@tidbcloud/uikit';
+import {
+  IconDotsHorizontal,
+  IconDownload01,
+  IconFile01,
+  IconFolder,
+  IconTrash01,
+} from '@tidbcloud/uikit/icons';
 import type { WorkspaceFile } from './remote-files';
 import { WorkspaceBrowserItem } from '../../ui/WorkspaceBrowserItem';
 
@@ -44,28 +51,58 @@ export function FileBrowserList({
             file.type === 'directory' ? onNavigate(file.path) : onOpen(file, event.currentTarget)
           }
           actions={
-            <>
-              {file.type === 'file' && (
-                <ActionIcon
-                  aria-label={`Download ${file.path}`}
-                  title="Download"
-                  onClick={() => onDownload(file)}
-                >
-                  <IconDownload01 size={18} />
-                </ActionIcon>
-              )}
-              <ActionIcon
-                aria-label={`Delete ${file.path}`}
-                title="Delete"
-                disabled={busy}
-                onClick={() => onDelete(file)}
-              >
-                <IconTrash01 size={18} />
-              </ActionIcon>
-            </>
+            <FileItemActions file={file} busy={busy} onDownload={onDownload} onDelete={onDelete} />
           }
         />
       ))}
     </nav>
+  );
+}
+
+function FileItemActions({
+  file,
+  busy,
+  onDownload,
+  onDelete,
+}: {
+  file: WorkspaceFile;
+  busy: boolean;
+  onDownload: (file: WorkspaceFile) => void;
+  onDelete: (file: WorkspaceFile) => void;
+}) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [returnFocus, setReturnFocus] = useState(true);
+  return (
+    <Menu
+      position="bottom-end"
+      withinPortal
+      returnFocus={returnFocus}
+      onOpen={() => setReturnFocus(true)}
+    >
+      <Menu.Target>
+        <ActionIcon ref={trigger} aria-label={`Actions for ${file.path}`} title="Item actions">
+          <IconDotsHorizontal size={20} />
+        </ActionIcon>
+      </Menu.Target>
+      <Menu.Dropdown>
+        {file.type === 'file' && (
+          <Menu.Item leftSection={<IconDownload01 size={18} />} onClick={() => onDownload(file)}>
+            Download
+          </Menu.Item>
+        )}
+        <Menu.Item
+          color="red"
+          leftSection={<IconTrash01 size={18} />}
+          disabled={busy}
+          onClick={() => {
+            setReturnFocus(false);
+            trigger.current?.focus({ preventScroll: true });
+            onDelete(file);
+          }}
+        >
+          {file.type === 'directory' ? 'Delete folder' : 'Delete file'}
+        </Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
   );
 }

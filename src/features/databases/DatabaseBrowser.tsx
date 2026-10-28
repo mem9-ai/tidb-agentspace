@@ -283,6 +283,7 @@ export function TableInspector({
 }
 export function DatabaseTableList({
   database,
+  busy,
   tableName,
   collapsed,
   onToggle,
@@ -291,6 +292,7 @@ export function DatabaseTableList({
   onLoadingChange,
 }: {
   database: Resource;
+  busy: boolean;
   tableName?: string;
   collapsed: boolean;
   onToggle: () => void;
@@ -344,7 +346,7 @@ export function DatabaseTableList({
               listing.retry();
               onRefresh();
             }}
-            disabled={listing.loading}
+            disabled={listing.loading || busy}
           >
             <IconRefreshCw01 size={20} />
           </ActionIcon>
