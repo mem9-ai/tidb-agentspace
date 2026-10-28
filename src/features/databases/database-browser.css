@@ -42,3 +42,42 @@
 .database-detail {
   margin-bottom: 0;
 }
+.database-table-columns {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  margin: 0 0 8px 20px;
+  padding: 12px;
+  border-left: 1px solid var(--border);
+}
+.database-column-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.database-column-list li + li {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.database-column-list li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.database-column-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.database-column-name > code {
+  min-width: 0;
+  flex: 1;
+  font-size: 16px;
+}
+.database-column-name > :last-child:not(code) {
+  flex-shrink: 0;
+}
+.database-column-list p > code {
+  font-size: 13px;
+}

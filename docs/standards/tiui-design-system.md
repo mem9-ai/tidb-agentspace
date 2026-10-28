@@ -159,6 +159,16 @@ verified, and record that as a remaining gap.
   retention, keyboard behavior, both themes and sizes; see [ADR 0007](../decisions/0007-database-browser.md)
   and [unified workspace verification](../database-workspace-verification.md). Revisit for
   multiple query documents, multiple schemas or durable draft persistence.
+- **Inline table columns (owner correction, GH-54):** a table row is an accessible disclosure
+  for its columns, not an automatic switch to Table details. Show column names, SQL types and
+  available nullable/key/default/extra attributes beneath the selected table. Keep SQL Editor,
+  edited SQL and completed results in place. Query table explicitly prepares a dialect-safe
+  SELECT and uses the existing Keep/Replace guard; only Run query executes it. Full inspection
+  stays an explicit secondary tab. Share the selected-table metadata read between both views,
+  pause new reads during active SQL/list/row operations, and clear resource-scoped data on
+  database changes. Preserve URLs, keyboard expanded/controls semantics, retry, filtering and
+  whole-browser collapse. See [verification](../database-workspace-verification.md#inline-table-columns).
+  Revisit for multiple open tables, schema trees or durable metadata caching.
 - **Database work area density (owner correction 2026-10-28):** prioritize the table list,
   editor and first query rows within a typical desktop viewport. Keep the page heading compact;
   show database name, protocol/provider and brief expiry in the shared resource bar above both
@@ -314,6 +324,11 @@ viewports, exact workflows, and limitations. Backend/cloud integration remains u
   item uses the supported `styles.description.color = 'inherit'` override so metadata follows
   the resolved row text color in both themes. Keep this in the shared adapter and recheck on
   upgrades; do not compensate with a separate hard-coded palette.
+- **NavLink action spacing (2.9.1):** upstream default props set logical `px=8` and `py=4`.
+  These override a shorthand `p` and can override a styles-API physical `paddingRight`.
+  The shared item uses explicit `px`/`py` and `pe` to reserve space for sibling actions.
+  Keep the existing compact vertical padding; check that disclosure and query/menu icons do not
+  overlap in either theme or at 390px. Revisit when upgrading TiUI or changing row actions.
 - **SQL extensions (0.0.6):** scope the editor cache to the database route, synchronize sample
   changes through the editor view, and keep callbacks current. CodeMirror's default
   `Mod-Enter` inserts a blank line: use `Prec.high(keymap.of(...))` for Run query. Put density

@@ -18,8 +18,8 @@ import { workspaceApi, type Resource, type TableDetail } from '../../api/client'
 import { ChoiceTabs } from '../../ui/ChoiceTabs';
 import { Heading } from '../../ui/WorkspaceHeading';
 import { WorkspaceBrowserPanel } from '../../ui/WorkspaceBrowserPanel';
-import { WorkspaceBrowserItem } from '../../ui/WorkspaceBrowserItem';
-import { databaseEditorHash } from '../navigation/workspace-route';
+import { DatabaseTableItem } from './DatabaseTableItem';
+import type { TableMetadata } from './use-table-metadata';
 import './database-browser.css';
 
 function useRead<T>(load: (signal: AbortSignal) => Promise<T>) {
@@ -220,22 +220,16 @@ export function TableInspector({
   onQuery,
   busy,
   onLoadingChange,
+  metadata,
 }: {
   resourceId: string;
   name: string;
   onQuery: () => void;
   busy: boolean;
   onLoadingChange: (loading: boolean) => void;
+  metadata: TableMetadata;
 }) {
-  const load = useCallback(
-    (signal: AbortSignal) => workspaceApi.table(resourceId, name, signal),
-    [resourceId, name],
-  );
-  const detail = useRead(load);
-  useEffect(() => {
-    onLoadingChange(detail.loading);
-    return () => onLoadingChange(false);
-  }, [detail.loading, onLoadingChange]);
+  const detail = metadata;
   const [tab, setTab] = useState('Columns');
   return (
     <Paper className="panel database-detail" p="xl" withBorder>
@@ -285,18 +279,26 @@ export function DatabaseTableList({
   database,
   busy,
   tableName,
+  expandedTable,
+  metadata,
+  waiting,
   collapsed,
   onToggle,
   onSelect,
+  onQuery,
   onRefresh,
   onLoadingChange,
 }: {
   database: Resource;
   busy: boolean;
   tableName?: string;
+  expandedTable?: string;
+  metadata: TableMetadata;
+  waiting: boolean;
   collapsed: boolean;
   onToggle: () => void;
-  onSelect: () => void;
+  onSelect: (name: string) => void;
+  onQuery: (name: string) => void;
   onRefresh: () => void;
   onLoadingChange: (loading: boolean) => void;
 }) {
@@ -346,7 +348,7 @@ export function DatabaseTableList({
               listing.retry();
               onRefresh();
             }}
-            disabled={listing.loading || busy}
+            disabled={listing.loading || busy || waiting || metadata.loading}
           >
             <IconRefreshCw01 size={20} />
           </ActionIcon>
@@ -377,14 +379,17 @@ export function DatabaseTableList({
             )}
             <nav aria-label="Database tables">
               {matches.map((table) => (
-                <WorkspaceBrowserItem
+                <DatabaseTableItem
                   key={table.name}
                   active={tableName === table.name}
-                  href={databaseEditorHash(database.id, table.name)}
-                  onClick={onSelect}
+                  expanded={expandedTable === table.name}
+                  busy={busy}
+                  waiting={waiting}
+                  metadata={metadata}
+                  onToggle={() => onSelect(table.name)}
+                  onQuery={() => onQuery(table.name)}
                   name={table.name}
-                  icon={<IconDatabase01 size={20} />}
-                  description={table.type === 'VIEW' ? 'View' : 'Table'}
+                  type={table.type}
                 />
               ))}
             </nav>

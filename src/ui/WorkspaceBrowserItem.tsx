@@ -9,6 +9,9 @@ export function WorkspaceBrowserItem({
   href,
   onClick,
   actions,
+  expanded,
+  controls,
+  disclosure,
 }: {
   name: string;
   description?: string;
@@ -17,19 +20,27 @@ export function WorkspaceBrowserItem({
   href?: string;
   onClick?: (event: MouseEvent<HTMLElement>) => void;
   actions?: ReactNode;
+  expanded?: boolean;
+  controls?: string;
+  disclosure?: ReactNode;
 }) {
   const props = {
     label: name,
     description,
     leftSection: icon,
+    rightSection: disclosure,
     active,
     title: name,
     onClick,
-    p: 'sm',
+    px: 8,
+    py: 4,
+    pe: actions ? 60 : 8,
     className: 'workspace-browser-item',
     classNames: { label: 'workspace-browser-item-label' },
-    styles: { description: { color: 'inherit' }, root: { paddingRight: actions ? 60 : undefined } },
+    styles: { description: { color: 'inherit' } },
     'aria-current': active ? ('true' as const) : undefined,
+    'aria-expanded': expanded,
+    'aria-controls': controls,
   };
   return (
     <div className="workspace-browser-row">

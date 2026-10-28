@@ -6,9 +6,14 @@ import { ChoiceTabs } from '../../ui/ChoiceTabs';
 import { WorkspaceModal } from '../../ui/WorkspaceModal';
 import { Heading } from '../../ui/WorkspaceHeading';
 import { SqlQueryPanel } from '../sql/SqlQueryPanel';
-import { tableSelectSql, type WorkspaceRoute } from '../navigation/workspace-route';
+import {
+  databaseEditorHash,
+  tableSelectSql,
+  type WorkspaceRoute,
+} from '../navigation/workspace-route';
 import { DatabaseTableList, TableInspector } from './DatabaseBrowser';
 import { createQueryDraft, queryDraftReducer } from './query-draft';
+import { useTableMetadata } from './use-table-metadata';
 
 type Props = {
   database: Resource;
@@ -53,8 +58,11 @@ export function DatabaseWorkspace({
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
   const [listingBusy, setListingBusy] = useState(true);
-  const [inspectionBusy, setInspectionBusy] = useState(false);
+  const [rowBusy, setRowBusy] = useState(false);
   const [browserCollapsed, setBrowserCollapsed] = useState(false);
+  const [collapsedTable, setCollapsedTable] = useState<string | null>(null);
+  const waitingForRead = busy || listingBusy || rowBusy;
+  const metadata = useTableMetadata(database.id, tableName, revision, waitingForRead);
   const editor = useRef<HTMLDivElement>(null);
   const showEditor = () => {
     setOutputView('Query results');
@@ -62,6 +70,24 @@ export function DatabaseWorkspace({
     editor.current
       ?.querySelector<HTMLElement>('[aria-label="SQL query"]')
       ?.focus({ preventScroll: true });
+  };
+  const queryTable = (name: string) => {
+    setCollapsedTable(null);
+    if (tableName !== name || routeLocation.databaseView !== 'sql') {
+      location.hash = databaseEditorHash(database.id, name);
+    }
+    dispatch({
+      type: 'queryTable',
+      sql: tableSelectSql(
+        name,
+        database.kind === 'duckdb'
+          ? 'duckdb'
+          : database.kind === 'postgresql'
+            ? 'postgresql'
+            : 'mysql',
+      ),
+    });
+    showEditor();
   };
   return (
     <>
@@ -81,9 +107,18 @@ export function DatabaseWorkspace({
           database={database}
           busy={busy}
           tableName={tableName}
+          expandedTable={tableName !== collapsedTable ? tableName : undefined}
+          metadata={metadata}
+          waiting={waitingForRead}
           collapsed={browserCollapsed}
           onToggle={() => setBrowserCollapsed((value) => !value)}
-          onSelect={() => setOutputView('Table details')}
+          onSelect={(name) => {
+            setCollapsedTable((current) => (tableName === name && current !== name ? name : null));
+            setOutputView('Query results');
+            if (tableName !== name || routeLocation.databaseView !== 'sql')
+              location.hash = databaseEditorHash(database.id, name);
+          }}
+          onQuery={queryTable}
           onLoadingChange={setListingBusy}
           onRefresh={() => {
             setListingBusy(true);
@@ -95,7 +130,7 @@ export function DatabaseWorkspace({
             sql={draft.sql}
             onSqlChange={(sql) => dispatch({ type: 'edit', sql })}
             database={database}
-            readBusy={database.kind === 'duckdb' && (listingBusy || inspectionBusy)}
+            readBusy={database.kind === 'duckdb' && (listingBusy || metadata.loading || rowBusy)}
             execute={(sql) => workspaceApi.query({ resourceId: database.id, sql })}
             onComplete={refresh}
             onExport={onExport}
@@ -120,29 +155,17 @@ export function DatabaseWorkspace({
                     resourceId={database.id}
                     name={tableName}
                     busy={busy}
-                    onLoadingChange={setInspectionBusy}
-                    onQuery={() => {
-                      dispatch({
-                        type: 'queryTable',
-                        sql: tableSelectSql(
-                          tableName,
-                          database.kind === 'duckdb'
-                            ? 'duckdb'
-                            : database.kind === 'postgresql'
-                              ? 'postgresql'
-                              : 'mysql',
-                        ),
-                      });
-                      showEditor();
-                    }}
+                    metadata={metadata}
+                    onLoadingChange={setRowBusy}
+                    onQuery={() => queryTable(tableName)}
                   />
                 ) : (
                   <Paper className="panel" withBorder p="xl">
                     <Stack gap="lg">
                       <Heading level={2}>Explore your tables</Heading>
                       <Text>
-                        Select a table on the left to inspect columns, indexes and data. Your SQL
-                        stays in the editor.
+                        Expand a table on the left to see its columns. Use Query table to prepare a
+                        SELECT in SQL Editor, or choose this tab for indexes and data.
                       </Text>
                     </Stack>
                   </Paper>

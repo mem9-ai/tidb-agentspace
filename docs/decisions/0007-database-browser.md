@@ -23,6 +23,12 @@ The Console uses one SQL workspace per database, with a persistent table navigat
 editor and query results/table inspection underneath (owner correction, 2026-10-28). Table
 selection preserves the editor draft and previous results. Query table explicitly generates a
 SELECT and protects edited SQL with a replace/keep choice; it does not execute automatically.
+Following [GH-54](https://github.com/siddontang/tidb.ai/issues/54), table selection expands column
+names/properties inline and keeps Query results active. Table details is an explicit secondary
+choice. Both column views share the same selected-table API result in route-local memory;
+refresh/retry obtains a new authorized read. New metadata reads wait for active SQL/list/row
+operations rather than competing with DuckDB's single-operation admission. The API contract
+and backend authorization remain unchanged; no metadata is persisted.
 Existing `/tables` and `/sql` links both open the unified workspace and retain table identity.
 Demo tables remain labeled. See [unified workspace verification](../database-workspace-verification.md).
 
