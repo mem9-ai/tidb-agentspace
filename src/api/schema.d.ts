@@ -292,6 +292,29 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/workspaces/{workspaceId}/result-exports': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Export a supplied result snapshot without rerunning its source query
+     * @description Required workspace key scope: Source database: queries:execute; source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.
+     */
+    post: operations['exportResult'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/workspaces/{workspaceId}/queries': {
     parameters: {
       query?: never;
@@ -533,6 +556,69 @@ export interface components {
         requestId: string;
       };
     };
+    ResultExportInput: {
+      sourceResourceId: string;
+      result: {
+        columns: string[];
+        rows: {
+          [key: string]: unknown;
+        }[];
+      };
+      target:
+        | {
+            /** @constant */
+            kind: 'download';
+            /** @enum {string} */
+            format: 'csv' | 'json' | 'jsonl';
+          }
+        | {
+            /** @constant */
+            kind: 'filesystem';
+            resourceId: string;
+            path: string;
+            /** @enum {string} */
+            format: 'csv' | 'json' | 'jsonl';
+          }
+        | {
+            /** @constant */
+            kind: 'database';
+            resourceId: string;
+            table: string;
+          };
+    };
+    ResultExportOutput:
+      | {
+          /** @constant */
+          kind: 'download';
+          rowCount: number;
+          /** @enum {string} */
+          format: 'csv' | 'json' | 'jsonl';
+          filename: string;
+          mimeType: string;
+          content: string;
+          bytes: number;
+        }
+      | {
+          /** @constant */
+          kind: 'filesystem';
+          rowCount: number;
+          resourceId: string;
+          path: string;
+          /** @enum {string} */
+          format: 'csv' | 'json' | 'jsonl';
+          bytes: number;
+        }
+      | {
+          /** @constant */
+          kind: 'database';
+          rowCount: number;
+          resourceId: string;
+          table: string;
+          columns: {
+            name: string;
+            type: string;
+          }[];
+        };
     QueryResult: {
       columns: string[];
       rows: {
@@ -2952,6 +3038,159 @@ export interface operations {
       };
       /** @description Provider quota or rate limit */
       429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider unavailable or invalid response */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider binding needs operator recovery */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  exportResult: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ResultExportInput'];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResultExportOutput'];
+        };
+      };
+      /** @description Invalid request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Missing, invalid, expired, or revoked credential */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Insufficient permission */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource or endpoint not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Conflict or free-tier limit */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Content too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Unsupported content type */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL syntax, result limit, or unsupported demo query */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider quota or rate limit */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Export may have completed but its activity record could not be saved */
+      500: {
         headers: {
           [name: string]: unknown;
         };

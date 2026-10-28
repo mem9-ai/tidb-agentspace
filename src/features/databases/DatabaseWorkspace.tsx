@@ -1,6 +1,6 @@
 import { useReducer, useRef, useState } from 'react';
 import { Button, Group, Paper, Stack, Text } from '@tidbcloud/uikit';
-import { workspaceApi, type QueryResult, type Resource } from '../../api/client';
+import { workspaceApi, type Resource } from '../../api/client';
 import { DatabaseWorkspaceHeader } from './DatabaseWorkspaceHeader';
 import { ChoiceTabs } from '../../ui/ChoiceTabs';
 import { WorkspaceModal } from '../../ui/WorkspaceModal';
@@ -21,7 +21,6 @@ type Props = {
   routeLocation: WorkspaceRoute;
   refresh: () => Promise<void>;
   onSelect: (id: string) => void;
-  onExport: (result: QueryResult) => void;
   onConnect: () => void;
   onRetry: () => void;
 };
@@ -31,7 +30,6 @@ export function DatabaseWorkspace({
   routeLocation,
   refresh,
   onSelect,
-  onExport,
   onConnect,
   onRetry,
 }: Props) {
@@ -105,6 +103,7 @@ export function DatabaseWorkspace({
       >
         <DatabaseTableList
           database={database}
+          revision={revision}
           busy={busy}
           tableName={tableName}
           expandedTable={tableName !== collapsedTable ? tableName : undefined}
@@ -133,7 +132,11 @@ export function DatabaseWorkspace({
             readBusy={database.kind === 'duckdb' && (listingBusy || metadata.loading || rowBusy)}
             execute={(sql) => workspaceApi.query({ resourceId: database.id, sql })}
             onComplete={refresh}
-            onExport={onExport}
+            onExportSaved={async () => {
+              setListingBusy(true);
+              setRevision((value) => value + 1);
+              await refresh();
+            }}
             onRunningChange={setBusy}
             onRunStart={() => setOutputView('Query results')}
             renderResults={(results) => (

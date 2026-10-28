@@ -14,6 +14,7 @@ import { readUpload, previewFile, downloadFile } from './file-transfer.mjs';
 import { canAccessResource, normalizeResourceGrant } from './access-policy.mjs';
 import { createFileAnalysis } from './file-analysis.mjs';
 import { createAnalysisSnapshot } from './file-analysis-snapshot.mjs';
+import { exportResult, createExportFile } from './result-exports.mjs';
 import { applyHttpPolicy, consoleOrigins } from './http-policy.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -474,6 +475,103 @@ export async function createApp({
               );
           if (execute) await recordFile('file.analyzed', resource.id, input.path, principal);
           return send(200, result);
+        } finally {
+          res.off('close', onClose);
+        }
+      }
+      if (route === '/result-exports' && req.method === 'POST') {
+        const input = await body(req);
+        const authorize = ({ sourceResourceId, target }) => {
+          const current = visibleState();
+          const key = isOwner ? undefined : current.keys.find((item) => item.id === principalId);
+          if (
+            isOwner
+              ? (sessions.get(sessionToken) || 0) <= Date.now()
+              : !key || key.revokedAt || Date.parse(key.expiresAt) <= Date.now()
+          )
+            fail(401, 'INVALID_KEY', 'The session or key is invalid, expired, or revoked.');
+          const resource = (id) => {
+            if (!isOwner && !canAccessResource(key.resourceIds, id))
+              fail(
+                403,
+                'RESOURCE_ACCESS_DENIED',
+                'This key cannot access a selected export resource.',
+              );
+            const selected = current.resources.find((item) => item.id === id);
+            if (!selected) fail(404, 'NOT_FOUND', 'Export resource not found.');
+            return selected;
+          };
+          const scope = (action) => {
+            if (!isOwner && !key.scopes.includes(action))
+              fail(403, 'INSUFFICIENT_SCOPE', `This action requires ${action}.`);
+          };
+          const source = resource(sourceResourceId);
+          for (const action of source.kind === 'filesystem'
+            ? ['files:read', 'files:analyze']
+            : ['queries:execute'])
+            scope(action);
+          if (target.kind === 'download') return;
+          const destination = resource(target.resourceId);
+          if (target.kind === 'filesystem') {
+            scope('files:write');
+            if (
+              destination.kind !== 'filesystem' ||
+              ![undefined, 'local', drive9Provider].includes(destination.provider)
+            )
+              fail(400, 'INVALID_EXPORT_TARGET', 'Select a public File System.');
+          } else {
+            scope('queries:execute');
+            const provider = {
+              mysql: zeroProvider,
+              postgresql: db9Provider,
+              duckdb: duckdbProvider,
+            }[destination.kind];
+            if (!provider || destination.provider !== provider)
+              fail(
+                400,
+                'INVALID_EXPORT_TARGET',
+                'Select a live database. Demo databases do not accept exports.',
+              );
+          }
+          if (destination.status !== 'active')
+            fail(409, 'EXPORT_TARGET_UNAVAILABLE', 'Wait until the export destination is active.');
+          return destination;
+        };
+        const record = async (target, rowCount) => {
+          try {
+            await store.mutate((draft) =>
+              event(
+                draft,
+                'result.exported',
+                `${target.path || target.table} (${rowCount} rows)`,
+                principal,
+                target.resourceId,
+              ),
+            );
+          } catch {
+            fail(
+              500,
+              'EXPORT_RECORD_FAILED',
+              'The export completed, but its activity record could not be saved. Inspect the destination before retrying.',
+            );
+          }
+        };
+        const controller = new AbortController();
+        const onClose = () => controller.abort();
+        res.on('close', onClose);
+        try {
+          return send(
+            200,
+            await exportResult(input, {
+              authorize,
+              cleanPath,
+              signal: controller.signal,
+              createFile: (options) => createExportFile({ ...options, store, drive9 }),
+              execute: (resource, sql, signal) =>
+                databaseAdapter(resource).execute(resource, sql, signal),
+              record,
+            }),
+          );
         } finally {
           res.off('close', onClose);
         }

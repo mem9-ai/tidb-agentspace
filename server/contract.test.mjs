@@ -138,6 +138,20 @@ test('standalone API responses conform to every declared JSON operation, includi
     resourceId: database.result.data.id,
     sql: 'SELECT 1',
   });
+  for (const target of [
+    { kind: 'download', format: 'csv' },
+    { kind: 'download', format: 'json' },
+    { kind: 'download', format: 'jsonl' },
+    { kind: 'filesystem', resourceId: 'fs_shared', path: '/result.json', format: 'json' },
+    { kind: 'database', resourceId: database.result.data.id, table: 'result_export' },
+  ])
+    await request(workspace + '/result-exports', 'post', {
+      sourceResourceId: 'db_memory',
+      result: { columns: ['connected'], rows: [{ connected: 1 }] },
+      target,
+    });
+  await request(workspace + '/result-exports', 'post', {}, { status: 400 });
+  await request(workspace + '/result-exports', 'post', {}, { owner: false, status: 401 });
   await request(workspace + '/bootstrap');
   await request(workspace + '/usage');
   await request(workspace + '/events');

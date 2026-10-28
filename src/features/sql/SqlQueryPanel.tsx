@@ -21,7 +21,7 @@ type Props = {
   readBusy: boolean;
   execute: (sql: string) => Promise<QueryResult>;
   onComplete: () => Promise<void>;
-  onExport: (result: QueryResult) => void;
+  onExportSaved: () => Promise<void>;
 };
 export function SqlQueryPanel({
   sql,
@@ -33,7 +33,7 @@ export function SqlQueryPanel({
   readBusy,
   execute,
   onComplete,
-  onExport,
+  onExportSaved,
 }: Props) {
   const live = ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
     database.provider || '',
@@ -133,7 +133,8 @@ export function SqlQueryPanel({
           result={result}
           busy={busy}
           error={error}
-          onExport={() => result && onExport(result)}
+          sourceResourceId={database.id}
+          onExportSaved={onExportSaved}
           footnote={
             result?.mode === 'live'
               ? `Statement completed in ${result.durationMs} ms.${result.columns.length ? '' : ` ${result.affectedRows ?? 0} rows affected.`}`

@@ -1,6 +1,12 @@
 import { resultCollector, sqlError } from './sql-common.mjs';
 
 export function postgresError(error) {
+  if (error?.code === '42P07')
+    return sqlError(
+      409,
+      'SQL_TABLE_EXISTS',
+      'A table with this name already exists. Choose a new table name.',
+    );
   if (
     ['RESULT_TOO_LARGE', 'SQL_MULTIPLE_RESULTS', 'SQL_TIMEOUT', 'SQL_CANCELED'].includes(
       error?.code,

@@ -89,6 +89,12 @@ export function resultCollector(limits = sqlLimits) {
 }
 
 export function sanitizeSqlError(error) {
+  if (error?.code === 'ER_TABLE_EXISTS_ERROR')
+    return sqlError(
+      409,
+      'SQL_TABLE_EXISTS',
+      'A table with this name already exists. Choose a new table name.',
+    );
   if (['RESULT_TOO_LARGE', 'SQL_MULTIPLE_RESULTS'].includes(error?.code)) return error;
   const code = String(error?.code ?? '');
   if (error?.errno === 8130 || ['ER_PARSE_ERROR', 'ER_EMPTY_QUERY'].includes(code))

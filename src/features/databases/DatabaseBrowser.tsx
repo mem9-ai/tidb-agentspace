@@ -22,7 +22,7 @@ import { DatabaseTableItem } from './DatabaseTableItem';
 import type { TableMetadata } from './use-table-metadata';
 import './database-browser.css';
 
-function useRead<T>(load: (signal: AbortSignal) => Promise<T>) {
+function useRead<T>(load: (signal: AbortSignal) => Promise<T>, refreshVersion = 0) {
   const [state, setState] = useState<{ data?: T; error?: string; loading: boolean }>({
     loading: true,
   });
@@ -44,7 +44,7 @@ function useRead<T>(load: (signal: AbortSignal) => Promise<T>) {
       },
     );
     return () => controller.abort();
-  }, [load, revision]);
+  }, [load, revision, refreshVersion]);
   return { ...state, retry: () => setRevision((value) => value + 1) };
 }
 function Loading({ children }: { children: string }) {
@@ -277,6 +277,7 @@ export function TableInspector({
 }
 export function DatabaseTableList({
   database,
+  revision,
   busy,
   tableName,
   expandedTable,
@@ -290,6 +291,7 @@ export function DatabaseTableList({
   onLoadingChange,
 }: {
   database: Resource;
+  revision: number;
   busy: boolean;
   tableName?: string;
   expandedTable?: string;
@@ -306,7 +308,7 @@ export function DatabaseTableList({
     (signal: AbortSignal) => workspaceApi.tables(database.id, signal),
     [database.id],
   );
-  const listing = useRead(load);
+  const listing = useRead(load, revision);
   useEffect(() => {
     onLoadingChange(listing.loading);
   }, [listing.loading, onLoadingChange]);

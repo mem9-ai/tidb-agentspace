@@ -218,7 +218,7 @@ export async function createDrive9({ credentialsFile, transport = fetch }) {
     read(resourceId, path, options = {}) {
       return request(resourceId, fsPath(path), options);
     },
-    async write(resourceId, path, bytes, createOnly = false) {
+    async write(resourceId, path, bytes, createOnly = false, beforeWrite = () => {}) {
       const info = await status(resourceId);
       if (info.status !== 'active')
         throw fileError(409, 'PROVIDER_NOT_READY', 'Wait until this File System is active.');
@@ -228,6 +228,7 @@ export async function createDrive9({ credentialsFile, transport = fetch }) {
           'FILE_TOO_LARGE',
           `This File System currently accepts uploads up to ${info.uploadLimitBytes} bytes.`,
         );
+      beforeWrite();
       const response = await request(resourceId, fsPath(path), {
         method: 'PUT',
         headers: {

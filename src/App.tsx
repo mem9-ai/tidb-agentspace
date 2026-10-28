@@ -921,10 +921,6 @@ function DatabaseDetail({
         routeLocation={routeLocation}
         refresh={refresh}
         onSelect={openDatabaseEditor}
-        onExport={(result) => {
-          download('query-results.json', JSON.stringify(result.rows, null, 2), 'application/json');
-          notify('Results exported');
-        }}
       />
     </section>
   );
@@ -1319,6 +1315,10 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               trigger={previewTrigger}
               onChange={setContent}
               onAnalysisRunningChange={setAnalysisBusy}
+              onExportSaved={async () => {
+                listing.refresh();
+                await refresh();
+              }}
               onClose={() => requestPreviewChange(closePreview)}
               onKeepEditing={() => setPendingAction(null)}
               onDiscard={() => {

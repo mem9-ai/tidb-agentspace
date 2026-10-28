@@ -25,10 +25,12 @@ export default function FileAnalysisPanel({
   resourceId,
   path,
   onRunningChange,
+  onExportSaved,
 }: {
   resourceId: string;
   path: string;
   onRunningChange: (running: boolean) => void;
+  onExportSaved: () => Promise<void>;
 }) {
   const [cap, setCap] = useState<FileAnalysisCapabilities | null>(null);
   const [script, setScript] = useState('');
@@ -213,6 +215,8 @@ export default function FileAnalysisPanel({
           </WorkspaceExecutionPanel>
           {sql ? (
             <WorkspaceQueryResults
+              sourceResourceId={resourceId}
+              onExportSaved={onExportSaved}
               result={result?.engine === 'duckdb' ? result : null}
               busy={busy}
               error={error}

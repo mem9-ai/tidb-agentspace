@@ -5,6 +5,7 @@ import { copySqlDependencies } from './sql-runtime-dependencies.mjs';
 
 export const runtimeFiles = [
   'server/index.mjs',
+  'server/result-exports.mjs',
   'server/database-browser.mjs',
   'server/database-identifiers.mjs',
   'server/duckdb-browser.mjs',

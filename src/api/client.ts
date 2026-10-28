@@ -19,6 +19,9 @@ export type FileAnalysisInput = JsonBody<operations['analyzeFile']>;
 export type FileAnalysisCapabilities =
   operations['fileAnalysisCapabilities']['responses'][200]['content']['application/json'];
 export type WriteFileInput = JsonBody<operations['writeFile']>;
+export type ResultExportInput = JsonBody<operations['exportResult']>;
+export type ResultExportOutput =
+  operations['exportResult']['responses'][200]['content']['application/json'];
 export const workspaceId = 'ws_agentlab';
 export const base = `/api/v1/workspaces/${workspaceId}`;
 const params = { path: { workspaceId } } as const;
@@ -33,6 +36,8 @@ export function configureApi(config: unknown) {
 }
 
 export const workspaceApi = {
+  exportResult: (body: ResultExportInput) =>
+    responseData(client.POST('/workspaces/{workspaceId}/result-exports', { params, body })),
   fileAnalysisCapabilities: (resourceId: string, path: string, signal?: AbortSignal) =>
     responseData(
       client.GET('/workspaces/{workspaceId}/file-analyses/capabilities', {

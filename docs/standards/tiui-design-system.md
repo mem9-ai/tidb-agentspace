@@ -225,6 +225,15 @@ verified, and record that as a remaining gap.
   both themes, desktop/narrow sizes, cancel/recovery, keyboard focus and draft/result retention.
   See [interaction verification](../resource-workspace-verification.md#shared-interaction-audit).
   Revisit when adding a new execution tool or changing the installed UI packages.
+- **Result export (owner correction, GH-58):** Database and File System SQL use the same
+  Export entry and TiUI dialog for CSV/JSON/JSON Lines downloads and copies to public workspace
+  files or new database tables. Export the completed rows without rerunning SQL. Show the
+  target, row count and format semantics before the explicit action; collisions preserve the
+  inputs and never overwrite or append. Lock submission/dismissal while writing, restore focus
+  on close, preserve drafts/results, and refresh the target browser without resetting filters.
+  Success links open the saved file/table. Follow [ADR 0013](../decisions/0013-result-snapshot-exports.md)
+  for authority and partial-write handling, and [verification](../result-export-verification.md)
+  for themes, narrow layouts and API limits. Revisit for larger exports or additional formats.
 - **File analysis (accepted and implemented, 2026-10-28):** keep Analyze in the selected
   file's side panel. CSV/Parquet use the official SQL Editor with Standard SQL dialect;
   UTF-8 logs/text use TiUI Textarea and read-only Just Bash. Fetch capabilities, but run only

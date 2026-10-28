@@ -14,10 +14,17 @@ export function safeDuckdbError(error) {
       'SQL_SYNTAX_ERROR',
       'SQL_OBJECT_NOT_FOUND',
       'SQL_CONFLICT',
+      'SQL_TABLE_EXISTS',
     ].includes(error.code)
   )
     return error;
   const message = String(error?.message || '');
+  if (/Catalog Error:.*Table.*already exists/i.test(message))
+    return sqlError(
+      409,
+      'SQL_TABLE_EXISTS',
+      'A table with this name already exists. Choose a new table name.',
+    );
   if (/Parser Error/.test(message))
     return sqlError(
       422,

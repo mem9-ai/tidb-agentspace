@@ -92,9 +92,11 @@ keeps the tool identity/context understated and consolidates auxiliary controls 
 Database table rows additionally follow [inline columns](docs/database-workspace-verification.md#inline-table-columns):
 disclose schema in the browser, keep SQL/results primary, and prepare table queries explicitly.
 
-The proposed [result export contract](specs/gh-58/spec.md) and
+The accepted [result export contract](specs/gh-58/spec.md) and
 [ADR 0013](docs/decisions/0013-result-snapshot-exports.md) define bounded snapshot downloads and
-create-only copies into public workspace resources. Implementation remains pending.
+create-only copies into public workspace resources. Database and File System SQL now share
+CSV/JSON/JSON Lines downloads and file/new-table exports; see
+[verification, API usage and limits](docs/result-export-verification.md).
 
 DuckDB uses tidbfs native database mode, with ordinary Tables and SQL in the Console; see
 [customer experience](docs/duckdb-databases.md#customer-experience). For the separate optional

@@ -29,4 +29,4 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 - [0012: DuckDB catalog reader](0012-duckdb-catalog-reader.md) — bounded read-only reuse for server-generated browsing, while customer SQL remains disposable.
 
-- [0013: Result snapshot exports](0013-result-snapshot-exports.md) — proposed create-only export contract; implementation pending the GH-58 acceptance workflow.
+- [0013: Result snapshot exports](0013-result-snapshot-exports.md) — accepted and implemented bounded downloads and create-only copies into public workspace resources.

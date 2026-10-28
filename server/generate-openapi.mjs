@@ -4,6 +4,7 @@ import { format, resolveConfig } from 'prettier';
 import { capabilities } from './store.mjs';
 import { zeroRegion } from './providers/zero.mjs';
 import { analysisLimits } from './file-analysis-contract.mjs';
+import { resultExportSchemas } from './result-export-contract.mjs';
 const regionSchema = {
   type: 'string',
   enum: [
@@ -100,6 +101,7 @@ const schemas = {
   },
 };
 const ref = (name) => ({ $ref: `#/components/schemas/${name}` });
+Object.assign(schemas, resultExportSchemas);
 const str = { type: 'string' };
 const array = (item) => ({
   type: 'object',
@@ -592,6 +594,14 @@ const paths = {
       },
     ),
   },
+  [ws + '/result-exports']: {
+    post: operation(
+      'exportResult',
+      'Export a supplied result snapshot without rerunning its source query',
+      'Source database: queries:execute; source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant',
+      { input: ref('ResultExportInput'), output: ref('ResultExportOutput') },
+    ),
+  },
   [ws + '/queries']: {
     post: operation(
       'executeQuery',
@@ -765,6 +775,12 @@ for (const [path, item] of Object.entries(paths))
   if (path.includes('{workspaceId}')) item.parameters = [workspaceId, ...(item.parameters || [])];
 paths[ws + '/file-analyses'].post.description +=
   ' Also requires files:read. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.';
+paths[ws + '/result-exports'].post.description +=
+  ' Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.';
+paths[ws + '/result-exports'].post.responses[500] = response(
+  ref('Error'),
+  'Export may have completed but its activity record could not be saved',
+);
 const spec = {
   openapi: '3.1.0',
   info: {

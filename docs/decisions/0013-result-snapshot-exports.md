@@ -1,6 +1,6 @@
 # ADR 0013: Export bounded result snapshots through Workspace authorization
 
-- Status: Proposed with [GH-58](../../specs/gh-58/spec.md); accepted on design PR merge.
+- Status: Accepted in [PR 59](https://github.com/siddontang/tidb.ai/pull/59), revision `f2e90079fc80757d2cf020e7647b9185da2e8e07`.
 - Date: 2026-10-28.
 - Scope: additive result export API, create-only destination semantics and Console workflow.
 
@@ -29,4 +29,5 @@ No migration or credential change is needed. Existing SQL/file endpoints remain 
 Rollback of code leaves exported customer objects intact. The implementation PR must cover
 the specification's authorization, serialization, conflicts, partial writes, packaging and
 browser cases. Review this boundary before adding durable jobs, overwrite/append, larger
-transfers, external connections or transactional imports. Implementation is pending.
+transfers, external connections or transactional imports. Implemented by the result-export
+service and shared Console dialog; see [verification and limits](../result-export-verification.md).

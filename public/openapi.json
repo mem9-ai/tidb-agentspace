@@ -1915,6 +1915,125 @@
         }
       }
     },
+    "/workspaces/{workspaceId}/result-exports": {
+      "post": {
+        "operationId": "exportResult",
+        "summary": "Export a supplied result snapshot without rerunning its source query",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: Source database: queries:execute; source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.",
+        "x-required-scope": "Source database: queries:execute; source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant",
+        "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ResultExportInput" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResultExportOutput" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "500": {
+            "description": "Export may have completed but its activity record could not be saved",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "const": "ws_agentlab" },
+          "description": "This local prototype has one workspace."
+        }
+      ]
+    },
     "/workspaces/{workspaceId}/queries": {
       "post": {
         "operationId": "executeQuery",
@@ -3026,6 +3145,118 @@
             }
           }
         }
+      },
+      "ResultExportInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceResourceId", "result", "target"],
+        "properties": {
+          "sourceResourceId": { "type": "string" },
+          "result": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["columns", "rows"],
+            "properties": {
+              "columns": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 100,
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "rows": {
+                "type": "array",
+                "maxItems": 1000,
+                "items": { "type": "object", "additionalProperties": true }
+              }
+            }
+          },
+          "target": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "format"],
+                "properties": {
+                  "kind": { "const": "download" },
+                  "format": { "type": "string", "enum": ["csv", "json", "jsonl"] }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "resourceId", "path", "format"],
+                "properties": {
+                  "kind": { "const": "filesystem" },
+                  "resourceId": { "type": "string" },
+                  "path": { "type": "string", "maxLength": 512 },
+                  "format": { "type": "string", "enum": ["csv", "json", "jsonl"] }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "resourceId", "table"],
+                "properties": {
+                  "kind": { "const": "database" },
+                  "resourceId": { "type": "string" },
+                  "table": { "type": "string", "minLength": 1, "maxLength": 63 }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "ResultExportOutput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "rowCount", "format", "filename", "mimeType", "content", "bytes"],
+            "properties": {
+              "kind": { "const": "download" },
+              "rowCount": { "type": "integer", "minimum": 0, "maximum": 1000 },
+              "format": { "type": "string", "enum": ["csv", "json", "jsonl"] },
+              "filename": { "type": "string" },
+              "mimeType": { "type": "string" },
+              "content": { "type": "string" },
+              "bytes": { "type": "integer", "minimum": 0 }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "rowCount", "resourceId", "path", "format", "bytes"],
+            "properties": {
+              "kind": { "const": "filesystem" },
+              "rowCount": { "type": "integer", "minimum": 0, "maximum": 1000 },
+              "resourceId": { "type": "string" },
+              "path": { "type": "string" },
+              "format": { "type": "string", "enum": ["csv", "json", "jsonl"] },
+              "bytes": { "type": "integer", "minimum": 0 }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "rowCount", "resourceId", "table", "columns"],
+            "properties": {
+              "kind": { "const": "database" },
+              "rowCount": { "type": "integer", "minimum": 0, "maximum": 1000 },
+              "resourceId": { "type": "string" },
+              "table": { "type": "string" },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["name", "type"],
+                  "properties": { "name": { "type": "string" }, "type": { "type": "string" } }
+                }
+              }
+            }
+          }
+        ]
       },
       "QueryResult": {
         "type": "object",

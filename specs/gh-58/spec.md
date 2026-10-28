@@ -2,7 +2,7 @@
 
 ## Identity and status
 
-- Status: Proposed; accepted when the design PR merges. Implementation is a separate PR.
+- Status: Accepted by PR 59 at `f2e90079fc80757d2cf020e7647b9185da2e8e07`; implementation evidence is recorded in [verification](../../docs/result-export-verification.md).
 - Parent: [GH-58](https://github.com/siddontang/tidb.ai/issues/58).
 - Intent/maintainer: Siddon; specification prepared with the current local agent.
 - Source baseline: `b8101fff6d49e405985292c7d0c38f135dbf9857`.

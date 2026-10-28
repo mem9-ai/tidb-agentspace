@@ -40,6 +40,7 @@ export default function FilePreviewPanel({
   onKeepEditing,
   onDiscard,
   onAnalysisRunningChange,
+  onExportSaved,
 }: {
   path: string;
   resourceId: string;
@@ -61,6 +62,7 @@ export default function FilePreviewPanel({
   onKeepEditing: () => void;
   onDiscard: () => void;
   onAnalysisRunningChange: (running: boolean) => void;
+  onExportSaved: () => Promise<void>;
 }) {
   const [mode, setMode] = useState<string | null>(initialView);
   const title = useRef<HTMLSpanElement>(null);
@@ -185,6 +187,7 @@ export default function FilePreviewPanel({
                 resourceId={resourceId}
                 path={path}
                 onRunningChange={onAnalysisRunningChange}
+                onExportSaved={onExportSaved}
               />
             </Suspense>
           )}
