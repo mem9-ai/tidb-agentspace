@@ -240,8 +240,14 @@ verified, and record that as a remaining gap.
   for authority and partial-write handling, and [verification](../result-export-verification.md)
   for themes, narrow layouts and API limits. Revisit for larger exports or additional formats.
 - **File analysis (accepted and implemented, 2026-10-28):** keep Analyze in the selected
-  file's side panel. CSV/Parquet use the official SQL Editor with Standard SQL dialect;
-  UTF-8 logs/text use TiUI Textarea and read-only Just Bash. Fetch capabilities, but run only
+  file's side panel. Separate file format from analysis method: use capability options to
+  offer DuckDB SQL and Just Bash for CSV; keep SQL as its default. Parquet remains SQL-only
+  and recognized text remains Bash-only. Use a labeled TiUI SegmentedControl when multiple
+  methods exist, explain parsed rows versus raw text, retain separate in-memory drafts/results/errors,
+  and disable switching while running. Changing a method must not execute. Follow
+  [ADR 0014](../decisions/0014-file-analysis-engine-options.md) for capability compatibility and
+  individual availability. SQL uses the official SQL Editor with Standard SQL dialect;
+  Bash uses TiUI Textarea. Fetch capabilities, but run only
   on an explicit button/shortcut. Keep file identity in the URL (never scripts/results), original Download, limit/error states,
   and cancel on unmount. Let the analysis panel expand into page flow so the editor cannot
   hide Run or results behind the fixed preview footer. For isolated interpreters, show the

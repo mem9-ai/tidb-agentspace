@@ -30,3 +30,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0012: DuckDB catalog reader](0012-duckdb-catalog-reader.md) — bounded read-only reuse for server-generated browsing, while customer SQL remains disposable.
 
 - [0013: Result snapshot exports](0013-result-snapshot-exports.md) — accepted and implemented bounded downloads and create-only copies into public workspace resources.
+
+- [0014: File analysis engine options](0014-file-analysis-engine-options.md) — separate format/default engine from supported methods; CSV supports SQL and raw-text Bash with individual availability.

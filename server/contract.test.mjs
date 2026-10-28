@@ -129,6 +129,33 @@ test('standalone API responses conform to every declared JSON operation, includi
     engine: 'bash',
     command: 'cat /workspace/input.log',
   });
+  await request(workspace + '/files', 'put', {
+    resourceId: 'fs_shared',
+    path: '/contract.csv',
+    type: 'file',
+    content: 'n\n1\n2\n',
+  });
+  const csvCapabilities = await request(
+    workspace + '/file-analyses/capabilities',
+    'get',
+    undefined,
+    {
+      suffix: '?resourceId=fs_shared&path=/contract.csv',
+    },
+  );
+  assert.deepEqual(
+    csvCapabilities.result.engines.map((e) => e.engine),
+    ['duckdb', 'bash'],
+  );
+  for (const query of [
+    { engine: 'duckdb', sql: 'SELECT * FROM file' },
+    { engine: 'bash', command: 'cat /workspace/input.log' },
+  ])
+    await request(workspace + '/file-analyses', 'post', {
+      resourceId: 'fs_shared',
+      path: '/contract.csv',
+      ...query,
+    });
   await request(workspace + '/files', 'delete', { resourceId: 'fs_shared', path: '/contract.txt' });
   await request(workspace + '/queries', 'post', { resourceId: 'db_memory', sql: 'SELECT 1' });
   await request(workspace + '/resources/{resourceId}/setup', 'post', undefined, {

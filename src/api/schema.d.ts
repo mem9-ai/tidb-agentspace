@@ -129,7 +129,7 @@ export interface paths {
     put?: never;
     /**
      * Run bounded read-only DuckDB SQL or Just Bash on one selected file
-     * @description Required workspace key scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Also requires files:read. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.
+     * @description Required workspace key scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Also requires files:read. Discover engines from capabilities: CSV supports DuckDB SQL over table file or Just Bash over its raw UTF-8 text at /workspace/input.log. Parquet supports only DuckDB, and other recognized text only Just Bash. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.
      */
     post: operations['analyzeFile'];
     delete?: never;
@@ -1484,10 +1484,22 @@ export interface operations {
         };
         content: {
           'application/json': {
-            /** @enum {string|null} */
+            /**
+             * @description Default engine, retained for compatibility. Select from engines.
+             * @enum {string|null}
+             */
             engine: 'duckdb' | 'bash' | null;
+            /** @description Supported analysis methods with individual availability. CSV offers both engines; Parquet only DuckDB; recognized text only Bash. Availability checks metadata, not successful parsing or UTF-8 decoding. */
+            engines: {
+              /** @enum {unknown} */
+              engine: 'duckdb' | 'bash';
+              available: boolean;
+              reason: string;
+            }[];
             format: string | null;
+            /** @description Availability of the default engine. */
             available: boolean;
+            /** @description Unavailable reason for the default engine. */
             reason: string;
             size: number;
             /** @constant */
