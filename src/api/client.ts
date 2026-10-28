@@ -19,6 +19,13 @@ export type FileAnalysisInput = JsonBody<operations['analyzeFile']>;
 export type FileAnalysisCapabilities =
   operations['fileAnalysisCapabilities']['responses'][200]['content']['application/json'];
 export type WriteFileInput = JsonBody<operations['writeFile']>;
+export type SsoAuthConfig = {
+  enabled: boolean;
+  provider?: string;
+  label?: string;
+  loginPath?: string;
+  logoutPath?: string;
+};
 export const workspaceId = 'ws_agentlab';
 export const base = `/api/v1/workspaces/${workspaceId}`;
 const params = { path: { workspaceId } } as const;
@@ -43,6 +50,11 @@ export const workspaceApi = {
   analyzeFile: (body: FileAnalysisInput, signal?: AbortSignal) =>
     responseData(client.POST('/workspaces/{workspaceId}/file-analyses', { params, body, signal })),
   startSession: () => responseData(sessionClient.POST('/api/session', { body: {} })),
+  authConfig: async (): Promise<SsoAuthConfig> => {
+    const response = await fetch(apiOrigin + '/api/auth/config', { credentials: 'include' });
+    if (!response.ok) return { enabled: false };
+    return (await response.json()) as SsoAuthConfig;
+  },
   bootstrap: () => responseData(client.GET('/workspaces/{workspaceId}/bootstrap', { params })),
   resources: () => responseData(client.GET('/workspaces/{workspaceId}/resources', { params })),
   usage: () => responseData(client.GET('/workspaces/{workspaceId}/usage', { params })),

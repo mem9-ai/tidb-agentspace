@@ -7,6 +7,7 @@ import {
   type ApiKey,
   type CreateKeyInput,
   type WriteFileInput,
+  type SsoAuthConfig,
 } from './api/client';
 import './features/files/file-preview.css';
 import {
@@ -308,6 +309,7 @@ function App() {
     [error, setError] = useState(''),
     [toast, setToast] = useState(''),
     [modal, setModal] = useState<'resource' | 'key' | 'search' | null>(null),
+    [sso, setSso] = useState<SsoAuthConfig>({ enabled: false }),
     [connection, setConnection] = useState<Resource | null>(null);
   const route = routeLocation.page;
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -319,10 +321,15 @@ function App() {
   const refresh = useCallback(async () => {
     setData(await workspaceApi.bootstrap());
   }, []);
+  // Boot the workspace. When SSO is enabled the anonymous demo session is disabled, so we never
+  // auto-start one: we only try to use an existing (SSO) session and, failing that, show the
+  // sign-in screen. When SSO is unconfigured, the local demo session starts as before.
   const start = useCallback(async () => {
     try {
       setError('');
-      await workspaceApi.startSession();
+      const auth = await workspaceApi.authConfig();
+      setSso(auth);
+      if (!auth.enabled) await workspaceApi.startSession();
       await refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -362,20 +369,40 @@ function App() {
     onCreate: () => setModal('resource'),
     onConnect: (r: Resource) => setConnection(r),
   };
+  const ssoButton =
+    sso.enabled && sso.loginPath ? (
+      <Button
+        variant="default"
+        onClick={() => {
+          window.location.href = apiOrigin + sso.loginPath;
+        }}
+      >
+        {sso.label || 'Continue with TiDB Account'}
+      </Button>
+    ) : null;
   if (!data)
     return (
       <div className="loading-screen">
         <div className="brand-mark">T</div>
-        {error ? (
+        {error && sso.enabled ? (
+          // SSO is enabled and no session is active yet: prompt sign-in (no anonymous demo).
+          <>
+            <Heading level={2}>Sign in to your workspace</Heading>
+            <Text component="p">Use your TiDB Account to continue.</Text>
+            {ssoButton}
+          </>
+        ) : error ? (
           <>
             <Heading level={2}>Couldn’t open your workspace</Heading>
             <Text component="p">{error}</Text>
             <Button onClick={start}>Try again</Button>
+            {ssoButton}
           </>
         ) : (
           <>
             <Loader size="lg" />
             <Text component="p">Opening your workspace…</Text>
+            {ssoButton}
           </>
         )}
       </div>

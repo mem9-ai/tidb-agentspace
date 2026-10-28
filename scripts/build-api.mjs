@@ -20,6 +20,7 @@ export const runtimeFiles = [
   'server/access-policy.mjs',
   'server/file-transfer.mjs',
   'server/http-policy.mjs',
+  'server/sso.mjs',
   'server/providers/drive9.mjs',
   'server/providers/zero.mjs',
   'server/providers/duckdb.mjs',
