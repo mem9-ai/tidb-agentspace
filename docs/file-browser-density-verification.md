@@ -5,7 +5,9 @@
 - Integrated source baseline: `ab65ddfdf64bff92de058b67bb5d7b67f511e8af`.
 - Design reference: [TiUI standard](standards/tiui-design-system.md), installed UIKit 2.9.1.
 - Implementation: `src/features/files/FileBrowserPanel.tsx`, existing file workspace state and
-  `file-preview.css`. Use real TiUI Menu, ActionIcon, Anchor, TextInput and Paper; existing
+  `file-preview.css`; shared chrome/collapse now lives in `src/ui/WorkspaceBrowserPanel.tsx`
+  and `workspace-browser.css`, also used by the database table navigator. Use real TiUI Menu,
+  ActionIcon, Anchor, TextInput and Paper; existing
   Table uses supported contextual spacing. No dependency, API, backend or permission change.
 
 ## Behavior

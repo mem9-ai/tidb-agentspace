@@ -171,6 +171,17 @@ verified, and record that as a remaining gap.
   expanded editors, long names and error messages may need page scrolling. See
   [density verification](../database-density-verification.md); revisit when adding query tabs
   or resizeable panes.
+- **Shared browser density (owner correction 2026-10-28):** database table navigation follows
+  the compact File System browser: one title/count/toggle row, a combined filter/refresh row,
+  and an independently scrolling list. Reuse `src/ui/WorkspaceBrowserPanel.tsx` for this chrome
+  and collapse behavior. Collapse to a 56px desktop rail without unmounting the list, inspector
+  or editor, clearing filters/drafts/results, changing selection or canceling active work.
+  Keep the same labeled toggle focused, expose expanded/controls state, and remove hidden
+  controls from keyboard navigation. On narrow database screens use a compact horizontal
+  disclosure; File System keeps its Back to files flow. Preserve readable text and 44px controls.
+  Check both themes at 1280×800/900 and 390×844, including keyboard toggling, active queries,
+  filtering and File System regression. Evidence is in [density verification](../database-density-verification.md#compact-table-browser).
+  Revisit for resizable navigation or multiple database documents.
 - **File analysis (accepted and implemented, 2026-10-28):** keep Analyze in the selected
   file's side panel. CSV/Parquet use the official SQL Editor with Standard SQL dialect;
   UTF-8 logs/text use TiUI Textarea and read-only Just Bash. Fetch capabilities, but run only
