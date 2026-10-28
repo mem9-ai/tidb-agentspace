@@ -1,4 +1,4 @@
-# ADR 0011: Reuse a bounded read-only DuckDB catalog reader
+# ADR 0012: Reuse a bounded read-only DuckDB catalog reader
 
 - Status: Implemented for the loopback prototype, 2026-10-28.
 - Reproduction and scope: [GH-39](https://github.com/siddontang/tidb.ai/issues/39).

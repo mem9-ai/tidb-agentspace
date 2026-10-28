@@ -31,7 +31,7 @@ memory/results and a deadline. Reject concurrent requests to the same database, 
 provider setup and close workers explicitly. Disable external access and automatic extensions,
 lock configuration and restrict statement categories before customer SQL. DuckDB's hardening
 settings supplement the loopback trust boundary; public hosting requires OS/container isolation.
-Server-generated catalog reads use the bounded read-only exception in [ADR 0011](0011-duckdb-catalog-reader.md).
+Server-generated catalog reads use the bounded read-only exception in [ADR 0012](0012-duckdb-catalog-reader.md).
 See [DuckDB security](https://duckdb.org/docs/2.0/operations_manual/securing_duckdb/overview)
 and [native storage limits](https://github.com/drive9-ai/duckdb/blob/main/docs/native-database.md).
 

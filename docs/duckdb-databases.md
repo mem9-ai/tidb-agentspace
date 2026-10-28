@@ -92,7 +92,7 @@ functions. Identifiers use double quotes, and previews retain the existing 100-r
 Details use one SELECT; a backend read-only reader is reused for browsing for at most 15 seconds
 idle / 60 seconds total. Every request is authorized again, with no result cache. An idle reader
 is released before customer SQL or switching databases; native errors/cancellation dispose it.
-Customer SQL and file-source queries remain disposable. See [ADR 0011](decisions/0011-duckdb-catalog-reader.md).
+Customer SQL and file-source queries remain disposable. See [ADR 0012](decisions/0012-duckdb-catalog-reader.md).
 
 A real Singapore check on 2026-10-28 measured table details at 26,434 ms before this fix.
 After a cold list (5,370 ms), details took 29 ms, repeated details 16 ms and 100-row preview
