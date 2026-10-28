@@ -113,6 +113,7 @@ const allScopes: CreateKeyInput['scopes'] = [
   'resources:read',
   'resources:write',
   'files:read',
+  'files:analyze',
   'files:write',
   'queries:execute',
   'usage:read',
@@ -932,6 +933,7 @@ function DatabaseDetail({
       <DatabaseWorkspace
         database={database}
         databases={data.resources.filter((resource) => resource.kind !== 'filesystem')}
+        fileSystems={data.resources.filter((resource) => resource.kind === 'filesystem')}
         routeLocation={routeLocation}
         refresh={refresh}
         onSelect={openDatabaseEditor}
@@ -1537,7 +1539,7 @@ function Connect({ data, copy }: Shared) {
   const snippet = `# Discover your workspace resources\ncurl ${apiOrigin}${base}/resources \\\n  -H "Authorization: Bearer $WORKSPACE_API_KEY"`;
   const python = `import os, json, urllib.request\n\nreq = urllib.request.Request(\n    "${apiOrigin}${base}/resources",\n    headers={"Authorization": "Bearer " + os.environ["WORKSPACE_API_KEY"]}\n)\nwith urllib.request.urlopen(req) as response:\n    print(json.load(response))`;
   const js = `const response = await fetch(\n  "${apiOrigin}${base}/resources",\n  { headers: { Authorization: \`Bearer \${process.env.WORKSPACE_API_KEY}\` } }\n);\nconsole.log(await response.json());`;
-  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiOrigin}/api/v1\nOpenAPI: ${apiOrigin}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for directory listings and UTF-8 writes; Drive9 listings contain metadata only. Use /files/content?resourceId=ID&path=PATH for binary upload/download and add preview=1 for bounded text previews. Use /resources/{resourceId}/tables to list tables, /resources/{resourceId}/table?name=NAME for columns and indexes, and /resources/{resourceId}/table/rows?name=NAME for up to 100 preview rows. Encode the exact table name as a query parameter. These reads require queries:execute and resource access, just like /queries for SQL on the selected database. Resources marked tidb-cloud-zero or duckdb-drive9 execute real SQL; queries:execute permits reads and writes within the database role. Run one statement per request; results are limited to 1,000 rows / 1 MiB and queries to 15 seconds. A timeout can leave a write outcome unknown; verify before retrying.\nOnly call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local Workspace gateway. File Systems marked drive9-anonymous use real Singapore trial storage. Databases marked tidb-cloud-zero connect to real temporary MySQL databases. Check expiresAt and export important data before expiration. Databases marked duckdb-drive9 use native DuckDB with service-managed storage. Other databases remain demos. Cloud telemetry is not measured.\nDo not upload credentials to the workspace or commit them to Git.\n`;
+  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiOrigin}/api/v1\nOpenAPI: ${apiOrigin}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for directory listings and UTF-8 writes; Drive9 listings contain metadata only. Use /files/content?resourceId=ID&path=PATH for binary upload/download and add preview=1 for bounded text previews. Use /resources/{resourceId}/tables to list tables, /resources/{resourceId}/table?name=NAME for columns and indexes, and /resources/{resourceId}/table/rows?name=NAME for up to 100 preview rows. Encode the exact table name as a query parameter. These reads require queries:execute and resource access, just like /queries for SQL on the selected database. Resources marked tidb-cloud-zero or duckdb-drive9 execute real SQL; queries:execute permits reads and writes within the database role. Run one statement per request; results are limited to 1,000 rows / 1 MiB and queries to 15 seconds. A timeout can leave a write outcome unknown; verify before retrying.\nFor DuckDB file queries, add sources: [{name: "orders", resourceId: "FILE_SYSTEM_ID", path: "/orders.csv"}] to the query JSON, then SELECT from files.orders. Require files:read and files:analyze plus queries:execute and grants for the database and each File System. Sources are query-scoped and SELECT-only: up to four CSV/JSON/NDJSON/Parquet files, 16 MiB combined input. Never send provider URLs, credentials or host paths. Only call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local Workspace gateway. File Systems marked drive9-anonymous use real Singapore trial storage. Databases marked tidb-cloud-zero connect to real temporary MySQL databases. Check expiresAt and export important data before expiration. Databases marked duckdb-drive9 use native DuckDB with service-managed storage. Other databases remain demos. Cloud telemetry is not measured.\nDo not upload credentials to the workspace or commit them to Git.\n`;
   return (
     <>
       <PageHeading
@@ -2716,6 +2718,7 @@ function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose:
                               'resources:write': 'Create resources',
                               'files:read': 'Read files and context',
                               'files:write': 'Create, edit, and delete files',
+                              'files:analyze': 'Analyze selected files with DuckDB',
                               'queries:execute': 'Read and write SQL on permitted databases',
                               'usage:read': 'Read usage and allowances',
                             } as Record<string, string>

@@ -1,5 +1,5 @@
 import type { QueryResult } from '../../api/client';
-import React, { lazy, Suspense, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -36,8 +36,10 @@ type Props = {
   renderResults: (results: React.ReactNode) => React.ReactNode;
   database: DatabaseResource;
   readBusy: boolean;
+  queryContext: string;
+  hasFileSources: boolean;
   databases: DatabaseResource[];
-  execute: (sql: string) => Promise<QueryResult>;
+  execute: (sql: string, signal?: AbortSignal) => Promise<QueryResult>;
   onComplete: () => Promise<void>;
   onSelect: (id: string) => void;
   onExport: (result: QueryResult) => void;
@@ -50,6 +52,8 @@ export function SqlQueryPanel({
   renderResults,
   database,
   readBusy,
+  queryContext,
+  hasFileSources,
   databases,
   execute,
   onComplete,
@@ -60,21 +64,28 @@ export function SqlQueryPanel({
   const resourceId = database.id;
   const live = ['tidb-cloud-zero', 'duckdb-drive9'].includes(database.provider || '');
   const [busy, setBusy] = useState(false),
-    [result, setResult] = useState<QueryResult | null>(null),
-    [error, setError] = useState(''),
+    [storedResult, setResult] = useState<QueryResult | null>(null),
+    [storedError, setError] = useState(''),
+    [resultContext, setResultContext] = useState(queryContext),
     [notice, setNotice] = useState('');
+  const result = resultContext === queryContext ? storedResult : null;
+  const error = resultContext === queryContext ? storedError : '';
   const running = useRef(false);
+  const request = useRef<AbortController | null>(null);
+  useEffect(() => () => request.current?.abort(), []);
   async function run() {
     if (running.current || readBusy || database.status !== 'active') return;
     running.current = true;
+    request.current = hasFileSources ? new AbortController() : null;
     setBusy(true);
     onRunningChange(true);
     onRunStart();
     setError('');
+    setResultContext(queryContext);
     setNotice('');
     setResult(null);
     try {
-      setResult(await execute(sql));
+      setResult(await execute(sql, request.current?.signal));
       await onComplete().catch(() =>
         setNotice(
           'Statement completed, but the workspace summary could not refresh. Do not repeat the statement to refresh the page.',
@@ -82,9 +93,14 @@ export function SqlQueryPanel({
       );
     } catch (e) {
       setResult(null);
-      setError((e as Error).message);
+      setError(
+        e instanceof Error && e.name === 'AbortError'
+          ? 'Read-only file query canceled.'
+          : (e as Error).message,
+      );
     } finally {
       running.current = false;
+      request.current = null;
       setBusy(false);
       onRunningChange(false);
     }
@@ -161,7 +177,9 @@ export function SqlQueryPanel({
     <>
       <Alert className="notice" color="peacock" icon={<Sparkles size={17} />}>
         <span>
-          {live ? (
+          {hasFileSources ? (
+            'Read-only file query · Selected files are loaded for this query only · 16 MiB input · 1,000 rows / 1 MiB output · 15 seconds.'
+          ) : live ? (
             'Live SQL · Writes change real data. One statement at a time · 1,000 rows / 1 MiB · 15-second timeout.'
           ) : (
             <>
@@ -200,6 +218,9 @@ export function SqlQueryPanel({
           >
             {busy ? 'Running…' : 'Run query'}
           </Button>
+          {busy && hasFileSources && (
+            <Button onClick={() => request.current?.abort()}>Cancel query</Button>
+          )}
         </div>
         <Suspense
           fallback={
@@ -215,6 +236,7 @@ export function SqlQueryPanel({
             value={sql}
             onChange={setSql}
             onRun={() => void run()}
+            disabled={busy}
           />
         </Suspense>
         <div className="editor-bottom">
@@ -225,12 +247,15 @@ export function SqlQueryPanel({
       <div className="sample-queries">
         <span>Try a sample:</span>
         {live && (
-          <UnstyledButton onClick={() => setSql('SHOW TABLES;')}>List tables</UnstyledButton>
+          <UnstyledButton disabled={busy} onClick={() => setSql('SHOW TABLES;')}>
+            List tables
+          </UnstyledButton>
         )}
-        <UnstyledButton onClick={() => setSql('SELECT 1 AS connected;')}>
+        <UnstyledButton disabled={busy} onClick={() => setSql('SELECT 1 AS connected;')}>
           Test connection
         </UnstyledButton>
         <UnstyledButton
+          disabled={busy}
           onClick={() =>
             setSql(
               live
@@ -242,7 +267,7 @@ export function SqlQueryPanel({
           {live ? 'Server time' : 'Read agent events'}
         </UnstyledButton>
       </div>
-      {notice && <Alert color="yellow">{notice}</Alert>}
+      {notice && resultContext === queryContext && <Alert color="yellow">{notice}</Alert>}
       {renderResults(results)}
     </>
   );

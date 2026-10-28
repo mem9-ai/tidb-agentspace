@@ -1,4 +1,4 @@
-import { DuckDBInstance, ResultReturnType } from '@duckdb/node-api';
+import { DuckDBInstance, ResultReturnType, StatementType } from '@duckdb/node-api';
 import { resultCollector, sqlError, sqlLimits } from './sql-common.mjs';
 
 const quote = (value) => "'" + value.replaceAll("'", "''") + "'";
@@ -6,7 +6,15 @@ export const duckdbUri = 'tidbfs+db:///workspace.duckdb';
 export function safeDuckdbError(error) {
   if (
     error?.status &&
-    ['INVALID_SQL', 'SQL_PERMISSION_DENIED', 'RESULT_TOO_LARGE'].includes(error.code)
+    [
+      'INVALID_SQL',
+      'SQL_PERMISSION_DENIED',
+      'RESULT_TOO_LARGE',
+      'SOURCE_INVALID',
+      'SQL_SYNTAX_ERROR',
+      'SQL_OBJECT_NOT_FOUND',
+      'SQL_CONFLICT',
+    ].includes(error.code)
   )
     return error;
   const message = String(error?.message || '');
@@ -17,7 +25,7 @@ export function safeDuckdbError(error) {
       'Check DuckDB SQL syntax and run one statement at a time.',
     );
   if (
-    /Permission Error|configuration.*locked|external access|disabled by configuration/i.test(
+    /Permission Error|configuration.*locked|external access|disabled by configuration|Expected a single SELECT statement|read.only database/i.test(
       message,
     )
   )
@@ -70,7 +78,7 @@ export async function probeDuckdbExtension(extensionPath) {
     instance.closeSync();
   }
 }
-export async function openDuckdb({ extensionPath, apiKey, endpoint, localPath }) {
+export async function openDuckdb({ extensionPath, apiKey, endpoint, localPath, sources = [] }) {
   const instance = await DuckDBInstance.create(':memory:', {
     allow_unsigned_extensions: extensionPath ? 'true' : 'false',
     allow_unredacted_secrets: 'false',
@@ -84,15 +92,41 @@ export async function openDuckdb({ extensionPath, apiKey, endpoint, localPath })
   });
   const setup = await instance.connect();
   try {
-    if (localPath) await setup.run(`ATTACH ${quote(localPath)} AS workspace`);
+    const attachment = sources.length ? ' (READ_ONLY)' : '';
+    if (localPath) await setup.run(`ATTACH ${quote(localPath)} AS workspace${attachment}`);
     else {
       await setup.run(`LOAD ${quote(extensionPath)}`);
       await setup.run(
         `CREATE TEMPORARY SECRET workspace_storage (TYPE tidbfs, ENDPOINT ${quote(endpoint)}, TOKEN ${quote(apiKey)})`,
       );
-      await setup.run(`ATTACH ${quote(duckdbUri)} AS workspace`);
+      await setup.run(`ATTACH ${quote(duckdbUri)} AS workspace${attachment}`);
     }
     await setup.run('USE workspace');
+    if (sources.length) {
+      await setup.run("ATTACH ':memory:' AS files");
+      const readers = {
+        csv: 'read_csv',
+        json: 'read_json_auto',
+        jsonl: 'read_json_auto',
+        ndjson: 'read_json_auto',
+        parquet: 'read_parquet',
+      };
+      for (const source of sources) {
+        if (!/^[a-z][a-z0-9_]{0,31}$/.test(source.name) || !Object.hasOwn(readers, source.format))
+          throw sqlError(422, 'SOURCE_INVALID', 'Invalid query source.');
+        try {
+          await setup.run(
+            `CREATE TABLE files."${source.name}" AS SELECT * FROM ${readers[source.format]}(${quote(source.path)})`,
+          );
+        } catch {
+          throw sqlError(
+            422,
+            'SOURCE_INVALID',
+            'A selected file could not be loaded within query limits. Check its format or use a smaller file.',
+          );
+        }
+      }
+    }
     // Access to the already attached database/WAL is internal to the storage engine.
     await setup.run('SET enable_external_access=false');
     await setup.run('SET lock_configuration=true');
@@ -120,6 +154,12 @@ export async function openDuckdb({ extensionPath, apiKey, endpoint, localPath })
         if (statements.count !== 1)
           throw sqlError(400, 'INVALID_SQL', 'Run exactly one SQL statement per request.');
         prepared = await statements.prepare(0);
+        if (sources.length && prepared.statementType !== StatementType.SELECT)
+          throw sqlError(
+            403,
+            'SQL_PERMISSION_DENIED',
+            'File source queries are read-only. Run one SELECT statement.',
+          );
         result = await prepared.stream();
         if (result.returnType !== ResultReturnType.QUERY_RESULT)
           return { columns: [], rows: [], rowCount: 0, affectedRows: result.rowsChanged };

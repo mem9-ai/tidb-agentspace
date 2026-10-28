@@ -1,6 +1,6 @@
 # ADR 0009: Authorized query-scoped file sources
 
-- Status: Accepted design direction; implementation pending.
+- Status: Accepted and implemented for the loopback prototype; see [verification](../duckdb-sources-verification.md).
 - Date: 2026-10-28. [GH-34 baseline](../../specs/gh-34/spec.md).
 
 ## Decision
@@ -36,6 +36,6 @@ remain governed by their existing actions. GH-26's separate analysis/Just Bash U
 
 GH-34 defines format, permission, native restriction, limit/cancellation/cleanup, packaging,
 live and theme/viewport acceptance. CI uses local native fixtures and injected providers only.
-Versioned implementation evidence must be added before claiming completion. Revisit for larger
+Versioned implementation evidence maps these requirements to native/API, real-service and browser checks. Revisit for larger
 streaming scans, persistent imports or public hosting. Rollback removes source-query capability
 without changing remote source files or private database storage.

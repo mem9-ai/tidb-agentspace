@@ -1,6 +1,7 @@
 import { useReducer, useRef, useState } from 'react';
 import { Button, Group, Paper, Stack, Text } from '@tidbcloud/uikit';
-import { workspaceApi, type QueryResult, type Resource } from '../../api/client';
+import { workspaceApi, type QueryResult, type QuerySource, type Resource } from '../../api/client';
+import { DuckdbSources } from './DuckdbSources';
 import { ChoiceTabs } from '../../ui/ChoiceTabs';
 import { WorkspaceModal } from '../../ui/WorkspaceModal';
 import { Heading } from '../../ui/WorkspaceHeading';
@@ -12,6 +13,7 @@ import { createQueryDraft, queryDraftReducer } from './query-draft';
 type Props = {
   database: Resource;
   databases: Resource[];
+  fileSystems: Resource[];
   routeLocation: WorkspaceRoute;
   refresh: () => Promise<void>;
   onSelect: (id: string) => void;
@@ -20,6 +22,7 @@ type Props = {
 export function DatabaseWorkspace({
   database,
   databases,
+  fileSystems,
   routeLocation,
   refresh,
   onSelect,
@@ -42,6 +45,8 @@ export function DatabaseWorkspace({
   const [busy, setBusy] = useState(false);
   const [listingBusy, setListingBusy] = useState(true);
   const [inspectionBusy, setInspectionBusy] = useState(false);
+  const [sources, setSources] = useState<QuerySource[]>([]);
+  const [sourceRevision, setSourceRevision] = useState(0);
   const editor = useRef<HTMLDivElement>(null);
   const showEditor = () => {
     setOutputView('Query results');
@@ -63,13 +68,39 @@ export function DatabaseWorkspace({
         }}
       />
       <div className="database-editor-area" ref={editor}>
+        {database.kind === 'duckdb' && (
+          <DuckdbSources
+            fileSystems={fileSystems}
+            sources={sources}
+            busy={busy}
+            onChange={(next) => {
+              setSources(next);
+              setSourceRevision((value) => value + 1);
+            }}
+            onQuery={(name) => {
+              dispatch({ type: 'queryTable', sql: `SELECT * FROM files."${name}" LIMIT 100;` });
+              showEditor();
+            }}
+          />
+        )}
         <SqlQueryPanel
+          queryContext={`${sourceRevision}:${JSON.stringify(sources)}`}
+          hasFileSources={sources.length > 0}
           sql={draft.sql}
           onSqlChange={(sql) => dispatch({ type: 'edit', sql })}
           database={database}
           readBusy={database.kind === 'duckdb' && (listingBusy || inspectionBusy)}
           databases={databases}
-          execute={(sql) => workspaceApi.query({ resourceId: database.id, sql })}
+          execute={(sql, signal) =>
+            workspaceApi.query(
+              {
+                resourceId: database.id,
+                sql,
+                ...(sources.length ? { sources } : {}),
+              },
+              signal,
+            )
+          }
           onComplete={refresh}
           onSelect={onSelect}
           onExport={onExport}

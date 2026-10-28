@@ -90,6 +90,43 @@ test('API builds without a frontend; separate archives boot independently withou
       nativeConnection.closeSync();
       native.closeSync();
       assert.ok(entries.includes('api/server/providers/drive9.mjs'));
+      const { parseSources, stageSources } = await import(
+        pathToFileURL(resolve(unpacked, 'api/server/duckdb-sources.mjs')).href
+      );
+      const { openDuckdb } = await import(
+        pathToFileURL(resolve(unpacked, 'api/server/providers/duckdb-engine.mjs')).href
+      );
+      const dbPath = resolve(root, 'package-file-query.duckdb');
+      const initial = await openDuckdb({ localPath: dbPath });
+      initial.close();
+      const selected = parseSources([
+        { name: 'orders', resourceId: 'fs', path: '/orders.csv' },
+      ]).map((source) => ({ ...source, resource: { provider: 'local' } }));
+      const snapshot = await stageSources(selected, {
+        authorize: () => {},
+        readState: () => ({
+          files: [
+            {
+              resourceId: 'fs',
+              path: '/orders.csv',
+              type: 'file',
+              content: 'amount\n10\n20\n',
+              updatedAt: 'stable',
+            },
+          ],
+        }),
+      });
+      let packaged;
+      try {
+        packaged = await openDuckdb({ localPath: dbPath, sources: snapshot.sources });
+        assert.equal(
+          (await packaged.query('SELECT SUM(amount) AS total FROM files.orders')).rows[0].total,
+          '30',
+        );
+      } finally {
+        packaged?.close();
+        await snapshot.cleanup();
+      }
       assert.ok(!entries.includes('index.html') && !entries.includes('console'));
       const { createApp } = await import(
         pathToFileURL(resolve(unpacked, 'api/server/index.mjs')).href

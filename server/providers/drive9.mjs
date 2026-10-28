@@ -42,7 +42,9 @@ export async function createDrive9({ credentialsFile, transport = fetch }) {
           ...(binding ? { Authorization: `Bearer ${binding.apiKey}` } : {}),
         },
         redirect: 'error',
-        signal: AbortSignal.timeout(30_000),
+        signal: options.signal
+          ? AbortSignal.any([options.signal, AbortSignal.timeout(30_000)])
+          : AbortSignal.timeout(30_000),
       });
     } catch {
       throw fileError(
@@ -190,16 +192,22 @@ export async function createDrive9({ credentialsFile, transport = fetch }) {
         };
       });
     },
-    async stat(resourceId, path) {
-      const response = await request(resourceId, fsPath(path), { method: 'HEAD' });
+    async stat(resourceId, path, options = {}) {
+      const response = await request(resourceId, fsPath(path), { ...options, method: 'HEAD' });
       const raw = response.headers.get('content-length');
       const size = raw === null ? NaN : Number(raw);
       if (!Number.isSafeInteger(size) || size < 0)
         throw fileError(502, 'INVALID_PROVIDER_RESPONSE', 'File size is unavailable.');
-      return { size, directory: response.headers.get('x-dat9-isdir') === 'true' };
+      return {
+        size,
+        directory: response.headers.get('x-dat9-isdir') === 'true',
+        revision: response.headers.get('x-dat9-revision'),
+        etag: response.headers.get('etag'),
+        resourceIdentity: response.headers.get('x-dat9-resource-id'),
+      };
     },
-    read(resourceId, path) {
-      return request(resourceId, fsPath(path));
+    read(resourceId, path, options = {}) {
+      return request(resourceId, fsPath(path), options);
     },
     async write(resourceId, path, bytes, createOnly = false) {
       const info = await status(resourceId);

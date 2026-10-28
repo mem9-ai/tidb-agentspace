@@ -6,6 +6,11 @@
   worker isolation and analysis permissions are not implemented by this discovery change.
 - Proposed acceptance baseline: [GH-26 specification](../specs/gh-26/spec.md).
 
+Follow-up: [GH-34](../specs/gh-34/spec.md) implements CSV/JSON/Parquet sources within a DuckDB
+database workspace, with a bounded snapshot API and explicit read/analyze permissions.
+See [file sources](duckdb-databases.md#workspace-file-sources). The separate File System analysis
+and Just Bash surface described below remains pending; the original discovery is not its acceptance.
+
 ## Findings
 
 | Capability         | Source support                                                                                              | Current Singapore anonymous service                                                                       | Product implication                                                                                          |

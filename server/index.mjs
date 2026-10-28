@@ -7,6 +7,7 @@ import { createStore, capabilities, workspaceId, usage } from './store.mjs';
 import { createDrive9, drive9Provider, drive9Region } from './providers/drive9.mjs';
 import { createZero, zeroProvider, zeroRegion } from './providers/zero.mjs';
 import { createDuckdb, duckdbProvider } from './providers/duckdb.mjs';
+import { parseSources, stageSources } from './duckdb-sources.mjs';
 import { browseDatabase, demoColumns, demoRows } from './database-browser.mjs';
 import { readUpload, previewFile, downloadFile } from './file-transfer.mjs';
 import { canAccessResource, normalizeResourceGrant } from './access-policy.mjs';
@@ -17,6 +18,7 @@ export const allowedScopes = [
   'resources:read',
   'resources:write',
   'files:read',
+  'files:analyze',
   'files:write',
   'queries:execute',
   'usage:read',
@@ -84,6 +86,7 @@ export async function createApp({
   duckdbExtensionPath,
   duckdbExtensionSha256,
   duckdbExecute,
+  duckdbSourceDirectory,
 } = {}) {
   if (!['local', drive9Provider].includes(filesProvider))
     throw new Error('Unknown File System provider.');
@@ -564,6 +567,47 @@ export async function createApp({
         const input = await body(req);
         const resource = requireResource(input.resourceId);
         if (resource.kind === 'filesystem') fail(404, 'NOT_FOUND', 'Database not found.');
+        const sources = parseSources(input.sources);
+        if (sources.length && resource.provider !== duckdbProvider)
+          fail(
+            400,
+            'SOURCES_REQUIRE_DUCKDB',
+            'File sources are available only on DuckDB databases.',
+          );
+        const authorizeSources = () => {
+          if (!sources.length) return;
+          const current = visibleState();
+          const key = isOwner ? undefined : current.keys.find((key) => key.id === principalId);
+          if (
+            isOwner
+              ? (sessions.get(sessionToken) || 0) <= Date.now()
+              : !key || key.revokedAt || Date.parse(key.expiresAt) <= Date.now()
+          )
+            fail(401, 'INVALID_KEY', 'The session or key is invalid, expired, or revoked.');
+          for (const action of ['queries:execute', 'files:read', 'files:analyze'])
+            if (!isOwner && !key.scopes.includes(action))
+              fail(403, 'INSUFFICIENT_SCOPE', `This action requires ${action}.`);
+          for (const [id, kind] of [
+            [resource.id, 'duckdb'],
+            ...sources.map((source) => [source.resourceId, 'filesystem']),
+          ]) {
+            if (!isOwner && !canAccessResource(key.resourceIds, id))
+              fail(
+                403,
+                'RESOURCE_ACCESS_DENIED',
+                'This key cannot access a selected query resource.',
+              );
+            const selected = current.resources.find((item) => item.id === id && item.kind === kind);
+            if (!selected) fail(404, 'NOT_FOUND', 'A selected resource is unavailable.');
+            if (selected.status !== 'active')
+              fail(409, 'SOURCE_UNAVAILABLE', 'Wait until every selected resource is active.');
+          }
+        };
+        authorizeSources();
+        const selectedSources = sources.map((source) => ({
+          ...source,
+          resource: requireResource(source.resourceId, 'filesystem'),
+        }));
         if ([zeroProvider, duckdbProvider].includes(resource.provider)) {
           if (resource.status === 'expired')
             fail(
@@ -581,7 +625,18 @@ export async function createApp({
               resource,
               input.sql,
               controller.signal,
+              sources.length
+                ? (signal) =>
+                    stageSources(selectedSources, {
+                      drive9,
+                      readState: () => store.read(),
+                      authorize: authorizeSources,
+                      signal,
+                      directory: duckdbSourceDirectory,
+                    })
+                : undefined,
             );
+            authorizeSources();
             try {
               await recordQuery(resource.id, principal);
             } catch {
@@ -591,6 +646,7 @@ export async function createApp({
                 'SQL completed, but its activity record could not be saved. Do not repeat a write; refresh the workspace instead.',
               );
             }
+            authorizeSources();
             return send(200, result);
           } finally {
             res.off('close', onClose);
