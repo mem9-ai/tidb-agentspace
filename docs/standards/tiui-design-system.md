@@ -118,16 +118,16 @@ Preserve browser zoom. Reflow narrow layouts rather than decreasing font size.
 
 ## Component selection for this Workspace
 
-| Product pattern                | TiUI building blocks                                                                          | Project responsibility                                                        |
-| ------------------------------ | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Navigation and page header     | Primitive `AppShell`, `NavLink`, `Breadcrumbs`; business page shells when appropriate         | Workspace identity, active route, mobile navigation, one clear primary action |
-| Resource cards and details     | `Card`, `Paper`, `Stack`, `Group`, business `PropertyCard`                                    | MySQL/Files labels (PG disabled), region, lifecycle, preview/limit text       |
-| Resource, key, activity tables | Primitive `Table`; business `ProTable` where filtering/pagination needs justify it            | Column meaning, empty/error/loading states, accessible row actions            |
-| Keys and settings forms        | `TextInput`, `Select`, `Checkbox`, `Fieldset`, `PasswordInput`; business `Form` when suitable | Validation, resource/action grants, expiration, reveal-once secret behavior   |
-| Dialogs and secondary panels   | `Modal`, `Drawer`, `Alert`, `Button`, `ActionIcon`                                            | Focus return, clear submit/cancel, failure recovery, pending state            |
-| Status, usage, feedback        | `Badge`, `Progress`, `Skeleton`, `Loader`, notifications; business `DotBadge`                 | Text in addition to color, fresh data versus simulation, retry behavior       |
-| Connection examples            | Business `CodeBlock`, `CopyText`                                                              | One Workspace Key, redacted secrets, accurate copy/download feedback          |
-| SQL work                       | `@tidbcloud/tisqleditor-react` with its cache provider and CodeMirror extensions              | Query lifecycle, permissions, cancellation, and honest demo limitations       |
+| Product pattern                | TiUI building blocks                                                                          | Project responsibility                                                         |
+| ------------------------------ | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Navigation and page header     | Primitive `AppShell`, `NavLink`, `Breadcrumbs`; business page shells when appropriate         | Workspace identity, active route, mobile navigation, one clear primary action  |
+| Resource cards and details     | `Card`, `Paper`, `Stack`, `Group`, business `PropertyCard`                                    | MySQL/DuckDB/Files labels (PG disabled), region, lifecycle, preview/limit text |
+| Resource, key, activity tables | Primitive `Table`; business `ProTable` where filtering/pagination needs justify it            | Column meaning, empty/error/loading states, accessible row actions             |
+| Keys and settings forms        | `TextInput`, `Select`, `Checkbox`, `Fieldset`, `PasswordInput`; business `Form` when suitable | Validation, resource/action grants, expiration, reveal-once secret behavior    |
+| Dialogs and secondary panels   | `Modal`, `Drawer`, `Alert`, `Button`, `ActionIcon`                                            | Focus return, clear submit/cancel, failure recovery, pending state             |
+| Status, usage, feedback        | `Badge`, `Progress`, `Skeleton`, `Loader`, notifications; business `DotBadge`                 | Text in addition to color, fresh data versus simulation, retry behavior        |
+| Connection examples            | Business `CodeBlock`, `CopyText`                                                              | One Workspace Key, redacted secrets, accurate copy/download feedback           |
+| SQL work                       | `@tidbcloud/tisqleditor-react` with its cache provider and CodeMirror extensions              | Query lifecycle, permissions, cancellation, and honest demo limitations        |
 
 The documentation labels `TableBasic`/`TablePro` do not imply exports with those names:
 2.9.1 exports `ProTable`. Its business `PageShell` export points to a legacy implementation;
@@ -198,14 +198,14 @@ SQL editor. The original global control styling, Lucide dependency, and independ
 controller have been removed. The only native input is the hidden browser file chooser;
 standard semantic HTML remains appropriate for page/domain composition.
 
-| Area                                 | Implementation                                                         | Evidence                                                              |
-| ------------------------------------ | ---------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Package, peers, stylesheet, provider | TiUI 2.9.1; compatible React 18; strict npm peers                      | Lockfile, `src/main.tsx`, WorkspaceThemeProvider, clean install/build |
-| Typography and density               | Self-hosted Inter; 16px body, 32px page titles, 48px actions/inputs    | Shared theme/heading adapters; computed browser sizes                 |
-| Controls and dialogs                 | TiUI Buttons, inputs, Checkbox, Fieldset, Modal, Drawer, Alerts        | Resource/Key/file workflows and keyboard verification                 |
-| Navigation and data views            | TiUI AppShell, NavLink, Breadcrumbs, Tabs, Table, Card, Paper          | Desktop/narrow screenshots and route checks                           |
-| Theme                                | One persisted TiUI preference and resolved provider mode               | Legacy migration tests; Light/Dark/System, reload and tab checks      |
-| Icons and SQL                        | Official icons; TiUI SQL Editor 0.0.6 with MySQL dialect (PG disabled) | Query, sample, error, route, theme, and shortcut verification         |
+| Area                                 | Implementation                                                                           | Evidence                                                              |
+| ------------------------------------ | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Package, peers, stylesheet, provider | TiUI 2.9.1; compatible React 18; strict npm peers                                        | Lockfile, `src/main.tsx`, WorkspaceThemeProvider, clean install/build |
+| Typography and density               | Self-hosted Inter; 16px body, 32px page titles, 48px actions/inputs                      | Shared theme/heading adapters; computed browser sizes                 |
+| Controls and dialogs                 | TiUI Buttons, inputs, Checkbox, Fieldset, Modal, Drawer, Alerts                          | Resource/Key/file workflows and keyboard verification                 |
+| Navigation and data views            | TiUI AppShell, NavLink, Breadcrumbs, Tabs, Table, Card, Paper                            | Desktop/narrow screenshots and route checks                           |
+| Theme                                | One persisted TiUI preference and resolved provider mode                                 | Legacy migration tests; Light/Dark/System, reload and tab checks      |
+| Icons and SQL                        | Official icons; TiUI SQL Editor 0.0.6 with MySQL/standard SQL highlighting (PG disabled) | Query, sample, error, route, theme, and shortcut verification         |
 
 See the [verification record](../tiui-migration-verification.md) for screenshots, checked
 viewports, exact workflows, and limitations. Backend/cloud integration remains unchanged.
@@ -243,3 +243,5 @@ remaining gaps; run `npm run check`; inspect light/dark desktop and narrow layou
 at least 1280px and 390px widths); inspect keyboard and relevant async/error states; attach
 screenshots. Claim TiUI adoption only for components actually migrated. CI currently checks
 document routing and application health, not visual fidelity.
+
+DuckDB is a customer database type with internal storage. Its create form, database pages and Key targets show DuckDB only; do not add its backing File System to Console navigation or permissions. Native worker/runtime configuration belongs in operator docs, not customer workflows. See [ADR 0008](../decisions/0008-duckdb-private-storage.md).

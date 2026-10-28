@@ -1,6 +1,6 @@
 # ADR 0008: DuckDB owns a private File System
 
-- Status: Accepted owner direction, 2026-10-28; implementation pending.
+- Status: Accepted owner direction, 2026-10-28; implementation complete; verification is recorded in [DuckDB evidence](../duckdb-verification.md).
 - Intent/specification: [GH-28](../../specs/gh-28/spec.md).
 
 ## Decision

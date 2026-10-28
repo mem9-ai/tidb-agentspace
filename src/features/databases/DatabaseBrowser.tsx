@@ -41,7 +41,13 @@ function useRead<T>(load: (signal: AbortSignal) => Promise<T>) {
     );
     return () => controller.abort();
   }, [load, revision]);
-  return { ...state, retry: () => setRevision((value) => value + 1) };
+  return {
+    ...state,
+    retry: () => {
+      setState({ loading: true });
+      setRevision((value) => value + 1);
+    },
+  };
 }
 function Loading({ children }: { children: string }) {
   return (
@@ -293,7 +299,9 @@ export function DatabaseBrowser({
           >
             Refresh tables
           </Button>
-          {database.provider !== 'tidb-cloud-zero' && <Badge>Local demo</Badge>}
+          {!['tidb-cloud-zero', 'duckdb-drive9'].includes(database.provider || '') && (
+            <Badge>Local demo</Badge>
+          )}
           {listing.loading ? (
             <Loading>Loading tables…</Loading>
           ) : listing.error ? (
@@ -328,7 +336,15 @@ export function DatabaseBrowser({
           )}
         </Stack>
       </Paper>
-      {tableName ? (
+      {tableName && (listing.loading || listing.error) ? (
+        <Paper className="panel database-detail" p="xl" withBorder>
+          {listing.loading ? (
+            <Loading>Loading tables…</Loading>
+          ) : (
+            <Text>Refresh the table list to continue.</Text>
+          )}
+        </Paper>
+      ) : tableName ? (
         <TableContent key={`${tableName}:${revision}`} resourceId={database.id} name={tableName} />
       ) : (
         <Paper className="panel database-detail" p="xl" withBorder>

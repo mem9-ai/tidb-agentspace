@@ -1,22 +1,8 @@
+import { browseDuckdb } from './duckdb-browser.mjs';
 import { sqlError } from './providers/sql-common.mjs';
 
-export function tableName(value) {
-  if (
-    typeof value !== 'string' ||
-    !value ||
-    [...value].length > 64 ||
-    [...value].some(
-      (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
-    ) ||
-    !value.isWellFormed()
-  )
-    throw sqlError(
-      400,
-      'INVALID_TABLE_NAME',
-      'Choose a table name of 1–64 characters without control characters.',
-    );
-  return value;
-}
+import { tableName } from './database-identifiers.mjs';
+export { tableName } from './database-identifiers.mjs';
 export function tableQuery(name) {
   return `SELECT * FROM \`${tableName(name).replaceAll('`', '``')}\` LIMIT 100;`;
 }
@@ -55,6 +41,7 @@ export function demoRows(createdAt) {
 }
 
 export async function browseDatabase({ resource, action, name, execute, createdAt }) {
+  if (resource.kind === 'duckdb') return browseDuckdb({ resource, action, name, execute });
   const live = mode(resource) === 'live';
   if (resource.status === 'expired')
     throw sqlError(

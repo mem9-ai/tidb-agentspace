@@ -10,6 +10,13 @@ export const capabilities = {
     monthlyRU: 50_000_000,
     preview: false,
   },
+  duckdb: {
+    label: 'DuckDB',
+    regions: ['aws-ap-southeast-1'],
+    storageGiB: null,
+    monthlyRU: null,
+    preview: true,
+  },
   filesystem: {
     label: 'TiDB Cloud File System',
     // The first region is the Console default. See ADR 0003 for provider/mode evidence.
@@ -141,24 +148,35 @@ export function usage(state) {
       resourceId: resource.id,
       name: resource.name,
       kind: resource.kind,
-      storageBytes: ['drive9-anonymous', 'tidb-cloud-zero'].includes(resource.provider)
+      storageBytes: ['drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9'].includes(
+        resource.provider,
+      )
         ? null
         : resource.kind === 'filesystem'
           ? state.files
               .filter((f) => f.resourceId === resource.id)
               .reduce((n, f) => n + Buffer.byteLength(f.content || ''), 0)
           : 0,
-      storageLimitBytes: ['drive9-anonymous', 'tidb-cloud-zero'].includes(resource.provider)
+      storageLimitBytes: ['drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9'].includes(
+        resource.provider,
+      )
         ? null
         : capabilities[resource.kind].storageGiB * 1024 ** 3,
-      measured: !['drive9-anonymous', 'tidb-cloud-zero'].includes(resource.provider),
-      fileCount: ['drive9-anonymous', 'tidb-cloud-zero'].includes(resource.provider)
+      measured: !['drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9'].includes(
+        resource.provider,
+      ),
+      fileCount: ['drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9'].includes(
+        resource.provider,
+      )
         ? null
         : state.files.filter((f) => f.resourceId === resource.id && f.type === 'file').length,
-      monthlyRU: ['drive9-anonymous', 'tidb-cloud-zero'].includes(resource.provider) ? null : 0,
-      monthlyRULimit:
-        resource.provider === 'tidb-cloud-zero'
-          ? null
-          : (capabilities[resource.kind].monthlyRU ?? null),
+      monthlyRU: ['drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9'].includes(
+        resource.provider,
+      )
+        ? null
+        : 0,
+      monthlyRULimit: ['tidb-cloud-zero', 'duckdb-drive9'].includes(resource.provider)
+        ? null
+        : (capabilities[resource.kind].monthlyRU ?? null),
     }));
 }

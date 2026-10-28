@@ -1,6 +1,6 @@
 # TiDB Agent Workspace
 
-An independent developer and agent console with real MySQL through TiDB Cloud Zero and TiDB Cloud File System. PostgreSQL is temporarily unavailable.
+An independent developer and agent console with real MySQL through TiDB Cloud Zero, persistent DuckDB databases, and TiDB Cloud File System. PostgreSQL is temporarily unavailable.
 
 New to the repository? Read [start-here.md](start-here.md) for the project goals, current
 state, reading route, source map, and the path from an Issue to verified delivery.
@@ -67,6 +67,15 @@ claim/upgrade trials or automatically replace expired/uncertain instances. Postg
 discovery and SQL are disabled; legacy PG records remain on disk for possible future migration.
 See [the SQL boundary and recovery](docs/decisions/0006-zero-sql-gateway.md) and
 [real verification evidence](docs/starter-sql-verification.md).
+
+## DuckDB databases
+
+Select DuckDB in Databases to create an analytical database with dedicated service-managed
+storage in Singapore. Customers see only the database; its backing File System and credentials
+remain internal. The same scoped Workspace Key works with MySQL, DuckDB and standalone Files.
+The operator supplies a verified DuckDB 2.0 tidbfs artifact; without it, creation is unavailable.
+See [runtime setup and recovery](docs/duckdb-databases.md) and
+[verification](docs/duckdb-verification.md). Native remote storage is experimental.
 
 ## What works
 

@@ -23,11 +23,11 @@ const WorkspaceSqlInput = lazy(() => import('./WorkspaceSqlInput'));
 type DatabaseResource = {
   id: string;
   name: string;
-  kind: 'mysql' | 'filesystem';
+  kind: 'mysql' | 'duckdb' | 'filesystem';
   provider?: string;
   status: string;
 };
-const kindLabel = { mysql: 'MySQL', filesystem: 'File System' };
+const kindLabel = { mysql: 'MySQL', duckdb: 'DuckDB', filesystem: 'File System' };
 type Props = {
   initialSql?: string;
   database: DatabaseResource;
@@ -48,7 +48,7 @@ export function SqlQueryPanel({
 }: Props) {
   const dbs = databases;
   const resourceId = database.id;
-  const live = database.provider === 'tidb-cloud-zero';
+  const live = ['tidb-cloud-zero', 'duckdb-drive9'].includes(database.provider || '');
   const [sql, setSql] = useState(
       initialSql ?? (live ? 'SELECT 1 AS connected;' : 'SELECT * FROM agent_events LIMIT 10;'),
     ),
@@ -83,7 +83,9 @@ export function SqlQueryPanel({
     <>
       <Alert className="notice" color="peacock" icon={<Sparkles size={17} />}>
         <span>
-          {live ? (
+          {database.kind === 'duckdb' ? (
+            'Queries run in your persistent DuckDB database. Run one statement at a time; writes change real data. Results are limited to 1,000 rows / 1 MiB, with a 15-second timeout.'
+          ) : live ? (
             'Queries run on your temporary TiDB Cloud Zero database. Run one statement at a time; writes change real data. Results are limited to 1,000 rows / 1 MiB, with a 15-second timeout.'
           ) : (
             <>
@@ -133,6 +135,7 @@ export function SqlQueryPanel({
         >
           <WorkspaceSqlInput
             databaseId={database.id}
+            dialect={database.kind === 'duckdb' ? 'duckdb' : 'mysql'}
             value={sql}
             onChange={setSql}
             onRun={() => void run()}

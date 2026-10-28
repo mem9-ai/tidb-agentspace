@@ -80,6 +80,15 @@ test('API builds without a frontend; separate archives boot independently withou
       assert.ok(!entries.includes('api/node_modules/react/'));
       const runtimeRequire = createRequire(resolve(unpacked, 'api/server/index.mjs'));
       assert.equal(typeof runtimeRequire('mysql2').createConnection, 'function');
+      const { DuckDBInstance } = runtimeRequire('@duckdb/node-api');
+      const native = await DuckDBInstance.create(':memory:');
+      const nativeConnection = await native.connect();
+      assert.equal(
+        (await nativeConnection.runAndReadAll('SELECT 42 AS value')).getRowObjectsJson()[0].value,
+        42,
+      );
+      nativeConnection.closeSync();
+      native.closeSync();
       assert.ok(entries.includes('api/server/providers/drive9.mjs'));
       assert.ok(!entries.includes('index.html') && !entries.includes('console'));
       const { createApp } = await import(

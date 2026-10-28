@@ -36,10 +36,12 @@ follow its task-specific references before implementation. Keep detailed rules c
   identifiers, comments, and shared engineering documentation use English.
 - Read `docs/architecture.md` for the proposed product. Distinguish proposed behavior from
   what the running prototype implements.
-- MySQL and File System are currently available; PostgreSQL is planned but disabled. Read
+- MySQL, DuckDB and File System are currently available; PostgreSQL is planned but disabled. Read
   [the Zero SQL boundary](docs/decisions/0006-zero-sql-gateway.md) before database work.
   The proposed Starter protocols and File System are separate resource types with their
   own endpoints, credentials, regional availability, and capabilities.
+- DuckDB owns dedicated private storage; read [the DuckDB boundary](docs/decisions/0008-duckdb-private-storage.md).
+  Never publish its backing filesystem as a customer resource, Key target, file API or usage row.
 - Customers use one Workspace Key for the public product API, with both action and resource
   permissions. The service manages upstream cloud keys and native data credentials internally.
   Never require customers to supply provider keys or expose those secrets to a browser or agent.
