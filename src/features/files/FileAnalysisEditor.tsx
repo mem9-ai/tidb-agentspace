@@ -126,7 +126,7 @@ export function FileAnalysisEditor({
                     { label: 'Preview rows', value: sqlSample },
                     { label: 'Count rows', value: 'SELECT COUNT(*) AS row_count FROM file;' },
                   ]
-                : bashSamples(bashInput.path)
+                : bashSamples(bashInput.path, bashInput.fileVariable)
             }
             onSample={sample}
           >

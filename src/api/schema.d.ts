@@ -1501,6 +1501,11 @@ export interface operations {
                 /** @constant */
                 workingDirectory: '/workspace';
                 aliases: string[];
+                /**
+                 * @description When present, Workspace sets FILE to input.path for each fresh Bash run. Use quoted "$FILE" or "${FILE}"; this is a Workspace convention, not a Bash built-in. Script assignments do not persist.
+                 * @constant
+                 */
+                fileVariable?: 'FILE';
               };
             }[];
             format: string | null;

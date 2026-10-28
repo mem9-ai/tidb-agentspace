@@ -35,8 +35,14 @@ export function BashAnalysisHelp({
         </CopyButton>
       </Group>
       <Text size="sm" c="carbon.7">
-        Only the selected saved file is available at this path. Other Workspace files are not
-        mounted.
+        {input.fileVariable === 'FILE' ? (
+          <>
+            Use this path directly or <Code fz="inherit">"$FILE"</Code> for the selected saved file.
+          </>
+        ) : (
+          'Only the selected saved file is available at this path.'
+        )}{' '}
+        Other Workspace files are not mounted.
       </Text>
       <details className="bash-usage">
         <summary>How to use Just Bash</summary>
@@ -46,7 +52,7 @@ export function BashAnalysisHelp({
           error for problems.
         </Text>
         <Group gap="xs" mt="sm">
-          {bashSamples(input.path).map((example) => (
+          {bashSamples(input.path, input.fileVariable).map((example) => (
             <Button
               key={example.label}
               variant="subtle"
@@ -57,11 +63,18 @@ export function BashAnalysisHelp({
             </Button>
           ))}
         </Group>
+        {input.fileVariable === 'FILE' && (
+          <Text size="sm" mt="sm">
+            Workspace sets <Code fz="inherit">FILE</Code> to this path on every run. Always quote{' '}
+            <Code fz="inherit">"$FILE"</Code> to preserve spaces and special characters. This is a
+            Workspace variable, not a Bash built-in.
+          </Text>
+        )}
         <Text size="sm" mt="sm">
-          Working directory: <Code fz="inherit">{input.workingDirectory}</Code>. Use the full input
-          path; examples quote it safely for spaces and special characters. Use head, tail, grep,
-          wc, awk, sed, sort and uniq, including pipes, on this read-only saved-file snapshot.
-          Writes, network access, installs and arbitrary programs are unavailable.
+          Working directory: <Code fz="inherit">{input.workingDirectory}</Code>. Absolute-path
+          examples quote spaces and special characters safely. Use head, tail, grep, wc, awk, sed,
+          sort and uniq, including pipes, on this read-only saved-file snapshot. Writes, network
+          access, installs and arbitrary programs are unavailable.
         </Text>
         {input.aliases.length > 0 && (
           <Text size="sm" mt="sm">

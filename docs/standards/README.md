@@ -55,6 +55,8 @@ file format is distinct from available methods. Discover per-engine capabilities
 CSV SQL or raw-text Bash explicitly, and preserve ADR 0010's single-file authorization/isolation.
 For Bash path identity, follow [ADR 0015](../decisions/0015-bash-workspace-paths.md): preserve
 the selected Workspace path in its virtual snapshot and use discovered metadata for safely quoted samples.
+Keep initial samples filled with absolute paths; expose the quoted current-file variable only
+when supported, following [ADR 0016](../decisions/0016-bash-selected-file-variable.md).
 
 For PostgreSQL through db9, read [ADR 0011](../decisions/0011-db9-postgres.md) and
 [the runtime guide](../db9-postgres.md). Preserve the private anonymous/native credential boundary

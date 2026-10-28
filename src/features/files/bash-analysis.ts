@@ -14,11 +14,13 @@ export function quoteBashPath(path: string) {
 export function bashPreviewCommand(path: string) {
   return `head -20 ${quoteBashPath(path)}`;
 }
-export function bashSamples(path: string) {
+export const bashFileCommand = 'head -20 "$FILE"';
+export function bashSamples(path: string, fileVariable?: BashInput['fileVariable']) {
   const input = quoteBashPath(path);
   return [
     { label: 'First lines', value: bashPreviewCommand(path) },
     { label: 'Find errors', value: `grep -n 'ERROR' ${input} | head -20` },
     { label: 'Count lines', value: `wc -l ${input}` },
+    ...(fileVariable === 'FILE' ? [{ label: 'Current file ($FILE)', value: bashFileCommand }] : []),
   ];
 }

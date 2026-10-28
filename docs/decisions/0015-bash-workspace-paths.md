@@ -18,7 +18,8 @@ the public Workspace path separately from the private temporary source path.
 
 The Bash option in capabilities adds optional `input` metadata containing `path`,
 `workingDirectory` and `aliases`. The service derives it from the normalized selected path;
-clients cannot supply a mount, working directory, alias, native path or environment. The
+clients cannot supply a mount, working directory, alias, native path or environment. Optional
+current-file variable discovery is defined by [ADR 0016](0016-bash-selected-file-variable.md). The
 Console uses this metadata for its copyable input, samples, limits and error recovery.
 Samples single-quote the entire path and escape embedded single quotes, so spaces, shell
 metacharacters and newlines cannot interpolate additional commands.

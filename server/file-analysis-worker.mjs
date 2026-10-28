@@ -114,7 +114,8 @@ async function bash({ sourcePath, workspacePath, script, limits }) {
   const shell = new Bash({
     fs,
     cwd: input.workingDirectory,
-    env: {},
+    // The selected public path is the only caller-related environment value, never host credentials.
+    env: { FILE: input.path },
     commands: analysisCommands,
     python: false,
     javascript: false,

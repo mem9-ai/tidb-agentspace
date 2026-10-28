@@ -122,7 +122,8 @@ The Bash capability option includes server-derived input metadata, for example:
   "input": {
     "path": "/file-analysis-demo-9de2ebb1/service.log",
     "workingDirectory": "/workspace",
-    "aliases": ["/workspace/input.log"]
+    "aliases": ["/workspace/input.log"],
+    "fileVariable": "FILE"
   }
 }
 ```
@@ -161,6 +162,49 @@ Verification on 2026-10-28, source base `00ca073e6165292978069e5611a6028668657cd
 | Mobile Light, 390×844     | [Wrapped input path](screenshots/bash-workspace-paths/mobile-light.jpg)                         |
 | Mobile Dark, 390×844      | [Wrapped input path](screenshots/bash-workspace-paths/mobile-dark.jpg)                          |
 | Special filename, 390×844 | [Quoted sample and selected contents](screenshots/bash-workspace-paths/special-path-mobile.jpg) |
+
+### Current file variable
+
+The first command and ordinary examples already contain the selected absolute path, safely
+quoted and ready to run. For reusable commands, Workspace also sets `FILE` to that path on
+each fresh Bash run when the input capability reports `fileVariable: "FILE"`:
+
+```bash
+head -20 "$FILE"
+grep -n 'ERROR' "$FILE" | head -20
+wc -l "$FILE"
+```
+
+`FILE` is a Workspace convention, not a Bash built-in for a file selected in a UI. Always quote
+`"$FILE"` (or `"${FILE}"`) to preserve spaces and special characters. The value does not
+introduce another mount or access to siblings. Assignments/unset affect only that one script;
+the next execution resets it from the selected saved file. No provider/private parent
+environment is inherited. See [ADR 0016](decisions/0016-bash-selected-file-variable.md).
+
+The Console keeps absolute paths as its default and offers **Current file ($FILE)** in
+Editor tools → Samples and the usage disclosure only when supported by the API. Choosing it
+fills `head -20 "$FILE"` without running. Older APIs retain working absolute-path examples.
+
+Verified for [GH-69](https://github.com/siddontang/tidb.ai/issues/69) on 2026-10-28, source
+base `9ba07863d78d5b2d05f3aaa5375275a5e33d443d`: real interpreter tests cover quoted expansion,
+special filenames, alias collisions, per-run reset, denied unselected reads/writes and absent
+private environment. HTTP/schema tests exercise metadata and variable execution with the
+same Workspace permissions. The standalone API artifact test reads its saved file via
+`"$FILE"` after packaging. Browser checks confirm the untouched first command contains the
+actual absolute path (also for a special filename), path copying remains exact, the variable
+sample prefills without execution, Cmd/Ctrl+Enter runs it, and both forms return selected
+contents. CSV SQL/Bash results remain independent across switching. Light/Dark at 1280×800
+and 390×844 retain 16px command text with no page-wide horizontal overflow. These checks use
+isolated local fixtures and real engines; final CI and Singapore preview verification are
+recorded in the implementation PR. No new cloud integration or write capability is claimed.
+
+| Evidence                                                  | Screenshot                                                                  |
+| --------------------------------------------------------- | --------------------------------------------------------------------------- |
+| First command already includes the absolute selected path | [Default preview](screenshots/bash-file-variable/default-absolute-path.jpg) |
+| Variable example, desktop Light, 1280×800                 | [Screenshot](screenshots/bash-file-variable/desktop-light.jpg)              |
+| Variable example, desktop Dark, 1280×800                  | [Screenshot](screenshots/bash-file-variable/desktop-dark.jpg)               |
+| Variable example, mobile Light, 390×844                   | [Screenshot](screenshots/bash-file-variable/mobile-light.jpg)               |
+| Variable example, mobile Dark, 390×844                    | [Screenshot](screenshots/bash-file-variable/mobile-dark.jpg)                |
 
 ### Just Bash input guidance
 
