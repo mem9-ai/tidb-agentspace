@@ -1,17 +1,8 @@
-.database-workspace {
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  align-items: start;
-  gap: 16px;
-}
 .database-data {
   display: flex;
   flex-direction: column;
   gap: 24px;
   min-width: 0;
-}
-.database-workspace[data-browser-collapsed] {
-  grid-template-columns: 56px minmax(0, 1fr);
 }
 .database-table-list nav {
   overflow-wrap: anywhere;
@@ -44,11 +35,7 @@
   max-height: 240px;
   overflow: auto;
 }
-@media (max-width: 1000px) {
-  .database-workspace,
-  .database-workspace[data-browser-collapsed] {
-    grid-template-columns: minmax(0, 1fr);
-  }
+@media (max-width: 1099px) {
   .database-table-list[data-collapsed] {
     flex-direction: row;
     align-items: center;
@@ -66,46 +53,12 @@
   min-width: 0;
   scroll-margin-top: 100px;
 }
-.database-workspace > .database-table-list {
-  position: sticky;
-  top: 104px;
-  max-height: calc(100dvh - 220px);
-}
-.database-workspace .sql-database-select {
-  min-width: 0;
-  width: 220px;
-}
-@media (max-width: 1000px) {
-  .database-workspace > .database-table-list {
-    position: static;
-    max-height: none;
-  }
+@media (max-width: 1099px) {
   .database-table-list .workspace-browser-list {
     max-height: 160px;
   }
 }
 
-.workspace-content.database-content {
-  padding-top: 20px;
-  padding-bottom: 20px;
-}
-.database-workspace-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-.database-workspace-identity {
-  min-width: 0;
-}
-.database-workspace-identity > div {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.database-workspace-actions {
-  flex-shrink: 0;
-}
 .database-workspace .panel {
   margin-bottom: 0;
 }
@@ -122,7 +75,7 @@
   min-height: 0;
 }
 .database-workspace .sql-toolbar {
-  padding: 12px 16px;
+  padding: 16px 20px;
 }
 .database-workspace .editor-bottom {
   padding: 0 12px 0 16px;
@@ -145,17 +98,15 @@
   padding: 10px 20px;
 }
 @media (max-width: 700px) {
-  .database-workspace-header {
-    flex-wrap: wrap;
-  }
-  .database-workspace-actions {
-    width: 100%;
-    justify-content: flex-end;
-  }
   .database-workspace .sql-panel {
     --workspace-sql-editor-height: 180px;
   }
   .database-workspace .sql-panel-expanded {
     --workspace-sql-editor-height: 360px;
   }
+}
+
+.database-file-sources {
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--border);
 }

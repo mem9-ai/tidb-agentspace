@@ -10,6 +10,9 @@ import {
 } from './api/client';
 import './features/files/file-preview.css';
 import { FileBrowserPanel } from './features/files/FileBrowserPanel';
+import { FileBrowserList } from './features/files/FileBrowserList';
+import { ResourceKindIcon as KindIcon } from './ui/ResourceKindIcon';
+import { ResourceWorkspaceBar, ResourceWorkspaceHeader } from './ui/ResourceWorkspaceHeader';
 import {
   useRemoteFiles,
   downloadRemoteFile,
@@ -58,8 +61,6 @@ import {
   IconCopy03 as Copy,
   IconCreditCard01 as CreditCard,
   IconDatabase01 as Database,
-  IconFileCode01 as FileCode2,
-  IconFile01 as FileText,
   IconFolder as Folder,
   IconKey01 as KeyRound,
   IconLayoutGrid01 as LayoutDashboard,
@@ -71,7 +72,6 @@ import {
   IconShieldTick as ShieldCheck,
   IconStars01 as Sparkles,
   IconTerminal as Terminal,
-  IconTrash01 as Trash2,
   IconUpload01 as Upload,
   IconGitBranch01 as Workflow,
   IconZap as Zap,
@@ -79,7 +79,6 @@ import {
 import type { IconProps } from '@tidbcloud/uikit/icons';
 import { ResourceAccessPicker } from './features/keys/ResourceAccessPicker';
 import { WorkspaceLayout } from './ui/WorkspaceLayout';
-import { DatabaseWorkspaceHeader } from './features/databases/DatabaseWorkspaceHeader';
 import { DatabaseWorkspace } from './features/databases/DatabaseWorkspace';
 import { databaseEditorHash, parseWorkspaceRoute } from './features/navigation/workspace-route';
 import type { Route, WorkspaceRoute } from './features/navigation/workspace-route';
@@ -147,14 +146,6 @@ function relative(value: string | null) {
       : seconds < 86400
         ? `${Math.floor(seconds / 3600)}h ago`
         : new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-function KindIcon({ kind, small = false }: { kind: Kind; small?: boolean }) {
-  const Icon = kind === 'filesystem' ? Folder : Database;
-  return (
-    <span className={`kind-icon ${kind} ${small ? 'small' : ''}`}>
-      <Icon size={small ? 17 : 22} />
-    </span>
-  );
 }
 
 function Empty({
@@ -911,8 +902,7 @@ function DatabaseDetail({
 }: Shared & { database: Resource; routeLocation: WorkspaceRoute }) {
   return (
     <section className="database-page">
-      <DatabaseWorkspaceHeader
-        database={database}
+      <DatabaseWorkspace
         onConnect={() => onConnect(database)}
         onRetry={async () => {
           try {
@@ -922,8 +912,6 @@ function DatabaseDetail({
             notify((error as Error).message);
           }
         }}
-      />
-      <DatabaseWorkspace
         database={database}
         databases={data.resources.filter((resource) => resource.kind !== 'filesystem')}
         fileSystems={data.resources.filter((resource) => resource.kind === 'filesystem')}
@@ -1144,10 +1132,9 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
   }
   return (
     <>
-      <PageHeading
-        eyebrow="PERSISTENT CONTEXT"
+      <ResourceWorkspaceHeader
         title="File System"
-        description="A shared home for your agent’s context, code, and outputs."
+        description="Browse files, preview content and analyze data."
         actions={
           <>
             <Button
@@ -1180,54 +1167,32 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           e.target.value = '';
         }}
       />
-      <div className="file-system-summary">
-        <div className="table-resource file-system-identity">
-          <KindIcon kind="filesystem" />
-          <div>
-            <NativeSelect
-              aria-label="File system"
-              className="heading-select"
-              value={system}
-              disabled={busy}
-              onChange={(e) => {
-                const nextSystem = e.target.value;
-                requestPreviewChange(() => {
-                  closePreview();
-                  setSystem(nextSystem);
-                  setPath('/');
-                  setSearch('');
-                  setEditing(null);
-                });
-              }}
-            >
-              {systems.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </NativeSelect>
-            <small>
-              {systems[0] ? region(systems.find((r) => r.id === system)!.region) : 'No file system'}
-            </small>
-          </div>
-          <Badge color={remote ? 'green' : 'purple'}>
-            {remote ? 'Live · Anonymous trial' : 'Local demo'}
-          </Badge>
-        </div>
-        <div className="file-stat">
-          <span>
-            {files.filter((f) => f.type === 'file').length} files{remote ? ' in folder' : ''}
-          </span>
-          <span>
-            {bytes(files.reduce((n, f) => n + fileSize(f), 0))}
-            {remote ? ' in folder' : ' / 2 GiB'}
-          </span>
-          <span>
-            <span className="live-dot" />
-            {selectedSystem?.status || 'Unavailable'}
-          </span>
-        </div>
-      </div>
+      <ResourceWorkspaceBar
+        resource={selectedSystem}
+        resources={systems}
+        label="File system"
+        description={selectedSystem ? region(selectedSystem.region) : 'No file system'}
+        live={remote}
+        mode={remote ? 'Live · Anonymous trial' : 'Local demo'}
+        disabled={busy}
+        onSelect={(nextSystem) =>
+          requestPreviewChange(() => {
+            closePreview();
+            setSystem(nextSystem);
+            setPath('/');
+            setSearch('');
+            setEditing(null);
+          })
+        }
+      >
+        <span>
+          {files.filter((file) => file.type === 'file').length} files{remote ? ' in folder' : ''}
+        </span>
+        <span>
+          {bytes(files.reduce((total, file) => total + fileSize(file), 0))}
+          {remote ? ' in folder' : ' / 2 GiB'}
+        </span>
+      </ResourceWorkspaceBar>
       {(listing.error || selectedSystem?.connectionError) && (
         <Alert color="red" mb={20}>
           {listing.error || selectedSystem?.connectionError}
@@ -1243,12 +1208,13 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
         </Alert>
       )}
       <div
-        className="file-workspace"
+        className="resource-workspace file-workspace"
         data-preview={editing ? true : undefined}
         data-browser-collapsed={editing && browserCollapsed ? true : undefined}
       >
         <FileBrowserPanel
           systemName={selectedSystem?.name || 'Files'}
+          count={children.length}
           path={path}
           search={search}
           onSearch={setSearch}
@@ -1287,95 +1253,31 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
             </Text>
           )}
           {systems.length ? (
-            <Table horizontalSpacing={editing ? 12 : 20} verticalSpacing={editing ? 12 : 20}>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Name</Table.Th>
-                  <Table.Th>Size</Table.Th>
-                  <Table.Th>Last modified</Table.Th>
-                  <Table.Th />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {path !== '/' && (
-                  <Table.Tr>
-                    <Table.Td colSpan={4}>
-                      <UnstyledButton
-                        className="file-name"
-                        onClick={() => setPath(path.slice(0, path.lastIndexOf('/')) || '/')}
-                      >
-                        <Folder size={17} />
-                        ..
-                      </UnstyledButton>
-                    </Table.Td>
-                  </Table.Tr>
-                )}
-                {children.map((f) => (
-                  <Table.Tr key={f.id} data-selected={editing?.id === f.id || undefined}>
-                    <Table.Td>
-                      <UnstyledButton
-                        className="file-name"
-                        aria-current={editing?.id === f.id ? 'true' : undefined}
-                        onClick={(event) => {
-                          if (f.type === 'directory') {
-                            setPath(f.path);
-                            setSearch('');
-                          } else {
-                            if (editing?.id === f.id) return;
-                            const trigger = event.currentTarget;
-                            requestPreviewChange(() => {
-                              setPreviewTrigger(trigger);
-                              void openFile(f);
-                            });
-                          }
-                        }}
-                      >
-                        {f.type === 'directory' ? (
-                          <Folder className="folder-icon" size={19} />
-                        ) : f.path.endsWith('.md') ? (
-                          <FileText size={18} />
-                        ) : (
-                          <FileCode2 size={18} />
-                        )}
-                        <span>
-                          <strong>{f.path.split('/').pop()}</strong>
-                          <small className="file-cell-meta">
-                            {f.type === 'directory' ? 'Folder' : bytes(fileSize(f))} ·{' '}
-                            {relative(f.updatedAt)}
-                          </small>
-                        </span>
-                      </UnstyledButton>
-                    </Table.Td>
-                    <Table.Td>{f.type === 'directory' ? '—' : bytes(fileSize(f))}</Table.Td>
-                    <Table.Td>{relative(f.updatedAt)}</Table.Td>
-                    <Table.Td>
-                      <div className="row-actions">
-                        {f.type === 'file' && (
-                          <ActionIcon
-                            className="icon-button"
-                            aria-label={`Download ${f.path}`}
-                            onClick={() => downloadFile(f)}
-                          >
-                            <ArrowDownToLine size={15} />
-                          </ActionIcon>
-                        )}
-                        <ActionIcon
-                          className="icon-button"
-                          aria-label={`Delete ${f.path}`}
-                          disabled={busy}
-                          onClick={() => {
-                            setDeleting(f);
-                            setError('');
-                          }}
-                        >
-                          <Trash2 size={15} />
-                        </ActionIcon>
-                      </div>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
+            <FileBrowserList
+              files={children}
+              path={path}
+              selectedId={editing?.id}
+              busy={busy}
+              describeFile={(file) =>
+                `${file.type === 'directory' ? 'Folder' : bytes(fileSize(file))} · ${relative(file.updatedAt)}`
+              }
+              onNavigate={(nextPath) => {
+                setPath(nextPath);
+                setSearch('');
+              }}
+              onOpen={(file, trigger) => {
+                if (editing?.id === file.id) return;
+                requestPreviewChange(() => {
+                  setPreviewTrigger(trigger);
+                  void openFile(file);
+                });
+              }}
+              onDownload={downloadFile}
+              onDelete={(file) => {
+                setDeleting(file);
+                setError('');
+              }}
+            />
           ) : (
             <Empty
               title="Add your first file system"
@@ -1394,7 +1296,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
             />
           )}
         </FileBrowserPanel>
-        {editing && (
+        {editing ? (
           <Suspense
             fallback={
               <Paper withBorder p={24}>
@@ -1448,6 +1350,13 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               }}
             />
           </Suspense>
+        ) : (
+          <Paper className="panel file-placeholder" withBorder>
+            <Empty
+              title="Select a file"
+              description="Choose a file on the left to preview, edit or analyze its contents."
+            />
+          </Paper>
         )}
       </div>
       <Alert className="notice quiet" color="peacock" icon={<ShieldCheck size={17} />}>
@@ -1507,7 +1416,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
       )}
       {deleting && (
         <Modal
-          title={`Delete ${deleting.type}?`}
+          title={`Delete ${deleting.type === 'directory' ? 'folder' : 'file'}?`}
           description={`“${deleting.path}” will be removed from this local workspace. Non-empty folders cannot be deleted.`}
           onClose={() => setDeleting(null)}
         >
@@ -1519,7 +1428,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           <div className="modal-actions">
             <Button onClick={() => setDeleting(null)}>Cancel</Button>
             <Button variant="filled" color="red" disabled={busy} onClick={remove}>
-              Delete {deleting.type}
+              Delete {deleting.type === 'directory' ? 'folder' : 'file'}
             </Button>
           </div>
         </Modal>

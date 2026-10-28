@@ -6,7 +6,6 @@ import {
   Button,
   Group,
   Loader,
-  NavLink,
   Paper,
   Stack,
   Table,
@@ -19,6 +18,7 @@ import { workspaceApi, type Resource, type TableDetail } from '../../api/client'
 import { ChoiceTabs } from '../../ui/ChoiceTabs';
 import { Heading } from '../../ui/WorkspaceHeading';
 import { WorkspaceBrowserPanel } from '../../ui/WorkspaceBrowserPanel';
+import { WorkspaceBrowserItem } from '../../ui/WorkspaceBrowserItem';
 import { databaseEditorHash } from '../navigation/workspace-route';
 import './database-browser.css';
 
@@ -351,7 +351,7 @@ export function DatabaseTableList({
         </>
       }
     >
-      <Stack gap="sm" p="sm">
+      <Stack gap="sm" p={8}>
         {!['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
           database.provider || '',
         ) && <Badge>Local demo</Badge>}
@@ -375,15 +375,14 @@ export function DatabaseTableList({
             )}
             <nav aria-label="Database tables">
               {matches.map((table) => (
-                <NavLink
-                  component="a"
+                <WorkspaceBrowserItem
                   key={table.name}
                   active={tableName === table.name}
                   href={databaseEditorHash(database.id, table.name)}
                   onClick={onSelect}
-                  label={table.name}
-                  description={table.type === 'VIEW' ? 'View' : undefined}
-                  title={table.name}
+                  name={table.name}
+                  icon={<IconDatabase01 size={20} />}
+                  description={table.type === 'VIEW' ? 'View' : 'Table'}
                 />
               ))}
             </nav>

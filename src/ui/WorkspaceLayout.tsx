@@ -182,7 +182,9 @@ export function WorkspaceLayout({
         </Button>
       </Drawer>
       <AppShell.Main>
-        <div className={`workspace-content${databaseId ? ' database-content' : ''}`}>
+        <div
+          className={`workspace-content${databaseId || active === 'files' ? ' resource-content' : ''}`}
+        >
           {children}
         </div>
         <footer className="footer">

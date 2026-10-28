@@ -1,0 +1,101 @@
+.workspace-content.resource-content {
+  padding-top: 20px;
+  padding-bottom: 20px;
+}
+.resource-workspace-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.resource-workspace-heading > div:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.resource-workspace-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.resource-workspace-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin-bottom: 20px;
+}
+.resource-workspace-selection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-width: 0;
+}
+.resource-workspace-select {
+  width: 280px;
+  min-width: 0;
+  max-width: 100%;
+}
+.resource-workspace-select > p {
+  margin-top: 4px;
+}
+.resource-workspace-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.resource-workspace {
+  --workspace-panel-max-height: max(420px, calc(100dvh - 300px));
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.resource-workspace[data-browser-collapsed] {
+  grid-template-columns: 56px minmax(0, 1fr);
+}
+.resource-workspace > .workspace-browser {
+  position: sticky;
+  top: 96px;
+  max-height: var(--workspace-panel-max-height);
+  margin-bottom: 0;
+}
+@media (max-width: 1099px) {
+  .resource-workspace,
+  .resource-workspace[data-browser-collapsed] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .resource-workspace > .workspace-browser {
+    position: static;
+    max-height: none;
+  }
+}
+@media (max-width: 700px) {
+  .resource-workspace-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .resource-workspace-actions {
+    width: 100%;
+  }
+  .resource-workspace-selection {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    width: 100%;
+  }
+  .resource-workspace-select {
+    width: 100%;
+  }
+  .resource-workspace-selection > :last-child {
+    grid-column: 2;
+    justify-self: start;
+  }
+}

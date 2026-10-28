@@ -6,7 +6,6 @@ import {
   Badge,
   Button,
   Loader,
-  NativeSelect,
   Menu,
   Popover,
   Paper,
@@ -14,7 +13,6 @@ import {
   Text,
 } from '@tidbcloud/uikit';
 import {
-  IconDatabase01 as Database,
   IconPlay as Play,
   IconMaximize02,
   IconMinimize02,
@@ -30,12 +28,6 @@ type DatabaseResource = {
   provider?: string;
   status: string;
 };
-const kindLabel = {
-  mysql: 'MySQL',
-  postgresql: 'PostgreSQL',
-  duckdb: 'DuckDB',
-  filesystem: 'File System',
-};
 type Props = {
   sql: string;
   onSqlChange: (sql: string) => void;
@@ -46,10 +38,9 @@ type Props = {
   readBusy: boolean;
   queryContext: string;
   hasFileSources: boolean;
-  databases: DatabaseResource[];
+  fileSources?: React.ReactNode;
   execute: (sql: string, signal?: AbortSignal) => Promise<QueryResult>;
   onComplete: () => Promise<void>;
-  onSelect: (id: string) => void;
   onExport: (result: QueryResult) => void;
 };
 export function SqlQueryPanel({
@@ -62,13 +53,11 @@ export function SqlQueryPanel({
   readBusy,
   queryContext,
   hasFileSources,
-  databases,
+  fileSources,
   execute,
   onComplete,
-  onSelect,
   onExport,
 }: Props) {
-  const dbs = databases;
   const resourceId = database.id;
   const live = ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
     database.provider || '',
@@ -188,23 +177,7 @@ export function SqlQueryPanel({
     <>
       <Paper className={`panel sql-panel${expanded ? ' sql-panel-expanded' : ''}`} withBorder>
         <div className="sql-toolbar">
-          <div className="inline-controls">
-            <Database size={16} />
-            <NativeSelect
-              className="sql-database-select"
-              aria-label="Database"
-              value={resourceId}
-              disabled={busy}
-              onChange={(e) => onSelect(e.target.value)}
-            >
-              {dbs.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name} · {kindLabel[r.kind]}
-                </option>
-              ))}
-            </NativeSelect>
-            <Badge color={live ? 'green' : 'carbon'}>{live ? 'Live' : 'Demo'}</Badge>
-          </div>
+          <Heading level={2}>SQL Editor</Heading>
           <Button
             variant="filled"
             loading={busy}
@@ -218,6 +191,7 @@ export function SqlQueryPanel({
             <Button onClick={() => request.current?.abort()}>Cancel query</Button>
           )}
         </div>
+        {fileSources}
         <Suspense
           fallback={
             <div className="editor-loading">

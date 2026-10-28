@@ -1,5 +1,5 @@
 import { Fragment, useRef, useState, type ReactNode } from 'react';
-import { ActionIcon, Anchor, Menu, TextInput } from '@tidbcloud/uikit';
+import { ActionIcon, Anchor, Badge, Menu, TextInput } from '@tidbcloud/uikit';
 import {
   IconChevronRight,
   IconFilePlus01,
@@ -13,6 +13,7 @@ import { WorkspaceBrowserPanel } from '../../ui/WorkspaceBrowserPanel';
 
 export function FileBrowserPanel({
   systemName,
+  count,
   path,
   search,
   onSearch,
@@ -28,6 +29,7 @@ export function FileBrowserPanel({
   children,
 }: {
   systemName: string;
+  count: number;
   path: string;
   search: string;
   onSearch: (value: string) => void;
@@ -62,24 +64,22 @@ export function FileBrowserPanel({
       onToggle={onToggle}
       footer={footer}
       heading={
-        <nav className="path-crumb" aria-label="File path">
-          <ActionIcon
+        <nav className="file-browser-path" aria-label="File path">
+          <Anchor
+            component="button"
+            type="button"
+            c="carbon.8"
+            fw={600}
+            className="file-browser-root"
             aria-label="File system root"
             title={systemName}
             onClick={() => onNavigate('/')}
           >
             <IconFolder size={20} />
-          </ActionIcon>
+            Files
+          </Anchor>
+          <Badge>{count}</Badge>
           <div className="file-path-segments">
-            <Anchor
-              component="button"
-              type="button"
-              className="file-path-root"
-              title={systemName}
-              onClick={() => onNavigate('/')}
-            >
-              {systemName}
-            </Anchor>
             {parts.map((part, index) => (
               <Fragment key={index}>
                 <IconChevronRight size={14} aria-hidden />

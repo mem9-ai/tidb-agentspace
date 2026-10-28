@@ -64,7 +64,7 @@ optional mix of three distinct resource types. [Supabase Platform](https://supab
 | Usage & billing  | Understand allowances and charges             | Per-resource usage, customer allocation, upstream allowance attribution, estimated/settled spend, limits                                             |
 | Settings         | Manage the personal workspace                 | Names, profile and account/session status; future account claim, security, export and deletion                                                       |
 
-SQL Editor belongs inside Databases, scoped to a selected MySQL or PostgreSQL resource;
+SQL Editor belongs inside Databases, scoped to a selected MySQL, PostgreSQL or DuckDB resource;
 it is not a peer of Databases in the workspace navigation. The implemented route is
 `#databases/<resource-id>/sql`. Database names, row actions, and connection dialogs must
 open that exact resource, with Databases remaining active in the sidebar. Reload and
@@ -72,6 +72,15 @@ browser back/forward preserve the resource; switching databases clears previous 
 results/errors. An unavailable or non-database resource must never silently select another
 database. Legacy `#sql` links open the database list for explicit selection. Keep the query
 target, displayed database, and URL consistent when adding future database tools.
+
+Database and File System workspaces share the same hierarchy (owner correction, 2026-10-28):
+page heading/actions, a resource selector with provider/region/status context, then a browser
+beside the working panel. The database selector is above both Tables and SQL Editor; it must
+not live inside the editor it controls. File System uses the same layout even before selecting
+a file, with an explicit unselected-file panel on desktop. Tables and Files share item chrome,
+browser width and collapse behavior; DuckDB file sources remain inside the SQL working panel.
+Existing resource/table/file URLs and busy/draft protections remain authoritative. See
+[resource workspace verification](resource-workspace-verification.md).
 
 File System analysis is implemented as bounded server-side snapshot workers: CSV/Parquet use
 DuckDB SQL, while UTF-8 logs and text use Just Bash. It requires `files:read`, `files:analyze`

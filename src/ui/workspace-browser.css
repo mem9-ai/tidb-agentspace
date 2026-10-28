@@ -66,3 +66,26 @@
   margin: 12px 0;
   color: var(--muted);
 }
+.workspace-browser-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.workspace-browser-row .workspace-browser-item {
+  flex: 1;
+  min-width: 0;
+}
+.workspace-browser-item .workspace-browser-item-label {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.workspace-browser-row-actions {
+  display: flex;
+  flex-shrink: 0;
+}
+.workspace-browser-entries {
+  padding: 8px;
+}

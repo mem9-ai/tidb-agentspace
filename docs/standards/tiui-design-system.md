@@ -160,8 +160,9 @@ verified, and record that as a remaining gap.
   and [unified workspace verification](../database-workspace-verification.md). Revisit for
   multiple query documents, multiple schemas or durable draft persistence.
 - **Database work area density (owner correction 2026-10-28):** prioritize the table list,
-  editor and first query rows within a typical desktop viewport. Keep the database name,
-  protocol/provider and brief expiry in a compact header; move full region/expiry guidance
+  editor and first query rows within a typical desktop viewport. Keep the page heading compact;
+  show database name, protocol/provider and brief expiry in the shared resource bar above both
+  browser and editor. Move full region/expiry guidance
   into TiUI Details and SQL budgets into Limits. Keep live-write/demo labels visible and
   show expired/provisioning/connection errors inline. Collapse optional sample queries into
   a menu; let users expand the editor without losing SQL or results. Reduce repeated chrome
@@ -182,6 +183,18 @@ verified, and record that as a remaining gap.
   Check both themes at 1280×800/900 and 390×844, including keyboard toggling, active queries,
   filtering and File System regression. Evidence is in [density verification](../database-density-verification.md#compact-table-browser).
   Revisit for resizable navigation or multiple database documents.
+- **Resource workspace hierarchy (owner correction 2026-10-28):** unify Database and File
+  System at the page level, not only their sidebars. Use `ResourceWorkspaceHeader` and its
+  `ResourceWorkspaceBar` for section heading/actions and the selected resource above the
+  entire work area. Tables and Files are children of that resource, beside SQL or file
+  preview/edit/analysis. Do not put the database selector inside SQL Editor while Tables sits
+  outside. Use the shared 320px/56px browser layout, heading/metadata spacing and
+  `WorkspaceBrowserItem` (TiUI NavLink) for icons, names, secondary text, selection and row
+  actions. File System keeps a desktop unselected-file panel and its narrow Back to files flow.
+  Keep DuckDB sources inside SQL Editor, preserve exact URLs and existing draft/resource
+  lifetimes, and disable resource selection during active operations. Verify both themes at
+  1280×800/900 and 390×844, resource switching, busy states, keyboard and draft guards. See
+  [verification](../resource-workspace-verification.md); revisit for tabs or resizable panes.
 - **File analysis (accepted and implemented, 2026-10-28):** keep Analyze in the selected
   file's side panel. CSV/Parquet use the official SQL Editor with Standard SQL dialect;
   UTF-8 logs/text use TiUI Textarea and read-only Just Bash. Fetch capabilities, but run only
@@ -276,6 +289,11 @@ viewports, exact workflows, and limitations. Backend/cloud integration remains u
   before mounting it and suppress the menu's delayed return-focus handoff; ordinary menu Escape
   should still return focus. The file browser verifies both paths. Preserve focus trapping,
   Escape, labels, and keyboard verification.
+- **Browser item contrast (2.9.1):** the active NavLink description used a dark text color
+  against the dark selected-row background during browser inspection. The shared browser
+  item uses the supported `styles.description.color = 'inherit'` override so metadata follows
+  the resolved row text color in both themes. Keep this in the shared adapter and recheck on
+  upgrades; do not compensate with a separate hard-coded palette.
 - **SQL extensions (0.0.6):** scope the editor cache to the database route, synchronize sample
   changes through the editor view, and keep callbacks current. CodeMirror's default
   `Mod-Enter` inserts a blank line: use `Prec.high(keymap.of(...))` for Run query. Put density

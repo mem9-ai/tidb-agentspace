@@ -5,10 +5,10 @@ import {
   Button,
   Group,
   NativeSelect,
-  Paper,
   Stack,
   Text,
   TextInput,
+  Typography,
 } from '@tidbcloud/uikit';
 import {
   workspaceApi,
@@ -16,7 +16,6 @@ import {
   type Resource,
   type WorkspaceFile,
 } from '../../api/client';
-import { Heading } from '../../ui/WorkspaceHeading';
 
 type Props = {
   fileSystems: Resource[];
@@ -65,13 +64,13 @@ export function DuckdbSources({ fileSystems, sources, busy, onChange, onQuery }:
   const valid =
     /^[a-z][a-z0-9_]{0,31}$/.test(name) && !sources.some((source) => source.name === name);
   return (
-    <Paper className="panel" withBorder p="md" mb="md">
+    <section className="database-file-sources" aria-label="Workspace file sources">
       <Stack gap="sm">
         <Group justify="space-between">
-          <Heading level={2}>
-            Workspace files <Badge>{sources.length} / 4</Badge>
-          </Heading>
-          <Button disabled={busy} onClick={() => setOpened(!opened)}>
+          <Typography component="h3" variant="title-lg">
+            File sources <Badge>{sources.length} / 4</Badge>
+          </Typography>
+          <Button variant="subtle" disabled={busy} onClick={() => setOpened(!opened)}>
             {opened ? 'Hide file picker' : 'Add file source'}
           </Button>
         </Group>
@@ -218,6 +217,6 @@ export function DuckdbSources({ fileSystems, sources, busy, onChange, onQuery }:
             </Stack>
           ))}
       </Stack>
-    </Paper>
+    </section>
   );
 }

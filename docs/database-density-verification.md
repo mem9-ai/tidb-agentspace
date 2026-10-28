@@ -1,5 +1,9 @@
 # Database workspace density verification
 
+This records the earlier density/collapse corrections. The owner's later GH-48 correction
+moves resource selection above both browser and working panel and gives both resource types
+the same 320px browser. See [current resource workspace verification](resource-workspace-verification.md).
+
 Owner-requested layout correction, 2026-10-28. Source baseline: `b78512d` (including the independently delivered file analysis feature).
 This builds on the [unified workspace](database-workspace-verification.md) without changing
 its API, provider, query budgets or draft lifecycle. The implementation PR records the exact
