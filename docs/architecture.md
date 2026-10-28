@@ -55,7 +55,8 @@ optional mix of three distinct resource types. [Supabase Platform](https://supab
 The [multi-tenant control-plane design](../specs/gh-74/spec.md) and
 [proposed ADR 0017](decisions/0017-workspace-kv-control-plane.md) define a logical KV metadata
 layer, scope-atomic records/indexes, ordinary local-file persistence, replaceable hosted
-adapters, Organization/Workspace authorization and identity-preserving resource/credential
+adapters including a service-owned TiDB File System candidate, Organization/Workspace
+authorization and identity-preserving resource/credential
 migration. This is a proposal, not implemented multi-tenancy or a completed migration. The
 current fixed Workspace, local owner session and JSON/vault persistence remain in use.
 

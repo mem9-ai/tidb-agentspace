@@ -2,18 +2,18 @@
 
 ## Identity, authority, and delivery
 
-| Field                                       | Value                                                                                                                                                             |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Parent intent                               | [Issue #74](https://github.com/siddontang/tidb.ai/issues/74)                                                                                                      |
-| Status                                      | Draft specification for review; no runtime or migration implementation                                                                                            |
-| Date                                        | 2026-10-29                                                                                                                                                        |
-| Intent contributor / accountable maintainer | Siddon Tang                                                                                                                                                       |
-| Source baseline                             | `ee1bd56f5a4a53d7864493634bf7d0eb228b878f`                                                                                                                        |
-| Accepted direction                          | Logical KV metadata, a replaceable persistence layer, bounded retrieval, ordinary local files first, explicit tenant isolation, and identity-preserving migration |
-| Proposed choices                            | Scope-atomic commits, record/index layouts, roles, adapter protocols, API evolution, limits, and the migration procedure below                                    |
-| Dependencies                                | ADRs 0001, 0004, 0005, 0006, 0008, 0010, 0011 and proposed [ADR 0017](../../docs/decisions/0017-workspace-kv-control-plane.md)                                    |
-| Risk                                        | Tenant authorization, credentials, concurrency, provider lifecycle, and migration; implementation requires the acceptance suite below                             |
-| Delivery endpoint                           | Reviewable specification and ADR in a design PR; the parent feature remains open                                                                                  |
+| Field                                       | Value                                                                                                                                                                                                     |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Parent intent                               | [Issue #74](https://github.com/siddontang/tidb.ai/issues/74)                                                                                                                                              |
+| Status                                      | Draft specification for review; no runtime or migration implementation                                                                                                                                    |
+| Date                                        | 2026-10-29                                                                                                                                                                                                |
+| Intent contributor / accountable maintainer | Siddon Tang                                                                                                                                                                                               |
+| Source baseline                             | `ee1bd56f5a4a53d7864493634bf7d0eb228b878f`                                                                                                                                                                |
+| Accepted direction                          | Logical KV metadata, a replaceable persistence layer, bounded retrieval, ordinary local files first, TiDB File System as a hosted candidate, explicit tenant isolation, and identity-preserving migration |
+| Proposed choices                            | Scope-atomic commits, record/index layouts, roles, adapter protocols, API evolution, limits, and the migration procedure below                                                                            |
+| Dependencies                                | ADRs 0001, 0004, 0005, 0006, 0008, 0010, 0011 and proposed [ADR 0017](../../docs/decisions/0017-workspace-kv-control-plane.md)                                                                            |
+| Risk                                        | Tenant authorization, credentials, concurrency, provider lifecycle, and migration; implementation requires the acceptance suite below                                                                     |
+| Delivery endpoint                           | Reviewable specification and ADR in a design PR; the parent feature remains open                                                                                                                          |
 
 This document specifies intended behavior. It neither changes the running Portal nor
 authorizes live migration, provider provisioning, account registration, credential rotation,
@@ -37,7 +37,7 @@ limited to 200 records, with no complete Run or failure history.
 
 The new abstraction is **logical KV plus bounded indexes**, not an ORM and not an arbitrary
 JSON document with unrestricted queries. It supplies a useful consistency contract across
-files, TiDB/MySQL, object storage, or a conforming KV engine. Local files remain a valid local
+files, TiDB File System, TiDB/MySQL, object storage, or a conforming KV engine. Local files remain a valid local
 backend; multi-server availability is an additional backend/deployment capability.
 
 ### Scope and exclusions
@@ -62,6 +62,7 @@ flowchart LR
   M --> F[Local files]
   M --> Q[TiDB or MySQL adapter]
   M --> O[S3 or conforming KV adapter]
+  M --> T[TiDB File System adapter]
   D --> B[Provider broker]
   B --> V[CredentialStore]
   B --> P[Customer databases and File Systems]
@@ -452,15 +453,81 @@ promise. Paging snapshots or an object-backed engine is a later adapter optimiza
 the same atomic publication contract. Do not build a general database on S3 just to satisfy
 the local use case.
 
-### 5.4 Candidate comparison
+### 5.4 TiDB File System: service-owned metadata storage
 
-| Backend                 | Recommendation                                           | Additional work before claiming support                                                                                             |
-| ----------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Plain local files       | First local adapter; no database service required        | Exclusive root owner, durable replace, recovery, backup, bounded indexes                                                            |
-| TiDB / MySQL            | Practical hosted adapter candidates                      | Scope transaction mapping, primary reads, locking/timeout/reconnect conformance                                                     |
-| Custom S3 snapshot+HEAD | Valid design candidate for a later measured need         | Conditional-write and durability probes, snapshot retention, GC and latency/cost testing                                            |
-| etcd                    | Candidate consistent KV service                          | Scope revision mapping, transactional limits, snapshot pagination/compaction and operations                                         |
-| SlateDB                 | Candidate object-backed engine behind a metadata service | Single-writer ownership/fencing, durable write acknowledgement, fresh authorization reads, transaction mapping, runtime integration |
+TiDB File System is an explicit owner-requested candidate for storing control-plane
+metadata, alongside ordinary local files and other hosted adapters. A dedicated remote
+filesystem can hold the same bounded KV snapshot/index records. Use the supported HTTP API
+or SDK behind `MetaStore`; Ti CLI and a filesystem mount are not product dependencies.
+
+Use a **service-owned control-plane File System**, separate from public customer File
+Systems and each DuckDB database's private backing store. One deployment/shard can hold
+multiple authorized scopes under encoded prefixes; a separate File System for every
+Workspace is not required. Workspace Keys, user file browsing, exports and analysis workers
+cannot list or address this storage, including through wildcard resource grants. Customer
+resource deletion must not delete its own control-plane authority.
+
+The deployment needs an out-of-band bootstrap locator and credential/secret reference for
+this File System. They cannot exist only inside the same metadata root that they unlock.
+The expected installation/environment identity and credential recovery path are configured
+by the operator; absence is an unavailable state, never permission to auto-provision a new
+filesystem or seed a replacement tenant catalog. Keep provider-account credentials in the
+separate CredentialStore; a filesystem-backed managed secret implementation would additionally
+require encrypted values and an external key/IAM root of trust.
+
+Two adapter profiles are candidates, subject to the shared conformance suite:
+
+1. **One metadata authority process:** multiple APIs call that authority, which serializes
+   scope updates and publishes complete remote snapshots. Verify latest reads, atomic
+   publication and durable acknowledgement using the remote protocol. Cold/manual takeover
+   first confirms the old writer is stopped or fenced. This is not multi-writer HA. Do not
+   copy the local `mkdir` lock, rename or `fsync` assumptions onto a FUSE/WebDAV mount and
+   infer their distributed semantics.
+2. **Revision-conditional publication:** create immutable snapshot files, then atomically
+   replace a small stable HEAD with a server-enforced expected version, following the S3
+   publication pattern. Retain mutation receipts, verify the referenced bytes before return,
+   and reconcile lost replies. Competing publishers must not both win from one version.
+   Version checks must include path incarnation or an equivalently enforced stable-HEAD
+   namespace: revision-only CAS does not protect a path deleted/recreated with a reset
+   revision. HEAD is never renamed, deleted, or reset during normal operation; restoration
+   creates a new installation namespace so an old writer cannot publish into the restored
+   authority. Automatic failover requires verified stale-writer exclusion.
+
+Evidence and gaps at this design date are deliberately separate:
+
+- Official TiDB Cloud Filesystem documentation describes persistent shared files and controlled
+  access. Its layers/checkpoints are not full-filesystem backups or authorization boundaries;
+  layer commit is not assumed to implement MetaStore's atomic scope transaction.
+- The [upstream ordinary-file server contract](https://github.com/drive9-ai/duckdb/blob/0e225c8d7b6adcccf8ce499d603350172dcca53e/docs/server-contract.md)
+  describes `X-Dat9-Expected-Revision: 0` for create-only and a positive value for conditional
+  replacement, with revision conflicts. It also states that revision-only writes do not
+  fence inode replacement. This is an upstream contract reference, not certification of
+  the current hosted endpoint for metadata.
+- This product's current `createDrive9().write` exposes create-only or unconditional writes;
+  it does not expose expected-positive-revision replacement, a complete remote metadata CAS
+  protocol, or remote root ownership. Existing conditional reads/snapshot checks are not
+  evidence that concurrent metadata publication is already implemented.
+- The current product gateway caps uploads at 1 MiB; a 16 MiB MetaStore snapshot budget does
+  not override it. A candidate adapter must declare verified limits and either use supported
+  bounded snapshots within the actual upload ceiling or implement verified multipart/paged
+  snapshots. Oversized metadata fails before effects; no silent split of an atomic commit.
+
+Keep a capability/limit manifest with the selected endpoint/runtime version and tests for
+fresh reads, publication, path replacement, durability, maximum payload and unknown outcomes.
+If the endpoint only meets immutable-blob storage requirements, it can store staged/backup
+snapshots while another authority controls publication; it cannot claim full MetaStore
+support. Keep primary data and backup failure domains/recovery credentials explicit.
+
+### 5.5 Candidate comparison
+
+| Backend                 | Recommendation                                             | Additional work before claiming support                                                                                             |
+| ----------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Plain local files       | First local adapter; no database service required          | Exclusive root owner, durable replace, recovery, backup, bounded indexes                                                            |
+| TiDB File System        | Explicit hosted candidate reusing the snapshot/index model | Service-owned storage and bootstrap credentials, verified publication/CAS and stale-writer behavior, payload limits and recovery    |
+| TiDB / MySQL            | Practical hosted adapter candidates                        | Scope transaction mapping, primary reads, locking/timeout/reconnect conformance                                                     |
+| Custom S3 snapshot+HEAD | Valid design candidate for a later measured need           | Conditional-write and durability probes, snapshot retention, GC and latency/cost testing                                            |
+| etcd                    | Candidate consistent KV service                            | Scope revision mapping, transactional limits, snapshot pagination/compaction and operations                                         |
+| SlateDB                 | Candidate object-backed engine behind a metadata service   | Single-writer ownership/fencing, durable write acknowledgement, fresh authorization reads, transaction mapping, runtime integration |
 
 Current official SlateDB documentation describes a single writer, multiple readers, writer
 fencing and transactions. These do not establish multi-writer service behavior or guarantee
@@ -830,6 +897,7 @@ These cases are requirements for later implementation, not passing tests deliver
 | META-18 | For an S3 claim, race conditional HEAD publication, return 412/409, lose successful replies, stale a read cache and run GC with active readers/backups; only complete committed snapshots authorize, with no lost references. Other S3-compatible systems must pass independently.                                                                                                                  |
 | META-19 | For a SQL/engine claim, inject transaction conflict, leader/reconnect failure and stale replica reads; scope-atomic/durable/fresh semantics remain intact. Stale/default asynchronous engine modes are refused.                                                                                                                                                                                     |
 | META-20 | Measure declared adapter limits and local snapshot rewrite/prefix scan latency with increasing resource/Key counts; publish hardware/version/workload/results before selecting hosted capacity. Exceeding scope budget is explicit and preserves state.                                                                                                                                             |
+| META-21 | For a TiDB File System claim, verify fresh/conditional reads, atomic durable publication, two publishers from one revision, lost replies, inode replacement/restore and stale writers, actual upload/multipart limits, unavailable bootstrap credentials, and isolation from public customer/DuckDB storage. A mount, advisory lock or layer checkpoint alone is not passing evidence.              |
 
 Implementation acceptance needs shared adapter conformance, API negative tests with injected
 providers, local crash/failure injection on supported OSes, a private migration-fixture suite,
@@ -838,28 +906,28 @@ document-presence checks. Live account creation is not necessary for ordinary CI
 
 ## 11. Incremental implementation and review decisions
 
-| Phase | Coherent deliverable                                                                                       | Gate                                                                 |
-| ----- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| A     | MetaStore contract, codecs, typed repositories and local file authority; single-Workspace compatibility    | META-01–06, 13 and existing API gate                                 |
-| B     | Offline importer, private backup/journal, legacy compatibility and read-only target validation             | META-14–17; no live cutover by default                               |
-| C     | Organization/Workspace identity, membership and Key isolation, discovery and explicit environment identity | META-07–09, 12, 16; identity integration decision                    |
-| D     | Durable provider operations, cross-scope reservations and reconciler                                       | META-10–11; provider recovery evidence                               |
-| E     | One hosted adapter selected by actual deployment needs                                                     | META-18 or 19, plus full shared conformance and performance evidence |
+| Phase | Coherent deliverable                                                                                       | Gate                                                                                                       |
+| ----- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| A     | MetaStore contract, codecs, typed repositories and local file authority; single-Workspace compatibility    | META-01–06, 13 and existing API gate                                                                       |
+| B     | Offline importer, private backup/journal, legacy compatibility and read-only target validation             | META-14–17; no live cutover by default                                                                     |
+| C     | Organization/Workspace identity, membership and Key isolation, discovery and explicit environment identity | META-07–09, 12, 16; identity integration decision                                                          |
+| D     | Durable provider operations, cross-scope reservations and reconciler                                       | META-10–11; provider recovery evidence                                                                     |
+| E     | One hosted adapter selected by actual deployment needs                                                     | Applicable hosted cases (META-18, 19 or 21), plus full shared conformance and META-20 performance evidence |
 
 Every phase preserves the current credential/private-storage/API boundaries until its reviewed
 replacement is complete. Public multi-tenant deployment requires C and D; passing phase A
 does not make a loopback service production-ready. Backend implementation updates the explicit
 API packaging list and generated OpenAPI/client/tests when contracts change.
 
-| Open decision                                                   | Proposed default                                                                    | Blocks                                 |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------- |
-| Accept the scope-atomic KV contract and local snapshot budgets? | Adopt this specification after review; measure before increasing budgets            | Phase A                                |
-| Which hosted metadata adapter?                                  | Keep open; choose TiDB/MySQL or conforming KV when deployment needs it              | Phase E only                           |
-| Which hosted identity and session provider?                     | No vendor selected; issuer+subject model required                                   | Hosted phase C                         |
-| Which managed secret service / residency profile?               | Local private-file mode first; explicit managed encryption/IAM profile              | Hosted deployment                      |
-| Provider-account commercial ownership and eligibility?          | One Organization owns its account; no cross-customer pool by default                | New hosted provider allocation         |
-| Retention, backup window and operational SLOs?                  | Bound hot metadata; measure and declare recovery objectives before hosted release   | Hosted deployment; not document review |
-| When to add complete Runs/results/review?                       | Separate product specification using Workspace ownership and private result storage | That feature only                      |
+| Open decision                                                   | Proposed default                                                                          | Blocks                                 |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------- |
+| Accept the scope-atomic KV contract and local snapshot budgets? | Adopt this specification after review; measure before increasing budgets                  | Phase A                                |
+| Which hosted metadata adapter?                                  | Evaluate TiDB File System alongside TiDB/MySQL and conforming KV when deployment needs it | Phase E only                           |
+| Which hosted identity and session provider?                     | No vendor selected; issuer+subject model required                                         | Hosted phase C                         |
+| Which managed secret service / residency profile?               | Local private-file mode first; explicit managed encryption/IAM profile                    | Hosted deployment                      |
+| Provider-account commercial ownership and eligibility?          | One Organization owns its account; no cross-customer pool by default                      | New hosted provider allocation         |
+| Retention, backup window and operational SLOs?                  | Bound hot metadata; measure and declare recovery objectives before hosted release         | Hosted deployment; not document review |
+| When to add complete Runs/results/review?                       | Separate product specification using Workspace ownership and private result storage       | That feature only                      |
 
 ## 12. Design verification and references
 
@@ -876,6 +944,8 @@ Primary references checked on 2026-10-29:
 - [etcd KV guarantees](https://etcd.io/docs/v3.5/learning/api_guarantees/): durable strict-serializable default KV operations; watches and stale read modes have different guarantees.
 - [SlateDB introduction](https://slatedb.io/docs/get-started/introduction/): single writer, multiple readers, fencing and transactions; adapter/service behavior still requires evaluation.
 - [Node filesystem APIs](https://nodejs.org/api/fs.html): file synchronization primitives; supported filesystem/platform durability must be tested.
+- [TiDB Cloud Filesystem introduction](https://docs.pingcap.com/tidbcloud-filesystem/filesystem-intro/) and [layers/checkpoints](https://docs.pingcap.com/tidbcloud-filesystem/filesystem-layers-checkpoints/): persistent shared storage and the limits of layers as backup/authorization mechanisms.
+- [Pinned TiDB Filesystem client/server contract](https://github.com/drive9-ai/duckdb/blob/0e225c8d7b6adcccf8ce499d603350172dcca53e/docs/server-contract.md): revision-checked ordinary-file writes and the inode-replacement boundary; not hosted metadata conformance evidence.
 
 Source of current behavior: `server/store.mjs`, `server/index.mjs`, provider adapters,
 `server/access-policy.mjs`, ADRs 0001/0004/0006/0008/0011, and their verification documents at
@@ -891,6 +961,6 @@ the source baseline above. No production tenant migration or new backend support
 - `npm ci` used the committed lockfile; `npm run check` passed on the design checkout with
   Node 24.22.1/npm 11.6.2, 132 existing tests, generated-contract checks and independent builds.
   Formatting/repository links and the documentation diff were checked again after final edits.
-- No new adapter, tenant isolation, migration or recovery test is claimed to pass: META-01–20
+- No new adapter, tenant isolation, migration or recovery test is claimed to pass: META-01–21
   are an implementation acceptance baseline. No live state, provider credential or existing
   resource was migrated or reprovisioned for this design.

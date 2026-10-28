@@ -1,6 +1,6 @@
 # ADR 0017: Portable KV metadata for the Workspace control plane
 
-- Status: Proposed; logical KV abstraction and ordinary local files are owner-requested direction, while the detailed contract is under review
+- Status: Proposed; logical KV abstraction, ordinary local files and evaluating TiDB File System are owner-requested direction, while the detailed contract is under review
 - Date: 2026-10-29
 - Parent: [GH-74](https://github.com/siddontang/tidb.ai/issues/74)
 - Specification: [Multi-tenant Workspace control plane](../../specs/gh-74/spec.md)
@@ -16,8 +16,9 @@ Its in-process mutation queue does not coordinate multiple API processes.
 The product needs Organization/Workspace ownership, explicit Key/resource isolation,
 recoverable cloud operations, and migration of existing bindings and credentials. The owner
 requested a metadata abstraction with a logical KV structure, bounded retrieval and multiple
-possible backends. Ordinary filesystem files should be sufficient for local use; a particular
-relational schema or database service must not become a domain prerequisite.
+possible backends, explicitly including TiDB File System. Ordinary filesystem files should
+be sufficient for local use; a particular relational schema or database service must not
+become a domain prerequisite.
 
 ## Proposed decision
 
@@ -30,10 +31,14 @@ relational schema or database service must not become a domain prerequisite.
 3. Use one ordinary JSON state file per scope for the first local adapter, owned by one
    authority process. Exclusive root ownership, synced temporary writes, atomic replacement,
    directory sync and explicit recovery are required. Local files do not imply multi-host HA.
-4. TiDB/MySQL may implement the same KV contract with physical scope/record tables and
-   transactions. A later S3 adapter must atomically publish an immutable snapshot through
-   conditional HEAD updates, or use a proven engine/service that meets the same contract.
-   Independent per-record object PUTs are insufficient. No hosted engine is selected here.
+4. TiDB File System is an explicit hosted candidate using service-owned metadata storage,
+   separate from public File Systems and DuckDB backing stores, with out-of-band bootstrap
+   credentials. Evaluate one metadata authority or immutable snapshots with conditional HEAD
+   publication; verify fresh reads, durability, path-incarnation/stale-writer protection and
+   upload limits. A mount or layer checkpoint does not establish that contract. TiDB/MySQL
+   may implement the same KV contract with physical scope/record tables and transactions.
+   A later S3 adapter must use conditional snapshot publication or a proven conforming engine.
+   Independent per-record PUTs are insufficient. No hosted engine is selected here.
 5. Store provider credentials through a separate internal `CredentialStore`. Local private
    files remain an explicit local profile; hosted encryption/IAM needs a chosen managed
    profile. Public metadata/projections never expose native passwords or provider tokens.
@@ -77,9 +82,11 @@ specification revision.
 
 ## Verification and revisit
 
-[META-01 through META-20](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
+[META-01 through META-21](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
 cover adapter conformance, crash/unknown outcomes, authorization before I/O, provider-account
 quotas, credential separation, full legacy import, no duplicate provider effects and restore.
+The TiDB File System case includes concurrent publication, path replacement, bootstrap and
+public/private storage separation; its current product adapter is not a metadata CAS adapter.
 This ADR does not claim those tests or a production migration exist. Repository checks only
 verify the current source/documents.
 

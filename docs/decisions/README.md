@@ -39,4 +39,4 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Proposed decisions
 
-- [0017: Portable Workspace KV control plane](0017-workspace-kv-control-plane.md) — logical records/indexes, scope-atomic commits, ordinary local files, alternative backend requirements, tenant authorization and identity-preserving migration; design only.
+- [0017: Portable Workspace KV control plane](0017-workspace-kv-control-plane.md) — logical records/indexes, scope-atomic commits, ordinary local files, TiDB File System and other backend candidates, tenant authorization and identity-preserving migration; design only.
