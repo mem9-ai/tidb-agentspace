@@ -179,6 +179,16 @@ verified, and record that as a remaining gap.
   hide Run or results behind the fixed preview footer. Preserve 16px text and inspect Light/Dark
   at desktop/narrow sizes. See [verification](../file-analysis-verification.md); revisit for
   multi-file contexts or persistent analysis sessions.
+- **File work area density (owner correction 2026-10-28):** keep the file browser beside the
+  selected file/analysis editor on desktop. Group New file and New folder under one labeled
+  TiUI plus-button Menu. Use a compact path/filter/refresh toolbar and readable rows; reduce
+  repeated chrome rather than text or control targets. Allow the browser to collapse to a
+  narrow inline rail and expand without unmounting the selected-file editor, resetting SQL,
+  discarding source drafts/results, changing file identity or canceling active work. Keep
+  hidden browser controls out of keyboard navigation, preserve focus on the toggle, and retain
+  Back to files on narrow screens. Verify menu/dialog focus, both themes, 1280×800/900 and
+  390×844 with no page-wide overflow. See [verification](../file-browser-density-verification.md).
+  Revisit for resizable panes or multiple file/editor documents.
 - **File reading (accepted and implemented, owner correction 2026-10-27):** open files in
   an inline right-hand panel, keeping the file list usable on desktop. Do not use a centered
   modal or a backdrop for routine reading. On narrow screens show the reading panel with a
@@ -251,7 +261,10 @@ viewports, exact workflows, and limitations. Backend/cloud integration remains u
   for resolved editor mode. Storage failures must still allow rendering.
 - **Dialog lifetime:** TiUI returns focus on an `opened` transition. Workspace dialogs are
   conditionally mounted, so the shared modal adapter also captures/restores the connected
-  trigger on unmount. Preserve focus trapping, Escape, labels, and keyboard verification.
+  trigger on unmount. For a Menu item opening such a dialog, focus the stable menu trigger
+  before mounting it and suppress the menu's delayed return-focus handoff; ordinary menu Escape
+  should still return focus. The file browser verifies both paths. Preserve focus trapping,
+  Escape, labels, and keyboard verification.
 - **SQL extensions (0.0.6):** scope the editor cache to the database route, synchronize sample
   changes through the editor view, and keep callbacks current. CodeMirror's default
   `Mod-Enter` inserts a blank line: use `Prec.high(keymap.of(...))` for Run query. Put density

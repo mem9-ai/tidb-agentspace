@@ -9,6 +9,7 @@ import {
   type WriteFileInput,
 } from './api/client';
 import './features/files/file-preview.css';
+import { FileBrowserPanel } from './features/files/FileBrowserPanel';
 import {
   useRemoteFiles,
   downloadRemoteFile,
@@ -60,7 +61,6 @@ import {
   IconFileCode01 as FileCode2,
   IconFile01 as FileText,
   IconFolder as Folder,
-  IconFolderPlus as FolderPlus,
   IconKey01 as KeyRound,
   IconLayoutGrid01 as LayoutDashboard,
   IconPlay as Play,
@@ -993,6 +993,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
   const selectedSystem = systems.find((r) => r.id === system);
   const remote = selectedSystem?.provider === 'drive9-anonymous';
   const listing = useRemoteFiles(system, path, remote);
+  const [browserCollapsed, setBrowserCollapsed] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [unavailableReason, setUnavailableReason] = useState('');
   const previewRequest = useRef<AbortController | null>(null);
@@ -1241,90 +1242,52 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           </Button>
         </Alert>
       )}
-      <div className="file-workspace" data-preview={editing ? true : undefined}>
-        <Paper className="panel file-browser" withBorder>
-          <div className="file-toolbar">
-            <div className="path-crumb">
-              <ActionIcon aria-label="File system root" onClick={() => setPath('/')}>
-                <Folder size={16} />
-              </ActionIcon>
-              <UnstyledButton onClick={() => setPath('/')}>
-                {systems.find((r) => r.id === system)?.name}
-              </UnstyledButton>
-              {path
-                .split('/')
-                .filter(Boolean)
-                .map((s, i) => (
-                  <React.Fragment key={i}>
-                    <ChevronRight size={13} />
-                    <UnstyledButton
-                      onClick={() =>
-                        setPath(
-                          '/' +
-                            path
-                              .split('/')
-                              .filter(Boolean)
-                              .slice(0, i + 1)
-                              .join('/'),
-                        )
-                      }
-                    >
-                      {s}
-                    </UnstyledButton>
-                  </React.Fragment>
-                ))}
-            </div>
-            <div className="inline-controls">
-              <div className="input-with-icon">
-                <Search size={14} />
-                <TextInput
-                  aria-label="Search files"
-                  placeholder="Filter files…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-              {remote && (
-                <ActionIcon
-                  aria-label="Refresh files"
-                  onClick={() => {
-                    listing.refresh();
-                    void refresh();
-                  }}
-                  disabled={listing.loading}
-                >
-                  <RefreshCw size={18} />
-                </ActionIcon>
-              )}
-              <Button
-                leftSection={React.createElement(FolderPlus, { size: 18 })}
-                disabled={!system || busy}
-                onClick={() => {
-                  setNewItem('directory');
-                  setError('');
-                }}
-              >
-                New folder
-              </Button>
-              <Button
-                leftSection={React.createElement(Plus, { size: 18 })}
-                disabled={!system || busy}
-                onClick={() => {
-                  setNewItem('file');
-                  setError('');
-                }}
-              >
-                New file
-              </Button>
-            </div>
-          </div>
+      <div
+        className="file-workspace"
+        data-preview={editing ? true : undefined}
+        data-browser-collapsed={editing && browserCollapsed ? true : undefined}
+      >
+        <FileBrowserPanel
+          systemName={selectedSystem?.name || 'Files'}
+          path={path}
+          search={search}
+          onSearch={setSearch}
+          onNavigate={setPath}
+          onRefresh={
+            remote
+              ? () => {
+                  listing.refresh();
+                  void refresh();
+                }
+              : undefined
+          }
+          refreshing={listing.loading}
+          canCreate={!!system && !busy}
+          onCreate={(type) => {
+            setNewItem(type);
+            setError('');
+          }}
+          collapsible={!!editing}
+          collapsed={!!editing && browserCollapsed}
+          onToggle={() => setBrowserCollapsed((value) => !value)}
+          footer={
+            <>
+              <span>{children.length} items</span>
+              <span>
+                {remote
+                  ? `Stored in Singapore · Upload up to ${bytes(selectedSystem?.uploadLimitBytes || 0)}`
+                  : 'Local persistent storage · UTF-8 text files up to 256 KiB'}
+              </span>
+            </>
+          }
+        >
           {listing.loading && remote && (
             <Text p={24}>
               <Loader size="sm" /> Loading files…
             </Text>
           )}
           {systems.length ? (
-            <Table>
+            <Table horizontalSpacing={editing ? 12 : 20} verticalSpacing={editing ? 12 : 20}>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Name</Table.Th>
@@ -1430,15 +1393,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               }
             />
           )}
-          <div className="file-browser-footer">
-            <span>{children.length} items</span>
-            <span>
-              {remote
-                ? `Stored in Singapore · Upload up to ${bytes(selectedSystem?.uploadLimitBytes || 0)}`
-                : 'Local persistent storage · UTF-8 text files up to 256 KiB'}
-            </span>
-          </div>
-        </Paper>
+        </FileBrowserPanel>
         {editing && (
           <Suspense
             fallback={
