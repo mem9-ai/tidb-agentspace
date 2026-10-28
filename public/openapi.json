@@ -3,7 +3,7 @@
   "info": {
     "title": "TiDB Agent Workspace · Local Prototype API",
     "version": "0.1.0",
-    "description": "A loopback Workspace gateway with opt-in real TiDB Cloud Zero MySQL and Singapore Drive9 files. Existing local resources remain demos. Workspace Keys authorize actions and resources; upstream credentials stay internal. Zero trials expire; cloud usage is unmeasured. Production identity and public hosting are deferred."
+    "description": "A loopback Workspace gateway with opt-in real db9 PostgreSQL and TiDB Cloud Zero MySQL and Singapore Drive9 files. Existing local resources remain demos. Workspace Keys authorize actions and resources; upstream credentials stay internal. Zero trials expire; cloud usage is unmeasured. Production identity and public hosting are deferred."
   },
   "servers": [
     { "url": "/api/v1", "description": "Standalone Workspace API; resolve against the API origin" }
@@ -464,10 +464,10 @@
                 "required": ["name", "kind", "region"],
                 "properties": {
                   "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,39}$" },
-                  "kind": { "enum": ["mysql", "duckdb", "filesystem"] },
+                  "kind": { "enum": ["mysql", "postgresql", "duckdb", "filesystem"] },
                   "region": {
                     "type": "string",
-                    "enum": ["aws-us-east-1", "aws-us-west-2", "aws-ap-southeast-1", "automatic"],
+                    "enum": ["aws-us-east-1", "aws-us-west-2", "automatic", "aws-ap-southeast-1"],
                     "description": "Choose a region supported by the resource kind in capabilities. Zero MySQL uses automatic provider assignment. The first supported region is the Console default."
                   }
                 }
@@ -2934,7 +2934,7 @@
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
-          "kind": { "enum": ["mysql", "duckdb", "filesystem"] },
+          "kind": { "enum": ["mysql", "postgresql", "duckdb", "filesystem"] },
           "region": { "type": "string" },
           "status": {
             "enum": [
@@ -2948,8 +2948,14 @@
             ]
           },
           "provider": {
-            "enum": ["local", "drive9-anonymous", "tidb-cloud-zero", "duckdb-drive9"],
-            "description": "Missing on legacy local resources."
+            "enum": [
+              "local",
+              "drive9-anonymous",
+              "tidb-cloud-zero",
+              "duckdb-drive9",
+              "db9-anonymous"
+            ],
+            "description": "Missing on legacy local resources. db9-anonymous is PostgreSQL-compatible; its NUMERIC supports 28–29 significant digits. Provider compatibility limits apply."
           },
           "uploadLimitBytes": {
             "type": "integer",
@@ -3151,7 +3157,7 @@
         "properties": {
           "resourceId": { "type": "string" },
           "name": { "type": "string" },
-          "kind": { "enum": ["mysql", "duckdb", "filesystem"] },
+          "kind": { "enum": ["mysql", "postgresql", "duckdb", "filesystem"] },
           "storageBytes": { "type": ["integer", "null"] },
           "storageLimitBytes": { "type": ["integer", "null"] },
           "monthlyRU": { "type": ["integer", "null"] },
@@ -3169,7 +3175,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "enum": ["aws-us-east-1", "aws-us-west-2", "aws-ap-southeast-1", "automatic"]
+              "enum": ["aws-us-east-1", "aws-us-west-2", "automatic", "aws-ap-southeast-1"]
             }
           },
           "storageGiB": { "type": ["number", "null"] },
@@ -3179,15 +3185,16 @@
           "provider": { "type": "string" },
           "available": {
             "type": "boolean",
-            "description": "False when the operator has not configured a verified native DuckDB runtime."
+            "description": "False when this resource provider is not configured or available."
           }
         }
       },
       "Capabilities": {
         "type": "object",
-        "required": ["mysql", "duckdb", "filesystem"],
+        "required": ["mysql", "postgresql", "duckdb", "filesystem"],
         "properties": {
           "mysql": { "$ref": "#/components/schemas/Capability" },
+          "postgresql": { "$ref": "#/components/schemas/Capability" },
           "duckdb": { "$ref": "#/components/schemas/Capability" },
           "filesystem": { "$ref": "#/components/schemas/Capability" }
         }

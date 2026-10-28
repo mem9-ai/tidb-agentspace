@@ -2,13 +2,17 @@
 
 Design baseline: 2026-10-27. This is the proposed architecture for an independent developer
 and agent product. The repository currently implements a loopback-only interactive prototype
-with demo databases and an opt-in real Singapore Drive9 anonymous File System. Anonymous Zero MySQL and native DuckDB with private dedicated storage are implemented; PostgreSQL is temporarily disabled. Persistent Starter and PG support below remain proposals; see [ADR 0006](decisions/0006-zero-sql-gateway.md). See [ADR 0004](decisions/0004-drive9-anonymous-provider.md) for the implemented provider boundary. See [ADR 0001](decisions/0001-unified-workspace-key.md) for the
+with demo databases and an opt-in real Singapore Drive9 anonymous File System. Anonymous Zero MySQL and native DuckDB with private dedicated storage are implemented; db9 PostgreSQL is available through explicit opt-in. Persistent TiDB Cloud Starter/PG support below remains proposed; see [ADR 0006](decisions/0006-zero-sql-gateway.md). See [ADR 0004](decisions/0004-drive9-anonymous-provider.md) for the implemented provider boundary. See [ADR 0001](decisions/0001-unified-workspace-key.md) for the
 accepted single-key authorization model.
 
 The [intent driven development system](standards/intent-driven-development.md) records the
 API-first and agent-experience direction, specification contributions, and proposed delivery
 harness. It complements this product architecture; it does not imply new runtime capabilities
 or deployment authority.
+
+The [db9 adapter](decisions/0011-db9-postgres.md) implements an independent PostgreSQL-compatible
+resource. Its credentials stay private and customer SQL uses a non-superuser role; see
+[compatibility and recovery](db9-postgres.md).
 
 ## Product model
 

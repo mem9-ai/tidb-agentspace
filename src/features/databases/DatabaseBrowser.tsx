@@ -332,9 +332,9 @@ export function DatabaseTableList({
           onChange={(event) => setSearch(event.currentTarget.value)}
           leftSection={<IconSearchLg size={18} />}
         />
-        {!['tidb-cloud-zero', 'duckdb-drive9'].includes(database.provider || '') && (
-          <Badge>Local demo</Badge>
-        )}
+        {!['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
+          database.provider || '',
+        ) && <Badge>Local demo</Badge>}
         {listing.loading ? (
           <Loading>Loading tables…</Loading>
         ) : listing.error ? (

@@ -25,6 +25,6 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 - [0010: Read-only file analysis](0010-read-only-file-analysis.md) — scoped snapshot workers, DuckDB SQL and Just Bash, explicit compute permission and bounded execution.
 
-- [0011: Anonymous db9 PostgreSQL](0011-db9-postgres.md) — proposed provider and credential boundary for GH-40; implementation pending.
+- [0011: Anonymous db9 PostgreSQL](0011-db9-postgres.md) — implemented anonymous PostgreSQL with private credentials, restricted native roles and provider compatibility limits.
 
 - [0012: DuckDB catalog reader](0012-duckdb-catalog-reader.md) — bounded read-only reuse for server-generated browsing, while customer SQL remains disposable.

@@ -1,4 +1,14 @@
-import { ActionIcon, Alert, Badge, Button, Group, Popover, Stack, Text } from '@tidbcloud/uikit';
+import {
+  ActionIcon,
+  Alert,
+  Anchor,
+  Badge,
+  Button,
+  Group,
+  Popover,
+  Stack,
+  Text,
+} from '@tidbcloud/uikit';
 import { IconArrowLeft, IconArrowUpRight } from '@tidbcloud/uikit/icons';
 import type { Resource } from '../../api/client';
 import { Heading } from '../../ui/WorkspaceHeading';
@@ -14,11 +24,13 @@ export function DatabaseWorkspaceHeader({
   onRetry: () => void;
 }) {
   const provider =
-    database.provider === 'duckdb-drive9'
-      ? 'DuckDB · Experimental'
-      : database.provider === 'tidb-cloud-zero'
-        ? 'MySQL · TiDB Cloud Zero'
-        : 'MySQL · Local demo';
+    database.provider === 'db9-anonymous'
+      ? 'PostgreSQL · db9'
+      : database.provider === 'duckdb-drive9'
+        ? 'DuckDB · Experimental'
+        : database.provider === 'tidb-cloud-zero'
+          ? 'MySQL · TiDB Cloud Zero'
+          : 'MySQL · Local demo';
   const expiry = database.expiresAt ? new Date(database.expiresAt) : null;
   return (
     <>
@@ -59,6 +71,18 @@ export function DatabaseWorkspaceHeader({
                 <Heading level={2}>Database details</Heading>
                 <Text>{provider}</Text>
                 <Text>Region: {regionLabel(database.region)}</Text>
+                {database.kind === 'postgresql' && (
+                  <Text>
+                    db9 is PostgreSQL-compatible. NUMERIC supports up to 28–29 significant digits.{' '}
+                    <Anchor
+                      href="https://db9.ai/docs/sql/data-types/"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Data type compatibility
+                    </Anchor>
+                  </Text>
+                )}
                 {expiry && (
                   <Text>
                     Temporary database · Expires {expiry.toLocaleString()}. Export important data
@@ -87,7 +111,12 @@ export function DatabaseWorkspaceHeader({
                   ? 'This temporary database has expired.'
                   : 'Database setup is incomplete.')}
             </Text>
-            {database.status === 'provisioning' && <Button onClick={onRetry}>Retry setup</Button>}
+            {(database.status === 'provisioning' ||
+              (database.provider === 'db9-anonymous' && database.status === 'failed')) && (
+              <Button onClick={onRetry}>
+                {database.status === 'failed' ? 'Recover database' : 'Retry setup'}
+              </Button>
+            )}
           </Group>
         </Alert>
       )}

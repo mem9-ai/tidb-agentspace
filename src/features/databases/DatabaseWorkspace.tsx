@@ -32,8 +32,15 @@ export function DatabaseWorkspace({
   const [draft, dispatch] = useReducer(
     queryDraftReducer,
     tableName
-      ? tableSelectSql(tableName, database.kind === 'duckdb' ? 'duckdb' : 'mysql')
-      : ['tidb-cloud-zero', 'duckdb-drive9'].includes(database.provider || '')
+      ? tableSelectSql(
+          tableName,
+          database.kind === 'duckdb'
+            ? 'duckdb'
+            : database.kind === 'postgresql'
+              ? 'postgresql'
+              : 'mysql',
+        )
+      : ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(database.provider || '')
         ? 'SELECT 1 AS connected;'
         : 'SELECT * FROM agent_events LIMIT 10;',
     createQueryDraft,
@@ -131,7 +138,11 @@ export function DatabaseWorkspace({
                       type: 'queryTable',
                       sql: tableSelectSql(
                         tableName,
-                        database.kind === 'duckdb' ? 'duckdb' : 'mysql',
+                        database.kind === 'duckdb'
+                          ? 'duckdb'
+                          : database.kind === 'postgresql'
+                            ? 'postgresql'
+                            : 'mysql',
                       ),
                     });
                     showEditor();
