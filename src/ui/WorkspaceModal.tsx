@@ -8,12 +8,14 @@ export function WorkspaceModal({
   children,
   onClose,
   wide = false,
+  size,
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  size?: number;
 }) {
   // These dialogs unmount on close; TiUI's opened-state transition cannot return focus then.
   const [trigger] = useState(() => document.activeElement);
@@ -29,7 +31,7 @@ export function WorkspaceModal({
       opened
       onClose={onClose}
       title={title}
-      size={wide ? 900 : 680}
+      size={size ?? (wide ? 900 : 680)}
       padding={24}
       centered
       closeButtonProps={{ 'aria-label': 'Close dialog', size: 44 }}

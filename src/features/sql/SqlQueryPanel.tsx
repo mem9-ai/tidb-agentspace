@@ -94,7 +94,7 @@ export function SqlQueryPanel({
         busy={busy}
         disabled={readBusy || !database.id || database.status !== 'active' || !sql.trim()}
         onRun={() => void run()}
-        context={live ? 'Live SQL · Writes change data' : 'Local demo · Sample data only'}
+        context={live ? 'Live · Writes change data' : 'Demo · Sample data only'}
         samples={samples}
         onSample={setSql}
         limits={

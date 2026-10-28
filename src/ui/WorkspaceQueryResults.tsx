@@ -85,7 +85,7 @@ export function WorkspaceQueryResults({
       footnote={result ? footnote : undefined}
     >
       {error ? (
-        <Alert className="workspace-result-message" color="red" role="alert">
+        <Alert className="workspace-result-message" color="red" role="alert" p="lg">
           {error}
         </Alert>
       ) : result ? (
@@ -124,7 +124,7 @@ export function WorkspaceQueryResults({
           {!result.rowCount && result.columns.length > 0 && <Text p="lg">No rows returned.</Text>}
         </div>
       ) : (
-        <Text className="workspace-result-message" role="status">
+        <Text className="workspace-result-message" role="status" p="lg" m={0}>
           {busy ? 'Running query…' : 'Run a query to see its results here.'}
         </Text>
       )}

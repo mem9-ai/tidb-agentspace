@@ -154,3 +154,54 @@ SQL and results can be reviewed together.
 - [Database, 390×844 Light](screenshots/resource-interactions/databases-mobile-light.jpg)
 - [File SQL, 390×844 Dark](screenshots/resource-interactions/files-mobile-dark.jpg)
 - [File SQL, 390×844 Light](screenshots/resource-interactions/files-mobile-light.jpg)
+
+## Compact editor toolbar
+
+Owner correction: [GH-56](https://github.com/siddontang/tidb.ai/issues/56), source base
+`cd3d02f9bf348a886d6d5aa7c3f9c6a1d6a4841d`. The large repeated SQL Editor heading and
+second footer in the GH-52 audit above are superseded by this correction. The implementation
+PR identifies the final candidate and its CI results.
+
+Database SQL, File SQL and Bash retain `WorkspaceExecutionPanel`, now with a quiet SQL/Bash
+marker, visible live/demo/read-only context and one primary Run action. Editor tools contains
+the existing samples, expansion and Limits controls, plus the keyboard shortcut reminder.
+The editor remains an accessible named section. This does not add query tabs or draft persistence.
+
+Observed against the existing loopback Console/API on 2026-10-28:
+
+- At 1280×800 the toolbar measured 65px and the SQL frame 217px, retaining the 150px editor
+  body while removing 65px of surrounding chrome. At 1280×900 the editor body remains 180px.
+  Run keeps its 48px target and Editor tools its 44px target. Empty/error result messages use
+  supported TiUI padding props; the empty message now has a verified 20px inset.
+- Native PostgreSQL `SELECT 56 AS toolbar_check` ran with Cmd+Enter and returned 56 in
+  4,244ms. Expanding/collapsing the editor preserved SQL/results; expanding the table kept
+  its five columns inline and left Query results selected.
+- The existing Singapore CSV Count rows sample prepared SQL without running it; explicit
+  Run returned 4 in 2,510ms. Editor expansion reached 420px and collapse retained the script
+  and result. Limits opened a compact dialog; Escape returned focus to Editor tools and
+  kept the selected file, Analyze view and SQL open.
+- At 390×844 a long read-only file query exposed a labeled 44px Cancel query control beside
+  Running and Editor tools, with document width still 390px. Samples were disabled while
+  running; upload/resource selection were disabled. Cancellation returned Query canceled
+  and preserved the script for editing. No real database writes or file modifications occurred.
+- The existing synthetic log's default Bash command returned its two ERROR lines, exit 0,
+  in 2,603ms. It uses the same quiet marker/context/Run layout and shared result frame.
+- Light/Dark at desktop 1280×800/900 and mobile 390×844 were inspected. Narrow screens move
+  context onto a full second line without truncating it or shrinking controls. Browser
+  collapse preserves the working editor/results. No browser warning/error logs were recorded.
+
+The full local `npm run check` passed all 118 tests, strict types, lint, formatting, generated
+contract checks and independent builds. TiUI 2.9.1 and SQL Editor 0.0.6 remain unchanged.
+This is shared Console presentation only; public contracts, authorization and native DuckDB
+storage behavior are unchanged. Screenshots of File System use full-page capture from the
+stated viewport to show the file context, editor and results together.
+
+- [Database, 1280×800 Dark](screenshots/compact-editor/database-dark-800.jpg)
+- [Database, 1280×900 Light](screenshots/compact-editor/database-light-900.jpg)
+- [Database, 390×844 Dark](screenshots/compact-editor/database-dark-mobile.jpg)
+- [Database, 390×844 Light](screenshots/compact-editor/database-light-mobile.jpg)
+- [File SQL, 1280×800 Dark](screenshots/compact-editor/files-dark-800.jpg)
+- [File SQL, 1280×900 Light](screenshots/compact-editor/files-light-900.jpg)
+- [File SQL, 390×844 Dark](screenshots/compact-editor/files-dark-mobile.jpg)
+- [File SQL, 390×844 Light](screenshots/compact-editor/files-light-mobile.jpg)
+- [File Bash, 1280×800 Dark](screenshots/compact-editor/bash-dark-800.jpg)

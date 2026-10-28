@@ -136,14 +136,14 @@ export default function FileAnalysisPanel({
       {cap?.available && (
         <>
           <WorkspaceExecutionPanel
-            title={sql ? 'SQL Editor' : 'Command Editor'}
+            language={sql ? 'SQL' : 'Bash'}
             runLabel={sql ? 'Run query' : 'Run command'}
             cancelLabel={sql ? 'Cancel query' : 'Cancel command'}
             busy={busy}
             disabled={!script.trim()}
             onRun={() => void run()}
             onCancel={cancel}
-            context={sql ? 'Read-only file · Table: file' : 'Read-only file · Just Bash'}
+            context={sql ? 'Read-only · Table: file' : 'Read-only · Saved file'}
             limits={
               <>
                 One saved file · Fresh snapshot per run · Up to 16 MiB input · 15 seconds · 1 MiB
@@ -228,7 +228,7 @@ export default function FileAnalysisPanel({
               footnote={footnote}
             >
               {error ? (
-                <Alert className="workspace-result-message" color="red" role="alert">
+                <Alert className="workspace-result-message" color="red" role="alert" p="lg">
                   {error}
                 </Alert>
               ) : result?.engine === 'bash' ? (
@@ -247,7 +247,7 @@ export default function FileAnalysisPanel({
                   )}
                 </div>
               ) : (
-                <Text className="workspace-result-message" role="status">
+                <Text className="workspace-result-message" role="status" p="lg" m={0}>
                   {busy ? 'Running command…' : 'Run a command to see its results here.'}
                 </Text>
               )}

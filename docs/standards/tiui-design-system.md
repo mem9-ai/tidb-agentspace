@@ -208,9 +208,14 @@ verified, and record that as a remaining gap.
   1280×800/900 and 390×844, resource switching, busy states, keyboard and draft guards. See
   [verification](../resource-workspace-verification.md); revisit for tabs or resizable panes.
 - **Shared execution and item interactions (owner correction, GH-52):** use
-  `WorkspaceExecutionPanel` for Database SQL and File System Analyze. SQL uses the same
-  top-right Run query button, Play icon, 48px target, loading/disabled behavior, Samples,
-  Limits and editor expansion. Bash uses Run command with the same chrome. Keep database
+  `WorkspaceExecutionPanel` for Database SQL and File System Analyze. Following GH-56,
+  use one compact toolbar with a quiet SQL/Bash marker, visible execution context and the
+  top-right Run query button, Play icon, 48px target and loading/disabled behavior. Put Samples,
+  Limits and expansion in Editor tools; omit the repeated large tool heading and footer strip.
+  Preserve an accessible named editor region. Reflow context onto its own line on narrow
+  screens rather than shrinking text or hiding live-write/read-only information. Bash uses
+  Run command with the same chrome; explicit cancellation retains a labeled 44px stop control.
+  Keep database
   write/demo context and file read-only/table context visible; retain separate execution and
   authorization rules. Use `WorkspaceQueryResults` for result headers, counts, export, table
   scrolling, errors, empty/running states and completion metadata. Scope shared spacing so
