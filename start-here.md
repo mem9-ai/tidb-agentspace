@@ -64,6 +64,11 @@ within the task's scope. A proposed architecture does not establish a runtime ca
 
 ## Read for your task
 
+For multi-tenant metadata, storage adapters, ownership, or migration design, read
+[GH-74](specs/gh-74/spec.md) and [proposed ADR 0017](docs/decisions/0017-workspace-kv-control-plane.md).
+They preserve the owner's logical-KV/local-file direction while distinguishing proposed
+consistency, isolation and migration behavior from the running single-Workspace service.
+
 | Task                                                      | Required starting points                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Intent, specification, or agent delivery                  | [Development system](docs/standards/intent-driven-development.md), [GitHub workflow](docs/standards/github-contribution-workflow.md), and [feature template](docs/templates/feature-spec.md)                                                                                |

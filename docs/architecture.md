@@ -45,12 +45,19 @@ customer.
 
 The first-run path is: create/open a Workspace, add one resource, create a scoped Workspace
 Key, complete a useful request from an agent, then inspect the resulting data and usage.
-A new workspace should not require provisioning all three resource types. The prototype preseeds a MySQL demo and local File System; real resources are explicitly created. PG is not currently offered.
+A new workspace should not require provisioning every resource type. The prototype preseeds a MySQL demo and local File System; real resources are explicitly created. PostgreSQL is available through the opt-in db9 adapter; TiDB Cloud PG Starter remains planned.
 
 Supabase's project-level grouping is a useful product reference; TiDB Workspace groups an
 optional mix of three distinct resource types. [Supabase Platform](https://supabase.com/docs/guides/platform)
 
 ## Console information architecture
+
+The [multi-tenant control-plane design](../specs/gh-74/spec.md) and
+[proposed ADR 0017](decisions/0017-workspace-kv-control-plane.md) define a logical KV metadata
+layer, scope-atomic records/indexes, ordinary local-file persistence, replaceable hosted
+adapters, Organization/Workspace authorization and identity-preserving resource/credential
+migration. This is a proposal, not implemented multi-tenancy or a completed migration. The
+current fixed Workspace, local owner session and JSON/vault persistence remain in use.
 
 | Page             | Primary task                                  | Important states and interactions                                                                                                                    |
 | ---------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
