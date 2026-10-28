@@ -8,6 +8,11 @@
 
 ## Decision
 
+File-format and engine selection follow the additive correction in
+[ADR 0014](0014-file-analysis-engine-options.md): CSV supports both SQL and raw-text Bash;
+the original fields retain default-engine semantics. This does not change the execution
+boundary below.
+
 Run analysis in the Workspace API, with actual DuckDB and Just Bash in disposable child
 processes. The Console uses the same public operations as agents:
 

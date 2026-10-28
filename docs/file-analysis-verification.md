@@ -17,7 +17,8 @@ the original GH-26 controls. The read-only/API boundary remains unchanged.
 
 Open File System, choose the existing Singapore trial, and open
 `/file-analysis-demo-9de2ebb1/orders.csv`, `orders.parquet` or `service.log`. Select **Analyze**.
-The CSV/Parquet editor queries table `file`; Bash reads `/workspace/input.log`.
+CSV offers DuckDB SQL or Just Bash under **Analyze with**, defaulting to SQL. Parquet uses
+SQL; recognized text uses Bash. The SQL editor queries table `file`; Bash reads `/workspace/input.log`.
 The file/resource and analysis tab remain in the URL for reload and direct links; scripts
 and results are not serialized into links. Browser Download returned the original 176-byte log. Run explicitly or use Cmd/Ctrl+Enter. Each execution starts fresh. Download retains the
 original file. Navigation or Cancel query / Cancel command aborts abandoned work; results are not persisted.
@@ -38,6 +39,68 @@ POST this body to `/api/v1/workspaces/{workspaceId}/file-analyses`. For text, us
 `"engine":"bash","command":"grep -n ERROR /workspace/input.log | head -20"`.
 Inspect GET `/file-analyses/capabilities?resourceId=…&path=…` first for availability and limits.
 No provider credential or runtime destination is a public input.
+
+### CSV analysis methods
+
+File format and analysis method are separate, as defined in
+[ADR 0014](decisions/0014-file-analysis-engine-options.md). For the same CSV:
+
+| Method     | Use                                                                                                           | Example                         |
+| ---------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| DuckDB SQL | Query parsed rows/columns, filter and aggregate; CSV quotes and embedded newlines are parsed                  | `SELECT COUNT(*) FROM file;`    |
+| Just Bash  | Inspect, search or count raw UTF-8 text with read-only commands; line counts need not equal CSV record counts | `head -20 /workspace/input.log` |
+
+Selecting a method never executes. Each retains its own in-memory draft, result and error
+while the file panel remains open. Run explicitly or use Cmd/Ctrl+Enter. Method selection is
+disabled during execution; Cancel restores it. Switching files discards the transient state.
+Empty CSV can use Bash even when SQL is unavailable. Metadata availability does not guarantee
+valid CSV or UTF-8: parsing/decoding errors remain recoverable in the selected method.
+
+Agents discover the available methods from the same capabilities endpoint. The additive
+`engines` array contains `{engine, available, reason}` per supported method. Legacy `engine`,
+`available` and `reason` still describe the default engine (DuckDB for CSV). Use the chosen
+engine explicitly with `sql` or `command`, never both. The same File System and
+`files:read`/`files:analyze` grants are required for either interpretation. For example:
+
+```json
+{
+  "resourceId": "<file-system-id>",
+  "path": "/orders.csv",
+  "engine": "bash",
+  "command": "head -20 /workspace/input.log"
+}
+```
+
+Verified for [GH-65](https://github.com/siddontang/tidb.ai/issues/65) on 2026-10-28, source
+base `c599211b8be2035e4c55960d68844a2318ad065a`:
+
+- Real-worker/API tests run both methods on CSV, preserve the source, and check per-engine
+  capabilities, empty/malformed text, invalid UTF-8/binary rejection, unsupported methods
+  and mixed script fields before snapshot I/O. Existing workspace/resource/action,
+  expiration and revocation denials now execute both CSV modes before any provider I/O.
+- Generated-contract tests validate CSV capabilities and both result variants over HTTP.
+  Existing isolation, concurrency, cancellation and native API artifact checks remain required.
+- A 57-byte local CSV fixture has a quoted comma and an embedded newline: SQL returns two
+  records and SUM(amount) = 30; Bash returns its original text. Browser checks preserve
+  separate scripts, successful results and SQL errors across switching, recover explicitly,
+  and verify no execution on selection. Native radio direction-key switching and both
+  editors' Cmd/Ctrl+Enter work.
+- Empty CSV shows the SQL reason and still runs Bash with Exit 0. README remains Bash-only.
+  A separate local fixture delays snapshot reads to verify both modes' disabled switching
+  and cancellation; it is not a cloud-latency measurement.
+- Both methods were checked in Light/Dark at 1280×800 and 390×844: 16px editors, approximately
+  47px selector targets, and no page-wide horizontal overflow. TiUI 2.9.1 SegmentedControl
+  uses its supported `lg` size; execution/results reuse the shared adapters. Screenshots use
+  isolated local fixtures without provider credentials; this change does not add a cloud
+  integration. The implementation PR records the candidate SHA, full quality gate, CI and
+  final main-preview delivery.
+
+| Viewport / theme        | SQL                                                                   | Bash                                                                   |
+| ----------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Desktop Light, 1280×800 | [Screenshot](screenshots/file-analysis-methods/desktop-light-sql.jpg) | [Screenshot](screenshots/file-analysis-methods/desktop-light-bash.jpg) |
+| Desktop Dark, 1280×800  | [Screenshot](screenshots/file-analysis-methods/desktop-dark-sql.jpg)  | [Screenshot](screenshots/file-analysis-methods/desktop-dark-bash.jpg)  |
+| Mobile Light, 390×844   | [Screenshot](screenshots/file-analysis-methods/mobile-light-sql.jpg)  | [Screenshot](screenshots/file-analysis-methods/mobile-light-bash.jpg)  |
+| Mobile Dark, 390×844    | [Screenshot](screenshots/file-analysis-methods/mobile-dark-sql.jpg)   | [Screenshot](screenshots/file-analysis-methods/mobile-dark-bash.jpg)   |
 
 ### Just Bash input guidance
 

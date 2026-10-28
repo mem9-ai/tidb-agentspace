@@ -96,8 +96,10 @@ read-only and cancelable, while database SQL preserves its live-write boundary.
 Existing resource/table/file URLs and busy/draft protections remain authoritative. See
 [resource workspace verification](resource-workspace-verification.md).
 
-File System analysis is implemented as bounded server-side snapshot workers: CSV/Parquet use
-DuckDB SQL, while UTF-8 logs and text use Just Bash. It requires `files:read`, `files:analyze`
+File System analysis is implemented as bounded server-side snapshot workers: CSV supports
+DuckDB SQL over parsed rows and Just Bash over raw UTF-8 text; Parquet uses SQL, while recognized
+logs and text use Just Bash. [ADR 0014](decisions/0014-file-analysis-engine-options.md) separates
+format, default engine and individual capability availability. Analysis requires `files:read`, `files:analyze`
 and the resource grant. Provider credentials never enter workers. This is a read-only local
 prototype; public compute isolation and larger remote scans remain future work. See
 [ADR 0010](decisions/0010-read-only-file-analysis.md).

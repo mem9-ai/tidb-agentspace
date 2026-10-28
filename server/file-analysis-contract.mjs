@@ -38,7 +38,8 @@ export function analysisError(status, code, message) {
 }
 export function analysisFormat(path) {
   const ext = path.split('.').pop()?.toLowerCase();
-  if (['csv', 'parquet'].includes(ext)) return { engine: 'duckdb', format: ext };
+  if (ext === 'csv') return { defaultEngine: 'duckdb', engines: ['duckdb', 'bash'], format: ext };
+  if (ext === 'parquet') return { defaultEngine: 'duckdb', engines: ['duckdb'], format: ext };
   if (
     [
       'log',
@@ -55,7 +56,7 @@ export function analysisFormat(path) {
       'tsv',
     ].includes(ext)
   )
-    return { engine: 'bash', format: 'text' };
+    return { defaultEngine: 'bash', engines: ['bash'], format: 'text' };
   return null;
 }
 export function validateAnalysis(input) {
@@ -69,11 +70,11 @@ export function validateAnalysis(input) {
       'Use a selected file and one SQL query or command.',
     );
   const kind = typeof input.path === 'string' && analysisFormat(input.path);
-  if (!kind || kind.engine !== input.engine)
+  if (!kind || !kind.engines.includes(input.engine))
     throw analysisError(
       422,
       'UNSUPPORTED_ANALYSIS',
-      'Use DuckDB for CSV/Parquet or Just Bash for UTF-8 logs and text.',
+      'Use DuckDB for CSV/Parquet, or Just Bash for UTF-8 CSV, logs and text.',
     );
   const script = input.engine === 'duckdb' ? input.sql : input.command;
   if (
@@ -83,5 +84,5 @@ export function validateAnalysis(input) {
     (input.engine === 'duckdb' ? 'command' : 'sql') in input
   )
     throw analysisError(400, 'INVALID_ANALYSIS', 'Enter one query or command, up to 64 KiB.');
-  return { ...kind, script };
+  return { format: kind.format, script };
 }

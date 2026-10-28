@@ -601,6 +601,7 @@
                   "type": "object",
                   "required": [
                     "engine",
+                    "engines",
                     "format",
                     "available",
                     "reason",
@@ -609,10 +610,33 @@
                     "limits"
                   ],
                   "properties": {
-                    "engine": { "type": ["string", "null"], "enum": ["duckdb", "bash", null] },
+                    "engine": {
+                      "type": ["string", "null"],
+                      "enum": ["duckdb", "bash", null],
+                      "description": "Default engine, retained for compatibility. Select from engines."
+                    },
+                    "engines": {
+                      "type": "array",
+                      "description": "Supported analysis methods with individual availability. CSV offers both engines; Parquet only DuckDB; recognized text only Bash. Availability checks metadata, not successful parsing or UTF-8 decoding.",
+                      "items": {
+                        "type": "object",
+                        "required": ["engine", "available", "reason"],
+                        "properties": {
+                          "engine": { "enum": ["duckdb", "bash"] },
+                          "available": { "type": "boolean" },
+                          "reason": { "type": "string" }
+                        }
+                      }
+                    },
                     "format": { "type": ["string", "null"] },
-                    "available": { "type": "boolean" },
-                    "reason": { "type": "string" },
+                    "available": {
+                      "type": "boolean",
+                      "description": "Availability of the default engine."
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Unavailable reason for the default engine."
+                    },
                     "size": { "type": "integer" },
                     "readOnly": { "const": true },
                     "limits": {
@@ -738,7 +762,7 @@
         "operationId": "analyzeFile",
         "summary": "Run bounded read-only DuckDB SQL or Just Bash on one selected file",
         "tags": ["Workspace"],
-        "description": "Required workspace key scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Also requires files:read. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.",
+        "description": "Required workspace key scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Also requires files:read. Discover engines from capabilities: CSV supports DuckDB SQL over table file or Just Bash over its raw UTF-8 text at /workspace/input.log. Parquet supports only DuckDB, and other recognized text only Just Bash. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.",
         "x-required-scope": "files:analyze",
         "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
         "requestBody": {

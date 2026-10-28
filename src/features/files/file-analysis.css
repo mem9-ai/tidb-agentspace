@@ -16,6 +16,9 @@
 .file-analysis {
   min-width: 0;
 }
+.file-analysis-method {
+  margin-bottom: 16px;
+}
 .file-analysis p {
   margin: 0;
 }

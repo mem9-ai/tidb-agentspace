@@ -351,10 +351,24 @@ const paths = {
           { name: 'path', in: 'query', required: true, schema: str },
         ],
         output: object({
-          engine: { type: ['string', 'null'], enum: ['duckdb', 'bash', null] },
+          engine: {
+            type: ['string', 'null'],
+            enum: ['duckdb', 'bash', null],
+            description: 'Default engine, retained for compatibility. Select from engines.',
+          },
+          engines: {
+            type: 'array',
+            description:
+              'Supported analysis methods with individual availability. CSV offers both engines; Parquet only DuckDB; recognized text only Bash. Availability checks metadata, not successful parsing or UTF-8 decoding.',
+            items: object({
+              engine: { enum: ['duckdb', 'bash'] },
+              available: { type: 'boolean' },
+              reason: str,
+            }),
+          },
           format: { type: ['string', 'null'] },
-          available: { type: 'boolean' },
-          reason: str,
+          available: { type: 'boolean', description: 'Availability of the default engine.' },
+          reason: { type: 'string', description: 'Unavailable reason for the default engine.' },
           size: { type: 'integer' },
           readOnly: { const: true },
           limits: object(
@@ -774,7 +788,7 @@ paths['/api/session'] = {
 for (const [path, item] of Object.entries(paths))
   if (path.includes('{workspaceId}')) item.parameters = [workspaceId, ...(item.parameters || [])];
 paths[ws + '/file-analyses'].post.description +=
-  ' Also requires files:read. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.';
+  ' Also requires files:read. Discover engines from capabilities: CSV supports DuckDB SQL over table file or Just Bash over its raw UTF-8 text at /workspace/input.log. Parquet supports only DuckDB, and other recognized text only Just Bash. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.';
 paths[ws + '/result-exports'].post.description +=
   ' Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.';
 paths[ws + '/result-exports'].post.responses[500] = response(

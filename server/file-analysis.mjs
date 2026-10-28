@@ -81,15 +81,24 @@ export function createFileAnalysis({
           ? 'This file exceeds the 16 MiB analysis limit. Download it to analyze locally.'
           : info.versionAvailable === false
             ? 'The file version cannot be verified. Download it to analyze locally.'
-            : info.size === 0 && format.engine === 'duckdb'
-              ? 'This file is empty. Add tabular data before running a query.'
-              : '';
+            : '';
+      const engines = (format?.engines || []).map((engine) => {
+        const engineReason =
+          reason ||
+          (info.size === 0 && engine === 'duckdb'
+            ? 'This file is empty. Add tabular data before running a query.'
+            : '');
+        return { engine, available: !engineReason, reason: engineReason };
+      });
+      const preferred = engines.find((option) => option.engine === format?.defaultEngine);
       return {
-        engine: format?.engine || null,
+        // Retain the original fields as the default engine's status for older clients.
+        engine: format?.defaultEngine || null,
+        engines,
         format: format?.format || null,
         size: info.size,
-        available: !reason,
-        reason,
+        available: preferred?.available || false,
+        reason: preferred?.reason ?? reason,
         readOnly: true,
         limits,
       };

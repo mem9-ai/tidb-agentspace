@@ -50,6 +50,10 @@ from DuckDB/Just Bash library support; preserve the Workspace credential and sel
 For DuckDB integrations, read [private database storage](../decisions/0008-duckdb-private-storage.md) and [the runtime guide](../duckdb-databases.md). Backing filesystems are internal bindings, not public resources or Key targets.
 For DuckDB file queries, follow [ADR 0009](../decisions/0009-duckdb-file-sources.md) and the runtime guide's source contract. Database and every File System require separate resource authorization plus query/read/analyze actions; never forward source-provider credentials into customer SQL.
 
+For File System Analyze, follow [ADR 0014](../decisions/0014-file-analysis-engine-options.md):
+file format is distinct from available methods. Discover per-engine capabilities, allow
+CSV SQL or raw-text Bash explicitly, and preserve ADR 0010's single-file authorization/isolation.
+
 For PostgreSQL through db9, read [ADR 0011](../decisions/0011-db9-postgres.md) and
 [the runtime guide](../db9-postgres.md). Preserve the private anonymous/native credential boundary
 and distinguish provider compatibility limits from gateway value preservation.
