@@ -19,9 +19,12 @@ subject to the existing byte/time/concurrency budgets. Never count full tables f
 On errors keep navigation and an explicit retry/query action; don't silently return a partial
 result. Metadata/rows are not persisted. Native credentials remain backend-only.
 
-The Console opens a Tables view under each database, keeps identity in the route, and prefills
-an editable SELECT when opening SQL Editor from a table. It never executes that query merely
-because a link was opened. Existing SQL links remain valid. Demo tables are visibly labeled.
+The Console uses one SQL workspace per database, with a persistent table navigator beside the
+editor and query results/table inspection underneath (owner correction, 2026-10-28). Table
+selection preserves the editor draft and previous results. Query table explicitly generates a
+SELECT and protects edited SQL with a replace/keep choice; it does not execute automatically.
+Existing `/tables` and `/sql` links both open the unified workspace and retain table identity.
+Demo tables remain labeled. See [unified workspace verification](../database-workspace-verification.md).
 
 This additive contract needs no persisted-data migration or new grants. Roll back application
 code without modifying database data. Revisit with read-only roles, pagination, multiple schemas

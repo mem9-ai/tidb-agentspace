@@ -15,7 +15,7 @@ import { IconCode02, IconRefreshCw01, IconSearchLg } from '@tidbcloud/uikit/icon
 import { workspaceApi, type Resource, type TableDetail } from '../../api/client';
 import { ChoiceTabs } from '../../ui/ChoiceTabs';
 import { Heading } from '../../ui/WorkspaceHeading';
-import { databaseEditorHash, databaseTablesHash } from '../navigation/workspace-route';
+import { databaseEditorHash } from '../navigation/workspace-route';
 import './database-browser.css';
 
 function useRead<T>(load: (signal: AbortSignal) => Promise<T>) {
@@ -198,7 +198,17 @@ function Rows({ resourceId, name }: { resourceId: string; name: string }) {
     </div>
   );
 }
-function TableContent({ resourceId, name }: { resourceId: string; name: string }) {
+export function TableInspector({
+  resourceId,
+  name,
+  onQuery,
+  busy,
+}: {
+  resourceId: string;
+  name: string;
+  onQuery: () => void;
+  busy: boolean;
+}) {
   const load = useCallback(
     (signal: AbortSignal) => workspaceApi.table(resourceId, name, signal),
     [resourceId, name],
@@ -222,9 +232,8 @@ function TableContent({ resourceId, name }: { resourceId: string; name: string }
           <Button
             variant="filled"
             leftSection={<IconCode02 size={18} />}
-            onClick={() => {
-              location.hash = databaseEditorHash(resourceId, name);
-            }}
+            onClick={onQuery}
+            disabled={busy}
           >
             Query table
           </Button>
@@ -250,12 +259,16 @@ function TableContent({ resourceId, name }: { resourceId: string; name: string }
     </Paper>
   );
 }
-export function DatabaseBrowser({
+export function DatabaseTableList({
   database,
   tableName,
+  onSelect,
+  onRefresh,
 }: {
   database: Resource;
   tableName?: string;
+  onSelect: () => void;
+  onRefresh: () => void;
 }) {
   const load = useCallback(
     (signal: AbortSignal) => workspaceApi.tables(database.id, signal),
@@ -263,88 +276,69 @@ export function DatabaseBrowser({
   );
   const listing = useRead(load);
   const [search, setSearch] = useState('');
-  const [revision, setRevision] = useState(0);
   const matches =
     listing.data?.data.filter((table) =>
       table.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
     ) ?? [];
   return (
-    <div className="database-browser">
-      <Paper className="panel database-table-list" p="xl" withBorder>
-        <Stack gap="xl">
-          <div className="database-section-header">
-            <Heading level={2}>Tables</Heading>
-            <Badge>{listing.data?.data.length ?? '…'}</Badge>
-          </div>
-          <TextInput
-            label="Find a table"
-            placeholder="Search tables…"
-            value={search}
-            onChange={(event) => setSearch(event.currentTarget.value)}
-            leftSection={<IconSearchLg size={18} />}
-          />
-          <Button
-            onClick={() => {
-              listing.retry();
-              setRevision((value) => value + 1);
-            }}
-            disabled={listing.loading}
-            leftSection={<IconRefreshCw01 size={18} />}
-          >
-            Refresh tables
-          </Button>
-          {database.provider !== 'tidb-cloud-zero' && <Badge>Local demo</Badge>}
-          {listing.loading ? (
-            <Loading>Loading tables…</Loading>
-          ) : listing.error ? (
-            <Failure message={listing.error} retry={listing.retry} />
-          ) : (
-            <>
-              {listing.data?.truncated && (
-                <Alert color="yellow">
-                  Showing the first 500 tables. Use SQL Editor to find more.
-                </Alert>
-              )}
-              {!matches.length && (
-                <Text>
-                  {listing.data?.data.length
-                    ? 'No matching tables.'
-                    : 'No tables yet. Create one in SQL Editor, then refresh.'}
-                </Text>
-              )}
-              <nav aria-label="Database tables">
-                {matches.map((table) => (
-                  <NavLink
-                    component="a"
-                    key={table.name}
-                    active={tableName === table.name}
-                    href={databaseTablesHash(database.id, table.name)}
-                    label={table.name}
-                    description={table.type === 'VIEW' ? 'View' : undefined}
-                  />
-                ))}
-              </nav>
-            </>
-          )}
-        </Stack>
-      </Paper>
-      {tableName ? (
-        <TableContent key={`${tableName}:${revision}`} resourceId={database.id} name={tableName} />
-      ) : (
-        <Paper className="panel database-detail" p="xl" withBorder>
-          <Stack gap="xl">
-            <Heading level={2}>Explore your database</Heading>
-            <Text>Select a table to inspect its columns, indexes and data.</Text>
-            <Button
-              onClick={() => {
-                location.hash = databaseEditorHash(database.id);
-              }}
-            >
-              Open SQL editor
-            </Button>
-          </Stack>
-        </Paper>
-      )}
-    </div>
+    <Paper className="panel database-table-list" p="xl" withBorder>
+      <Stack gap="xl">
+        <div className="database-section-header">
+          <Heading level={2}>Tables</Heading>
+          <Badge>{listing.data?.data.length ?? '…'}</Badge>
+        </div>
+        <TextInput
+          label="Find a table"
+          placeholder="Search tables…"
+          value={search}
+          onChange={(event) => setSearch(event.currentTarget.value)}
+          leftSection={<IconSearchLg size={18} />}
+        />
+        <Button
+          onClick={() => {
+            listing.retry();
+            onRefresh();
+          }}
+          disabled={listing.loading}
+          leftSection={<IconRefreshCw01 size={18} />}
+        >
+          Refresh tables
+        </Button>
+        {database.provider !== 'tidb-cloud-zero' && <Badge>Local demo</Badge>}
+        {listing.loading ? (
+          <Loading>Loading tables…</Loading>
+        ) : listing.error ? (
+          <Failure message={listing.error} retry={listing.retry} />
+        ) : (
+          <>
+            {listing.data?.truncated && (
+              <Alert color="yellow">
+                Showing the first 500 tables. Use SQL Editor to find more.
+              </Alert>
+            )}
+            {!matches.length && (
+              <Text>
+                {listing.data?.data.length
+                  ? 'No matching tables.'
+                  : 'No tables yet. Create one in SQL Editor, then refresh.'}
+              </Text>
+            )}
+            <nav aria-label="Database tables">
+              {matches.map((table) => (
+                <NavLink
+                  component="a"
+                  key={table.name}
+                  active={tableName === table.name}
+                  href={databaseEditorHash(database.id, table.name)}
+                  onClick={onSelect}
+                  label={table.name}
+                  description={table.type === 'VIEW' ? 'View' : undefined}
+                />
+              ))}
+            </nav>
+          </>
+        )}
+      </Stack>
+    </Paper>
   );
 }

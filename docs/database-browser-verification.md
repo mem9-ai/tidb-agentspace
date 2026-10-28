@@ -1,5 +1,9 @@
 # Database browser verification
 
+This records the initial split-view implementation. The subsequent
+[unified workspace verification](database-workspace-verification.md) covers the current
+same-page table navigator and editor; the API evidence below remains applicable.
+
 Verified on 2026-10-28 against the [DB-BROWSER specification](../specs/database-browser/spec.md)
 and [ADR 0007](decisions/0007-database-browser.md). Source baseline:
 `08daa919415dd063d8294786bedeecf909f6a52c`. The implementation PR identifies the evaluated head;

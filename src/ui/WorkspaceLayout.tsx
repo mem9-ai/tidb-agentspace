@@ -136,7 +136,7 @@ export function WorkspaceLayout({
               </Anchor>
             )}
             <Text size="sm" fw={600}>
-              {databaseId ? (databaseView === 'tables' ? 'Tables' : 'SQL editor') : label}
+              {databaseId ? 'SQL workspace' : label}
             </Text>
           </Breadcrumbs>
           <Group gap={12} wrap="nowrap" className="header-actions">
