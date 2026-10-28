@@ -55,6 +55,7 @@ export function FileBrowserPanel({
     <Paper
       component="aside"
       className="panel file-browser"
+      style={{ display: 'var(--workspace-file-browser-display, flex)' }}
       withBorder
       aria-label="File browser"
       data-collapsed={collapsed || undefined}

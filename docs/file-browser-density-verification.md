@@ -45,6 +45,11 @@ its ordinary focus behavior. This avoids a removed menu item becoming the modal'
 - The list's labeled focusable region supports keyboard horizontal scrolling on mobile:
   ArrowRight moved its scrollLeft to 40px while the plus button stayed fixed in the viewport.
   Document width matched the viewport in expanded, collapsed and narrow states.
+- Explicit supported Paper layout plus a responsive CSS variable preserves flex layout despite
+  stylesheet ordering, without an important override. Rechecked mobile preview hidden (`none`)
+  and Back to files restored (`flex`). At 1280×800, a long local list occupied a 680px panel
+  with a 457px scrolling region and 666px content; internal scroll reached 208px while the
+  outer panel scroll stayed zero. Header/footer remain outside that list scroller.
 - Final-code read-only CSV count completed while collapsed (row_count 4); keyboard expansion
   retained the edited SELECT, filter value `orders` and results. Desktop screenshots capture
   the plus menu and collapsed rail; mobile screenshots capture both themes. Screenshots are

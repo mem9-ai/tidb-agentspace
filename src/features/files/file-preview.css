@@ -318,7 +318,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .file-workspace[data-preview] .file-browser {
-    display: none;
+    --workspace-file-browser-display: none;
   }
   .file-browser-toggle {
     display: none;
