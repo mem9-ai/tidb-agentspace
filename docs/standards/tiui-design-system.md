@@ -171,6 +171,14 @@ verified, and record that as a remaining gap.
   expanded editors, long names and error messages may need page scrolling. See
   [density verification](../database-density-verification.md); revisit when adding query tabs
   or resizeable panes.
+- **File analysis (accepted and implemented, 2026-10-28):** keep Analyze in the selected
+  file's side panel. CSV/Parquet use the official SQL Editor with Standard SQL dialect;
+  UTF-8 logs/text use TiUI Textarea and read-only Just Bash. Fetch capabilities, but run only
+  on an explicit button/shortcut. Keep file identity in the URL (never scripts/results), original Download, limit/error states,
+  and cancel on unmount. Let the analysis panel expand into page flow so the editor cannot
+  hide Run or results behind the fixed preview footer. Preserve 16px text and inspect Light/Dark
+  at desktop/narrow sizes. See [verification](../file-analysis-verification.md); revisit for
+  multi-file contexts or persistent analysis sessions.
 - **File reading (accepted and implemented, owner correction 2026-10-27):** open files in
   an inline right-hand panel, keeping the file list usable on desktop. Do not use a centered
   modal or a backdrop for routine reading. On narrow screens show the reading panel with a

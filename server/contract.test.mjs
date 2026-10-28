@@ -120,6 +120,15 @@ test('standalone API responses conform to every declared JSON operation, includi
     type: 'file',
     content: 'hello',
   });
+  await request(workspace + '/file-analyses/capabilities', 'get', undefined, {
+    suffix: '?resourceId=fs_shared&path=/contract.txt',
+  });
+  await request(workspace + '/file-analyses', 'post', {
+    resourceId: 'fs_shared',
+    path: '/contract.txt',
+    engine: 'bash',
+    command: 'cat /workspace/input.log',
+  });
   await request(workspace + '/files', 'delete', { resourceId: 'fs_shared', path: '/contract.txt' });
   await request(workspace + '/queries', 'post', { resourceId: 'db_memory', sql: 'SELECT 1' });
   await request(workspace + '/resources/{resourceId}/setup', 'post', undefined, {

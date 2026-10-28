@@ -2,34 +2,31 @@ import { cp, mkdir, readFile, realpath } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, relative, resolve } from 'node:path';
 
+// Copy the installed, pinned runtime closure, including ESM-only and native-binding packages.
 export async function copySqlDependencies(root, staged) {
   root = await realpath(root);
   const copied = new Set();
   async function copy(name, from, optional = false) {
-    let entry;
-    try {
-      entry = createRequire(resolve(from, 'package.json')).resolve(name);
-    } catch (error) {
-      // Platform bindings have no root JS entry; their package contains a native .node file.
+    let directory, pkg;
+    for (const search of createRequire(resolve(from, 'package.json')).resolve.paths(
+      `${name}/package.json`,
+    ) || []) {
+      const candidate = resolve(search, name);
       try {
-        entry = createRequire(resolve(from, 'package.json')).resolve(name + '/package.json');
+        const metadata = JSON.parse(await readFile(resolve(candidate, 'package.json'), 'utf8'));
+        if (metadata.name === name) {
+          directory = await realpath(candidate);
+          pkg = metadata;
+          break;
+        }
       } catch {
-        if (optional && error.code === 'MODULE_NOT_FOUND') return;
-        throw error;
+        /* Try the next Node package search directory. */
       }
     }
-    let directory = dirname(entry),
-      pkg;
-    while (directory !== dirname(directory)) {
-      try {
-        pkg = JSON.parse(await readFile(resolve(directory, 'package.json'), 'utf8'));
-        if (pkg.name === name) break;
-      } catch {
-        /* An entry point may be inside a package subdirectory. */
-      }
-      directory = dirname(directory);
+    if (!directory) {
+      if (optional) return;
+      throw new Error(`Cannot locate runtime dependency ${name}.`);
     }
-    if (pkg?.name !== name) throw new Error(`Cannot locate runtime dependency ${name}.`);
     const path = relative(root, directory);
     if (!path.startsWith('node_modules/'))
       throw new Error('Runtime dependency is outside the installed lockfile tree.');
@@ -43,4 +40,5 @@ export async function copySqlDependencies(root, staged) {
   }
   await copy('mysql2', root);
   await copy('@duckdb/node-api', root);
+  await copy('just-bash', root);
 }

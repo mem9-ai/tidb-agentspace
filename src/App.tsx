@@ -84,6 +84,8 @@ import { DatabaseWorkspace } from './features/databases/DatabaseWorkspace';
 import { databaseEditorHash, parseWorkspaceRoute } from './features/navigation/workspace-route';
 import type { Route, WorkspaceRoute } from './features/navigation/workspace-route';
 
+import { fileHash, parseFileLocation, type FileView } from './features/files/file-location';
+
 const FilePreviewPanel = lazy(() => import('./features/files/FilePreviewPanel'));
 type WorkspaceIcon = React.ComponentType<IconProps>;
 
@@ -113,6 +115,7 @@ const allScopes: CreateKeyInput['scopes'] = [
   'resources:read',
   'resources:write',
   'files:read',
+  'files:analyze',
   'files:write',
   'queries:execute',
   'usage:read',
@@ -393,7 +396,7 @@ function App() {
         <div key={route}>
           {route === 'overview' && <Overview {...shared} />}
           {route === 'databases' && <Databases {...shared} routeLocation={routeLocation} />}
-          {route === 'files' && <Files {...shared} />}
+          {route === 'files' && <Files key={routeLocation.fileLink || 'files'} {...shared} />}
           {route === 'connect' && <Connect {...shared} />}
           {route === 'keys' && <Keys {...shared} onNewKey={() => setModal('key')} />}
           {route === 'api' && <ApiExplorer {...shared} />}
@@ -927,17 +930,46 @@ function download(name: string, value: string, mime = 'text/plain') {
 }
 function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
   const systems = data.resources.filter((r) => r.kind === 'filesystem');
+  const [initialLocation] = useState(() => parseFileLocation(location.hash));
+  const initialResource = systems.find((r) => r.id === initialLocation?.resourceId);
+  const initialFile =
+    initialResource && initialLocation
+      ? data.files.find(
+          (f) => f.resourceId === initialResource.id && f.path === initialLocation.path,
+        ) ||
+        (initialResource.provider === 'drive9-anonymous'
+          ? {
+              id: `${initialResource.id}:${initialLocation.path}`,
+              resourceId: initialResource.id,
+              path: initialLocation.path,
+              type: 'file' as const,
+              size: 0,
+              updatedAt: null,
+            }
+          : null)
+      : null;
+  const restoreFile = useRef(initialFile);
+  const [previewView, setPreviewView] = useState<FileView>(initialLocation?.view || 'preview');
   const [system, setSystem] = useState(
-      systems.find((r) => r.provider === 'drive9-anonymous')?.id || systems[0]?.id || '',
+      initialResource?.id ||
+        systems.find((r) => r.provider === 'drive9-anonymous')?.id ||
+        systems[0]?.id ||
+        '',
     ),
-    [path, setPath] = useState('/'),
+    [path, setPath] = useState(
+      initialFile ? initialFile.path.slice(0, initialFile.path.lastIndexOf('/')) || '/' : '/',
+    ),
     [search, setSearch] = useState(''),
     [editing, setEditing] = useState<WorkspaceFile | null>(null),
     [content, setContent] = useState(''),
     [newItem, setNewItem] = useState<'file' | 'directory' | null>(null),
     [name, setName] = useState(''),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
+    [error, setError] = useState(
+      initialLocation && !initialFile
+        ? 'The linked file or File System is unavailable. Select a file to continue.'
+        : '',
+    ),
     [deleting, setDeleting] = useState<WorkspaceFile | null>(null);
   const selectedSystem = systems.find((r) => r.id === system);
   const remote = selectedSystem?.provider === 'drive9-anonymous';
@@ -951,35 +983,46 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
   const dirty = !!editing && content !== (editing.content || '');
   function requestPreviewChange(action: () => void) {
     if (busy) return;
+    restoreFile.current = null;
     if (dirty) setPendingAction(() => action);
     else action();
   }
   const upload = useRef<HTMLInputElement>(null);
   const files = remote ? listing.files : data.files.filter((f) => f.resourceId === system);
-  async function openFile(file: WorkspaceFile) {
-    previewRequest.current?.abort();
-    const controller = new AbortController();
-    previewRequest.current = controller;
-    setEditing(file);
-    setContent(file.content || '');
-    setError('');
-    setUnavailableReason('');
-    setPreviewLoading(remote);
-    if (!remote) return;
-    try {
-      const result = await workspaceApi.previewFile(file, controller.signal);
-      if (controller.signal.aborted) return;
-      setEditing({ ...file, content: result.content, size: result.size });
-      setContent(result.content || '');
-      setUnavailableReason(result.unavailableReason || '');
-    } catch (cause) {
-      if (!controller.signal.aborted)
-        setUnavailableReason(cause instanceof Error ? cause.message : 'Unable to load preview.');
-    } finally {
-      if (!controller.signal.aborted) setPreviewLoading(false);
-    }
-  }
+  const openFile = useCallback(
+    async (file: WorkspaceFile, view: FileView = 'preview') => {
+      setPreviewView(view);
+      history.replaceState(null, '', fileHash(file.resourceId, file.path, view));
+      previewRequest.current?.abort();
+      const controller = new AbortController();
+      previewRequest.current = controller;
+      setEditing(file);
+      setContent(file.content || '');
+      setError('');
+      setUnavailableReason('');
+      setPreviewLoading(remote);
+      if (!remote) return;
+      try {
+        const result = await workspaceApi.previewFile(file, controller.signal);
+        if (controller.signal.aborted) return;
+        setEditing({ ...file, content: result.content, size: result.size });
+        setContent(result.content || '');
+        setUnavailableReason(result.unavailableReason || '');
+      } catch (cause) {
+        if (!controller.signal.aborted)
+          setUnavailableReason(cause instanceof Error ? cause.message : 'Unable to load preview.');
+      } finally {
+        if (!controller.signal.aborted) setPreviewLoading(false);
+      }
+    },
+    [remote],
+  );
+  useEffect(() => {
+    const file = restoreFile.current;
+    if (file) void openFile(file, initialLocation?.view);
+  }, [openFile, initialLocation]);
   function closePreview() {
+    history.replaceState(null, '', '#files');
     previewRequest.current?.abort();
     setPreviewLoading(false);
     setEditing(null);
@@ -1388,6 +1431,11 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
             <FilePreviewPanel
               key={editing.id}
               path={editing.path}
+              resourceId={editing.resourceId}
+              initialView={previewView}
+              onViewChange={(view) =>
+                history.replaceState(null, '', fileHash(editing.resourceId, editing.path, view))
+              }
               content={content}
               dirty={dirty}
               size={editing.size}
@@ -1510,7 +1558,7 @@ function Connect({ data, copy }: Shared) {
   const snippet = `# Discover your workspace resources\ncurl ${apiOrigin}${base}/resources \\\n  -H "Authorization: Bearer $WORKSPACE_API_KEY"`;
   const python = `import os, json, urllib.request\n\nreq = urllib.request.Request(\n    "${apiOrigin}${base}/resources",\n    headers={"Authorization": "Bearer " + os.environ["WORKSPACE_API_KEY"]}\n)\nwith urllib.request.urlopen(req) as response:\n    print(json.load(response))`;
   const js = `const response = await fetch(\n  "${apiOrigin}${base}/resources",\n  { headers: { Authorization: \`Bearer \${process.env.WORKSPACE_API_KEY}\` } }\n);\nconsole.log(await response.json());`;
-  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiOrigin}/api/v1\nOpenAPI: ${apiOrigin}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for directory listings and UTF-8 writes; Drive9 listings contain metadata only. Use /files/content?resourceId=ID&path=PATH for binary upload/download and add preview=1 for bounded text previews. Use /resources/{resourceId}/tables to list tables, /resources/{resourceId}/table?name=NAME for columns and indexes, and /resources/{resourceId}/table/rows?name=NAME for up to 100 preview rows. Encode the exact table name as a query parameter. These reads require queries:execute and resource access, just like /queries for SQL on the selected database. Resources marked tidb-cloud-zero or duckdb-drive9 execute real SQL; queries:execute permits reads and writes within the database role. Run one statement per request; results are limited to 1,000 rows / 1 MiB and queries to 15 seconds. A timeout can leave a write outcome unknown; verify before retrying.\nOnly call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local Workspace gateway. File Systems marked drive9-anonymous use real Singapore trial storage. Databases marked tidb-cloud-zero connect to real temporary MySQL databases. Check expiresAt and export important data before expiration. Databases marked duckdb-drive9 use native DuckDB with service-managed storage. Other databases remain demos. Cloud telemetry is not measured.\nDo not upload credentials to the workspace or commit them to Git.\n`;
+  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiOrigin}/api/v1\nOpenAPI: ${apiOrigin}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for directory listings and UTF-8 writes; Drive9 listings contain metadata only. Use /files/content?resourceId=ID&path=PATH for binary upload/download and add preview=1 for bounded text previews. Use /resources/{resourceId}/tables to list tables, /resources/{resourceId}/table?name=NAME for columns and indexes, and /resources/{resourceId}/table/rows?name=NAME for up to 100 preview rows. Encode the exact table name as a query parameter. These reads require queries:execute and resource access, just like /queries for SQL on the selected database. Resources marked tidb-cloud-zero or duckdb-drive9 execute real SQL; queries:execute permits reads and writes within the database role. Run one statement per request; results are limited to 1,000 rows / 1 MiB and queries to 15 seconds. A timeout can leave a write outcome unknown; verify before retrying.\nFor read-only file analysis, inspect GET /workspaces/${data.workspace.id}/file-analyses/capabilities?resourceId=ID&path=PATH, then POST /workspaces/${data.workspace.id}/file-analyses with resourceId, path, engine and sql or command. Require both files:read and files:analyze plus the File System grant. CSV/Parquet SQL reads table file; Just Bash reads /workspace/input.log. Each run uses one fresh saved-file snapshot, up to 16 MiB input and 15 seconds. No source writes or arbitrary native commands are permitted.\nOnly call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local Workspace gateway. File Systems marked drive9-anonymous use real Singapore trial storage. Databases marked tidb-cloud-zero connect to real temporary MySQL databases. Check expiresAt and export important data before expiration. Databases marked duckdb-drive9 use native DuckDB with service-managed storage. Other databases remain demos. Cloud telemetry is not measured.\nDo not upload credentials to the workspace or commit them to Git.\n`;
   return (
     <>
       <PageHeading
@@ -2688,6 +2736,7 @@ function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose:
                               'resources:read': 'Discover workspace resources',
                               'resources:write': 'Create resources',
                               'files:read': 'Read files and context',
+                              'files:analyze': 'Analyze files (read-only SQL and Bash)',
                               'files:write': 'Create, edit, and delete files',
                               'queries:execute': 'Read and write SQL on permitted databases',
                               'usage:read': 'Read usage and allowances',

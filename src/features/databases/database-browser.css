@@ -92,6 +92,8 @@
 }
 .database-workspace .sql-panel {
   margin-bottom: 12px;
+  --workspace-sql-content-min-height: 100%;
+  --workspace-sql-content-padding: 12px 0;
   --workspace-sql-editor-height: clamp(120px, calc(35dvh - 130px), 180px);
 }
 .database-workspace .sql-panel-expanded {

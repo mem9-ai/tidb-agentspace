@@ -1,6 +1,6 @@
 # Database workspace density verification
 
-Owner-requested layout correction, 2026-10-28. Source baseline: `8fcab93` (PR #33 implementation plus the later file-source design).
+Owner-requested layout correction, 2026-10-28. Source baseline: `b78512d` (including the independently delivered file analysis feature).
 This builds on the [unified workspace](database-workspace-verification.md) without changing
 its API, provider, query budgets or draft lifecycle. The implementation PR records the exact
 candidate and current CI result.
@@ -16,7 +16,8 @@ write/demo labels and actionable errors remain visible.
 Implementation uses TiUI 2.9.1 Popover, Menu, ActionIcon, Button, Table and Tabs plus the
 existing official SQL Editor 0.0.6. Table row spacing uses its supported `verticalSpacing`
 prop; CodeMirror height/scrolling uses the shared editor theme. Database-specific layout is
-scoped to its page, leaving other destinations and default tab spacing unchanged.
+scoped to its page, leaving other destinations and default tab spacing unchanged. Editor
+height/content variables retain their prior defaults for the File System analysis panel.
 
 ## Evidence
 
@@ -42,7 +43,7 @@ scoped to its page, leaving other destinations and default tab spacing unchanged
   this presentation-only correction; its existing provider/permission tests run in the gate.
 
 Final validation: `npm run check` passed (runtime/policy, formatting, lint, generated API,
-83 tests, strict types and independent builds). The PR records the candidate and CI result.
+91 tests, strict types and independent builds). The PR records the candidate and CI result.
 No new dependency or public contract change. Existing upstream `google-libphonenumber`
 build warnings remain non-failing.
 
