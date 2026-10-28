@@ -244,8 +244,14 @@ verified, and record that as a remaining gap.
   UTF-8 logs/text use TiUI Textarea and read-only Just Bash. Fetch capabilities, but run only
   on an explicit button/shortcut. Keep file identity in the URL (never scripts/results), original Download, limit/error states,
   and cancel on unmount. Let the analysis panel expand into page flow so the editor cannot
-  hide Run or results behind the fixed preview footer. Preserve 16px text and inspect Light/Dark
-  at desktop/narrow sizes. See [verification](../file-analysis-verification.md); revisit for
+  hide Run or results behind the fixed preview footer. For isolated interpreters, show the
+  actual input name/path beside the editor with a copy action; distinguish the runtime path
+  from the original Workspace path. Keep the common path visible and put longer usage guidance
+  in a disclosure. Start with a generic, executable preview sample and explain that examples
+  fill the editor without running. Check samples against the real worker and provide recovery
+  guidance for missing-file errors without changing access boundaries. This owner correction
+  is implemented for Just Bash in [GH-63's usage verification](../file-analysis-verification.md#just-bash-input-guidance).
+  Preserve 16px text and inspect Light/Dark at desktop/narrow sizes. See [verification](../file-analysis-verification.md); revisit for
   multi-file contexts or persistent analysis sessions.
 - **File work area density (owner correction 2026-10-28):** keep the file browser beside the
   selected file/analysis editor on desktop. Group New file and New folder under one labeled

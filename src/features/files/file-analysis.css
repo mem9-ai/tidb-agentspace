@@ -47,3 +47,15 @@
   font-weight: 600;
   padding: 12px 0;
 }
+
+.bash-analysis-help {
+  padding: 8px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.bash-analysis-help code {
+  overflow-wrap: anywhere;
+}
+.file-analysis .bash-usage summary {
+  padding: 8px 0 0;
+  font-size: 14px;
+}
