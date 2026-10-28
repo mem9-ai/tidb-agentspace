@@ -58,6 +58,10 @@
 .bash-analysis-help code {
   overflow-wrap: anywhere;
 }
+.analysis-input-path {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
 .file-analysis .bash-usage summary {
   padding: 8px 0 0;
   font-size: 14px;

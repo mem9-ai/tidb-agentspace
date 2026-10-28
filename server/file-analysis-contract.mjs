@@ -36,6 +36,12 @@ export const analysisCommands = Object.freeze([
 export function analysisError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
 }
+export function analysisBashInput(path) {
+  const alias = '/workspace/input.log';
+  // Never replace a selected file or one of its parent directories with an alias.
+  const conflicts = path === alias || path.startsWith(alias + '/') || alias.startsWith(path + '/');
+  return { path, workingDirectory: '/workspace', aliases: conflicts ? [] : [alias] };
+}
 export function analysisFormat(path) {
   const ext = path.split('.').pop()?.toLowerCase();
   if (ext === 'csv') return { defaultEngine: 'duckdb', engines: ['duckdb', 'bash'], format: ext };

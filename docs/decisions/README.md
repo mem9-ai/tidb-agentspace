@@ -32,3 +32,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0013: Result snapshot exports](0013-result-snapshot-exports.md) — accepted and implemented bounded downloads and create-only copies into public workspace resources.
 
 - [0014: File analysis engine options](0014-file-analysis-engine-options.md) — separate format/default engine from supported methods; CSV supports SQL and raw-text Bash with individual availability.
+
+- [0015: Bash Workspace paths](0015-bash-workspace-paths.md) — preserve the selected file's visible path inside its isolated snapshot, with discovered input metadata and non-conflicting legacy aliases.

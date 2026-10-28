@@ -129,7 +129,7 @@ export interface paths {
     put?: never;
     /**
      * Run bounded read-only DuckDB SQL or Just Bash on one selected file
-     * @description Required workspace key scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Also requires files:read. Discover engines from capabilities: CSV supports DuckDB SQL over table file or Just Bash over its raw UTF-8 text at /workspace/input.log. Parquet supports only DuckDB, and other recognized text only Just Bash. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.
+     * @description Required workspace key scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Also requires files:read. Discover engines from capabilities: CSV supports DuckDB SQL over table file or Just Bash over its raw UTF-8 text. Bash exposes the selected absolute Workspace path; discover input.path, input.workingDirectory and compatibility aliases on its engine option. Paths refer only to the virtual selected-file snapshot. Parquet supports only DuckDB, and other recognized text only Just Bash. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.
      */
     post: operations['analyzeFile'];
     delete?: never;
@@ -1495,6 +1495,13 @@ export interface operations {
               engine: 'duckdb' | 'bash';
               available: boolean;
               reason: string;
+              /** @description Bash only: the selected absolute Workspace path in its read-only virtual snapshot, working directory, and compatible aliases. The legacy alias is omitted when it would shadow the selected path or a parent directory. Not a host path or a mount of other files. */
+              input?: {
+                path: string;
+                /** @constant */
+                workingDirectory: '/workspace';
+                aliases: string[];
+              };
             }[];
             format: string | null;
             /** @description Availability of the default engine. */

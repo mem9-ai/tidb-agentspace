@@ -100,7 +100,9 @@ File System analysis is implemented as bounded server-side snapshot workers: CSV
 DuckDB SQL over parsed rows and Just Bash over raw UTF-8 text; Parquet uses SQL, while recognized
 logs and text use Just Bash. [ADR 0014](decisions/0014-file-analysis-engine-options.md) separates
 format, default engine and individual capability availability. Analysis requires `files:read`, `files:analyze`
-and the resource grant. Provider credentials never enter workers. This is a read-only local
+and the resource grant. [ADR 0015](decisions/0015-bash-workspace-paths.md) preserves the selected
+Workspace path inside the Bash snapshot, with discovered input metadata and compatible aliases.
+Provider credentials never enter workers. This is a read-only local
 prototype; public compute isolation and larger remote scans remain future work. See
 [ADR 0010](decisions/0010-read-only-file-analysis.md).
 

@@ -1,13 +1,15 @@
 import { ActionIcon, Button, Code, CopyButton, Group, Text } from '@tidbcloud/uikit';
 import { IconCheck, IconCopy03 } from '@tidbcloud/uikit/icons';
-import { bashInputPath, bashSamples } from './bash-analysis';
+import { bashSamples, type BashInput } from './bash-analysis';
 
 export function BashAnalysisHelp({
   id,
+  input,
   busy,
   onSample,
 }: {
   id: string;
+  input: BashInput;
   busy: boolean;
   onSample: (command: string) => void;
 }) {
@@ -17,8 +19,10 @@ export function BashAnalysisHelp({
         <Text component="span" size="sm" fw={600}>
           Input file
         </Text>
-        <Code fz="md">{bashInputPath}</Code>
-        <CopyButton value={bashInputPath}>
+        <Code className="analysis-input-path" fz="md">
+          {input.path}
+        </Code>
+        <CopyButton value={input.path}>
           {({ copied, copy }) => (
             <ActionIcon
               aria-label={copied ? 'Input path copied' : 'Copy input file path'}
@@ -31,8 +35,8 @@ export function BashAnalysisHelp({
         </CopyButton>
       </Group>
       <Text size="sm" c="carbon.7">
-        Use this path for the selected file, regardless of its original name. Other Workspace files
-        are not mounted.
+        Only the selected saved file is available at this path. Other Workspace files are not
+        mounted.
       </Text>
       <details className="bash-usage">
         <summary>How to use Just Bash</summary>
@@ -42,7 +46,7 @@ export function BashAnalysisHelp({
           error for problems.
         </Text>
         <Group gap="xs" mt="sm">
-          {bashSamples.map((example) => (
+          {bashSamples(input.path).map((example) => (
             <Button
               key={example.label}
               variant="subtle"
@@ -54,11 +58,22 @@ export function BashAnalysisHelp({
           ))}
         </Group>
         <Text size="sm" mt="sm">
-          Working directory: <Code fz="inherit">/workspace</Code>. Both{' '}
-          <Code fz="inherit">input.log</Code> and the full input path work. Use head, tail, grep,
+          Working directory: <Code fz="inherit">{input.workingDirectory}</Code>. Use the full input
+          path; examples quote it safely for spaces and special characters. Use head, tail, grep,
           wc, awk, sed, sort and uniq, including pipes, on this read-only saved-file snapshot.
           Writes, network access, installs and arbitrary programs are unavailable.
         </Text>
+        {input.aliases.length > 0 && (
+          <Text size="sm" mt="sm">
+            Compatibility input:{' '}
+            {input.aliases.map((alias) => (
+              <Code key={alias} fz="inherit">
+                {alias}
+              </Code>
+            ))}
+            . These names refer to the same selected snapshot.
+          </Text>
+        )}
         <Text size="sm" c="carbon.7" mt="sm">
           Each run reads a fresh saved snapshot. A grep exit code of 1 can simply mean no matching
           lines; check Standard error before treating a nonzero exit as a failure.

@@ -18,7 +18,7 @@ the original GH-26 controls. The read-only/API boundary remains unchanged.
 Open File System, choose the existing Singapore trial, and open
 `/file-analysis-demo-9de2ebb1/orders.csv`, `orders.parquet` or `service.log`. Select **Analyze**.
 CSV offers DuckDB SQL or Just Bash under **Analyze with**, defaulting to SQL. Parquet uses
-SQL; recognized text uses Bash. The SQL editor queries table `file`; Bash reads `/workspace/input.log`.
+SQL; recognized text uses Bash. The SQL editor queries table `file`; Bash reads the same absolute Workspace path shown in the file header, discovered from its engine option’s `input.path`.
 The file/resource and analysis tab remain in the URL for reload and direct links; scripts
 and results are not serialized into links. Browser Download returned the original 176-byte log. Run explicitly or use Cmd/Ctrl+Enter. Each execution starts fresh. Download retains the
 original file. Navigation or Cancel query / Cancel command aborts abandoned work; results are not persisted.
@@ -36,7 +36,7 @@ Agents use the generated OpenAPI operations with a Workspace Key granting `files
 ```
 
 POST this body to `/api/v1/workspaces/{workspaceId}/file-analyses`. For text, use
-`"engine":"bash","command":"grep -n ERROR /workspace/input.log | head -20"`.
+`"engine":"bash","command":"head -20 '/orders.csv'"` with the same `/orders.csv` selection.
 Inspect GET `/file-analyses/capabilities?resourceId=…&path=…` first for availability and limits.
 No provider credential or runtime destination is a public input.
 
@@ -45,10 +45,10 @@ No provider credential or runtime destination is a public input.
 File format and analysis method are separate, as defined in
 [ADR 0014](decisions/0014-file-analysis-engine-options.md). For the same CSV:
 
-| Method     | Use                                                                                                           | Example                         |
-| ---------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| DuckDB SQL | Query parsed rows/columns, filter and aggregate; CSV quotes and embedded newlines are parsed                  | `SELECT COUNT(*) FROM file;`    |
-| Just Bash  | Inspect, search or count raw UTF-8 text with read-only commands; line counts need not equal CSV record counts | `head -20 /workspace/input.log` |
+| Method     | Use                                                                                                           | Example                      |
+| ---------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| DuckDB SQL | Query parsed rows/columns, filter and aggregate; CSV quotes and embedded newlines are parsed                  | `SELECT COUNT(*) FROM file;` |
+| Just Bash  | Inspect, search or count raw UTF-8 text with read-only commands; line counts need not equal CSV record counts | `head -20 '/orders.csv'`     |
 
 Selecting a method never executes. Each retains its own in-memory draft, result and error
 while the file panel remains open. Run explicitly or use Cmd/Ctrl+Enter. Method selection is
@@ -67,7 +67,7 @@ engine explicitly with `sql` or `command`, never both. The same File System and
   "resourceId": "<file-system-id>",
   "path": "/orders.csv",
   "engine": "bash",
-  "command": "head -20 /workspace/input.log"
+  "command": "head -20 '/orders.csv'"
 }
 ```
 
@@ -102,13 +102,80 @@ base `c599211b8be2035e4c55960d68844a2318ad065a`:
 | Mobile Light, 390×844   | [Screenshot](screenshots/file-analysis-methods/mobile-light-sql.jpg)  | [Screenshot](screenshots/file-analysis-methods/mobile-light-bash.jpg)  |
 | Mobile Dark, 390×844    | [Screenshot](screenshots/file-analysis-methods/mobile-dark-sql.jpg)   | [Screenshot](screenshots/file-analysis-methods/mobile-dark-bash.jpg)   |
 
+### Workspace path identity
+
+[GH-67](https://github.com/siddontang/tidb.ai/issues/67) corrects the fixed-name-only mapping:
+the file's displayed absolute Workspace path now works inside its isolated Bash snapshot.
+For the selected log, the reported command is valid:
+
+```bash
+cat /file-analysis-demo-9de2ebb1/service.log
+```
+
+The Bash capability option includes server-derived input metadata, for example:
+
+```json
+{
+  "engine": "bash",
+  "available": true,
+  "reason": "",
+  "input": {
+    "path": "/file-analysis-demo-9de2ebb1/service.log",
+    "workingDirectory": "/workspace",
+    "aliases": ["/workspace/input.log"]
+  }
+}
+```
+
+This metadata describes the one selected saved snapshot, not native paths or other provider
+files. It is not accepted as execution input. [ADR 0015](decisions/0015-bash-workspace-paths.md)
+defines compatibility aliases and their ancestor-collision exception. The new Console falls
+back to the old fixed input only when an older API does not supply metadata.
+
+Verification on 2026-10-28, source base `00ca073e6165292978069e5611a6028668657cde`:
+
+- Actual interpreter tests run the exact reported command, root/nested paths, a virtual
+  `/etc/selected.log`, spaces, single quotes, command substitutions/backticks and embedded
+  newlines. Safely quoted samples return selected content without interpolation. Old absolute
+  and relative aliases work where available; equality and ancestor collisions never replace
+  the primary path or its directories. Unselected/host reads and writes through both names
+  remain denied. The alias is a preconfigured in-memory symlink, not a second content copy.
+- HTTP tests verify Bash metadata and canonical text/CSV commands, keep mixed/mount/worker
+  configuration fields invalid before I/O, and retain both engines' current authorization,
+  expiry/revocation, limits, cancellation and standalone artifact checks.
+- Browser fixtures reproduce the screenshot command with Exit 0, verify exact copied path
+  text, Ctrl/Cmd+Enter, quoted examples, no automatic sample/recovery execution, and a missing
+  unselected-file error that points back to the actual selected path. A filename containing
+  spaces, a single quote and `$()` runs safely. CSV still works through SQL and Bash using its
+  own discovered path; SQL results remain separate.
+- Light/Dark at 1280×800 and 390×844 retain 16px command text and have no page-wide horizontal
+  overflow. Path Code blocks wrap within their containers. TiUI 2.9.1 copy/help/error controls
+  and shared execution/results remain in use; no new dependency or cloud integration.
+  These screenshots use isolated local fixtures; the implementation PR records final CI and
+  main-preview verification on the existing Singapore log.
+
+| Viewport / theme          | Screenshot                                                                                      |
+| ------------------------- | ----------------------------------------------------------------------------------------------- |
+| Desktop Light, 1280×800   | [Full path and successful result](screenshots/bash-workspace-paths/desktop-light.jpg)           |
+| Desktop Dark, 1280×800    | [Full path and successful result](screenshots/bash-workspace-paths/desktop-dark.jpg)            |
+| Mobile Light, 390×844     | [Wrapped input path](screenshots/bash-workspace-paths/mobile-light.jpg)                         |
+| Mobile Dark, 390×844      | [Wrapped input path](screenshots/bash-workspace-paths/mobile-dark.jpg)                          |
+| Special filename, 390×844 | [Quoted sample and selected contents](screenshots/bash-workspace-paths/special-path-mobile.jpg) |
+
 ### Just Bash input guidance
 
-Just Bash runs supported text commands on the **selected saved file**, which the worker
-exposes as `/workspace/input.log`. This is a virtual input name even for `README.md`; it does
-not convert the contents into a log. The working directory is `/workspace`, so `input.log`
-also works. The original Workspace path (for example `./README.md` or `/docs/README.md`),
-other Workspace files and host files are not mounted.
+Just Bash runs supported commands on the **selected saved file**, exposed at its original
+absolute Workspace path. For example, selecting `/file-analysis-demo-9de2ebb1/service.log`
+allows `cat /file-analysis-demo-9de2ebb1/service.log`. Only this read-only virtual snapshot is
+mounted; sibling/provider files and native host paths remain unavailable. The working
+directory is `/workspace`, so relative paths resolve there rather than beside the selected
+file. Use the full displayed **Input file** path; examples quote spaces and shell characters.
+
+The Bash capability option reports `input.path`, `input.workingDirectory` and `input.aliases`.
+The legacy `/workspace/input.log` (or relative `input.log`) is a compatibility symlink when
+it can coexist with the selected path. It is omitted for ancestor collisions; discover it
+rather than assuming it exists. If the selected path itself is `/workspace/input.log`, it
+already names the selected bytes. See [ADR 0015](decisions/0015-bash-workspace-paths.md).
 
 1. Open a text or Markdown file and select **Analyze**.
 2. Copy the displayed **Input file** path or expand **How to use Just Bash** and choose an
@@ -119,9 +186,9 @@ other Workspace files and host files are not mounted.
    the next execution still requires an explicit Run.
 
 ```bash
-head -20 /workspace/input.log
-grep -n 'ERROR' /workspace/input.log | head -20
-wc -l /workspace/input.log
+head -20 '/file-analysis-demo-9de2ebb1/service.log'
+grep -n 'ERROR' '/file-analysis-demo-9de2ebb1/service.log' | head -20
+wc -l '/file-analysis-demo-9de2ebb1/service.log'
 ```
 
 The default preview is `head`, suitable for Markdown and general text. Commands such as
@@ -129,6 +196,9 @@ head, tail, grep, wc, awk, sed, sort and uniq support read-only text processing 
 Each run reads a fresh saved snapshot. Writes, network access, installs and arbitrary
 programs are unavailable; use Download for work in another environment. See [ADR 0010](decisions/0010-read-only-file-analysis.md)
 for the isolation boundary and limits.
+
+**Historical verification:** GH-63 added fixed-input guidance; GH-67 below supersedes its
+fixed-name-only restriction. The screenshots in this historical section retain that earlier UI.
 
 Verified for [GH-63](https://github.com/siddontang/tidb.ai/issues/63) on 2026-10-28, source
 base `c1ffc10751aeb0f22d8f164b6710789e0fdfeac2`:

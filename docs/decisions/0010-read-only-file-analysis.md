@@ -41,7 +41,9 @@ locks configuration **before** preparing guest SQL. Require exactly one parser-c
 SELECT. No extension loading, external reads, configuration changes or writes. Return types,
 file schema and exact JSON numeric representations (BIGINT values are strings).
 
-Just Bash sees `/workspace/input.log` in a read-only in-memory filesystem. Use a small command
+Just Bash sees the selected absolute Workspace path in a read-only in-memory filesystem.
+[ADR 0015](0015-bash-workspace-paths.md) supersedes the original fixed-name-only mapping and
+defines input discovery and compatibility aliases. Use a small command
 allowlist for grep/awk/sed and pipelines; keep interpreter defense guards enabled, Python and
 JavaScript disabled, and network commands unavailable. Native shells and arbitrary binaries
 are not exposed. Nonzero shell exit status is a normal result; service/limit failures use

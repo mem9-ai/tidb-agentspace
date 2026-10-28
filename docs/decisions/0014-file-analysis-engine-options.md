@@ -33,7 +33,8 @@ falls back to Bash, and changing the Console method never starts a request.
 
 The Console uses capability options rather than its own extension-to-engine rules. Where
 multiple options exist, show **DuckDB SQL** and **Just Bash** with a short explanation:
-SQL queries parsed table `file`; Bash reads raw text at `/workspace/input.log`. Shell tools
+SQL queries parsed table `file`; Bash reads raw text at the input path discovered under
+[ADR 0015](0015-bash-workspace-paths.md), which supersedes the fixed-name-only mapping. Shell tools
 do not implement CSV quoting or embedded-newline semantics. Keep independent in-memory
 drafts, results and errors while the same file panel stays open; hide inactive views and
 disable method switching during execution. File navigation/unmount still cancels work and

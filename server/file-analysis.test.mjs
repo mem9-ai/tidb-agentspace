@@ -10,7 +10,8 @@ import { createFileAnalysis } from './file-analysis.mjs';
 import { createAnalysisSnapshot } from './file-analysis-snapshot.mjs';
 import { analysisLimits, analysisError } from './file-analysis-contract.mjs';
 import {
-  bashInputPath,
+  legacyBashInput,
+  quoteBashPath,
   bashPreviewCommand,
   bashSamples,
 } from '../src/features/files/bash-analysis.ts';
@@ -41,7 +42,16 @@ test('analysis capabilities separate file format, default engine and individual 
   assert.equal(csvCap.available, true);
   assert.deepEqual(csvCap.engines, [
     { engine: 'duckdb', available: true, reason: '' },
-    { engine: 'bash', available: true, reason: '' },
+    {
+      engine: 'bash',
+      available: true,
+      reason: '',
+      input: {
+        path: '/ORDERS.CSV',
+        workingDirectory: '/workspace',
+        aliases: ['/workspace/input.log'],
+      },
+    },
   ]);
   assert.deepEqual(
     (await a.capabilities(resource, '/orders.parquet')).engines.map((e) => e.engine),
@@ -63,7 +73,16 @@ test('analysis capabilities separate file format, default engine and individual 
   assert.equal(empty.engine, 'duckdb');
   assert.equal(empty.available, false);
   assert.match(empty.engines[0].reason, /empty/);
-  assert.deepEqual(empty.engines[1], { engine: 'bash', available: true, reason: '' });
+  assert.deepEqual(empty.engines[1], {
+    engine: 'bash',
+    available: true,
+    reason: '',
+    input: {
+      path: '/empty.csv',
+      workingDirectory: '/workspace',
+      aliases: ['/workspace/input.log'],
+    },
+  });
   for (const info of [
     { size: analysisLimits.inputBytes + 1 },
     { size: 12, versionAvailable: false },
@@ -125,6 +144,8 @@ test('the same CSV supports real SQL and raw-text Bash without broadening format
     { ...sql('SELECT 1'), command: 'cat input.log' },
     { ...bashCsv('cat input.log'), sql: 'SELECT 1' },
     { ...bashCsv('cat input.log'), command: undefined, sql: 'SELECT 1' },
+    { ...bashCsv('cat input.log'), input: { path: '/etc/passwd' } },
+    { ...bashCsv('cat input.log'), workspacePath: '/etc/passwd' },
   ])
     await assert.rejects(guarded.execute(resource, input), { code: 'INVALID_ANALYSIS' });
   assert.equal(snapshots, 0);
@@ -230,12 +251,66 @@ test('Just Bash Console examples use the actual input path for a selected Markdo
   const wrong = await run('head ./README.md');
   assert.equal(wrong.exitCode, 1);
   assert.match(wrong.stderr, /No such file or directory/);
-  for (const example of bashSamples) assert.equal((await run(example.value)).exitCode, 0);
-  const preview = await run(bashPreviewCommand);
+  for (const example of bashSamples('/docs/README.md'))
+    assert.equal((await run(example.value)).exitCode, 0);
+  const preview = await run(bashPreviewCommand('/docs/README.md'));
   assert.equal(preview.stdout, text);
   assert.equal((await run('head -20 input.log')).stdout, text);
-  assert.equal((await run(`head -20 ${bashInputPath}`)).stdout, text);
+  assert.equal((await run(bashPreviewCommand(legacyBashInput.path))).stdout, text);
   assert.equal((await run('cat /workspace/other.md')).exitCode, 1);
+});
+
+test('Bash exposes the selected Workspace path, quotes samples safely and keeps aliases read-only', async () => {
+  const text = 'INFO ready\nERROR retry\n';
+  const a = engine(Buffer.from(text));
+  const nested = '/file-analysis-demo-9de2ebb1/service.log';
+  for (const path of [
+    nested,
+    '/service.log',
+    '/etc/selected.log',
+    "/context/a' $(printf INJECTED) `printf BAD`; file.log",
+    '/context/line\nbreak.log',
+  ]) {
+    const run = (script) => a.execute(resource, { ...command(script), path });
+    const cap = await a.capabilities(resource, path);
+    assert.deepEqual(cap.engines[0].input, {
+      path,
+      workingDirectory: '/workspace',
+      aliases: ['/workspace/input.log'],
+    });
+    assert.equal((await run(`cat ${quoteBashPath(path)}`)).stdout, text);
+    if (path === nested) assert.equal((await run(`cat ${path}`)).stdout, text);
+    for (const example of bashSamples(path)) assert.equal((await run(example.value)).exitCode, 0);
+    assert.equal((await run(bashPreviewCommand(path))).stdout, text);
+    assert.equal((await run('pwd')).stdout, '/workspace\n');
+    assert.equal((await run('cat /workspace/input.log')).stdout, text);
+    assert.equal((await run('cat input.log')).stdout, text);
+    assert.notEqual((await run('cat /context/other.log')).exitCode, 0);
+    assert.notEqual((await run('cat /etc/passwd')).exitCode, 0);
+    for (const target of [path, '/workspace/input.log']) {
+      try {
+        assert.notEqual((await run(`printf changed > ${quoteBashPath(target)}`)).exitCode, 0);
+      } catch (error) {
+        assert.equal(error.status, 422);
+      }
+    }
+    assert.equal((await run(`cat ${quoteBashPath(path)}`)).stdout, text);
+  }
+});
+
+test('Bash alias collisions never shadow the selected file or its parent directories', async () => {
+  const text = 'selected snapshot\n';
+  const a = engine(Buffer.from(text));
+  for (const path of ['/workspace/input.log', '/workspace/input.log/nested.log']) {
+    const cap = await a.capabilities(resource, path);
+    assert.deepEqual(cap.engines[0].input, { path, workingDirectory: '/workspace', aliases: [] });
+    const run = (script) => a.execute(resource, { ...command(script), path });
+    assert.equal((await run(bashPreviewCommand(path))).stdout, text);
+    assert.equal((await run(`cat ${quoteBashPath(path)}`)).stdout, text);
+    if (path === '/workspace/input.log') assert.equal((await run('cat input.log')).stdout, text);
+    else assert.notEqual((await run('cat /workspace/input.log')).exitCode, 0);
+    assert.notEqual((await run('cat /workspace/input.log/other.log')).exitCode, 0);
+  }
 });
 
 test('Just Bash executes actual grep/awk/pipelines without host files, network, credentials or writes', async () => {
@@ -475,7 +550,7 @@ test('Workspace analysis checks actions, resources, workspace, expiration and re
       resourceId: 'fs_shared',
       path: '/orders.csv',
       engine: 'bash',
-      command: 'cat /workspace/input.log',
+      command: 'cat /orders.csv',
     },
   ];
   for (const [scopes, ids] of [

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   analysisError,
+  analysisBashInput,
   analysisFormat,
   analysisLimits,
   validateAnalysis,
@@ -88,7 +89,12 @@ export function createFileAnalysis({
           (info.size === 0 && engine === 'duckdb'
             ? 'This file is empty. Add tabular data before running a query.'
             : '');
-        return { engine, available: !engineReason, reason: engineReason };
+        return {
+          engine,
+          available: !engineReason,
+          reason: engineReason,
+          ...(engine === 'bash' ? { input: analysisBashInput(path) } : {}),
+        };
       });
       const preferred = engines.find((option) => option.engine === format?.defaultEngine);
       return {
@@ -143,7 +149,15 @@ export function createFileAnalysis({
         const sourcePath = join(directory, 'input.' + format);
         await writeFile(sourcePath, source.bytes, { mode: 0o600 });
         const result = await runner(
-          { engine: input.engine, format, script, sourcePath, directory, limits },
+          {
+            engine: input.engine,
+            format,
+            script,
+            sourcePath,
+            workspacePath: input.path,
+            directory,
+            limits,
+          },
           signal,
         );
         if (signal.aborted) throw abortError(signal);
