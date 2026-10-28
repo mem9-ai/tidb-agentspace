@@ -89,6 +89,8 @@ the resource header, browser and item adapters. Follow the
 for Run query, samples/limits, expansion, row actions and desktop/mobile collapse behavior.
 Its [compact toolbar correction](docs/resource-workspace-verification.md#compact-editor-toolbar)
 keeps the tool identity/context understated and consolidates auxiliary controls into Editor tools.
+The [compact resource header](docs/resource-workspace-verification.md#compact-resource-header)
+puts selection, one status badge and actions in a shared row, with supplemental metadata in Details.
 Database table rows additionally follow [inline columns](docs/database-workspace-verification.md#inline-table-columns):
 disclose schema in the browser, keep SQL/results primary, and prepare table queries explicitly.
 

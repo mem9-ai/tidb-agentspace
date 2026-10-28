@@ -12,11 +12,7 @@ import './features/files/file-preview.css';
 import { FileBrowserPanel } from './features/files/FileBrowserPanel';
 import { FileBrowserList } from './features/files/FileBrowserList';
 import { ResourceKindIcon as KindIcon } from './ui/ResourceKindIcon';
-import {
-  ResourceConnectButton,
-  ResourceWorkspaceBar,
-  ResourceWorkspaceHeader,
-} from './ui/ResourceWorkspaceHeader';
+import { FileWorkspaceHeader } from './features/files/FileWorkspaceHeader';
 import {
   useRemoteFiles,
   downloadRemoteFile,
@@ -76,7 +72,6 @@ import {
   IconShieldTick as ShieldCheck,
   IconStars01 as Sparkles,
   IconTerminal as Terminal,
-  IconUpload01 as Upload,
   IconGitBranch01 as Workflow,
   IconZap as Zap,
 } from '@tidbcloud/uikit/icons';
@@ -1132,26 +1127,24 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
   }
   return (
     <>
-      <ResourceWorkspaceHeader
-        title="File System"
-        description="Browse files, preview content and analyze data."
-        actions={
-          <>
-            <ResourceConnectButton
-              onClick={() => {
-                const r = systems.find((r) => r.id === system);
-                if (r) onConnect(r);
-              }}
-            />
-            <Button
-              variant="filled"
-              leftSection={React.createElement(Upload, { size: 18 })}
-              onClick={() => upload.current?.click()}
-              disabled={busy || analysisBusy || !system}
-            >
-              Upload file
-            </Button>
-          </>
+      <FileWorkspaceHeader
+        resource={selectedSystem}
+        resources={systems}
+        busy={busy || analysisBusy}
+        fileCount={files.filter((file) => file.type === 'file').length}
+        sizeLabel={`${bytes(files.reduce((total, file) => total + fileSize(file), 0))}${remote ? ' in folder' : ' / 2 GiB'}`}
+        onConnect={() => {
+          if (selectedSystem) onConnect(selectedSystem);
+        }}
+        onUpload={() => upload.current?.click()}
+        onSelect={(nextSystem) =>
+          requestPreviewChange(() => {
+            closePreview();
+            setSystem(nextSystem);
+            setPath('/');
+            setSearch('');
+            setEditing(null);
+          })
         }
       />
       <input
@@ -1164,32 +1157,6 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           e.target.value = '';
         }}
       />
-      <ResourceWorkspaceBar
-        resource={selectedSystem}
-        resources={systems}
-        label="File system"
-        description={selectedSystem ? region(selectedSystem.region) : 'No file system'}
-        live={remote}
-        mode={remote ? 'Live · Anonymous trial' : 'Local demo'}
-        disabled={busy || analysisBusy}
-        onSelect={(nextSystem) =>
-          requestPreviewChange(() => {
-            closePreview();
-            setSystem(nextSystem);
-            setPath('/');
-            setSearch('');
-            setEditing(null);
-          })
-        }
-      >
-        <span>
-          {files.filter((file) => file.type === 'file').length} files{remote ? ' in folder' : ''}
-        </span>
-        <span>
-          {bytes(files.reduce((total, file) => total + fileSize(file), 0))}
-          {remote ? ' in folder' : ' / 2 GiB'}
-        </span>
-      </ResourceWorkspaceBar>
       {(listing.error || selectedSystem?.connectionError) && (
         <Alert color="red" mb={20}>
           {listing.error || selectedSystem?.connectionError}

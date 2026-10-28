@@ -7,13 +7,61 @@
 - Components: TiUI 2.9.1 Paper, NativeSelect, NavLink, Typography, Badge, Button, ActionIcon,
   Menu and Popover; existing official SQL Editor 0.0.6 and the shared Workspace theme.
 
+## Compact resource header
+
+Owner correction [GH-61](https://github.com/siddontang/tidb.ai/issues/61), reproduced on
+`9ba5f0d6871841a52f9b996ce71eebde9e149c0a`: the section title/description, large resource
+icon, selector caption and duplicate Live/active indicators occupied two large rows.
+The shared header now has one selector/status/actions row. NativeSelect includes a small
+official icon and the database protocol; TiUI VisuallyHidden preserves the semantic H1.
+Details uses one shared Popover for provider/region/expiry context and file counts/size.
+Abnormal states and connection-error alerts remain visible. The File System header is
+extracted into its feature module while its existing selection/draft callbacks stay in place.
+
+Verified in the local live-resource Console:
+
+- At 1280×800 Dark and 1280×900 Light, both headers are 48px tall, start at y=100 and
+  place the work area at y=164. The selector remains 16px/48px; browser toggles and the
+  labeled All databases icon retain 44px targets. No document-wide overflow.
+- At 390×844, both themes retain the same controls in two rows (108px total). The mode/state
+  badge does not shrink; long native select values remain available in the option list/title.
+  File and table collapse/expand retain their existing behavior. Details fits the viewport.
+- DuckDB → PostgreSQL updates the exact route, table list and empty query results together.
+  The All databases action returns to the resource list. A real read-only DuckDB
+  `SELECT 1 AS connected;` returned 1 in 5,662ms; selection was disabled while running.
+- Database Details retains DuckDB Experimental, PostgreSQL compatibility and MySQL temporary
+  expiry guidance. Escape closes the popover and returns focus to Details.
+- File Details shows the selected resource, region, trial mode, status and current folder
+  totals (4 files / 619 B for the observed folder). A transient file-service read failure
+  remained visible inline and recovered after Retry.
+- An unsaved README draft blocked switching File Systems. Keep editing retained the draft
+  through the mobile transition; Discard changes switched the resource. The original file
+  preview was read again successfully. No file save, upload or database write was performed.
+
+Existing non-active resource branches were reviewed; no live resource was forced into an
+expired/provisioning state for this presentation check. `npm run check` passes (126 tests,
+formatting/lint, generated contract, types and both builds); build warnings remain the existing
+large-chunk and transitive `google-libphonenumber` eval notices. The PR carries the evaluated
+commit and remote CI result. No API, provider, authorization or persisted-data contract changes.
+
+Screenshots:
+
+- [Database, Dark 1280×800](screenshots/compact-resource-header/database-dark-1280x800.png)
+- [Database, Light 1280×900](screenshots/compact-resource-header/database-light-1280x900.png)
+- [File System, Dark 1280×800](screenshots/compact-resource-header/files-dark-1280x800.png)
+- [File System, Light 1280×900](screenshots/compact-resource-header/files-light-1280x900.png)
+- [Database, Dark 390×844](screenshots/compact-resource-header/database-dark-390x844.png)
+- [File System, Light 390×844](screenshots/compact-resource-header/files-light-390x844.png)
+
 ## Layout and state ownership
 
-Both pages now follow section heading/actions → selected resource/context → browser and
-working panel. `ResourceWorkspaceHeader` and `ResourceWorkspaceBar` own the common top
-composition. The database selector is above both Tables and SQL Editor, rather than inside
-the editor while controlling a sibling table navigator. Database names remain visible in
-that selector; resource type/provider and live/demo mode remain visible underneath/beside it.
+Both pages follow resource selection/actions → browser and working panel.
+`ResourceWorkspaceHeader` and `ResourceWorkspaceBar` own the common top composition.
+Following [GH-61](https://github.com/siddontang/tidb.ai/issues/61), this is one compact toolbar
+with a visually hidden semantic page heading. Database names and protocol remain in the
+selector, alongside one live/demo/state badge. Supplemental provider/region/expiry information
+and File System counts/size are in shared Details. The database selector is above both Tables
+and SQL Editor, rather than inside the editor while controlling a sibling table navigator.
 
 The shared desktop browser is 320px wide, collapsing to 56px. `WorkspaceBrowserItem` uses
 TiUI NavLink for the common icon/name/secondary-information/selection layout, with separate
@@ -38,7 +86,8 @@ shown alongside a narrow selected-file panel. Wide query/preview tables scroll i
 
 ## Observed verification
 
-These observations and screenshots describe the GH-48 candidate before the GH-50 correction.
+These historical observations and screenshots describe the GH-48 candidate before the GH-50
+correction and the [compact resource header](#compact-resource-header).
 
 | Case                       | Result                                                                                                                                                                                                                                                                                                              |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

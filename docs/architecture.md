@@ -74,7 +74,7 @@ database. Legacy `#sql` links open the database list for explicit selection. Kee
 target, displayed database, and URL consistent when adding future database tools.
 
 Database and File System workspaces share the same hierarchy (owner correction, 2026-10-28):
-page heading/actions, a resource selector with provider/region/status context, then a browser
+one compact resource selector/status/actions toolbar, then a browser
 beside the working panel. The database selector is above both Tables and SQL Editor; it must
 not live inside the editor it controls. File System uses the same layout even before selecting
 a file, with an explicit unselected-file panel on desktop. Tables and Files share item chrome,

@@ -1,9 +1,8 @@
 import type { ReactNode } from 'react';
-import { Badge, Button, NativeSelect, Text } from '@tidbcloud/uikit';
-import { IconArrowUpRight } from '@tidbcloud/uikit/icons';
+import { Badge, Button, NativeSelect, Popover, Stack, VisuallyHidden } from '@tidbcloud/uikit';
+import { IconArrowUpRight, IconDatabase01, IconFolder } from '@tidbcloud/uikit/icons';
 import type { Resource } from '../api/client';
 import { Heading } from './WorkspaceHeading';
-import { ResourceKindIcon } from './ResourceKindIcon';
 import './resource-workspace.css';
 
 export function ResourceConnectButton({
@@ -22,21 +21,37 @@ export function ResourceConnectButton({
 
 export function ResourceWorkspaceHeader({
   title,
-  description,
+  children,
   actions,
 }: {
   title: string;
-  description: string;
+  children: ReactNode;
   actions: ReactNode;
 }) {
   return (
     <header className="resource-workspace-heading">
-      <div>
+      <VisuallyHidden>
         <Heading level={1}>{title}</Heading>
-        <Text c="carbon.7">{description}</Text>
-      </div>
+      </VisuallyHidden>
+      {children}
       <div className="resource-workspace-actions">{actions}</div>
     </header>
+  );
+}
+
+export function ResourceDetails({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Popover width={340} position="bottom-end" withinPortal trapFocus returnFocus>
+      <Popover.Target>
+        <Button variant="subtle">Details</Button>
+      </Popover.Target>
+      <Popover.Dropdown maw="calc(100vw - 32px)">
+        <Stack gap="sm">
+          <Heading level={2}>{title}</Heading>
+          {children}
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
   );
 }
 
@@ -44,58 +59,52 @@ export function ResourceWorkspaceBar({
   resource,
   resources,
   label,
-  description,
   mode,
   live,
   disabled,
   onSelect,
-  children,
 }: {
   resource?: Resource;
   resources: Resource[];
   label: string;
-  description: ReactNode;
   mode: string;
   live: boolean;
   disabled: boolean;
   onSelect: (id: string) => void;
-  children?: ReactNode;
 }) {
+  const Icon = resource?.kind === 'filesystem' || !resource ? IconFolder : IconDatabase01;
+  const kinds = { mysql: 'MySQL', postgresql: 'PostgreSQL', duckdb: 'DuckDB', filesystem: '' };
+  const active = resource?.status === 'active';
   return (
     <section className="resource-workspace-bar" aria-label={`${label} context`}>
-      <div className="resource-workspace-selection">
-        <ResourceKindIcon kind={resource?.kind || 'filesystem'} />
-        <div className="resource-workspace-select">
-          <NativeSelect
-            aria-label={label}
-            title={resource?.name}
-            value={resource?.id || ''}
-            disabled={disabled || !resources.length}
-            onChange={(event) => onSelect(event.currentTarget.value)}
-          >
-            {!resource && (
-              <option value="">
-                {resources.length ? 'Choose a resource' : 'No resources available'}
-              </option>
-            )}
-            {resources.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </NativeSelect>
-          <Text size="sm" c="carbon.7">
-            {description}
-          </Text>
-        </div>
-        <Badge color={live ? 'green' : 'carbon'}>{mode}</Badge>
+      <div className="resource-workspace-select">
+        <NativeSelect
+          aria-label={label}
+          title={resource?.name}
+          value={resource?.id || ''}
+          disabled={disabled || !resources.length}
+          leftSection={<Icon size={18} aria-hidden />}
+          onChange={(event) => onSelect(event.currentTarget.value)}
+        >
+          {!resource && (
+            <option value="">
+              {resources.length ? 'Choose a resource' : 'No resources available'}
+            </option>
+          )}
+          {resources.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+              {kinds[item.kind] ? ` · ${kinds[item.kind]}` : ''}
+            </option>
+          ))}
+        </NativeSelect>
       </div>
-      <div className="resource-workspace-meta">
-        {children}
-        <Badge color={resource?.status === 'active' ? 'green' : 'yellow'} variant="dot">
-          {resource?.status || 'Unavailable'}
-        </Badge>
-      </div>
+      <Badge
+        className="resource-workspace-status"
+        color={active ? (live ? 'green' : 'carbon') : 'yellow'}
+      >
+        {resource ? (active ? mode : `${mode} · ${resource.status}`) : 'Unavailable'}
+      </Badge>
     </section>
   );
 }

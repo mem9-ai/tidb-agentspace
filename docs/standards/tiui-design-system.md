@@ -170,10 +170,11 @@ verified, and record that as a remaining gap.
   whole-browser collapse. See [verification](../database-workspace-verification.md#inline-table-columns).
   Revisit for multiple open tables, schema trees or durable metadata caching.
 - **Database work area density (owner correction 2026-10-28):** prioritize the table list,
-  editor and first query rows within a typical desktop viewport. Keep the page heading compact;
-  show database name, protocol/provider and brief expiry in the shared resource bar above both
-  browser and editor. Move full region/expiry guidance
-  into TiUI Details and SQL budgets into Limits. Keep live-write/demo labels visible and
+  editor and first query rows within a typical desktop viewport. Following GH-61, use one
+  compact resource toolbar above both browser and editor: name/protocol in the selector,
+  one live/demo/state badge and resource actions. Keep the semantic page heading visually
+  hidden; the navigation already identifies the section. Put provider, region and expiry
+  guidance in shared TiUI Details and SQL budgets in Limits. Keep live-write/demo labels visible and
   show expired/provisioning/connection errors inline. Collapse optional sample queries into
   a menu; let users expand the editor without losing SQL or results. Reduce repeated chrome
   and vertical whitespace, not font size or primary action targets. Use supported component
@@ -196,8 +197,12 @@ verified, and record that as a remaining gap.
   Revisit for resizable navigation or multiple database documents.
 - **Resource workspace hierarchy (owner correction 2026-10-28):** unify Database and File
   System at the page level, not only their sidebars. Use `ResourceWorkspaceHeader` and its
-  `ResourceWorkspaceBar` for section heading/actions and the selected resource above the
-  entire work area. Tables and Files are children of that resource, beside SQL or file
+  `ResourceWorkspaceBar` for one compact selector/status/actions toolbar above the entire
+  work area, with an accessible section heading. Avoid a second large title, description,
+  resource-icon block or duplicate active indicator. `ResourceDetails` holds supplemental
+  provider/region/expiry information and File System counts/size; unusual status and connection
+  errors remain visible. Reflow the same controls on narrow screens without reducing their
+  text or target sizes. Tables and Files are children of that resource, beside SQL or file
   preview/edit/analysis. Do not put the database selector inside SQL Editor while Tables sits
   outside. Use the shared 320px/56px browser layout, heading/metadata spacing and
   `WorkspaceBrowserItem` (TiUI NavLink) for icons, names, secondary text, selection and row
