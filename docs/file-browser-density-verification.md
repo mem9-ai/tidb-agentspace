@@ -1,7 +1,8 @@
 # File browser density and collapse verification
 
 - Owner correction and reproduction: [GH-43](https://github.com/siddontang/tidb.ai/issues/43).
-- Baseline: `c1be992fd8ee417d2a470af939ac855c6601c5af`.
+- Reproduction baseline: `c1be992fd8ee417d2a470af939ac855c6601c5af`.
+- Integrated source baseline: `ab65ddfdf64bff92de058b67bb5d7b67f511e8af`.
 - Design reference: [TiUI standard](standards/tiui-design-system.md), installed UIKit 2.9.1.
 - Implementation: `src/features/files/FileBrowserPanel.tsx`, existing file workspace state and
   `file-preview.css`. Use real TiUI Menu, ActionIcon, Anchor, TextInput and Paper; existing
@@ -53,7 +54,7 @@ its ordinary focus behavior. This avoids a removed menu item becoming the modal'
 - Final-code read-only CSV count completed while collapsed (row_count 4); keyboard expansion
   retained the edited SELECT, filter value `orders` and results. Desktop screenshots capture
   the plus menu and collapsed rail; mobile screenshots capture both themes. Screenshots are
-  local review artifacts rather than committed customer data.
+  sanitized demo artifacts linked below; no credentials or private account details are shown.
 
 ## Scope and remaining behavior
 
@@ -63,3 +64,12 @@ the mounted file workspace; it is not persisted across reloads. Narrow screens c
 existing one-panel navigation. Long analysis editors/results still use page scrolling. Revisit
 with resizable panes or multiple editor documents. CI validates application health, not visual
 fidelity; the browser observations above provide the UI evidence.
+
+## Review screenshots
+
+Captured from the integrated code at 1280×900 with a generic Developer profile. Additional
+Light/Dark 1280×800 and 390×844 checks are described above.
+
+![Expanded file browser with the plus menu](screenshots/file-browser/desktop-dark-expanded.jpg)
+
+![Collapsed file browser beside the retained SQL editor](screenshots/file-browser/desktop-dark-collapsed.jpg)
