@@ -148,13 +148,17 @@ verified, and record that as a remaining gap.
   Follow the [information architecture](../architecture.md#console-information-architecture)
   when adding tools; do not add a workspace-level SQL Editor entry. Verify valid, unavailable,
   and empty-resource paths; keep the resource context when extending the editor.
-- **Database browsing (owner request 2026-10-28):** keep Tables and SQL Editor inside the
-  selected database. Table links preserve resource and exact table identity across history
-  and reload. Use TiUI navigation, Tabs and Table for columns, indexes and bounded data;
-  keep wide tables scrollable within their panels. Opening Query table prefills a SELECT
-  without executing it. Keep loading/empty/denied/expired/error states visible and clear old
-  results when selection changes. See [ADR 0007](../decisions/0007-database-browser.md) and
-  [verification](../database-browser-verification.md); revisit for pagination or multiple schemas.
+- **Database workspace (owner correction 2026-10-28):** keep the table navigator and SQL
+  Editor on one database page. On desktop the table list stays beside the editor; place query
+  results and table structure/data inspection below the editor. Selecting or refreshing a
+  table must not unmount the editor, clear query results or replace edited SQL. Generating a
+  table SELECT is explicit and requires a replace/keep choice for an edited draft; never run
+  it automatically. Preserve existing table/editor URLs and exact resource/table identities.
+  Reflow panels on narrow screens without shrinking text, and keep wide tables internally
+  scrollable. Use TiUI navigation, Tabs, Table and shared layout primitives. Check state
+  retention, keyboard behavior, both themes and sizes; see [ADR 0007](../decisions/0007-database-browser.md)
+  and [unified workspace verification](../database-workspace-verification.md). Revisit for
+  multiple query documents, multiple schemas or durable draft persistence.
 - **File reading (accepted and implemented, owner correction 2026-10-27):** open files in
   an inline right-hand panel, keeping the file list usable on desktop. Do not use a centered
   modal or a backdrop for routine reading. On narrow screens show the reading panel with a

@@ -29,8 +29,13 @@ type DatabaseResource = {
 };
 const kindLabel = { mysql: 'MySQL', duckdb: 'DuckDB', filesystem: 'File System' };
 type Props = {
-  initialSql?: string;
+  sql: string;
+  onSqlChange: (sql: string) => void;
+  onRunStart: () => void;
+  onRunningChange: (running: boolean) => void;
+  renderResults: (results: React.ReactNode) => React.ReactNode;
   database: DatabaseResource;
+  readBusy: boolean;
   databases: DatabaseResource[];
   execute: (sql: string) => Promise<QueryResult>;
   onComplete: () => Promise<void>;
@@ -38,8 +43,13 @@ type Props = {
   onExport: (result: QueryResult) => void;
 };
 export function SqlQueryPanel({
-  initialSql,
+  sql,
+  onSqlChange: setSql,
+  onRunStart,
+  onRunningChange,
+  renderResults,
   database,
+  readBusy,
   databases,
   execute,
   onComplete,
@@ -49,18 +59,17 @@ export function SqlQueryPanel({
   const dbs = databases;
   const resourceId = database.id;
   const live = ['tidb-cloud-zero', 'duckdb-drive9'].includes(database.provider || '');
-  const [sql, setSql] = useState(
-      initialSql ?? (live ? 'SELECT 1 AS connected;' : 'SELECT * FROM agent_events LIMIT 10;'),
-    ),
-    [busy, setBusy] = useState(false),
+  const [busy, setBusy] = useState(false),
     [result, setResult] = useState<QueryResult | null>(null),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
   const running = useRef(false);
   async function run() {
-    if (running.current || database.status !== 'active') return;
+    if (running.current || readBusy || database.status !== 'active') return;
     running.current = true;
     setBusy(true);
+    onRunningChange(true);
+    onRunStart();
     setError('');
     setNotice('');
     setResult(null);
@@ -77,16 +86,83 @@ export function SqlQueryPanel({
     } finally {
       running.current = false;
       setBusy(false);
+      onRunningChange(false);
     }
   }
+  const results = (
+    <Paper className="panel result-panel" withBorder>
+      <div className="panel-header">
+        <Heading level={2}>
+          Results{' '}
+          {result && (
+            <Badge color="green">
+              {result.columns.length
+                ? `${result.rowCount} rows`
+                : `${result.affectedRows ?? 0} affected`}
+            </Badge>
+          )}
+        </Heading>
+        {result && result.columns.length > 0 && (
+          <Button
+            leftSection={React.createElement(ArrowDownToLine, { size: 18 })}
+            onClick={() => onExport(result)}
+          >
+            Export JSON
+          </Button>
+        )}
+      </div>
+      {error ? (
+        <Alert className="inline-error" color="red">
+          {error}
+        </Alert>
+      ) : result ? (
+        <div className="table-scroll">
+          <Table>
+            <Table.Thead>
+              <Table.Tr>
+                {result.columns.map((c: string) => (
+                  <Table.Th key={c}>{c}</Table.Th>
+                ))}
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {result.rows.map((r: Record<string, unknown>, i: number) => (
+                <Table.Tr key={i}>
+                  {result.columns.map((c: string) => (
+                    <Table.Td key={c}>
+                      <code>
+                        {r[c] === null
+                          ? 'NULL'
+                          : typeof r[c] === 'object'
+                            ? JSON.stringify(r[c])
+                            : String(r[c])}
+                      </code>
+                    </Table.Td>
+                  ))}
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+          <div className="result-footnote">
+            <CheckCircle2 size={13} />{' '}
+            {result.mode === 'live'
+              ? `Statement completed in ${result.durationMs} ms.${result.columns.length ? '' : ` ${result.affectedRows ?? 0} rows affected.`}`
+              : 'Demo query completed. Results are sample data.'}
+          </div>
+        </div>
+      ) : (
+        <div className="empty-state">
+          <Text>Run a query to see its results here.</Text>
+        </div>
+      )}
+    </Paper>
+  );
   return (
     <>
       <Alert className="notice" color="peacock" icon={<Sparkles size={17} />}>
         <span>
-          {database.kind === 'duckdb' ? (
-            'Queries run in your persistent DuckDB database. Run one statement at a time; writes change real data. Results are limited to 1,000 rows / 1 MiB, with a 15-second timeout.'
-          ) : live ? (
-            'Queries run on your temporary TiDB Cloud Zero database. Run one statement at a time; writes change real data. Results are limited to 1,000 rows / 1 MiB, with a 15-second timeout.'
+          {live ? (
+            'Live SQL · Writes change real data. One statement at a time · 1,000 rows / 1 MiB · 15-second timeout.'
           ) : (
             <>
               Local demo. Supports <code>SELECT 1</code> and{' '}
@@ -119,7 +195,7 @@ export function SqlQueryPanel({
             variant="filled"
             loading={busy}
             leftSection={<Play size={18} />}
-            disabled={busy || !resourceId || database.status !== 'active'}
+            disabled={busy || readBusy || !resourceId || database.status !== 'active'}
             onClick={run}
           >
             {busy ? 'Running…' : 'Run query'}
@@ -167,72 +243,7 @@ export function SqlQueryPanel({
         </UnstyledButton>
       </div>
       {notice && <Alert color="yellow">{notice}</Alert>}
-      <Paper className="panel result-panel" withBorder>
-        <div className="panel-header">
-          <Heading level={2}>
-            Results{' '}
-            {result && (
-              <Badge color="green">
-                {result.columns.length
-                  ? `${result.rowCount} rows`
-                  : `${result.affectedRows ?? 0} affected`}
-              </Badge>
-            )}
-          </Heading>
-          {result && result.columns.length > 0 && (
-            <Button
-              leftSection={React.createElement(ArrowDownToLine, { size: 18 })}
-              onClick={() => onExport(result)}
-            >
-              Export JSON
-            </Button>
-          )}
-        </div>
-        {error ? (
-          <Alert className="inline-error" color="red">
-            {error}
-          </Alert>
-        ) : result ? (
-          <div className="table-scroll">
-            <Table>
-              <Table.Thead>
-                <Table.Tr>
-                  {result.columns.map((c: string) => (
-                    <Table.Th key={c}>{c}</Table.Th>
-                  ))}
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {result.rows.map((r: Record<string, unknown>, i: number) => (
-                  <Table.Tr key={i}>
-                    {result.columns.map((c: string) => (
-                      <Table.Td key={c}>
-                        <code>
-                          {r[c] === null
-                            ? 'NULL'
-                            : typeof r[c] === 'object'
-                              ? JSON.stringify(r[c])
-                              : String(r[c])}
-                        </code>
-                      </Table.Td>
-                    ))}
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-            <div className="result-footnote">
-              <CheckCircle2 size={13} />{' '}
-              {result.mode === 'live'
-                ? `Statement completed in ${result.durationMs} ms.${result.columns.length ? '' : ` ${result.affectedRows ?? 0} rows affected.`}`
-                : 'Demo query completed. Results are sample data.'}
-            </div>
-          </div>
-        ) : (
-          <div className="empty-state">
-            <Text>Run a query to see its results here.</Text>
-          </div>
-        )}
-      </Paper>
+      {renderResults(results)}
     </>
   );
 }

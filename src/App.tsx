@@ -80,16 +80,10 @@ import {
 import type { IconProps } from '@tidbcloud/uikit/icons';
 import { ResourceAccessPicker } from './features/keys/ResourceAccessPicker';
 import { WorkspaceLayout } from './ui/WorkspaceLayout';
-import { DatabaseBrowser } from './features/databases/DatabaseBrowser';
-import {
-  databaseEditorHash,
-  databaseTablesHash,
-  tableSelectSql,
-  parseWorkspaceRoute,
-} from './features/navigation/workspace-route';
+import { DatabaseWorkspace } from './features/databases/DatabaseWorkspace';
+import { databaseEditorHash, parseWorkspaceRoute } from './features/navigation/workspace-route';
 import type { Route, WorkspaceRoute } from './features/navigation/workspace-route';
 
-import { SqlQueryPanel } from './features/sql/SqlQueryPanel';
 const FilePreviewPanel = lazy(() => import('./features/files/FilePreviewPanel'));
 type WorkspaceIcon = React.ComponentType<IconProps>;
 
@@ -801,7 +795,7 @@ function Databases({ routeLocation, ...shared }: Shared & { routeLocation: Works
                     <div className="table-resource">
                       <KindIcon small kind={r.kind} />
                       <div>
-                        <a className="text-link database-name" href={databaseTablesHash(r.id)}>
+                        <a className="text-link database-name" href={databaseEditorHash(r.id)}>
                           {r.name}
                         </a>
                         <small>{r.id}</small>
@@ -895,7 +889,7 @@ function DatabaseDetail({
   routeLocation,
 }: Shared & { database: Resource; routeLocation: WorkspaceRoute }) {
   return (
-    <>
+    <section className="database-page">
       <a className="text-link database-back" href="#databases">
         <ArrowLeft size={16} /> All databases
       </a>
@@ -910,7 +904,7 @@ function DatabaseDetail({
         }
       />
       {['tidb-cloud-zero', 'duckdb-drive9'].includes(database.provider || '') && (
-        <Alert color={database.status === 'expired' ? 'yellow' : 'peacock'}>
+        <Alert mb={24} color={database.status === 'expired' ? 'yellow' : 'peacock'}>
           {database.kind === 'duckdb' && <>Persistent DuckDB · Experimental. </>}
           {database.expiresAt && (
             <>
@@ -935,46 +929,18 @@ function DatabaseDetail({
           )}
         </Alert>
       )}
-      <ChoiceTabs
-        value={routeLocation.databaseView === 'tables' ? 'Tables' : 'SQL editor'}
-        onChange={(view) => {
-          location.hash =
-            view === 'Tables'
-              ? databaseTablesHash(database.id, routeLocation.tableName)
-              : databaseEditorHash(database.id, routeLocation.tableName);
+      <DatabaseWorkspace
+        database={database}
+        databases={data.resources.filter((resource) => resource.kind !== 'filesystem')}
+        routeLocation={routeLocation}
+        refresh={refresh}
+        onSelect={openDatabaseEditor}
+        onExport={(result) => {
+          download('query-results.json', JSON.stringify(result.rows, null, 2), 'application/json');
+          notify('Results exported');
         }}
-        options={['Tables', 'SQL editor']}
-      >
-        {routeLocation.databaseView === 'tables' ? (
-          <DatabaseBrowser database={database} tableName={routeLocation.tableName} />
-        ) : (
-          <SqlQueryPanel
-            key={`${database.id}:${routeLocation.tableName ?? ''}`}
-            initialSql={
-              routeLocation.tableName
-                ? tableSelectSql(
-                    routeLocation.tableName,
-                    database.kind === 'duckdb' ? 'duckdb' : 'mysql',
-                  )
-                : undefined
-            }
-            database={database}
-            databases={data.resources.filter((r) => r.kind !== 'filesystem')}
-            execute={(sql) => workspaceApi.query({ resourceId: database.id, sql })}
-            onComplete={refresh}
-            onSelect={openDatabaseEditor}
-            onExport={(result) => {
-              download(
-                'query-results.json',
-                JSON.stringify(result.rows, null, 2),
-                'application/json',
-              );
-              notify('Results exported');
-            }}
-          />
-        )}
-      </ChoiceTabs>
-    </>
+      />
+    </section>
   );
 }
 

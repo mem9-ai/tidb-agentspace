@@ -54,7 +54,7 @@ note. An intent contribution can start with a user problem and a concrete exampl
 | Product runtime     | Independently runnable Console and API in a loopback-only prototype. MySQL, DuckDB and Files support explicit live-provider modes; labeled local demo behavior also exists. PostgreSQL is disabled. Read the README for current availability, limits, and configuration. |
 | Public API          | [Generated OpenAPI](public/openapi.json) and [client types](src/api/schema.d.ts) describe the implemented HTTP surface. The [contract generator](server/generate-openapi.mjs) is the editable source.                                                                    |
 | Product target      | Persistent Starter/PG, production identity, telemetry, billing, SDK/CLI/MCP, and public delivery include proposed work. Use the architecture, README, and accepted decisions to assess each capability.                                                                  |
-| Contribution system | Native GitHub forms, labels, documents, and PR/CI procedures support manual coordination. Autonomous dispatch, isolated runs, and independent specification evaluation remain proposed.                                                                                  |
+| Contribution system | GitHub forms, labels, versioned specs, local checks and PR/CI procedures support the current local agent. `/agent` comments are handoff requests; execution stays in the already running session.                                                                        |
 | Delivery            | [CI/CD policy](docs/ci-cd.md) distinguishes accepted specs, passing checks, merged source, packaged artifacts, and verified deployments.                                                                                                                                 |
 
 Distinguish **verified implementation**, **accepted project rule**, and **proposal**. Check
@@ -145,8 +145,8 @@ Report the checks and results that actually ran.
    and follow current merge policy. Record evidence before completing the promised endpoint.
 
 The [GitHub workflow](docs/standards/github-contribution-workflow.md) owns roles, labels,
-handoffs, and Issue closure. Its `/agent` commands describe a proposed controller and do not
-currently dispatch work. Deployment needs its own configured target and authority under CI/CD
+handoffs, and Issue closure. Its `/agent` comments guide the current local agent; they do not
+start a model or require a new model key. Deployment needs its own configured target and authority under CI/CD
 policy.
 
 ## Confirm that you are ready to contribute

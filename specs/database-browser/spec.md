@@ -68,3 +68,22 @@ focused PR under the owner's existing early-prototype authorization, then fast-f
 restart the local preview. No public deployment. Changes are additive; rollback code without
 modifying databases or private bindings. Completion evidence belongs in
 `docs/database-browser-verification.md`. No unresolved product decisions block this scope.
+
+## Unified workspace amendment — owner correction, 2026-10-28
+
+The table navigator and SQL Editor share one page. On desktop, the table list stays beside
+the editor; Query results and Table details are panels underneath it. On narrow viewports
+the same controls reflow vertically. Table details retain Columns, Indexes and Data.
+
+- DB-08: Both legacy `/tables` and `/sql` routes render the unified workspace. Choosing a
+  table, reading its metadata/data or refreshing the list never unmounts the editor.
+- DB-09: Typed SQL and previous query results survive table selection and inspection.
+  Query table prepares an editable SELECT; if the draft was edited, Keep my query preserves
+  it and Replace query changes it. Neither action executes SQL automatically.
+- DB-10: Explicit Run (including Cmd/Ctrl+Enter) reveals Query results. Resource changes
+  start a fresh editor for that database; existing action/resource permissions are unchanged.
+
+This is a bounded UI correction under the existing owner-authorized iteration. No API,
+provider, native credential, query budget or grant changes. The previous split-view browser
+evidence remains historical; [new evidence](../../docs/database-workspace-verification.md)
+verifies this amendment, in addition to the existing API/route regression suite.

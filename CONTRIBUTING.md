@@ -64,8 +64,8 @@ Official references: [Codex instructions](https://developers.openai.com/codex/gu
 Contributions can start with a user problem, detailed specification, acceptance case, code,
 or a harness improvement. An intent/specification contribution does not require implementing
 the feature. Read [intent driven contribution](docs/standards/intent-driven-development.md)
-for API-first and agent-experience principles, specification acceptance, and the proposed
-delivery harness. Use the [feature specification template](docs/templates/feature-spec.md)
+for API-first, agent-experience and local-agent execution principles, specification acceptance,
+and the repository's quality gates. Use the [feature specification template](docs/templates/feature-spec.md)
 for new capabilities or consequential changes; a small fix can use a reproduction and
 regression test. Existing review and merge authority remains governed by the CI/CD policy.
 
@@ -75,8 +75,10 @@ Start on GitHub with an [intent](https://github.com/siddontang/tidb.ai/issues/ne
 Follow the [GitHub contribution workflow](docs/standards/github-contribution-workflow.md):
 refine the intent, merge a specification PR, implement against that revision in a separate
 PR, evaluate the candidate, and complete the agreed delivery endpoint. A design PR references
-the parent Issue without closing it. Native templates and manual labels are available;
-agent dispatch commands and the automated controller remain proposed.
+the parent Issue without closing it. `/agent design` and `/agent implement` are handoff
+requests for the already running local agent. Direct that session to the relevant Issue;
+commenting does not start a model. Ordinary contribution uses the existing local tools and CI
+without a new model key or external agent dispatcher.
 
 1. Read the task, `AGENTS.md`, relevant code/tests, and applicable standards/architecture notes.
 2. Inspect the working tree. Use a focused branch or checkout and preserve unrelated edits.

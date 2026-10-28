@@ -19,7 +19,7 @@ used SHA-256 `6b1737dd598ea07a875a6ddb75ad22be3ddc4a02bd601066bd1fbaaca97a8e68`.
 | DUCK-07     | Full shared gate; extracted API archive loads native DuckDB and executes SELECT independently                                                                                                         | Native dependency closure included; no cloud credentials in CI or secrets/artifacts in Git     |
 | DUCK-08     | TiUI 2.9.1, SQL Editor 0.0.6, generated client; creation/Key choices/database SQL and tables checked against real service                                                                             | Light/Dark desktop 1280×900 and narrow 390×844 evidence below                                  |
 
-`npm ci` completed with no audit vulnerabilities. `npm run check` passed with 81 tests,
+`npm ci` completed with no audit vulnerabilities. `npm run check` passed with 83 tests,
 repository/runtime checks, formatting, lint, generated OpenAPI/client verification, strict
 TypeScript and both independent production builds. Existing UIKit transitive eval and bundle
 size warnings remain; checks were not weakened. The runtime packaging test caught a missing
@@ -46,8 +46,9 @@ No paid account, public deployment, community submission, or monitoring was perf
 
 Production-built Console on port 5174, independent API on 4319, real provider responses.
 Creation required only database type, name and region. The Key dialog listed DuckDB databases
-and standalone Files, with no private backing resource. The Tables and SQL Editor views remain
-under the selected database and use its exact route and SQL dialect. The retained example
+and standalone Files, with no private backing resource. The unified database workspace keeps table navigation beside SQL, with results and table
+details below it, preserving the exact route and SQL dialect. Catalog loading pauses DuckDB
+query execution because the native database admits one operation at a time. The retained example
 contains three synthetic agent metric rows; no customer data or credentials appear in evidence.
 
 ![DuckDB creation](screenshots/duckdb/create-dark.png)
