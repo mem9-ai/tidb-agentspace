@@ -55,7 +55,7 @@ async function fixture(t) {
         inline_threshold: 1048576,
       });
     },
-    duckdbExecute: async ({ connection, sql, probe }) => {
+    duckdbExecute: async ({ connection, sql, probe, readOnly }) => {
       if (probe) return {};
       calls.push(sql);
       if (failSetup)
@@ -64,7 +64,10 @@ async function fixture(t) {
           status: 503,
         });
       if (release) await release;
-      const engine = await openDuckdb({ localPath: join(dir, connection.apiKey + '.duckdb') });
+      const engine = await openDuckdb({
+        localPath: join(dir, connection.apiKey + '.duckdb'),
+        readOnly,
+      });
       try {
         return await engine.query(sql);
       } finally {
@@ -261,6 +264,11 @@ test('same Workspace Key runs persistent DuckDB and permitted MySQL/Files; scope
     ).status,
     200,
   );
+  assert.equal(
+    (await f.request(base + `/resources/${id}/table?name=items`, 'GET', undefined, key.secret)).body
+      .columns[0].name,
+    'id',
+  );
   const second = (await f.create('second-analytics')).body.data.id;
   const count = f.calls.length;
   assert.equal((await f.query(second, 'SELECT 1', key.secret)).status, 403);
@@ -286,6 +294,29 @@ test('same Workspace Key runs persistent DuckDB and permitted MySQL/Files; scope
   );
   await f.request(base + '/keys/' + key.data.id, 'DELETE');
   assert.equal((await f.query(id, 'SELECT 1', key.secret)).status, 401);
+  for (const suffix of ['tables', 'table?name=items', 'table/rows?name=items']) {
+    for (const [token, status] of [
+      [key.secret, 401],
+      ['expired-token', 401],
+      [wrong.secret, 403],
+      [missing.secret, 403],
+    ])
+      assert.equal(
+        (await f.request(base + `/resources/${id}/${suffix}`, 'GET', undefined, token)).status,
+        status,
+      );
+  }
+  assert.equal(
+    (
+      await f.request(
+        '/api/v1/workspaces/other/resources/' + id + '/tables',
+        'GET',
+        undefined,
+        wrong.secret,
+      )
+    ).status,
+    404,
+  );
   assert.equal(f.calls.length, count);
 });
 

@@ -6,8 +6,7 @@ await vite.listen();
 vite.printUrls();
 async function shutdown() {
   await vite.close();
-  api.close();
-  process.exit(0);
+  await new Promise((resolve) => api.close(resolve));
 }
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
