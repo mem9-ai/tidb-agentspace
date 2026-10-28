@@ -10,7 +10,7 @@ import { configureApi } from './api/client';
 const root = createRoot(document.getElementById('root')!);
 async function start() {
   try {
-    const response = await fetch('/config.json', { cache: 'no-store' });
+    const response = await fetch(import.meta.env.BASE_URL + 'config.json', { cache: 'no-store' });
     if (!response.ok) throw new Error('Unable to load config.json.');
     const config: unknown = await response.json();
     configureApi(config);

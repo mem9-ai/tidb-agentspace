@@ -1,3 +1,4 @@
+import { publicPathPrefix } from './http-policy.mjs';
 import http from 'node:http';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -117,7 +118,9 @@ export async function createApp({
   duckdbSourceDirectory,
   ssoConfig = loadSsoConfig(),
   ssoFetch = fetch,
+  publicPath = ssoConfig?.publicPath ?? process.env.WORKSPACE_PUBLIC_PATH ?? '',
 } = {}) {
+  publicPath = publicPathPrefix(publicPath);
   if (!['local', drive9Provider].includes(filesProvider))
     throw new Error('Unknown File System provider.');
   const drive9 = await createDrive9({
@@ -342,7 +345,7 @@ export async function createApp({
         });
         res.setHeader(
           'Set-Cookie',
-          `aw_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800`,
+          `aw_session=${token}; HttpOnly; SameSite=Strict; Path=${publicPath}/; Max-Age=28800`,
         );
         return send(200, { workspaceId, mode: 'demo' });
       }
@@ -368,7 +371,7 @@ export async function createApp({
         });
         res.setHeader(
           'Set-Cookie',
-          `aw_sso_flow=${flowId}; HttpOnly; SameSite=Lax;${ssoConfig.cookieSecure ? ' Secure;' : ''} Path=/api/auth/tidbcloud; Max-Age=600`,
+          `aw_sso_flow=${flowId}; HttpOnly; SameSite=Lax;${ssoConfig.cookieSecure ? ' Secure;' : ''} Path=${publicPath}/api/auth/tidbcloud; Max-Age=600`,
         );
         res.writeHead(302, { Location: authorizeUrl });
         res.end();
@@ -376,7 +379,7 @@ export async function createApp({
       }
       if (path === '/api/auth/tidbcloud/callback' && req.method === 'GET') {
         if (!ssoConfig) fail(404, 'SSO_NOT_CONFIGURED', 'TiDB Cloud SSO is not configured.');
-        const clearFlowCookie = `aw_sso_flow=; HttpOnly; SameSite=Lax;${ssoConfig.cookieSecure ? ' Secure;' : ''} Path=/api/auth/tidbcloud; Max-Age=0`;
+        const clearFlowCookie = `aw_sso_flow=; HttpOnly; SameSite=Lax;${ssoConfig.cookieSecure ? ' Secure;' : ''} Path=${publicPath}/api/auth/tidbcloud; Max-Age=0`;
         const flowId = /(?:^|; )aw_sso_flow=([^;]+)/.exec(req.headers.cookie || '')?.[1];
         pruneLoginFlows();
         const flow = flowId && loginFlows.get(flowId);
@@ -433,7 +436,7 @@ export async function createApp({
         res.writeHead(302, {
           Location: ssoConfig.postLoginUrl,
           'Set-Cookie': [
-            `aw_session=${token}; HttpOnly; SameSite=Strict;${ssoConfig.cookieSecure ? ' Secure;' : ''} Path=/; Max-Age=28800`,
+            `aw_session=${token}; HttpOnly; SameSite=Strict;${ssoConfig.cookieSecure ? ' Secure;' : ''} Path=${publicPath}/; Max-Age=28800`,
             clearFlowCookie,
           ],
         });
@@ -445,7 +448,7 @@ export async function createApp({
         if (sessionToken) sessions.delete(sessionToken);
         res.setHeader(
           'Set-Cookie',
-          `aw_session=; HttpOnly; SameSite=Strict;${ssoConfig?.cookieSecure ? ' Secure;' : ''} Path=/; Max-Age=0`,
+          `aw_session=; HttpOnly; SameSite=Strict;${ssoConfig?.cookieSecure ? ' Secure;' : ''} Path=${publicPath}/; Max-Age=0`,
         );
         if (req.method === 'GET' && ssoConfig) {
           res.writeHead(302, { Location: ssoConfig.postLoginUrl });

@@ -1068,3 +1068,78 @@ test('trustedProxies: non-canonical IPv4 (leading zeros) is rejected, not silent
   assert.doesNotThrow(() => trustedProxies('10.0.0.1'));
   assert.doesNotThrow(() => trustedProxies('2001:db8::1'));
 });
+
+test('subpath SSO scopes flow/session/logout cookies and preserves post-login destination', async () => {
+  const config = testSsoConfig({
+    publicPath: '/studio',
+    redirectUri: 'http://127.0.0.1:4318/studio/api/auth/tidbcloud/callback',
+    postLoginUrl: 'http://127.0.0.1:4318/studio/',
+  });
+  const { server, address } = await appWith(config);
+  try {
+    const login = await fetch(address + '/api/auth/tidbcloud/login', { redirect: 'manual' });
+    assert.match(login.headers.get('set-cookie'), /Path=\/studio\/api\/auth\/tidbcloud;/);
+    assert.equal(
+      new URL(login.headers.get('location')).searchParams.get('redirect_uri'),
+      config.redirectUri,
+    );
+    const flow = await startLogin(address);
+    control.nonce = flow.nonce;
+    const res = await callback(address, {
+      flowCookie: flow.flowCookie,
+      params: { code: 'test-code', state: flow.state },
+    });
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.get('location'), config.postLoginUrl);
+    const cookies = res.headers.getSetCookie();
+    assert.ok(
+      cookies.some((cookie) => /^aw_session=/.test(cookie) && /Path=\/studio\/;/.test(cookie)),
+    );
+    assert.ok(
+      cookies.some(
+        (cookie) =>
+          /^aw_sso_flow=/.test(cookie) &&
+          /Path=\/studio\/api\/auth\/tidbcloud; Max-Age=0/.test(cookie),
+      ),
+    );
+    const session = cookies.find((cookie) => cookie.startsWith('aw_session=')).split(';')[0];
+    const logout = await fetch(address + '/api/auth/tidbcloud/logout', {
+      method: 'POST',
+      headers: { Cookie: session },
+    });
+    assert.match(logout.headers.get('set-cookie'), /Path=\/studio\/; Max-Age=0/);
+    assert.equal(
+      (
+        await fetch(address + '/api/v1/workspaces/ws_agentlab/bootstrap', {
+          headers: { Cookie: session },
+        })
+      ).status,
+      401,
+    );
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('subpath configuration rejects ambiguous prefixes and mismatched callback/return paths', () => {
+  const env = {
+    TIDB_SSO_ISSUER: 'https://sso.example.com',
+    TIDB_SSO_CLIENT_ID: 'fixture-id',
+    TIDB_SSO_CLIENT_SECRET: 'fixture-secret',
+    WORKSPACE_PUBLIC_PATH: '/studio',
+    TIDB_SSO_REDIRECT_URI: 'https://app.example.com/studio/api/auth/tidbcloud/callback',
+  };
+  assert.equal(loadSsoConfig(env).postLoginUrl, 'https://app.example.com/studio/');
+  for (const publicPath of ['/studio/', '//host', '/..', '/a/../b', '/a%2fb', '/a;b', '/a?b'])
+    assert.throws(() => loadSsoConfig({ ...env, WORKSPACE_PUBLIC_PATH: publicPath }));
+  assert.throws(() =>
+    loadSsoConfig({
+      ...env,
+      TIDB_SSO_REDIRECT_URI: 'https://app.example.com/api/auth/tidbcloud/callback',
+    }),
+  );
+  for (const path of ['/', '/studio-else', '/studio/../outside'])
+    assert.throws(() =>
+      loadSsoConfig({ ...env, TIDB_SSO_POST_LOGIN_URL: 'https://app.example.com' + path }),
+    );
+});
