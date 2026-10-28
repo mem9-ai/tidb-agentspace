@@ -22,12 +22,47 @@ binding is a native addon, amd64 and arm64 are built as separate images (no cros
 and joined into one multi-arch manifest. The rollout pins the image by immutable digest, not
 the floating tag, so a later restart runs the exact image that was built.
 
-The Deployment, Service, volumes and every runtime Secret/ConfigMap already exist in the
-cluster and are managed out-of-band. The workflow only updates the running image; it creates
-or templates no Kubernetes object. Consequently **no namespace, cluster endpoint, registry
-account, role ARN or secret value appears in this repository** — all are injected from GitHub
-Actions secrets at run time, and runtime configuration is injected into the Pod by the
-out-of-band Secret/ConfigMap.
+Every push to `main` runs this workflow, without a path filter. Pull requests only
+validate. Normal releases update an existing Deployment's image. First installation
+is an explicit manual operation; it is never inferred from a missing Deployment.
+Environment names, registry addresses and cloud identifiers are runtime inputs.
+No real account identifier, namespace, role ARN or secret value is committed.
+
+The manual `deployment_mode` is `deploy` (default), `bootstrap-preview`, or `bootstrap`.
+Both bootstrap modes run the same quality/image gates and render
+[`scripts/bootstrap-dev.mjs`](../../scripts/bootstrap-dev.mjs) from the resolved SHA.
+They require an existing namespace and an explicit `storage_class` input. The class
+must use the EBS CSI driver; there is no fallback to a default class or ephemeral data.
+`bootstrap-preview` performs Kubernetes server-side dry-run only, then ends without
+rollout or rollback. `bootstrap` first repeats that validation and then **creates**
+the PVC, private Service and Deployment. It refuses existing objects rather than
+adopting or overwriting them. Errors are surfaced; a partial creation or readiness
+failure leaves resources and the PVC for inspection, never deletes persisted data,
+and never pretends there is a previous release to roll back to.
+
+The initial API has one replica, `Recreate` updates and a 10 GiB `ReadWriteOncePod`
+PVC. Unlike node-scoped RWO, RWOP prevents a second Pod from mounting the same claim,
+including on the same node. This requires a compatible CSI driver/sidecars; a dry-run
+does not prove provisioning or mount success. The container cannot start until its
+claim binds and mounts. An unbound claim leaves the Pod Pending, the Service without
+ready endpoints, and rollout times out as a failed deployment. No ephemeral fallback
+or force-detach is performed. The bootstrap does not delete the PVC; deleting it
+manually may delete its underlying volume according to the StorageClass reclaim policy.
+
+The initial Service is ClusterIP only, with no Ingress, NodePort, LoadBalancer,
+host port or host network. This is a **private dev/demo API**, not public SSO delivery.
+It uses the existing local/demo providers and does not invent provider credentials.
+API networking explicitly sets `WORKSPACE_API_HOST=0.0.0.0`; the application default
+remains `127.0.0.1`. Only these two values are accepted; empty/invalid values fail
+startup. Host/origin and authorization checks do not change. HTTP probes connect to
+the Pod IP and send `Host: 127.0.0.1`; they do not connect to the kubelet's loopback.
+The Pod runs as UID/GID 1000 with a read-only root filesystem, dropped capabilities,
+no privilege escalation, no service-account token, resource limits and bounded scratch
+storage. Workspace state and sibling credential files live on `/data`, never `/tmp`.
+
+Before exposing the Service through a public gateway, separately configure the
+reviewed public origin, proxy and SSO runtime settings below. Normal image releases
+preserve that configuration; they do not reapply the bootstrap template.
 
 The requested ref is resolved to a single immutable commit SHA up front (the `resolve` job);
 the quality gate, the pre-merge image build and the deployed image are all bound to that same
@@ -35,8 +70,9 @@ SHA, so the commit that passes `npm run check` is exactly the commit that is bui
 (no branch-advances-between-jobs race). Dispatch inputs are read from the environment as data
 and validated against a character allowlist — never interpolated into a `run:` script — so a
 crafted ref cannot inject shell commands. The deployment secrets are scoped to the `deploy` job
-behind the protected `dev` environment, so the quality gate and any repository script that runs
-earlier never see them.
+and the `dev` environment, so the quality gate and any repository script that runs earlier
+never see them. Environment approval and branch restrictions must be configured separately
+in GitHub; declaring the environment in YAML does not enable these protections.
 
 ## Required GitHub Actions secrets (names only)
 
@@ -52,9 +88,9 @@ Set these on the protected `dev` environment (not at repository scope) before th
 - `DEV_API_CONTAINER` — container name within the Deployment, **only if** it differs from the
   Deployment name (defaults to `DEV_API_DEPLOYMENT`).
 
-## Required in-cluster runtime configuration (out-of-band, not in this repo)
+## Runtime configuration for a public gateway (out-of-band)
 
-The API Deployment must already provide, via Secret/ConfigMap/volume:
+Public gateway configuration is injected via Secret/ConfigMap/volume, never Git:
 
 - `WORKSPACE_DATA_FILE` — absolute path on a persistent volume for the workspace data file.
 - `TIDB_PUBLIC_ORIGIN` / `WORKSPACE_TRUSTED_ORIGINS` — public origin(s) when served behind the
@@ -65,18 +101,26 @@ The API Deployment must already provide, via Secret/ConfigMap/volume:
   and the optional `TIDB_SSO_*` fields documented in `.env.example`. Leave unset to keep SSO
   disabled. The redirect URI must match the public path (e.g. `/studio`) and callback route.
 
-## Before the first real rollout
+## First installation and verification
 
-The workflow only updates an image, so the cluster objects must already exist and must be
-proven out-of-band before the dev rollout is considered ready: the Deployment (with its
-container name matching `DEV_API_DEPLOYMENT`/`DEV_API_CONTAINER`), Service, the persistent
-volume backing `WORKSPACE_DATA_FILE`, the Pod `securityContext` (non-root, read-only root
-filesystem, dropped capabilities), resource requests/limits, liveness/readiness probes on
-`GET /api/health`, the runtime Secret/ConfigMap, and any NetworkPolicy. Capture a server-side
-dry-run / render of those objects and a rollback check against the actual Deployment as
-deployment evidence. On pull requests the workflow runs only the `verify` job — the quality
-gate plus a no-push amd64/arm64 image build — and never reaches `deploy`, so packaging
-failures surface on the PR itself; the deploy job is gated off pull-request events.
+1. Confirm the configured namespace is the intended dev namespace and already exists.
+   Confirm its Deployment, Service and `<deployment>-data` PVC do not yet exist.
+2. Run the workflow manually on the candidate branch with its full SHA as `deploy_ref`,
+   `deployment_mode=bootstrap-preview`, and the actual EBS CSI `storage_class` name.
+   Inspect the full diff and server-side dry-run result before creating resources.
+3. Run `deployment_mode=bootstrap` on that same reviewed SHA and storage class.
+   Wait for rollout; a successful preview alone is not a deployment.
+4. Verify the PVC is Bound, Pod is Ready, image digest matches, and `/api/health`
+   works through the private Service (port-forward is sufficient). Verify state survives
+   replacement of the Pod. With no public runtime configuration, use loopback HTTP
+   through port-forward; do not publish the anonymous demo to the internet.
+5. Subsequent main pushes/manual `deploy` operations update only the image. If such a
+   rollout fails, the workflow undoes the image update and verifies recovery. First
+   bootstrap has no previous release and therefore does not invoke rollout undo.
+
+See Kubernetes documentation for [single-instance stateful applications](https://kubernetes.io/docs/tasks/run-application/run-single-instance-stateful-application/),
+[ReadWriteOncePod](https://kubernetes.io/docs/tasks/administer-cluster/change-pv-access-mode-readwriteoncepod/),
+and [HTTP probe Host headers](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/).
 
 Concurrency is split by whether a run can deploy. Pull-request runs use a per-PR group with
 `cancel-in-progress: true`, so a newer commit on the same PR supersedes the older verify run.
@@ -89,6 +133,6 @@ on different refs, all share the deploy group and serialize the same way.
 
 ## Not in scope
 
-Single dev region (AWS EKS). The multi-region Tencent/GCP fan-out, production CD and any
-in-repo Kubernetes manifests are out of scope; revisit if dev needs additional regions or the
-cluster objects should become repository-managed.
+Single dev region (AWS EKS). Public ingress/SSO provisioning, multi-region fan-out,
+production CD, automatic namespace creation and ongoing reconciliation of Kubernetes
+configuration are out of scope. The bootstrap only creates the first private instance.

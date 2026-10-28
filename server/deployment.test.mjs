@@ -1,12 +1,60 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { networkInterfaces, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { get } from 'node:http';
 import test from 'node:test';
-import { createApp } from './index.mjs';
+import { createApp, startServer } from './index.mjs';
 import { consoleOrigins } from './http-policy.mjs';
 
 const workspace = '/api/v1/workspaces/ws_agentlab';
+
+function statusWithHost(url, host) {
+  return new Promise((resolve, reject) => {
+    get(url, { headers: { Host: host } }, (response) => {
+      response.resume();
+      response.once('end', () => resolve(response.statusCode));
+    }).once('error', reject);
+  });
+}
+
+test('API listener stays local by default and explicitly supports the Pod network', async (t) => {
+  const previous = process.env.WORKSPACE_API_HOST;
+  t.after(() => {
+    if (previous === undefined) delete process.env.WORKSPACE_API_HOST;
+    else process.env.WORKSPACE_API_HOST = previous;
+  });
+  const directory = await mkdtemp(join(tmpdir(), 'tidb-listener-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  for (const host of [undefined, '127.0.0.1', '0.0.0.0']) {
+    if (host === undefined) delete process.env.WORKSPACE_API_HOST;
+    else process.env.WORKSPACE_API_HOST = host;
+    const app = await startServer({ port: 0, dataFile: join(directory, 'data.json') });
+    try {
+      assert.equal(app.address().address, host ?? '127.0.0.1');
+      const address =
+        host === '0.0.0.0'
+          ? Object.values(networkInterfaces())
+              .flat()
+              .find((entry) => entry.family === 'IPv4' && !entry.internal)?.address
+          : '127.0.0.1';
+      assert.ok(address, 'The non-loopback listener must be tested through a network interface.');
+      const base = `http://${address}:${app.address().port}`;
+      // Use node:http to actually send the Host header; fetch may replace it.
+      assert.equal(await statusWithHost(base + '/api/health', '127.0.0.1'), 200);
+      assert.equal(await statusWithHost(base + workspace + '/resources', '127.0.0.1'), 401);
+      assert.equal(await statusWithHost(base + '/api/health', 'untrusted.invalid'), 403);
+    } finally {
+      await new Promise((resolve) => app.close(resolve));
+    }
+  }
+});
+
+test('invalid and empty listener configuration fails before starting the app', async () => {
+  for (const host of ['', ' ', 'localhost', '127.0.0.1:4318', 'bad-host', '::', '10.0.0.1'])
+    await assert.rejects(startServer({ host, port: 0 }), /WORKSPACE_API_HOST/);
+});
+
 test('separate Console origins support credentialed sessions and retain API authorization', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'tidb-cors-'));
   const origin = 'http://127.0.0.1:41379';

@@ -8,6 +8,12 @@
 - `.github/workflows/release.yml`: a manual, main-branch-only internal artifact build. It
   runs the same quality gate, checks commit sign-off, and packages the runtime, frontend,
   API contract, source SHA, and checksums. It does not deploy to a cloud provider.
+- `.github/workflows/dev-cd.yml`: credential-free PR verification, then digest-pinned API
+  deployment to a configured EKS dev environment on every `main` push or manual request.
+  Explicit manual bootstrap modes preview or create the initial private API and persistent
+  volume. [ADR 0013](decisions/0013-dev-kubernetes-cd.md) defines setup, runtime boundaries,
+  first-install verification, and failure handling. Each repository must configure its own
+  environment; checking in this workflow does not provision credentials or a cluster.
 - Exact npm dependency versions, a committed lockfile, fixed Node/npm versions, editor
   settings, Prettier, ESLint, strict TypeScript, and a generated-contract drift check.
 - `scripts/check-repo.mjs` checks instruction entry points, required standards and their
@@ -181,9 +187,9 @@ turned on. Follow this sequence:
    outcome. Roll back to the previous known-good artifact on failed health checks. Keep
    schema migrations backward compatible; destructive migrations need a separate rollout.
 
-Automatic staging and protected production deployment are policies for the future integration,
-not commands hidden inside the current artifact workflow. Add a target-specific runbook and
-exercise rollback before enabling production delivery.
+The configured dev API workflow implements a development target only. Protected production
+deployment remains a future integration, not a command hidden inside the artifact workflow.
+Exercise rollback before enabling production delivery.
 
 GitHub references: [deployment environments and concurrency](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments)
 and [secure use of Actions](https://docs.github.com/en/actions/reference/security/secure-use).

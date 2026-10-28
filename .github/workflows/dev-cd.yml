@@ -6,13 +6,9 @@ name: Deploy API to dev
 # in-cluster Deployment to the new image and wait for the rollout, undoing it
 # on failure.
 #
-# The Deployment, Service, volumes and every runtime Secret/ConfigMap already
-# exist in the cluster and are managed out-of-band. This workflow only updates
-# the running image — it does not create or template any Kubernetes object, so
-# no namespace, cluster endpoint, registry account or secret value lives in
-# this repository. All such identifiers are injected from GitHub Actions
-# secrets at run time, and are scoped to the deploy job (behind the protected
-# `dev` environment), never to the quality gate.
+# Normal releases only update the image. An explicit manual bootstrap can
+# create the initial private API, Service and PVC in an existing namespace.
+# All environment identifiers remain runtime inputs, never repository values.
 
 on:
   # Pull requests run only the quality gate (including the no-push
@@ -24,6 +20,7 @@ on:
       - 'public/openapi.json'
       - 'scripts/build-api.mjs'
       - 'scripts/sql-runtime-dependencies.mjs'
+      - 'scripts/bootstrap-dev*'
       - 'package.json'
       - 'package-lock.json'
       - '.node-version'
@@ -32,23 +29,21 @@ on:
       - '.github/workflows/dev-cd.yml'
   push:
     branches: [main]
-    paths:
-      - 'server/**'
-      - 'public/openapi.json'
-      - 'scripts/build-api.mjs'
-      - 'scripts/sql-runtime-dependencies.mjs'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.node-version'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - '.github/workflows/dev-cd.yml'
   workflow_dispatch:
     inputs:
       deploy_ref:
         description: 'Branch, tag, or SHA to deploy'
         required: true
         default: 'main'
+      deployment_mode:
+        description: 'Normal image update, preview initial resources, or create initial resources'
+        type: choice
+        options: [deploy, bootstrap-preview, bootstrap]
+        default: deploy
+      storage_class:
+        description: 'Existing EBS CSI StorageClass (required only for bootstrap modes)'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -171,12 +166,18 @@ jobs:
       # Container name within the Deployment. Set this secret when the
       # container name differs from the Deployment name.
       K8S_CONTAINER: ${{ secrets.DEV_API_CONTAINER || secrets.DEV_API_DEPLOYMENT }}
+      DEPLOYMENT_MODE: ${{ inputs.deployment_mode || 'deploy' }}
+      STORAGE_CLASS: ${{ inputs.storage_class }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.sha }}
           persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
@@ -240,18 +241,22 @@ jobs:
             --name "$EKS_CLUSTER" \
             --region "$AWS_REGION"
 
-      - name: Apply image to the dev API deployment
+      - name: Apply image or explicitly bootstrap the dev API
         id: apply
         run: |
           set -euo pipefail
-          # Pin by immutable digest, not the floating tag, so the rollout and
-          # any later restart always run the exact image we just built.
-          kubectl set image "deployment/$K8S_DEPLOYMENT" \
-            "$K8S_CONTAINER=$IMAGE_REF" \
-            -n "$DEPLOY_NAMESPACE"
+          case "$DEPLOYMENT_MODE" in
+            deploy)
+              kubectl set image "deployment/$K8S_DEPLOYMENT" \
+                "$K8S_CONTAINER=$IMAGE_REF" -n "$DEPLOY_NAMESPACE" ;;
+            bootstrap-preview|bootstrap)
+              node scripts/bootstrap-dev.mjs "$DEPLOYMENT_MODE" ;;
+            *) echo '::error::Unknown deployment mode.' >&2; exit 1 ;;
+          esac
 
       - name: Wait for rollout
         id: rollout
+        if: env.DEPLOYMENT_MODE != 'bootstrap-preview'
         run: |
           set -euo pipefail
           kubectl rollout status "deployment/$K8S_DEPLOYMENT" \
@@ -259,7 +264,7 @@ jobs:
             --timeout=300s
 
       - name: Roll back on failed rollout
-        if: failure() && steps.apply.outcome == 'success' && steps.rollout.outcome == 'failure'
+        if: failure() && env.DEPLOYMENT_MODE == 'deploy' && steps.apply.outcome == 'success' && steps.rollout.outcome == 'failure'
         run: |
           set -euo pipefail
           kubectl rollout undo "deployment/$K8S_DEPLOYMENT" \
