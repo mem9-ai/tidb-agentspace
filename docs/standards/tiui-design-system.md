@@ -195,6 +195,18 @@ verified, and record that as a remaining gap.
   Check both themes at 1280×800/900 and 390×844, including keyboard toggling, active queries,
   filtering and File System regression. Evidence is in [density verification](../database-density-verification.md#compact-table-browser).
   Revisit for resizable navigation or multiple database documents.
+- **Resource collections first (owner correction, 2026-10-29):** sidebar destinations for
+  Databases and File System open their global resource lists. Never silently choose the first,
+  live or only resource. Enter a resource only through an explicit resource URL/selection;
+  keep a labeled All resources return action in its workspace, guarded against unsaved work
+  and disabled during active resource operations. File System list rows show identity, region,
+  status and provider, with open/connect/create entry points. Unknown or wrong-kind IDs show
+  unavailable with a route back to the list. Preserve existing file preview/analysis links,
+  and keep closing a file inside its selected File System. Use actual TiUI Table and controls,
+  existing page-heading spacing, and the shared compact header inside a selected resource.
+  Check zero/one/multiple resources, reload/history, direct links, creation defaults, draft
+  guards and both themes/viewports. See [list verification](../filesystem-list-verification.md).
+  Revisit when adding collection filters or pagination.
 - **Resource workspace hierarchy (owner correction 2026-10-28):** unify Database and File
   System at the page level, not only their sidebars. Use `ResourceWorkspaceHeader` and its
   `ResourceWorkspaceBar` for one compact selector/status/actions toolbar above the entire

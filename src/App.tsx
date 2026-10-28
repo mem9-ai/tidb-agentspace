@@ -13,6 +13,7 @@ import { FileBrowserPanel } from './features/files/FileBrowserPanel';
 import { FileBrowserList } from './features/files/FileBrowserList';
 import { ResourceKindIcon as KindIcon } from './ui/ResourceKindIcon';
 import { FileWorkspaceHeader } from './features/files/FileWorkspaceHeader';
+import { FileSystemsList } from './features/files/FileSystemsList';
 import {
   useRemoteFiles,
   downloadRemoteFile,
@@ -82,7 +83,12 @@ import { DatabaseWorkspace } from './features/databases/DatabaseWorkspace';
 import { databaseEditorHash, parseWorkspaceRoute } from './features/navigation/workspace-route';
 import type { Route, WorkspaceRoute } from './features/navigation/workspace-route';
 
-import { fileHash, parseFileLocation, type FileView } from './features/files/file-location';
+import {
+  fileHash,
+  fileSystemHash,
+  parseFileSystemLocation,
+  type FileView,
+} from './features/files/file-location';
 
 const FilePreviewPanel = lazy(() => import('./features/files/FilePreviewPanel'));
 type WorkspaceIcon = React.ComponentType<IconProps>;
@@ -382,6 +388,9 @@ function App() {
         active={route}
         databaseId={routeLocation.databaseId}
         databaseView={routeLocation.databaseView}
+        fileSystemId={
+          parseFileSystemLocation('#' + (routeLocation.fileLink || 'files'))?.resourceId
+        }
         navigation={Object.entries(routes).map(([id, item]) => ({ id, ...item }))}
         onSearch={() => setModal('search')}
       >
@@ -408,7 +417,13 @@ function App() {
           {toast}
         </Notification>
       )}
-      {modal === 'resource' && <CreateResource {...shared} onClose={() => setModal(null)} />}
+      {modal === 'resource' && (
+        <CreateResource
+          {...shared}
+          initialKind={route === 'files' ? 'filesystem' : 'mysql'}
+          onClose={() => setModal(null)}
+        />
+      )}
       {modal === 'key' && <CreateKey {...shared} onClose={() => setModal(null)} />}
       {modal === 'search' && (
         <SearchModal data={data} onClose={() => setModal(null)} onConnect={setConnection} />
@@ -929,10 +944,40 @@ function download(name: string, value: string, mime = 'text/plain') {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
+function Files(shared: Shared) {
+  const context = parseFileSystemLocation(location.hash);
+  const systems = shared.data.resources.filter((resource) => resource.kind === 'filesystem');
+  if (!context)
+    return (
+      <FileSystemsList
+        resources={systems}
+        onCreate={shared.onCreate}
+        onConnect={shared.onConnect}
+      />
+    );
+  const resource = systems.find((system) => system.id === context.resourceId);
+  if (!resource)
+    return (
+      <Empty
+        title="File System unavailable"
+        description="This File System is no longer available in your workspace. Choose a File System from the list."
+        action={<Button onClick={() => go('files')}>All file systems</Button>}
+      />
+    );
+  return <FileWorkspace key={resource.id} {...shared} resource={resource} />;
+}
+function FileWorkspace({
+  data,
+  refresh,
+  notify,
+  onConnect,
+  onCreate,
+  resource,
+}: Shared & { resource: Resource }) {
   const systems = data.resources.filter((r) => r.kind === 'filesystem');
-  const [initialLocation] = useState(() => parseFileLocation(location.hash));
-  const initialResource = systems.find((r) => r.id === initialLocation?.resourceId);
+  const [initialContext] = useState(() => parseFileSystemLocation(location.hash));
+  const initialLocation = initialContext?.file;
+  const initialResource = resource;
   const initialFile =
     initialResource && initialLocation
       ? data.files.find(
@@ -951,13 +996,8 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
       : null;
   const restoreFile = useRef(initialFile);
   const [previewView, setPreviewView] = useState<FileView>(initialLocation?.view || 'preview');
-  const [system, setSystem] = useState(
-      initialResource?.id ||
-        systems.find((r) => r.provider === 'drive9-anonymous')?.id ||
-        systems[0]?.id ||
-        '',
-    ),
-    [path, setPath] = useState(
+  const system = resource.id;
+  const [path, setPath] = useState(
       initialFile ? initialFile.path.slice(0, initialFile.path.lastIndexOf('/')) || '/' : '/',
     ),
     [search, setSearch] = useState(''),
@@ -967,7 +1007,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
     [name, setName] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(
-      initialLocation && !initialFile
+      initialContext?.invalidFile || (initialLocation && !initialFile)
         ? 'The linked file or File System is unavailable. Select a file to continue.'
         : '',
     ),
@@ -984,6 +1024,26 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [previewTrigger, setPreviewTrigger] = useState<HTMLElement | null>(null);
   const dirty = !!editing && content !== (editing.content || '');
+  useEffect(() => {
+    if (!dirty) return;
+    const guardCollectionLink = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      )
+        return;
+      const link = event.target instanceof Element ? event.target.closest('a') : null;
+      if (link?.getAttribute('href') !== '#files') return;
+      event.preventDefault();
+      setPendingAction(() => () => go('files'));
+    };
+    document.addEventListener('click', guardCollectionLink);
+    return () => document.removeEventListener('click', guardCollectionLink);
+  }, [dirty]);
   function requestPreviewChange(action: () => void) {
     if (busy) return;
     restoreFile.current = null;
@@ -1025,10 +1085,11 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
     if (file) void openFile(file, initialLocation?.view);
   }, [openFile, initialLocation]);
   function closePreview() {
-    history.replaceState(null, '', '#files');
+    history.replaceState(null, '', fileSystemHash(system));
     previewRequest.current?.abort();
     setPreviewLoading(false);
     setEditing(null);
+    setError('');
     setBrowserCollapsed(false);
   }
   function downloadFile(file: WorkspaceFile) {
@@ -1137,13 +1198,10 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           if (selectedSystem) onConnect(selectedSystem);
         }}
         onUpload={() => upload.current?.click()}
+        onBack={() => requestPreviewChange(() => go('files'))}
         onSelect={(nextSystem) =>
           requestPreviewChange(() => {
-            closePreview();
-            setSystem(nextSystem);
-            setPath('/');
-            setSearch('');
-            setEditing(null);
+            location.hash = fileSystemHash(nextSystem);
           })
         }
       />
@@ -1157,6 +1215,11 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           e.target.value = '';
         }}
       />
+      {error && !editing && !newItem && !deleting && (
+        <Alert color="red" mb={20}>
+          {error}
+        </Alert>
+      )}
       {(listing.error || selectedSystem?.connectionError) && (
         <Alert color="red" mb={20}>
           {listing.error || selectedSystem?.connectionError}
@@ -2285,10 +2348,16 @@ function WorkspaceSettings({ data, refresh, notify, copy }: Shared) {
     </>
   );
 }
-function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: () => void }) {
-  const [kind, setKind] = useState<Kind>('mysql'),
+function CreateResource({
+  data,
+  refresh,
+  notify,
+  onClose,
+  initialKind = 'mysql',
+}: Shared & { onClose: () => void; initialKind?: Kind }) {
+  const [kind, setKind] = useState<Kind>(initialKind),
     [name, setName] = useState(''),
-    [selectedRegion, setRegion] = useState(data.capabilities.mysql.regions[0]),
+    [selectedRegion, setRegion] = useState(data.capabilities[initialKind].regions[0]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   const createId = useRef(crypto.randomUUID());
@@ -2770,7 +2839,7 @@ function Connection({
           variant="filled"
           onClick={() => {
             onClose();
-            if (isFileSystem) go('files');
+            if (isFileSystem) location.hash = fileSystemHash(r.id);
             else openDatabaseEditor(r.id);
           }}
         >

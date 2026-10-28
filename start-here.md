@@ -104,6 +104,10 @@ DuckDB uses tidbfs native database mode, with ordinary Tables and SQL in the Con
 [customer experience](docs/duckdb-databases.md#customer-experience). For the separate optional
 query-source API over CSV/JSON/Parquet, read [file sources](docs/duckdb-databases.md#workspace-file-sources),
 [ADR 0009](docs/decisions/0009-duckdb-file-sources.md) and [GH-34](specs/gh-34/spec.md).
+File System navigation starts with the global resource list (`#files`), followed by a selected
+resource (`#files?resourceId=…`). See [navigation verification](docs/filesystem-list-verification.md)
+for the list/return flow and preserved file links.
+
 For CSV/Parquet SQL and text/log analysis, read [ADR 0010](docs/decisions/0010-read-only-file-analysis.md),
 [engine options](docs/decisions/0014-file-analysis-engine-options.md)
 and [Bash input paths](docs/decisions/0015-bash-workspace-paths.md), plus
