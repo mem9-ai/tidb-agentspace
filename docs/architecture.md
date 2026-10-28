@@ -292,8 +292,9 @@ permission-denial reasons, revocation behavior, allowance accuracy, and safe ret
 
 ### Database browsing
 
-Tables, columns, indexes and a bounded 100-row preview live inside each database, alongside
-SQL Editor. The Console and agents use the same resource-scoped reads with `queries:execute`
+Each database has one SQL workspace: a persistent table navigator beside the editor, with
+query results, columns, indexes and a bounded 100-row preview below. Selecting a table preserves
+the SQL draft; explicitly generating a table query protects edited SQL before replacement. The Console and agents use the same resource-scoped reads with `queries:execute`
 and resource grants. Discovery-only keys do not gain data access. Table selection is encoded
 in the URL and Query table opens an editable SELECT without running it. See
 [ADR 0007](decisions/0007-database-browser.md) for limits and the additive API contract.
