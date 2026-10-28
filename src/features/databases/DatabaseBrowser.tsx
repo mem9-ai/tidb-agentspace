@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  ActionIcon,
   Alert,
   Badge,
   Button,
@@ -305,28 +306,32 @@ export function DatabaseTableList({
     ) ?? [];
   return (
     <Paper className="panel database-table-list" p="xl" withBorder>
-      <Stack gap="xl">
+      <Stack gap="md">
         <div className="database-section-header">
-          <Heading level={2}>Tables</Heading>
-          <Badge>{listing.data?.data.length ?? '…'}</Badge>
+          <Heading level={2}>
+            Tables <Badge>{listing.data?.data.length ?? '…'}</Badge>
+          </Heading>
+          <ActionIcon
+            size={48}
+            variant="subtle"
+            aria-label="Refresh tables"
+            title="Refresh tables"
+            onClick={() => {
+              listing.retry();
+              onRefresh();
+            }}
+            disabled={listing.loading}
+          >
+            <IconRefreshCw01 size={20} />
+          </ActionIcon>
         </div>
         <TextInput
-          label="Find a table"
+          aria-label="Find a table"
           placeholder="Search tables…"
           value={search}
           onChange={(event) => setSearch(event.currentTarget.value)}
           leftSection={<IconSearchLg size={18} />}
         />
-        <Button
-          onClick={() => {
-            listing.retry();
-            onRefresh();
-          }}
-          disabled={listing.loading}
-          leftSection={<IconRefreshCw01 size={18} />}
-        >
-          Refresh tables
-        </Button>
         {!['tidb-cloud-zero', 'duckdb-drive9'].includes(database.provider || '') && (
           <Badge>Local demo</Badge>
         )}

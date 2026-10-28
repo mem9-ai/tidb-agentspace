@@ -41,8 +41,12 @@ function Editor({ databaseId, dialect, value, onChange, onRun }: Props) {
           fontFamily: palette.fontFamilyMonospace,
           lineHeight: '1.7',
           overflow: 'auto',
+          height: 'var(--workspace-sql-editor-height, auto)',
         },
-        '.cm-content': { minHeight: '260px', padding: '20px 0' },
+        '.cm-content': {
+          minHeight: 'var(--workspace-sql-content-min-height, 260px)',
+          padding: 'var(--workspace-sql-content-padding, 20px 0)',
+        },
         '.cm-gutters': {
           backgroundColor: palette.colors.carbon[2],
           color: palette.colors.carbon[7],
