@@ -42,7 +42,9 @@ export async function createDrive9({ credentialsFile, transport = fetch }) {
           ...(binding ? { Authorization: `Bearer ${binding.apiKey}` } : {}),
         },
         redirect: 'error',
-        signal: AbortSignal.timeout(30_000),
+        signal: options.signal
+          ? AbortSignal.any([options.signal, AbortSignal.timeout(30_000)])
+          : AbortSignal.timeout(30_000),
       });
     } catch {
       throw fileError(
@@ -50,6 +52,10 @@ export async function createDrive9({ credentialsFile, transport = fetch }) {
         'PROVIDER_UNAVAILABLE',
         'File System service is unavailable. Retry reading its status before repeating a write.',
       );
+    }
+    if (response.status === 412) {
+      await response.body?.cancel();
+      throw fileError(409, 'FILE_CHANGED', 'The file changed. Refresh it before trying again.');
     }
     if (!response.ok) {
       await response.body?.cancel();
@@ -190,16 +196,21 @@ export async function createDrive9({ credentialsFile, transport = fetch }) {
         };
       });
     },
-    async stat(resourceId, path) {
-      const response = await request(resourceId, fsPath(path), { method: 'HEAD' });
+    async stat(resourceId, path, options = {}) {
+      const response = await request(resourceId, fsPath(path), { ...options, method: 'HEAD' });
       const raw = response.headers.get('content-length');
       const size = raw === null ? NaN : Number(raw);
       if (!Number.isSafeInteger(size) || size < 0)
         throw fileError(502, 'INVALID_PROVIDER_RESPONSE', 'File size is unavailable.');
-      return { size, directory: response.headers.get('x-dat9-isdir') === 'true' };
+      const revision = response.headers.get('etag');
+      return {
+        size,
+        directory: response.headers.get('x-dat9-isdir') === 'true',
+        ...(revision ? { revision } : {}),
+      };
     },
-    read(resourceId, path) {
-      return request(resourceId, fsPath(path));
+    read(resourceId, path, options = {}) {
+      return request(resourceId, fsPath(path), options);
     },
     async write(resourceId, path, bytes, createOnly = false) {
       const info = await status(resourceId);

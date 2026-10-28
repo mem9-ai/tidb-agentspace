@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { format, resolveConfig } from 'prettier';
 import { capabilities } from './store.mjs';
 import { zeroRegion } from './providers/zero.mjs';
+import { analysisLimits } from './file-analysis-contract.mjs';
 const regionSchema = {
   type: 'string',
   enum: [
@@ -334,6 +335,81 @@ const paths = {
       },
     ),
   },
+  [ws + '/file-analyses/capabilities']: {
+    get: operation(
+      'fileAnalysisCapabilities',
+      'Discover read-only analysis for a selected file',
+      'files:read',
+      {
+        parameters: [
+          { name: 'resourceId', in: 'query', required: true, schema: str },
+          { name: 'path', in: 'query', required: true, schema: str },
+        ],
+        output: object({
+          engine: { type: ['string', 'null'], enum: ['duckdb', 'bash', null] },
+          format: { type: ['string', 'null'] },
+          available: { type: 'boolean' },
+          reason: str,
+          size: { type: 'integer' },
+          readOnly: { const: true },
+          limits: object(
+            Object.fromEntries(
+              Object.entries(analysisLimits).map(([k, v]) => [k, { type: 'integer', const: v }]),
+            ),
+          ),
+        }),
+      },
+    ),
+  },
+  [ws + '/file-analyses']: {
+    post: operation(
+      'analyzeFile',
+      'Run bounded read-only DuckDB SQL or Just Bash on one selected file',
+      'files:analyze',
+      {
+        input: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['resourceId', 'path', 'engine'],
+          properties: {
+            resourceId: str,
+            path: str,
+            engine: { enum: ['duckdb', 'bash'] },
+            sql: { type: 'string', maxLength: 65536 },
+            command: { type: 'string', maxLength: 65536 },
+          },
+          oneOf: [
+            {
+              required: ['sql'],
+              properties: { engine: { const: 'duckdb' } },
+              not: { required: ['command'] },
+            },
+            {
+              required: ['command'],
+              properties: { engine: { const: 'bash' } },
+              not: { required: ['sql'] },
+            },
+          ],
+        },
+        output: object({
+          engine: { enum: ['duckdb', 'bash'] },
+          resourceId: str,
+          path: str,
+          readOnly: { const: true },
+          inputBytes: { type: 'integer' },
+          durationMs: { type: 'integer' },
+          columns: { type: 'array', items: str },
+          schema: { type: 'array', items: object({ column_name: str, column_type: str }) },
+          columnTypes: { type: 'array', items: str },
+          rows: { type: 'array', items: { type: 'object', additionalProperties: true } },
+          rowCount: { type: 'integer' },
+          stdout: str,
+          stderr: str,
+          exitCode: { type: 'integer' },
+        }),
+      },
+    ),
+  },
   [ws + '/files']: {
     get: operation(
       'listFiles',
@@ -581,6 +657,7 @@ const paths = {
                 'resources:write',
                 'files:read',
                 'files:write',
+                'files:analyze',
                 'queries:execute',
                 'usage:read',
               ],
@@ -658,6 +735,8 @@ paths['/api/session'] = {
 };
 for (const [path, item] of Object.entries(paths))
   if (path.includes('{workspaceId}')) item.parameters = [workspaceId, ...(item.parameters || [])];
+paths[ws + '/file-analyses'].post.description +=
+  ' Also requires files:read. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.';
 const spec = {
   openapi: '3.1.0',
   info: {

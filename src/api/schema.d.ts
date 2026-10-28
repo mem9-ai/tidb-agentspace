@@ -92,6 +92,52 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/workspaces/{workspaceId}/file-analyses/capabilities': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+      };
+      cookie?: never;
+    };
+    /**
+     * Discover read-only analysis for a selected file
+     * @description Required workspace key scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint.
+     */
+    get: operations['fileAnalysisCapabilities'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/workspaces/{workspaceId}/file-analyses': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Run bounded read-only DuckDB SQL or Just Bash on one selected file
+     * @description Required workspace key scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Also requires files:read. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.
+     */
+    post: operations['analyzeFile'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/workspaces/{workspaceId}/files': {
     parameters: {
       query?: never;
@@ -1206,6 +1252,358 @@ export interface operations {
             data?: components['schemas']['Resource'];
             /** @enum {unknown} */
             mode?: 'demo' | 'live';
+          };
+        };
+      };
+      /** @description Invalid request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Missing, invalid, expired, or revoked credential */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Insufficient permission */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource or endpoint not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Conflict or free-tier limit */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Content too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Unsupported content type */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL syntax, result limit, or unsupported demo query */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider quota or rate limit */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider unavailable or invalid response */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider binding needs operator recovery */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  fileAnalysisCapabilities: {
+    parameters: {
+      query: {
+        resourceId: string;
+        path: string;
+      };
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            /** @enum {string|null} */
+            engine: 'duckdb' | 'bash' | null;
+            format: string | null;
+            available: boolean;
+            reason: string;
+            size: number;
+            /** @constant */
+            readOnly: true;
+            limits: {
+              /** @constant */
+              inputBytes: 16777216;
+              /** @constant */
+              scriptBytes: 65536;
+              /** @constant */
+              outputBytes: 1048576;
+              /** @constant */
+              rows: 1000;
+              /** @constant */
+              timeoutMs: 15000;
+              /** @constant */
+              concurrency: 2;
+              /** @constant */
+              workerHeapMiB: 128;
+              /** @constant */
+              duckdbMemoryMB: 128;
+            };
+          };
+        };
+      };
+      /** @description Invalid request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Missing, invalid, expired, or revoked credential */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Insufficient permission */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource or endpoint not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Conflict or free-tier limit */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Content too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Unsupported content type */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL syntax, result limit, or unsupported demo query */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider quota or rate limit */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider unavailable or invalid response */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider binding needs operator recovery */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  analyzeFile: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          resourceId: string;
+          path: string;
+          /** @enum {unknown} */
+          engine: 'duckdb' | 'bash';
+          sql?: string;
+          command?: string;
+        } & (
+          | {
+              /** @constant */
+              engine?: 'duckdb';
+            }
+          | {
+              /** @constant */
+              engine?: 'bash';
+            }
+        );
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            /** @enum {unknown} */
+            engine: 'duckdb' | 'bash';
+            resourceId: string;
+            path: string;
+            /** @constant */
+            readOnly: true;
+            inputBytes: number;
+            durationMs: number;
+            columns: string[];
+            schema: {
+              column_name: string;
+              column_type: string;
+            }[];
+            columnTypes: string[];
+            rows: {
+              [key: string]: unknown;
+            }[];
+            rowCount: number;
+            stdout: string;
+            stderr: string;
+            exitCode: number;
           };
         };
       };
@@ -3184,6 +3582,7 @@ export interface operations {
             | 'resources:write'
             | 'files:read'
             | 'files:write'
+            | 'files:analyze'
             | 'queries:execute'
             | 'usage:read'
           )[];

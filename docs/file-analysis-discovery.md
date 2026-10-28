@@ -1,5 +1,10 @@
 # File System analysis: capability discovery
 
+Implementation update: the owner approved the GH-26 baseline. Read-only Console/API analysis
+now uses backend-managed selected-file snapshots; see [ADR 0010](decisions/0010-read-only-file-analysis.md)
+and [implementation verification](file-analysis-verification.md). The provider capability findings
+below describe the original discovery and do not imply that hosted Exec became available.
+
 - Verified: 2026-10-28 (Asia/Shanghai).
 - Intent: [GH-26](https://github.com/siddontang/tidb.ai/issues/26).
 - Status: Live capability proof complete. The Console analysis view, Workspace analysis API,

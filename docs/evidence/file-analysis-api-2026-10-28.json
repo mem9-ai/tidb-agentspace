@@ -1,0 +1,62 @@
+{
+  "date": "2026-10-28T00:45:10.274Z",
+  "provider": "drive9-anonymous",
+  "region": "Singapore",
+  "authentication": "scoped Workspace Key; revoked after verification",
+  "outputs": [
+    {
+      "file": "orders.csv",
+      "status": 200,
+      "engine": "duckdb",
+      "readOnly": true,
+      "rows": [
+        {
+          "region": "APAC",
+          "total": "30"
+        },
+        {
+          "region": "EU",
+          "total": "20"
+        }
+      ],
+      "stdout": "",
+      "exitCode": 0,
+      "durationMs": 2307,
+      "inputBytes": 52,
+      "sourceUnchanged": true
+    },
+    {
+      "file": "orders.parquet",
+      "status": 200,
+      "engine": "duckdb",
+      "readOnly": true,
+      "rows": [
+        {
+          "region": "APAC",
+          "total": "30"
+        },
+        {
+          "region": "EU",
+          "total": "20"
+        }
+      ],
+      "stdout": "",
+      "exitCode": 0,
+      "durationMs": 2288,
+      "inputBytes": 526,
+      "sourceUnchanged": true
+    },
+    {
+      "file": "service.log",
+      "status": 200,
+      "engine": "bash",
+      "readOnly": true,
+      "rows": [],
+      "stdout": "2:2026-10-28T01:00:01Z ERROR request timed out\n4:2026-10-28T01:00:03Z ERROR upstream unavailable\n",
+      "exitCode": 0,
+      "durationMs": 2589,
+      "inputBytes": 176,
+      "sourceUnchanged": true
+    }
+  ]
+}

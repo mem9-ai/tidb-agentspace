@@ -98,7 +98,7 @@ function Editor({ databaseId, dialect, value, onChange, onRun }: Props) {
 }
 
 export default function WorkspaceSqlInput(props: Props) {
-  // The database route owns the cache; leaving/switching releases its editor and old results.
+  // The resource panel owns the cache; leaving/switching releases its editor and old results.
   return (
     <EditorCacheProvider>
       <Editor {...props} />
