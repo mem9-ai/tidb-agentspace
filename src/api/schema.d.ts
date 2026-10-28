@@ -479,16 +479,17 @@ export interface components {
       id: string;
       name: string;
       /** @enum {unknown} */
-      kind: 'mysql' | 'duckdb' | 'filesystem';
+      kind: 'mysql' | 'postgresql' | 'duckdb' | 'filesystem';
       region: string;
       /** @enum {unknown} */
       status:
         'active' | 'provisioning' | 'failed' | 'suspended' | 'deleting' | 'deleted' | 'expired';
       /**
-       * @description Missing on legacy local resources.
+       * @description Missing on legacy local resources. db9-anonymous is PostgreSQL-compatible; its NUMERIC supports 28–29 significant digits. Provider compatibility limits apply.
        * @enum {unknown}
        */
-      provider?: 'local' | 'drive9-anonymous' | 'tidb-cloud-zero' | 'duckdb-drive9';
+      provider?:
+        'local' | 'drive9-anonymous' | 'tidb-cloud-zero' | 'duckdb-drive9' | 'db9-anonymous';
       /** @description Negotiated gateway upload limit; zero means uploads are unavailable. */
       uploadLimitBytes?: number;
       connectionError?: string;
@@ -604,7 +605,7 @@ export interface components {
       resourceId: string;
       name: string;
       /** @enum {unknown} */
-      kind: 'mysql' | 'duckdb' | 'filesystem';
+      kind: 'mysql' | 'postgresql' | 'duckdb' | 'filesystem';
       storageBytes: number | null;
       storageLimitBytes: number | null;
       monthlyRU: number | null;
@@ -614,17 +615,18 @@ export interface components {
     };
     Capability: {
       label: string;
-      regions: ('aws-us-east-1' | 'aws-us-west-2' | 'aws-ap-southeast-1' | 'automatic')[];
+      regions: ('aws-us-east-1' | 'aws-us-west-2' | 'automatic' | 'aws-ap-southeast-1')[];
       storageGiB: number | null;
       monthlyRU?: number | null;
       maxFiles?: number | null;
       preview: boolean;
       provider?: string;
-      /** @description False when the operator has not configured a verified native DuckDB runtime. */
+      /** @description False when this resource provider is not configured or available. */
       available?: boolean;
     };
     Capabilities: {
       mysql: components['schemas']['Capability'];
+      postgresql: components['schemas']['Capability'];
       duckdb: components['schemas']['Capability'];
       filesystem: components['schemas']['Capability'];
     };
@@ -1232,12 +1234,12 @@ export interface operations {
         'application/json': {
           name: string;
           /** @enum {unknown} */
-          kind: 'mysql' | 'duckdb' | 'filesystem';
+          kind: 'mysql' | 'postgresql' | 'duckdb' | 'filesystem';
           /**
            * @description Choose a region supported by the resource kind in capabilities. Zero MySQL uses automatic provider assignment. The first supported region is the Console default.
            * @enum {string}
            */
-          region: 'aws-us-east-1' | 'aws-us-west-2' | 'aws-ap-southeast-1' | 'automatic';
+          region: 'aws-us-east-1' | 'aws-us-west-2' | 'automatic' | 'aws-ap-southeast-1';
         };
       };
     };

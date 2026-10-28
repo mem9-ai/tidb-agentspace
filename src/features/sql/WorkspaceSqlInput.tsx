@@ -6,13 +6,13 @@ import {
   useEditorCacheContext,
 } from '@tidbcloud/tisqleditor-react';
 import { bbedit, oneDark } from '@tidbcloud/codemirror-extension-themes';
-import { MySQL, StandardSQL } from '@codemirror/lang-sql';
+import { MySQL, PostgreSQL, StandardSQL } from '@codemirror/lang-sql';
 import { Prec, EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 
 type Props = {
   databaseId: string;
-  dialect: 'mysql' | 'duckdb';
+  dialect: 'mysql' | 'duckdb' | 'postgresql';
   value: string;
   onChange: (value: string) => void;
   onRun: () => void;
@@ -28,7 +28,10 @@ function Editor({ databaseId, dialect, value, onChange, onRun, disabled = false 
   const scheme = useComputedColorScheme('light');
   const palette = useMantineTheme();
   const sqlConfig = useMemo(
-    () => ({ dialect: dialect === 'duckdb' ? StandardSQL : MySQL, upperCaseKeywords: true }),
+    () => ({
+      dialect: dialect === 'duckdb' ? StandardSQL : dialect === 'postgresql' ? PostgreSQL : MySQL,
+      upperCaseKeywords: true,
+    }),
     [dialect],
   );
   const theme = useMemo(

@@ -34,9 +34,11 @@ export function ResourceAccessPicker({
             description={
               resource.kind === 'mysql'
                 ? 'MySQL'
-                : resource.kind === 'duckdb'
-                  ? 'DuckDB'
-                  : 'File System'
+                : resource.kind === 'postgresql'
+                  ? 'PostgreSQL'
+                  : resource.kind === 'duckdb'
+                    ? 'DuckDB'
+                    : 'File System'
             }
             onChange={(event) =>
               onChange(

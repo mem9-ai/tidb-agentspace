@@ -39,6 +39,7 @@ export async function copySqlDependencies(root, staged) {
       await copy(dependency, directory, true);
   }
   await copy('mysql2', root);
+  await copy('pg', root);
   await copy('@duckdb/node-api', root);
   await copy('just-bash', root);
 }

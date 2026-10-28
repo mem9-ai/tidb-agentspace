@@ -1,6 +1,6 @@
 # TiDB Agent Workspace
 
-An independent developer and agent console with real MySQL through TiDB Cloud Zero, persistent DuckDB databases, and TiDB Cloud File System. PostgreSQL is temporarily unavailable.
+An independent developer and agent console with real MySQL through TiDB Cloud Zero, db9 PostgreSQL, persistent DuckDB databases, and TiDB Cloud File System.
 
 New to the repository? Read [start-here.md](start-here.md) for the project goals, current
 state, reading route, source map, and the path from an Issue to verified delivery.
@@ -63,10 +63,21 @@ file. Existing demo resources retain their labeled local behavior.
 
 Zero databases expire after up to 30 days; the Console shows the provider's exact expiry.
 Export important data before expiry. Region assignment is automatic. This integration does not
-claim/upgrade trials or automatically replace expired/uncertain instances. PostgreSQL creation,
-discovery and SQL are disabled; legacy PG records remain on disk for possible future migration.
+claim/upgrade trials or automatically replace expired/uncertain instances. Legacy simulated PG
+records remain hidden on disk; db9 resources use new private bindings.
 See [the SQL boundary and recovery](docs/decisions/0006-zero-sql-gateway.md) and
 [real verification evidence](docs/starter-sql-verification.md).
+
+## PostgreSQL with db9
+
+Enable `WORKSPACE_POSTGRES_PROVIDER=db9-anonymous` alongside the existing provider flags,
+then create **PostgreSQL · db9** in the Console. Official REST calls create an anonymous account
+and database; SQL uses a restricted native PostgreSQL role over verified TLS. Customers use
+Workspace Keys for queries, table browsing and files; upstream credentials stay in the service.
+Anonymous accounts currently allow five databases. Provider quotas/compatibility apply and
+usage is not metered. db9 NUMERIC supports 28–29 significant digits, rather than PostgreSQL's
+larger precision range. See [setup and recovery](docs/db9-postgres.md),
+[the provider decision](docs/decisions/0011-db9-postgres.md) and [verification](docs/db9-verification.md).
 
 ## DuckDB databases
 
@@ -83,7 +94,7 @@ See [runtime setup and recovery](docs/duckdb-databases.md) and
 
 - Nine top-level destinations: overview, databases, files, agent connection, keys, API explorer, monitoring, billing, settings. Each database has one SQL workspace with a persistent table list, editor, query results, columns, indexes and up to 100 preview rows at `#databases/<resource-id>/sql`, preserving the selected database on reload and browser history navigation.
 - Table links preserve exact names and keep the SQL editor visible. Table selection retains drafts; Query table explicitly prepares a SELECT. Agents use the same scoped table APIs; see [unified workspace verification](docs/database-workspace-verification.md) and [database API evidence](docs/database-browser-verification.md).
-- Simulated databases/local files by default, plus opt-in real Zero MySQL databases and Drive9 anonymous File Systems in Singapore. Creation persists idempotency and provider bindings across restarts.
+- Simulated databases/local files by default, plus opt-in real Zero MySQL, db9 PostgreSQL databases and Drive9 anonymous File Systems in Singapore. Creation persists idempotency and provider bindings across restarts.
 - Local UTF-8 files up to 256 KiB; live text/binary uploads up to the negotiated gateway maximum of 1 MiB, metadata listings, bounded previews, streaming downloads, and empty-directory deletion. Markdown, JSON, CSV, code, and text render in a side panel; oversized/binary content remains downloadable.
 - Read-only file analysis in the file side panel: CSV/Parquet use real DuckDB SQL; UTF-8 logs/text use Just Bash grep/awk/pipelines. The API takes bounded snapshots from local or live files, with no hosted Exec requirement. Agents need both `files:read` and `files:analyze` plus the File System grant; existing keys are unchanged. See [limits and verification](docs/file-analysis-verification.md).
 - Unified Workspace Keys with action scopes and explicit resource access, 7/30/90-day expiration, last-used metadata, and immediate revocation. Keys are revealed once; only a digest is stored.

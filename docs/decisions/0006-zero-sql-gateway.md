@@ -4,6 +4,10 @@
 - Date: 2026-10-28.
 - Scope: Anonymous provisioning, credential isolation, SQL execution, expiry, and PG withdrawal.
 
+The PG withdrawal described here is historical. [ADR 0011](0011-db9-postgres.md) adds opt-in
+real db9 PostgreSQL while keeping retired simulated PG records inaccessible. TiDB Cloud PG
+Starter remains a separate future integration.
+
 ## Decision and verified sources
 
 The owner explicitly chose TiDB Cloud Zero for the first real SQL integration and asked to

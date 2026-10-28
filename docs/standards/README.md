@@ -50,4 +50,8 @@ from DuckDB/Just Bash library support; preserve the Workspace credential and sel
 For DuckDB integrations, read [private database storage](../decisions/0008-duckdb-private-storage.md) and [the runtime guide](../duckdb-databases.md). Backing filesystems are internal bindings, not public resources or Key targets.
 For DuckDB file queries, follow [ADR 0009](../decisions/0009-duckdb-file-sources.md) and the runtime guide's source contract. Database and every File System require separate resource authorization plus query/read/analyze actions; never forward source-provider credentials into customer SQL.
 
+For PostgreSQL through db9, read [ADR 0011](../decisions/0011-db9-postgres.md) and
+[the runtime guide](../db9-postgres.md). Preserve the private anonymous/native credential boundary
+and distinguish provider compatibility limits from gateway value preservation.
+
 For DuckDB browsing performance, follow [ADR 0012](../decisions/0012-duckdb-catalog-reader.md): reuse only bounded server-generated read-only catalog sessions. Do not turn customer SQL or file-source workers into shared sessions to reduce attachment cost. Measure cold and warm paths separately and retain authorization on every request.

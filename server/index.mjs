@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStore, capabilities, workspaceId, usage } from './store.mjs';
 import { createDrive9, drive9Provider, drive9Region } from './providers/drive9.mjs';
+import { createDb9, db9Provider, db9Region } from './providers/db9.mjs';
 import { createZero, zeroProvider, zeroRegion } from './providers/zero.mjs';
 import { createDuckdb, duckdbProvider } from './providers/duckdb.mjs';
 import { parseSources, stageSources } from './duckdb-sources.mjs';
@@ -87,6 +88,9 @@ export async function createApp({
   analysisOptions,
   sqlExecute,
   zeroTransport,
+  postgresProvider = process.env.WORKSPACE_POSTGRES_PROVIDER || 'disabled',
+  db9Transport,
+  postgresExecute,
   mysqlProvider = process.env.WORKSPACE_MYSQL_PROVIDER || 'local',
   duckdbExtensionPath,
   duckdbExtensionSha256,
@@ -112,7 +116,21 @@ export async function createApp({
     extensionSha256: duckdbExtensionSha256,
     execute: duckdbExecute,
   });
+  if (!['disabled', db9Provider].includes(postgresProvider))
+    throw new Error('Unknown PostgreSQL provider.');
+  const db9 = await createDb9({
+    credentialsFile: dataFile + '.db9.json',
+    transport: db9Transport,
+    execute: postgresExecute,
+  });
+  const databaseAdapter = (resource) =>
+    resource.kind === 'duckdb' ? duckdb : resource.kind === 'postgresql' ? db9 : zero;
   const availableCapabilities = structuredClone(capabilities);
+  Object.assign(availableCapabilities.postgresql, {
+    provider: db9Provider,
+    available: postgresProvider === db9Provider,
+    regions: [db9Region],
+  });
   availableCapabilities.duckdb.provider = duckdbProvider;
   availableCapabilities.duckdb.available = duckdb.available;
   availableCapabilities.filesystem.provider = filesProvider;
@@ -139,7 +157,13 @@ export async function createApp({
   function visibleState() {
     const state = store.read();
     const retired = new Set(
-      state.resources.filter((r) => !Object.hasOwn(capabilities, r.kind)).map((r) => r.id),
+      state.resources
+        .filter(
+          (r) =>
+            !Object.hasOwn(capabilities, r.kind) ||
+            (r.kind === 'postgresql' && r.provider !== db9Provider),
+        )
+        .map((r) => r.id),
     );
     state.resources = state.resources.filter((r) => !retired.has(r.id));
     state.events = state.events.filter((e) => !retired.has(e.resourceId));
@@ -154,23 +178,27 @@ export async function createApp({
     });
   }
   async function updateProvider(resource, provision = false) {
-    if (![drive9Provider, zeroProvider, duckdbProvider].includes(resource.provider))
+    if (![drive9Provider, zeroProvider, duckdbProvider, db9Provider].includes(resource.provider))
       return resource;
     let info;
     try {
       info =
-        resource.provider === duckdbProvider
-          ? await (provision ? duckdb.provision(resource) : duckdb.status(resource.id))
-          : resource.provider === zeroProvider
-            ? await (provision ? zero.provision(resource) : zero.status(resource.id))
-            : await (provision ? drive9.provision(resource.id) : drive9.status(resource.id));
+        resource.provider === db9Provider
+          ? await (provision ? db9.provision(resource) : db9.status(resource.id))
+          : resource.provider === duckdbProvider
+            ? await (provision ? duckdb.provision(resource) : duckdb.status(resource.id))
+            : resource.provider === zeroProvider
+              ? await (provision ? zero.provision(resource) : zero.status(resource.id))
+              : await (provision ? drive9.provision(resource.id) : drive9.status(resource.id));
     } catch (error) {
       info = {
-        ...(resource.provider === zeroProvider
-          ? zero.status(resource.id)
-          : resource.provider === duckdbProvider
-            ? await duckdb.status(resource.id)
-            : {}),
+        ...(resource.provider === db9Provider
+          ? db9.status(resource.id)
+          : resource.provider === zeroProvider
+            ? zero.status(resource.id)
+            : resource.provider === duckdbProvider
+              ? await duckdb.status(resource.id)
+              : {}),
         connectionError: error.message,
       };
     }
@@ -201,7 +229,11 @@ export async function createApp({
           status: 'ok',
           mode:
             filesProvider === drive9Provider ||
-            store.read().resources.some((r) => [zeroProvider, duckdbProvider].includes(r.provider))
+            store
+              .read()
+              .resources.some((r) =>
+                [zeroProvider, duckdbProvider, db9Provider].includes(r.provider),
+              )
               ? 'hybrid'
               : 'demo',
           filesProvider,
@@ -277,7 +309,9 @@ export async function createApp({
         requireOwner();
         await Promise.all(
           state.resources
-            .filter((r) => [drive9Provider, zeroProvider, duckdbProvider].includes(r.provider))
+            .filter((r) =>
+              [drive9Provider, zeroProvider, duckdbProvider, db9Provider].includes(r.provider),
+            )
             .map((r) => updateProvider(r)),
         );
         state = visibleState();
@@ -289,7 +323,7 @@ export async function createApp({
           capabilities: availableCapabilities,
           usage: usage(state),
           mode: state.resources.some((r) =>
-            [drive9Provider, zeroProvider, duckdbProvider].includes(r.provider),
+            [drive9Provider, zeroProvider, duckdbProvider, db9Provider].includes(r.provider),
           )
             ? 'hybrid'
             : 'demo',
@@ -311,11 +345,14 @@ export async function createApp({
             'Creating resources requires access to all current and future workspace resources.',
           );
         const input = await body(req);
-        if (!Object.hasOwn(capabilities, input.kind))
+        if (
+          !Object.hasOwn(capabilities, input.kind) ||
+          (input.kind === 'postgresql' && postgresProvider !== db9Provider)
+        )
           fail(
             400,
             'INVALID_KIND',
-            'Choose mysql, duckdb or filesystem. PostgreSQL is not currently available.',
+            'Choose an available mysql, postgresql, duckdb or filesystem resource.',
           );
         if (typeof input.name !== 'string' || !/^[a-z][a-z0-9-]{2,39}$/.test(input.name))
           fail(
@@ -357,7 +394,11 @@ export async function createApp({
           const limit = 5;
           if (
             input.kind !== 'filesystem' &&
-            draft.resources.filter((r) => r.kind === input.kind).length >= limit
+            draft.resources.filter(
+              (r) =>
+                r.kind === input.kind &&
+                (input.kind !== 'postgresql' || r.provider === db9Provider),
+            ).length >= limit
           )
             fail(
               409,
@@ -372,6 +413,7 @@ export async function createApp({
             status:
               (input.kind === 'filesystem' && filesProvider === drive9Provider) ||
               (input.kind === 'mysql' && mysqlProvider === zeroProvider) ||
+              input.kind === 'postgresql' ||
               input.kind === 'duckdb'
                 ? 'provisioning'
                 : 'active',
@@ -380,7 +422,9 @@ export async function createApp({
                 ? filesProvider
                 : input.kind === 'duckdb'
                   ? duckdbProvider
-                  : mysqlProvider,
+                  : input.kind === 'postgresql'
+                    ? db9Provider
+                    : mysqlProvider,
             createdAt: new Date().toISOString(),
           };
           draft.resources.push(resource);
@@ -390,7 +434,9 @@ export async function createApp({
         });
         return send(201, {
           data: await updateProvider(resource, true),
-          mode: [drive9Provider, zeroProvider, duckdbProvider].includes(resource.provider)
+          mode: [drive9Provider, zeroProvider, duckdbProvider, db9Provider].includes(
+            resource.provider,
+          )
             ? 'live'
             : 'demo',
         });
@@ -399,7 +445,7 @@ export async function createApp({
       if (setupMatch && req.method === 'POST') {
         requireScope('resources:write');
         const resource = requireResource(setupMatch[1]);
-        if (![zeroProvider, duckdbProvider].includes(resource.provider))
+        if (![zeroProvider, duckdbProvider, db9Provider].includes(resource.provider))
           fail(400, 'UNSUPPORTED_PROVIDER', 'Setup is available only for managed databases.');
         return send(200, { data: await updateProvider(resource, true) });
       }
@@ -592,7 +638,7 @@ export async function createApp({
               execute: (sql) =>
                 resource.kind === 'duckdb'
                   ? duckdb.catalog(resource, sql, controller.signal)
-                  : zero.execute(resource, sql, controller.signal),
+                  : databaseAdapter(resource).execute(resource, sql, controller.signal),
             }),
           );
         } finally {
@@ -645,7 +691,7 @@ export async function createApp({
           ...source,
           resource: requireResource(source.resourceId, 'filesystem'),
         }));
-        if ([zeroProvider, duckdbProvider].includes(resource.provider)) {
+        if ([zeroProvider, duckdbProvider, db9Provider].includes(resource.provider)) {
           if (resource.status === 'expired')
             fail(
               410,
@@ -658,7 +704,7 @@ export async function createApp({
           const onClose = () => controller.abort();
           res.on('close', onClose);
           try {
-            const result = await (resource.kind === 'duckdb' ? duckdb : zero).execute(
+            const result = await databaseAdapter(resource).execute(
               resource,
               input.sql,
               controller.signal,

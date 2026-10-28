@@ -28,7 +28,12 @@ export function databaseEditorHash(resourceId: string, tableName?: string): stri
 export function databaseTablesHash(resourceId: string, tableName?: string): string {
   return databaseHash(resourceId, 'tables', tableName);
 }
-export function tableSelectSql(name: string, dialect: 'mysql' | 'duckdb' = 'mysql'): string {
+export function tableSelectSql(
+  name: string,
+  dialect: 'mysql' | 'duckdb' | 'postgresql' = 'mysql',
+): string {
+  if (dialect === 'postgresql')
+    return `SELECT * FROM "workspace"."${name.replaceAll('"', '""')}" LIMIT 100;`;
   if (dialect === 'duckdb')
     return `SELECT * FROM "main"."${name.replaceAll('"', '""')}" LIMIT 100;`;
   return `SELECT * FROM \`${name.replaceAll('`', '``')}\` LIMIT 100;`;

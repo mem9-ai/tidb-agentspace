@@ -17,14 +17,15 @@ const schemas = {
     properties: {
       id: { type: 'string' },
       name: { type: 'string' },
-      kind: { enum: ['mysql', 'duckdb', 'filesystem'] },
+      kind: { enum: ['mysql', 'postgresql', 'duckdb', 'filesystem'] },
       region: { type: 'string' },
       status: {
         enum: ['active', 'provisioning', 'failed', 'suspended', 'deleting', 'deleted', 'expired'],
       },
       provider: {
-        enum: ['local', 'drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9'],
-        description: 'Missing on legacy local resources.',
+        enum: ['local', 'drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'],
+        description:
+          'Missing on legacy local resources. db9-anonymous is PostgreSQL-compatible; its NUMERIC supports 28–29 significant digits. Provider compatibility limits apply.',
       },
       uploadLimitBytes: {
         type: 'integer',
@@ -187,7 +188,7 @@ Object.assign(schemas, {
   Usage: object({
     resourceId: str,
     name: str,
-    kind: { enum: ['mysql', 'duckdb', 'filesystem'] },
+    kind: { enum: ['mysql', 'postgresql', 'duckdb', 'filesystem'] },
     storageBytes: { type: ['integer', 'null'] },
     storageLimitBytes: { type: ['integer', 'null'] },
     monthlyRU: { type: ['integer', 'null'] },
@@ -206,13 +207,15 @@ Object.assign(schemas, {
       provider: str,
       available: {
         type: 'boolean',
-        description: 'False when the operator has not configured a verified native DuckDB runtime.',
+        description: 'False when this resource provider is not configured or available.',
       },
     },
     ['label', 'regions', 'storageGiB', 'preview'],
   ),
   Capabilities: object(
-    Object.fromEntries(['mysql', 'duckdb', 'filesystem'].map((kind) => [kind, ref('Capability')])),
+    Object.fromEntries(
+      ['mysql', 'postgresql', 'duckdb', 'filesystem'].map((kind) => [kind, ref('Capability')]),
+    ),
   ),
   Bootstrap: object({
     workspace: ref('Workspace'),
@@ -320,7 +323,7 @@ const paths = {
           required: ['name', 'kind', 'region'],
           properties: {
             name: { type: 'string', pattern: '^[a-z][a-z0-9-]{2,39}$' },
-            kind: { enum: ['mysql', 'duckdb', 'filesystem'] },
+            kind: { enum: ['mysql', 'postgresql', 'duckdb', 'filesystem'] },
             region: {
               ...regionSchema,
               description:
@@ -768,7 +771,7 @@ const spec = {
     title: 'TiDB Agent Workspace · Local Prototype API',
     version: '0.1.0',
     description:
-      'A loopback Workspace gateway with opt-in real TiDB Cloud Zero MySQL and Singapore Drive9 files. Existing local resources remain demos. Workspace Keys authorize actions and resources; upstream credentials stay internal. Zero trials expire; cloud usage is unmeasured. Production identity and public hosting are deferred.',
+      'A loopback Workspace gateway with opt-in real db9 PostgreSQL and TiDB Cloud Zero MySQL and Singapore Drive9 files. Existing local resources remain demos. Workspace Keys authorize actions and resources; upstream credentials stay internal. Zero trials expire; cloud usage is unmeasured. Production identity and public hosting are deferred.',
   },
   servers: [
     { url: '/api/v1', description: 'Standalone Workspace API; resolve against the API origin' },

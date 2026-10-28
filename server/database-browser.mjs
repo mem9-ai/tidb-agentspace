@@ -1,3 +1,4 @@
+import { browsePostgres } from './postgres-browser.mjs';
 import { browseDuckdb } from './duckdb-browser.mjs';
 import { sqlError } from './providers/sql-common.mjs';
 
@@ -41,6 +42,7 @@ export function demoRows(createdAt) {
 }
 
 export async function browseDatabase({ resource, action, name, execute, createdAt }) {
+  if (resource.kind === 'postgresql') return browsePostgres({ resource, action, name, execute });
   if (resource.kind === 'duckdb') return browseDuckdb({ resource, action, name, execute });
   const live = mode(resource) === 'live';
   if (resource.status === 'expired')
