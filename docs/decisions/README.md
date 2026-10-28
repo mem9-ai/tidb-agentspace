@@ -21,3 +21,4 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0007: Database browsing](0007-database-browser.md) — scoped schema reads, bounded data preview, and table-to-editor navigation.
 
 - [0008: DuckDB private storage](0008-duckdb-private-storage.md) — implemented with a verified native runtime; dedicated backing files hidden behind each DuckDB database.
+- [0009: Query-scoped file sources](0009-duckdb-file-sources.md) — design baseline for authorized CSV/JSON/Parquet inputs in DuckDB; implementation pending.
