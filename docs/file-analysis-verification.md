@@ -2,8 +2,8 @@
 
 - Date: 2026-10-28. Implementation against the owner-approved
   [GH-26 baseline at b76e1d](https://github.com/siddontang/tidb.ai/blob/b76e1dde2a02355552fcba50cb8299ec625ebeff/specs/gh-26/spec.md),
-  source base `7031f13` (including DuckDB databases, the unified database UI and local-agent workflow).
-- Boundary: [ADR 0009](decisions/0009-read-only-file-analysis.md).
+  source base `8fcab93` (including DuckDB databases, the unified database UI and local-agent workflow).
+- Boundary: [ADR 0010](decisions/0010-read-only-file-analysis.md).
   The actual candidate is identified by the implementation PR's head and its CI runs.
 - Scope: local loopback API/Console with real native/interpreter engines and real Singapore
   anonymous files. No public deployment, new tenant, paid compute or source-file mutation.

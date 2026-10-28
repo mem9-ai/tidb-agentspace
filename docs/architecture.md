@@ -73,7 +73,7 @@ File System analysis is implemented as bounded server-side snapshot workers: CSV
 DuckDB SQL, while UTF-8 logs and text use Just Bash. It requires `files:read`, `files:analyze`
 and the resource grant. Provider credentials never enter workers. This is a read-only local
 prototype; public compute isolation and larger remote scans remain future work. See
-[ADR 0009](decisions/0009-read-only-file-analysis.md).
+[ADR 0010](decisions/0010-read-only-file-analysis.md).
 
 File System opens files in a non-modal reading panel beside the desktop file list. On narrow
 screens the panel has an explicit return to the list. Markdown is rendered by default;

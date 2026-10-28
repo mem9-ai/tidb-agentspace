@@ -1,4 +1,4 @@
-# 0009: Read-only analysis of selected File System snapshots
+# 0010: Read-only analysis of selected File System snapshots
 
 - Status: Accepted for the loopback prototype, 2026-10-28; implements the owner-approved
   [GH-26 baseline](https://github.com/siddontang/tidb.ai/blob/b76e1dde2a02355552fcba50cb8299ec625ebeff/specs/gh-26/spec.md).

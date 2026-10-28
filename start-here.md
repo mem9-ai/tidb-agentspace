@@ -80,7 +80,7 @@ Backend action/resource authorization, service-owned provider secrets, shared do
 operations, and actual TiUI components/adapters are central project boundaries. Their detailed
 rules and verification stay in these linked sources.
 
-For CSV/Parquet SQL and text/log analysis, read [ADR 0009](docs/decisions/0009-read-only-file-analysis.md)
+For CSV/Parquet SQL and text/log analysis, read [ADR 0010](docs/decisions/0010-read-only-file-analysis.md)
 and [verification](docs/file-analysis-verification.md). The Console/API implement selected-file
 snapshot workers; provider-hosted Exec, large remote scans and public compute isolation remain future work.
 

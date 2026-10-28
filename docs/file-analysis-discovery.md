@@ -1,7 +1,7 @@
 # File System analysis: capability discovery
 
 Implementation update: the owner approved the GH-26 baseline. Read-only Console/API analysis
-now uses backend-managed selected-file snapshots; see [ADR 0009](decisions/0009-read-only-file-analysis.md)
+now uses backend-managed selected-file snapshots; see [ADR 0010](decisions/0010-read-only-file-analysis.md)
 and [implementation verification](file-analysis-verification.md). The provider capability findings
 below describe the original discovery and do not imply that hosted Exec became available.
 

@@ -47,7 +47,7 @@ Console. To run the built backend independently, copy `dist/api/` anywhere and e
 | `WORKSPACE_DATA_FILE`                | `.data/workspace.json` relative to the API source/output root | Use an absolute path on persistent storage across artifact replacement. Provider credentials stay in sibling `.providers.json` (Files) and `.databases.json` (Zero) files.                                  |
 | `WORKSPACE_FILES_PROVIDER`           | `local`                                                       | Existing explicit `drive9-anonymous` opt-in remains unchanged.                                                                                                                                              |
 
-DuckDB database resources require a separately provided verified native tidbfs artifact; see [DuckDB runtime setup](duckdb-databases.md). File snapshot analysis uses the installed native engine without that extension; see [ADR 0009](decisions/0009-read-only-file-analysis.md).
+DuckDB database resources require a separately provided verified native tidbfs artifact; see [DuckDB runtime setup](duckdb-databases.md). File snapshot analysis uses the installed native engine without that extension; see [ADR 0010](decisions/0010-read-only-file-analysis.md).
 
 `WORKSPACE_MYSQL_PROVIDER=tidb-cloud-zero` enables real anonymous MySQL creation; default `local` retains demos. Trials expire and existing bindings are preserved.
 
