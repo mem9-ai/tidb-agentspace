@@ -5,8 +5,11 @@
 - Accepted direction: Welcome contributions of intent, detailed specifications, and acceptance
   cases; design public APIs and the agent experience as primary product surfaces. This captures
   the project owner's direction on this date.
-- Proposed operating model: The specification packages, execution protocol, risk controls,
-  and milestones below require incremental implementation. They do not grant new merge,
+- Accepted execution model: The already running local agent performs the work. GitHub holds
+  intent, accepted specifications, PRs, and CI evidence. The owner clarified that this system
+  should define principles and a local workflow, without adding external model calls or keys.
+- Proposed extensions: Unattended execution and production-delivery models below are optional
+  designs requiring a separate explicit request. They do not grant new merge,
   cloud-operation, or deployment authority. Existing [CI/CD policy](../ci-cd.md) governs delivery.
 - Revisit: After the first end-to-end specification pilot, before public contributor execution,
   and before any production deployment.
@@ -25,7 +28,31 @@ GitHub is the accepted collaboration interface for this model. Follow the
 [GitHub contribution workflow](github-contribution-workflow.md) for intent Issues, specification
 PRs, bounded task handoffs, implementation PRs, and delivery evidence. Accepted specifications
 live at Git revisions; ordinary Issue edits do not silently change the baseline. Native forms
-and manual coordination are the initial implementation; autonomous dispatch remains proposed.
+and local agent coordination are the current foundation. Comment commands describe work to
+hand off to the local agent; they do not start an external agent service.
+
+## Local agent first
+
+The development system is a contract the current local agent follows. A contributor should
+be able to clone the repository, read `start-here.md`, open the relevant Issue, and continue
+from shared documents without needing the original chat or a new model-service integration.
+
+| Principle                      | Concrete rule                                                                                                                                                                                          |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Local execution                | Use the agent session the contributor already runs. Do not add a model API key, cloud dispatcher, webhook, daemon, or agent-calling-agent layer to perform ordinary contribution work.                 |
+| GitHub as shared memory        | Record intent, ownership, accepted spec revision, task handoff, PR and evidence on GitHub. An Issue comment is a request, not an automatic execution authority.                                        |
+| API and agent experience first | Define the observable public contract before interface-specific implementation. Keep API behavior, structured errors and examples usable by both people and agents.                                    |
+| Portable context               | Keep rules, source maps, specs and reproducible commands in the repository. A feature must not depend on a specific agent vendor, private skill or personal memory.                                    |
+| Frozen acceptance              | Acceptance comes from the accepted specification and versioned checks. The implementer cannot weaken that baseline to obtain a pass.                                                                   |
+| Independent evidence           | Independent acceptance means a separately defined baseline and verifiable results; it does not require another AI agent, another model call, or another service.                                       |
+| Smallest useful harness        | Start with existing repository commands, meaningful behavior tests, contract checks and CI. Add tooling only for a demonstrated gap and within an explicitly requested scope.                          |
+| Evidence before delivery       | The same local agent can prepare a PR and perform an authorized merge after diff review, sign-offs, acceptance and latest-head CI. Follow the existing merge policy and enforced GitHub requirements.  |
+| Bounded completion             | Missing requirements return to design; failed checks return to implementation. Stop at the agreed endpoint, preserve partial work, and report blockers instead of launching an unattended repair loop. |
+
+The minimum loop is: Issue intent → accepted spec PR → local implementation → frozen
+acceptance and `npm run check` → implementation PR → current-head CI and authorized merge.
+GitHub CI runs deterministic checks; it does not need to call a model. An already authorized
+local agent may carry the loop through without a separate agent orchestration system.
 
 ## Contribution as a shared contract
 
@@ -295,9 +322,30 @@ unconfigured or unauthorized.
 
 ## Harness architecture
 
-Keep the first implementation small: an orchestrator with persistent run state, disposable
-workers, a trusted evaluator, an evidence store, and narrow delivery integrations. Do not
-start by building a multi-agent framework or requiring several agents for every feature.
+The minimum harness is the repository's reproducible checks and accepted delivery contract:
+versioned specs/fixtures, meaningful behavior tests, generated-contract checks, `npm run check`,
+and current-head CI. The current local agent reads the context, implements, records evidence,
+opens a PR, and performs delivery when authorized by the existing policy. No new execution
+service or second model is needed to apply these principles.
+
+```mermaid
+flowchart LR
+  issue[GitHub intent] --> spec[Accepted specification at a Git SHA]
+  spec --> local[Current local agent]
+  local --> candidate[Focused branch and PR]
+  baseline[Frozen acceptance baseline] --> checks[Behavior tests and repository checks]
+  candidate --> checks
+  checks --> ci[Current-head CI and diff review]
+  ci --> merge[Authorized local-agent merge]
+  merge --> evidence[Confirmed endpoint and GitHub evidence]
+```
+
+### Optional unattended execution model
+
+The following architecture describes stricter boundaries only if unattended execution is
+separately requested later. It is not the default contribution path or a prerequisite for
+local-agent work. Its components are logical responsibilities, not a requirement to deploy
+separate services or agents. No external model integration is authorized by this design.
 
 ```mermaid
 flowchart TB
@@ -447,20 +495,21 @@ claimed yet.
 
 Each stage should produce a useful contribution path without requiring the next stage first.
 
-| Stage                         | Deliverable                                                                                            | Exit evidence                                                                                                        |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| 1 Contributor workflow        | Publish principles/template; accept one intent/spec PR without requiring implementation                | A maintainer can refine and accept it with explicit unresolved decisions and contributor credit                      |
-| 2 Specification pilot         | One bounded feature, frozen acceptance baseline, isolated implementation, requirement report           | Implementation passes behavior and quality gates; a portability trial identifies and resolves material ambiguity     |
-| 3 Local harness               | Persistent run records, context builder, disposable worker, trusted evaluation, finite repair loop     | Resume after worker failure; reject a modified baseline and stale evidence; contain an attempted out-of-scope action |
-| 4 Authorized merge automation | Narrow merge integration, review routing, latest-candidate checks, evidence retention                  | Demonstrate correct rejection of stale, failing, conflicting, unsigned, or unauthorized candidates                   |
-| 5 Protected delivery          | Configured staging/production targets, verified artifacts, scoped identity, health/recovery procedures | Release and recover in an authorized test environment; verify tenant boundaries and audit the result                 |
+| Stage                        | Deliverable                                                                                            | Exit evidence                                                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| 1 Contributor workflow       | Publish principles/template; accept one intent/spec PR without requiring implementation                | A maintainer can refine and accept it with explicit unresolved decisions and contributor credit                  |
+| 2 Specification pilot        | One bounded feature, frozen acceptance baseline, isolated implementation, requirement report           | Implementation passes behavior and quality gates; a portability trial identifies and resolves material ambiguity |
+| 3 Reproducible local harness | Versioned acceptance, existing repository commands, requirement evidence and resumable handoffs        | A local session can resume work and identify modified baselines, failed requirements and stale evidence          |
+| 4 Authorized local delivery  | Local diff review, current-head CI, sign-offs and the existing merge policy                            | Reject stale, failing, conflicting, unsigned or unauthorized candidates before merging                           |
+| 5 Protected delivery         | Configured staging/production targets, verified artifacts, scoped identity, health/recovery procedures | Release and recover in an authorized test environment; verify tenant boundaries and audit the result             |
 
 For the first pilot, prefer a bounded feature using existing local domain operations and
 fixtures. Avoid making payments, public provisioning, or a new identity system the first
 autonomy experiment. The authorization example above is useful for evaluating regression
 quality but remains sensitive work under the existing review policy.
 
-Implement each stage as its own focused change with meaningful tests. Proposed metadata and
+Improve each stage only when a demonstrated gap requires a focused change. Unattended
+orchestration and external model integration are not implied next steps. Proposed metadata and
 operations become public contracts only after review, an ADR when applicable, implementation,
 and generated/client/test alignment.
 
@@ -474,11 +523,11 @@ and generated/client/test alignment.
 | API behavior and provider fixtures                                      | Existing tests use temporary state and controlled provider behavior; coverage must be assessed per requirement |
 | Internal artifact packaging                                             | Existing manual workflow records source SHA and checksums; it does not deploy                                  |
 | Merge authorization                                                     | Existing early-iteration policy; repository-side protection and independent review are not configured by prose |
-| Contribution template and detailed system design                        | Supplied here; intake automation, schema validation, and spec-to-test mapping remain proposed                  |
+| Contribution template and local-agent workflow                          | Shared principles, feature template and GitHub handoff procedure are available; comments do not start a model  |
 | Isolated autonomous runtime and trusted evaluator                       | Proposed; existing CI and repository checks are not this security boundary                                     |
 | Persistent runs, independent evidence, and automatic policy enforcement | Proposed                                                                                                       |
 | Protected staging and production delivery                               | Proposed; no configured production target is introduced here                                                   |
 
-This design builds on the current repository without claiming that documentation has supplied
-an operational harness. The next useful implementation is the bounded specification pilot,
-followed by the smallest runtime that can execute and evaluate it safely.
+This design builds on existing local development and CI without claiming that documentation
+has supplied a new autonomous runtime. Apply the bounded specification workflow with the
+current local agent first. Additional infrastructure needs a demonstrated gap and explicit scope.

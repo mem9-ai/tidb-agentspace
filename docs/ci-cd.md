@@ -70,9 +70,11 @@ report do not grant merge or deployment rights.
 
 Use the [GitHub contribution workflow](standards/github-contribution-workflow.md) for Issue
 intake, specification/implementation PR links, and requirement evidence. A specification PR
-does not close its parent feature intent. Labels and future dispatch commands do not replace
+does not close its parent feature intent. Local-agent handoff comments and labels do not replace
 the review, latest-head checks, sign-offs, or hosting requirements in this policy. No automatic
-agent dispatcher is installed by the Issue templates.
+agent dispatcher is installed by the Issue templates. The current local agent can perform
+authorized delivery under the existing policy. Independent acceptance uses a frozen baseline
+and verifiable results; it does not require a second model or model credentials in CI.
 
 Local and remote validation both use `npm run check`. It checks runtime versions, repository
 configuration, formatting, lint, API and client generation, tests, strict types, and independent
