@@ -11,6 +11,7 @@ export type QueryResult =
   operations['executeQuery']['responses'][200]['content']['application/json'];
 type JsonBody<T extends { requestBody: { content: { 'application/json': unknown } } }> =
   T['requestBody']['content']['application/json'];
+export type QuerySource = NonNullable<JsonBody<operations['executeQuery']>['sources']>[number];
 export type CreateKeyInput = JsonBody<operations['createKey']>;
 export type FileAnalysisResult =
   operations['analyzeFile']['responses'][200]['content']['application/json'];
@@ -80,8 +81,8 @@ export const workspaceApi = {
         signal,
       }),
     ),
-  query: (body: JsonBody<operations['executeQuery']>) =>
-    responseData(client.POST('/workspaces/{workspaceId}/queries', { params, body })),
+  query: (body: JsonBody<operations['executeQuery']>, signal?: AbortSignal) =>
+    responseData(client.POST('/workspaces/{workspaceId}/queries', { params, body, signal })),
   saveFile: (body: WriteFileInput) =>
     responseData(client.PUT('/workspaces/{workspaceId}/files', { params, body })),
   deleteFile: (body: JsonBody<operations['deleteFile']>) =>

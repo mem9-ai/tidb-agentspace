@@ -44,6 +44,7 @@ follow its task-specific references before implementation. Keep detailed rules c
   own endpoints, credentials, regional availability, and capabilities.
 - DuckDB owns dedicated private storage; read [the DuckDB boundary](docs/decisions/0008-duckdb-private-storage.md).
   Never publish its backing filesystem as a customer resource, Key target, file API or usage row.
+  File query sources follow [ADR 0009](docs/decisions/0009-duckdb-file-sources.md): authorize every selected public File System and read/analyze action before I/O; keep snapshots query-scoped and credentials internal.
 - Customers use one Workspace Key for the public product API, with both action and resource
   permissions. The service manages upstream cloud keys and native data credentials internally.
   Never require customers to supply provider keys or expose those secrets to a browser or agent.

@@ -107,6 +107,13 @@ throughout the app.
 
 ## Backend boundaries
 
+Implemented DuckDB file queries use explicit query-scoped CSV/JSON/Parquet sources, authorized
+with database query access plus read/analyze access to every public File System. The backend
+loads bounded private snapshots and materializes an in-memory catalog before disabling external
+access; source queries attach the native database read-only and admit only SELECT. Source tokens,
+snapshots and database backing storage stay internal. See [ADR 0009](decisions/0009-duckdb-file-sources.md)
+and [the source contract](duckdb-databases.md#workspace-file-sources).
+
 Implemented delivery: the Console and API have independent builds, processes, and artifacts in
 one repository. The API serves only HTTP API/schema endpoints; the static Console uses runtime
 API-origin configuration and an OpenAPI-generated typed client. The existing backend remains

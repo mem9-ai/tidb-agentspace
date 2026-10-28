@@ -19,6 +19,8 @@ public file interface.
 
 ## Operator runtime setup
 
+For CSV, JSON and Parquet in public File Systems, see [Workspace file sources](#workspace-file-sources).
+
 Use Node/npm from the repository pins and `npm ci`. The pinned `@duckdb/node-api@2.0.0-r.1`
 provides DuckDB 2.0.0. Supply the exact matching platform/version of the native tidbfs artifact
 from [drive9-ai/duckdb](https://github.com/drive9-ai/duckdb). Its release build statically links
@@ -90,7 +92,63 @@ functions. Identifiers use double quotes, and previews retain the existing 100-r
 The editor uses TiUI SQL Editor with standard SQL highlighting; execution is DuckDB's dialect,
 not MySQL or PG protocol support. Cloud usage/allowances are unmeasured (null).
 
-## Verification
+## Workspace file sources
+
+In the DuckDB workspace, choose **Add file source**, select a File System and file, and give
+it a unique table name. Browse folders or enter a directory. CSV, JSON, JSONL/NDJSON and Parquet
+are supported. **Query orders** prepares `SELECT * FROM files."orders" LIMIT 100;`; it does
+not run it. Existing edited SQL requires a replace/keep choice. Add multiple named sources
+to join them and existing database tables. Removing/changing sources clears prior results.
+Source selections stay in this page's memory; every execution reads fresh snapshots.
+
+Agents use the same query API, with **all** of `queries:execute`, `files:read`, `files:analyze`,
+the DuckDB resource grant and each source File System grant. Existing Keys do not gain the
+new analyze action automatically. Key administration remains owner-only. Example JSON for
+`POST /workspaces/ws_agentlab/queries`:
+
+```json
+{
+  "resourceId": "db_example",
+  "sql": "SELECT region, SUM(amount) AS total FROM files.orders GROUP BY region",
+  "sources": [{ "name": "orders", "resourceId": "fs_example", "path": "/orders.csv" }]
+}
+```
+
+Source names use `[a-z][a-z0-9_]{0,31}` and must be unique. Only exact absolute Workspace paths
+are accepted; no traversal, globs, external URLs, credentials or native paths. Maximum four
+sources and 16 MiB combined input. Preflight sizes before fetching and enforce bounds while
+streaming. Compare size, revision, ETag and file identity where supplied before/after reads;
+observed replacement/growth returns a conflict. No atomic snapshot across files is promised.
+Malformed, empty or unsupported files fail clearly; download originals from File System for
+larger/local analysis. The existing 1 MiB anonymous gateway upload limit is unchanged.
+
+File queries admit one native SELECT statement, with the selected database attached read-only.
+The parent service downloads only authorized snapshots to owner-only temporary files; source
+provider tokens never enter SQL or the native worker. Trusted setup materializes a separate
+in-memory `files` catalog, then disables external access and locks settings before customer SQL.
+Source tables and snapshots are disposed after every request; files are never imported into
+the persistent database. Ordinary SQL without sources retains its existing read/write behavior.
+See [ADR 0009](decisions/0009-duckdb-file-sources.md).
+
+Input loading and native execution share the 15-second deadline and existing admission, memory
+and output bounds. Disconnect, timeout, parse error and rejected SQL clean snapshots and workers.
+Expiry/revocation is checked before reads, native execution and returning file-derived data.
+No request or SQL is retried automatically. These controls retain the trusted loopback boundary;
+they do not supply OS isolation for public untrusted SQL. Native remote storage remains experimental.
+
+See [file query evidence](duckdb-sources-verification.md) for format/permission/cleanup tests and
+real-service/browser checks. Run explicit task-owned acceptance with:
+
+```sh
+node scripts/verify-duckdb-sources.mjs http://127.0.0.1:4318 DUCKDB_ID FILESYSTEM_ID
+```
+
+It uploads synthetic CSV/JSON/NDJSON/Parquet to a new task directory, verifies real queries and
+Key denials, revokes verification keys and retains examples. To reconcile/recheck an existing
+sample directory, pass its exact `/duckdb-query-demo-XXXXXXXX` as the fourth argument; that
+mode only reads existing examples and never repeats file creation.
+
+## Database verification
 
 See [verification evidence](duckdb-verification.md) for requirement mappings, live results,
 checked viewports and screenshots. Explicit operator acceptance can run:

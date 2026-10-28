@@ -48,3 +48,4 @@ and [GH-26 design baseline](../../specs/gh-26/spec.md). Read [ADR 0010](../decis
 from DuckDB/Just Bash library support; preserve the Workspace credential and selected-file boundaries.
 
 For DuckDB integrations, read [private database storage](../decisions/0008-duckdb-private-storage.md) and [the runtime guide](../duckdb-databases.md). Backing filesystems are internal bindings, not public resources or Key targets.
+For DuckDB file queries, follow [ADR 0009](../decisions/0009-duckdb-file-sources.md) and the runtime guide's source contract. Database and every File System require separate resource authorization plus query/read/analyze actions; never forward source-provider credentials into customer SQL.

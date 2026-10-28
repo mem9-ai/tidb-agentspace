@@ -8,6 +8,7 @@ export const runtimeFiles = [
   'server/database-browser.mjs',
   'server/database-identifiers.mjs',
   'server/duckdb-browser.mjs',
+  'server/duckdb-sources.mjs',
   'server/file-analysis-contract.mjs',
   'server/file-analysis-snapshot.mjs',
   'server/file-analysis.mjs',

@@ -257,6 +257,9 @@ viewports, exact workflows, and limitations. Backend/cloud integration remains u
   `Mod-Enter` inserts a blank line: use `Prec.high(keymap.of(...))` for Run query. Put density
   overrides before the official syntax theme so extension precedence preserves readable
   type. Recheck shortcuts, selection, dialect switching, disposal, and theme changes on upgrades.
+  SQL Editor 0.0.6 consumes `extraExts` only when creating its cached editor; changing that prop
+  does not reconfigure an existing instance. Use a CodeMirror `Compartment` and editor-view
+  dispatch for dynamic editability, and verify `contenteditable` during and after execution.
 - **Compatibility:** pin React/React DOM/types to 18 while the official SQL Editor and
   transitive dependencies require it. Group updates, keep the scoped Dependabot hold and
   strict peer installation, and revisit them together when upgrading the editor. Do not
@@ -269,3 +272,9 @@ screenshots. Claim TiUI adoption only for components actually migrated. CI curre
 document routing and application health, not visual fidelity.
 
 DuckDB is a customer database type with internal storage. Its create form, database pages and Key targets show DuckDB only; do not add its backing File System to Console navigation or permissions. Native worker/runtime configuration belongs in operator docs, not customer workflows. See [ADR 0008](../decisions/0008-duckdb-private-storage.md).
+
+DuckDB file sources use TiUI forms inside the database workspace, with each public File System,
+path and table alias visible. Selection prepares SQL only on explicit action, preserving edited
+drafts and the unified table/editor layout. Invalidate file-derived results whenever source
+selection changes, including removing and re-adding the same path. Keep source edits disabled
+while running and explain read-only/query lifetime and input limits. See [ADR 0009](../decisions/0009-duckdb-file-sources.md).

@@ -207,6 +207,12 @@ export async function createDrive9({ credentialsFile, transport = fetch }) {
         size,
         directory: response.headers.get('x-dat9-isdir') === 'true',
         ...(revision ? { revision } : {}),
+        ...(response.headers.get('x-dat9-revision')
+          ? { dataRevision: response.headers.get('x-dat9-revision') }
+          : {}),
+        ...(response.headers.get('x-dat9-resource-id')
+          ? { resourceIdentity: response.headers.get('x-dat9-resource-id') }
+          : {}),
       };
     },
     read(resourceId, path, options = {}) {

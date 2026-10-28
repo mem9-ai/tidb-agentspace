@@ -7,7 +7,7 @@ import {
 } from '@tidbcloud/tisqleditor-react';
 import { bbedit, oneDark } from '@tidbcloud/codemirror-extension-themes';
 import { MySQL, StandardSQL } from '@codemirror/lang-sql';
-import { Prec } from '@codemirror/state';
+import { Prec, EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 
 type Props = {
@@ -16,10 +16,12 @@ type Props = {
   value: string;
   onChange: (value: string) => void;
   onRun: () => void;
+  disabled?: boolean;
 };
-function Editor({ databaseId, dialect, value, onChange, onRun }: Props) {
+function Editor({ databaseId, dialect, value, onChange, onRun, disabled = false }: Props) {
   const cache = useEditorCacheContext();
   const callbacks = useRef({ onChange, onRun });
+  const editability = useMemo(() => new Compartment(), []);
   useEffect(() => {
     callbacks.current = { onChange, onRun };
   }, [onChange, onRun]);
@@ -59,6 +61,7 @@ function Editor({ databaseId, dialect, value, onChange, onRun }: Props) {
   );
   const extensions = useMemo(
     () => [
+      editability.of([EditorState.readOnly.of(false), EditorView.editable.of(true)]),
       EditorView.contentAttributes.of({
         'aria-label': 'SQL query',
         role: 'textbox',
@@ -81,8 +84,16 @@ function Editor({ databaseId, dialect, value, onChange, onRun }: Props) {
       ),
       EditorView.lineWrapping,
     ],
-    [],
+    [editability],
   );
+  useEffect(() => {
+    cache.getEditor(databaseId)?.editorView.dispatch({
+      effects: editability.reconfigure([
+        EditorState.readOnly.of(disabled),
+        EditorView.editable.of(!disabled),
+      ]),
+    });
+  }, [cache, databaseId, disabled, editability]);
   useEffect(() => {
     const view = cache.getEditor(databaseId)?.editorView;
     if (view && value !== view.state.doc.toString())

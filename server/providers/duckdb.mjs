@@ -26,6 +26,7 @@ export function runDuckdbWorker({
   sql,
   signal,
   probe = false,
+  sources,
   limits = sqlLimits,
 }) {
   return new Promise((resolve, reject) => {
@@ -78,7 +79,7 @@ export function runDuckdbWorker({
     });
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) return abort();
-    child.send({ connection, extensionPath, sql, limits, probe });
+    child.send({ connection, extensionPath, sql, limits, probe, sources });
   });
 }
 export async function createDuckdb({
@@ -119,7 +120,7 @@ export async function createDuckdb({
     if (!(await verifyDuckdbRuntime(extensionPath, extensionSha256)))
       throw sqlError(503, 'DUCKDB_RUNTIME_UNAVAILABLE', 'DuckDB runtime verification failed.');
   };
-  const run = async (binding, sql, signal) => {
+  const run = async (binding, sql, signal, sources, limits) => {
     requireRuntime();
     // Recheck the operator-pinned artifact before every native process launch.
     if (!(await verifyDuckdbRuntime(extensionPath, extensionSha256)))
@@ -129,6 +130,8 @@ export async function createDuckdb({
       extensionPath,
       sql,
       signal,
+      sources,
+      limits,
     });
   };
   async function status(id) {
@@ -177,7 +180,7 @@ export async function createDuckdb({
         );
       return provisioning.get(resource.id);
     },
-    async execute(resource, sql, signal) {
+    async execute(resource, sql, signal, loadSources) {
       requireRuntime();
       if (typeof sql !== 'string' || !sql.trim() || Buffer.byteLength(sql) > sqlLimits.sqlBytes)
         throw sqlError(400, 'INVALID_SQL', 'Enter one SQL statement, up to 64 KiB.');
@@ -188,14 +191,44 @@ export async function createDuckdb({
         throw sqlError(429, 'SQL_BUSY', 'DuckDB is busy. Wait for the current query to finish.');
       active.add(resource.id);
       const started = performance.now();
+      const deadline = AbortSignal.timeout(sqlLimits.timeoutMs);
+      const workSignal = loadSources
+        ? AbortSignal.any([deadline, ...[signal].filter(Boolean)])
+        : signal;
+      let staged;
       try {
+        if (loadSources) staged = await loadSources(workSignal);
+        workSignal?.throwIfAborted();
         return {
-          ...(await run(binding, sql, signal)),
+          ...(await run(
+            binding,
+            sql,
+            workSignal,
+            staged?.sources,
+            loadSources
+              ? {
+                  ...sqlLimits,
+                  timeoutMs: Math.max(1, sqlLimits.timeoutMs - (performance.now() - started)),
+                }
+              : undefined,
+          )),
           mode: 'live',
           durationMs: Math.round(performance.now() - started),
         };
+      } catch (error) {
+        if (workSignal?.aborted)
+          throw sqlError(
+            signal?.aborted ? 499 : 504,
+            signal?.aborted ? 'SQL_CANCELED' : 'SQL_TIMEOUT',
+            'File query canceled or exceeded 15 seconds. No source query is retried automatically.',
+          );
+        throw error;
       } finally {
-        active.delete(resource.id);
+        try {
+          await staged?.cleanup();
+        } finally {
+          active.delete(resource.id);
+        }
       }
     },
   };

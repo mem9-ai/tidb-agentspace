@@ -600,6 +600,31 @@ const paths = {
           required: ['resourceId', 'sql'],
           properties: {
             resourceId: str,
+            sources: {
+              type: 'array',
+              maxItems: 4,
+              description:
+                'DuckDB only: query-scoped CSV/JSON/NDJSON/Parquet snapshots as files.NAME. Nonempty sources require files:read, files:analyze and every source File System grant in addition to database query access. SELECT only; 16 MiB combined input and a shared 15-second deadline. Sources are not persisted.',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['name', 'resourceId', 'path'],
+                properties: {
+                  name: {
+                    type: 'string',
+                    pattern: '^[a-z][a-z0-9_]{0,31}$',
+                    description: 'Unique source table name in the per-query files catalog.',
+                  },
+                  resourceId: str,
+                  path: {
+                    type: 'string',
+                    maxLength: 512,
+                    description:
+                      'Exact absolute Workspace file path; no globs, traversal, external URLs or native paths.',
+                  },
+                },
+              },
+            },
             sql: {
               type: 'string',
               description:

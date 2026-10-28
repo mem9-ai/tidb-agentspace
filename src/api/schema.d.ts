@@ -3000,6 +3000,14 @@ export interface operations {
       content: {
         'application/json': {
           resourceId: string;
+          /** @description DuckDB only: query-scoped CSV/JSON/NDJSON/Parquet snapshots as files.NAME. Nonempty sources require files:read, files:analyze and every source File System grant in addition to database query access. SELECT only; 16 MiB combined input and a shared 15-second deadline. Sources are not persisted. */
+          sources?: {
+            /** @description Unique source table name in the per-query files catalog. */
+            name: string;
+            resourceId: string;
+            /** @description Exact absolute Workspace file path; no globs, traversal, external URLs or native paths. */
+            path: string;
+          }[];
           /** @description Live Zero/DuckDB: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n]. */
           sql: string;
         };
