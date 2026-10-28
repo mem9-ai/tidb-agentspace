@@ -24,3 +24,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0009: Query-scoped file sources](0009-duckdb-file-sources.md) — implemented authorized, query-scoped CSV/JSON/Parquet inputs in DuckDB; source credentials remain in the backend.
 
 - [0010: Read-only file analysis](0010-read-only-file-analysis.md) — scoped snapshot workers, DuckDB SQL and Just Bash, explicit compute permission and bounded execution.
+
+- [0011: DuckDB catalog reader](0011-duckdb-catalog-reader.md) — bounded read-only reuse for server-generated browsing, while customer SQL remains disposable.

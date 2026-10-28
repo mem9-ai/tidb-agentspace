@@ -76,6 +76,9 @@ within the task's scope. A proposed architecture does not establish a runtime ca
 | Separate Console/API builds, configuration, or packaging  | [Independent delivery](docs/independent-delivery.md) and [ADR 0005](docs/decisions/0005-independent-console-and-api.md)                                                                                                                                                     |
 | Reusable corrections or integration findings              | [Knowledge maintenance](docs/standards/knowledge-maintenance.md); update the canonical standard or ADR and its entry points                                                                                                                                                 |
 
+DuckDB browsing also follows the bounded read-only catalog-reader exception in
+[ADR 0011](docs/decisions/0011-duckdb-catalog-reader.md). Customer SQL remains disposable.
+
 Backend action/resource authorization, service-owned provider secrets, shared domain
 operations, and actual TiUI components/adapters are central project boundaries. Their detailed
 rules and verification stay in these linked sources.

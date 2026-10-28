@@ -89,6 +89,15 @@ query execution or concurrent multi-worker writing.
 
 Table browsing reads the selected `main` schema through DuckDB information/constraint/index
 functions. Identifiers use double quotes, and previews retain the existing 100-row bound.
+Details use one SELECT; a backend read-only reader is reused for browsing for at most 15 seconds
+idle / 60 seconds total. Every request is authorized again, with no result cache. An idle reader
+is released before customer SQL or switching databases; native errors/cancellation dispose it.
+Customer SQL and file-source queries remain disposable. See [ADR 0011](decisions/0011-duckdb-catalog-reader.md).
+
+A real Singapore check on 2026-10-28 measured table details at 26,434 ms before this fix.
+After a cold list (5,370 ms), details took 29 ms, repeated details 16 ms and 100-row preview
+300 ms. These are individual local observations, not a latency SLA. Cold attachment remains
+several seconds, and ordinary customer SQL still pays that cost.
 The editor uses TiUI SQL Editor with standard SQL highlighting; execution is DuckDB's dialect,
 not MySQL or PG protocol support. Cloud usage/allowances are unmeasured (null).
 

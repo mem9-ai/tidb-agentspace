@@ -78,7 +78,14 @@ export async function probeDuckdbExtension(extensionPath) {
     instance.closeSync();
   }
 }
-export async function openDuckdb({ extensionPath, apiKey, endpoint, localPath, sources = [] }) {
+export async function openDuckdb({
+  extensionPath,
+  apiKey,
+  endpoint,
+  localPath,
+  sources = [],
+  readOnly = false,
+}) {
   const instance = await DuckDBInstance.create(':memory:', {
     allow_unsigned_extensions: extensionPath ? 'true' : 'false',
     allow_unredacted_secrets: 'false',
@@ -92,7 +99,7 @@ export async function openDuckdb({ extensionPath, apiKey, endpoint, localPath, s
   });
   const setup = await instance.connect();
   try {
-    const attachment = sources.length ? ' (READ_ONLY)' : '';
+    const attachment = sources.length || readOnly ? ' (READ_ONLY)' : '';
     if (localPath) await setup.run(`ATTACH ${quote(localPath)} AS workspace${attachment}`);
     else {
       await setup.run(`LOAD ${quote(extensionPath)}`);
@@ -154,7 +161,7 @@ export async function openDuckdb({ extensionPath, apiKey, endpoint, localPath, s
         if (statements.count !== 1)
           throw sqlError(400, 'INVALID_SQL', 'Run exactly one SQL statement per request.');
         prepared = await statements.prepare(0);
-        if (sources.length && prepared.statementType !== StatementType.SELECT)
+        if ((sources.length || readOnly) && prepared.statementType !== StatementType.SELECT)
           throw sqlError(
             403,
             'SQL_PERMISSION_DENIED',

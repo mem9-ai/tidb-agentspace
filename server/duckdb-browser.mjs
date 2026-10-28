@@ -13,30 +13,37 @@ export async function browseDuckdb({ resource, action, name, execute }) {
     return { data: data.slice(0, 500), truncated: data.length > 500, mode: 'live' };
   }
   name = tableName(name);
-  const table = (await execute(`${select} AND table_name = ${quote(name)}`)).rows[0];
-  if (!table)
-    throw sqlError(
-      404,
-      'TABLE_NOT_FOUND',
-      'This table is no longer available. Refresh the table list.',
-    );
-  if (action === 'rows') return execute(duckdbTableQuery(name));
-  const columns = (
-    await execute(
-      `SELECT column_name AS name, data_type AS type, is_nullable AS nullable, column_default AS defaultValue FROM information_schema.columns WHERE ${schema} AND table_name = ${quote(name)} ORDER BY ordinal_position`,
-    )
-  ).rows;
+  if (action === 'rows') {
+    const table = (await execute(`${select} AND table_name = ${quote(name)}`)).rows[0];
+    if (!table) throw missingTable();
+    return execute(duckdbTableQuery(name));
+  }
   const filter = `database_name = current_database() AND schema_name = 'main' AND table_name = ${quote(name)}`;
-  const constraints = (
-    await execute(
-      `SELECT constraint_type AS type, constraint_column_names AS names, constraint_index AS position FROM duckdb_constraints() WHERE ${filter} AND constraint_type IN ('PRIMARY KEY','UNIQUE') ORDER BY constraint_index`,
-    )
-  ).rows;
-  const parts = (
-    await execute(
-      `SELECT index_name AS name, is_unique AS uniqueValue, CAST(expressions AS VARCHAR[]) AS expressions FROM duckdb_indexes() WHERE ${filter} ORDER BY index_name`,
-    )
-  ).rows;
+  // One statement / remote attachment, with ordered native lists rather than four executions.
+  const detail = (
+    await execute(`
+    SELECT table_name AS name, table_type AS type,
+      (SELECT list(c ORDER BY position) FROM (
+        SELECT column_name AS name, data_type AS type, is_nullable AS nullable,
+          column_default AS defaultValue, ordinal_position AS position
+        FROM information_schema.columns WHERE ${schema} AND table_name = ${quote(name)}
+      ) c) AS columns,
+      (SELECT list(c ORDER BY position) FROM (
+        SELECT constraint_type AS type, constraint_column_names AS names, constraint_index AS position
+        FROM duckdb_constraints() WHERE ${filter} AND constraint_type IN ('PRIMARY KEY','UNIQUE')
+      ) c) AS constraints,
+      (SELECT list(i ORDER BY name) FROM (
+        SELECT index_name AS name, is_unique AS uniqueValue, CAST(expressions AS VARCHAR[]) AS expressions
+        FROM duckdb_indexes() WHERE ${filter}
+      ) i) AS indexes
+    FROM information_schema.tables WHERE ${schema} AND table_name = ${quote(name)}
+  `)
+  ).rows[0];
+  if (!detail) throw missingTable();
+  const columns = detail.columns ?? [];
+  const constraints = detail.constraints ?? [];
+  const parts = detail.indexes ?? [];
+  const table = { name: detail.name, type: detail.type };
   const indexes = constraints.map((c) => ({
     name: c.type === 'PRIMARY KEY' ? 'PRIMARY' : `UNIQUE_${c.position}`,
     unique: true,
@@ -72,4 +79,11 @@ export async function browseDuckdb({ resource, action, name, execute }) {
     query: duckdbTableQuery(name),
     mode: 'live',
   };
+}
+function missingTable() {
+  return sqlError(
+    404,
+    'TABLE_NOT_FOUND',
+    'This table is no longer available. Refresh the table list.',
+  );
 }

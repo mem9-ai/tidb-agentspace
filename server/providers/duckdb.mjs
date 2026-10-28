@@ -4,6 +4,7 @@ import { fork } from 'node:child_process';
 import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStore } from '../store.mjs';
+import { createDuckdbCatalog } from './duckdb-catalog.mjs';
 import { sqlError, sqlLimits } from './sql-common.mjs';
 
 export const duckdbProvider = 'duckdb-drive9';
@@ -27,6 +28,7 @@ export function runDuckdbWorker({
   signal,
   probe = false,
   sources,
+  readOnly,
   limits = sqlLimits,
 }) {
   return new Promise((resolve, reject) => {
@@ -79,7 +81,7 @@ export function runDuckdbWorker({
     });
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) return abort();
-    child.send({ connection, extensionPath, sql, limits, probe, sources });
+    child.send({ connection, extensionPath, sql, limits, probe, sources, readOnly });
   });
 }
 export async function createDuckdb({
@@ -104,6 +106,8 @@ export async function createDuckdb({
       available = false;
     }
   }
+  const catalog =
+    execute === runDuckdbWorker ? createDuckdbCatalog({ disposable: execute }) : undefined;
   const provisioning = new Map(),
     active = new Set();
   const get = (id) => vault.read().bindings[id];
@@ -120,19 +124,25 @@ export async function createDuckdb({
     if (!(await verifyDuckdbRuntime(extensionPath, extensionSha256)))
       throw sqlError(503, 'DUCKDB_RUNTIME_UNAVAILABLE', 'DuckDB runtime verification failed.');
   };
-  const run = async (binding, sql, signal, sources, limits) => {
+  const run = async (binding, sql, signal, sources, limits, catalogRead = false) => {
     requireRuntime();
     // Recheck the operator-pinned artifact before every native process launch.
     if (!(await verifyDuckdbRuntime(extensionPath, extensionSha256)))
       throw sqlError(503, 'DUCKDB_RUNTIME_UNAVAILABLE', 'DuckDB runtime verification failed.');
-    return execute({
+    if (!catalogRead) await catalog?.invalidateIdle();
+    signal?.throwIfAborted();
+    const input = {
       connection: drive9.internalConnection(binding.storageId),
       extensionPath,
       sql,
       signal,
       sources,
       limits,
-    });
+      readOnly: catalogRead,
+    };
+    return catalogRead && catalog
+      ? catalog.query({ ...input, key: binding.storageId })
+      : execute(input);
   };
   async function status(id) {
     const binding = get(id);
@@ -167,6 +177,56 @@ export async function createDuckdb({
     });
     return status(resource.id);
   }
+  async function executeQuery(resource, sql, signal, loadSources, catalogRead = false) {
+    requireRuntime();
+    if (typeof sql !== 'string' || !sql.trim() || Buffer.byteLength(sql) > sqlLimits.sqlBytes)
+      throw sqlError(400, 'INVALID_SQL', 'Enter one SQL statement, up to 64 KiB.');
+    const binding = get(resource.id);
+    if (binding?.state !== 'ready')
+      throw sqlError(409, 'DATABASE_UNAVAILABLE', 'DuckDB is not ready for queries.');
+    if (active.size >= 4 || active.has(resource.id))
+      throw sqlError(429, 'SQL_BUSY', 'DuckDB is busy. Wait for the current query to finish.');
+    active.add(resource.id);
+    const started = performance.now();
+    const deadline = AbortSignal.timeout(sqlLimits.timeoutMs);
+    const workSignal = AbortSignal.any([deadline, ...[signal].filter(Boolean)]);
+    let staged;
+    try {
+      if (loadSources) staged = await loadSources(workSignal);
+      workSignal?.throwIfAborted();
+      return {
+        ...(await run(
+          binding,
+          sql,
+          workSignal,
+          staged?.sources,
+          {
+            ...sqlLimits,
+            timeoutMs: Math.max(1, sqlLimits.timeoutMs - (performance.now() - started)),
+          },
+          catalogRead,
+        )),
+        mode: 'live',
+        durationMs: Math.round(performance.now() - started),
+      };
+    } catch (error) {
+      if (workSignal?.aborted)
+        throw sqlError(
+          signal?.aborted ? 499 : 504,
+          signal?.aborted ? 'SQL_CANCELED' : 'SQL_TIMEOUT',
+          loadSources
+            ? 'File query canceled or exceeded 15 seconds. No source query is retried automatically.'
+            : 'DuckDB request canceled or exceeded 15 seconds. Check any write outcome before retrying.',
+        );
+      throw error;
+    } finally {
+      try {
+        await staged?.cleanup();
+      } finally {
+        active.delete(resource.id);
+      }
+    }
+  }
   return {
     available,
     requireRuntime,
@@ -180,56 +240,12 @@ export async function createDuckdb({
         );
       return provisioning.get(resource.id);
     },
-    async execute(resource, sql, signal, loadSources) {
-      requireRuntime();
-      if (typeof sql !== 'string' || !sql.trim() || Buffer.byteLength(sql) > sqlLimits.sqlBytes)
-        throw sqlError(400, 'INVALID_SQL', 'Enter one SQL statement, up to 64 KiB.');
-      const binding = get(resource.id);
-      if (binding?.state !== 'ready')
-        throw sqlError(409, 'DATABASE_UNAVAILABLE', 'DuckDB is not ready for queries.');
-      if (active.size >= 4 || active.has(resource.id))
-        throw sqlError(429, 'SQL_BUSY', 'DuckDB is busy. Wait for the current query to finish.');
-      active.add(resource.id);
-      const started = performance.now();
-      const deadline = AbortSignal.timeout(sqlLimits.timeoutMs);
-      const workSignal = loadSources
-        ? AbortSignal.any([deadline, ...[signal].filter(Boolean)])
-        : signal;
-      let staged;
-      try {
-        if (loadSources) staged = await loadSources(workSignal);
-        workSignal?.throwIfAborted();
-        return {
-          ...(await run(
-            binding,
-            sql,
-            workSignal,
-            staged?.sources,
-            loadSources
-              ? {
-                  ...sqlLimits,
-                  timeoutMs: Math.max(1, sqlLimits.timeoutMs - (performance.now() - started)),
-                }
-              : undefined,
-          )),
-          mode: 'live',
-          durationMs: Math.round(performance.now() - started),
-        };
-      } catch (error) {
-        if (workSignal?.aborted)
-          throw sqlError(
-            signal?.aborted ? 499 : 504,
-            signal?.aborted ? 'SQL_CANCELED' : 'SQL_TIMEOUT',
-            'File query canceled or exceeded 15 seconds. No source query is retried automatically.',
-          );
-        throw error;
-      } finally {
-        try {
-          await staged?.cleanup();
-        } finally {
-          active.delete(resource.id);
-        }
-      }
+    execute: executeQuery,
+    catalog(resource, sql, signal) {
+      return executeQuery(resource, sql, signal, undefined, true);
+    },
+    close() {
+      return catalog?.close();
     },
   };
 }
