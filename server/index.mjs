@@ -211,7 +211,7 @@ export async function createApp({
   async function recordFile(action, resourceId, path, actor) {
     await store.mutate((draft) => event(draft, action, path, actor, resourceId));
   }
-  return http.createServer(async (req, res) => {
+  const app = http.createServer(async (req, res) => {
     const requestId = randomUUID();
     res.setHeader('X-Request-Id', requestId);
     res.setHeader('Cache-Control', 'no-store');
@@ -635,7 +635,10 @@ export async function createApp({
               action: browseMatch[2] === 'table/rows' ? 'rows' : browseMatch[2],
               name: url.searchParams.get('name'),
               createdAt: state.workspace.createdAt,
-              execute: (sql) => databaseAdapter(resource).execute(resource, sql, controller.signal),
+              execute: (sql) =>
+                resource.kind === 'duckdb'
+                  ? duckdb.catalog(resource, sql, controller.signal)
+                  : databaseAdapter(resource).execute(resource, sql, controller.signal),
             }),
           );
         } finally {
@@ -868,6 +871,10 @@ export async function createApp({
       });
     }
   });
+  app.on('close', () => {
+    void duckdb.close();
+  });
+  return app;
 }
 export async function startServer(options = {}) {
   const server = await createApp(options);

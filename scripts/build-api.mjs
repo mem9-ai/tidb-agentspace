@@ -25,6 +25,7 @@ export const runtimeFiles = [
   'server/providers/duckdb.mjs',
   'server/providers/duckdb-engine.mjs',
   'server/providers/duckdb-worker.mjs',
+  'server/providers/duckdb-catalog.mjs',
   'server/providers/sql-common.mjs',
   'server/providers/sql-drivers.mjs',
   'public/openapi.json',
