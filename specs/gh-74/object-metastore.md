@@ -3,7 +3,7 @@
 - Status: Owner-selected SlateDB for hosted metadata; service/protocol details remain proposed.
 - Date: 2026-10-29.
 - Parent: [control-plane specification](spec.md), [scale profile](metadata-scale.md), and
-  [proposed ADR 0017](../../docs/decisions/0017-workspace-kv-control-plane.md).
+  [proposed ADR 0019](../../docs/decisions/0019-workspace-kv-control-plane.md).
 - Implementation: None. The running service still uses
   [`createStore`](../../server/store.mjs), process memory and whole-file JSON replacement.
   There is no implemented object-backed MetaStore, WAL, LSM or distributed writer protocol.

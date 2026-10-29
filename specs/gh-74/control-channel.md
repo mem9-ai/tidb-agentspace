@@ -1,7 +1,7 @@
 # GH-74: Global-initiated regional control channel
 
 - Status: Owner-requested direction; regional autonomy, protocol and deployment details proposed for review.
-- Parent: [Workspace control plane](spec.md) and [ADR 0017](../../docs/decisions/0017-workspace-kv-control-plane.md).
+- Parent: [Workspace control plane](spec.md) and [ADR 0019](../../docs/decisions/0019-workspace-kv-control-plane.md).
 - Implementation: Design only; no control network, TLS, policy replication or migration is implemented here.
 
 ## 1. One caller direction

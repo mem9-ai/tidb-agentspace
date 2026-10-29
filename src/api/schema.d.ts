@@ -92,6 +92,29 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/workspaces/{workspaceId}/files/tabular-preview': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+      };
+      cookie?: never;
+    };
+    /**
+     * Read a fixed bounded CSV/Parquet schema and sample
+     * @description Required workspace key scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Fixed CSV/Parquet schema/sample only: accepts resourceId/path, no custom SQL or engine settings. Requires files:read, not files:analyze. Whole version-verified snapshot up to 16 MiB, 15 seconds and shared two-worker budget; at most 20 rows, 50 columns, 128 KiB. CSV types are inferred and totalRows unknown; Parquet count is metadata. No automatic retry. Download unsupported or over-budget files.
+     */
+    get: operations['tabularFilePreview'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/workspaces/{workspaceId}/file-analyses/capabilities': {
     parameters: {
       query?: never;
@@ -286,6 +309,52 @@ export interface paths {
     get: operations['previewDatabaseTable'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/workspaces/{workspaceId}/file-exports/prepare': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Parse an original file or Bash stream for explicit schema review
+     * @description Required workspace key scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Also requires files:read and the source File System grant. Fixed CSV/Parquet/text-line parsing, no scripts. Up to 16 MiB original or 1 MiB output text, 1000 rows/100 columns/1 MiB parsed data and 15 seconds, shared worker admission. Returns 20 sample rows and suggested field types with an actor-bound five-minute preparation. Parsing writes nothing. CSV keeps leading zeros and distinguishes quoted empty strings from NULL. Text lines are explicit one-column records.
+     */
+    post: operations['prepareFileExport'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/workspaces/{workspaceId}/file-exports': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Copy original bytes, export Bash text or commit a confirmed database import
+     * @description Required workspace key scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Original copies require read access; Bash output requires read plus analyze. File targets require files:write and a target grant. Database commits require the exact actor preparation, confirmed=true, reviewed fields, source read/analyze and target queries:execute/grant. Original versions must match; single-use writes, no append/overwrite/retry. Output text is client-supplied authorization context, not attested command lineage. Only these two routes permit an 8 MiB JSON envelope for at most 1 MiB output text. Original downloads retain /files/content (local files use /files).
+     */
+    post: operations['exportFileContent'];
     delete?: never;
     options?: never;
     head?: never;
@@ -614,6 +683,135 @@ export interface components {
           rowCount: number;
           resourceId: string;
           table: string;
+          columns: {
+            name: string;
+            type: string;
+          }[];
+        };
+    FileExportSource:
+      | {
+          /** @constant */
+          kind: 'original';
+          resourceId: string;
+          path: string;
+        }
+      | {
+          /** @constant */
+          kind: 'output';
+          resourceId: string;
+          /** @enum {unknown} */
+          stream: 'stdout' | 'stderr';
+          text: string;
+        };
+    FileExportParsing:
+      | {
+          /** @constant */
+          format: 'csv';
+          header: boolean;
+          /** @enum {unknown} */
+          delimiter: ',' | '\t' | ';' | '|';
+        }
+      | {
+          /** @enum {unknown} */
+          format: 'parquet' | 'lines';
+        };
+    FileExportPreparationInput: {
+      source: components['schemas']['FileExportSource'];
+      parsing: components['schemas']['FileExportParsing'];
+    };
+    FileExportPreparation: {
+      preparationId: string;
+      expiresAt: string;
+      fields: {
+        source: string;
+        name: string;
+        /** @enum {unknown} */
+        type: 'TEXT' | 'BIGINT' | 'DOUBLE' | 'BOOLEAN';
+      }[];
+      rows: {
+        [key: string]: unknown;
+      }[];
+      rowCount: number;
+      sourceVersion: string;
+      inputBytes: number;
+      /** @enum {unknown} */
+      format: 'csv' | 'parquet' | 'lines';
+    };
+    FileExportInput:
+      | {
+          source: {
+            /** @constant */
+            kind: 'original';
+            resourceId: string;
+            path: string;
+          };
+          target: {
+            /** @constant */
+            kind: 'filesystem';
+            resourceId: string;
+            path: string;
+          };
+        }
+      | {
+          source: {
+            /** @constant */
+            kind: 'output';
+            resourceId: string;
+            /** @enum {unknown} */
+            stream: 'stdout' | 'stderr';
+            text: string;
+          };
+          target:
+            | {
+                /** @constant */
+                kind: 'download';
+              }
+            | {
+                /** @constant */
+                kind: 'filesystem';
+                resourceId: string;
+                path: string;
+              };
+        }
+      | {
+          preparationId: string;
+          /** @constant */
+          confirmed: true;
+          fields: {
+            source: string;
+            name: string;
+            /** @enum {unknown} */
+            type: 'TEXT' | 'BIGINT' | 'DOUBLE' | 'BOOLEAN';
+          }[];
+          target: {
+            /** @constant */
+            kind: 'database';
+            resourceId: string;
+            table: string;
+          };
+        };
+    FileExportOutput:
+      | {
+          /** @constant */
+          kind: 'download';
+          filename: string;
+          mimeType: string;
+          content: string;
+          bytes: number;
+        }
+      | {
+          /** @constant */
+          kind: 'filesystem';
+          resourceId: string;
+          path: string;
+          bytes: number;
+        }
+      | {
+          /** @constant */
+          kind: 'database';
+          resourceId: string;
+          table: string;
+          rowCount: number;
           columns: {
             name: string;
             type: string;
@@ -1462,6 +1660,173 @@ export interface operations {
       };
     };
   };
+  tabularFilePreview: {
+    parameters: {
+      query: {
+        resourceId: string;
+        path: string;
+      };
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            resourceId: string;
+            path: string;
+            /** @enum {unknown} */
+            format: 'csv' | 'parquet';
+            /** @constant */
+            readOnly: true;
+            inputBytes: number;
+            durationMs: number;
+            fileVersion: string;
+            columns: string[];
+            columnTypes: string[];
+            schema: {
+              column_name: string;
+              column_type: string;
+            }[];
+            rows: {
+              [key: string]: unknown;
+            }[];
+            rowCount: number;
+            /** @description Exact Parquet metadata row count; null for CSV. Not the sample count. */
+            totalRows: string | null;
+            typesInferred: boolean;
+            truncated: boolean;
+          };
+        };
+      };
+      /** @description Invalid request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Missing, invalid, expired, or revoked credential */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Insufficient permission */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource or endpoint not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Conflict or free-tier limit */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Content too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Unsupported content type */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL syntax, result limit, or unsupported demo query */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider quota or rate limit */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider unavailable or invalid response */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider binding needs operator recovery */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
   fileAnalysisCapabilities: {
     parameters: {
       query: {
@@ -1716,6 +2081,8 @@ export interface operations {
             stdout: string;
             stderr: string;
             exitCode: number;
+            /** @description Saved-byte digest when supported; compare with tabular preview. */
+            fileVersion?: string;
           };
         };
       };
@@ -2977,6 +3344,294 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['QueryResult'];
+        };
+      };
+      /** @description Invalid request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Missing, invalid, expired, or revoked credential */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Insufficient permission */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource or endpoint not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Conflict or free-tier limit */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Content too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Unsupported content type */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL syntax, result limit, or unsupported demo query */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider quota or rate limit */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider unavailable or invalid response */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider binding needs operator recovery */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  prepareFileExport: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['FileExportPreparationInput'];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['FileExportPreparation'];
+        };
+      };
+      /** @description Invalid request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Missing, invalid, expired, or revoked credential */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Insufficient permission */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource or endpoint not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Conflict or free-tier limit */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Content too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Unsupported content type */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL syntax, result limit, or unsupported demo query */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider quota or rate limit */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider unavailable or invalid response */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider binding needs operator recovery */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  exportFileContent: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['FileExportInput'];
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['FileExportOutput'];
         };
       };
       /** @description Invalid request */

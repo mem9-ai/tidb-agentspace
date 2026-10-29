@@ -1,4 +1,4 @@
-# ADR 0017: Portable KV metadata for the Workspace control plane
+# ADR 0019: Portable KV metadata for the Workspace control plane
 
 - Status: Proposed; portable KV, SlateDB on object storage and the global/regional three-plane split are owner-accepted direction; detailed contracts remain under review
 - Date: 2026-10-29

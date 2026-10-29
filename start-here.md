@@ -65,7 +65,7 @@ within the task's scope. A proposed architecture does not establish a runtime ca
 ## Read for your task
 
 For multi-tenant metadata, storage adapters, ownership, or migration design, read
-[GH-74](specs/gh-74/spec.md) and [proposed ADR 0017](docs/decisions/0017-workspace-kv-control-plane.md).
+[GH-74](specs/gh-74/spec.md) and [proposed ADR 0019](docs/decisions/0019-workspace-kv-control-plane.md).
 They preserve the owner's logical-KV/local-file direction, TiDB File System candidate and
 global/regional control plus regional data-plane separation. Resource placement, dispatch,
 consistency, isolation and migration remain proposed behavior, distinct from the running
@@ -128,11 +128,24 @@ The accepted [result export contract](specs/gh-58/spec.md) and
 create-only copies into public workspace resources. Database and File System SQL now share
 CSV/JSON/JSON Lines downloads and file/new-table exports; see
 [verification, API usage and limits](docs/result-export-verification.md).
+Original-file and Bash exports use the same destinations with explicit source labels and a
+separate format/field/type review before database import. Read
+[ADR 0018](docs/decisions/0018-contextual-file-exports.md) and
+[verification and API usage](docs/contextual-file-export-verification.md) before export work.
 
 DuckDB uses tidbfs native database mode, with ordinary Tables and SQL in the Console; see
 [customer experience](docs/duckdb-databases.md#customer-experience). For the separate optional
 query-source API over CSV/JSON/Parquet, read [file sources](docs/duckdb-databases.md#workspace-file-sources),
 [ADR 0009](docs/decisions/0009-duckdb-file-sources.md) and [GH-34](specs/gh-34/spec.md).
+File System navigation starts with the global resource list (`#files`), followed by a selected
+resource (`#files?resourceId=…`). See [navigation verification](docs/filesystem-list-verification.md)
+for the list/return flow and preserved file links.
+
+File preview and analysis now share a preview-first workspace with on-demand tools. Read
+[ADR 0017](docs/decisions/0017-preview-first-file-workspace.md) and
+[verification](docs/file-workspace-verification.md) for fixed read-authorized CSV/Parquet samples,
+version comparison, retained drafts/results, execution-dependent result navigation, and compatibility limits.
+
 For CSV/Parquet SQL and text/log analysis, read [ADR 0010](docs/decisions/0010-read-only-file-analysis.md),
 [engine options](docs/decisions/0014-file-analysis-engine-options.md)
 and [Bash input paths](docs/decisions/0015-bash-workspace-paths.md), plus

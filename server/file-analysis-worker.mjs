@@ -1,8 +1,9 @@
 // Disposable child: receives only one snapshot and a script, never provider/session credentials.
 import { readFile } from 'node:fs/promises';
+import { readImport } from './file-import-reader.mjs';
 import { analysisBashInput, analysisCommands, analysisError } from './file-analysis-contract.mjs';
 
-async function duckdb({ sourcePath, format, script, limits }) {
+async function duckdb({ sourcePath, format, script, limits, preview }) {
   const { DuckDBInstance, StatementType, JsonDuckDBValueConverter } =
     await import('@duckdb/node-api');
   const db = await DuckDBInstance.create(':memory:', {
@@ -18,8 +19,42 @@ async function duckdb({ sourcePath, format, script, limits }) {
   try {
     const reader = format === 'parquet' ? 'read_parquet' : 'read_csv_auto';
     const quoted = sourcePath.replaceAll("'", "''");
-    await connection.run(`CREATE TABLE "file" AS SELECT * FROM ${reader}('${quoted}')`);
+    // Preview binds a lazy view: never materialize/count every CSV row just to open a file.
+    await connection.run(
+      `CREATE ${preview ? 'VIEW' : 'TABLE'} "file" AS SELECT * FROM ${reader}('${quoted}')`,
+    );
     const schema = (await connection.runAndReadAll('DESCRIBE "file"')).getRowObjectsJson();
+    if (preview) {
+      if (schema.length > limits.columns)
+        throw analysisError(
+          422,
+          'PREVIEW_COLUMN_LIMIT',
+          'Preview supports up to 50 columns. Download the file or analyze selected columns.',
+        );
+      const totalRows =
+        format === 'parquet'
+          ? (
+              await connection.runAndReadAll(
+                `SELECT num_rows FROM parquet_file_metadata('${quoted}')`,
+              )
+            ).getRowObjectsJson()[0].num_rows
+          : null;
+      const sample = await connection.runAndReadAll(
+        `SELECT * FROM "file" LIMIT ${limits.rows + 1}`,
+      );
+      const columns = sample.columnNames();
+      const rows = sample.getRowObjectsJson();
+      return {
+        columns,
+        columnTypes: columns.map((_, i) => String(sample.columnType(i))),
+        schema,
+        rows: rows.slice(0, limits.rows),
+        rowCount: Math.min(rows.length, limits.rows),
+        totalRows,
+        typesInferred: format === 'csv',
+        truncated: rows.length > limits.rows,
+      };
+    }
     await connection.run('SET enable_external_access=false; SET lock_configuration=true');
     const extracted = await connection.extractStatements(script);
     if (extracted.count !== 1)
@@ -156,12 +191,18 @@ async function bash({ sourcePath, workspacePath, script, limits }) {
 process.once('message', async (input) => {
   let message;
   try {
-    const result = await (input.engine === 'duckdb' ? duckdb(input) : bash(input));
+    const result = await (input.mode === 'import'
+      ? readImport(input)
+      : input.engine === 'duckdb'
+        ? duckdb(input)
+        : bash(input));
     if (Buffer.byteLength(JSON.stringify(result)) > input.limits.outputBytes)
       throw analysisError(
         422,
         'ANALYSIS_OUTPUT_LIMIT',
-        'Analysis output exceeds 1 MiB. Reduce the result size.',
+        input.preview
+          ? 'Preview exceeds 128 KiB. Download the file instead.'
+          : 'Analysis output exceeds 1 MiB. Reduce the result size.',
       );
     message = { result };
   } catch (error) {
@@ -172,7 +213,11 @@ process.once('message', async (input) => {
         code: error.code || 'ANALYSIS_FAILED',
         message: error.status
           ? error.message
-          : 'Analysis could not complete. Check the query or command, file format and execution limits.',
+          : input.mode === 'import'
+            ? 'The input could not be parsed. Check the format, header and separator, or use text lines.'
+            : input.preview
+              ? 'The file could not be previewed. Check its format or download it to another tool.'
+              : 'Analysis could not complete. Check the query or command, file format and execution limits.',
       },
     };
   }

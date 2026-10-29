@@ -1,4 +1,5 @@
 import { fork } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +10,7 @@ import {
   analysisFormat,
   analysisLimits,
   validateAnalysis,
+  tabularPreviewLimits,
 } from './file-analysis-contract.mjs';
 
 function abortError(signal) {
@@ -73,6 +75,24 @@ export function createFileAnalysis({
   let active = 0;
   return {
     limits,
+    async read(resource, path, signal) {
+      return this.execute(resource, { path }, signal, { mode: 'read' });
+    },
+    async parse(resource, { path, parsing, bytes }, signal) {
+      return this.execute(resource, { path }, signal, { mode: 'import', parsing, bytes });
+    },
+    async preview(resource, input, signal) {
+      if (Object.keys(input).some((key) => !['resourceId', 'path'].includes(key)))
+        throw analysisError(400, 'INVALID_PREVIEW', 'Use only a File System and a file path.');
+      const format = analysisFormat(input.path)?.format;
+      if (!['csv', 'parquet'].includes(format))
+        throw analysisError(
+          422,
+          'UNSUPPORTED_PREVIEW',
+          'Tabular preview supports CSV and Parquet.',
+        );
+      return this.execute(resource, input, signal, true);
+    },
     async capabilities(resource, path, signal) {
       const info = await snapshot(resource, path, signal, true);
       const format = analysisFormat(path);
@@ -109,8 +129,19 @@ export function createFileAnalysis({
         limits,
       };
     },
-    async execute(resource, input, externalSignal) {
-      const { format, script } = validateAnalysis(input);
+    async execute(resource, input, externalSignal, options = {}) {
+      if (options === true) options = { mode: 'preview' };
+      const mode = options.mode || 'analysis';
+      const preview = mode === 'preview';
+      const { format, script } =
+        mode === 'analysis'
+          ? validateAnalysis(input)
+          : { format: options.parsing?.format || analysisFormat(input.path)?.format };
+      const runLimits = preview
+        ? { ...limits, ...tabularPreviewLimits }
+        : mode === 'import'
+          ? { ...limits, columns: 100 }
+          : limits;
       if (active >= limits.concurrency)
         throw analysisError(
           429,
@@ -137,7 +168,10 @@ export function createFileAnalysis({
       let directory;
       try {
         if (signal.aborted) throw abortError(signal);
-        const source = await snapshot(resource, input.path, signal, false, limits.inputBytes);
+        const source =
+          options.bytes === undefined
+            ? await snapshot(resource, input.path, signal, false, limits.inputBytes)
+            : { bytes: options.bytes };
         if (signal.aborted) throw abortError(signal);
         if (source.bytes.length > limits.inputBytes)
           throw analysisError(
@@ -145,36 +179,44 @@ export function createFileAnalysis({
             'ANALYSIS_INPUT_LIMIT',
             'This file exceeds the 16 MiB analysis limit. Download it instead.',
           );
+        const fileVersion = createHash('sha256').update(source.bytes).digest('hex');
+        if (mode === 'read') return { ...source, fileVersion };
         directory = await mkdtemp(join(tmpdir(), 'workspace-analysis-'));
         const sourcePath = join(directory, 'input.' + format);
         await writeFile(sourcePath, source.bytes, { mode: 0o600 });
         const result = await runner(
           {
-            engine: input.engine,
+            engine: mode === 'analysis' ? input.engine : 'duckdb',
+            mode,
+            parsing: options.parsing,
+            preview,
             format,
             script,
             sourcePath,
             workspacePath: input.path,
             directory,
-            limits,
+            limits: runLimits,
           },
           signal,
         );
         if (signal.aborted) throw abortError(signal);
         const output = {
           ...result,
-          engine: input.engine,
+          ...(mode === 'analysis' ? { engine: input.engine } : { format }),
           resourceId: resource.id,
           path: input.path,
           readOnly: true,
           inputBytes: source.bytes.length,
+          fileVersion,
           durationMs: Math.round(performance.now() - started),
         };
-        if (Buffer.byteLength(JSON.stringify(output)) > limits.outputBytes)
+        if (Buffer.byteLength(JSON.stringify(output)) > runLimits.outputBytes)
           throw analysisError(
             422,
             'ANALYSIS_OUTPUT_LIMIT',
-            'Analysis output exceeds 1 MiB. Reduce the result size.',
+            preview
+              ? 'Preview exceeds 128 KiB. Download the file instead.'
+              : 'Analysis output exceeds 1 MiB. Reduce the result size.',
           );
         return output;
       } catch (error) {

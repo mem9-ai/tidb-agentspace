@@ -75,7 +75,7 @@ export function WorkspaceQueryResults({
               disabled={busy}
               onClick={() => setExportOpen(true)}
             >
-              Export
+              Export results
             </Button>
           )
         }

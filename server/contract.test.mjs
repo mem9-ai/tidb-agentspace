@@ -120,6 +120,27 @@ test('standalone API responses conform to every declared JSON operation, includi
     type: 'file',
     content: 'hello',
   });
+  await request(workspace + '/files', 'put', {
+    resourceId: 'fs_shared',
+    path: '/preview.csv',
+    type: 'file',
+    content: 'id,region\n1,APAC\n',
+  });
+  await request(workspace + '/files/tabular-preview', 'get', undefined, {
+    suffix: '?resourceId=fs_shared&path=/preview.csv',
+  });
+  await request(workspace + '/file-exports', 'post', {
+    source: { kind: 'output', resourceId: 'fs_shared', stream: 'stdout', text: 'hello\n' },
+    target: { kind: 'download' },
+  });
+  await request(workspace + '/file-exports', 'post', {
+    source: { kind: 'original', resourceId: 'fs_shared', path: '/preview.csv' },
+    target: { kind: 'filesystem', resourceId: 'fs_shared', path: '/copied.csv' },
+  });
+  await request(workspace + '/file-exports/prepare', 'post', {
+    source: { kind: 'output', resourceId: 'fs_shared', stream: 'stdout', text: 'id\n001\n' },
+    parsing: { format: 'csv', header: true, delimiter: ',' },
+  });
   const textCapabilities = await request(
     workspace + '/file-analyses/capabilities',
     'get',

@@ -31,6 +31,7 @@ type Props = {
   profileName: string;
   active: string;
   databaseId?: string;
+  fileSystemId?: string;
   databaseView?: 'tables' | 'sql';
   navigation: NavigationItem[];
   onSearch: () => void;
@@ -44,6 +45,7 @@ export function WorkspaceLayout({
   profileName,
   active,
   databaseId,
+  fileSystemId,
   databaseView,
   navigation,
   onSearch,
@@ -183,7 +185,7 @@ export function WorkspaceLayout({
       </Drawer>
       <AppShell.Main>
         <div
-          className={`workspace-content${databaseId || active === 'files' ? ' resource-content' : ''}`}
+          className={`workspace-content${databaseId || fileSystemId ? ' resource-content' : ''}`}
         >
           {children}
         </div>

@@ -53,7 +53,7 @@ optional mix of three distinct resource types. [Supabase Platform](https://supab
 ## Global and regional deployment (proposed)
 
 The [multi-tenant control-plane design](../specs/gh-74/spec.md) and
-[proposed ADR 0017](decisions/0017-workspace-kv-control-plane.md) define a logical KV metadata
+[proposed ADR 0019](decisions/0019-workspace-kv-control-plane.md) define a logical KV metadata
 layer, scope-atomic records/indexes, ordinary local-file persistence, hosted object storage
 as the preferred source of truth, a service-owned TiDB File System candidate, Organization/Workspace
 authorization and identity-preserving resource/credential
@@ -155,6 +155,15 @@ results/errors. An unavailable or non-database resource must never silently sele
 database. Legacy `#sql` links open the database list for explicit selection. Keep the query
 target, displayed database, and URL consistent when adding future database tools.
 
+Resource collection entry points are explicit: `#databases` lists databases and `#files`
+lists public File Systems, including the zero- and single-resource cases. The Console does
+not auto-select a live/first resource. `#files?resourceId=<id>` opens one File System; existing
+`path`/`view` query links still open the selected file directly. Resource names and connection
+dialogs retain that ID, closing a file stays in the resource, and All file systems returns to
+the collection with the unsaved-draft guard. Unknown/non-File-System IDs cannot fall back to
+another resource. The list does not mount the file browser or fetch a directory before
+selection. See [verification](filesystem-list-verification.md).
+
 Database and File System workspaces share the same hierarchy (owner correction, 2026-10-28):
 one compact resource selector/status/actions toolbar, then a browser
 beside the working panel. The database selector is above both Tables and SQL Editor; it must
@@ -188,15 +197,28 @@ Provider credentials never enter workers. This is a read-only local
 prototype; public compute isolation and larger remote scans remain future work. See
 [ADR 0010](decisions/0010-read-only-file-analysis.md).
 
-File System opens files in a non-modal reading panel beside the desktop file list. On narrow
-screens the panel has an explicit return to the list. Markdown is rendered by default;
-JSON, CSV, common source files, and plain text have text-based previews with an Edit source
-tab. Save keeps the current file open. The local JSON API accepts UTF-8 text up to
-256 KiB; live resources additionally support bounded binary transfers through the gateway; automatic preview has a separate 128 KiB budget plus line/complexity limits.
-Oversized, unsupported, invalid, or failed previews show a reason and retain Download and
-navigation. Text source editing remains available; correcting a draft can restore its preview.
-Binary files can be uploaded/downloaded on live resources, but image, PDF, and media rendering are not implemented. See the
+File System opens a unified non-modal file workspace beside the desktop browser. Preview is
+primary; SQL/Bash expands in place and preview/results share the content area without losing
+in-memory drafts or outputs. Markdown renders by default; text source editing is an explicit
+secondary action with save/discard guards. The local JSON API accepts UTF-8 up to 256 KiB;
+live resources also support bounded binary transfers. Text previews retain their separate
+128 KiB and complexity limits. CSV/Parquet use a fixed server-generated sample of at most
+20 rows/50 columns/128 KiB, with the existing 16 MiB whole-snapshot and 15-second budgets.
+CSV types are inferred and total count unknown; Parquet reports metadata row count. Fixed
+preview needs read access, while custom SQL/Bash still needs read plus analyze. Versioned
+results warn when compared to another saved preview. Download/navigation remain available
+on unsupported, invalid or over-budget input. Image/PDF/media rendering and large remote
+scans remain future work. See [ADR 0017](decisions/0017-preview-first-file-workspace.md),
+[verification](file-workspace-verification.md) and the
 [file reading standard](standards/tiui-design-system.md#theme-responsive-behavior-and-interaction).
+
+Preview actions target the saved original (Download original/Export original); execution headers
+export only their completed SQL result or Bash stdout/stderr. All share computer, public File
+System and new database table destinations. Original/Bash database imports use explicit fixed
+parsing and reviewed fields/types before confirmation, with bounded five-minute, principal-bound
+server snapshots and saved-original version checks. Copy/download preserves raw bytes; export
+never reruns execution. See [ADR 0018](decisions/0018-contextual-file-exports.md) and
+[contract, permissions and verification](contextual-file-export-verification.md).
 
 File System creation and fresh demo workspaces default to AWS Singapore (`aws-ap-southeast-1`),
 with Oregon retained as another configured region. Persisted resources keep their existing

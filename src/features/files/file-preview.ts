@@ -113,10 +113,15 @@ export function prepareFilePreview(path: string, content: string) {
   }
 }
 
+export function isTabularFile(path: string) {
+  return /\.(csv|parquet)$/i.test(path);
+}
+
 export function fileFormat(path: string) {
   const extension = path.split('/').pop()?.split('.').pop()?.toLowerCase() ?? '';
   if (extension === 'md' || extension === 'markdown') return { kind: 'markdown' } as const;
   if (extension === 'json') return { kind: 'json', language: 'json' } as const;
+  if (extension === 'parquet') return { kind: 'parquet' } as const;
   if (extension === 'csv') return { kind: 'csv' } as const;
   const language = Object.entries(codeLanguages).find(([key]) => key === extension)?.[1];
   return language ? ({ kind: 'code', language } as const) : ({ kind: 'text' } as const);

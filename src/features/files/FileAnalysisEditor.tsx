@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
-import { Alert, Badge, Button, Code, Loader, Paper, Table, Text, Textarea } from '@tidbcloud/uikit';
+import { lazy, Suspense, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { Alert, Badge, Button, Code, Loader, Paper, Text, Textarea, Tabs } from '@tidbcloud/uikit';
 import {
   workspaceApi,
   type FileAnalysisResult,
@@ -9,7 +9,11 @@ import { WorkspaceExecutionPanel } from '../../ui/WorkspaceExecutionPanel';
 import { WorkspaceQueryResults, WorkspaceResultPanel } from '../../ui/WorkspaceQueryResults';
 import { BashAnalysisHelp } from './BashAnalysisHelp';
 import { legacyBashInput, bashPreviewCommand, bashSamples } from './bash-analysis';
+import { isTabularFile } from './file-preview';
 import './file-analysis.css';
+const FileExportDialog = lazy(() =>
+  import('../exports/FileExportDialog').then((module) => ({ default: module.FileExportDialog })),
+);
 const WorkspaceSqlInput = lazy(() => import('../sql/WorkspaceSqlInput'));
 const sqlSample = 'SELECT * FROM file LIMIT 100;';
 export function FileAnalysisEditor({
@@ -18,7 +22,23 @@ export function FileAnalysisEditor({
   cap,
   onRunningChange,
   onExportSaved,
+  preview,
+  editorId,
+  expanded,
+  active,
+  onContentViewChange,
+  blocked,
+  previewVersion,
+  onRefreshPreview,
 }: {
+  preview: ReactNode;
+  editorId: string;
+  expanded: boolean;
+  active: boolean;
+  onContentViewChange: (view: 'preview' | 'result') => void;
+  blocked: boolean;
+  previewVersion?: string;
+  onRefreshPreview: () => void;
   resourceId: string;
   path: string;
   cap: FileAnalysisCapabilities['engines'][number];
@@ -32,6 +52,13 @@ export function FileAnalysisEditor({
   const [result, setResult] = useState<FileAnalysisResult | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [contentView, setContentView] = useState<string | null>('preview');
+  const [exportOpen, setExportOpen] = useState(false);
+  const hasExecution = !!(result || busy || error);
+  const visibleContentView = hasExecution ? contentView : 'preview';
+  useEffect(() => {
+    if (active) onContentViewChange(visibleContentView === 'result' ? 'result' : 'preview');
+  }, [active, visibleContentView, onContentViewChange]);
   const execution = useRef<AbortController | null>(null);
   const pending = useRef(false);
   useEffect(() => {
@@ -45,9 +72,10 @@ export function FileAnalysisEditor({
     [onRunningChange],
   );
   async function run() {
-    if (pending.current || !cap.available || !script.trim()) return;
+    if (pending.current || blocked || !expanded || !cap.available || !script.trim()) return;
     pending.current = true;
     setBusy(true);
+    setContentView('result');
     setError('');
     setResult(null);
     const controller = new AbortController();
@@ -87,97 +115,127 @@ export function FileAnalysisEditor({
     : undefined;
   return (
     <div className="file-analysis workspace-tool">
-      {!cap.available && (
-        <Alert color="yellow">{cap.reason} Use Download to open the file in another tool.</Alert>
+      <div id={editorId} hidden={!expanded}>
+        {!cap.available && (
+          <Alert color="yellow">{cap.reason} Use Download to open the file in another tool.</Alert>
+        )}
+        {cap.available && (
+          <>
+            <WorkspaceExecutionPanel
+              language={sql ? 'SQL' : 'Bash'}
+              runLabel={sql ? 'Run query' : 'Run command'}
+              cancelLabel={sql ? 'Cancel query' : 'Cancel command'}
+              busy={busy}
+              disabled={blocked || !script.trim()}
+              onRun={() => void run()}
+              onCancel={cancel}
+              context={sql ? 'Read-only · Table: file' : 'Read-only · Saved file'}
+              limits={
+                <>
+                  One saved file · Fresh snapshot per run · Up to 16 MiB input · 15 seconds · 1 MiB
+                  output.
+                  {sql ? (
+                    ' SELECT only · Up to 1,000 rows. Query this file as the table file.'
+                  ) : (
+                    <>
+                      {' '}
+                      Just Bash runs supported text commands on the selected saved file at{' '}
+                      <Code className="analysis-input-path" fz="inherit">
+                        {bashInput.path}
+                      </Code>
+                      , with working directory{' '}
+                      <Code fz="inherit">{bashInput.workingDirectory}</Code>. Other files, writes,
+                      network access and native programs are unavailable.
+                    </>
+                  )}
+                </>
+              }
+              samples={
+                sql
+                  ? [
+                      { label: 'Preview rows', value: sqlSample },
+                      { label: 'Count rows', value: 'SELECT COUNT(*) AS row_count FROM file;' },
+                    ]
+                  : bashSamples(bashInput.path, bashInput.fileVariable)
+              }
+              onSample={sample}
+            >
+              {sql ? (
+                <Suspense
+                  fallback={
+                    <div className="editor-loading">
+                      <Loader />
+                      <Text>Loading SQL editor…</Text>
+                    </div>
+                  }
+                >
+                  <WorkspaceSqlInput
+                    databaseId={'analysis:' + resourceId + path}
+                    dialect="duckdb"
+                    value={script}
+                    onChange={setScript}
+                    onRun={() => void run()}
+                    disabled={busy || blocked}
+                  />
+                </Suspense>
+              ) : (
+                <>
+                  <BashAnalysisHelp
+                    id={bashHelpId}
+                    input={bashInput}
+                    busy={busy}
+                    onSample={sample}
+                  />
+                  <Textarea
+                    aria-label="Bash command"
+                    aria-describedby={bashHelpId}
+                    className="workspace-command-input"
+                    value={script}
+                    onChange={(event) => setScript(event.currentTarget.value)}
+                    disabled={busy || blocked}
+                    spellCheck={false}
+                    onKeyDown={(event) => {
+                      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                        event.preventDefault();
+                        void run();
+                      }
+                    }}
+                    styles={{
+                      input: {
+                        fontFamily: 'var(--mantine-font-family-monospace)',
+                        border: 0,
+                        borderRadius: 0,
+                        height: 'var(--workspace-sql-editor-height)',
+                        padding: '12px 20px',
+                      },
+                    }}
+                  />
+                </>
+              )}
+            </WorkspaceExecutionPanel>
+          </>
+        )}
+      </div>
+      {result?.fileVersion && previewVersion && result.fileVersion !== previewVersion && (
+        <Alert color="yellow" title="File version changed" m="md">
+          This result and the data preview use different saved versions. Refresh the preview, then
+          rerun to compare the same data.
+          <Button variant="subtle" onClick={onRefreshPreview} disabled={busy || blocked}>
+            Refresh preview
+          </Button>
+        </Alert>
       )}
-      {cap.available && (
-        <>
-          <WorkspaceExecutionPanel
-            language={sql ? 'SQL' : 'Bash'}
-            runLabel={sql ? 'Run query' : 'Run command'}
-            cancelLabel={sql ? 'Cancel query' : 'Cancel command'}
-            busy={busy}
-            disabled={!script.trim()}
-            onRun={() => void run()}
-            onCancel={cancel}
-            context={sql ? 'Read-only · Table: file' : 'Read-only · Saved file'}
-            limits={
-              <>
-                One saved file · Fresh snapshot per run · Up to 16 MiB input · 15 seconds · 1 MiB
-                output.
-                {sql ? (
-                  ' SELECT only · Up to 1,000 rows. Query this file as the table file.'
-                ) : (
-                  <>
-                    {' '}
-                    Just Bash runs supported text commands on the selected saved file at{' '}
-                    <Code className="analysis-input-path" fz="inherit">
-                      {bashInput.path}
-                    </Code>
-                    , with working directory <Code fz="inherit">{bashInput.workingDirectory}</Code>.
-                    Other files, writes, network access and native programs are unavailable.
-                  </>
-                )}
-              </>
-            }
-            samples={
-              sql
-                ? [
-                    { label: 'Preview rows', value: sqlSample },
-                    { label: 'Count rows', value: 'SELECT COUNT(*) AS row_count FROM file;' },
-                  ]
-                : bashSamples(bashInput.path, bashInput.fileVariable)
-            }
-            onSample={sample}
-          >
-            {sql ? (
-              <Suspense
-                fallback={
-                  <div className="editor-loading">
-                    <Loader />
-                    <Text>Loading SQL editor…</Text>
-                  </div>
-                }
-              >
-                <WorkspaceSqlInput
-                  databaseId={'analysis:' + resourceId + path}
-                  dialect="duckdb"
-                  value={script}
-                  onChange={setScript}
-                  onRun={() => void run()}
-                  disabled={busy}
-                />
-              </Suspense>
-            ) : (
-              <>
-                <BashAnalysisHelp id={bashHelpId} input={bashInput} busy={busy} onSample={sample} />
-                <Textarea
-                  aria-label="Bash command"
-                  aria-describedby={bashHelpId}
-                  className="workspace-command-input"
-                  value={script}
-                  onChange={(event) => setScript(event.currentTarget.value)}
-                  disabled={busy}
-                  spellCheck={false}
-                  onKeyDown={(event) => {
-                    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                      event.preventDefault();
-                      void run();
-                    }
-                  }}
-                  styles={{
-                    input: {
-                      fontFamily: 'var(--mantine-font-family-monospace)',
-                      border: 0,
-                      borderRadius: 0,
-                      height: 'var(--workspace-sql-editor-height)',
-                      padding: '12px 20px',
-                    },
-                  }}
-                />
-              </>
-            )}
-          </WorkspaceExecutionPanel>
+      <Tabs value={visibleContentView} onChange={setContentView} keepMounted>
+        <Tabs.List
+          px="md"
+          hidden={!hasExecution}
+          style={{ display: hasExecution ? undefined : 'none' }}
+        >
+          <Tabs.Tab value="preview">{isTabularFile(path) ? 'Data preview' : 'Preview'}</Tabs.Tab>
+          <Tabs.Tab value="result">{sql ? 'Query result' : 'Command output'}</Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Panel value="preview">{preview}</Tabs.Panel>
+        <Tabs.Panel value="result">
           {sql ? (
             <WorkspaceQueryResults
               sourceResourceId={resourceId}
@@ -189,6 +247,13 @@ export function FileAnalysisEditor({
             />
           ) : (
             <WorkspaceResultPanel
+              actions={
+                result?.engine === 'bash' && (
+                  <Button disabled={busy} onClick={() => setExportOpen(true)}>
+                    Export output
+                  </Button>
+                )
+              }
               badge={
                 result?.engine === 'bash' && (
                   <Badge color={result.exitCode ? 'yellow' : 'green'}>Exit {result.exitCode}</Badge>
@@ -235,32 +300,19 @@ export function FileAnalysisEditor({
               )}
             </WorkspaceResultPanel>
           )}
-          {result?.engine === 'duckdb' && (
-            <Paper withBorder p="lg">
-              <details>
-                <summary>File columns ({result.schema.length})</summary>
-                <div className="analysis-table">
-                  <Table>
-                    <Table.Thead>
-                      <Table.Tr>
-                        <Table.Th>Column</Table.Th>
-                        <Table.Th>Type</Table.Th>
-                      </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>
-                      {result.schema.map((column) => (
-                        <Table.Tr key={column.column_name}>
-                          <Table.Td>{column.column_name}</Table.Td>
-                          <Table.Td>{column.column_type}</Table.Td>
-                        </Table.Tr>
-                      ))}
-                    </Table.Tbody>
-                  </Table>
-                </div>
-              </details>
-            </Paper>
-          )}
-        </>
+        </Tabs.Panel>
+      </Tabs>
+      {exportOpen && result?.engine === 'bash' && (
+        <Suspense fallback={<Loader aria-label="Loading output export" />}>
+          <FileExportDialog
+            source={{ kind: 'output', resourceId, stream: 'stdout', text: result.stdout }}
+            sourcePath={path}
+            outputStreams={{ stdout: result.stdout, stderr: result.stderr }}
+            exitCode={result.exitCode}
+            onClose={() => setExportOpen(false)}
+            onSaved={onExportSaved}
+          />
+        </Suspense>
       )}
     </div>
   );

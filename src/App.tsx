@@ -13,6 +13,7 @@ import { FileBrowserPanel } from './features/files/FileBrowserPanel';
 import { FileBrowserList } from './features/files/FileBrowserList';
 import { ResourceKindIcon as KindIcon } from './ui/ResourceKindIcon';
 import { FileWorkspaceHeader } from './features/files/FileWorkspaceHeader';
+import { FileSystemsList } from './features/files/FileSystemsList';
 import {
   useRemoteFiles,
   downloadRemoteFile,
@@ -82,7 +83,12 @@ import { DatabaseWorkspace } from './features/databases/DatabaseWorkspace';
 import { databaseEditorHash, parseWorkspaceRoute } from './features/navigation/workspace-route';
 import type { Route, WorkspaceRoute } from './features/navigation/workspace-route';
 
-import { fileHash, parseFileLocation, type FileView } from './features/files/file-location';
+import {
+  fileHash,
+  fileSystemHash,
+  parseFileSystemLocation,
+  type FileView,
+} from './features/files/file-location';
 
 const FilePreviewPanel = lazy(() => import('./features/files/FilePreviewPanel'));
 type WorkspaceIcon = React.ComponentType<IconProps>;
@@ -382,6 +388,9 @@ function App() {
         active={route}
         databaseId={routeLocation.databaseId}
         databaseView={routeLocation.databaseView}
+        fileSystemId={
+          parseFileSystemLocation('#' + (routeLocation.fileLink || 'files'))?.resourceId
+        }
         navigation={Object.entries(routes).map(([id, item]) => ({ id, ...item }))}
         onSearch={() => setModal('search')}
       >
@@ -408,7 +417,13 @@ function App() {
           {toast}
         </Notification>
       )}
-      {modal === 'resource' && <CreateResource {...shared} onClose={() => setModal(null)} />}
+      {modal === 'resource' && (
+        <CreateResource
+          {...shared}
+          initialKind={route === 'files' ? 'filesystem' : 'mysql'}
+          onClose={() => setModal(null)}
+        />
+      )}
       {modal === 'key' && <CreateKey {...shared} onClose={() => setModal(null)} />}
       {modal === 'search' && (
         <SearchModal data={data} onClose={() => setModal(null)} onConnect={setConnection} />
@@ -929,10 +944,40 @@ function download(name: string, value: string, mime = 'text/plain') {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
+function Files(shared: Shared) {
+  const context = parseFileSystemLocation(location.hash);
+  const systems = shared.data.resources.filter((resource) => resource.kind === 'filesystem');
+  if (!context)
+    return (
+      <FileSystemsList
+        resources={systems}
+        onCreate={shared.onCreate}
+        onConnect={shared.onConnect}
+      />
+    );
+  const resource = systems.find((system) => system.id === context.resourceId);
+  if (!resource)
+    return (
+      <Empty
+        title="File System unavailable"
+        description="This File System is no longer available in your workspace. Choose a File System from the list."
+        action={<Button onClick={() => go('files')}>All file systems</Button>}
+      />
+    );
+  return <FileWorkspace key={resource.id} {...shared} resource={resource} />;
+}
+function FileWorkspace({
+  data,
+  refresh,
+  notify,
+  onConnect,
+  onCreate,
+  resource,
+}: Shared & { resource: Resource }) {
   const systems = data.resources.filter((r) => r.kind === 'filesystem');
-  const [initialLocation] = useState(() => parseFileLocation(location.hash));
-  const initialResource = systems.find((r) => r.id === initialLocation?.resourceId);
+  const [initialContext] = useState(() => parseFileSystemLocation(location.hash));
+  const initialLocation = initialContext?.file;
+  const initialResource = resource;
   const initialFile =
     initialResource && initialLocation
       ? data.files.find(
@@ -951,13 +996,8 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
       : null;
   const restoreFile = useRef(initialFile);
   const [previewView, setPreviewView] = useState<FileView>(initialLocation?.view || 'preview');
-  const [system, setSystem] = useState(
-      initialResource?.id ||
-        systems.find((r) => r.provider === 'drive9-anonymous')?.id ||
-        systems[0]?.id ||
-        '',
-    ),
-    [path, setPath] = useState(
+  const system = resource.id;
+  const [path, setPath] = useState(
       initialFile ? initialFile.path.slice(0, initialFile.path.lastIndexOf('/')) || '/' : '/',
     ),
     [search, setSearch] = useState(''),
@@ -967,7 +1007,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
     [name, setName] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(
-      initialLocation && !initialFile
+      initialContext?.invalidFile || (initialLocation && !initialFile)
         ? 'The linked file or File System is unavailable. Select a file to continue.'
         : '',
     ),
@@ -984,6 +1024,26 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [previewTrigger, setPreviewTrigger] = useState<HTMLElement | null>(null);
   const dirty = !!editing && content !== (editing.content || '');
+  useEffect(() => {
+    if (!dirty) return;
+    const guardCollectionLink = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      )
+        return;
+      const link = event.target instanceof Element ? event.target.closest('a') : null;
+      if (link?.getAttribute('href') !== '#files') return;
+      event.preventDefault();
+      setPendingAction(() => () => go('files'));
+    };
+    document.addEventListener('click', guardCollectionLink);
+    return () => document.removeEventListener('click', guardCollectionLink);
+  }, [dirty]);
   function requestPreviewChange(action: () => void) {
     if (busy) return;
     restoreFile.current = null;
@@ -1025,10 +1085,11 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
     if (file) void openFile(file, initialLocation?.view);
   }, [openFile, initialLocation]);
   function closePreview() {
-    history.replaceState(null, '', '#files');
+    history.replaceState(null, '', fileSystemHash(system));
     previewRequest.current?.abort();
     setPreviewLoading(false);
     setEditing(null);
+    setError('');
     setBrowserCollapsed(false);
   }
   function downloadFile(file: WorkspaceFile) {
@@ -1137,13 +1198,10 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           if (selectedSystem) onConnect(selectedSystem);
         }}
         onUpload={() => upload.current?.click()}
+        onBack={() => requestPreviewChange(() => go('files'))}
         onSelect={(nextSystem) =>
           requestPreviewChange(() => {
-            closePreview();
-            setSystem(nextSystem);
-            setPath('/');
-            setSearch('');
-            setEditing(null);
+            location.hash = fileSystemHash(nextSystem);
           })
         }
       />
@@ -1157,6 +1215,11 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           e.target.value = '';
         }}
       />
+      {error && !editing && !newItem && !deleting && (
+        <Alert color="red" mb={20}>
+          {error}
+        </Alert>
+      )}
       {(listing.error || selectedSystem?.connectionError) && (
         <Alert color="red" mb={20}>
           {listing.error || selectedSystem?.connectionError}
@@ -1272,6 +1335,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
                 history.replaceState(null, '', fileHash(editing.resourceId, editing.path, view))
               }
               content={content}
+              savedContent={editing.content || ''}
               dirty={dirty}
               size={editing.size}
               loading={previewLoading}
@@ -1405,7 +1469,7 @@ function Connect({ data, copy }: Shared) {
   const snippet = `# Discover your workspace resources\ncurl ${apiOrigin}${base}/resources \\\n  -H "Authorization: Bearer $WORKSPACE_API_KEY"`;
   const python = `import os, json, urllib.request\n\nreq = urllib.request.Request(\n    "${apiOrigin}${base}/resources",\n    headers={"Authorization": "Bearer " + os.environ["WORKSPACE_API_KEY"]}\n)\nwith urllib.request.urlopen(req) as response:\n    print(json.load(response))`;
   const js = `const response = await fetch(\n  "${apiOrigin}${base}/resources",\n  { headers: { Authorization: \`Bearer \${process.env.WORKSPACE_API_KEY}\` } }\n);\nconsole.log(await response.json());`;
-  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiOrigin}/api/v1\nOpenAPI: ${apiOrigin}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for directory listings and UTF-8 writes; Drive9 listings contain metadata only. Use /files/content?resourceId=ID&path=PATH for binary upload/download and add preview=1 for bounded text previews. Use /resources/{resourceId}/tables to list tables, /resources/{resourceId}/table?name=NAME for columns and indexes, and /resources/{resourceId}/table/rows?name=NAME for up to 100 preview rows. Encode the exact table name as a query parameter. These reads require queries:execute and resource access, just like /queries for SQL on the selected database. Resources marked tidb-cloud-zero, db9-anonymous or duckdb-drive9 execute real SQL; queries:execute permits reads and writes within the database role. Run one statement per request; results are limited to 1,000 rows / 1 MiB and queries to 15 seconds. A timeout can leave a write outcome unknown; verify before retrying.\nFor read-only file analysis, inspect GET /workspaces/${data.workspace.id}/file-analyses/capabilities?resourceId=ID&path=PATH, then POST /workspaces/${data.workspace.id}/file-analyses with resourceId, path, engine and sql or command. Require both files:read and files:analyze plus the File System grant. CSV/Parquet SQL reads table file; Just Bash reads /workspace/input.log. Each run uses one fresh saved-file snapshot, up to 16 MiB input and 15 seconds. No source writes or arbitrary native commands are permitted.\nFor DuckDB database file queries, add sources: [{name: "orders", resourceId: "FILE_SYSTEM_ID", path: "/orders.csv"}] to the query JSON, then SELECT from files.orders. Require files:read and files:analyze plus queries:execute and grants for the database and each File System. Sources are SELECT-only and query-scoped: up to four CSV/JSON/NDJSON/Parquet files, 16 MiB combined input. Never send provider URLs, credentials or host paths.\nOnly call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local Workspace gateway. File Systems marked drive9-anonymous use real Singapore trial storage. Databases marked tidb-cloud-zero connect to real temporary MySQL databases. Check expiresAt and export important data before expiration. PostgreSQL resources marked db9-anonymous use native db9 PostgreSQL. db9 NUMERIC supports 28–29 significant digits; other PostgreSQL compatibility limits may apply. Databases marked duckdb-drive9 use native DuckDB with service-managed storage. Other databases remain demos. Cloud telemetry is not measured.\nDo not upload credentials to the workspace or commit them to Git.\n`;
+  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiOrigin}/api/v1\nOpenAPI: ${apiOrigin}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for directory listings and UTF-8 writes; Drive9 listings contain metadata only. Use /files/content?resourceId=ID&path=PATH for binary upload/download and add preview=1 for bounded text previews. Use GET /files/tabular-preview?resourceId=ID&path=PATH for a fixed CSV/Parquet schema and up to 20 rows; this requires files:read and the resource grant, without files:analyze. Use /resources/{resourceId}/tables to list tables, /resources/{resourceId}/table?name=NAME for columns and indexes, and /resources/{resourceId}/table/rows?name=NAME for up to 100 preview rows. Encode the exact table name as a query parameter. These reads require queries:execute and resource access, just like /queries for SQL on the selected database. Resources marked tidb-cloud-zero, db9-anonymous or duckdb-drive9 execute real SQL; queries:execute permits reads and writes within the database role. Run one statement per request; results are limited to 1,000 rows / 1 MiB and queries to 15 seconds. A timeout can leave a write outcome unknown; verify before retrying.\nFor read-only file analysis, inspect GET /workspaces/${data.workspace.id}/file-analyses/capabilities?resourceId=ID&path=PATH, then POST /workspaces/${data.workspace.id}/file-analyses with resourceId, path, engine and sql or command. Require both files:read and files:analyze plus the File System grant. CSV/Parquet SQL reads table file; Just Bash reads the selected Workspace path from capabilities input.path; use quoted "$FILE" only when input.fileVariable reports FILE. Each run uses one fresh saved-file snapshot, up to 16 MiB input and 15 seconds. No source writes or arbitrary native commands are permitted.\nFor DuckDB database file queries, add sources: [{name: "orders", resourceId: "FILE_SYSTEM_ID", path: "/orders.csv"}] to the query JSON, then SELECT from files.orders. Require files:read and files:analyze plus queries:execute and grants for the database and each File System. Sources are SELECT-only and query-scoped: up to four CSV/JSON/NDJSON/Parquet files, 16 MiB combined input. Never send provider URLs, credentials or host paths.\nOnly call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local Workspace gateway. File Systems marked drive9-anonymous use real Singapore trial storage. Databases marked tidb-cloud-zero connect to real temporary MySQL databases. Check expiresAt and export important data before expiration. PostgreSQL resources marked db9-anonymous use native db9 PostgreSQL. db9 NUMERIC supports 28–29 significant digits; other PostgreSQL compatibility limits may apply. Databases marked duckdb-drive9 use native DuckDB with service-managed storage. Other databases remain demos. Cloud telemetry is not measured.\nDo not upload credentials to the workspace or commit them to Git.\n`;
   return (
     <>
       <PageHeading
@@ -2285,10 +2349,16 @@ function WorkspaceSettings({ data, refresh, notify, copy }: Shared) {
     </>
   );
 }
-function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: () => void }) {
-  const [kind, setKind] = useState<Kind>('mysql'),
+function CreateResource({
+  data,
+  refresh,
+  notify,
+  onClose,
+  initialKind = 'mysql',
+}: Shared & { onClose: () => void; initialKind?: Kind }) {
+  const [kind, setKind] = useState<Kind>(initialKind),
     [name, setName] = useState(''),
-    [selectedRegion, setRegion] = useState(data.capabilities.mysql.regions[0]),
+    [selectedRegion, setRegion] = useState(data.capabilities[initialKind].regions[0]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   const createId = useRef(crypto.randomUUID());
@@ -2770,7 +2840,7 @@ function Connection({
           variant="filled"
           onClick={() => {
             onClose();
-            if (isFileSystem) go('files');
+            if (isFileSystem) location.hash = fileSystemHash(r.id);
             else openDatabaseEditor(r.id);
           }}
         >

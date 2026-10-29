@@ -195,6 +195,18 @@ verified, and record that as a remaining gap.
   Check both themes at 1280×800/900 and 390×844, including keyboard toggling, active queries,
   filtering and File System regression. Evidence is in [density verification](../database-density-verification.md#compact-table-browser).
   Revisit for resizable navigation or multiple database documents.
+- **Resource collections first (owner correction, 2026-10-29):** sidebar destinations for
+  Databases and File System open their global resource lists. Never silently choose the first,
+  live or only resource. Enter a resource only through an explicit resource URL/selection;
+  keep a labeled All resources return action in its workspace, guarded against unsaved work
+  and disabled during active resource operations. File System list rows show identity, region,
+  status and provider, with open/connect/create entry points. Unknown or wrong-kind IDs show
+  unavailable with a route back to the list. Preserve existing file preview/analysis links,
+  and keep closing a file inside its selected File System. Use actual TiUI Table and controls,
+  existing page-heading spacing, and the shared compact header inside a selected resource.
+  Check zero/one/multiple resources, reload/history, direct links, creation defaults, draft
+  guards and both themes/viewports. See [list verification](../filesystem-list-verification.md).
+  Revisit when adding collection filters or pagination.
 - **Resource workspace hierarchy (owner correction 2026-10-28):** unify Database and File
   System at the page level, not only their sidebars. Use `ResourceWorkspaceHeader` and its
   `ResourceWorkspaceBar` for one compact selector/status/actions toolbar above the entire
@@ -231,7 +243,7 @@ verified, and record that as a remaining gap.
   See [interaction verification](../resource-workspace-verification.md#shared-interaction-audit).
   Revisit when adding a new execution tool or changing the installed UI packages.
 - **Result export (owner correction, GH-58):** Database and File System SQL use the same
-  Export entry and TiUI dialog for CSV/JSON/JSON Lines downloads and copies to public workspace
+  Export results entry and TiUI dialog for CSV/JSON/JSON Lines downloads and copies to public workspace
   files or new database tables. Export the completed rows without rerunning SQL. Show the
   target, row count and format semantics before the explicit action; collisions preserve the
   inputs and never overwrite or append. Lock submission/dismissal while writing, restore focus
@@ -239,8 +251,46 @@ verified, and record that as a remaining gap.
   Success links open the saved file/table. Follow [ADR 0013](../decisions/0013-result-snapshot-exports.md)
   for authority and partial-write handling, and [verification](../result-export-verification.md)
   for themes, narrow layouts and API limits. Revisit for larger exports or additional formats.
-- **File analysis (accepted and implemented, 2026-10-28):** keep Analyze in the selected
-  file's side panel. Separate file format from analysis method: use capability options to
+- **Contextual file exports (owner correction, GH-79; implemented 2026-10-29):** Preview
+  operates on the saved original with Download original and Export original; SQL/Bash result
+  views expose Export results/Export output in their own result header. Never leave a source
+  Download footer beneath output. Raw copies preserve original bytes or the chosen stdout/stderr
+  stream, including empty/nonzero-exit output, without rerunning execution. Use shared TiUI
+  destination controls for computer, public File System and new database table. Parsed imports
+  require explicit format, sample, field/name/type review and a separate confirmation showing
+  source and target. Keep arbitrary output as text lines until CSV is chosen. Preserve drafts,
+  results and recoverable form values; invalidate review when parsing options or stream changes.
+  Move focus to the parsed review, return it on close, and keep a usable download link after
+  preparation. Check both themes/viewports, source/result switching, errors and busy locking.
+  [ADR 0018](../decisions/0018-contextual-file-exports.md) and
+  [verification](../contextual-file-export-verification.md) define the authority and evidence.
+  Revisit for new destinations, formats or persistent/large exports.
+- **Preview-first file workspace (owner correction, GH-76):** open a file to its content or
+  bounded tabular sample. SQL/Bash expands in place, with Data preview and Query result/Command
+  output sharing the content area. Following the GH-82 owner correction, initial preview and
+  unexecuted Analyze show no result navigation. Reveal usable preview/result tabs only when
+  explicit execution starts; retain them for running, success, error and canceled states.
+  Never present a disabled result tab as an apparent Analyze entry. Clearing execution state
+  returns to preview and its original-file actions; preserve existing results when merely
+  switching tools/methods. Check these transitions in both themes/viewports, including keyboard
+  navigation and export context. See the result-discovery evidence in the linked verification;
+  revisit when introducing persistent sessions or separate analysis routes.
+  Keep tools mounted through tool, content, method and browser
+  toggles; retain independent in-memory drafts/results/errors and run only explicitly. Source
+  editing remains a secondary action with save/discard guards; Parquet has no source editor.
+  CSV/Parquet preview uses the server's fixed reader, shows types/schema and a clearly labeled
+  sample; CSV types are inferred and its total is unknown, while Parquet count comes from metadata.
+  Fixed preview requires read access; custom execution still requires analyze access. Keep
+  Download original in preview, unavailable/retry states and saved-version mismatch guidance. Refresh
+  preview/capabilities after saving without unmounting tools. Legacy analyze links expand tools.
+  Use TiUI disclosures, Tabs, Table and the existing shared execution/results/theme adapters.
+  Inspect retained state, source guards, busy/cancel/errors, 16px editors and 15px table cells,
+  both themes at 1280×800 and 390×844 with internal scrolling and no page overflow. See
+  [ADR 0017](../decisions/0017-preview-first-file-workspace.md) and
+  [verification](../file-workspace-verification.md). This supersedes the top-level Preview/Analyze
+  split in older reading/analysis evidence. Revisit for durable sessions or large-file range reads.
+- **File analysis (accepted and implemented, 2026-10-28):** keep analysis in the selected
+  unified file workspace with tools expanded on demand. Separate file format from analysis method: use capability options to
   offer DuckDB SQL and Just Bash for CSV; keep SQL as its default. Parquet remains SQL-only
   and recognized text remains Bash-only. Use a labeled TiUI SegmentedControl when multiple
   methods exist, explain parsed rows versus raw text, retain separate in-memory drafts/results/errors,
@@ -284,7 +334,7 @@ verified, and record that as a remaining gap.
   an inline right-hand panel, keeping the file list usable on desktop. Do not use a centered
   modal or a backdrop for routine reading. On narrow screens show the reading panel with a
   clear Back to files action. Default Markdown to rendered content and keep an explicit
-  source-editing tab; preserve unsaved drafts when switching files, changing file systems,
+  source-editing action; preserve unsaved drafts when switching files, changing file systems,
   or closing the panel. Keep save failures recoverable in place. Reuse TiUI Paper, Tabs,
   Textarea, Table, and CodeBlock; semantic document markup is appropriate for Markdown.
   Treat content as untrusted: no raw HTML execution, unsafe links, or automatic remote image

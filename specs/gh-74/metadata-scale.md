@@ -2,7 +2,7 @@
 
 - Status: Proposed amendment to the [control-plane specification](spec.md); no scale implementation or benchmark claim.
 - Owner-requested workload: millions of tenants/Workspaces, including individual Workspaces with thousands to a million resources.
-- Authority: [Proposed ADR 0017](../../docs/decisions/0017-workspace-kv-control-plane.md); accepted direction does not imply accepted capacity or availability promises.
+- Authority: [Proposed ADR 0019](../../docs/decisions/0019-workspace-kv-control-plane.md); accepted direction does not imply accepted capacity or availability promises.
 
 ## 1. Scale is cardinality, traffic and skew
 

@@ -1,5 +1,5 @@
-import { Button, Text } from '@tidbcloud/uikit';
-import { IconUpload01 } from '@tidbcloud/uikit/icons';
+import { ActionIcon, Button, Text } from '@tidbcloud/uikit';
+import { IconArrowLeft, IconUpload01 } from '@tidbcloud/uikit/icons';
 import type { Resource } from '../../api/client';
 import {
   ResourceConnectButton,
@@ -18,6 +18,7 @@ export function FileWorkspaceHeader({
   onSelect,
   onConnect,
   onUpload,
+  onBack,
 }: {
   resource?: Resource;
   resources: Resource[];
@@ -27,6 +28,7 @@ export function FileWorkspaceHeader({
   onSelect: (id: string) => void;
   onConnect: () => void;
   onUpload: () => void;
+  onBack: () => void;
 }) {
   const live = resource?.provider === 'drive9-anonymous';
   return (
@@ -34,6 +36,15 @@ export function FileWorkspaceHeader({
       title="File System"
       actions={
         <>
+          <ActionIcon
+            variant="subtle"
+            aria-label="All file systems"
+            title="All file systems"
+            onClick={onBack}
+            disabled={busy}
+          >
+            <IconArrowLeft size={18} />
+          </ActionIcon>
           <ResourceDetails title="File System details">
             <Text>{resource?.name || 'No File System selected'}</Text>
             {resource && (

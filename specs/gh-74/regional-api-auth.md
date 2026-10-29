@@ -1,6 +1,6 @@
 # GH-74: Direct regional APIs and regional token authority
 
-- Status: Proposed extension of the [control-plane specification](spec.md), [autonomy/channel contract](control-channel.md) and [ADR 0017](../../docs/decisions/0017-workspace-kv-control-plane.md).
+- Status: Proposed extension of the [control-plane specification](spec.md), [autonomy/channel contract](control-channel.md) and [ADR 0019](../../docs/decisions/0019-workspace-kv-control-plane.md).
 - Owner direction: Global and regional API origins differ; data requests go directly to Region, and Global failure must not disable established regional service.
 - Implementation: Design only. Current generated OpenAPI, routes, Key/session expiry and Console single-origin configuration remain unchanged.
 
