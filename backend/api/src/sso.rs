@@ -316,6 +316,23 @@ impl Runtime {
         let nonce = secret(32)?;
         let flow = secret(32)?;
         let mut url = Url::parse(&e.authorize).map_err(|_| failure(503, "SSO_UNAVAILABLE"))?;
+        let reserved = [
+            "response_type",
+            "client_id",
+            "redirect_uri",
+            "scope",
+            "state",
+            "nonce",
+            "code_challenge",
+            "code_challenge_method",
+        ];
+        let preserved = url
+            .query_pairs()
+            .filter(|(k, _)| !reserved.contains(&k.as_ref()))
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect::<Vec<_>>();
+        url.set_query(None);
+        url.query_pairs_mut().extend_pairs(preserved);
         url.query_pairs_mut().extend_pairs([
             ("response_type", "code"),
             ("client_id", &self.config.client_id),
@@ -484,6 +501,30 @@ mod tests {
             }
             _ => panic!("Expected distinct SSO identity"),
         }
+    }
+    #[tokio::test]
+    async fn authorize_parameters_cannot_be_overridden_by_endpoint_query() {
+        let mut c = config();
+        c.authorize_url = Some(
+            "https://issuer.example/authorize?client_id=wrong&state=wrong&organization=org-a"
+                .into(),
+        );
+        c.token_url = Some("https://issuer.example/token".into());
+        c.jwks_url = Some("https://issuer.example/jwks".into());
+        let r = Runtime::new(c).unwrap();
+        let (url, _) = r.login("fixture").await.unwrap();
+        let parsed = Url::parse(&url).unwrap();
+        let pairs = parsed.query_pairs().collect::<Vec<_>>();
+        assert_eq!(pairs.iter().filter(|(k, _)| k == "client_id").count(), 1);
+        assert_eq!(
+            pairs.iter().find(|(k, _)| k == "client_id").unwrap().1,
+            "client"
+        );
+        assert_eq!(pairs.iter().filter(|(k, _)| k == "state").count(), 1);
+        assert_eq!(
+            pairs.iter().find(|(k, _)| k == "organization").unwrap().1,
+            "org-a"
+        );
     }
     #[tokio::test]
     async fn expired_flow_is_consumed() {
