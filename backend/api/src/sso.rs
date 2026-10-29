@@ -207,6 +207,7 @@ fn identity(config: &Config, claims: &Value) -> Result<Credential, ServiceError>
         id: format!("sso:{}:{sub}", config.issuer),
         actor: format!("tidb:{sub}"),
         expires_at: chrono::Utc::now().timestamp() + 28800,
+        revoked: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
 }
 #[derive(Clone)]

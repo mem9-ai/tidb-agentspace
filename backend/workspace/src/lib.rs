@@ -12,8 +12,16 @@ pub enum Credential {
         id: String,
         actor: String,
         expires_at: i64,
+        revoked: std::sync::Arc<std::sync::atomic::AtomicBool>,
     },
     Bearer(String),
+}
+impl Credential {
+    pub fn revoke(&self) {
+        if let Self::SessionOwner { revoked, .. } = self {
+            revoked.store(true, std::sync::atomic::Ordering::Release);
+        }
+    }
 }
 pub enum Operation {
     ListWorkspaces,
@@ -138,8 +146,11 @@ pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
             id,
             actor,
             expires_at,
+            revoked,
         } => {
-            if *expires_at <= Utc::now().timestamp() {
+            if *expires_at <= Utc::now().timestamp()
+                || revoked.load(std::sync::atomic::Ordering::Acquire)
+            {
                 return Err(reject(401, "UNAUTHENTICATED"));
             }
             (id.clone(), actor.clone())
@@ -423,8 +434,27 @@ mod session_tests {
             id: "sso:issuer:alice".into(),
             actor: "tidb:alice".into(),
             expires_at: Utc::now().timestamp() - 1,
+            revoked: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         };
         assert!(principal(&json!({}), &credential).is_err());
         assert!(execute_operation(&mut json!({}), credential, Operation::ListWorkspaces).is_err());
+    }
+}
+
+#[cfg(test)]
+mod revocation_tests {
+    use super::*;
+    #[test]
+    fn logout_revokes_already_cloned_operation_credentials() {
+        let credential = Credential::SessionOwner {
+            id: "sso:issuer:alice".into(),
+            actor: "tidb:alice".into(),
+            expires_at: Utc::now().timestamp() + 28800,
+            revoked: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        };
+        let operation_credential = credential.clone();
+        assert!(principal(&json!({}), &operation_credential).is_ok());
+        credential.revoke();
+        assert!(principal(&json!({}), &operation_credential).is_err());
     }
 }

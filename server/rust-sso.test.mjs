@@ -131,7 +131,7 @@ async function fixture(t, overrides = {}) {
     });
   });
   const origin = `http://127.0.0.1:${listen}`;
-  const request = (path, { method = 'GET', cookie, body, headers = {} } = {}) =>
+  const request = (path, { method = 'GET', cookie, body, raw, headers = {} } = {}) =>
     new Promise((done, reject) => {
       const req = http.request(
         origin + path,
@@ -159,7 +159,7 @@ async function fixture(t, overrides = {}) {
         },
       );
       req.on('error', reject);
-      req.end(body === undefined ? undefined : JSON.stringify(body));
+      req.end(raw ?? (body === undefined ? undefined : JSON.stringify(body)));
     });
   await until(async () => {
     if (child.exitCode !== null) throw Error(log);
@@ -382,5 +382,115 @@ test(
       const r = await fetch(`http://127.0.0.1:${listen}/api/health`);
       assert.equal(r.status, 200, again.output());
     });
+  },
+);
+
+test(
+  'SSO logout after CREATE revokes the in-flight import before INSERT; reviews stay session-bound',
+  { skip: !enabled, timeout: 90000 },
+  async (t) => {
+    const statements = [];
+    let onCreate;
+    const sql = http.createServer(async (req, res) => {
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      const input = JSON.parse(Buffer.concat(chunks));
+      const reply = (value) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(value));
+      };
+      if (req.url === '/zero')
+        return reply({
+          instance: {
+            id: 'native-sso-fixture',
+            expiresAt: new Date(Date.now() + 86400000).toISOString(),
+            connection: {
+              host: 'fixture.tidbcloud.com',
+              port: 4000,
+              username: 'prefix.root',
+              password: 'private-synthetic-fixture',
+            },
+          },
+        });
+      statements.push(input.sql);
+      if (input.sql.startsWith('CREATE TABLE') && onCreate) await onCreate();
+      reply({ columns: ['connected'], rows: [{ connected: 1 }], rowCount: 1, affectedRows: 0 });
+    });
+    await new Promise((r) => sql.listen(0, '127.0.0.1', r));
+    t.after(() => new Promise((r) => sql.close(r)));
+    const origin = `http://127.0.0.1:${sql.address().port}`;
+    const f = await fixture(t, {
+      product: {
+        providers: {
+          mysqlProvider: 'tidb-cloud-zero',
+          testMode: true,
+          zeroEndpoint: origin + '/zero',
+          sqlFixture: origin + '/sql',
+        },
+      },
+    });
+    const login = async () => {
+      const flow = await f.flow();
+      const r = await f.callback(flow);
+      assert.equal(r.status, 302);
+      return r.headers['set-cookie'][0].split(';')[0];
+    };
+    const cookie = await login();
+    const created = await f.request(base + '/resources', {
+      method: 'POST',
+      cookie,
+      body: { name: 'sso-import-target', kind: 'mysql', region: 'automatic' },
+      headers: { 'Idempotency-Key': 'native-sso-import' },
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.equal(created.body.data.status, 'active');
+    const resourceId = created.body.data.id;
+    const prep = await f.request(
+      base +
+        '/database-imports/prepare-upload?' +
+        new URLSearchParams({
+          resourceId,
+          filename: 'input.csv',
+          format: 'csv',
+          header: 'true',
+          delimiter: ',',
+        }),
+      {
+        method: 'POST',
+        cookie,
+        raw: Buffer.from('id\n001\n'),
+        headers: { 'Content-Type': 'application/octet-stream' },
+      },
+    );
+    assert.equal(prep.status, 200, JSON.stringify(prep.body));
+    const commit = {
+      resourceId,
+      preparationId: prep.body.preparationId,
+      confirmed: true,
+      table: 'mid_logout_import',
+      fields: prep.body.fields,
+    };
+    const other = await login();
+    const cross = await f.request(base + '/database-imports', {
+      method: 'POST',
+      cookie: other,
+      body: commit,
+    });
+    assert.equal(cross.status, 409);
+    assert.equal(cross.body.error.code, 'IMPORT_PREPARATION_UNAVAILABLE');
+    onCreate = async () => {
+      const r = await f.request('/api/auth/tidbcloud/logout', { method: 'POST', cookie });
+      assert.equal(r.status, 200);
+    };
+    statements.length = 0;
+    const result = await f.request(base + '/database-imports', {
+      method: 'POST',
+      cookie,
+      body: commit,
+    });
+    assert.equal(result.status, 502, JSON.stringify(result.body));
+    assert.equal(result.body.error.code, 'EXPORT_INCOMPLETE');
+    assert.equal(statements.filter((s) => s.startsWith('CREATE TABLE')).length, 1);
+    assert.ok(!statements.some((s) => s.startsWith('INSERT')));
   },
 );

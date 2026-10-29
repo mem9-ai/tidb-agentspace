@@ -468,7 +468,14 @@ async fn dispatch(
         let token = secret(32)?;
         let now = Instant::now();
         let mut sessions = app.sessions.lock().await;
-        sessions.retain(|_, session| session.expires > now);
+        sessions.retain(|_, session| {
+            if session.expires <= now {
+                session.credential.revoke();
+                false
+            } else {
+                true
+            }
+        });
         if sessions.len() >= 4096 {
             return Err(reject(429, "SESSION_BUSY"));
         }
@@ -480,6 +487,7 @@ async fn dispatch(
                     id: "local-owner".into(),
                     actor: "You".into(),
                     expires_at: chrono::Utc::now().timestamp() + 28800,
+                    revoked: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 },
             },
         );
@@ -692,7 +700,9 @@ async fn auth_route(
     };
     if path == "/api/auth/tidbcloud/logout" && [Method::GET, Method::POST].contains(method) {
         if let Some(token) = cookie(headers, "aw_session") {
-            app.sessions.lock().await.remove(token);
+            if let Some(session) = app.sessions.lock().await.remove(token) {
+                session.credential.revoke();
+            }
         }
         let mut response = if *method == Method::GET && app.sso.is_some() {
             redirect(
@@ -740,9 +750,18 @@ async fn auth_route(
             Ok(credential) => {
                 let now = Instant::now();
                 let mut sessions = app.sessions.lock().await;
-                sessions.retain(|_, s| s.expires > now);
+                sessions.retain(|_, s| {
+                    if s.expires <= now {
+                        s.credential.revoke();
+                        false
+                    } else {
+                        true
+                    }
+                });
                 if let Some(old) = cookie(headers, "aw_session") {
-                    sessions.remove(old);
+                    if let Some(session) = sessions.remove(old) {
+                        session.credential.revoke();
+                    }
                 }
                 if sessions.len() >= 4096 {
                     error(reject(429, "SESSION_BUSY"))
