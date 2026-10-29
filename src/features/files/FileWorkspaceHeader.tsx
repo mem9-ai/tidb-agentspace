@@ -65,7 +65,7 @@ export function FileWorkspaceHeader({
             onClick={onUpload}
             disabled={busy || !resource}
           >
-            Upload file
+            Upload
           </Button>
         </>
       }

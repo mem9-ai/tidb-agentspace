@@ -1,4 +1,5 @@
 import { createWorkspaceClient, resolveApiOrigin, responseData } from './transport';
+import { createUploadFetch, type UploadProgress } from './upload-transport';
 import type { components, operations } from './schema';
 
 export type Resource = components['schemas']['Resource'];
@@ -110,8 +111,13 @@ export const workspaceApi = {
     ),
   query: (body: JsonBody<operations['executeQuery']>, signal?: AbortSignal) =>
     responseData(client.POST('/workspaces/{workspaceId}/queries', { params, body, signal })),
-  saveFile: (body: WriteFileInput) =>
-    responseData(client.PUT('/workspaces/{workspaceId}/files', { params, body })),
+  saveFile: (body: WriteFileInput, onProgress?: (progress: UploadProgress) => void) =>
+    responseData(
+      (onProgress ? createWorkspaceClient(apiOrigin, createUploadFetch(onProgress)) : client).PUT(
+        '/workspaces/{workspaceId}/files',
+        { params, body },
+      ),
+    ),
   deleteFile: (body: JsonBody<operations['deleteFile']>) =>
     responseData(client.DELETE('/workspaces/{workspaceId}/files', { params, body })),
   listFiles: (resourceId: string, path?: string, signal?: AbortSignal) =>
@@ -131,14 +137,21 @@ export const workspaceApi = {
     if ('arrayBuffer' in result) throw new Error('Expected a JSON preview.');
     return result;
   },
-  uploadFile: (file: Pick<WorkspaceFile, 'resourceId' | 'path'>, body: Blob) =>
+  uploadFile: (
+    file: Pick<WorkspaceFile, 'resourceId' | 'path'>,
+    body: Blob,
+    onProgress: (progress: UploadProgress) => void,
+  ) =>
     responseData(
-      client.PUT('/workspaces/{workspaceId}/files/content', {
-        params: { path: params.path, query: file, header: { 'If-None-Match': '*' } },
-        body,
-        bodySerializer: (value) => value,
-        headers: { 'Content-Type': 'application/octet-stream' },
-      }),
+      createWorkspaceClient(apiOrigin, createUploadFetch(onProgress)).PUT(
+        '/workspaces/{workspaceId}/files/content',
+        {
+          params: { path: params.path, query: file, header: { 'If-None-Match': '*' } },
+          body,
+          bodySerializer: (value) => value,
+          headers: { 'Content-Type': 'application/octet-stream' },
+        },
+      ),
     ),
   createKey: (body: CreateKeyInput) =>
     responseData(client.POST('/workspaces/{workspaceId}/keys', { params, body })),
