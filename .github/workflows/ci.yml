@@ -79,6 +79,24 @@ jobs:
       - run: npm ci
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+      - name: Check Rust formatting before compiling
+        run: npm run backend:fmt
+      - name: Restore Rust dependency cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          # Keep fallback restores inside the same native-library and build configuration.
+          prefix-key: rust-v1-${{ hashFiles('Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml', 'scripts/duckdb-runtime.json') }}
+          shared-key: backend
+          workspaces: . -> meta-service/target
+          cache-bin: false
+          cache-workspace-crates: false
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
+      - name: Build native backend with Cargo timings
+        run: npm run backend:build -- --timings
+      - name: Check Rust with Clippy
+        run: npm run backend:clippy
+      - name: Run Rust unit tests
+        run: npm run backend:test
       - name: Install verified RustFS 1.0.4 binary
         shell: bash
         run: |
@@ -90,4 +108,13 @@ jobs:
           unzip -q "$runtime_dir/rustfs.zip" -d "$runtime_dir"
           chmod +x "$runtime_dir/rustfs"
           printf '%s\n' "$runtime_dir" >> "$GITHUB_PATH"
-      - run: npm run backend:check
+      - name: Run native API and real S3 integration tests
+        run: npm run backend:test:integration
+      - name: Save Cargo timing reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cargo-timings-${{ github.sha }}-${{ github.run_attempt }}
+          path: meta-service/target/cargo-timings/
+          if-no-files-found: ignore
+          retention-days: 7

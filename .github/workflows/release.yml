@@ -18,6 +18,7 @@ jobs:
     env:
       CARGO_BUILD_JOBS: 2
       CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - name: Require reviewed main-branch source
         run: test "$GITHUB_REF" = refs/heads/main
@@ -37,6 +38,15 @@ jobs:
         run: node scripts/check-signoff.mjs '' "$GITHUB_SHA"
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Restore reviewed Rust dependency cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          prefix-key: rust-v1-${{ hashFiles('Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml', 'scripts/duckdb-runtime.json') }}
+          shared-key: backend
+          workspaces: . -> meta-service/target
+          cache-bin: false
+          cache-workspace-crates: false
+          save-if: false
       - run: npm run build:api
       - name: Package the internal runtime
         run: node scripts/package-runtime.mjs "$GITHUB_SHA"

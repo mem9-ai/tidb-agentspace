@@ -149,6 +149,13 @@ Use the root Cargo workspace, pinned `rust-toolchain.toml` and root `Cargo.lock`
 `WORKSPACE_BACKEND_CONFIG` pointing to the private regional deployment; they never fall back
 to another backend or seed another data file. `npm run backend:check` runs workspace format/Clippy/tests and real isolated S3/native API tests in addition to `npm run check`. Node remains build/test tooling and an isolated behavior oracle; it is not a serving or rollback backend. Fresh installations follow [ADR 0024](docs/decisions/0024-fresh-record-metadata.md), replacing the retired document/import bridge. See [the Rust guide](docs/rust-backend.md) for module composition, private plans and explicit empty-Workspace bootstrap.
 
+`backend:check` checks formatting before compiling. Its individual phases are available as
+`backend:fmt`, `backend:build`, `backend:clippy`, `backend:test` and `backend:test:integration`;
+the latter requires the built executables and installed RustFS. For a compilation report,
+run `npm run backend:build -- --timings`. CI runs the same complete gate in separate steps;
+see [Rust cache and timing evidence](docs/ci-cd.md#rust-build-cache-and-timing-evidence) for
+cache boundaries and measurement.
+
 ## Commits and review
 
 Use `type(scope): description`, for example `feat(keys): restrict keys to selected resources`.
