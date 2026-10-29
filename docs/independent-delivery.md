@@ -80,6 +80,14 @@ must all point at the configured API origin.
 
 ## Contract-first changes
 
+Planned multi-plane delivery follows [the regional API/auth design](../specs/gh-74/regional-api-auth.md):
+generate separate Global and Region public contracts/clients with shared schemas, direct
+regional data/auth endpoints and isolated credential stores. Per-operation OpenAPI server
+overrides are possible, but server lists do not implement discovery or token refresh. Regional
+endpoint caches/session renewal must survive Global failure. This is not the current runtime:
+`apiOrigin`, `/openapi.json`, local cookies/CORS and package commands above remain unchanged.
+Implement a reviewed versioned configuration/contract transition before advertising multi-origin support.
+
 1. Define requests, responses, errors, and permissions in `server/generate-openapi.mjs` before
    implementing the interaction. Console aggregation and session endpoints are documented;
    owner-only privileges do not become Workspace Key privileges.

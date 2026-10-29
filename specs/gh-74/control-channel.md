@@ -82,6 +82,12 @@ export and repair. Detailed regional logs/metrics follow the same Global-initiat
 
 ## 4. Durable local admission from signed policy
 
+The [regional API/auth contract](regional-api-auth.md) specifies separate API origins,
+local exchange/refresh/reauthentication and explicit continuity grants. Short access-token,
+bootstrap-credential and actual authorization-end times are separate; existing expiring Keys
+cannot silently acquire indefinite regional renewal. Public API client flows never add a
+Region -> Global call or data proxy through Global.
+
 Regional independence is a hard availability requirement. The previous online Global
 admission and policy-lease-expiry shutdown proposals are superseded. Global unavailability,
 failed synchronization and elapsed policy age must not deny work already authorized by a

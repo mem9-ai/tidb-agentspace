@@ -94,6 +94,15 @@ A region outage preserves identity/pending state without replacement provisionin
 Resolved telemetry may be archived/compacted in Region without Global ACK; recovery pulls
 missing observations or a snapshot and preserves regional policy/deny floors and resource IDs.
 
+The [regional API/auth contract](../specs/gh-74/regional-api-auth.md) separates public Global,
+public Region and private control OpenAPI/client origins. SQL/files/results and regional
+auth go directly to Region, including token exchange/refresh and independent reauthentication.
+Short access-token expiry is separate from a durable, explicitly approved continuity grant
+and rotatable credential versions. Existing 7/30/90-day Keys retain their hard expiry; they
+are not silently converted into persistent grants. A Global-only expiring root cannot provide
+unbounded regional reauthentication merely by increasing JWT TTL. This is proposed behavior;
+the current one-origin generator/client remains implemented until an explicit migration.
+
 The [metadata scale profile](../specs/gh-74/metadata-scale.md) targets millions of Workspaces
 and individual million-resource Workspaces. Pool small tenants in shared cells and partition
 hot tenants by resource/edge identity. A Workspace is not one JSON blob, CAS lock, database,

@@ -79,6 +79,9 @@ callback/admission dependency. Region must keep serving known authorized work du
 failure using durable policy, independent local authentication/session refresh and regional
 state/recovery. Policy-sync age never expires access; actual credential expiry and received
 denials still apply. Production mTLS and regional autonomy require implementation evidence.
+For direct regional OpenAPI/SDK routes and credential lifetime/renewal, read the
+[regional API/auth contract](specs/gh-74/regional-api-auth.md). It separates explicit continuity
+grants from existing expiring Keys and preserves the current single-origin implementation status.
 
 | Task                                                      | Required starting points                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

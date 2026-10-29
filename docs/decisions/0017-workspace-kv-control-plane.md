@@ -107,6 +107,13 @@ policy without synchronization TTL; enforce real credential expiry and received 
     credentials and restart recovery do not depend on Global. Known regional work continues;
     new Global-coordinated changes may wait. Compact resolved telemetry regionally without
     requiring Global ingestion ACKs; preserve canonical state and unresolved ownership.
+14. Generate separate Global/public Region/private control OpenAPI contracts from shared
+    schemas and explicit route ownership. Data clients call Region directly, with separate
+    origin/issuer/audience credentials. Regional token exchange/refresh/reauthentication uses
+    regional storage/signers. The [API/auth contract](../../specs/gh-74/regional-api-auth.md)
+    separates durable grants, credential versions and short access tokens: a new continuity
+    grant needs explicit owner authorization; legacy 7/30/90-day Keys keep their real expiry.
+    No child credential gains Global privileges or outlives an explicit authorization end.
 
 ## Alternatives and consequences
 
@@ -151,7 +158,7 @@ specification revision.
 
 ## Verification and revisit
 
-[META-01 through META-50](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
+[META-01 through META-58](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
 cover adapter conformance, crash/unknown outcomes, authorization before I/O, provider-account
 quotas, credential separation, full legacy import, no duplicate provider effects and restore.
 The TiDB File System case includes concurrent publication, path replacement, bootstrap and
@@ -164,6 +171,8 @@ Channel cases cover invocation/egress direction, incremental reads/recovery, sig
 policy/revocation histories, real TLS identity negatives and explicit local-only relaxation.
 Autonomy cases blackhole Global through serving/session renewal, regional restart, telemetry
 retention and resynchronization; shared-process local tests are not hosted availability evidence.
+API/auth cases cover origin/contract ownership, local exchange/refresh/reauthentication,
+credential/grant lifetimes, refresh replay, audience isolation, browsers and safe data retries.
 This ADR does not claim those tests or a production migration exist. Repository checks only
 verify the current source/documents.
 
