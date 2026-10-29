@@ -36,3 +36,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0015: Bash Workspace paths](0015-bash-workspace-paths.md) — preserve the selected file's visible path inside its isolated snapshot, with discovered input metadata and non-conflicting legacy aliases.
 
 - [0016: Selected Bash file variable](0016-bash-selected-file-variable.md) — discoverable, quoted `$FILE` for each fresh selected-file execution; initial examples retain absolute paths.
+
+- [0017: Preview-first file workspace](0017-preview-first-file-workspace.md) — accepted unified reading/analysis experience and bounded read-authorized tabular preview; implementation pending.
