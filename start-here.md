@@ -73,6 +73,9 @@ single-Workspace service.
 For millions of Workspaces or a million-resource Workspace, also read the
 [metadata scale profile](specs/gh-74/metadata-scale.md): Workspace ownership is distinct from
 atomic-group granularity, shared-cell routing, query indexes and workload capacity evidence.
+For Global/Region communication, read the [control-channel contract](specs/gh-74/control-channel.md):
+Global initiates commands, policy delivery and information reads; Region has no upstream
+callback/admission dependency. Production mTLS and bounded local policy leases remain proposed implementation.
 
 | Task                                                      | Required starting points                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -62,17 +62,20 @@ and automatic migration of customer application data between providers.
 flowchart TB
   C[Console or agent] --> G[Global control plane]
   G --> GM[Global MetaStore: identity, policy, desired state and routing]
-  G -->|Durable regional commands| RA[Region A control plane]
-  G -->|Durable regional commands| RB[Region B control plane]
+  G -->|mTLS commands, policy push and observation queries| RA[Region A control plane]
+  G -->|mTLS commands, policy push and observation queries| RB[Region B control plane]
   RA --> RM[Region A MetaStore and CredentialStore]
   RB --> RN[Region B MetaStore and CredentialStore]
   RA --> DA[Region A data plane: gateways, databases, files and workers]
   RB --> DB[Region B data plane: gateways, databases, files and workers]
   C -->|Authorized regional data request| DA
   C -->|Authorized regional data request| DB
-  DA -. Fresh admission .-> G
-  DB -. Fresh admission .-> G
 ```
+
+Arrows describe permitted invocation/dependency direction. Regional replies belong to the
+Global-initiated exchange; Region/data services never initiate a Global RPC or callback.
+The [control-channel contract](control-channel.md) supersedes earlier online regional
+Global-admission and Region-published result proposals.
 
 Both metadata authorities use typed repositories over the same `MetaStore` contract. Each
 can select ordinary local files, TiDB File System, TiDB/MySQL or another conforming adapter;
@@ -165,19 +168,20 @@ must follow the declared location policy; a prefix alone is not a residency guar
 ### 2.4 Dispatch and data request paths
 
 A create follows global admission -> durable desired resource/operation/outbox -> account
-reservation -> target-region inbox -> regional execution -> durable observed result -> global
-status projection. Use one product resource ID and operation ID throughout. Transport is
-at-least-once; inbox/outbox records and generation checks handle duplicate, reordered and
-lost messages. A broker or polling transport can be selected later without moving domain
-decisions into the transport. Global and regional stores do not share a transaction.
+reservation -> Global-pushed regional inbox -> regional execution -> local observed journal.
+Global later queries the operation/journal and updates its projection. Commands can be
+delivered at least once; stable IDs, inbox/receipts and generations handle duplicates and
+lost replies. All cross-plane requests originate in Global, over the control-channel
+contract. Region never pulls commands, publishes results, refreshes policy from Global or
+reaches a Global broker/store indirectly. The stores do not share a transaction.
 
 For queries/files, discover an authorized region endpoint and route bytes to that region's
 data plane. A compatibility gateway may stream to it while preserving the API URL, but
 must declare that proxy location in the data-flow/residency profile. Global control should
 not carry SQL result/file bytes. One Workspace Key still covers its granted resources;
 service-issued internal admission is audience/action/resource/request bound, and upstream
-provider credentials never reach the caller. Section 6 defines fresh authorization across
-the split; regional policy replicas are not an implicit offline permission cache.
+provider credentials never reach the caller. Section 6 defines local regional admission from
+Global-pushed signed policy with bounded leases; no per-request reverse Global call exists.
 
 Cross-region file analysis is rejected by default. An explicit later transfer design must
 authorize source read, destination execution and allowed data movement before any snapshot
@@ -189,16 +193,17 @@ customer Workspace Keys.
 
 If one region is unavailable, global lists preserve its resource IDs and last-known state;
 operations remain pending/unknown and retain reservations. Other reachable regions can
-continue when their dependencies and global admission are healthy. No automatic create,
-secret fallback or redirect to another region is allowed. Global admission failure denies
-new data requests and external lifecycle steps in the initial fresh-policy profile; bounded
-work already admitted may finish. Availability independent of global control would require
-an explicit bounded-staleness/revocation contract, which is not selected here.
+continue with healthy dependencies and valid locally installed policy/leases. No automatic
+create, secret fallback or redirect to another region is allowed. On Global disconnection,
+Region admits new work only inside its recorded policy lease; expiration/missing coverage
+denies new operations and external steps. Bounded admitted work may finish. Global keeps
+regional status stale/unknown until it can query again. Revocation completion requires
+applied-version or provable superseded-lease-expiry evidence, not a global commit alone.
 
 Start with one global module, one local region-control module and one local data-plane
 module in the existing API package, with separate repositories/service contexts. This does
 not require three new deployment services now. A later hosted split preserves the same
-command/admission contracts and gives each region independent storage and identities.
+command/local-admission contracts and gives each region independent storage and identities.
 Region redundancy, disaster recovery and cross-region replication need their own measured
 SLOs and recovery design; region labels alone supply none of them.
 
@@ -224,7 +229,7 @@ Global MetaStore:
   region/<regionId>       trusted region catalog, endpoints, lifecycle and declared capabilities
 
 Region-owned MetaStore:
-  region-workspace/<regionId>/<workspaceId>/resources/<resourceId> binding, observed state, attempts/inbox/outbox
+  region-workspace/<regionId>/<workspaceId>/resources/<resourceId> binding, observed state, attempts/inbox/journal
   region-control/<regionId>/<family>/<partition> capacity pools, configuration and account-access groups
 ```
 
@@ -235,7 +240,7 @@ An immutable Workspace descriptor binds it to its Organization; mismatches fail 
 
 **An atomic scope commit is required. A cross-scope transaction is not required.** A global
 resource intent, its local authoritative indexes, operations and outbox commit together;
-regional state/binding/attempts/inbox/outbox commit in that resource's regional group.
+regional state/binding/attempts/inbox/journal commit in that resource's regional group.
 Names, request identity and quota reservations are separate bounded groups coordinated
 through the staged create protocol. Provider I/O waits for confirmed prerequisites. Neither
 namespace strings nor a shared adapter grant access to global or other-region scopes.
@@ -434,7 +439,7 @@ rows belong only to the indicated region. `region` is preserved legacy/provider 
 | Workspace `outbox/<operationId>/<generation>`                   | `orgId`, `workspaceId`, `resourceId`, `regionId`, `routingEpoch`, desired generation, action, request fingerprint and reservation refs                                                                                                   | Committed with global intent; no provider secrets; delivery ACK alone is not execution success          |
 | Regional Workspace `inbox/<operationId>/<generation>`           | original operation ID, fingerprint, placement, receive state and local operation ref                                                                                                                                                     | Duplicate content reuses one operation; changed content/region conflicts                                |
 | Regional Workspace `operations/<operationId>`                   | original actor, action, desired generation, state, attempt/lease, unknown-effect marker, result/receipt refs                                                                                                                             | Owns regional external effects; never a second operation identity on redelivery                         |
-| Regional Workspace `result-outbox/<operationId>/<sequence>`     | desired/observed generation, routing epoch, monotonically increasing observation sequence, safe status and reservation disposition                                                                                                       | Durable replayable observation; global projection rejects stale/wrong-region results                    |
+| Regional Workspace `observations/<operationId>/<sequence>`      | desired/observed generation, routing epoch, monotonically increasing observation sequence, safe status and reservation disposition                                                                                                       | Durable replayable observation; global projection rejects stale/wrong-region results                    |
 | Workspace `idempotency/<principalId>/<action>/<requestKeyHash>` | request fingerprint, operation/resource IDs, response status, created/retention times                                                                                                                                                    | Same input returns same identity; mismatched input conflicts                                            |
 | Workspace `events/<time>/<eventId>`                             | actor ID, action, target, outcome, request/operation ID, safe error reference                                                                                                                                                            | Append records through service policy; never contain credential values                                  |
 | Workspace `quotas/<policyId>`                                   | policy version, limits, disjoint rights-pool allocations and reservation refs                                                                                                                                                            | Product limits; independent of actual provider-account limits                                           |
@@ -442,6 +447,16 @@ rows belong only to the indicated region. `region` is preserved legacy/provider 
 | Region `region`                                                 | `regionId`, lifecycle, allowlisted endpoints/audiences, supported kinds/modes, capability version and residency evidence                                                                                                                 | Operator-owned global catalog; not client-discovered arbitrary URLs                                     |
 | Region control `accounts/<accountId>`                           | `ownerOrgId`, `regionId`, allowed provider access, `credentialRef`, capability/quota evidence                                                                                                                                            | Regional credential context; global ownership/capacity is checked separately                            |
 | Region control `capacity/<poolId>`                              | limits, units, reservations keyed by original operation identity                                                                                                                                                                         | Physical regional capacity, independent of global product/account quotas                                |
+
+Additional internal groups implement the Global-initiated channel:
+
+| Authority / family           | Required durable state                                                                                            | Rule                                                                        |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Global policy delivery       | Target identity, desired policy/source-cut manifest, issued lease versions/deadlines and queried applied evidence | Global pushes; lease freshness cannot advance from replay alone             |
+| Global ingestion cursor      | Region/cell/stream epoch, committed page/sequence and replay progress                                             | Advance only after all bounded projection updates are durably accounted for |
+| Regional policy projection   | Signed manifest/chunk refs, epoch/sequence/base version, staging/active state and checksum                        | Publish a complete verified version atomically; no Global fetch             |
+| Regional authorization lease | Scope/coverage, policy hash/version, source cut, expiry, issuer and local time-validation state                   | Region cannot mint/renew it; expiry/missing coverage denies new work        |
+| Regional observation journal | Safe resource/operation observations, generation/sequence and local read-index checkpoints                        | Read only on Global request; no result/metrics publisher to Global          |
 
 Directory scopes contain `users/<userId>`, identity mappings by issuer+subject, and optional
 user/legacy-Key Workspace routing hints. Lookups always verify the canonical Organization,
@@ -752,78 +767,52 @@ plus the selected File System grant, preserving existing behavior.
 
 ### 6.2 Request admission
 
-1. Verify the user identity/session or Key secret; identify the canonical principal.
-2. Resolve the requested Workspace and its immutable Organization, rejecting a path/key
-   Workspace mismatch before provider, secret, file or engine I/O.
-3. Read current canonical Organization membership/status and Workspace status/role or Key
-   state. Validate expiration, revocation, action, resource grant and resource ownership.
-4. O and W denote bounded policy read sets: policy roots plus the relevant member, Key and
-   exact-grant records, not whole tenant catalogs. Bracket the target global resource read G
-   with unchanged policy versions (O1/W1 -> G -> W2/O2). Retry bounded evaluation if any
-   relevant record changes. Apply this to human and Key admission, including suspension;
-   resource inventory/telemetry writes do not advance policy-root revisions.
-5. For global mutations, validate the admitted desired-resource predicates in the resource
-   group's expected revision. Conflict means reauthorize; never reuse a prior
-   grant on a rebased write. Regional requests additionally use the protocol below. When a
-   queued worker is ready for external I/O, evaluate its current operation authority and
-   current policy again, using the original submitting principal.
+Global management requests authenticate the human/Key and validate current canonical
+Organization/Workspace policy, relevant member/Key/grant edges and desired resource ownership.
+O/W are bounded read sets, not full catalogs. Bracket the global resource read with unchanged
+policy versions; a conflict reauthorizes metadata work. Global can initiate a regional read
+when it needs observations, but Region cannot participate by calling Global back.
 
-For regional admission, extend validation to **O1 -> W1 -> G1 -> R -> G2 -> W2 -> O2**. After
-preliminary global authorization/routing, the target region reads its current regional
-resource group R and returns a private non-secret admission context. Global control verifies
-unchanged O/W read sets and G1=G2, plus canonical resource ownership, region, routing epoch, desired generation
-and R's matching regional ownership/state. R's read is then a coherent policy/resource
-admission point bracketed by unchanged global policy; any mismatch restarts bounded
-evaluation. No distributed transaction or stale replicated policy is assumed.
-Bracket R with unchanged reads of any additional admission policy scope as well, including
-the region catalog's lifecycle/capability revision; disabled regions deny new admissions.
+The [control-channel contract](control-channel.md) replaces the earlier cross-plane
+O1/W1/G1/R/G2/W2/O2 online protocol. Global compiles signed, audience-scoped policy manifests
+and leases, uploads all required chunks and issues desired commands. A regional policy version
+becomes active only after complete signature/hash/schema/ownership validation and atomic
+publication. A transport acknowledgement does not prove later provider effects succeeded.
 
-The resulting internal grant binds issuer/audience, principal, Organization/Workspace/resource,
-region, action, request/operation ID, payload fingerprint, global policy revisions, expected
-regional revision, routing epoch/generation, nonce and a short declared expiry. Use
-authenticated service transport and an allowlisted issuer. Regions cannot mint a global
-permission or resolve a caller-supplied credential ref. A grant is not a public bearer Key,
-provider token or permission to execute future commands. Replay of a mutation resolves its
-original receipt; changed requests, audiences, regions and generations are rejected before
-secret/provider/data I/O. A regional mutation CAS conflict requires a fresh admission.
-Data reads use the admitted regional snapshot/binding context or reject its changed version;
-they cannot apply an old grant to a newer binding or generation.
+Regional requests authenticate using the installed Key/session verifier and policy grant set.
+Evaluate **P1 -> R -> P2**, where P is the local policy/lease read set and R is the canonical
+regional resource group. Require unchanged complete policy, valid coverage/deadline/original
+Key expiry, correct action/owner/Region/generation and a valid resource binding. Mutations
+validate their expected resource version; conflicts repeat local admission. No Region/data
+request, queued step or session command may fetch Global policy, introspect a token, request
+capacity or refresh a credential from Global. Missing/expired policy fails closed.
 
-The initial contract requires live global admission for each new data request, session
-command and queued external step. Dispatched intent does not preserve an old user's grants
-forever. Replicated policy may accelerate negative/discovery checks but cannot supply a stale
-positive. Persist only operation/receipt identity, not a reusable authorization grant. A
-bounded in-flight action can complete after a later revocation; replaying a grant does not
-start another action. Background system cleanup uses an explicit narrow service authority,
-not impersonation of a revoked user. Offline regional admission with policy leases would
-weaken the current revocation boundary and needs a separate accepted policy/SLO amendment.
+A signed per-operation grant narrows authority and binds request/payload/operation identity,
+audience and generation; it never extends lease validity or authorizes another command.
+Before each new external step, recheck current local policy/lease and the durable operation
+claim. Replay resolves its original receipt rather than starting an effect again. Background
+cleanup uses a narrow installed service authority, not a revoked user's identity.
 
-There is no assertion of an atomic snapshot across Organization and Workspace scopes. A
-revocation completed before a new admission check denies that admission. Work admitted
-before revocation can already have an upstream effect; cancellation cannot undo it. New
-external steps and long-lived/delegated sessions require fresh checks and bounded lifetimes.
-If a use case requires revocation and a cross-scope mutation to be globally atomic, it needs
-co-location or a stronger coordinator contract, not a weaker adapter pretending to provide it.
+Global denial is immediately authoritative for new global management admissions. Regional
+propagation follows explicit accepted/pending/effective states: a prior valid lease can still
+permit work until replacement policy is applied or the lease expires. Global alone initiates
+policy push, lease renewal and applied-version queries; completion requires target/version or
+proven old-lease-expiry evidence under the configured policy-age/clock bounds. Feed lag or
+re-signing an old policy cannot extend freshness. There is no claim of immediate worldwide
+revocation, unlimited offline admission or an atomic global/regional transaction.
 
-An Organization can still change after O2 and before a global resource commit; the operation was
-admitted before that later change. This is the stated in-flight rule, not strict ordering of
-all Organization mutations with every Workspace write. Requests whose admission starts after
-a completed revocation must observe the revocation. Implementation tests must distinguish
-these two histories rather than use the phrase "immediate revocation" without a boundary.
+A newly applied denial or lease expiry rejects new regional admissions and external steps.
+Bounded work admitted earlier may finish; cancellation cannot undo a provider effect.
+Unknown effects retain their receipts/reservations and do not trigger a new create. Restores,
+clock rollback, old policy epochs and expired delegated sessions cannot revive grants.
 
-Canonical policy reads fail closed on metadata unavailability. Caches and watches can improve
-discovery or invalidate data but cannot serve a stale positive authorization decision. Native
-sessions are service-managed and bounded; customers do not receive upstream credentials to
-bypass revocation. Key `resourceIds: ["*"]` covers only the bound Workspace, including its
-future public resources; it never includes another Workspace or private DuckDB backing data.
-
-Untrusted resource IDs, prefixes, names, filenames and search hints are not proof of ownership.
-Every record reference verifies `orgId`/`workspaceId` and, for regional state, `regionId`,
-generation and routing epoch in the repository. Backend-enforced
-checks cover single reads, lists, search, usage, events, results, retries and background jobs.
-Unauthorized Workspace/resource probing returns a consistent `404 NOT_FOUND`; an authenticated
-principal inside an accessible Workspace with a missing action receives `403 INSUFFICIENT_SCOPE`.
-Deleted/tombstoned state cannot be revived through an old pagination cursor or binding.
+Workspace wildcard covers only that Workspace's public resources; hidden DuckDB storage
+remains inaccessible. Verify org/workspace/region ownership, routing epoch and generation on
+all relevant canonical references before secret/provider/engine/file I/O. Checks cover reads,
+lists, search, usage, events, results, jobs and retries. Unauthorized probing returns uniform
+`404 NOT_FOUND`; an accessible Workspace with a missing action returns `403 INSUFFICIENT_SCOPE`.
+Deleted state cannot be revived through a stale cursor/binding. Required local policy/state
+unavailability returns a structured unavailable/expired-lease error, not a permissive default.
 
 ### 6.3 Data-plane and provider-account boundaries
 
@@ -887,12 +876,12 @@ never adopt mismatched ownership, and update directory/search projections only a
    IDs, region/routing/generation are fixed before delivery. Partial steps stay pending and
    resume the original identity under the scale profile's staged-create protocol.
 3. The target regional control plane authenticates the dispatcher, checks its audience,
-   canonical intent/placement and current authority, then atomically records its inbox,
+   the pushed signed intent/placement and current local policy/lease, then atomically records its inbox,
    regional resource and execution operation. Duplicate delivery with the same fingerprint
    reuses these records; different content under the same identity conflicts. Reserve regional
    capacity before provider I/O and hold global capacity while regional disposition is unknown.
 4. Claim the operation by regional resource-group CAS with `attemptId`, owner and lease
-   deadline. Obtain fresh admission before each external step. A process-local `Map` and an
+   deadline. Check current local installed policy/lease before each external step. A process-local `Map` and an
    acknowledged message are not execution authority.
 5. Before a non-idempotent provider request, durably mark the attempt `request-may-have-been-sent`.
    A restarted/expired claim with that marker enters reconciliation; it does not issue the
@@ -901,10 +890,11 @@ never adopt mismatched ownership, and update directory/search projections only a
    that still matches the operation/attempt/generation. Uncertain secret/metadata outcomes
    retain the provider identity and capacity reservation for recovery.
 7. Validate the existing native binding/role and provider location evidence, then mark regional
-   state active and persist a result outbox. Global control applies only observations matching
+   state active and persist a local observation. Global control initiates a result/journal read
+   and applies only observations matching
    the resource/region/routing epoch/generation, advancing the observation sequence without
    regressing newer state. Mark reservations allocated and reconcile partial finalization.
-   Lost result delivery leaves global status pending/stale until replay; it never repeats create.
+   Lost query replies leave global status pending/stale until Global retries the same read; they never repeat create.
    Unexpected/unverified provider placement that violates the requested policy quarantines
    the binding for reconciliation; it is neither active success nor permission to create elsewhere.
 
@@ -950,6 +940,14 @@ Membership administration needs owner/admin-only actions and final-owner protect
 exact request shapes and identity-provider login/session integration must be reviewed before
 hosted implementation. Production browser sessions require actual authenticated identity,
 secure cookie/session handling and CSRF/origin policy, not `POST /api/session` as a guest owner.
+
+Resource/Key/membership management terminates at Global control; a regional data endpoint
+does not forward a management request upstream. Global alone pushes signed desired state,
+policy and quota rights and queries regional progress. Revocation/suspension/access denial
+exposes accepted/pending/regionally-effective state and applied/expiry evidence, following the
+control-channel contract. Local lease expiry or incomplete policy returns a structured
+unavailable/expired-policy result; Region never introspects the Key at Global. Public status
+shapes and policy-age/clock bounds must be pinned before hosted implementation.
 
 Migration mode preserves the existing Workspace/resource URLs and response shapes. Do not
 silently replace the current resource-create `201` contract: introduce explicit opt-in
@@ -1127,6 +1125,11 @@ implicit global local-owner assumption; legacy local mode binds only its explici
 owner. Normal startup fails if target import is incomplete, a scope/secret is missing, or
 the configured installation/environment differs. Keep the sealed source backup.
 
+Global installs the target Region's complete current policy/lease and issues its activation;
+Region does not fetch Global bootstrap state. Cutover/restore verifies stream epochs,
+revocation floors, trust identities and lease deadlines before data admissions. Frozen legacy
+writers stay stopped; restoring an old policy or clock cannot enable a second active authority.
+
 **M6 — Observe and retire.** Check access, original resource identities and reconciliation
 backlog. Only after a declared recovery window and verified restorable backup may legacy
 files be retired by an explicit operator step. Retirement is not provider deletion.
@@ -1172,7 +1175,7 @@ These cases are requirements for later implementation, not passing tests deliver
 | META-05 | Local root opened by a second writer is rejected; stale lock is not stolen on TTL/PID assumptions. Missing/corrupt/wrong-environment roots fail startup.                                                                                                                                                                                                                                             |
 | META-06 | Resource-local indexes/outboxes agree with canonical groups after concurrent changes/restart. Local snapshot cursors reject changed group versions; live collection cursors survive unrelated writes under documented semantics. Filters, candidate/byte budgets and oversized-commit rejection are enforced.                                                                                        |
 | META-07 | User/Key from Organization A requests B's Workspace/resource through read, list, search, bootstrap, usage, events and operation routes; all are denied before secret/provider/engine/file I/O, verified with spies. Poison directory hints and conflicting envelope ownership do not bypass checks.                                                                                                  |
-| META-08 | A Workspace wildcard remains inside one Workspace and excludes hidden storage. Exact grants do not expand. Missing grants deny. Revocation/expiry/membership changes deny new admissions and new queued external steps; pre-admitted effect semantics are observed explicitly.                                                                                                                       |
+| META-08 | A Workspace wildcard stays inside that Workspace and excludes hidden storage; exact/missing grants never broaden. Global denies new management admissions after canonical revocation; Region denies after applied denial or lease expiry. Pending/effective revocation and bounded in-flight effects follow the channel contract.                                                                    |
 | META-09 | A viewer cannot obtain read/write SQL through `queries:execute`, a Key cannot administer members/other Keys, and a final Organization owner cannot be removed. Hosted mode cannot obtain a guest local-owner session.                                                                                                                                                                                |
 | META-10 | Concurrent claims, process death and lease expiry around provider creation never produce a second non-idempotent create. Late receipts reconcile under original IDs; stale workers cannot overwrite a newer generation. Unknowns retain capacity/name/secret references.                                                                                                                             |
 | META-11 | Account quotas are enforced across two Workspaces of one Organization; another Organization cannot bind that account. Product and provider quotas are independently enforced; partial reservations reconcile without free-tier circumvention.                                                                                                                                                        |
@@ -1188,20 +1191,28 @@ These cases are requirements for later implementation, not passing tests deliver
 | META-21 | For a TiDB File System claim, verify fresh/conditional reads, atomic durable publication, two publishers from one revision, lost replies, inode replacement/restore and stale writers, actual upload/multipart limits, unavailable bootstrap credentials, and isolation from public customer/DuckDB storage. A mount, advisory lock or layer checkpoint alone is not passing evidence.               |
 | META-22 | One Workspace holds resources in two regions; names remain globally unique. Creation validates regional eligibility/kind/mode and freezes placement before dispatch. Draining/disabled regions and unverified/automatic provider location cannot satisfy an incompatible placement/residency policy. Changing homeRegion never relocates an existing resource.                                       |
 | META-23 | Crash each global-outbox/regional-inbox/result boundary; duplicate/reordered/lost messages reuse the same resource/operation identity and reservation. Fingerprint, region, routing-epoch and generation mismatches reject before effects. Late observations cannot regress state; unknown provider requests are reconciled without another create.                                                  |
-| META-24 | Exercise bounded O/W policy read sets and G1/R/G2 plus catalog races, wrong-region audiences, expired/replayed grants, queued steps after revocation and admission outage. Fresh ownership/version validation denies stale permissions without a Workspace-wide resource-write counter.                                                                                                              |
+| META-24 | Validate Global bounded canonical policy reads and regional local P1/R/P2 with signed pushed manifests/leases. Wrong audiences, replay, missing coverage, local conflicts and expired grants deny before I/O; no Region/data request or queued step calls Global. Policy/resource writes remain independently versioned.                                                                             |
 | META-25 | A Region A service cannot read Region B/global private stores, resolve its credentials, or route customer SQL to metadata. Test public/private TiDB File System roots and bootstrap identities with spies before secret/provider/data I/O; ownership prefixes alone never substitute for service authorization.                                                                                      |
-| META-26 | Race global product/account reservations and regional capacity across two Workspaces/regions. Partial delivery/outage retains unknown allocations. An unavailable region preserves IDs and stale/pending status without fallback provisioning, fake deletion success or quota release; reachable regions continue only with healthy admission/dependencies.                                          |
+| META-26 | Race product/account rights and regional capacity across Workspaces/regions. Outage retains unknown allocations and IDs; Global queries label stale/pending state without fallback create or fake erasure. Healthy regions admit only under valid local policy/leases and their dependencies; expiry stops new effects.                                                                              |
 | META-27 | Query/file bytes and detailed logs follow the declared regional path. Cross-region analysis and unapproved proxy/backup destinations reject before data movement. DuckDB backing location must satisfy its resource policy; membership in one Workspace never authorizes regional export.                                                                                                            |
 | META-28 | Import and restore global plus regional fixtures with original region strings, automatic/unverified provider placement, private backing storage, pending dispatch/results and missing regional vaults. Preserve identities/bytes/grants and explicit execution-region mappings; quarantine ambiguity, reconcile generations/revocations, and never infer a new location or repeat an unknown create. |
 | META-29 | Model millions of sparse Workspaces with lazy pooled routing and bounded active memory/handles. No database, worker, timer, watcher or preallocated bucket set exists per inactive Workspace/resource. Show distribution across cells and isolation of tenant/authority routes.                                                                                                                      |
 | META-30 | Generate a million-resource Workspace and mixed skewed traffic. Independent resources do not lock/rewrite a Workspace head or advance its auth version; point work is bounded by its resource/policy groups. Record incremental bytes, conflicts, index amplification and p95/p99 latency.                                                                                                           |
 | META-31 | Crash/replay every request-claim, name-claim, rights-reservation, resource-intent and dispatch-eligibility boundary. Same request/name has one identity; no provider effect precedes confirmed prerequisites. Unknown claims/rights remain held until proof permits release; bulk delete resumes safely.                                                                                             |
 | META-32 | Live indexed keyset pages progress during concurrent writes, with bounded fan-out/candidates/bytes and no global OFFSET/full scan. Test lag/minWriteToken, exact-grant filtering and explicit continuation on exhausted budgets. Snapshot/export pins a declared projection, respects expiry/current auth and never mixes routing generations.                                                       |
-| META-33 | A Key with a million exact grants and a large member/directory collection use partitioned edges and bounded point admission. Import preserves exact/wildcard semantics; revocation races deny new admissions. Large grant replacement stages a versioned set without a million-key transaction.                                                                                                      |
+| META-33 | A Key with a million grants and large member/directory collections use bounded edges/manifests. Import preserves permissions; pushed policy replacement/revocation uses version/lease evidence. Local point admission needs no upstream lookup; large replacement stages a set rather than a million-key transaction.                                                                                |
 | META-34 | Under concurrent pooled creates/returns, issued quota rights plus allocation never exceed hard limits; unknown/late/duplicated reservations and returns, pool rotation, coordinator outage and limit reduction do not free or double-consume rights. Approximate counters cannot authorize creation.                                                                                                 |
 | META-35 | A hot tenant's create/reconcile/export/delete backlog cannot monopolize interactive workers/connections/provider calls. Exercise feed gaps/replay, jitter/backoff and idle inventory without per-resource polling/timers; measure an unrelated small tenant's latency under the same load.                                                                                                           |
 | META-36 | Move/split partitions with stale routers/workers, writes at freeze, lost replies and in-flight provider effects. One ownership epoch may accept writes; IDs, grants, receipts, unresolved markers and location policy survive. Old cursors pin supported routing or explicitly restart; GC waits for reachability/retention proof.                                                                   |
 | META-37 | Every claimed scale backend passes core/region/scale suites and a reproducible declared workload with versions, costs, skew, memory, amplification, feed lag and failure/repair/export/rebalance results. Small file conformance or available conditional PUT alone cannot be reported as million-resource support.                                                                                  |
+| META-38 | Enforce the Global -> Region call/import/egress graph. Spy/deny reverse admission, result/metrics publication, command/policy pull, token/credential/certificate refresh and indirect Global broker/store access from Region/data roles. Only replies to authenticated Global-initiated requests are permitted.                                                                                      |
+| META-39 | Lose/duplicate command acknowledgements and Global journal-query pages; preserve one operation/effect identity and advance ingestion only after durable idempotent projection. Gaps/stream restore/retention trigger an explicit Global-requested snapshot. Polling never emits an echo observation or new desired generation.                                                                       |
+| META-40 | Stage partial/corrupt/wrong-audience policy chunks and gapped/reordered deltas; no incomplete version becomes active. Reject stale epochs/rollback, invalid signatures, missing coverage and inconsistent roots. Region obtains every chunk by Global push, never a fetch to Global.                                                                                                                 |
+| META-41 | With controlled clocks, renew/replay old cuts, lag the source feed, disconnect Global, restart/restore Region and roll back its clock. Only proved coverage within the signed freshness/deadline admits work; expiry stops new actions without callbacks. Trusted Global policy repair still works when a customer lease has expired.                                                                |
+| META-42 | Revoke across multiple Region/cell targets with delayed/reordered application, unknown lease issuance and missing acknowledgements. Global reports pending until all applied-version or provable superseded-lease-expiry conditions hold. Valid old leases/in-flight work follow declared bounds; no false immediate regional-effectiveness claim.                                                   |
+| META-43 | Exercise actual TLS 1.3/mTLS: wrong CA, client/server identity, hostname, environment/Region/purpose, expired/retired certificate, downgrade, signature/replay and 0-RTT control attempts fail before metadata/provider I/O. Rotation/overlap/recovery introduce no Region -> Global key/enrollment lookup or plaintext hop.                                                                         |
+| META-44 | Explicit in-process/loopback test identity or local-insecure HTTP works only in its declared test profile. Non-loopback/hosted/production targets and failure-triggered downgrade are rejected. Local relaxation does not weaken caller direction, tenant/action ownership, generation or replay checks.                                                                                             |
+| META-45 | At declared scale, Global polls bounded Region/cell/stream deltas with durable cursors and prioritized policy traffic; no per-resource heartbeat/lease/scan loop or regional publisher appears. Measure source-cut compilation/lease proof, batching, feed gaps, fairness, retention repair and failure latency/cost before setting policy-age and propagation SLOs.                                 |
 
 Implementation acceptance needs shared adapter conformance, API negative tests with injected
 providers, local crash/failure injection on supported OSes, a private migration-fixture suite,
@@ -1227,18 +1238,21 @@ requires F and a conforming hosted storage/identity profile. Backend implementat
 API packaging list and generated OpenAPI/client/tests when contracts change.
 Scale work within one region may precede F, but a million-Workspace/resource claim requires
 G and a conforming hosted profile; passing local file durability is not that evidence.
+Channel direction/local-policy recovery cases META-38–42/44 apply from phase D. Hosted phase
+F additionally requires real TLS/identity META-43; scale phase G requires META-45. Policy-age,
+clock and revocation-status contracts are implementation gates, not silent defaults.
 
-| Open decision                                                   | Proposed default                                                                                                 | Blocks                                 |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| Accept the scope-atomic KV contract and local snapshot budgets? | Adopt this specification after review; measure before increasing budgets                                         | Phase A                                |
-| Which hosted metadata adapter?                                  | Evaluate TiDB File System alongside TiDB/MySQL and conforming KV when deployment needs it                        | Phase E only                           |
-| Which hosted identity and session provider?                     | No vendor selected; issuer+subject model required                                                                | Hosted phase C                         |
-| Global dependency versus offline regional authorization?        | Fresh global admission initially; bounded policy leases need an explicit revocation/SLO amendment                | Phase F availability contract          |
-| Which initial regions and verified provider placements?         | Local compatibility region first; select hosted regions from per-kind verified capability and residency evidence | Phase F, not the logical split         |
-| Which managed secret service / residency profile?               | Local private-file mode first; explicit managed encryption/IAM profile                                           | Hosted deployment                      |
-| Provider-account commercial ownership and eligibility?          | One Organization owns its account; no cross-customer pool by default                                             | New hosted provider allocation         |
-| Retention, backup window and operational SLOs?                  | Bound hot metadata; measure and declare recovery objectives before hosted release                                | Hosted deployment; not document review |
-| When to add complete Runs/results/review?                       | Separate product specification using Workspace ownership and private result storage                              | That feature only                      |
+| Open decision                                                   | Proposed default                                                                                                      | Blocks                                 |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Accept the scope-atomic KV contract and local snapshot budgets? | Adopt this specification after review; measure before increasing budgets                                              | Phase A                                |
+| Which hosted metadata adapter?                                  | Evaluate TiDB File System alongside TiDB/MySQL and conforming KV when deployment needs it                             | Phase E only                           |
+| Which hosted identity and session provider?                     | No vendor selected; issuer+subject model required                                                                     | Hosted phase C                         |
+| Policy age/clock bounds and revocation completion SLO?          | Global-pushed signed policy, bounded source-cut leases and applied/expiry evidence; choose explicit production limits | Phase F availability contract          |
+| Which initial regions and verified provider placements?         | Local compatibility region first; select hosted regions from per-kind verified capability and residency evidence      | Phase F, not the logical split         |
+| Which managed secret service / residency profile?               | Local private-file mode first; explicit managed encryption/IAM profile                                                | Hosted deployment                      |
+| Provider-account commercial ownership and eligibility?          | One Organization owns its account; no cross-customer pool by default                                                  | New hosted provider allocation         |
+| Retention, backup window and operational SLOs?                  | Bound hot metadata; measure and declare recovery objectives before hosted release                                     | Hosted deployment; not document review |
+| When to add complete Runs/results/review?                       | Separate product specification using Workspace ownership and private result storage                                   | That feature only                      |
 
 ## 12. Design verification and references
 
@@ -1264,11 +1278,11 @@ the source baseline above. No production tenant migration or new backend support
 
 ### Design delivery evidence
 
-- Reviewed resource-group CAS and staged name/request/quota coordination, bounded O/W policy
-  read sets bracketing the desired resource, S3 publication against a conditional group HEAD,
+- Reviewed resource-group CAS and staged name/request/quota coordination, current global
+  policy and signed regional local-admission boundaries, S3 publication against a conditional group HEAD,
   and unknown provider/secret outcomes against retained operation identities.
-- Extended review to global desired state versus regional observed authority, bounded policy read sets
-  and G1/R/G2 admission with catalog validation, inbox/outbox replay, regional outage/quota retention,
+- Extended review to global desired state versus regional observed authority, Global-pushed
+  policy and pulled journal recovery, local P1/R/P2 checks, regional outage/quota retention,
   unverified upstream placement, data movement and multi-authority restore boundaries.
 - Reviewed all five current persistence files, legacy idempotency/grants, retired PostgreSQL
   visibility, and DuckDB private-storage references against the migration mapping.
@@ -1277,6 +1291,8 @@ the source baseline above. No production tenant migration or new backend support
   Formatting/repository links and the documentation diff were checked again after final edits.
 - Reviewed pooled routing, resource-local write contention, grant edges, live/snapshot query
   semantics, quota-rights accounting, fair discovery, partition fencing and declared scale gates.
-- No new adapter, tenant isolation, migration or recovery test is claimed to pass: META-01–37
+- Reviewed the one-caller dependency graph, mTLS/local-test profiles, signed complete policy
+  publication, source-cut lease freshness, pending/effective revocation and Global-owned cursors.
+- No new adapter, tenant isolation, migration or recovery test is claimed to pass: META-01–45
   are an implementation acceptance baseline. No live state, provider credential or existing
   resource was migrated or reprovisioned for this design.

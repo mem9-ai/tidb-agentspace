@@ -75,13 +75,16 @@ resource has an assigned `regionId`; `homeRegion` is a default for future creati
 upstream/legacy region values separately, and verify actual provider location before making
 residency claims. Global and regional metadata use separate authorities over the same KV
 interface, including separate service-owned TiDB File System roots where selected. Global
-status projections do not replace regional execution records or fresh authorization.
+status projections do not replace regional execution records or valid local policy/leases.
 
 Initially one local API may package all three modules. The hosted design requires authenticated
-dispatch, regional inbox/result recovery, scoped service identities and fresh global admission
-for new regional requests; offline regional policy leases are a separate decision. SQL/file
-payloads stay on the declared regional data path. A region outage preserves resource identity
-and pending state; it never silently recreates a resource elsewhere. This remains design-only.
+Global-initiated command/policy delivery and result/health/journal queries, with no Region ->
+Global callback, broker publication, introspection or policy pull. Region uses atomically
+installed signed policy with bounded leases for local admission. Revocation has pending and
+regionally-effective states; lease/source-cut freshness and clock bounds are deployment gates.
+The [channel contract](../specs/gh-74/control-channel.md) requires TLS 1.3/mTLS in production
+and permits explicitly selected loopback test relaxation. SQL/file payloads remain regional.
+A region outage preserves identity/pending state without replacement provisioning. This is design-only.
 
 The [metadata scale profile](../specs/gh-74/metadata-scale.md) targets millions of Workspaces
 and individual million-resource Workspaces. Pool small tenants in shared cells and partition

@@ -31,6 +31,12 @@ up to a million resources. This invalidates the earlier one-Workspace snapshot/C
 production partition. The [scale profile](../../specs/gh-74/metadata-scale.md) replaces that
 granularity; no capacity benchmark or hosted engine selection is claimed.
 
+The owner requires a Global -> Region invocation/dependency graph with no reverse call or
+unsolicited regional reporting. Global queries any regional information it needs. Production
+communication must be strongly encrypted/authenticated; local tests may explicitly relax
+transport. The [control-channel contract](../../specs/gh-74/control-channel.md) supersedes the
+earlier Region -> Global online-admission dependency and result-publisher proposal.
+
 ## Proposed decision
 
 1. Domain services use typed repositories over `MetaStore`, with versioned JSON records,
@@ -66,24 +72,30 @@ granularity; no capacity benchmark or hosted engine selection is claimed.
    desired state and dispatch. Each region owns actual bindings, native credential access,
    execution recovery and observed state; its data plane handles SQL/files/workers. Distinct
    global/regional metadata roots use the same MetaStore interface with separate identities.
-   Export only safe status/usage projections globally; replicas do not become authority.
+   Return safe status/usage evidence only to Global-initiated queries; derived global views
+   do not become regional execution authority.
 9. Assign one `regionId` before dispatch and verify provider placement separately. Preserve
    legacy `region` values, including `automatic`, without inventing geographic residency.
    Workspace `homeRegion` is a future-create default. Changing regions requires an explicit
    transfer design, not a metadata patch or automatic failover. Shared Workspace ownership
    does not permit cross-region file analysis/data export.
-10. Use authenticated at-least-once command/result delivery with stable operation identity,
-    fingerprints, regional inbox deduplication and generation/routing checks. Fresh global
-    policy admission remains required for new regional requests/external steps, with bounded
-    audience/request grants and explicit in-flight semantics. Offline policy leases are a
-    separate revocation/SLO decision. Start with modules in one local API deployment; split
-    hosted services only after the regional isolation and failure acceptance cases pass.
+10. Global initiates command/policy delivery and journal/health/result reads. Region persists
+    local observations and returns request-bound replies; no reverse RPC, Global broker/store
+    write, introspection or policy/lease pull is allowed. Use stable command identity,
+    fingerprints, inbox deduplication and generation checks. Signed, atomically installed
+    policy/leases enable regional local admission. Revocation distinguishes pending from
+    regionally effective, using applied-version or provable old-lease-expiry evidence. Declare
+    source-cut freshness, policy-age/clock bounds and in-flight semantics before hosting.
 11. Pool sparse tenants across metadata cells and shard hot tenants by resource/edge identity.
     Keep policy roots small, exact grants as partitioned edges, strict quota rights in bounded
     pools, and list/task projections indexed with explicit lag. Use keyset/live or pinned
     snapshot/export contracts, fair shared workers and ownership-fenced partition movement.
     Millions of resources require the scale profile's incremental/query/discovery/isolation
     evidence; core file durability or conditional object writes alone are insufficient.
+12. Production cross-plane hops require TLS 1.3, mutual certificate/service identity checks
+    and signed persisted commands/policy. Bootstrap/rotate trust out of band or through
+    Global-initiated requests; Region never enrolls at Global. Explicit loopback/in-process
+    test relaxation cannot apply to remote/hosted targets or activate after connection failure.
 
 ## Alternatives and consequences
 
@@ -102,10 +114,11 @@ granularity; no capacity benchmark or hosted engine selection is claimed.
   keys. Logical KV independence does not promise equal performance from every backend.
 - Storage independence is not free: relationship checks, codecs, index updates, conformance,
   crash recovery and import verification are product responsibilities.
-- Independent regional execution adds sagas and stale status projections. The initial fresh
-  global admission contract adds latency and a global availability dependency; it cannot
-  promise offline regional service without changing its revocation policy. Resource data,
-  global identity metadata, backups and proxies each need explicit location declarations.
+- Independent regional execution adds sagas, policy compilation and stale status projections.
+  Global-initiated synchronization removes reverse runtime dependencies but introduces bounded
+  policy propagation/expiry and explicit revocation completion. Ingestion/lease/source-cut
+  evidence and fairness require implementation, not a promise of immediate global revocation.
+  Data, identity metadata, backups and proxies each need explicit location declarations.
 
 ## Migration and compatibility
 
@@ -127,15 +140,17 @@ specification revision.
 
 ## Verification and revisit
 
-[META-01 through META-37](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
+[META-01 through META-45](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
 cover adapter conformance, crash/unknown outcomes, authorization before I/O, provider-account
 quotas, credential separation, full legacy import, no duplicate provider effects and restore.
 The TiDB File System case includes concurrent publication, path replacement, bootstrap and
 public/private storage separation; its current product adapter is not a metadata CAS adapter.
-Regional cases cover placement, dispatch/results, fresh cross-authority admission, service/
+Regional cases cover placement, pushed commands/pulled results, local policy/lease admission, service/
 credential isolation, capacity/outages, data movement and distributed import/restore.
 Scale cases cover sparse/large tenants, group contention, staged claims, pagination, grant
 edges, strict quota pools, fairness, partition movement and reproducible workload/cost evidence.
+Channel cases cover invocation/egress direction, incremental reads/recovery, signed policy,
+lease/revocation histories, real TLS identity negatives and explicit local-only relaxation.
 This ADR does not claim those tests or a production migration exist. Repository checks only
 verify the current source/documents.
 

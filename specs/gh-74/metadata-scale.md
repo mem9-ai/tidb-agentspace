@@ -57,7 +57,7 @@ The production routing layout separates the following groups, even inside one Wo
 | Organization or Workspace policy | Small descriptor, owner/status and policy version                                                  | Policy only; resource/telemetry updates never advance this version              |
 | Membership/directory edge        | One member or Workspace-directory identity, with bounded local metadata                            | Large member/Workspace collections are indexed edges, not one Organization file |
 | Global resource                  | One desired resource, lifecycle operations, idempotent receipts and dispatch outbox                | Resource-local intent and scheduling evidence commit together                   |
-| Regional resource                | One actual resource, private binding/storage refs, attempts/receipts and result outbox             | Provider-effect marker, claims and observed state commit together               |
+| Regional resource                | One actual resource, private binding/storage refs, attempts/receipts and local observation journal | Provider-effect marker, claims and observed evidence commit together            |
 | Resource name                    | One normalized-name claim and original operation/resource identity                                 | A unique conditional claim; no Workspace-wide name map                          |
 | Request identity                 | One request-key claim, non-secret canonical intent/placement, fingerprint, stage and generated IDs | Retry resolves the same identity and initial assignment                         |
 | Key and grants                   | One Key descriptor; separately partitioned exact-grant edges                                       | No million-ID array; wildcard is an explicit permission, not enumeration        |
@@ -98,7 +98,7 @@ Use a durable staged operation, with the same semantics on every adapter:
 5. Dispatch/admit into the target regional resource group, reserve regional capacity and
    execute the existing unknown-effect protocol. Persist the effect marker before a
    non-idempotent request.
-6. Finalize allocation and safe projections through replayable results. Reconcile partial
+6. Global queries regional results/journal to finalize allocation and safe projections. Reconcile partial
    commits; release a name/right only after proving no unresolved binding/effect needs it.
 
 An engine may optimize co-located metadata steps into one transaction, but correctness
@@ -156,23 +156,22 @@ resources, grants, detailed events or regional connection states.
 
 Keep Organization/Workspace policy roots small and change their authorization versions only
 for policy/lifecycle changes. Membership and exact-grant edges are separately partitioned.
-A point action reads the relevant principal, Key, grant, global resource and regional resource
-records, not the Workspace collection. Existing digest/grant semantics remain unchanged;
+A point action reads the relevant bounded policy/grant and resource records in its own
+authority, not the Workspace collection. Region uses Global-pushed signed policy and local
+resource state, with no reverse Global lookup. Existing digest/grant semantics remain unchanged;
 legacy exact-ID arrays import into exact edges without widening permissions. Large grant
 updates are explicit bounded jobs; an atomic replacement requires a staged immutable grant
 set and one version-pointer publication, not a million-key transaction.
 
-The main specification's O/W authorization notation now denotes the **bounded policy read
-set**, not a full Organization/Workspace catalog. Bracket the regional resource read with
-unchanged versions of all relevant global policy, membership, Key/grant, desired resource
-and region-catalog records. Validate the exact resource versions/ownership epoch again on
-mutation. Resource/telemetry updates must not contend on a Workspace-wide auth counter.
-Fresh-policy failure remains fail-closed; immutable routing caches or tenant isolation cells
-do not grant permission. Offline admission still requires a separate revocation contract.
-Batch point reads/validation within each authority and measure hot policy-read throughput;
-turning one resource action into a network round trip for every grant/edge is not acceptable.
-Versioned immutable payload caching still needs fresh canonical version validation and cannot
-be presented as removal of the global availability dependency.
+The [Global-initiated control channel](control-channel.md) supersedes the former online
+cross-plane admission design. Global uses current bounded canonical policy read sets to
+compile signed manifests and leases. Region atomically installs complete policy and evaluates
+local P1/R/P2 versions and lease validity before I/O; no callback, token introspection or
+upstream policy fetch is permitted. Resource writes do not contend on a Workspace auth counter.
+Global renewal proves a complete relevant source cut; replaying old policy cannot refresh its
+age. Revocation has accepted/pending/effective stages with applied-version or old-lease-expiry
+evidence. Expired/missing coverage fails closed. Batch active-coverage pushes/renewals and
+Global-owned delta reads rather than maintaining one renewal/heartbeat per resource.
 
 Avoid updating one Workspace/Organization resource-count row for every create. Divide strict
 quota rights into durable bounded pools: the coordinator allocates disjoint rights whose sum
@@ -194,6 +193,10 @@ canonical operations; a late wakeup cannot bypass claim, generation or fresh aut
 Index feed gaps trigger bounded checkpointed repair, with retained outboxes preventing lost
 work. Local small mode can enumerate its explicitly bounded groups at startup; hosted scale
 mode needs a proven replayable discovery path rather than a service-wide polling loop.
+Cross-plane journal ingestion is always a Global-initiated bounded read of Region/cell/stream
+deltas. Region never publishes to Global's queue/store. Global controls polling cadence and
+cursors; policy/revocation traffic has priority over bulk status. Provider -> Region callbacks
+below are upstream-provider integrations, not permission for a Region -> Global callback.
 
 Provider callbacks/delta APIs and lifecycle observations are preferable where verified;
 reconcile long-lived idle resources less often under a declared staleness policy. At one
@@ -209,6 +212,10 @@ it must not consume every worker or make unrelated tenants fail. Upstream thrott
 separate budget and cannot be bypassed by spawning another anonymous account.
 
 ## 8. Partition movement and recovery
+
+Global initiates movement commands and queries their progress. Actual copy/fencing stays
+inside the owning global/regional metadata authority with its authorized local storage;
+Region cannot pull Global or another region's catalog, keys or policy as a recovery shortcut.
 
 Split/move bounded partitions under a versioned routing/ownership protocol: mark the source
 moving, durably freeze/fence its writes and new external steps, copy a verified final state
