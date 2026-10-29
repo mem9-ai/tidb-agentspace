@@ -14,7 +14,7 @@ Preview now shows one Export action in its content header, following the GH-84 o
 The dialog identifies Original file and includes Download original as its computer destination.
 Source drafts retain Download draft and Save changes in that header;
 save/discard before copying or importing the saved original. Run selects a result view whose
-header offers Export results (SQL) or Export output (Bash). The source footer is absent there.
+header offers the same Export action for SQL results and Bash output. The source footer is absent there.
 Switching preview/results/methods retains scripts and results without executing them again.
 There is no separate transfer footer below the preview.
 
@@ -176,3 +176,34 @@ Screenshots (narrow captures use the existing browser collapse to keep file cont
 The PR records the final candidate, complete quality gate, latest-head CI and local preview
 refresh. Existing API/authorization/export tests remain unchanged; this correction is checked
 through browser interactions. Revisit the header pattern for additional preview modes or destinations.
+
+## Unified entry action (GH-96)
+
+Owner feedback identified three inconsistent entry buttons: Export results with an icon,
+Export without an icon, and Export output without an icon. The scoped correction follows
+[GH-96](https://github.com/siddontang/tidb.ai/issues/96), based on
+`0e98bc5e0203fb828c3d554348a6d040f12e8f96`. Preview, Database/File System SQL and Bash now
+reuse `WorkspaceExportButton`: Export, official IconDownload01 at 18px, TiUI large size and
+the shared default variant. Dirty-draft download remains a distinct action. The existing
+dialog titles and source summaries still identify Original file, SQL result or the selected
+Bash stream; destinations, parsing, permissions and snapshot authority are unchanged.
+
+Browser checks used the existing isolated export fixture, with no cloud requests or writes.
+At 1280×800 and 390×844, Light and Dark, all three contexts had identical computed label,
+width, height, font, weight, padding, radius, foreground/background/border and icon dimensions
+within each theme. Observed buttons were 97.78125×48px, 16px text and 18×18px icons; page width
+matched the viewport. Each opened the correct source dialog and returned focus to Export.
+SQL/Bash output and drafts stayed unchanged when opening/closing the dialog or switching views.
+An ordinary database SQL run also returned its row and opened Export results with the same
+97.78125×48px action, 16px text and 18×18px icon.
+
+Screenshots retain the running context; narrow captures use the existing file-browser collapse:
+
+- [Preview, Dark desktop](screenshots/unified-export-action/preview-dark-1280x800.png)
+- [SQL result, Light desktop](screenshots/unified-export-action/sql-light-1280x800.png)
+- [SQL result, Dark narrow](screenshots/unified-export-action/sql-dark-390x844.png)
+- [Bash output, Light narrow](screenshots/unified-export-action/bash-light-390x844.png)
+
+The PR records the final quality gate and all latest-head CI checks. This presentation-only
+change retains TiUI 2.9.1 and SQL Editor 0.0.6; no dependencies, API, metadata or backend runtime
+are changed. Revisit the shared action when introducing additional export entry points.

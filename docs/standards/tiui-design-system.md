@@ -243,7 +243,7 @@ verified, and record that as a remaining gap.
   See [interaction verification](../resource-workspace-verification.md#shared-interaction-audit).
   Revisit when adding a new execution tool or changing the installed UI packages.
 - **Result export (owner correction, GH-58):** Database and File System SQL use the same
-  Export results entry and TiUI dialog for CSV/JSON/JSON Lines downloads and copies to public workspace
+  Export entry and TiUI dialog for CSV/JSON/JSON Lines downloads and copies to public workspace
   files or new database tables. Export the completed rows without rerunning SQL. Show the
   target, row count and format semantics before the explicit action; collisions preserve the
   inputs and never overwrite or append. Lock submission/dismissal while writing, restore focus
@@ -255,8 +255,13 @@ verified, and record that as a remaining gap.
   operates on the saved original. Following the GH-84 owner correction, place one Export action
   beside the Preview heading, using the same shared content-panel header as results; remove
   the separate transfer footer. Download is a destination inside that dialog, which still
-  identifies Original file and labels its download Download original. SQL/Bash result views
-  retain Export results/Export output in their own result header. Dirty preview/source headers
+  identifies Original file and labels its download Download original. Following GH-96, saved
+  Preview, Database/File System SQL results and Bash output all use `WorkspaceExportButton`
+  with the visible label Export, the same official icon, 48px size and theme-resolved default
+  variant. Do not introduce context-specific entry labels or independent button styling.
+  Keep the source explicit in the owning panel and export dialog instead; verify each button
+  still opens the correct original-file, SQL-result or command-output flow without rerunning it.
+  This supersedes the former Export results/Export output entry labels. Dirty preview/source headers
   instead expose Download draft and Save changes; saved-original copy/import remains blocked
   until save/discard. Keep export reachable on unavailable/oversized/failed previews, and check
   its original-file destination, focus return and draft/result transitions in both themes and

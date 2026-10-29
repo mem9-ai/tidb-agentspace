@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from 'react';
 import { ResultExportDialog } from '../features/exports/ResultExportDialog';
-import { Alert, Badge, Button, Paper, Table, Text } from '@tidbcloud/uikit';
-import { IconCheckCircle, IconDownload01 } from '@tidbcloud/uikit/icons';
+import { Alert, Badge, Paper, Table, Text } from '@tidbcloud/uikit';
+import { IconCheckCircle } from '@tidbcloud/uikit/icons';
 import { Heading } from './WorkspaceHeading';
+import { WorkspaceExportButton } from './WorkspaceExportButton';
 import './workspace-execution.css';
 
 type Rows = {
@@ -74,13 +75,7 @@ export function WorkspaceQueryResults({
         actions={
           result &&
           result.columns.length > 0 && (
-            <Button
-              leftSection={<IconDownload01 size={18} />}
-              disabled={busy}
-              onClick={() => setExportOpen(true)}
-            >
-              Export results
-            </Button>
+            <WorkspaceExportButton disabled={busy} onClick={() => setExportOpen(true)} />
           )
         }
         footnote={result ? footnote : undefined}

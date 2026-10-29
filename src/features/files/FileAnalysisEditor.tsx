@@ -7,6 +7,7 @@ import {
 } from '../../api/client';
 import { WorkspaceExecutionPanel } from '../../ui/WorkspaceExecutionPanel';
 import { WorkspaceQueryResults, WorkspaceResultPanel } from '../../ui/WorkspaceQueryResults';
+import { WorkspaceExportButton } from '../../ui/WorkspaceExportButton';
 import { BashAnalysisHelp } from './BashAnalysisHelp';
 import { legacyBashInput, bashPreviewCommand, bashSamples } from './bash-analysis';
 import { isTabularFile } from './file-preview';
@@ -242,9 +243,7 @@ export function FileAnalysisEditor({
             <WorkspaceResultPanel
               actions={
                 result?.engine === 'bash' && (
-                  <Button disabled={busy} onClick={() => setExportOpen(true)}>
-                    Export output
-                  </Button>
+                  <WorkspaceExportButton disabled={busy} onClick={() => setExportOpen(true)} />
                 )
               }
               badge={

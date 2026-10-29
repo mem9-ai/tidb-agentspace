@@ -141,6 +141,8 @@ Preview's single Export header action and Bash result exports use the same desti
 separate format/field/type review before database import. Read
 [ADR 0018](docs/decisions/0018-contextual-file-exports.md) and
 [verification and API usage](docs/contextual-file-export-verification.md) before export work.
+All saved-file, SQL-result and Bash-output entry buttons reuse
+[WorkspaceExportButton](src/ui/WorkspaceExportButton.tsx) for a consistent Export label and appearance.
 
 DuckDB uses tidbfs native database mode, with ordinary Tables and SQL in the Console; see
 [customer experience](docs/duckdb-databases.md#customer-experience). For the separate optional

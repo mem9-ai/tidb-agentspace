@@ -13,6 +13,7 @@ import {
 import { IconArrowLeft, IconDownload01, IconXClose } from '@tidbcloud/uikit/icons';
 import { Heading } from '../../ui/WorkspaceHeading';
 import { WorkspaceResultPanel } from '../../ui/WorkspaceQueryResults';
+import { WorkspaceExportButton } from '../../ui/WorkspaceExportButton';
 import { FileContent, FilePreviewBoundary } from './FileContent';
 import { fileFormat, isTabularFile } from './file-preview';
 import { TabularFilePreview, useTabularPreview } from './TabularFilePreview';
@@ -94,9 +95,10 @@ export default function FilePreviewPanel({
           Download draft
         </Button>
       ) : (
-        <Button disabled={busy || analysisRunning || loading} onClick={() => setExportOpen(true)}>
-          Export
-        </Button>
+        <WorkspaceExportButton
+          disabled={busy || analysisRunning || loading}
+          onClick={() => setExportOpen(true)}
+        />
       )}
       {(mode === 'source' || dirty) && (
         <Button
