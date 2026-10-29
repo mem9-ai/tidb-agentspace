@@ -1,6 +1,6 @@
 # GH-74: Global-initiated regional control channel
 
-- Status: Owner-requested direction; protocol, lease and deployment details proposed for review.
+- Status: Owner-requested direction; regional autonomy, protocol and deployment details proposed for review.
 - Parent: [Workspace control plane](spec.md) and [ADR 0017](../../docs/decisions/0017-workspace-kv-control-plane.md).
 - Implementation: Design only; no control network, TLS, policy replication or migration is implemented here.
 
@@ -12,7 +12,7 @@ metadata store, telemetry publisher, credential refresh endpoint or token intros
 Regional data services must not provide an indirect reverse path. Regional services may
 access their authorized regional stores/providers; this does not grant access to global stores.
 
-Global pushes desired state/policy/leases and initiates every observation, result, health,
+Global pushes desired state/policy and initiates every observation, result, health,
 capability and metrics read. Region returns a bounded response to that exact request. Reply
 bytes and mTLS authentication are required parts of that exchange, not a Region-initiated
 RPC or a physical data-diode guarantee. No unsolicited server push, reverse RPC, subscription
@@ -39,13 +39,12 @@ Illustrative internal operations, not public API endpoints:
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | ApplyDesiredBatch                               | Validate signed intent, audience, generation and authority; persist inbox before effects; return a durable acceptance receipt |
 | StagePolicyChunks / CommitPolicy                | Receive bounded signed snapshot/delta chunks, then atomically activate a complete verified policy version                     |
-| RenewAuthorizationLease                         | Validate version, coverage, source-cut freshness, expiry and signature; never extend validity locally                         |
 | ReadOperations / ReadObservations               | Return requested operation states or a bounded local change page since a cursor, without callbacks                            |
-| ReadPolicyState / ReadHealth / ReadCapabilities | Return applied versions, lease state and safe regional status only when queried                                               |
+| ReadPolicyState / ReadHealth / ReadCapabilities | Return applied versions, synchronization lag and safe regional status only when queried                                       |
 | ReadMetrics / ReadAuditSummary                  | Return allowlisted bounded regional summaries; raw SQL/file payloads and native secrets stay regional                         |
 
 All commands carry installation/environment, target Region/cell/shard, operation ID,
-idempotency fingerprint, desired generation, routing/ownership epoch, policy/lease refs,
+idempotency fingerprint, desired generation, routing/ownership epoch, policy-version refs,
 issuer/key identity and validity. Region rejects mismatches before secret/provider/data I/O.
 Duplicate delivery returns the original receipt; a changed payload under the same identity
 conflicts. Missing prerequisites leave pending/unavailable state, never a reverse lookup.
@@ -69,85 +68,134 @@ idempotently. Reject stale generation/wrong-region observations without changing
 state. Sequence gaps/expired retention require an explicit Global-requested bounded snapshot;
 an empty page is not proof that a resource disappeared or a provider effect failed.
 
-Global can communicate its durable ingestion checkpoint in a later request. Journal GC
-requires that checkpoint or an explicit expiry/resnapshot policy plus backup/read reachability;
-unresolved provider identities/receipts are retained independently. Region restart/restore
-changes the stream epoch rather than resetting a cursor silently. Reading health/observations
-does not create another journal event for the poll itself.
+Global can communicate its ingestion checkpoint in a later request, but that acknowledgement
+is not a regional availability/retention prerequisite. Region compacts resolved journal
+history under a declared local snapshot/archive and cursor-expiry policy; unresolved provider
+identities/receipts are retained independently. Global resnapshots explicitly when needed.
+Region restore changes stream epoch rather than resetting a cursor silently. Reading health/
+observations does not create another journal event for the poll itself.
 
 At scale, Global polls indexed Region/cell/stream deltas and requested operations, not every
 resource every interval. Use bounded batches, backoff/jitter, change/health-specific cadence,
 tenant fairness and separate budgets. Policy/revocation traffic has priority over bulk status,
 export and repair. Detailed regional logs/metrics follow the same Global-initiated rule.
 
-## 4. Local admission from signed policy
+## 4. Durable local admission from signed policy
 
-The previous regional online Global-admission protocol is superseded. Global management
-mutations still use current global canonical policy. Regional requests use a locally installed,
-signed, region-scoped policy projection and bounded authorization lease; no reverse identity,
-Key validation, quota, credential or session-refresh call is allowed.
+Regional independence is a hard availability requirement. The previous online Global
+admission and policy-lease-expiry shutdown proposals are superseded. Global unavailability,
+failed synchronization and elapsed policy age must not deny work already authorized by a
+complete installed policy version. There is no Global heartbeat, policy-renewal deadline
+or control-plane lease that can stop established regional service.
 
-Global compiles only relevant owner/membership/Key-verifier/grant-set/resource-access/region
-policy into versioned manifests and immutable chunks. Include source versions/cut, checksum,
-issuer, environment, audience, policy epoch/sequence, predecessor/base version, coverage and
-expiry. Never distribute upstream credentials or a global signing private key. Global uploads
-chunks to Region; Region must not fetch missing chunks from a Global URL/store. Missing or
-out-of-order deltas leave the prior complete version active only within its lease. Staging
-is unservable; signature/hash/ownership/schema/generation checks precede atomic publication.
+Global compiles relevant owner/membership/Key-verifier/grant-set/resource-access policy into
+signed, versioned manifests/chunks with issuer, environment, audience, source versions,
+epoch/sequence, predecessor and checksums. Global uploads every required chunk; Region does
+not fetch missing material from a Global URL/store. Stage replacements without changing the
+active root. After signature/hash/schema/ownership/completeness checks, atomically publish and
+retain an activation/provenance record plus monotonic applied/denial floors in regional storage.
+An incomplete, gapped or invalid update leaves the last complete version active without a TTL.
+A Region with no valid established policy cannot invent a permissive tenant catalog.
 
-Region checks the customer Key/session verifier, action, tenant/resource grants, policy/lease
-coverage, local resource lifecycle/binding, ownership epoch and original credential expiry
-before I/O. Pin a local policy read set and resource revision, then validate unchanged policy
-and expected resource version at mutation/admission. Wildcards stay inside one Workspace;
-hidden storage is never exposed. A direct regional request with no complete valid policy
-gets an explicit unavailable response, never a callback to Global or a permissive default.
+Evaluate local **P1 -> R -> P2**: pin the installed policy/Key/session/grant read set and
+regional resource group, then check unchanged policy, ownership/region, action, generation,
+binding and original customer-credential constraints. Mutations validate the expected resource
+revision. The policy's synchronization timestamp/source watermark is freshness information,
+not a permission timeout. A locally applied denial, expired customer Key or missing grant
+still denies access. Wildcards never cross Workspace/private-storage boundaries.
 
-Every new customer lifecycle command/session action and external step rechecks current **local**
-policy/lease. A Global-issued per-operation grant can narrow permission; it cannot outlive
-the policy/credential lease, be reused for another payload, or substitute for local resource
-state. Region may not mint/renew Global authorization. Long-running work has explicit bounded
-admission/cancellation semantics; expiration does not undo an already completed provider effect.
-Unknown effects remain recoverable and are not retried just because permission expired.
+Separate time-dependent objects explicitly:
 
-Global policy/trust installation, lease repair and safe control-status reads use a separate
-infrastructure service authority. An expired customer/data lease must not prevent a correctly
-authenticated Global caller from repairing policy or reading local progress. That exception
-does not authorize customer SQL/files or a provider mutation without its required authority.
+- Installed policy remains effective until a complete authorized replacement or local deny;
+  signer/control-certificate expiration does not expire an already verified activation.
+- Customer Keys/session credentials keep their declared expiry. Region verifies them locally,
+  and issues/renews regional sessions from locally verifiable credentials/refresh state and
+  installed policy, using regional signing keys. It never extends an expired customer Key or
+  mints new Global privileges. Regional renewal must not depend on Global login/introspection.
+- A command delivery deadline limits accepting a new message. Once durably accepted, intent
+  executes under explicit regional operation/service authority and current local policy;
+  expiry of the original delivery envelope is not a Global-connectivity kill switch. New
+  customer requests remain subject to their original credential validity.
+- Worker claim leases, request replay windows and native-resource expiry keep their separate
+  meanings. Their expiry cannot be confused with loss of policy freshness or used to repeat
+  an unknown provider effect.
 
-## 5. Lease freshness and revocation completion
+Each regional data action/queued step uses the current local policy and durable claim/service
+context. Observed local cancellation/revocation stops prohibited new steps; admitted effects
+have bounded cancellation/recovery semantics. A local operator with previously delegated
+regional authority may apply an audited deny-only overlay during isolation; it cannot grant
+new Global roles. Keep that overlay/floor through resynchronization until explicitly resolved,
+so an old Global snapshot cannot silently re-enable locally denied access.
 
-Production must declare maximum policy age `L`, clock uncertainty bound `D`, in-flight
-deadlines and renewal cadence. There is no implicit unlimited offline mode. Global records
-issued scope/coverage/version/deadline before sending, and signs validity against the last
-**proved complete source cut**, not merely the current signing or retransmission time.
-Replaying or re-signing an old snapshot cannot extend its freshness. Renewal needs proof
-that the relevant denial/suspension/resource-access changes through the new source cut are
-included. Feed gaps, incomplete coverage or an unavailable issuer block renewal.
+Offline restart verifies the installed policy bytes, retained trusted signer/provenance and
+activation/denial floors from regional replicas/backups. It does not require Global discovery,
+current Global signing services or certificate introspection to reapprove established policy.
+New incoming updates still require currently valid authorized control identity/signatures;
+this rule does not accept an unknown/expired signer for a new policy installation. Missing or
+corrupt established state fails closed only for its affected scope, never seeds replacement
+resources, and is a regional recovery failure rather than a policy-age decision.
 
-Batch leases for active policy coverage/streams; do not create one heartbeat/renewal per
-resource or preactivate every inactive Workspace. The compiler/issuer must demonstrate
-source-cut completeness, bounded point/manifest validation and load/fairness under META-45.
-Missing proof fails closed rather than using an asynchronous index as current permission.
+## 5. Availability, revocation and resynchronization
 
-A global denial starts a revocation workflow. Persist the new canonical policy/access guard,
-stop extending the superseded cut for affected coverage, and push the replacement. Global
-marks it regionally effective only after querying/receiving durable applied-version evidence
-for every covered target, or proving every superseded authorization has passed its recorded
-deadline plus `D` with no eligible old-cut renewal. Missing issued-lease/target proof keeps
-the workflow pending. Global APIs must distinguish accepted/pending from regionally effective;
-they cannot claim immediate completed revocation from a global metadata commit alone.
+The regional serving path has no dependency on Global liveness. Global owns coordination and
+synchronization; Region durably owns the material needed to keep serving its existing scope.
 
-Within a valid previous lease, an isolated Region may still admit previously permitted work;
-at expiry it rejects new data operations and external lifecycle steps while retaining state.
-Local clock rollback, uncertain time beyond `D`, missing lease on restart or an older epoch
-cannot prolong validity. Use bounded monotonic deadlines with validated wall-clock limits;
-restore must not resurrect policy/leases or forget revocation floors. Physical deletion and
-unknown provider outcomes require their own evidence; time-based lease expiry proves neither.
+| While Global is unavailable                                               | Required behavior                                                                                                 |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Known regional SQL/files and new valid requests                           | Continue under installed policy, regional resource state and actual local/provider budgets                        |
+| Existing regional session reconnect/renewal                               | Use local verifiers/refresh state and regional signing; enforce genuine credential expiry                         |
+| Accepted lifecycle work, repair and scheduling                            | Continue under installed regional authority; retain unknown effects and original identities                       |
+| Regional process/node restart                                             | Recover policy, bindings, routing and credentials from regional storage/replicas, without a Global bootstrap call |
+| New Global Organization/Workspace/placement or additional shared capacity | Pending/unavailable for that Global-dependent change; existing regional work continues                            |
+| Global policy change/revocation not delivered                             | Report accepted/pending for that Region; do not claim regional effectiveness                                      |
+| Health/observations/metrics no longer collected                           | Mark Global views stale; regional service and bounded local retention continue                                    |
 
-Global/Region disconnection therefore has an explicit bounded policy window. Work admitted
-before a deny/expiry may finish within its declared bounds; a new step after a locally applied
-denial or lease expiry is forbidden. The actual `L`/`D` and public status shapes are review
-gates before hosted implementation, not numbers selected by this documentation change.
+Deploy regional entry points, routing/discovery views (including installed legacy Key-digest
+hints), authentication/session signing, metadata/indexes, provider credentials, Vault/KMS,
+regional leadership/fencing, data workers and needed DNS/PKI/time services independently of
+Global control. Regional coordination/claim leases cannot require a Global keepalive. A client/SDK must be able to
+connect/reconnect using a known regional endpoint without going through a Global gateway,
+login redirect or per-request discovery. Regional bootstrap/listing serves only its installed
+Workspace/resource scope and does not claim a complete Global inventory. Unknown assignments
+need synchronization; they do not invalidate already known regional resources.
+
+Hosted independence requires separate Global and regional processes/failure domains and
+independent regional stores/secrets. Same-process packaging is a local functional-test profile
+only; killing that process is not evidence of this availability requirement. Regional token,
+TLS and provider-credential renewal use authorized regional infrastructure/providers rather
+than a Global issuer/KMS or shared Global secret broker. Do not weaken cryptographic identity
+or ignore genuine credential/certificate expiration to simulate availability. Expired Global
+control-channel identity blocks synchronization, not already established regional data work.
+
+Global-issued quota/capacity rights already delegated to Region remain valid on disconnect;
+no renewal timer recalls/reissues them. Region consumes/returns rights only within its owned
+allocation and proof rules. Exhaustion blocks work needing additional rights, not unrelated
+existing requests. Never obtain new shared capacity by assuming an unreachable Global ledger
+has no allocations or by bypassing provider limits. Global-coordinated names/placement still
+follow their confirmed reservations; offline operation does not fabricate a new global claim.
+
+A Global denial becomes effective immediately for new Global admissions. Regional effectiveness
+requires Global to push/query and obtain durable applied-policy/deny evidence for each target.
+There is no fixed propagation/revocation deadline while a Region is unreachable, and no policy
+lease expiry from which Global can infer that the Region stopped serving. Expose per-target
+accepted/pending/effective state and the last applied version. Delivery-lag alerts are not a
+serving veto. Locally delivered revocation, credential expiry and authorized local denies
+continue to take effect without Global connectivity.
+
+Region must not wait for a Global ingestion acknowledgement before compacting resolved
+observation/telemetry history under its regional retention/archive policy. Keep canonical
+current state, local snapshots, unresolved provider receipts and minimal operation/tombstone
+replay evidence even when detailed observations are compacted; never let an
+uncollected Global export queue grow until it blocks data I/O. An expired ingestion cursor
+returns an explicit resnapshot requirement. Audit retention/storage remains a regional budget,
+not an unbounded in-memory queue or an excuse to discard unresolved ownership evidence.
+
+On recovery, Global initiates version/progress reads, pulls journal deltas or a bounded
+snapshot and reconciles pending work before pushing changes. Resume from regional applied
+floors and original resource/operation identities; do not reset Region from stale Global
+projections, replay creates, drop a local deny overlay, or label unchanged resources missing.
+A restored older Global installation must recover those floors before issuing a new epoch;
+an epoch bump alone is not proof that old grants/descriptors are safe to restore.
 
 ## 6. Production encryption and identity
 
@@ -160,7 +208,7 @@ Any approved proxy must authenticate and re-encrypt the next hop; no plaintext i
 Bound connection reuse/resumption by peer identity/certificate validity and retirement policy;
 an old authenticated connection cannot preserve retired authority indefinitely.
 
-Sign persisted commands/policy/leases using vetted signing libraries and managed Global-only
+Sign persisted commands/policy using vetted signing libraries and managed Global-only
 keys, so replayed queued payloads remain attributable after transport termination. Bind request
 and response to operation/request identity and audience; validate structured responses rather
 than following instructions/URLs in them. Encrypt persisted sensitive payloads through the
@@ -183,13 +231,14 @@ downgrade. Prefer a disposable test CA when testing the real TLS path; trusting 
 different from disabling verification.
 
 Local relaxation changes transport setup only: preserve one caller direction, message
-ownership/shape, authorization, generation, replay and tenant tests. Test lease timing with
-controlled clocks. No environment flag, endpoint or implementation is introduced by this spec.
+ownership/shape, authorization, generation, replay and tenant tests. Test credential/command
+expiry with controlled clocks; policy synchronization age must not disable Region service. No environment flag, endpoint or implementation is introduced by this spec.
 
 ## 8. Verification and references
 
-Main-spec META-38–45 cover call-direction/egress, pulled recovery, policy publication, lease/
-revocation histories, real TLS/identity negatives, local-only relaxation and scaled scheduling.
+Main-spec META-38–50 cover call direction, pulled recovery, durable policy/revocation, real
+TLS identity negatives, local-only relaxation, scale and independent regional outage/restart
+behavior. Global blackhole tests must outlast the superseded lease/heartbeat deadlines.
 No check run in this documentation PR proves these new protocols exist or pass.
 
 Primary references checked on 2026-10-29:

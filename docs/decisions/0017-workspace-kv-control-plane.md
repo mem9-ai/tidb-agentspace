@@ -37,6 +37,11 @@ communication must be strongly encrypted/authenticated; local tests may explicit
 transport. The [control-channel contract](../../specs/gh-74/control-channel.md) supersedes the
 earlier Region -> Global online-admission dependency and result-publisher proposal.
 
+Regional independence is a hard owner requirement: a Global outage must not stop established
+regional service, including after a policy-heartbeat interval or regional restart. This
+supersedes the earlier authorization-lease-expiry shutdown proposal. Persist verified local
+policy without synchronization TTL; enforce real credential expiry and received revocations.
+
 ## Proposed decision
 
 1. Domain services use typed repositories over `MetaStore`, with versioned JSON records,
@@ -81,11 +86,12 @@ earlier Region -> Global online-admission dependency and result-publisher propos
    does not permit cross-region file analysis/data export.
 10. Global initiates command/policy delivery and journal/health/result reads. Region persists
     local observations and returns request-bound replies; no reverse RPC, Global broker/store
-    write, introspection or policy/lease pull is allowed. Use stable command identity,
+    write, introspection or policy pull is allowed. Use stable command identity,
     fingerprints, inbox deduplication and generation checks. Signed, atomically installed
-    policy/leases enable regional local admission. Revocation distinguishes pending from
-    regionally effective, using applied-version or provable old-lease-expiry evidence. Declare
-    source-cut freshness, policy-age/clock bounds and in-flight semantics before hosting.
+    policy remains durable local authority without a Global heartbeat/renewal TTL. Revocation
+    stays pending for an unreachable target until applied evidence exists; there is no fixed
+    offline propagation bound. Preserve genuine credential expiry, local deny floors and
+    in-flight semantics without requiring Global connectivity.
 11. Pool sparse tenants across metadata cells and shard hot tenants by resource/edge identity.
     Keep policy roots small, exact grants as partitioned edges, strict quota rights in bounded
     pools, and list/task projections indexed with explicit lag. Use keyset/live or pinned
@@ -96,6 +102,11 @@ earlier Region -> Global online-admission dependency and result-publisher propos
     and signed persisted commands/policy. Bootstrap/rotate trust out of band or through
     Global-initiated requests; Region never enrolls at Global. Explicit loopback/in-process
     test relaxation cannot apply to remote/hosted targets or activate after connection failure.
+13. Hosted Global and Region serving paths use separate processes/failure domains. Regional
+    endpoints/discovery, session issuance/refresh, policy/bindings, Vault/KMS/PKI, provider
+    credentials and restart recovery do not depend on Global. Known regional work continues;
+    new Global-coordinated changes may wait. Compact resolved telemetry regionally without
+    requiring Global ingestion ACKs; preserve canonical state and unresolved ownership.
 
 ## Alternatives and consequences
 
@@ -114,10 +125,10 @@ earlier Region -> Global online-admission dependency and result-publisher propos
   keys. Logical KV independence does not promise equal performance from every backend.
 - Storage independence is not free: relationship checks, codecs, index updates, conformance,
   crash recovery and import verification are product responsibilities.
-- Independent regional execution adds sagas, policy compilation and stale status projections.
-  Global-initiated synchronization removes reverse runtime dependencies but introduces bounded
-  policy propagation/expiry and explicit revocation completion. Ingestion/lease/source-cut
-  evidence and fairness require implementation, not a promise of immediate global revocation.
+- Independent regional execution adds sagas, durable policy and stale Global projections.
+  Global disconnection has no policy-age shutdown deadline. A disconnected Region cannot
+  observe a new Global revocation; its status remains pending rather than falsely immediate.
+  Regional local denials, genuine credential expiry and independent recovery still apply.
   Data, identity metadata, backups and proxies each need explicit location declarations.
 
 ## Migration and compatibility
@@ -140,17 +151,19 @@ specification revision.
 
 ## Verification and revisit
 
-[META-01 through META-45](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
+[META-01 through META-50](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
 cover adapter conformance, crash/unknown outcomes, authorization before I/O, provider-account
 quotas, credential separation, full legacy import, no duplicate provider effects and restore.
 The TiDB File System case includes concurrent publication, path replacement, bootstrap and
 public/private storage separation; its current product adapter is not a metadata CAS adapter.
-Regional cases cover placement, pushed commands/pulled results, local policy/lease admission, service/
+Regional cases cover placement, pushed commands/pulled results, durable local admission, service/
 credential isolation, capacity/outages, data movement and distributed import/restore.
 Scale cases cover sparse/large tenants, group contention, staged claims, pagination, grant
 edges, strict quota pools, fairness, partition movement and reproducible workload/cost evidence.
 Channel cases cover invocation/egress direction, incremental reads/recovery, signed policy,
-lease/revocation histories, real TLS identity negatives and explicit local-only relaxation.
+policy/revocation histories, real TLS identity negatives and explicit local-only relaxation.
+Autonomy cases blackhole Global through serving/session renewal, regional restart, telemetry
+retention and resynchronization; shared-process local tests are not hosted availability evidence.
 This ADR does not claim those tests or a production migration exist. Repository checks only
 verify the current source/documents.
 

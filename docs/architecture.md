@@ -75,16 +75,24 @@ resource has an assigned `regionId`; `homeRegion` is a default for future creati
 upstream/legacy region values separately, and verify actual provider location before making
 residency claims. Global and regional metadata use separate authorities over the same KV
 interface, including separate service-owned TiDB File System roots where selected. Global
-status projections do not replace regional execution records or valid local policy/leases.
+status projections do not replace regional execution records or durable installed local policy.
 
-Initially one local API may package all three modules. The hosted design requires authenticated
+Local functional tests may package the modules in one API. Hosted independence requires separate
+Global/regional processes, stores/failure domains and direct regional entry points, even with
+one Region. The design requires authenticated
 Global-initiated command/policy delivery and result/health/journal queries, with no Region ->
 Global callback, broker publication, introspection or policy pull. Region uses atomically
-installed signed policy with bounded leases for local admission. Revocation has pending and
-regionally-effective states; lease/source-cut freshness and clock bounds are deployment gates.
+installed durable policy with no Global heartbeat, renewal deadline or synchronization-age
+shutdown. Known regional serving, session renewal, accepted work and restart continue while
+Global is unavailable. Local verifiers/refresh, routing, Vault/KMS/PKI and leadership must be
+independent; real credential expiry and received denials still apply. New Global-coordinated
+changes may wait. Revocation remains pending for an unreachable Region without a finite
+propagation guarantee; Global needs per-target applied evidence to mark it effective.
 The [channel contract](../specs/gh-74/control-channel.md) requires TLS 1.3/mTLS in production
 and permits explicitly selected loopback test relaxation. SQL/file payloads remain regional.
 A region outage preserves identity/pending state without replacement provisioning. This is design-only.
+Resolved telemetry may be archived/compacted in Region without Global ACK; recovery pulls
+missing observations or a snapshot and preserves regional policy/deny floors and resource IDs.
 
 The [metadata scale profile](../specs/gh-74/metadata-scale.md) targets millions of Workspaces
 and individual million-resource Workspaces. Pool small tenants in shared cells and partition

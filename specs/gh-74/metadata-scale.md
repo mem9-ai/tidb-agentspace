@@ -164,14 +164,15 @@ updates are explicit bounded jobs; an atomic replacement requires a staged immut
 set and one version-pointer publication, not a million-key transaction.
 
 The [Global-initiated control channel](control-channel.md) supersedes the former online
-cross-plane admission design. Global uses current bounded canonical policy read sets to
-compile signed manifests and leases. Region atomically installs complete policy and evaluates
-local P1/R/P2 versions and lease validity before I/O; no callback, token introspection or
-upstream policy fetch is permitted. Resource writes do not contend on a Workspace auth counter.
-Global renewal proves a complete relevant source cut; replaying old policy cannot refresh its
-age. Revocation has accepted/pending/effective stages with applied-version or old-lease-expiry
-evidence. Expired/missing coverage fails closed. Batch active-coverage pushes/renewals and
-Global-owned delta reads rather than maintaining one renewal/heartbeat per resource.
+cross-plane admission and policy-lease shutdown designs. Global compiles signed manifests;
+Region durably installs complete policy and evaluates local P1/R/P2 before I/O, with no
+reverse call or renewable policy lease. Installed policy remains effective during Global
+failure regardless of sync age, including restart. Missing/corrupt authority or genuine
+credential expiry still denies affected requests. Revocation has per-target pending/effective
+states based on applied evidence, without an offline propagation bound. Batch policy updates
+and Global delta reads; no resource heartbeat or policy renewal gates service. Resource
+writes never contend on a Workspace auth counter. Regional endpoint/session/vault/routing
+dependencies must be independent too.
 
 Avoid updating one Workspace/Organization resource-count row for every create. Divide strict
 quota rights into durable bounded pools: the coordinator allocates disjoint rights whose sum
@@ -184,6 +185,9 @@ Approximate projected counts can inform UI/billing views, never enforce a hard q
 Pool rotation/receipt compaction must preserve issued rights and late-return deduplication;
 seal old generations before reclamation and retain every unresolved reservation. A bounded
 file group cannot silently accumulate an unlimited reservation history.
+Previously delegated regional rights do not expire or get reissued because Global cannot
+reach Region. Local exhaustion affects only work needing more rights; it cannot stop known
+resources. Offline work cannot invent additional shared capacity or globally unique names.
 
 ## 7. Scheduling and resource budgets
 
@@ -216,6 +220,11 @@ separate budget and cannot be bypassed by spawning another anonymous account.
 Global initiates movement commands and queries their progress. Actual copy/fencing stays
 inside the owning global/regional metadata authority with its authorized local storage;
 Region cannot pull Global or another region's catalog, keys or policy as a recovery shortcut.
+
+A regional move is a durable regional workflow after its Global-issued intent is accepted;
+Global is not a synchronous participant in each freeze/copy/activate step. Region must finish
+or safely abort locally if Global disappears, without leaving its metadata frozen waiting
+for an upstream acknowledgement. Regional routing/leadership also uses regional coordination.
 
 Split/move bounded partitions under a versioned routing/ownership protocol: mark the source
 moving, durably freeze/fence its writes and new external steps, copy a verified final state

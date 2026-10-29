@@ -75,7 +75,10 @@ For millions of Workspaces or a million-resource Workspace, also read the
 atomic-group granularity, shared-cell routing, query indexes and workload capacity evidence.
 For Global/Region communication, read the [control-channel contract](specs/gh-74/control-channel.md):
 Global initiates commands, policy delivery and information reads; Region has no upstream
-callback/admission dependency. Production mTLS and bounded local policy leases remain proposed implementation.
+callback/admission dependency. Region must keep serving known authorized work during Global
+failure using durable policy, independent local authentication/session refresh and regional
+state/recovery. Policy-sync age never expires access; actual credential expiry and received
+denials still apply. Production mTLS and regional autonomy require implementation evidence.
 
 | Task                                                      | Required starting points                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

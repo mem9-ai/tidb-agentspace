@@ -39,4 +39,4 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Proposed decisions
 
-- [0017: Portable Workspace KV control plane](0017-workspace-kv-control-plane.md) — Global-initiated encrypted regional control, local policy leases, regional placement, pooled cells/bounded groups, KV candidates and identity-preserving migration; design only.
+- [0017: Portable Workspace KV control plane](0017-workspace-kv-control-plane.md) — Global-initiated encrypted control, independent regional serving with durable policy, regional placement, pooled cells/bounded groups, KV candidates and identity-preserving migration; design only.
