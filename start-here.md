@@ -150,6 +150,8 @@ All saved-file, SQL-result and Bash-output entry buttons reuse
 [WorkspaceExportButton](src/ui/WorkspaceExportButton.tsx) for a consistent Export label and appearance.
 File System Upload uses actual transfer progress and separate server-save acknowledgement;
 follow [upload feedback and recovery](docs/drive9-verification.md#upload-progress-and-recovery-gh-99).
+Database-owned Import from local or Workspace files is specified under
+[GH-103](specs/gh-103/spec.md); the new destination-bound API and Console entry are pending implementation.
 
 DuckDB uses tidbfs native database mode, with ordinary Tables and SQL in the Console; see
 [customer experience](docs/duckdb-databases.md#customer-experience). For the separate optional
