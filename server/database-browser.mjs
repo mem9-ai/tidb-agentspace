@@ -13,6 +13,21 @@ const tableSelect =
 // Hex literals are independent of SQL escaping modes. Names are values here, identifiers in SELECT.
 const nameFilter = (name) =>
   ` AND TABLE_NAME = CONVERT(X'${Buffer.from(name).toString('hex')}' USING utf8mb4)`;
+// One bounded native request avoids three independent TLS handshakes for a disclosure.
+export function mysqlTableMetadataQuery(name) {
+  const scope = `WHERE TABLE_SCHEMA = DATABASE()${nameFilter(tableName(name))}`;
+  return `SELECT 'table' AS recordKind, TABLE_NAME AS name, TABLE_TYPE AS type,
+    NULL AS nullable, NULL AS defaultValue, NULL AS columnKey, NULL AS extra,
+    NULL AS nonUnique, NULL AS columnName, NULL AS position, NULL AS prefixLength
+    FROM information_schema.TABLES ${scope}
+    UNION ALL
+    SELECT 'column', COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY, EXTRA,
+    NULL, NULL, ORDINAL_POSITION, NULL FROM information_schema.COLUMNS ${scope}
+    UNION ALL
+    SELECT 'index', INDEX_NAME, NULL, NULL, NULL, NULL, NULL, NON_UNIQUE, COLUMN_NAME,
+    SEQ_IN_INDEX, SUB_PART FROM information_schema.STATISTICS ${scope}
+    ORDER BY recordKind, position, name LIMIT 1001`;
+}
 const tables = [{ name: 'agent_events', type: 'BASE TABLE' }];
 export const demoColumns = ['id', 'agent', 'event', 'status', 'created_at'];
 export function demoRows(createdAt) {
@@ -62,9 +77,13 @@ export async function browseDatabase({ resource, action, name, execute, createdA
     return { data: data.slice(0, 500), truncated: data.length > 500, mode: mode(resource) };
   }
   name = tableName(name);
-  const candidates = live
-    ? (await execute(`${tableSelect}${nameFilter(name)} LIMIT 1`)).rows
-    : tables;
+  const metadata =
+    live && action !== 'rows' ? (await execute(mysqlTableMetadataQuery(name))).rows : null;
+  const candidates = metadata
+    ? metadata.filter((row) => row.recordKind === 'table')
+    : live
+      ? (await execute(`${tableSelect}${nameFilter(name)} LIMIT 1`)).rows
+      : tables;
   const table = candidates.find((entry) => entry.name === name);
   if (!table)
     throw sqlError(
@@ -98,16 +117,8 @@ export async function browseDatabase({ resource, action, name, execute, createdA
       query: 'SELECT * FROM agent_events LIMIT 100;',
       mode: 'demo',
     };
-  const columns = (
-    await execute(
-      `SELECT COLUMN_NAME AS name, COLUMN_TYPE AS type, IS_NULLABLE AS nullable, COLUMN_DEFAULT AS defaultValue, COLUMN_KEY AS columnKey, EXTRA AS extra FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()${nameFilter(name)} ORDER BY ORDINAL_POSITION`,
-    )
-  ).rows;
-  const parts = (
-    await execute(
-      `SELECT INDEX_NAME AS name, NON_UNIQUE AS nonUnique, COLUMN_NAME AS columnName, SEQ_IN_INDEX AS position, SUB_PART AS prefixLength FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE()${nameFilter(name)} ORDER BY INDEX_NAME, SEQ_IN_INDEX`,
-    )
-  ).rows;
+  const columns = metadata.filter((row) => row.recordKind === 'column');
+  const parts = metadata.filter((row) => row.recordKind === 'index');
   const indexes = new Map();
   for (const part of parts) {
     if (!indexes.has(part.name))
@@ -123,7 +134,8 @@ export async function browseDatabase({ resource, action, name, execute, createdA
     });
   }
   return {
-    ...table,
+    name: table.name,
+    type: table.type,
     columns: columns.map((column) => ({
       name: column.name,
       type: column.type,

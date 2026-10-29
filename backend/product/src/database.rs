@@ -305,6 +305,17 @@ impl Product {
                 "SELECT INDEX_NAME AS name, NON_UNIQUE AS nonUnique, COLUMN_NAME AS columnName, SEQ_IN_INDEX AS position, SUB_PART AS prefixLength FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE(){filter} ORDER BY INDEX_NAME, SEQ_IN_INDEX"
             )
         };
+        let mysql_metadata = if native && !pg && !duck && action == "table" {
+            Some(
+                self.execute_database(r, &mysql_table_metadata_sql(&filter), true, json!([]))
+                    .await?["rows"]
+                    .as_array()
+                    .cloned()
+                    .ok_or_else(|| err(502, "INVALID_METADATA"))?,
+            )
+        } else {
+            None
+        };
         // The three metadata reads reuse one fresh native session, not three TLS handshakes.
         let pg_metadata = if native && pg && action == "table" {
             Some(
@@ -322,7 +333,13 @@ impl Product {
         } else {
             None
         };
-        let candidates = if let Some(results) = &pg_metadata {
+        let candidates = if let Some(rows) = &mysql_metadata {
+            json!(
+                rows.iter()
+                    .filter(|row| row["recordKind"] == "table")
+                    .collect::<Vec<_>>()
+            )
+        } else if let Some(results) = &pg_metadata {
             results[0]["rows"].clone()
         } else if native {
             self.execute_database(r, &format!("{select}{filter} LIMIT 1"), true, json!([]))
@@ -352,7 +369,9 @@ impl Product {
                 json!({"name":table["name"],"type":table["type"],"columns":demo_columns().iter().map(|n|json!({"name":n,"type":if *n=="id"{"int"}else if *n=="created_at"{"datetime"}else{"varchar(255)"},"nullable":false,"default":null,"key":if *n=="id"{"PRI"}else{""},"extra":""})).collect::<Vec<_>>(),"indexes":[{"name":"PRIMARY","unique":true,"columns":[{"name":"id","position":1,"prefixLength":null}]}],"query":"SELECT * FROM agent_events LIMIT 100;","mode":"demo"}),
             );
         }
-        let column_result = if let Some(results) = &pg_metadata {
+        let column_result = if let Some(rows) = &mysql_metadata {
+            json!({"rows":rows.iter().filter(|row| row["recordKind"] == "column").collect::<Vec<_>>()})
+        } else if let Some(results) = &pg_metadata {
             results[1].clone()
         } else {
             self.execute_database(r, &columns_sql, true, json!([]))
@@ -362,7 +381,9 @@ impl Product {
             .as_array()
             .cloned()
             .ok_or_else(|| err(502, "INVALID_METADATA"))?;
-        let index_result = if let Some(results) = &pg_metadata {
+        let index_result = if let Some(rows) = &mysql_metadata {
+            json!({"rows":rows.iter().filter(|row| row["recordKind"] == "index").collect::<Vec<_>>()})
+        } else if let Some(results) = &pg_metadata {
             results[2].clone()
         } else {
             self.execute_database(r, &index_sql, true, json!([]))
@@ -437,6 +458,22 @@ let s=if s.starts_with('"')&&s.ends_with('"'){s[1..s.len()-1].replace("\"\"","\"
             json!({"name":table["name"],"type":table["type"],"columns":columns.iter().map(|c|{let name=c["name"].as_str().unwrap_or("");json!({"name":name,"type":c["type"],"nullable":c["nullable"]=="YES","default":if c["defaultValue"].is_null(){Value::Null}else{json!(c["defaultValue"].as_str().map(str::to_owned).unwrap_or(c["defaultValue"].to_string()))},"key":if pg||duck{if primary.contains(name){"PRI"}else if unique.contains(name){"UNI"}else{""}}else{c["columnKey"].as_str().unwrap_or("")},"extra":c["extra"].as_str().unwrap_or("")})}).collect::<Vec<_>>(),"indexes":indexes,"query":table_query,"mode":"live"}),
         )
     }
+}
+fn mysql_table_metadata_sql(filter: &str) -> String {
+    let scope = format!("WHERE TABLE_SCHEMA = DATABASE(){filter}");
+    format!(
+        "SELECT 'table' AS recordKind, TABLE_NAME AS name, TABLE_TYPE AS type,
+        NULL AS nullable, NULL AS defaultValue, NULL AS columnKey, NULL AS extra,
+        NULL AS nonUnique, NULL AS columnName, NULL AS position, NULL AS prefixLength
+        FROM information_schema.TABLES {scope}
+        UNION ALL
+        SELECT 'column', COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY, EXTRA,
+        NULL, NULL, ORDINAL_POSITION, NULL FROM information_schema.COLUMNS {scope}
+        UNION ALL
+        SELECT 'index', INDEX_NAME, NULL, NULL, NULL, NULL, NULL, NON_UNIQUE, COLUMN_NAME,
+        SEQ_IN_INDEX, SUB_PART FROM information_schema.STATISTICS {scope}
+        ORDER BY recordKind, position, name LIMIT 1001"
+    )
 }
 fn number(v: &Value) -> i64 {
     v.as_i64()

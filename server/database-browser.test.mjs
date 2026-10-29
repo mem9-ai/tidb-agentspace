@@ -72,6 +72,63 @@ async function fixture(t) {
       const hex = /CONVERT\(X'([a-f0-9]+)' USING utf8mb4\)/.exec(sql)?.[1];
       const name = hex ? Buffer.from(hex, 'hex').toString() : undefined;
       if (sql.includes('information_schema.')) assert.ok(sql.includes('TABLE_SCHEMA = DATABASE()'));
+      if (sql.includes('AS recordKind')) {
+        assert.equal(sql.match(/TABLE_SCHEMA = DATABASE\(\)/g)?.length, 3);
+        assert.equal(sql.match(/CONVERT\(X'[a-f0-9]+' USING utf8mb4\)/g)?.length, 3);
+        assert.match(sql, /ORDER BY recordKind, position, name LIMIT 1001$/);
+        const table = fixtureTables.find((entry) => entry.name === name);
+        return rowset(
+          table
+            ? [
+                {
+                  recordKind: 'column',
+                  name: 'id',
+                  type: 'bigint',
+                  nullable: 'NO',
+                  defaultValue: null,
+                  columnKey: 'PRI',
+                  extra: 'auto_increment',
+                  position: 1,
+                },
+                {
+                  recordKind: 'column',
+                  name: 'label',
+                  type: 'varchar(50)',
+                  nullable: 'YES',
+                  defaultValue: '',
+                  columnKey: 'MUL',
+                  extra: '',
+                  position: 2,
+                },
+                {
+                  recordKind: 'index',
+                  name: 'PRIMARY',
+                  nonUnique: '0',
+                  columnName: 'id',
+                  position: '1',
+                  prefixLength: null,
+                },
+                {
+                  recordKind: 'index',
+                  name: 'by_label',
+                  nonUnique: '1',
+                  columnName: 'label',
+                  position: '1',
+                  prefixLength: '10',
+                },
+                {
+                  recordKind: 'index',
+                  name: 'by_label',
+                  nonUnique: '1',
+                  columnName: 'id',
+                  position: '2',
+                  prefixLength: null,
+                },
+                { recordKind: 'table', ...table },
+              ]
+            : [],
+        );
+      }
       if (sql.includes('information_schema.TABLES'))
         return rowset(name ? fixtureTables.filter((table) => table.name === name) : fixtureTables);
       if (sql.includes('information_schema.COLUMNS'))
@@ -176,7 +233,10 @@ test('table reads return native metadata, ordered composite indexes and bounded 
   assert.equal(list.mode, 'live');
   assert.equal(list.truncated, false);
   assert.deepEqual(list.data, fixtureTables);
+  const before = f.calls.length;
   const detail = await f.request(f.path + '/table?name=' + encodeURIComponent(strangeName), auth);
+  assert.equal(f.calls.length - before, 1, 'one authorized native request for all metadata');
+  assert.equal(detail.recordKind, undefined);
   assert.deepEqual(detail.columns[1], {
     name: 'label',
     type: 'varchar(50)',
@@ -243,11 +303,11 @@ test('invalid names fail before SQL; bounded read errors are returned without pa
   }
   assert.deepEqual(f.calls, []);
   f.setFailure(sqlError(422, 'RESULT_TOO_LARGE', 'Result exceeds 1 MiB. Select fewer columns.'));
-  const result = await f.request(f.path + '/table/rows?name=empty', { status: 422 });
+  const result = await f.request(f.path + '/table?name=empty', { status: 422 });
   assert.equal(result.error.code, 'RESULT_TOO_LARGE');
   assert.equal(result.rows, undefined);
   f.setFailure(sqlError(504, 'SQL_TIMEOUT', 'Query exceeded 15 seconds.'));
-  await f.request(f.path + '/tables', { status: 504 });
+  await f.request(f.path + '/table?name=empty', { status: 504 });
   f.setFailure(undefined);
   const demo = await f.request(`${base}/resources/db_memory/table?name=agent_events`);
   assert.equal(demo.mode, 'demo');
