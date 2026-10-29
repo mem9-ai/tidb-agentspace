@@ -2,7 +2,7 @@ import { publicPathPrefix } from './http-policy.mjs';
 import { randomBytes, createHash } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
-// TiDB Cloud SSO ("Continue with TiDB Account") via OAuth2 / OIDC authorization-code flow.
+// TiDB Cloud SSO ("Continue with TiDB Account") via OIDC public-client authorization-code + S256 PKCE.
 //
 // Everything here is driven by environment variables. No real credentials, client ids,
 // or provider endpoints are hard-coded. When SSO is not configured the feature is a no-op:
@@ -16,7 +16,6 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 //   TIDB_SSO_USERINFO_URL     Optional explicit userinfo endpoint (overrides discovery).
 //   TIDB_SSO_JWKS_URL         Optional explicit JWKS endpoint (overrides discovery).
 //   TIDB_SSO_CLIENT_ID        Required. OAuth client id.
-//   TIDB_SSO_CLIENT_SECRET    Required. OAuth client secret (secret injection only; never logged).
 //   TIDB_SSO_REDIRECT_URI     Required. Absolute callback URL registered with the provider.
 //   TIDB_SSO_SCOPES           Optional. Space-separated scopes (default "openid profile email").
 //   TIDB_SSO_OWNER_SUBJECTS   Owner allowlist. Comma-separated IMMUTABLE provider subject ids
@@ -75,11 +74,9 @@ export function loadSsoConfig(env = process.env) {
   ].some((name) => get(name));
 
   // Nothing configured at all -> feature cleanly disabled.
-  if (!issuer && !clientId && !explicitEndpoints && !get('TIDB_SSO_CLIENT_SECRET')) return null;
+  if (!issuer && !clientId && !explicitEndpoints) return null;
 
   if (!clientId) throw new Error('TIDB_SSO_CLIENT_ID is required to enable TiDB SSO.');
-  if (!get('TIDB_SSO_CLIENT_SECRET'))
-    throw new Error('TIDB_SSO_CLIENT_SECRET is required to enable TiDB SSO.');
   if (!get('TIDB_SSO_REDIRECT_URI'))
     throw new Error('TIDB_SSO_REDIRECT_URI is required to enable TiDB SSO.');
   // The expected ID-token issuer is ALWAYS required, so jwtVerify always checks a concrete
@@ -140,7 +137,6 @@ export function loadSsoConfig(env = process.env) {
     jwksUrl,
     userinfoUrl,
     clientId,
-    clientSecret: get('TIDB_SSO_CLIENT_SECRET'),
     redirectUri: redirect.href,
     redirectOrigin: redirect.origin,
     scopes: get('TIDB_SSO_SCOPES') || DEFAULT_SCOPES,
@@ -217,14 +213,14 @@ export function buildAuthorizeUrl(config, endpoints, { state, nonce, codeChallen
   return url.href;
 }
 
-// Exchange the authorization code for tokens using PKCE. Returns the token response JSON.
+// Public-client token exchange: PKCE binds the token request to its authorization flow.
+// The provider registration must allow token endpoint authentication method "none".
 export async function exchangeCode(config, endpoints, { code, codeVerifier }, fetchImpl = fetch) {
   const form = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
     redirect_uri: config.redirectUri,
     client_id: config.clientId,
-    client_secret: config.clientSecret,
     code_verifier: codeVerifier,
   });
   const response = await fetchImpl(endpoints.tokenUrl, {
@@ -330,7 +326,7 @@ export function resolveIdentity(config, claims) {
   return identity;
 }
 
-// Non-secret display info for the frontend. NEVER includes the client secret.
+// Only public display information is exposed to the frontend.
 export function publicSsoInfo(config) {
   if (!config) return { enabled: false };
   return {

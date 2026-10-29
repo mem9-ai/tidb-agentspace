@@ -1,6 +1,7 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -27,6 +28,10 @@ function resetControl() {
     orgId: 'org_allowed',
     includeIdToken: true,
     tokenHttpError: false,
+    requireClientAuthentication: false,
+    tokenExpiresIn: '5m',
+    expectedChallenge: null,
+    tokenRequest: null,
     extraClaims: {},
     lastCode: null,
     lastCodeVerifierExpected: null,
@@ -48,7 +53,7 @@ async function signIdToken() {
     .setIssuer(control.issuer())
     .setAudience(control.audience)
     .setIssuedAt()
-    .setExpirationTime('5m')
+    .setExpirationTime(control.tokenExpiresIn)
     .sign(key);
 }
 
@@ -72,10 +77,20 @@ before(async () => {
       });
     if (url.pathname === '/jwks') return json(200, { keys: [fakeJwk] });
     if (url.pathname === '/token' && req.method === 'POST') {
-      if (control.tokenHttpError) return json(400, { error: 'invalid_grant' });
       const chunks = [];
       for await (const c of req) chunks.push(c);
       const form = new URLSearchParams(Buffer.concat(chunks).toString());
+      control.tokenRequest = { form, authorization: req.headers.authorization };
+      if (form.has('client_secret') || req.headers.authorization)
+        return json(400, { error: 'unexpected_client_authentication' });
+      if (control.requireClientAuthentication)
+        return json(401, { error: 'invalid_client', error_description: 'provider-only-detail' });
+      if (control.tokenHttpError) return json(400, { error: 'invalid_grant' });
+      const challenge = createHash('sha256')
+        .update(form.get('code_verifier') || '')
+        .digest('base64url');
+      if (form.get('client_id') !== 'test-client-id' || challenge !== control.expectedChallenge)
+        return json(400, { error: 'invalid_grant' });
       control.lastCode = form.get('code');
       control.lastCodeVerifierReceived = form.get('code_verifier');
       const body = { token_type: 'Bearer', access_token: 'fake-access', expires_in: 300 };
@@ -98,7 +113,6 @@ function testSsoConfig(overrides = {}) {
   return {
     issuer,
     clientId: 'test-client-id',
-    clientSecret: 'test-client-secret',
     redirectUri: 'http://127.0.0.1:4318/api/auth/tidbcloud/callback',
     redirectOrigin: 'http://127.0.0.1:4318',
     scopes: 'openid profile email',
@@ -142,6 +156,7 @@ async function startLogin(address) {
   const res = await fetch(address + '/api/auth/tidbcloud/login', { redirect: 'manual' });
   assert.equal(res.status, 302);
   const location = new URL(res.headers.get('location'));
+  control.expectedChallenge = location.searchParams.get('code_challenge');
   const setCookie = res.headers.get('set-cookie') || '';
   const flowCookie = /aw_sso_flow=[^;]+/.exec(setCookie)?.[0];
   return {
@@ -168,7 +183,7 @@ test('loadSsoConfig returns null when nothing is configured (feature disabled)',
 });
 
 test('loadSsoConfig throws on a partial config instead of silently disabling', () => {
-  assert.throws(() => loadSsoConfig({ TIDB_SSO_CLIENT_ID: 'x' }), /CLIENT_SECRET/);
+  assert.throws(() => loadSsoConfig({ TIDB_SSO_CLIENT_ID: 'x' }), /TIDB_SSO_REDIRECT_URI/);
 });
 
 test('SSO-disabled: /api/auth/config reports disabled and login/callback 404', async () => {
@@ -209,7 +224,6 @@ test('config endpoint exposes only non-secret booleans/strings when enabled', as
     assert.equal(cfg.enabled, true);
     assert.equal(cfg.loginPath, '/api/auth/tidbcloud/login');
     const serialized = JSON.stringify(cfg);
-    assert.ok(!serialized.includes('test-client-secret'));
     assert.ok(!serialized.includes('client_secret'));
   } finally {
     await new Promise((r) => server.close(r));
@@ -234,7 +248,15 @@ test('happy path: login redirect carries PKCE S256, then callback mints an aw_se
     assert.match(setCookie, /aw_session=[a-f0-9]{64}/);
     assert.match(setCookie, /HttpOnly/);
     // The code verifier the server sent to the token endpoint hashes to the login challenge.
-    assert.ok(control.lastCodeVerifierReceived, 'token request carried a code_verifier (PKCE)');
+    assert.equal(
+      createHash('sha256').update(control.lastCodeVerifierReceived).digest('base64url'),
+      flow.challenge,
+    );
+    assert.equal(control.tokenRequest.form.has('client_secret'), false);
+    assert.equal(control.tokenRequest.authorization, undefined);
+    assert.equal(control.tokenRequest.form.get('grant_type'), 'authorization_code');
+    assert.equal(control.lastCode, 'auth-code-1');
+    assert.equal(control.tokenRequest.form.get('redirect_uri'), testSsoConfig().redirectUri);
   } finally {
     await new Promise((r) => server.close(r));
   }
@@ -389,6 +411,66 @@ test('token endpoint HTTP error is handled gracefully (no crash, no session)', a
   }
 });
 
+test('a provider requiring client authentication fails closed without exposing provider details', async () => {
+  const { server, address } = await appWith(testSsoConfig());
+  try {
+    const flow = await startLogin(address);
+    control.requireClientAuthentication = true;
+    const res = await callback(address, {
+      flowCookie: flow.flowCookie,
+      params: { code: 'c', state: flow.state },
+    });
+    assert.equal(res.status, 401);
+    const body = await res.json();
+    assert.equal(body.error.code, 'SSO_VERIFICATION_FAILED');
+    assert.equal(JSON.stringify(body).includes('provider-only-detail'), false);
+    assert.ok(!/aw_session=/.test(res.headers.get('set-cookie') || ''));
+    assert.equal(control.tokenRequest.form.has('client_secret'), false);
+    assert.equal(control.tokenRequest.authorization, undefined);
+  } finally {
+    await new Promise((r) => server.close(r));
+  }
+});
+
+test('expired login state is rejected before any token exchange', async (t) => {
+  const { server, address } = await appWith(testSsoConfig());
+  try {
+    const flow = await startLogin(address);
+    const later = Date.now() + 11 * 60 * 1000;
+    const now = t.mock.method(Date, 'now', () => later);
+    const res = await callback(address, {
+      flowCookie: flow.flowCookie,
+      params: { code: 'c', state: flow.state },
+    });
+    now.mock.restore();
+    assert.equal(res.status, 400);
+    assert.equal((await res.json()).error.code, 'SSO_STATE_INVALID');
+    assert.ok(!/aw_session=/.test(res.headers.get('set-cookie') || ''));
+    assert.equal(control.tokenRequest, null);
+  } finally {
+    t.mock.restoreAll();
+    await new Promise((r) => server.close(r));
+  }
+});
+
+test('expired ID token is rejected without a session', async () => {
+  const { server, address } = await appWith(testSsoConfig());
+  try {
+    const flow = await startLogin(address);
+    control.nonce = flow.nonce;
+    control.tokenExpiresIn = '-1m';
+    const res = await callback(address, {
+      flowCookie: flow.flowCookie,
+      params: { code: 'c', state: flow.state },
+    });
+    assert.equal(res.status, 401);
+    assert.equal((await res.json()).error.code, 'SSO_VERIFICATION_FAILED');
+    assert.ok(!/aw_session=/.test(res.headers.get('set-cookie') || ''));
+  } finally {
+    await new Promise((r) => server.close(r));
+  }
+});
+
 test('missing immutable subject claim is rejected (fail closed, no session)', async () => {
   // Configure the subject claim to one the token does not carry -> no subject -> fail closed.
   const { server, address } = await appWith(testSsoConfig({ subjectClaim: 'uid' }));
@@ -468,7 +550,6 @@ test('loadSsoConfig rejects a post-login URL on a different origin (open-redirec
       loadSsoConfig({
         TIDB_SSO_ISSUER: 'https://sso.example.com',
         TIDB_SSO_CLIENT_ID: 'id',
-        TIDB_SSO_CLIENT_SECRET: 'secret',
         TIDB_SSO_REDIRECT_URI: 'https://app.example.com/api/auth/tidbcloud/callback',
         TIDB_SSO_POST_LOGIN_URL: 'https://evil.example.com/',
       }),
@@ -581,7 +662,6 @@ test('loadSsoConfig requires an issuer even when explicit endpoints are given', 
     () =>
       loadSsoConfig({
         TIDB_SSO_CLIENT_ID: 'id',
-        TIDB_SSO_CLIENT_SECRET: 'secret',
         TIDB_SSO_REDIRECT_URI: 'https://app.example.com/api/auth/tidbcloud/callback',
         TIDB_SSO_AUTHORIZE_URL: 'https://sso.example.com/authorize',
         TIDB_SSO_TOKEN_URL: 'https://sso.example.com/token',
@@ -778,7 +858,6 @@ test('loadSsoConfig sets cookieSecure true for https and false for loopback http
   const https = loadSsoConfig({
     TIDB_SSO_ISSUER: 'https://sso.example.com',
     TIDB_SSO_CLIENT_ID: 'id',
-    TIDB_SSO_CLIENT_SECRET: 'secret',
     TIDB_SSO_REDIRECT_URI: 'https://app.example.com/api/auth/tidbcloud/callback',
     TIDB_SSO_OWNER_SUBJECTS: 'a',
   });
@@ -786,7 +865,6 @@ test('loadSsoConfig sets cookieSecure true for https and false for loopback http
   const loopback = loadSsoConfig({
     TIDB_SSO_ISSUER: 'https://sso.example.com',
     TIDB_SSO_CLIENT_ID: 'id',
-    TIDB_SSO_CLIENT_SECRET: 'secret',
     TIDB_SSO_REDIRECT_URI: 'http://127.0.0.1:4318/api/auth/tidbcloud/callback',
     TIDB_SSO_OWNER_SUBJECTS: 'a',
   });
@@ -1125,7 +1203,6 @@ test('subpath configuration rejects ambiguous prefixes and mismatched callback/r
   const env = {
     TIDB_SSO_ISSUER: 'https://sso.example.com',
     TIDB_SSO_CLIENT_ID: 'fixture-id',
-    TIDB_SSO_CLIENT_SECRET: 'fixture-secret',
     WORKSPACE_PUBLIC_PATH: '/studio',
     TIDB_SSO_REDIRECT_URI: 'https://app.example.com/studio/api/auth/tidbcloud/callback',
   };
