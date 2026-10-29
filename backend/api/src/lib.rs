@@ -161,6 +161,41 @@ fn error(error: ServiceError) -> Response {
         "INVALID_KEY" => "API key is invalid, expired, or revoked.",
         "OWNER_REQUIRED" => "This action requires the local owner session.",
         "NOT_FOUND" => "Workspace or endpoint not found.",
+        "INVALID_IMPORT" => "Choose a database, a CSV/Parquet source and explicit parsing options.",
+        "IMPORT_TARGET_MISMATCH" => {
+            "This review belongs to a different database. Parse and review again."
+        }
+        "IMPORT_PREPARATION_UNAVAILABLE" => {
+            "This review expired or is unavailable. Parse and review again."
+        }
+        "IMPORT_ALREADY_COMMITTED" => {
+            "This review already started a write. Inspect its destination before importing again."
+        }
+        "INVALID_IMPORT_FIELDS" => {
+            "Check selected fields, unique column names and compatible data types before creating a table."
+        }
+        "SQL_TABLE_EXISTS" | "EXPORT_TARGET_EXISTS" => {
+            "A table with this name already exists. Choose a new table name; existing data was not replaced."
+        }
+        "EXPORT_INCOMPLETE" => {
+            "The table was created but its data write was not confirmed. Inspect the table before repeating an import."
+        }
+        "EXPORT_RECORD_FAILED" => {
+            "The data write may have completed, but its activity record was not confirmed. Inspect the destination before repeating it."
+        }
+        "FILE_CHANGED" => "The source file changed after review. Parse and review again.",
+        "ANALYSIS_FAILED" => {
+            "This file could not be parsed or analyzed. Check its format and parsing options, or choose another file."
+        }
+        "ANALYSIS_OUTPUT_LIMIT" => {
+            "The parsed data exceeds the row, column or result-size limit. Reduce the input before importing."
+        }
+        "FILE_TOO_LARGE" | "ANALYSIS_INPUT_LIMIT" => {
+            "The file exceeds the current size limit. Choose a smaller file."
+        }
+        "EXPORT_TOO_LARGE" => {
+            "The reviewed data exceeds the current import/export limit. Reduce the input before trying again."
+        }
         _ => "The operation could not be completed.",
     };
     let id = uuid::Uuid::new_v4().to_string();
@@ -340,7 +375,16 @@ async fn dispatch(
     )
     .await
     .map_err(|_| reject(408, "REQUEST_TIMEOUT"))?
-    .map_err(|_| reject(413, "BODY_TOO_LARGE"))?;
+    .map_err(|_| {
+        reject(
+            413,
+            if path.ends_with("/database-imports/prepare-upload") {
+                "FILE_TOO_LARGE"
+            } else {
+                "BODY_TOO_LARGE"
+            },
+        )
+    })?;
     let body = || {
         if !headers
             .get("content-type")
@@ -401,7 +445,8 @@ async fn dispatch(
             }
             _ => {
                 if let Some(product) = &app.product {
-                    let raw_upload = method == Method::PUT && route == "/files/content";
+                    let raw_upload = (method == Method::PUT && route == "/files/content")
+                        || (method == Method::POST && route == "/database-imports/prepare-upload");
                     let input = if raw_upload {
                         if headers.get("content-type").and_then(|v| v.to_str().ok())
                             != Some("application/octet-stream")

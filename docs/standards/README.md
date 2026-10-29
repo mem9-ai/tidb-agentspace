@@ -62,6 +62,12 @@ For PostgreSQL through db9, read [ADR 0011](../decisions/0011-db9-postgres.md) a
 [the runtime guide](../db9-postgres.md). Preserve the private anonymous/native credential boundary
 and distinguish provider compatibility limits from gateway value preservation.
 
+For database Import, read [ADR 0023](../decisions/0023-database-import-workspace.md),
+the accepted [GH-103 specification](../../specs/gh-103/spec.md) and
+[verification/API usage](../database-import-verification.md). Local uploads require only the
+destination query grant; Workspace files additionally require source read/analyze grants.
+Preserve the explicit review, destination-bound preparation and create-only write boundaries.
+
 For DuckDB browsing performance, follow [ADR 0012](../decisions/0012-duckdb-catalog-reader.md): reuse only bounded server-generated read-only catalog sessions. Do not turn customer SQL or file-source workers into shared sessions to reduce attachment cost. Measure cold and warm paths separately and retain authorization on every request.
 
 For preview-first file UI and bounded tabular samples, follow

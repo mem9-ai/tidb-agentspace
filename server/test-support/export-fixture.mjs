@@ -113,11 +113,11 @@ export async function exportFixture({ port = 0, hooks = {}, delay = 0, allowedOr
     }
   };
   await native("CREATE TABLE sample AS SELECT 1 AS id, 'APAC' AS region, 30 AS total");
-  const execute = async (kind, sql) => {
+  const execute = async (kind, sql, limits) => {
     statements.push({ kind, sql });
     if (delay && /^CREATE|^INSERT/.test(sql))
       await new Promise((resolve) => setTimeout(resolve, delay));
-    await hooks.beforeSql?.(kind, sql);
+    await hooks.beforeSql?.(kind, sql, limits);
     const result =
       kind === 'duckdb'
         ? await native(sql)
@@ -130,7 +130,7 @@ export async function exportFixture({ port = 0, hooks = {}, delay = 0, allowedOr
     allowedOrigins,
     duckdbExtensionPath: artifact,
     duckdbExtensionSha256: createHash('sha256').update('fixture-runtime').digest('hex'),
-    duckdbExecute: async ({ sql, probe }) => (probe ? {} : execute('duckdb', sql)),
+    duckdbExecute: async ({ sql, probe, limits }) => (probe ? {} : execute('duckdb', sql, limits)),
     sqlExecute: async (_, sql) => execute('mysql', sql),
     postgresExecute: async (_, sql) => execute('postgresql', sql),
     drive9Transport: async (url, input) => {

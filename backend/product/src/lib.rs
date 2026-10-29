@@ -1,6 +1,7 @@
 mod database;
 mod exports;
 mod files;
+mod imports;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -371,6 +372,12 @@ Ok((r,true))}).await?;
                     if method == "GET" { json!(query) } else { input },
                 )
                 .await?,
+            ),
+            ("POST", "/database-imports")
+            | ("POST", "/database-imports/prepare")
+            | ("POST", "/database-imports/prepare-upload") => Reply::Json(
+                self.database_import(&credential, actor, route, query, input, raw)
+                    .await?,
             ),
             ("POST", "/result-exports")
             | ("POST", "/file-exports")

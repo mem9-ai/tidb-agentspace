@@ -1,7 +1,7 @@
 # GH-103: Import files from a database workspace
 
 - Parent: [GH-103](https://github.com/siddontang/tidb.ai/issues/103).
-- Status: Owner-approved product direction; contract proposed for design-PR acceptance.
+- Status: Accepted in PR #104 at `69b3adfc770e346047205638475d6966a5442961`; implementation and evidence follow [verification](../../docs/database-import-verification.md).
 - Baseline: `cd4e9a88ab0837cf93616f2a5d184e9f92e45d49` (includes GH-99 upload feedback and GH-100 metadata changes).
 - Maintainer/intent contributor: Siddon Tang. Implementation follows current local-agent/DCO/CI authority.
 - Decision: [ADR 0023](../../docs/decisions/0023-database-import-workspace.md).
@@ -34,6 +34,11 @@ format. Filenames are bounded basenames, not filesystem destinations. Uploads ar
 1,000 rows, 100 columns, 1 MiB parsed result, a 15-second parse deadline and two disposable
 worker slots. Reject an oversized result rather than importing a sample. Existing 64 KiB
 CREATE/INSERT statement budgets still apply after field/type conversion.
+
+Implementation refinement from live acceptance: only server-generated DuckDB import writes
+have a fixed 30-second deadline per statement to allow cold storage commit/close. The original
+15-second parsing deadline and ordinary SQL limits remain unchanged; writes are never retried
+automatically and timeout still requires inspection. See ADR 0023 for the observed trigger.
 
 Preparation never mutates the database. Upload bytes live only in bounded request/worker
 storage and are discarded after parsing. Private parsed rows expire after five minutes;

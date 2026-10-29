@@ -180,7 +180,14 @@ export async function createDuckdb({
     });
     return status(resource.id);
   }
-  async function executeQuery(resource, sql, signal, loadSources, catalogRead = false) {
+  async function executeQuery(
+    resource,
+    sql,
+    signal,
+    loadSources,
+    catalogRead = false,
+    timeoutMs = sqlLimits.timeoutMs,
+  ) {
     requireRuntime();
     if (typeof sql !== 'string' || !sql.trim() || Buffer.byteLength(sql) > sqlLimits.sqlBytes)
       throw sqlError(400, 'INVALID_SQL', 'Enter one SQL statement, up to 64 KiB.');
@@ -191,7 +198,7 @@ export async function createDuckdb({
       throw sqlError(429, 'SQL_BUSY', 'DuckDB is busy. Wait for the current query to finish.');
     active.add(resource.id);
     const started = performance.now();
-    const deadline = AbortSignal.timeout(sqlLimits.timeoutMs);
+    const deadline = AbortSignal.timeout(timeoutMs);
     const workSignal = AbortSignal.any([deadline, ...[signal].filter(Boolean)]);
     let staged;
     try {
@@ -205,7 +212,7 @@ export async function createDuckdb({
           staged?.sources,
           {
             ...sqlLimits,
-            timeoutMs: Math.max(1, sqlLimits.timeoutMs - (performance.now() - started)),
+            timeoutMs: Math.max(1, timeoutMs - (performance.now() - started)),
           },
           catalogRead,
         )),
@@ -219,7 +226,7 @@ export async function createDuckdb({
           signal?.aborted ? 'SQL_CANCELED' : 'SQL_TIMEOUT',
           loadSources
             ? 'File query canceled or exceeded 15 seconds. No source query is retried automatically.'
-            : 'DuckDB request canceled or exceeded 15 seconds. Check any write outcome before retrying.',
+            : `DuckDB request canceled or exceeded ${timeoutMs / 1000} seconds. Check any write outcome before retrying.`,
         );
       throw error;
     } finally {
@@ -245,6 +252,9 @@ export async function createDuckdb({
         return provisioning.get(resource.id);
       },
       execute: executeQuery,
+      importStatement(resource, sql, signal) {
+        return executeQuery(resource, sql, signal, undefined, false, 30000);
+      },
       catalog(resource, sql, signal) {
         return executeQuery(resource, sql, signal, undefined, true);
       },

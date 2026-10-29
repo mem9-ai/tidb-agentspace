@@ -29,6 +29,20 @@ The local operator manages the native roles and RustFS. For independent deployme
 
 The Console loads `/config.json` before creating its API client. `apiOrigin` selects the regional API without rebuilding JavaScript; an empty string uses the page origin. For the optional local static runner, set `WORKSPACE_API_ORIGIN` and `WORKSPACE_CONSOLE_PORT`. Console origins must be allowlisted in private API configuration. Credentialed CORS, Host/Origin restrictions, HttpOnly local owner sessions and backend action/resource authorization remain required.
 
+Use the same hostname for Console and API (`127.0.0.1` for both, or `localhost` for both).
+They can use different ports. The HttpOnly SameSite=Strict cookie is not shared between
+`localhost` and `127.0.0.1`; cross-site cookie authentication is not implemented. Every browser
+API request includes credentials; CORS does not grant API permissions. Unknown origins are
+rejected before session creation or provider access. Non-browser agents use Workspace Keys
+without relying on CORS or Console sessions.
+
+For a separate browser-verification API, keep its Console/API hostname pair distinct from
+the active user preview (for example, use `localhost` for verification and `127.0.0.1` for the
+user preview). Different ports on the same hostname do not isolate local owner session
+cookies between independent API processes. Preserve the active serving process and confirm
+the user's actual tab, URL and authenticated read after a preview update; another working
+directory or an already loaded tab can still serve an older Console build.
+
 Production identity and direct multi-region public API discovery remain proposed in [the regional API/auth design](../specs/gh-74/regional-api-auth.md). The current public contract has one configured origin. Separate internal Meta authorities do not implement production global policy distribution by themselves.
 
 ## Contract and packaging

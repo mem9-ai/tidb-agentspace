@@ -267,6 +267,20 @@ verified, and record that as a remaining gap.
   recovery, original-byte downloads and both themes at desktop/narrow sizes. See
   [upload verification](../drive9-verification.md#upload-progress-and-recovery-gh-99).
   Revisit for multiple concurrent, resumable or provider-reported upload stages.
+- **Database Import (owner direction, GH-103):** offer one Import beside Connect in each
+  supported live database workspace. Local CSV/Parquet and public Workspace files converge on
+  the same source → parse/sample → field/name/type review → confirmed new-table flow. Keep the
+  owning destination visible and fixed. Collapse the source form after parsing and focus the
+  review; allow explicit Change source/Parse again without losing recoverable field edits.
+  Changing source/parsing invalidates confirmation. Place progress above the form so it remains
+  visible on narrow screens: actual upload percentage, then indeterminate parsing/writing.
+  Lock duplicate submission and dismissal while work is pending. Retain SQL drafts/results and
+  table filters; refresh without remounting the editor. An acknowledged import remains successful
+  if refreshing the browser fails. Never automatically retry an uncertain write. Use TiUI Modal,
+  Progress and the shared import review, with labeled fields, error focus and focus return.
+  Verify both themes at desktop/narrow sizes. [ADR 0023](../decisions/0023-database-import-workspace.md)
+  owns authorization/limits; [verification](../database-import-verification.md) records evidence.
+  Revisit for append/upsert, durable jobs or larger/resumable inputs.
 - **Contextual file exports (owner correction, GH-79; implemented 2026-10-29):** Preview
   operates on the saved original. Following the GH-84 owner correction, place one Export action
   beside the Preview heading, using the same shared content-panel header as results; remove

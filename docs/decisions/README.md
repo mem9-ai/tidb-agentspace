@@ -45,9 +45,9 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 - [0022: Native SlateDB transactions](0022-native-slatedb-transactions.md) — concurrent native metadata transactions, pinned object-durable snapshots, receipt replay and lifecycle drain; fixed-engine service contract with compatibility ownership retained.
 
-## Proposed decisions
+- [0023: Database import workspace](0023-database-import-workspace.md) — accepted and implemented destination-owned local/public-file CSV/Parquet preparation, reviewed new-table writes and target-bound tickets under GH-103.
 
-- [0023: Database import workspace](0023-database-import-workspace.md) — proposed destination-owned local/public-file CSV/Parquet preparation, reviewed new-table writes and target-bound tickets under GH-103.
+## Proposed decisions
 
 - [0019: Portable Workspace KV control plane](0019-workspace-kv-control-plane.md) — Global-initiated encrypted control, independent regional serving, pooled cells/bounded groups, selected hosted SlateDB/object storage, private regional storage directory and identity-preserving migration; phased implementation.
 
