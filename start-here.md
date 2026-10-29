@@ -88,6 +88,11 @@ one executable with in-process or independently deployed metadata/API roles; see
 [migration contract](specs/gh-88/spec.md) and [runtime guide](docs/rust-backend.md).
 Node remains the compatibility oracle, rollback implementation and build/migration tooling.
 The original Workspace/Key-only Rust profile stays explicitly partial when `product` is omitted.
+Metadata requests use native concurrent SlateDB transactions with a pinned durable read
+frontier, as recorded in [ADR 0022](docs/decisions/0022-native-slatedb-transactions.md).
+Use the selected SlateDB engine and thin service contract; alternative-engine adapters are
+not implementation prerequisites. The document compatibility queue is separate from engine
+transaction concurrency and remains until resource-level repository migration.
 
 For millions of Workspaces or a million-resource Workspace, also read the
 [metadata scale profile](specs/gh-74/metadata-scale.md): Workspace ownership is distinct from

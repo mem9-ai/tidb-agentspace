@@ -16,10 +16,10 @@ use axum::{
 use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
 use subtle::ConstantTimeEq;
-use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 #[derive(Clone)]
 struct App {
-    engine: Arc<Mutex<Engine>>,
+    engine: Arc<Engine>,
     token: Arc<Vec<u8>>,
     authority: String,
     installation: String,
@@ -68,9 +68,7 @@ async fn guard(State(app): State<App>, mut request: HttpRequest, next: Next) -> 
 }
 async fn health(State(app): State<App>, headers: HeaderMap) -> Result<Json<Value>, Failure> {
     authorize(&app, &headers)?;
-    let e = app.engine.lock().await;
-    e.barrier().await?;
-    Ok(Json(e.health()))
+    app.engine.check_health().await.map(Json)
 }
 async fn command(
     State(app): State<App>,
@@ -81,10 +79,10 @@ async fn command(
     authorize(&app, &headers)?;
     let request: Request =
         serde_json::from_slice(&bytes).map_err(|_| Failure(400, "META_INVALID_REQUEST"))?;
-    // Detached execution preserves the commit serialization boundary after a client disconnect.
+    // Accepted transactions finish and retain their receipt after a client disconnect.
     tokio::spawn(async move {
         let _permit = permit;
-        app.engine.lock().await.execute(request).await
+        app.engine.execute(request).await
     })
     .await
     .map_err(|_| Failure(503, "META_UNAVAILABLE"))?
@@ -126,7 +124,7 @@ impl MetaService {
         let engine = Engine::open(config.clone(), initialize, recover).await.map_err(|_| anyhow::anyhow!("Metadata startup failed: verify installation, encryption, storage and exclusive ownership; no state was seeded automatically"))?;
         Ok(Self {
             state: App {
-                engine: Arc::new(Mutex::new(engine)),
+                engine: Arc::new(engine),
                 token: Arc::new(token),
                 authority: config.authority_id.clone(),
                 installation: config.installation_id.clone(),
@@ -136,7 +134,7 @@ impl MetaService {
         })
     }
     pub async fn close(&self) -> anyhow::Result<()> {
-        self.state.engine.lock().await.close().await
+        self.state.engine.close().await
     }
     pub async fn serve(
         &self,
@@ -211,8 +209,6 @@ impl workspace_contracts::Metadata for MetaService {
             tokio::spawn(async move {
                 let _permit = permit;
                 engine
-                    .lock()
-                    .await
                     .execute(request)
                     .await
                     .map_err(|e| workspace_contracts::ServiceError::new(e.0, e.1))
@@ -223,12 +219,11 @@ impl workspace_contracts::Metadata for MetaService {
     }
     fn health(&self) -> workspace_contracts::Call<'_> {
         Box::pin(async {
-            let engine = self.state.engine.lock().await;
-            engine
-                .barrier()
+            self.state
+                .engine
+                .check_health()
                 .await
-                .map_err(|e| workspace_contracts::ServiceError::new(e.0, e.1))?;
-            Ok(engine.health())
+                .map_err(|e| workspace_contracts::ServiceError::new(e.0, e.1))
         })
     }
 }

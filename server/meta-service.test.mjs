@@ -20,6 +20,7 @@ import { createWriteStream } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import { privateJson } from './meta/client.mjs';
+import { setTimeout as delay } from 'node:timers/promises';
 
 test(
   'real S3 SlateDB services preserve atomicity, isolation, crash recovery and legacy credentials',
@@ -300,16 +301,158 @@ test(
 );
 
 test(
-  'metadata ACK and visibility wait for an object-durable WAL',
+  'independent metadata requests progress while another ownership read is stalled',
+  { skip: process.env.WORKSPACE_META_TEST !== '1', timeout: 60_000 },
+  async (t) => {
+    const fixture = await metaFixture();
+    let gate;
+    t.after(async () => {
+      gate?.resume();
+      gate?.resumeOwnerReads();
+      await fixture.close();
+      await gate?.close();
+    });
+    const original = await fixture.service('concurrent');
+    await original.stop();
+    original.client.close();
+    gate = await walGate(original.server.s3.endpoint);
+    const service = await fixture.service('concurrent', {
+      previous: original,
+      tls: { s3: { ...original.server.s3, endpoint: gate.origin } },
+    });
+    const scope = {
+      authorityId: service.server.authorityId,
+      ownerKind: 'workspace',
+      ownerId: 'ws_test',
+      family: 'resource',
+      partitionId: 'slow',
+    };
+    const first = await service.client.call({
+      op: 'commit',
+      scope,
+      expectedRevision: null,
+      mutationId: randomUUID(),
+      changes: [{ key: 'kept', value: true }],
+    });
+    gate.pauseNextOwnerRead();
+    let finished = false;
+    const slow = service.client.call({ op: 'snapshot', scope }).finally(() => {
+      finished = true;
+    });
+    slow.catch(() => {});
+    await until(async () => {
+      if (gate.waitingOwnerReads !== 1) throw new Error('Waiting for the stalled owner read.');
+    });
+    const other = { ...scope, partitionId: 'independent' };
+    const fast = service.client.call({
+      op: 'commit',
+      scope: other,
+      expectedRevision: null,
+      mutationId: randomUUID(),
+      changes: [{ key: 'progress', value: true }],
+    });
+    const deadline = new AbortController();
+    const timedOut = delay(5000, undefined, { signal: deadline.signal }).then(() => {
+      assert.fail('An independent commit was blocked by the stalled metadata request.');
+    });
+    try {
+      const result = await Promise.race([fast, timedOut]);
+      const snapshot = await service.client.call({ op: 'snapshot', scope: other });
+      assert.equal(snapshot.revision, result.revision);
+      assert.equal(snapshot.records.progress, true);
+      assert.equal(finished, false);
+      assert.equal(gate.waitingOwnerReads, 1);
+    } finally {
+      deadline.abort();
+      gate.resumeOwnerReads();
+    }
+    assert.equal((await slow).revision, first.revision);
+    service.client.close();
+  },
+);
+
+test(
+  'native metadata transactions preserve revision races, duplicate receipts and coherent snapshots',
   { skip: process.env.WORKSPACE_META_TEST !== '1', timeout: 60_000 },
   async (t) => {
     const fixture = await metaFixture();
     t.after(() => fixture.close());
+    const service = await fixture.service('transactions');
+    const scope = {
+      authorityId: service.server.authorityId,
+      ownerKind: 'workspace',
+      ownerId: 'ws_test',
+      family: 'resource',
+      partitionId: 'one',
+    };
+    const commit = (partitionId, value, expectedRevision = null, mutationId = randomUUID()) => ({
+      op: 'commit',
+      scope: { ...scope, partitionId },
+      expectedRevision,
+      mutationId,
+      changes: [
+        { key: 'left', value },
+        { key: 'right', value },
+      ],
+    });
+    const initialized = await Promise.all(
+      ['one', 'two', 'three', 'four'].map((id) => service.client.call(commit(id, 0))),
+    );
+    const duplicate = commit('one', 1, initialized[0].revision);
+    const receipts = await Promise.all([0, 1, 2].map(() => service.client.call(duplicate)));
+    assert.equal(new Set(receipts.map((r) => r.revision)).size, 1);
+    assert.equal(receipts.filter((r) => r.replayed === false).length, 1);
+    await assert.rejects(
+      service.client.call({ ...duplicate, changes: [{ key: 'left', value: 999 }] }),
+      { code: 'META_MUTATION_MISMATCH' },
+    );
+    const race = await Promise.allSettled(
+      [2, 3, 4].map((v) => service.client.call(commit('one', v, receipts[0].revision))),
+    );
+    assert.equal(race.filter((r) => r.status === 'fulfilled').length, 1);
+    for (const result of race.filter((r) => r.status === 'rejected'))
+      assert.equal(result.reason.code, 'META_CONFLICT');
+    let current = await service.client.call({ op: 'snapshot', scope });
+    assert.equal(current.records.left, current.records.right);
+    for (let version = 5; version < 10; version++) {
+      const [result, ...reads] = await Promise.all([
+        service.client.call(commit('one', version, current.revision)),
+        ...[0, 1, 2].map(() => service.client.call({ op: 'snapshot', scope })),
+      ]);
+      for (const read of reads) {
+        assert.equal(read.records.left, read.records.right);
+        assert.ok([current.revision, result.revision].includes(read.revision));
+        assert.equal(
+          read.records.left,
+          read.revision === result.revision ? version : current.records.left,
+        );
+      }
+      current = await service.client.call({ op: 'snapshot', scope });
+      assert.equal(current.revision, result.revision);
+      assert.equal(current.records.left, version);
+    }
+    // Known native conflicts must leave the service usable for unrelated groups.
+    await service.client.call(commit('after-conflict', true));
+    assert.equal((await service.client.health()).authorityId, scope.authorityId);
+    service.client.close();
+  },
+);
+
+test(
+  'metadata ACK and visibility wait for an object-durable WAL',
+  { skip: process.env.WORKSPACE_META_TEST !== '1', timeout: 60_000 },
+  async (t) => {
+    const fixture = await metaFixture();
+    let gate;
+    t.after(async () => {
+      gate?.resume();
+      await fixture.close();
+      await gate?.close();
+    });
     const local = await fixture.service('durability');
     await local.stop();
     local.client.close();
-    const gate = await walGate(local.server.s3.endpoint);
-    t.after(() => gate.close());
+    gate = await walGate(local.server.s3.endpoint);
     const service = await fixture.service('durability', {
       previous: local,
       tls: { s3: { ...local.server.s3, endpoint: gate.origin } },
@@ -322,13 +465,14 @@ test(
       family: 'policy',
       partitionId: 'one',
     };
+    const mutationId = randomUUID();
     let completed = false;
     const write = service.client
       .call({
         op: 'commit',
         scope,
         expectedRevision: null,
-        mutationId: randomUUID(),
+        mutationId,
         changes: [{ key: 'granted', value: true }],
       })
       .then((v) => {
@@ -339,9 +483,37 @@ test(
       if (!gate.waiting) throw new Error('Waiting for WAL upload.');
     });
     assert.equal(completed, false);
+    const ownerReadsBefore = gate.ownerReadCount;
+    let readDone = false;
+    let resolveDone = false;
+    const read = service.client.call({ op: 'snapshot', scope }).finally(() => {
+      readDone = true;
+    });
+    const receipt = service.client.call({ op: 'resolve', scope, mutationId }).finally(() => {
+      resolveDone = true;
+    });
+    read.catch(() => {});
+    receipt.catch(() => {});
+    // Health can progress concurrently, but a pending memory grant/receipt cannot become truth.
+    await service.client.health();
+    await until(async () => {
+      if (gate.ownerReadCount < ownerReadsBefore + 3)
+        throw new Error('Waiting for snapshot, receipt and health admission.');
+    });
+    assert.equal(readDone, false);
+    assert.equal(resolveDone, false);
+    const stopping = service.stop();
     gate.resume();
-    const result = await write;
-    assert.equal((await service.client.call({ op: 'snapshot', scope })).revision, result.revision);
+    const [result, snapshot, resolved] = await Promise.all([write, read, receipt, stopping]);
+    assert.equal(snapshot.revision, result.revision);
+    assert.equal(snapshot.records.granted, true);
+    assert.deepEqual(resolved, { outcome: 'committed', revision: result.revision });
+    assert.equal(service.child.exitCode, 0);
+    service.client.close();
+    const reopened = await fixture.service('durability', { previous: service });
+    assert.deepEqual(await reopened.client.call({ op: 'snapshot', scope }), snapshot);
+    assert.deepEqual(await reopened.client.call({ op: 'resolve', scope, mutationId }), resolved);
+    reopened.client.close();
   },
 );
 
