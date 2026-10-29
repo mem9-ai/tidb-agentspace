@@ -1220,3 +1220,368 @@ test('subpath configuration rejects ambiguous prefixes and mismatched callback/r
       loadSsoConfig({ ...env, TIDB_SSO_POST_LOGIN_URL: 'https://app.example.com' + path }),
     );
 });
+
+function emailOwnerConfig(overrides = {}) {
+  const configured = loadSsoConfig({
+    TIDB_SSO_ISSUER: 'https://identity.example.com',
+    TIDB_SSO_CLIENT_ID: 'test-client-id',
+    TIDB_SSO_REDIRECT_URI: 'http://127.0.0.1:4318/api/auth/tidbcloud/callback',
+    TIDB_SSO_OWNER_EMAIL_RULES: '*@pingcap.com',
+  });
+  return { ...configured, ...testSsoConfig({ ownerSubjects: [], ...overrides }) };
+}
+
+test('email owner rules: configuration accepts mixed rules and rejects malformed patterns', () => {
+  const env = {
+    TIDB_SSO_ISSUER: 'https://identity.example.com',
+    TIDB_SSO_CLIENT_ID: 'client',
+    TIDB_SSO_REDIRECT_URI: 'https://console.example.com/api/auth/tidbcloud/callback',
+  };
+  const configured = loadSsoConfig({
+    ...env,
+    TIDB_SSO_OWNER_EMAIL_RULES:
+      ' *@PingCAP.com, Alice@Example.net, *@example.org, *@PINGCAP.COM,alice@example.net ',
+  });
+  assert.deepEqual(configured.ownerEmailRules, [
+    '*@pingcap.com',
+    'alice@example.net',
+    '*@example.org',
+  ]);
+  for (const email of ['a@pingcap.com', 'b@EXAMPLE.ORG', 'ALICE@example.NET']) {
+    assert.equal(
+      resolveIdentity(configured, { sub: 'user', email, email_verified: true }).subject,
+      'user',
+    );
+  }
+  assert.throws(
+    () =>
+      resolveIdentity(configured, { sub: 'user', email: 'bob@example.net', email_verified: true }),
+    { ssoError: 'not_authorized' },
+  );
+  assert.throws(
+    () =>
+      resolveIdentity(loadSsoConfig(env), {
+        sub: 'user',
+        email: 'a@pingcap.com',
+        email_verified: true,
+      }),
+    { ssoError: 'not_authorized' },
+  );
+  for (const rule of [
+    '*',
+    'pingcap.com',
+    'foo*@pingcap.com',
+    '@pingcap.com',
+    'a@b@pingcap.com',
+    'alice@example.net,',
+    'a b@pingcap.com',
+    'a..b@pingcap.com',
+    'a@pingcap.com\n',
+    '\ta@pingcap.com',
+    '*@*.pingcap.com',
+    '*@pingcap.*',
+    '*@pingcap.com.',
+    '*@-pingcap.com',
+    '*@pingcap..com',
+    '*@pingcap.com/evil',
+    '*@pingcap.com\n.evil',
+    '*@pіngcap.com',
+    '*@Kingcap.com',
+    '*@pingcap.com,',
+    ',*@pingcap.com',
+    '*@' + 'a'.repeat(64) + '.com',
+  ]) {
+    assert.throws(
+      () => loadSsoConfig({ ...env, TIDB_SSO_OWNER_EMAIL_RULES: rule }),
+      /TIDB_SSO_OWNER_EMAIL_RULES/,
+    );
+  }
+});
+
+test('email owner rules: verified exact-domain email grants owner without replacing the sub identity', () => {
+  const config = emailOwnerConfig();
+  const a = resolveIdentity(config, {
+    sub: 'account-a',
+    email: 'First.Last+demo@PingCAP.COM',
+    email_verified: true,
+  });
+  const b = resolveIdentity(config, {
+    sub: 'account-b',
+    email: 'second@pingcap.com',
+    email_verified: true,
+  });
+  assert.equal(a.principalId, `sso:${issuer}:account-a`);
+  assert.notEqual(a.principalId, b.principalId);
+  assert.equal(a.principal, 'tidb:account-a');
+  assert.equal(a.display, undefined);
+  // Subject-based grants retain their old behavior, even with no verified email.
+  assert.equal(
+    resolveIdentity(emailOwnerConfig({ ownerSubjects: ['legacy'] }), {
+      sub: 'legacy',
+      email: 'user@elsewhere.test',
+      email_verified: false,
+    }).subject,
+    'legacy',
+  );
+  assert.throws(
+    () =>
+      resolveIdentity(emailOwnerConfig({ ownerEmailRules: [] }), {
+        sub: 'account-a',
+        email: 'a@pingcap.com',
+        email_verified: true,
+      }),
+    { ssoError: 'not_authorized' },
+  );
+  assert.throws(
+    () =>
+      resolveIdentity(emailOwnerConfig({ allowedOrgs: ['required'] }), {
+        sub: 'account-a',
+        email: 'a@pingcap.com',
+        email_verified: true,
+        org_id: 'other',
+      }),
+    { ssoError: 'org_not_allowed' },
+  );
+});
+
+test('email owner rules: malformed, unverified and lookalike claims fail closed', () => {
+  const config = emailOwnerConfig();
+  for (const email of [
+    undefined,
+    null,
+    42,
+    [],
+    { value: 'a@pingcap.com' },
+    '',
+    '@pingcap.com',
+    'a@evilpingcap.com',
+    'a@pingcap.com.evil',
+    'a@sub.pingcap.com',
+    'a@pіngcap.com',
+    'a@pingcap.com.',
+    'a@@pingcap.com',
+    'a@b@pingcap.com',
+    'a@pingcap.com\n',
+    '\u0000a@pingcap.com',
+    'a b@pingcap.com',
+    ' a@pingcap.com',
+    'a@pingcap.com ',
+    'a..b@pingcap.com',
+    '.a@pingcap.com',
+    'a.@pingcap.com',
+    '"a"@pingcap.com',
+  ]) {
+    assert.throws(() => resolveIdentity(config, { sub: 'user', email, email_verified: true }), {
+      ssoError: 'not_authorized',
+    });
+  }
+  for (const email_verified of [undefined, null, false, 'true', 1, [], {}]) {
+    assert.throws(
+      () => resolveIdentity(config, { sub: 'user', email: 'a@pingcap.com', email_verified }),
+      { ssoError: 'not_authorized' },
+    );
+  }
+  for (const sub of [undefined, null, '', ' ', [], {}]) {
+    assert.throws(
+      () => resolveIdentity(config, { sub, email: 'a@pingcap.com', email_verified: true }),
+      { ssoError: 'invalid_subject' },
+    );
+  }
+  assert.throws(
+    () =>
+      resolveIdentity(emailOwnerConfig({ displayClaim: 'preferred_username' }), {
+        sub: 'user',
+        preferred_username: 'a@pingcap.com',
+        email_verified: true,
+      }),
+    { ssoError: 'not_authorized' },
+  );
+});
+
+test('email owner rules: two verified accounts get shared owner sessions with distinct audit actors', async () => {
+  const { server, address } = await appWith(
+    emailOwnerConfig({ ownerEmailRules: ['*@pingcap.com', 'employee-b@example.net'] }),
+  );
+  try {
+    const actors = [];
+    for (const user of ['employee-a', 'employee-b']) {
+      control.userId = user;
+      control.extraClaims = {
+        email: `${user}@${user === 'employee-a' ? 'pingcap.com' : 'example.net'}`,
+        email_verified: true,
+      };
+      const flow = await startLogin(address);
+      control.nonce = flow.nonce;
+      const res = await callback(address, {
+        flowCookie: flow.flowCookie,
+        params: { code: 'c', state: flow.state },
+      });
+      assert.equal(res.status, 302);
+      const session = /aw_session=[a-f0-9]+/.exec(res.headers.get('set-cookie'))?.[0];
+      assert.ok(session);
+      assert.match(res.headers.get('set-cookie'), /HttpOnly/);
+      const headers = { Cookie: session, 'Content-Type': 'application/json' };
+      const workspaces = await (await fetch(address + '/api/v1/workspaces', { headers })).json();
+      assert.deepEqual(
+        workspaces.data.map((w) => w.id),
+        ['ws_agentlab'],
+      );
+      const created = await fetch(address + '/api/v1/workspaces/ws_agentlab/keys', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: user,
+          scopes: ['resources:read'],
+          resourceIds: ['*'],
+          expiresInDays: 7,
+        }),
+      });
+      assert.equal(created.status, 201);
+      assert.equal(
+        (await fetch(address + '/api/v1/workspaces/other/keys', { headers })).status,
+        404,
+      );
+      const events = await (
+        await fetch(address + '/api/v1/workspaces/ws_agentlab/events', { headers })
+      ).json();
+      actors.push(events.data.find((e) => e.action === 'key.created' && e.resource === user).actor);
+      assert.ok(!JSON.stringify(events).includes('@pingcap.com'));
+    }
+    assert.deepEqual(actors, ['tidb:employee-a', 'tidb:employee-b']);
+  } finally {
+    await new Promise((r) => server.close(r));
+  }
+});
+
+test('email owner rules: callback never grants a session for unverified identity or ineligible email', async () => {
+  const { server, address } = await appWith(
+    emailOwnerConfig({ ownerEmailRules: ['*@pingcap.com', 'alice@example.net'] }),
+  );
+  try {
+    const scenarios = [
+      { claims: { email: 'a@pingcap.com', email_verified: false }, status: 403 },
+      { claims: { email: 'a@pingcap.com', email_verified: 'true' }, status: 403 },
+      { claims: { email: 'a@evilpingcap.com', email_verified: true }, status: 403 },
+      { claims: {}, status: 403 },
+      { claims: { email: 'bob@example.net', email_verified: true }, status: 403 },
+      { claims: { email: 'alice@example.net', email_verified: false }, status: 403 },
+      { control: { signWithGoodKey: false }, status: 401 },
+      { control: { issuer: () => 'https://wrong.example.com' }, status: 401 },
+      { control: { audience: 'wrong-client' }, status: 401 },
+      { control: { tokenExpiresIn: '-1s' }, status: 401 },
+      { control: { nonce: 'wrong-nonce' }, status: 401 },
+      { control: { userId: undefined }, status: 401 },
+    ];
+    for (const scenario of scenarios) {
+      resetControl();
+      control.extraClaims = scenario.claims ?? { email: 'a@pingcap.com', email_verified: true };
+      const flow = await startLogin(address);
+      control.nonce = flow.nonce;
+      Object.assign(control, scenario.control);
+      const res = await callback(address, {
+        flowCookie: flow.flowCookie,
+        params: {
+          code: 'c',
+          state: flow.state,
+          email: 'forged@pingcap.com',
+          email_verified: 'true',
+        },
+      });
+      assert.equal(res.status, scenario.status);
+      assert.ok(!/aw_session=[a-f0-9]/.test(res.headers.get('set-cookie') || ''));
+      const body = await res.text();
+      assert.ok(!body.includes('@pingcap.com'));
+      assert.ok(!body.includes('id_token'));
+    }
+  } finally {
+    await new Promise((r) => server.close(r));
+  }
+});
+
+test('email owner rules: revocation needs session invalidation and separate persisted Key revocation', async (t) => {
+  const dataFile = join(directory, 'email-rule-revocation.json');
+  const config = emailOwnerConfig();
+  let server;
+  let address;
+  const start = async (ssoConfig) => {
+    server = await createApp({
+      dataFile,
+      mysqlProvider: 'local',
+      filesProvider: 'local',
+      ssoConfig,
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    address = `http://127.0.0.1:${server.address().port}`;
+  };
+  const login = async () => {
+    const flow = await startLogin(address);
+    control.nonce = flow.nonce;
+    return callback(address, {
+      flowCookie: flow.flowCookie,
+      params: { code: 'c', state: flow.state },
+    });
+  };
+  const keysPath = '/api/v1/workspaces/ws_agentlab/keys';
+  const resourcesPath = '/api/v1/workspaces/ws_agentlab/resources';
+  try {
+    await start(config);
+    control.extraClaims = { email: 'employee@pingcap.com', email_verified: true };
+    const first = await login();
+    assert.equal(first.status, 302);
+    const cookie = /aw_session=[a-f0-9]+/.exec(first.headers.get('set-cookie'))[0];
+    const second = await login();
+    assert.equal(second.status, 302);
+    const expiringCookie = /aw_session=[a-f0-9]+/.exec(second.headers.get('set-cookie'))[0];
+    const created = await fetch(address + keysPath, {
+      method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'persisted-key',
+        scopes: ['resources:read'],
+        resourceIds: ['*'],
+        expiresInDays: 7,
+      }),
+    });
+    assert.equal(created.status, 201);
+    const key = await created.json();
+    const bearer = { Authorization: `Bearer ${key.secret}` };
+    // Inject removal to prove authorization is not rechecked per request. Runtime env is startup-only.
+    config.ownerEmailRules = [];
+    assert.equal((await login()).status, 403);
+    assert.equal((await fetch(address + keysPath, { headers: { Cookie: cookie } })).status, 200);
+    const later = Date.now() + 8 * 60 * 60 * 1000;
+    const now = t.mock.method(Date, 'now', () => later);
+    try {
+      assert.equal(
+        (await fetch(address + keysPath, { headers: { Cookie: expiringCookie } })).status,
+        401,
+      );
+    } finally {
+      now.mock.restore();
+    }
+    assert.equal((await fetch(address + keysPath, { headers: { Cookie: cookie } })).status, 200);
+    await new Promise((r) => server.close(r));
+    // New application instance, same persisted data: sessions are gone, the Workspace Key is not.
+    await start(emailOwnerConfig({ ownerEmailRules: [], ownerSubjects: ['operator'] }));
+    assert.equal((await fetch(address + keysPath, { headers: { Cookie: cookie } })).status, 401);
+    assert.equal((await login()).status, 403);
+    assert.equal((await fetch(address + resourcesPath, { headers: bearer })).status, 200);
+    control.userId = 'operator';
+    control.extraClaims = {};
+    const operator = await login();
+    assert.equal(operator.status, 302);
+    const operatorCookie = /aw_session=[a-f0-9]+/.exec(operator.headers.get('set-cookie'))[0];
+    assert.equal(
+      (
+        await fetch(address + keysPath + '/' + key.data.id, {
+          method: 'DELETE',
+          headers: { Cookie: operatorCookie },
+        })
+      ).status,
+      200,
+    );
+    assert.equal((await fetch(address + resourcesPath, { headers: bearer })).status, 401);
+  } finally {
+    if (server?.listening) await new Promise((r) => server.close(r));
+  }
+});
