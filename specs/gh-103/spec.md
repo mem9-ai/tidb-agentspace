@@ -1,7 +1,7 @@
 # GH-103: Import files from a database workspace
 
 - Parent: [GH-103](https://github.com/siddontang/tidb.ai/issues/103).
-- Status: Owner-approved product direction; contract proposed for design-PR acceptance.
+- Status: Accepted in PR #104 at `69b3adfc770e346047205638475d6966a5442961`; implementation and evidence follow [verification](../../docs/database-import-verification.md).
 - Baseline: `cd4e9a88ab0837cf93616f2a5d184e9f92e45d49` (includes GH-99 upload feedback and GH-100 metadata changes).
 - Maintainer/intent contributor: Siddon Tang. Implementation follows current local-agent/DCO/CI authority.
 - Decision: [ADR 0023](../../docs/decisions/0023-database-import-workspace.md).

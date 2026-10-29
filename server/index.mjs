@@ -498,13 +498,25 @@ export async function createApp({
         }
       }
       if (
-        ['/result-exports', '/file-exports', '/file-exports/prepare'].includes(route) &&
+        [
+          '/result-exports',
+          '/file-exports',
+          '/file-exports/prepare',
+          '/database-imports',
+          '/database-imports/prepare',
+          '/database-imports/prepare-upload',
+        ].includes(route) &&
         req.method === 'POST'
       ) {
-        const input = await body(
-          req,
-          route === '/result-exports' ? 1024 * 1024 : fileExportLimits.envelopeBytes,
-        );
+        const uploadImport = route === '/database-imports/prepare-upload';
+        const input = uploadImport
+          ? await readUpload(req)
+          : await body(
+              req,
+              route === '/result-exports' || route.startsWith('/database-imports')
+                ? 1024 * 1024
+                : fileExportLimits.envelopeBytes,
+            );
         const authorize = createExportAuthorizer({
           readState: visibleState,
           sessions,
@@ -524,7 +536,11 @@ export async function createApp({
             await store.mutate((draft) =>
               event(
                 draft,
-                route === '/result-exports' ? 'result.exported' : 'file.exported',
+                route.startsWith('/database-imports')
+                  ? 'database.imported'
+                  : route === '/result-exports'
+                    ? 'result.exported'
+                    : 'file.exported',
                 `${target.path || target.table}${rowCount === undefined ? '' : ` (${rowCount} rows)`}`,
                 principal,
                 target.resourceId,
@@ -552,6 +568,15 @@ export async function createApp({
               databaseAdapter(resource).execute(resource, sql, signal),
             record,
           };
+          if (uploadImport)
+            return send(
+              200,
+              await fileExports.prepareImport(Object.fromEntries(url.searchParams), context, input),
+            );
+          if (route === '/database-imports/prepare')
+            return send(200, await fileExports.prepareImport(input, context));
+          if (route === '/database-imports')
+            return send(200, await fileExports.commitImport(input, context));
           if (route === '/file-exports/prepare')
             return send(200, await fileExports.prepare(input, context));
           if (route === '/file-exports') return send(200, await fileExports.export(input, context));

@@ -5,6 +5,7 @@ import { capabilities } from './store.mjs';
 import { zeroRegion } from './providers/zero.mjs';
 import { analysisLimits } from './file-analysis-contract.mjs';
 import { fileExportSchemas } from './file-export-contract.mjs';
+import { databaseImportSchemas } from './database-import-contract.mjs';
 import { resultExportSchemas } from './result-export-contract.mjs';
 const regionSchema = {
   type: 'string',
@@ -102,7 +103,7 @@ const schemas = {
   },
 };
 const ref = (name) => ({ $ref: `#/components/schemas/${name}` });
-Object.assign(schemas, resultExportSchemas, fileExportSchemas);
+Object.assign(schemas, resultExportSchemas, fileExportSchemas, databaseImportSchemas);
 const str = { type: 'string' };
 const array = (item) => ({
   type: 'object',
@@ -693,6 +694,61 @@ const paths = {
       },
     ),
   },
+  [ws + '/database-imports/prepare']: {
+    post: operation(
+      'prepareDatabaseImport',
+      'Parse a Workspace CSV/Parquet for a fixed destination database',
+      'queries:execute on destination; files:read and files:analyze on source',
+      { input: ref('DatabaseImportPreparationInput'), output: ref('FileExportPreparation') },
+    ),
+  },
+  [ws + '/database-imports/prepare-upload']: {
+    post: {
+      ...operation(
+        'prepareDatabaseImportUpload',
+        'Upload up to 1 MiB of local CSV/Parquet for private schema review',
+        'queries:execute on destination',
+        {
+          parameters: [
+            { name: 'resourceId', in: 'query', required: true, schema: str },
+            {
+              name: 'filename',
+              in: 'query',
+              required: true,
+              schema: { type: 'string', minLength: 1, maxLength: 255 },
+              description: 'A basename of at most 255 UTF-8 bytes, not a File System path.',
+            },
+            { name: 'format', in: 'query', required: true, schema: { enum: ['csv', 'parquet'] } },
+            {
+              name: 'header',
+              in: 'query',
+              schema: { enum: ['true', 'false'] },
+              description: 'Required for CSV; forbidden for Parquet.',
+            },
+            {
+              name: 'delimiter',
+              in: 'query',
+              schema: { enum: [',', '\t', ';', '|'] },
+              description: 'Required for CSV; forbidden for Parquet.',
+            },
+          ],
+          output: ref('FileExportPreparation'),
+        },
+      ),
+      requestBody: {
+        required: true,
+        content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+      },
+    },
+  },
+  [ws + '/database-imports']: {
+    post: operation(
+      'commitDatabaseImport',
+      'Confirm reviewed server rows and create a new database table',
+      'queries:execute on destination; Workspace files additionally require source files:read and files:analyze',
+      { input: ref('DatabaseImportInput'), output: ref('DatabaseImportResult') },
+    ),
+  },
   [ws + '/file-exports/prepare']: {
     post: operation(
       'prepareFileExport',
@@ -898,6 +954,14 @@ paths['/api/session'] = {
 };
 for (const [path, item] of Object.entries(paths))
   if (path.includes('{workspaceId}')) item.parameters = [workspaceId, ...(item.parameters || [])];
+for (const route of [
+  '/database-imports/prepare',
+  '/database-imports/prepare-upload',
+  '/database-imports',
+]) {
+  paths[ws + route].post.description +=
+    ' CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.';
+}
 paths[ws + '/file-exports/prepare'].post.description +=
   ' Also requires files:read and the source File System grant. Fixed CSV/Parquet/text-line parsing, no scripts. Up to 16 MiB original or 1 MiB output text, 1000 rows/100 columns/1 MiB parsed data and 15 seconds, shared worker admission. Returns 20 sample rows and suggested field types with an actor-bound five-minute preparation. Parsing writes nothing. CSV keeps leading zeros and distinguishes quoted empty strings from NULL. Text lines are explicit one-column records.';
 paths[ws + '/file-exports'].post.description +=

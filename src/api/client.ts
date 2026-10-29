@@ -27,6 +27,8 @@ export type FileExportPreparation = components['schemas']['FileExportPreparation
 export type FileExportPreparationInput = components['schemas']['FileExportPreparationInput'];
 export type FileExportInput = components['schemas']['FileExportInput'];
 export type FileExportOutput = components['schemas']['FileExportOutput'];
+export type DatabaseImportParsing = components['schemas']['DatabaseImportParsing'];
+export type DatabaseImportResult = components['schemas']['DatabaseImportResult'];
 export type WriteFileInput = JsonBody<operations['writeFile']>;
 export type ResultExportInput = JsonBody<operations['exportResult']>;
 export type ResultExportOutput =
@@ -45,6 +47,47 @@ export function configureApi(config: unknown) {
 }
 
 export const workspaceApi = {
+  prepareDatabaseImport: (
+    body: components['schemas']['DatabaseImportPreparationInput'],
+    signal?: AbortSignal,
+  ) =>
+    responseData(
+      client.POST('/workspaces/{workspaceId}/database-imports/prepare', { params, body, signal }),
+    ),
+  prepareDatabaseImportUpload: (
+    resourceId: string,
+    file: File,
+    parsing: DatabaseImportParsing,
+    onProgress: (progress: UploadProgress) => void,
+    signal?: AbortSignal,
+  ) =>
+    responseData(
+      createWorkspaceClient(apiOrigin, createUploadFetch(onProgress)).POST(
+        '/workspaces/{workspaceId}/database-imports/prepare-upload',
+        {
+          params: {
+            path: params.path,
+            query: {
+              resourceId,
+              filename: file.name,
+              format: parsing.format,
+              ...(parsing.format === 'csv'
+                ? {
+                    header: parsing.header ? ('true' as const) : ('false' as const),
+                    delimiter: parsing.delimiter,
+                  }
+                : {}),
+            },
+          },
+          body: file,
+          bodySerializer: (value) => value,
+          headers: { 'Content-Type': 'application/octet-stream' },
+          signal,
+        },
+      ),
+    ),
+  commitDatabaseImport: (body: components['schemas']['DatabaseImportInput']) =>
+    responseData(client.POST('/workspaces/{workspaceId}/database-imports', { params, body })),
   prepareFileExport: (body: FileExportPreparationInput, signal?: AbortSignal) =>
     responseData(
       client.POST('/workspaces/{workspaceId}/file-exports/prepare', { params, body, signal }),

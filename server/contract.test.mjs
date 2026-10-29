@@ -197,6 +197,18 @@ test('standalone API responses conform to every declared JSON operation, includi
     resourceId: database.result.data.id,
     sql: 'SELECT 1',
   });
+  const imported = await request(workspace + '/database-imports/prepare', 'post', {
+    resourceId: database.result.data.id,
+    source: { resourceId: 'fs_shared', path: '/preview.csv' },
+    parsing: { format: 'csv', header: true, delimiter: ',' },
+  });
+  await request(workspace + '/database-imports', 'post', {
+    resourceId: database.result.data.id,
+    preparationId: imported.result.preparationId,
+    confirmed: true,
+    table: 'database_import',
+    fields: imported.result.fields,
+  });
   for (const target of [
     { kind: 'download', format: 'csv' },
     { kind: 'download', format: 'json' },
@@ -251,7 +263,7 @@ test('standalone API responses conform to every declared JSON operation, includi
         .filter(([method]) => ['get', 'post', 'put', 'patch', 'delete'].includes(method))
         .map(([, operation]) => operation.operationId),
     )
-    .filter((id) => !['uploadFile', 'downloadFile'].includes(id));
+    .filter((id) => !['uploadFile', 'downloadFile', 'prepareDatabaseImportUpload'].includes(id));
   assert.deepEqual([...covered].sort(), allJsonOperations.sort());
   const validateBootstrap = ajv.compile({
     ...contract.components.schemas.Bootstrap,

@@ -150,8 +150,11 @@ All saved-file, SQL-result and Bash-output entry buttons reuse
 [WorkspaceExportButton](src/ui/WorkspaceExportButton.tsx) for a consistent Export label and appearance.
 File System Upload uses actual transfer progress and separate server-save acknowledgement;
 follow [upload feedback and recovery](docs/drive9-verification.md#upload-progress-and-recovery-gh-99).
-Database-owned Import from local or Workspace files is specified under
-[GH-103](specs/gh-103/spec.md); the new destination-bound API and Console entry are pending implementation.
+Database-owned Import from local CSV/Parquet or Workspace files is implemented for MySQL,
+opt-in db9 PostgreSQL and DuckDB. Follow the accepted [GH-103 contract](specs/gh-103/spec.md),
+[ADR 0023](docs/decisions/0023-database-import-workspace.md) and
+[verification/API usage](docs/database-import-verification.md). Source/review/write phases share
+TiUI controls; new preparations bind their principal and destination, including through legacy export routes.
 
 DuckDB uses tidbfs native database mode, with ordinary Tables and SQL in the Console; see
 [customer experience](docs/duckdb-databases.md#customer-experience). For the separate optional

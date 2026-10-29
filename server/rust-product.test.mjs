@@ -4,7 +4,9 @@ import http from 'node:http';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { writeFile, readFile, mkdir } from 'node:fs/promises';
+import { writeFile, readFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { DuckDBInstance } from '@duckdb/node-api';
 import { createWriteStream } from 'node:fs';
 import { resolve } from 'node:path';
 import { createApp } from './index.mjs';
@@ -321,6 +323,22 @@ async function connect(origin) {
     };
   };
 }
+async function parquetImportInput() {
+  const directory = await mkdtemp(resolve(tmpdir(), 'import-parquet-'));
+  const db = await DuckDBInstance.create(':memory:');
+  const connection = await db.connect();
+  try {
+    const path = resolve(directory, 'data.parquet');
+    await connection.run(
+      `COPY (SELECT range::BIGINT AS id FROM range(25)) TO '${path}' (FORMAT PARQUET)`,
+    );
+    return await readFile(path);
+  } finally {
+    connection.closeSync();
+    db.closeSync();
+    await rm(directory, { recursive: true, force: true });
+  }
+}
 async function scenarios(request, provider) {
   let trace = [];
   async function run(path, options, expected = 200) {
@@ -500,6 +518,177 @@ async function scenarios(request, provider) {
   );
   await run(base + '/file-exports', { method: 'POST', body: commit });
   await run(base + '/file-exports', { method: 'POST', body: commit }, 409);
+  const importKey = await run(
+    base + '/keys',
+    {
+      method: 'POST',
+      body: {
+        name: 'local-import-only',
+        scopes: ['queries:execute'],
+        resourceIds: ['db_live'],
+        expiresInDays: 7,
+      },
+    },
+    201,
+  );
+  const rawPath =
+    base +
+    '/database-imports/prepare-upload?' +
+    new URLSearchParams({
+      resourceId: 'db_live',
+      filename: 'local.csv',
+      format: 'csv',
+      header: 'true',
+      delimiter: ',',
+    });
+  const importedPreparation = await run(rawPath, {
+    method: 'POST',
+    token: importKey.body.secret,
+    binary: true,
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: Buffer.from('id,value\n001,9007199254740993\n'),
+  });
+  validateResponse(rawPath, 'POST', 200, importedPreparation.body);
+  assert.equal(importedPreparation.body.rows[0].id, '001');
+  assert.equal(importedPreparation.body.rows[0].value, '9007199254740993');
+  const importCommit = {
+    resourceId: 'db_live',
+    preparationId: importedPreparation.body.preparationId,
+    confirmed: true,
+    table: 'direct_import',
+    fields: importedPreparation.body.fields,
+  };
+  await run(base + '/database-imports', { method: 'POST', body: importCommit }, 409);
+  await run(
+    base + '/database-imports',
+    {
+      method: 'POST',
+      token: importKey.body.secret,
+      body: { ...importCommit, resourceId: 'db_pg' },
+    },
+    409,
+  );
+  await run(
+    base + '/file-exports',
+    {
+      method: 'POST',
+      token: importKey.body.secret,
+      body: {
+        preparationId: importCommit.preparationId,
+        confirmed: true,
+        fields: importCommit.fields,
+        target: { kind: 'database', resourceId: 'db_pg', table: 'bypass_import' },
+      },
+    },
+    409,
+  );
+  const beforeSourceDenied = provider.calls;
+  await run(
+    base + '/database-imports/prepare',
+    {
+      method: 'POST',
+      token: importKey.body.secret,
+      body: {
+        resourceId: 'db_live',
+        source: { resourceId: 'fs_live', path: '/live.csv' },
+        parsing: { format: 'csv', header: true, delimiter: ',' },
+      },
+    },
+    403,
+  );
+  assert.equal(provider.calls, beforeSourceDenied);
+  await run(base + '/database-imports', {
+    method: 'POST',
+    token: importKey.body.secret,
+    body: importCommit,
+  });
+  await run(
+    base + '/database-imports',
+    { method: 'POST', token: importKey.body.secret, body: importCommit },
+    409,
+  );
+  await run(
+    rawPath,
+    {
+      method: 'POST',
+      token: importKey.body.secret,
+      binary: true,
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: Buffer.alloc(1024 * 1024 + 1),
+    },
+    413,
+  );
+  const parquetPath =
+    base +
+    '/database-imports/prepare-upload?' +
+    new URLSearchParams({ resourceId: 'db_live', filename: 'sample.parquet', format: 'parquet' });
+  const parquetReview = await run(parquetPath, {
+    method: 'POST',
+    token: importKey.body.secret,
+    binary: true,
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: await parquetImportInput(),
+  });
+  validateResponse(parquetPath, 'POST', 200, parquetReview.body);
+  assert.equal(parquetReview.body.rowCount, 25);
+  assert.equal(parquetReview.body.rows.length, 20);
+  assert.equal(parquetReview.body.fields[0].type, 'BIGINT');
+  await run(base + '/database-imports', {
+    method: 'POST',
+    token: importKey.body.secret,
+    body: {
+      resourceId: 'db_live',
+      preparationId: parquetReview.body.preparationId,
+      confirmed: true,
+      table: 'parquet_import',
+      fields: parquetReview.body.fields,
+    },
+  });
+  const fileImport = await run(base + '/database-imports/prepare', {
+    method: 'POST',
+    body: {
+      resourceId: 'db_pg',
+      source: { resourceId: 'fs_shared', path: '/orders.csv' },
+      parsing: { format: 'csv', header: true, delimiter: ',' },
+    },
+  });
+  await run(
+    base + '/file-exports',
+    {
+      method: 'POST',
+      body: {
+        preparationId: fileImport.body.preparationId,
+        confirmed: true,
+        fields: fileImport.body.fields,
+        target: { kind: 'database', resourceId: 'db_live', table: 'file_bypass' },
+      },
+    },
+    409,
+  );
+  await run(base + '/database-imports', {
+    method: 'POST',
+    body: {
+      resourceId: 'db_pg',
+      preparationId: fileImport.body.preparationId,
+      confirmed: true,
+      table: 'file_import',
+      fields: fileImport.body.fields,
+    },
+  });
+  await run(
+    base + '/database-imports',
+    {
+      method: 'POST',
+      body: {
+        resourceId: 'db_pg',
+        preparationId: preparation.body.preparationId,
+        confirmed: true,
+        table: 'legacy_ticket',
+        fields: preparation.body.fields,
+      },
+    },
+    409,
+  );
   await run(base + '/file-exports', {
     method: 'POST',
     body: {
