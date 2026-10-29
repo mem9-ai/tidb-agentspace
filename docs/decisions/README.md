@@ -51,4 +51,4 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 - [0021: Native Rust computation](0021-native-rust-computation.md) — bundled DuckDB, restricted Bashkit snapshot workers, native SQL and Node-free regional serving.
 
-- [0023: Fresh record metadata](0023-fresh-record-metadata.md) — accepted local reset direction; removes document/import and Node handoff paths.
+- [0024: Fresh record metadata](0024-fresh-record-metadata.md) — accepted local reset direction; removes document/import and Node handoff paths.

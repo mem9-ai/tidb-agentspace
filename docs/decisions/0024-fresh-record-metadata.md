@@ -1,4 +1,4 @@
-# ADR 0023: Fresh record metadata and retirement of the document bridge
+# ADR 0024: Fresh record metadata and retirement of the document bridge
 
 - Status: Accepted owner direction; implementation under [GH-105](https://github.com/siddontang/tidb.ai/issues/105).
 - Date: 2026-10-29.

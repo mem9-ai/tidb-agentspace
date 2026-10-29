@@ -80,14 +80,14 @@ shared code/contracts do not mean one database partitioned by authority prefixes
 Global records private regional S3/storage descriptors; Region retains independent bootstrap
 config and object-backed shard catalogs, with no Global lookup/renewal gate on startup.
 Local development can still use ordinary files. For the implemented independent Rust/SlateDB service and fresh local bootstrap, follow the
-[runtime guide](docs/meta-service.md). [ADR 0023](docs/decisions/0023-fresh-record-metadata.md)
+[runtime guide](docs/meta-service.md). [ADR 0024](docs/decisions/0024-fresh-record-metadata.md)
 retires the five-document/chunk/import bridge. The owner explicitly allowed resetting the local
 test deployment while excluding cloud deletion; this does not authorize arbitrary customer resets.
 The regional product API is Rust, using independent record repositories and native concurrent
 SlateDB transactions. [ADR 0020](docs/decisions/0020-modular-rust-backend.md) defines shared Rust
 modules and single-binary/multiple-process composition; [ADR 0022](docs/decisions/0022-native-slatedb-transactions.md)
 defines coherent durable reads. [GH-88](specs/gh-88/spec.md) is the historical language-parity baseline;
-its document compatibility direction is superseded by ADR 0023. Node sources remain test oracles
+its document compatibility direction is superseded by ADR 0024. Node sources remain test oracles
 and tooling, not a production or rollback API. See the [Rust guide](docs/rust-backend.md).
 
 For millions of Workspaces or a million-resource Workspace, also read the

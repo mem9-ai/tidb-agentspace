@@ -9,7 +9,7 @@
 - This is the existing loopback guest product profile. Production identity, typed multi-tenant
   repositories, Global policy distribution and million-resource sharding remain GH-74 work.
 
-The fresh record profile supersedes the document migration baseline; see [ADR 0023](decisions/0023-fresh-record-metadata.md). Old format-1 installations are rejected, and no import or Node rollback backend is retained.
+The fresh record profile supersedes the document migration baseline; see [ADR 0024](decisions/0024-fresh-record-metadata.md). Old format-1 installations are rejected, and no import or Node rollback backend is retained.
 
 ## Modules
 
@@ -41,7 +41,7 @@ npm run package:api:rust -- FULL_REVIEWED_SOURCE_SHA
 
 `backend:check` runs workspace format, Clippy with warnings denied, Rust tests, and isolated
 real RustFS/S3 metadata, ownership, Node/Rust parity and provider-recovery integration tests.
-Ordinary `npm test` skips explicitly gated S3 cases; those skips are not integration evidence.
+Heavy native test files run serially to bound concurrent RustFS/role startup and packaging resources; concurrency behavior is exercised explicitly inside those tests. Ordinary `npm test` skips explicitly gated S3 cases; those skips are not integration evidence.
 CI uses two Cargo jobs and omits native/Rust debug symbols to bound cold-build time and memory. Functional checks and warnings-as-errors remain enabled. Initial bundled DuckDB compilation
 is substantially slower than an incremental Rust build. Reuse installed RustFS locally.
 
@@ -184,6 +184,6 @@ Follow [Meta setup](meta-service.md) to initialize a new deployment. `initialize
 
 Resources, Keys, files, bindings and credentials are independent encrypted records. Reads use bounded prefix pages; writes condition only changed records on their versions. Existing domain/bootstrap operations reconstruct bounded projections rather than storing or rewriting JSON documents. Key authentication uses its digest index and canonical record; resource authorization performs a point read. Native credentials remain internal.
 
-The API has one active writer per Workspace until provider lifecycle claims support concurrent API writers. `recoverWriterOwner` names the exact stopped owner after a crash; there is no lease timeout or global dependency. Storage version 2 intentionally rejects the old five-document installation. JSON import/export, legacy vault codecs and Node/Rust handoff are retired under [ADR 0023](decisions/0023-fresh-record-metadata.md).
+The API has one active writer per Workspace until provider lifecycle claims support concurrent API writers. `recoverWriterOwner` names the exact stopped owner after a crash; there is no lease timeout or global dependency. Storage version 2 intentionally rejects the old five-document installation. JSON import/export, legacy vault codecs and Node/Rust handoff are retired under [ADR 0024](decisions/0024-fresh-record-metadata.md).
 
 Package reviewed clean source with a full SHA and binary/archive checksums. Keep configuration and state outside the artifact. Deploy all version-coupled API/Meta roles, verify readiness, authorized/denied reads and the Portal. A source upgrade cannot silently reset an incompatible root. The owner authorized one disposable local reset; cloud instances are outside that operation. Production identity, distributed policy, sharding and automatic HA remain future work.

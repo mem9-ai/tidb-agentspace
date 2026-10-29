@@ -11,7 +11,7 @@ Use the pinned Node/npm versions for Console and tooling and the pinned Cargo wo
 
 ## Configuration and startup
 
-Follow [Meta bootstrap](meta-service.md) for a new local deployment. It creates independent Global/Region Meta roots and an empty Workspace. Fresh installation format 2 rejects old document roots; [ADR 0023](decisions/0023-fresh-record-metadata.md) records the explicit local reset boundary. No cloud resources are created automatically.
+Follow [Meta bootstrap](meta-service.md) for a new local deployment. It creates independent Global/Region Meta roots and an empty Workspace. Fresh installation format 2 rejects old document roots; [ADR 0024](decisions/0024-fresh-record-metadata.md) records the explicit local reset boundary. No cloud resources are created automatically.
 
 ```sh
 npm run backend:build

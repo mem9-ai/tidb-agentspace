@@ -150,7 +150,7 @@ write path, preserve sign-offs, and recheck the new head; do not bypass reposito
 
 Use the manual `Internal artifact` workflow on reviewed `main`. It runs the shared quality gate, builds the pinned native Rust backend and produces separate native API and static Console archives. Each includes its source SHA and component instructions; checksums cover both. Private configuration, data, provider credentials and Node business modules are excluded.
 
-The workflow packages artifacts only. The native API runs `workspace-backend serve --config /absolute/private/deployment.json`; Console hosting and its API origin remain independent. Native builds use bounded parallelism/debug symbols and the pinned Rust toolchain. See [independent delivery](independent-delivery.md) for commands and [ADR 0023](decisions/0023-fresh-record-metadata.md) for the explicit fresh-storage boundary.
+The workflow packages artifacts only. The native API runs `workspace-backend serve --config /absolute/private/deployment.json`; Console hosting and its API origin remain independent. Native builds use bounded parallelism/debug symbols and the pinned Rust toolchain. See [independent delivery](independent-delivery.md) for commands and [ADR 0024](decisions/0024-fresh-record-metadata.md) for the explicit fresh-storage boundary.
 
 ## Actual deployment policy for the next phase
 

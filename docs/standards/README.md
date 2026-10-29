@@ -71,4 +71,4 @@ Fixed preview uses read permission; custom SQL/Bash retains explicit analyze per
 
 For backend language, module boundaries or service composition, follow [ADR 0020](../decisions/0020-modular-rust-backend.md)
 and [the Rust migration contract](../../specs/gh-88/spec.md). Rust is the accepted target;
-Node is retained only for regression oracles/tooling; fresh record metadata and native packaging follow [ADR 0023](../decisions/0023-fresh-record-metadata.md).
+Node is retained only for regression oracles/tooling; fresh record metadata and native packaging follow [ADR 0024](../decisions/0024-fresh-record-metadata.md).
