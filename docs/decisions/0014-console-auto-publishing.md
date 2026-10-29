@@ -6,14 +6,15 @@
   synchronization interrupts every frontend deployment.
 - Decision: Use a main-only GitHub Actions workflow to build with the pinned toolchain,
   validate public files, update one artifact-only PR through a dedicated GitHub App, and merge
-  the tested candidate without bypassing repository rules. Existing Netlify CD publishes it.
+  only after an independent required website check enforced for everyone passes. Existing Netlify CD publishes it.
   API deployment, runtime configuration, SSO and customer authorization are unchanged.
 - Credential boundary: Build jobs have no publication key. The App is installed only on the
-  public target with Contents/PR write; private source access uses the source repository's
+  public target with Contents/PR write and Checks read; private source access uses the source repository's
   read-only Actions token. Netlify receives no source credential. Short-lived installation
   tokens are revoked after publication.
 - Consequences: No new service or frontend hosting platform. The generated artifact remains
-  reviewable and has source/hash evidence. Serial publication and source input checks prevent
+  reviewable and has source/hash evidence. The target runs its own required validation;
+  pending/failed checks prevent merge, and no publisher bypass is granted. Serial publication and source input checks prevent
   historical builds from replacing newer frontend revisions. A last-moment source commit is
   picked up by its next run; publication is not an atomic transaction across GitHub and Netlify.
 - Migration: Configure the App once, merge the workflow, and dispatch main. Do not declare

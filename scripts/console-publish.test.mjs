@@ -6,10 +6,11 @@ import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 import { parse } from 'yaml';
 import {
-  checkPublicFiles,
   consoleFingerprint,
   consoleInput,
   validateCandidate,
+  validateTargetGate,
+  waitForWebsiteCheck,
   websiteRepository,
   publicationBranch,
 } from './console-publish.mjs';
@@ -152,24 +153,37 @@ test('merge accepts only the exact tested tree on the current website base', () 
   }
 });
 
-test('credential and source map markers fail without printing the matched content', async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), 'console-public-files-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const file = join(directory, 'index.html');
-  await writeFile(file, '<script src="/studio/assets/app.js"></script>');
-  await checkPublicFiles(directory, { 'index.html': old });
-  for (const marker of [
-    '-----BEGIN PRIVATE KEY-----',
-    `ghp_${'x'.repeat(36)}`,
-    `github_pat_${'x'.repeat(30)}`,
-    `AKIA${'A'.repeat(16)}`,
-    '//# sourceMappingURL=app.js.map',
+test('publication requires an independent Actions check enforced for everyone', () => {
+  const branch = {
+    protected: true,
+    protection: {
+      required_status_checks: {
+        enforcement_level: 'everyone',
+        checks: [{ context: 'Studio artifact', app_id: 15368 }],
+      },
+    },
+  };
+  assert.doesNotThrow(() => validateTargetGate(branch));
+  for (const change of [
+    (value) => {
+      value.protected = false;
+    },
+    (value) => {
+      value.protection.required_status_checks.enforcement_level = 'non_admins';
+    },
+    (value) => {
+      value.protection.required_status_checks.checks = [];
+    },
+    (value) => {
+      value.protection.required_status_checks.checks[0].app_id = 123;
+    },
+    (value) => {
+      value.protection.required_status_checks.checks[0].context = 'Other check';
+    },
   ]) {
-    await writeFile(file, marker);
-    await assert.rejects(checkPublicFiles(directory, { 'index.html': old }), (error) => {
-      assert.ok(!error.message.includes(marker));
-      return true;
-    });
+    const value = structuredClone(branch);
+    change(value);
+    assert.throws(() => validateTargetGate(value));
   }
 });
 
@@ -207,5 +221,48 @@ test('current command skips stale input and never echoes remote failure output',
       assert.ok(!`${error.stdout}${error.stderr}`.includes('PRIVATE_REMOTE_OUTPUT'));
       return true;
     },
+  );
+});
+
+test('waits for registration and pending checks, accepts only Actions success', async () => {
+  const run = (id, status, conclusion, app = 15368) => ({
+    id,
+    name: 'Studio artifact',
+    app: { id: app },
+    status,
+    conclusion,
+  });
+  const states = [
+    [],
+    [run(1, 'queued', null)],
+    [run(1, 'completed', 'success', 123)],
+    [run(2, 'completed', 'success')],
+  ];
+  let pauses = 0;
+  await waitForWebsiteCheck(
+    async () => ({ check_runs: states.shift() }),
+    async () => {
+      pauses++;
+    },
+    4,
+  );
+  assert.equal(pauses, 3);
+  for (const conclusion of ['failure', 'cancelled', 'skipped', 'neutral', 'timed_out']) {
+    await assert.rejects(
+      waitForWebsiteCheck(
+        async () => ({ check_runs: [run(2, 'completed', conclusion)] }),
+        async () => {},
+        1,
+      ),
+      /failed/,
+    );
+  }
+  await assert.rejects(
+    waitForWebsiteCheck(
+      async () => ({ check_runs: [run(1, 'completed', 'success'), run(2, 'queued', null)] }),
+      async () => {},
+      2,
+    ),
+    /Timed out/,
   );
 });

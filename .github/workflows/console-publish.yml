@@ -75,7 +75,7 @@ jobs:
     needs: build
     if: needs.build.outputs.current == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -133,6 +133,7 @@ jobs:
           repositories: drive9-fe
           permission-contents: write
           permission-pull-requests: write
+          permission-checks: read
       - name: Create or update the single artifact PR
         id: pr
         if: steps.artifact.outputs.changed == 'true'
@@ -155,6 +156,12 @@ jobs:
             Pinned toolchain, source quality checks, artifact allowlist/checksums and website tests passed.
             Only `vendor/studio/` and `vendor/studio-build.json` are published. No private source or source maps.
             Evidence: https://github.com/mem9-ai/tidb.ai/actions/runs/${{ github.run_id }}
+      - name: Wait for the independent website check
+        if: steps.pr.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR_HEAD: ${{ steps.pr.outputs.pull-request-head-sha }}
+        run: node scripts/console-publish.mjs wait "$PR_HEAD"
       - name: Recheck source before merge
         id: latest
         if: steps.pr.outputs.pull-request-number != ''
@@ -162,7 +169,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ needs.build.outputs.sha }}
         run: node scripts/console-publish.mjs current "$SOURCE_SHA"
-      - name: Merge only the tested candidate through normal repository rules
+      - name: Merge the tested candidate after required website checks pass
         if: steps.latest.outputs.current == 'true'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
@@ -172,4 +179,4 @@ jobs:
         run: |
           node scripts/console-publish.mjs verify "$PR_NUMBER" "$EXPECTED_TREE" "$PR_HEAD"
           gh pr merge "$PR_NUMBER" --repo mem9-ai/drive9-fe --squash --match-head-commit "$PR_HEAD"
-          echo 'Console artifact merged. Netlify now builds drive9-fe main; confirm its deploy status before reporting it live.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Console artifact merged after the independent website check passed. Confirm the Netlify deploy before reporting it live.' >> "$GITHUB_STEP_SUMMARY"

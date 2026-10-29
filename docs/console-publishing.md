@@ -2,16 +2,23 @@
 
 Console changes merged into `mem9-ai/tidb.ai` main are built by **Publish Studio Console**.
 The workflow updates one generated-artifact PR in `mem9-ai/drive9-fe`, validates it, and
-merges through normal repository rules. Netlify's existing main-branch deployment then
+waits for the independent required website check, then merges. Netlify's existing main-branch deployment then
 publishes `https://drive9.ai/studio/`. Daily changes need no manual synchronization or deploy click.
 Backend-only edits continue through the independent dev API CD workflow.
 
 ## One-time setup
 
+First merge the independent **Studio artifact** validation workflow in drive9-fe. Configure
+main to require that check specifically from GitHub Actions, require an up-to-date branch
+and a PR (zero mandatory human approvals), enforce checks for administrators, and give the
+publisher no bypass. These settings must be verified
+on GitHub; adding workflow YAML alone does not protect the branch.
+
 Create a dedicated GitHub App owned by the organization:
 
 1. Disable its webhook. Grant repository **Contents: Read and write** and
-   **Pull requests: Read and write**; Metadata read is automatic. Grant no other permissions.
+   **Pull requests: Read and write**, plus **Checks: Read-only** to wait for validation.
+   Metadata read is automatic. Grant no other permissions.
 2. Install it on **only `mem9-ai/drive9-fe`**. Do not grant access to the private source repository.
 3. In **tidb.ai → Settings → Secrets and variables → Actions**, add repository variable
    `STUDIO_PUBLISH_APP_ID` with the App ID, and repository secret
@@ -52,8 +59,8 @@ to npm or Vite. Only Console output transfers between the build and publishing j
 
 The website's existing importer enforces an allowlist of public static files, rejects symlinks
 and source maps, normalizes same-origin configuration, and records the exact source SHA plus
-SHA-256 checksums. Additional checks reject tracked environment files and common credential
-markers. This is not a general secret detector: contributors must still review any code or
+SHA-256 checksums. Source checks reject tracked environment files; the website verifier rejects common
+credential markers. This is not a general secret detector: contributors must still review any code or
 literal deliberately included in the public Console. Private backend source is never copied.
 
 Website artifact and routing tests run before minting the write token. Only `vendor/studio/`
@@ -64,14 +71,20 @@ blocks the merge. There is no `--admin`, protection bypass, or direct main push.
 
 The publication is the fixed `automation/studio-console` branch and PR. Do not manually edit
 that generated branch. The workflow can replace its contents on subsequent publications.
-The normal merge command respects enforced checks/reviews; this setup does not enable or
-relax branch protection. If new required checks/reviews block merging, satisfy them rather
-than granting a bypass. `allow_auto_merge` is not required: the job merges its validated PR.
+Before waiting or merging, the publisher checks that main is protected and the independent
+GitHub Actions **Studio artifact** check is required for everyone. It fails closed if these
+are absent. It waits up to ten minutes for that check on the exact candidate head, including
+initial check registration. Only success passes: failed, cancelled, skipped or timed-out
+checks stop publication. It then rechecks source freshness, candidate tree and website base,
+and requests a normal merge. There is no queued auto-merge left behind for a stale PR.
+No human click is needed after successful checks, and repository `allow_auto_merge` need not
+change. If additional required reviews/checks block merging, satisfy them without a bypass.
 
 ## Failure and recovery
 
 Missing App configuration, denied installation access, changed source/base, failed validation,
-or a failed merge is visible in the workflow. Stale inputs and identical artifacts are explicit
+or a failed merge is visible in the workflow. Pending/failed independent checks remain
+visible on the artifact PR. Stale inputs and identical artifacts are explicit
 successful skips. An unmerged PR leaves the published website unchanged. Netlify build failure
 keeps its previous successful deploy; GitHub merge success alone does not prove the site is live.
 

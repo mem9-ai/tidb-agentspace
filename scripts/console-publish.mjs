@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { appendFile, readFile } from 'node:fs/promises';
+import { appendFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -64,17 +64,38 @@ export function validateCandidate(pr, commit, main, expectedTree, expectedHead) 
   );
 }
 
-export async function checkPublicFiles(directory, hashes) {
-  for (const path of Object.keys(hashes)) {
-    if (path.endsWith('.woff2')) continue;
-    const content = await readFile(resolve(directory, path), 'utf8');
-    assert.ok(
-      !/(?:-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----|\bgh[pousr]_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}|\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|sourceMappingURL\s*=)/.test(
-        content,
-      ),
-      'Public artifact contains a credential marker or source map reference.',
-    );
+export function validateTargetGate(branch) {
+  assert.equal(branch.protected, true, 'Website main must be protected before publishing.');
+  const checks = branch.protection?.required_status_checks;
+  assert.equal(
+    checks?.enforcement_level,
+    'everyone',
+    'Required checks must also apply to administrators.',
+  );
+  assert.ok(
+    checks.checks?.some((check) => check.context === 'Studio artifact' && check.app_id === 15368),
+    'Require the independent GitHub Actions Studio artifact check.',
+  );
+}
+
+export async function waitForWebsiteCheck(readChecks, pause, attempts = 120) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const checks = (await readChecks()).check_runs;
+    assert.ok(Array.isArray(checks), 'Missing website checks.');
+    const check = checks
+      .filter((item) => item.name === 'Studio artifact' && item.app?.id === 15368)
+      .sort((a, b) => b.id - a.id)[0];
+    if (check?.status === 'completed') {
+      assert.equal(
+        check.conclusion,
+        'success',
+        'Independent website check failed; publication will not merge.',
+      );
+      return;
+    }
+    if (attempt + 1 < attempts) await pause(5000);
   }
+  throw new Error('Timed out waiting for the independent website check.');
 }
 
 function api(endpoint) {
@@ -113,7 +134,6 @@ async function run(command, args) {
     const manifest = resolve(root, 'vendor/studio-build.json');
     await verifyStudioArtifact(destination, manifest);
     const previous = await studioHashes(destination);
-    await checkPublicFiles(resolve(artifact), await studioHashes(artifact));
     execFileSync(process.execPath, [importer, resolve(artifact), source], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -132,10 +152,23 @@ async function run(command, args) {
         ? 'Public Console artifact validated.'
         : 'Console bytes are unchanged; no publication needed.',
     );
+  } else if (command === 'wait') {
+    const [head] = args;
+    assert.match(head || '', shaPattern, 'Invalid PR head.');
+    validateTargetGate(api(`repos/${websiteRepository}/branches/main`));
+    await waitForWebsiteCheck(
+      () =>
+        api(
+          `repos/${websiteRepository}/commits/${head}/check-runs?check_name=Studio%20artifact&filter=latest&per_page=100`,
+        ),
+      (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+    );
+    console.log('Independent website check passed.');
   } else if (command === 'verify') {
     const [number, tree, head] = args;
     assert.match(number || '', /^[1-9][0-9]*$/, 'Invalid PR number.');
     assert.match(head || '', shaPattern, 'Invalid PR head.');
+    validateTargetGate(api(`repos/${websiteRepository}/branches/main`));
     validateCandidate(
       api(`repos/${websiteRepository}/pulls/${number}`),
       api(`repos/${websiteRepository}/commits/${head}`),
@@ -145,7 +178,7 @@ async function run(command, args) {
     );
     console.log('Publication PR matches the tested tree and current website base.');
   } else {
-    throw new Error('Usage: console-publish.mjs current|prepare|verify <arguments>');
+    throw new Error('Usage: console-publish.mjs current|prepare|wait|verify <arguments>');
   }
 }
 
