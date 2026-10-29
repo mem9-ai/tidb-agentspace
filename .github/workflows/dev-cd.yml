@@ -6,8 +6,7 @@ name: Deploy API to dev
 # in-cluster Deployment to the new image and wait for the rollout, undoing it
 # on failure.
 #
-# Normal releases only update the image. An explicit manual bootstrap can
-# create the initial private API, Service and PVC in an existing namespace.
+# Releases only update the existing Deployment image.
 # All environment identifiers remain runtime inputs, never repository values.
 
 on:
@@ -20,7 +19,7 @@ on:
       - 'public/openapi.json'
       - 'scripts/build-api.mjs'
       - 'scripts/sql-runtime-dependencies.mjs'
-      - 'scripts/bootstrap-dev*'
+      - 'scripts/deploy-dev*'
       - 'package.json'
       - 'package-lock.json'
       - '.node-version'
@@ -35,15 +34,6 @@ on:
         description: 'Branch, tag, or SHA to deploy'
         required: true
         default: 'main'
-      deployment_mode:
-        description: 'Normal image update, preview initial resources, or create initial resources'
-        type: choice
-        options: [deploy, bootstrap-preview, bootstrap]
-        default: deploy
-      storage_class:
-        description: 'Existing EBS CSI StorageClass (required only for bootstrap modes)'
-        type: string
-        default: ''
 
 permissions:
   contents: read
@@ -65,42 +55,26 @@ concurrency:
 jobs:
   # Resolve the requested ref to ONE immutable commit SHA up front. Every later
   # job checks out and ships exactly this SHA, so the commit that passes the
-  # quality gate is the commit that gets built and deployed (no branch-advances-
-  # between-jobs race). The ref is read from the environment as data — never
-  # interpolated into a shell script — so a crafted dispatch input cannot inject
-  # commands.
+  # quality gate is the commit that gets built and deployed. The requested ref
+  # is passed to checkout as data, never interpolated into a shell script.
   resolve:
     name: Resolve commit
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.resolve.outputs.sha }}
-      image_tag: ${{ steps.resolve.outputs.image_tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || github.sha }}
           persist-credentials: false
-      - name: Resolve SHA and image tag
+      - name: Resolve SHA
         id: resolve
-        env:
-          REQUESTED_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_ref || github.sha }}
-        run: |
-          set -euo pipefail
-          # Validate the requested ref as data before using it anywhere.
-          case "$REQUESTED_REF" in
-            *[!A-Za-z0-9._/-]*)
-              echo "::error::Invalid deploy ref: only [A-Za-z0-9._/-] are allowed." >&2
-              exit 1 ;;
-          esac
-          SHA=$(git rev-parse --verify HEAD)
-          TAG="$(git rev-parse --short=7 "$SHA")"
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "image_tag=sha-$TAG" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(git rev-parse --verify HEAD)" >> "$GITHUB_OUTPUT"
 
   # Run the same quality gate as CI, and prove the image builds for both
-  # architectures (no push), against the exact resolved SHA before anything is
-  # deployed. The repository enforces that every workflow runs `npm run check`.
+  # architectures on PRs (no push). Releases build once after the tests pass.
+  # The repository enforces that every workflow runs `npm run check`.
   verify:
     name: Quality gate
     runs-on: ubuntu-24.04
@@ -120,10 +94,13 @@ jobs:
       - run: npm ci
       - run: npm run check
       - name: Set up QEMU for cross-platform builds
+        if: github.event_name == 'pull_request'
         uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
       - name: Set up Docker Buildx
+        if: github.event_name == 'pull_request'
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Build image for both architectures (no push)
+        if: github.event_name == 'pull_request'
         run: |
           set -euo pipefail
           docker buildx build \
@@ -155,7 +132,7 @@ jobs:
       id-token: write
       contents: read
     env:
-      IMAGE_TAG: ${{ needs.resolve.outputs.image_tag }}
+      IMAGE_TAG: sha-${{ needs.resolve.outputs.sha }}
       AWS_REGION: ${{ secrets.AWS_REGION }}
       ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
       ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
@@ -166,8 +143,6 @@ jobs:
       # Container name within the Deployment. Set this secret when the
       # container name differs from the Deployment name.
       K8S_CONTAINER: ${{ secrets.DEV_API_CONTAINER || secrets.DEV_API_DEPLOYMENT }}
-      DEPLOYMENT_MODE: ${{ inputs.deployment_mode || 'deploy' }}
-      STORAGE_CLASS: ${{ inputs.storage_class }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -214,24 +189,20 @@ jobs:
           IMAGE_BASE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
         run: |
           set -euo pipefail
-          # Build each architecture, push by tag, then assemble one multi-arch
-          # manifest tag. --provenance=false keeps a plain manifest list (no
-          # extra attestation image) as fs does.
-          for arch in amd64 arm64; do
-            docker buildx build \
-              --platform "linux/$arch" \
-              --build-arg NODE_VERSION=24.22.1 \
-              --provenance=false \
-              --tag "$IMAGE_BASE:$IMAGE_TAG-$arch" \
-              --push \
-              .
-          done
-          docker buildx imagetools create \
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg NODE_VERSION=24.22.1 \
+            --provenance=false \
             --tag "$IMAGE_BASE:$IMAGE_TAG" \
-            "$IMAGE_BASE:$IMAGE_TAG-amd64" \
-            "$IMAGE_BASE:$IMAGE_TAG-arm64"
-          DIGEST=$(docker buildx imagetools inspect "$IMAGE_BASE:$IMAGE_TAG" \
-            --format '{{json .Manifest.Digest}}' | tr -d '"')
+            --metadata-file "$RUNNER_TEMP/image.json" \
+            --push \
+            .
+          DIGEST=$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const digest = JSON.parse(readFileSync(process.argv[1], "utf8"))["containerimage.digest"];
+            if (!/^sha256:[a-f0-9]{64}$/.test(digest)) throw new Error("Missing image digest");
+            process.stdout.write(digest);
+          ' "$RUNNER_TEMP/image.json")
           echo "IMAGE_REF=$IMAGE_BASE@$DIGEST" >> "$GITHUB_ENV"
 
       - name: Update kubeconfig
@@ -241,34 +212,5 @@ jobs:
             --name "$EKS_CLUSTER" \
             --region "$AWS_REGION"
 
-      - name: Apply image or explicitly bootstrap the dev API
-        id: apply
-        run: |
-          set -euo pipefail
-          case "$DEPLOYMENT_MODE" in
-            deploy)
-              kubectl set image "deployment/$K8S_DEPLOYMENT" \
-                "$K8S_CONTAINER=$IMAGE_REF" -n "$DEPLOY_NAMESPACE" ;;
-            bootstrap-preview|bootstrap)
-              node scripts/bootstrap-dev.mjs "$DEPLOYMENT_MODE" ;;
-            *) echo '::error::Unknown deployment mode.' >&2; exit 1 ;;
-          esac
-
-      - name: Wait for rollout
-        id: rollout
-        if: env.DEPLOYMENT_MODE != 'bootstrap-preview'
-        run: |
-          set -euo pipefail
-          kubectl rollout status "deployment/$K8S_DEPLOYMENT" \
-            -n "$DEPLOY_NAMESPACE" \
-            --timeout=300s
-
-      - name: Roll back on failed rollout
-        if: failure() && env.DEPLOYMENT_MODE == 'deploy' && steps.apply.outcome == 'success' && steps.rollout.outcome == 'failure'
-        run: |
-          set -euo pipefail
-          kubectl rollout undo "deployment/$K8S_DEPLOYMENT" \
-            -n "$DEPLOY_NAMESPACE"
-          kubectl rollout status "deployment/$K8S_DEPLOYMENT" \
-            -n "$DEPLOY_NAMESPACE" \
-            --timeout=300s
+      - name: Deploy image and verify readiness (restore previous image on failure)
+        run: node scripts/deploy-dev.mjs
