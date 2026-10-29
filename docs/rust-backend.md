@@ -52,6 +52,13 @@ includes only the binary, Cargo lockfile, contract and instructions. It excludes
 configuration, state, credentials, Console assets and Node runtime dependencies. A verified
 native tidbfs extension is a separately supplied artifact, with its checksum preserved.
 
+`npm start`, `start:api`, `dev:api` and the API portion of `npm run dev` now start Rust.
+Set `WORKSPACE_BACKEND_CONFIG` to the absolute private deployment file; optionally set
+`WORKSPACE_BACKEND_BINARY` to the absolute reviewed artifact. The default binary is the local
+Cargo debug build. Missing configuration fails explicitly, with no alternate data file or
+Node fallback. For deliberate compatibility work, use `start:legacy-api` / `dev:legacy-api`.
+The optional npm launcher is tooling; the distributed native artifact runs directly without it.
+
 The existing `build:api` / `package` commands retain the Node compatibility artifact used by
 existing deployment tests and rollback. `build:api:rust` / `package:api:rust` produce the Rust
 serving artifact. The Console remains an independently built static artifact. A Node process

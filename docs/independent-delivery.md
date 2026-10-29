@@ -10,8 +10,9 @@ The [full Rust profile](rust-backend.md) serves the existing API independently o
 `npm run package:api:rust -- FULL_REVIEWED_SOURCE_SHA` creates a native API artifact with source
 SHA and checksums, without Node runtime dependencies or Console assets. Private regional Meta
 configuration and verified native extension artifacts remain external to the package.
-The Node commands below retain the compatibility oracle and rollback artifact; they do not
-start the Rust profile. Preserve the configured API origin when changing the local listener.
+Root `npm start`, `start:api`, `dev:api` and `npm run dev` select Rust and require
+`WORKSPACE_BACKEND_CONFIG`. Use `start:legacy-api` / `dev:legacy-api` for the Node compatibility
+API below. Its artifact and provider environment settings are retained for tests and rollback. Preserve the configured API origin when changing the local listener.
 
 ## Compatibility repository and commands
 
@@ -19,10 +20,10 @@ Use the pinned Node/npm versions and `npm ci` from the repository root. One npm 
 all dependencies, including the isolated contract generator workspace. The backend includes mysql2, DuckDB Node bindings, Just Bash and their pinned runtime dependency closures for SQL and read-only file analysis;
 frontend and contract-generator dependencies are excluded. See [ADR 0006](decisions/0006-zero-sql-gateway.md).
 
-| Component | Source                           | Build                                     | Run from source / serve output                  |
-| --------- | -------------------------------- | ----------------------------------------- | ----------------------------------------------- |
-| Console   | `src/`, `console/public/`        | `npm run build:console` → `dist/console/` | `npm run dev:console` / `npm run start:console` |
-| API       | `server/`, `public/openapi.json` | `npm run build:api` → `dist/api/`         | `npm run dev:api` / `npm run start:api`         |
+| Component | Source                           | Build                                     | Run from source / serve output                        |
+| --------- | -------------------------------- | ----------------------------------------- | ----------------------------------------------------- |
+| Console   | `src/`, `console/public/`        | `npm run build:console` → `dist/console/` | `npm run dev:console` / `npm run start:console`       |
+| API       | `server/`, `public/openapi.json` | `npm run build:api` → `dist/api/`         | `npm run dev:legacy-api` / `npm run start:legacy-api` |
 
 `npm run dev` starts both development servers as a convenience. `npm run build` builds both
 independent outputs. `npm start` starts only the source API; `npm run preview` serves only
@@ -31,7 +32,7 @@ built Console output. There is no API proxy inside the Console server.
 For independent local runs, use two terminals:
 
 ```sh
-npm run start:api
+npm run start:legacy-api
 ```
 
 ```sh
@@ -76,7 +77,7 @@ Example with non-default ports, in two terminals:
 
 ```sh
 WORKSPACE_API_PORT=4418 WORKSPACE_CONSOLE_ORIGINS=http://127.0.0.1:4273 \
-  WORKSPACE_DATA_FILE=/absolute/persistent/workspace.json npm run start:api
+  WORKSPACE_DATA_FILE=/absolute/persistent/workspace.json npm run start:legacy-api
 ```
 
 ```sh

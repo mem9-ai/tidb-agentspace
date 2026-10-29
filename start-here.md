@@ -194,7 +194,9 @@ An existing accepted example is the [independent Console/API specification](spec
 ## Set up and verify
 
 Select Node from [.node-version](.node-version) and npm from [package.json](package.json),
-following [reproducible setup](CONTRIBUTING.md#reproducible-setup). Use the committed lockfile:
+following [reproducible setup](CONTRIBUTING.md#reproducible-setup). Use the committed lockfile. Before starting the default Rust API, follow
+[regional Meta/import setup](docs/rust-backend.md) and set `WORKSPACE_BACKEND_CONFIG` to its
+absolute private deployment file. Missing configuration never falls back to another data file.
 
 ```sh
 npm ci

@@ -619,7 +619,13 @@ pub async fn bash(input: &Value) -> Result<Value> {
     let result = shell
         .exec(input["script"].as_str().unwrap_or(""))
         .await
-        .map_err(|_| err(422, "ANALYSIS_FAILED"))?;
+        .map_err(|e| {
+            if e.to_string().contains("filesystem is read-only") {
+                err(422, "EROFS")
+            } else {
+                err(422, "ANALYSIS_FAILED")
+            }
+        })?;
     if result.stderr.contains("filesystem is read-only") {
         return Err(err(422, "EROFS"));
     }
@@ -789,7 +795,9 @@ mod tests {
         input["script"] = json!("cat /etc/passwd");
         assert_ne!(bash(&input).await.unwrap()["exitCode"], 0);
         input["script"] = json!("printf changed > \"$FILE\"");
-        assert_eq!(bash(&input).await.unwrap_err().code, "EROFS");
+        for _ in 0..8 {
+            assert_eq!(bash(&input).await.unwrap_err().code, "EROFS");
+        }
         input["script"] = json!("curl https://example.com");
         assert_ne!(bash(&input).await.unwrap()["exitCode"], 0);
     }

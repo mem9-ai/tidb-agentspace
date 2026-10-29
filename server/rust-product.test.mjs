@@ -415,13 +415,15 @@ async function scenarios(request, provider) {
           rows: [
             { value: '=SUM(A1)', n: 1 },
             { value: 'quote"\nline', n: null },
+            { value: '\ufeff=1', n: 3 },
           ],
         },
         target: { kind: 'download', format },
       },
     });
     assert.equal(r.body.format, format);
-    assert.equal(r.body.rowCount, 2);
+    assert.equal(r.body.rowCount, 3);
+    trace.push([format, r.body.content, r.body.bytes, r.body.filename, r.body.mimeType]);
     if (format === 'csv') assert.match(r.body.content, /'=SUM/);
   }
   await run(base + '/result-exports', {

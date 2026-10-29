@@ -94,7 +94,11 @@ fn serialized(result: &Value, format: &str) -> Result<Value> {
         let mut text = cell_text(v);
         if v.is_string()
             && (text.starts_with(['\t', '\r', '\n'])
-                || text.trim_start().starts_with(['=', '+', '@', '-']))
+                || text
+                    .trim_start_matches(|c: char| {
+                        (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
+                    })
+                    .starts_with(['=', '+', '@', '-']))
         {
             text = format!("'{text}");
         }
