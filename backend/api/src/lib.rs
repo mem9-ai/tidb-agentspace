@@ -699,10 +699,10 @@ async fn auth_route(
         )
     };
     if path == "/api/auth/tidbcloud/logout" && [Method::GET, Method::POST].contains(method) {
-        if let Some(token) = cookie(headers, "aw_session") {
-            if let Some(session) = app.sessions.lock().await.remove(token) {
-                session.credential.revoke();
-            }
+        if let Some(token) = cookie(headers, "aw_session")
+            && let Some(session) = app.sessions.lock().await.remove(token)
+        {
+            session.credential.revoke();
         }
         let mut response = if *method == Method::GET && app.sso.is_some() {
             redirect(
@@ -758,10 +758,10 @@ async fn auth_route(
                         true
                     }
                 });
-                if let Some(old) = cookie(headers, "aw_session") {
-                    if let Some(session) = sessions.remove(old) {
-                        session.credential.revoke();
-                    }
+                if let Some(old) = cookie(headers, "aw_session")
+                    && let Some(session) = sessions.remove(old)
+                {
+                    session.credential.revoke();
                 }
                 if sessions.len() >= 4096 {
                     error(reject(429, "SESSION_BUSY"))
