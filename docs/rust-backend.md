@@ -39,10 +39,18 @@ npm run check
 npm run package:api:rust -- FULL_REVIEWED_SOURCE_SHA
 ```
 
-`backend:check` runs workspace format, Clippy with warnings denied, Rust tests, and isolated
+`backend:check` checks formatting first, then builds the workspace and runs Clippy with warnings denied, Rust tests, and isolated
 real RustFS/S3 metadata, ownership, Node/Rust parity and provider-recovery integration tests.
 Heavy native test files run serially to bound concurrent RustFS/role startup and packaging resources; concurrency behavior is exercised explicitly inside those tests. Ordinary `npm test` skips explicitly gated S3 cases; those skips are not integration evidence.
 CI uses two Cargo jobs and omits Rust debug symbols to bound cold-build time and memory. Functional checks and warnings-as-errors remain enabled. Reuse installed RustFS locally.
+
+For focused checks after preparing/building the native backend, use `backend:fmt`,
+`backend:clippy`, `backend:test` and `backend:test:integration`. CI runs those same phases as
+separate steps and caches dependency builds, excluding workspace binaries, incremental
+state and private runtime data. See [the cache and timing policy](ci-cd.md#rust-build-cache-and-timing-evidence)
+for cache scope, invalidation and cold/warm verification. `npm run backend:build -- --timings`
+produces a local Cargo HTML report in `meta-service/target/cargo-timings/`; CI retains this
+report as an artifact. A warm cache still builds the current workspace and runs every check.
 
 DuckDB 2.0.0 uses official **prebuilt static libraries**, with release/archive and individual-file
 SHA-256 pins in `scripts/duckdb-runtime.json`. `npm run backend:build` first runs

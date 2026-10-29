@@ -95,6 +95,44 @@ receives deployment credentials, and checkout credentials are not persisted. Avo
 PR titles, branch names, or other untrusted event text into shell code; pass needed values
 through environment variables and validate them.
 
+## Rust build cache and timing evidence
+
+The Rust CI job checks formatting before compiling, then runs separately named build,
+Clippy, Rust unit-test and native/S3 integration-test steps. Together these run the same
+checks as local `npm run backend:check`; warnings remain errors and integration tests still
+use isolated real RustFS. Two Cargo jobs and disabled debug symbols bound runner memory.
+
+The pinned [rust-cache action](https://github.com/Swatinem/rust-cache/tree/d1527c8f67ef9af357290475d4af4b0fab8f12e0)
+caches Cargo registry/git dependencies and dependency build artifacts in the actual target
+directory, `meta-service/target`. It prunes workspace artifacts and incremental compilation
+state; caching Cargo-installed binaries is disabled. Do not add product `.data/`, deployment
+configuration, credentials or runtime state to cache paths. The action disables incremental
+compilation in CI; local Cargo incremental behavior is unchanged.
+
+The cache namespace includes the root Cargo manifest, Cargo configuration, pinned toolchain
+file and `scripts/duckdb-runtime.json`. Native-library or build-configuration changes therefore
+invalidate even fallback restores. The action also keys on runner OS/architecture, Rust
+versions, compiler/profile environment variables, dependency manifests and lockfiles. A
+lockfile update can restore compatible older dependencies; Cargo determines what to rebuild.
+Keep the CI and artifact workflow's cache inputs and profile environment aligned when
+upgrading them. A release-profile build would need its own cache identity and measurement.
+
+Successful `main` runs populate the shared dependency cache. PR runs may save caches in
+their own merge-ref scope for repeated validation. Under [GitHub's cache access rules](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache),
+PRs can restore base/default-branch caches, but their caches cannot be restored by `main` or
+other PRs. The internal artifact workflow restores compatible `main` caches without saving.
+Cache availability is an optimization: an empty or evicted cache still runs the full build
+and all checks. Keep the workflows' token permissions read-only.
+
+CI builds with `--timings` and retains the HTML report from
+`meta-service/target/cargo-timings/` for seven days, with a distinct artifact name per run
+attempt. To evaluate a cache change, compare an initial miss with a rerun of the Rust job
+on the same commit and a fresh hosted runner. Record the action's exact/fallback cache hit,
+cache size, restore/save overhead, build/Clippy/test steps and total job duration. A PR-local
+rerun proves same-PR reuse; verify the subsequent `main` seed separately before claiming
+cross-PR reuse. Compare actual Linux CI results rather than extrapolating from a warm local
+machine. Revisit the cache policy if storage/transfer cost outweighs saved compilation time.
+
 ## Commit sign-off
 
 DCO validation checks the actual Git trailer block for an author or committer sign-off on
