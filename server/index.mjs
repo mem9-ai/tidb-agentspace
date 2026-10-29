@@ -564,8 +564,10 @@ export async function createApp({
             cleanPath,
             signal: controller.signal,
             createFile: (options) => createExportFile({ ...options, store, drive9 }),
-            execute: (resource, sql, signal) =>
-              databaseAdapter(resource).execute(resource, sql, signal),
+            execute: (resource, sql, signal, options) =>
+              options?.databaseImport && resource.provider === duckdbProvider
+                ? duckdb.importStatement(resource, sql, signal)
+                : databaseAdapter(resource).execute(resource, sql, signal),
             record,
           };
           if (uploadImport)

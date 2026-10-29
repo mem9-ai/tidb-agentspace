@@ -35,6 +35,11 @@ format. Filenames are bounded basenames, not filesystem destinations. Uploads ar
 worker slots. Reject an oversized result rather than importing a sample. Existing 64 KiB
 CREATE/INSERT statement budgets still apply after field/type conversion.
 
+Implementation refinement from live acceptance: only server-generated DuckDB import writes
+have a fixed 30-second deadline per statement to allow cold storage commit/close. The original
+15-second parsing deadline and ordinary SQL limits remain unchanged; writes are never retried
+automatically and timeout still requires inspection. See ADR 0023 for the observed trigger.
+
 Preparation never mutates the database. Upload bytes live only in bounded request/worker
 storage and are discarded after parsing. Private parsed rows expire after five minutes;
 retain at most eight preparations per current Workspace process, pruning/evicting older ones.

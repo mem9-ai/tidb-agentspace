@@ -64,7 +64,13 @@ impl Compute {
             "SQL_EXECUTION_FAILED"
         };
 
-        tokio::time::timeout(Duration::from_secs(15), async {
+        // Only server-generated import writes get a longer cold-storage commit budget.
+        let seconds = if input["mode"] == "database" && input["importWrite"] == true {
+            30
+        } else {
+            15
+        };
+        tokio::time::timeout(Duration::from_secs(seconds), async {
             let mut child = tokio::process::Command::new(
                 std::env::current_exe().map_err(|_| err(503, failure))?,
             )
@@ -135,6 +141,12 @@ impl Compute {
         sources: Value,
         read_only: bool,
     ) -> Result<Value> {
+        self.database_job(id, json!({"mode":"database","connection":connection,"extensionPath":self.config.extension_path,"sql":sql,"sources":sources,"readOnly":read_only})).await
+    }
+    pub async fn import_statement(&self, id: &str, connection: Value, sql: &str) -> Result<Value> {
+        self.database_job(id, json!({"mode":"database","connection":connection,"extensionPath":self.config.extension_path,"sql":sql,"sources":[],"readOnly":false,"importWrite":true})).await
+    }
+    async fn database_job(&self, id: &str, input: Value) -> Result<Value> {
         self.verify()?;
         let _slot = self
             .database_slots
@@ -157,7 +169,7 @@ impl Compute {
         }
         let _active = Active(&self.active, id.into());
         let start = std::time::Instant::now();
-        let result=self.worker(json!({"mode":"database","connection":connection,"extensionPath":self.config.extension_path,"sql":sql,"sources":sources,"readOnly":read_only})).await;
+        let result = self.worker(input).await;
         let mut value = result?;
         value["mode"] = json!("live");
         value["durationMs"] = json!(start.elapsed().as_millis() as u64);

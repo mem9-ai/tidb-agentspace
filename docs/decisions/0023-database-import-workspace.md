@@ -22,6 +22,13 @@ also require source files:read/analyze and resource access. Reauthorize before s
 No scope is broadened, no automatic write retry/append/overwrite/DROP is added, and partial
 outcomes require inspection. Old APIs and preparations retain their existing contract.
 
+Live verification found cold DuckDB storage commits can exceed the ordinary 15-second SQL
+worker lifetime after CREATE becomes durable. Server-generated, confirmed database-import
+CREATE/INSERT statements therefore receive a fixed 30-second worker budget each. Parsing,
+ordinary customer SQL and older unbound exports keep their existing 15-second bounds. This
+does not change single-use tickets, admission limits, read-only parsing or unknown-outcome
+handling; no customer-supplied timeout option is exposed.
+
 The Console shares TiUI review/progress and keeps database SQL state mounted. Source/parsing
 changes invalidate review; acknowledgement and browser refresh remain distinct. No persistent
 upload staging, background job, billing or metadata migration is introduced.

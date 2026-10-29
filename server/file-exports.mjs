@@ -241,7 +241,9 @@ export function createFileExports({ analysis, now = Date.now, limits = fileExpor
         signal?.throwIfAborted();
         entry.used = true;
         try {
-          await execute(resource, plan.create, signal);
+          await execute(resource, plan.create, signal, {
+            databaseImport: Boolean(entry.destination),
+          });
         } catch (error) {
           if (error.code === 'SQL_TABLE_EXISTS') entry.used = false;
           throw error;
@@ -250,7 +252,9 @@ export function createFileExports({ analysis, now = Date.now, limits = fileExpor
           if (plan.insert) {
             authorize(context, { fileSource });
             signal?.throwIfAborted();
-            await execute(resource, plan.insert, signal);
+            await execute(resource, plan.insert, signal, {
+              databaseImport: Boolean(entry.destination),
+            });
           }
         } catch {
           throw sqlError(

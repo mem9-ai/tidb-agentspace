@@ -798,7 +798,10 @@ impl Product {
             }
             entry.used = true;
         }
-        if let Err(e) = self.execute_database(&r, &create, false, json!([])).await {
+        if let Err(e) = self
+            .execute_database_with_mode(&r, &create, false, json!([]), database_import)
+            .await
+        {
             if e.code == "SQL_TABLE_EXISTS"
                 && let Some(id) = preparation
                 && let Some(entry) = self.preparations.lock().await.get_mut(id)
@@ -811,7 +814,8 @@ impl Product {
             let inserted = async {
                 self.export_authorize(credential, source, target, false, file_source)
                     .await?;
-                self.execute_database(&r, &insert, false, json!([])).await
+                self.execute_database_with_mode(&r, &insert, false, json!([]), database_import)
+                    .await
             }
             .await;
             if inserted.is_err() {

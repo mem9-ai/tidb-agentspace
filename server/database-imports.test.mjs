@@ -75,10 +75,18 @@ const error = (r, status, code) => {
 };
 
 test('destination-only Key imports exact local CSV values without File System writes or resources', async (t) => {
-  const f = await fixture(t);
+  const budgets = [];
+  const f = await fixture(t, {
+    hooks: {
+      beforeSql(kind, sql, limits) {
+        if (kind === 'duckdb') budgets.push({ sql, timeoutMs: limits.timeoutMs });
+      },
+    },
+  });
   const key = await f.key(['queries:execute'], ['db_duck']);
   const before = await f.request('/bootstrap');
   const ioBefore = f.io.length;
+  budgets.length = 0;
   const prepared = await upload(f, csv, key.secret);
   assert.equal(prepared.status, 200);
   assert.equal(prepared.body.rows[0].id, '001');
@@ -87,6 +95,13 @@ test('destination-only Key imports exact local CSV values without File System wr
   assert.equal(f.io.length, ioBefore);
   const imported = await ownerCommit(f, prepared, 'local_import', 'db_duck', key.secret);
   assert.equal(imported.status, 200);
+  assert.equal(budgets.length, 2);
+  assert.ok(budgets.every(({ timeoutMs }) => timeoutMs > 15000 && timeoutMs <= 30000));
+  await f.request('/queries', 'POST', { resourceId: 'db_duck', sql: 'SELECT 1 AS normal_query' });
+  assert.ok(
+    budgets[2].timeoutMs > 0 && budgets[2].timeoutMs <= 15000,
+    'ordinary customer SQL keeps its existing deadline',
+  );
   const read = await f.native('SELECT * FROM local_import ORDER BY id');
   assert.equal(read.rows[0].id, '001');
   assert.equal(read.rows[0].amount, '9007199254740993');
@@ -99,7 +114,7 @@ test('destination-only Key imports exact local CSV values without File System wr
     409,
     'IMPORT_ALREADY_COMMITTED',
   );
-  assert.equal(f.statements.length, 2);
+  assert.equal(f.statements.length, 3, 'replay must not add another statement');
 });
 test('local Parquet retains its schema, complete row count and exact integers', async (t) => {
   const f = await fixture(t);

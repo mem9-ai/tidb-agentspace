@@ -59,6 +59,11 @@ CREATE/INSERT plans must fit existing 64 KiB statement budgets. Preparations are
 principal/target-bound, expire after five minutes and retain at most eight entries. Restart or
 eviction requires preparing again. Changed saved bytes reject before writes.
 
+Only server-generated DuckDB import CREATE/INSERT workers have a 30-second deadline each,
+including cold storage commit/close. Ordinary SQL and parsing retain 15 seconds. Live acceptance
+observed a CREATE durable as an empty table after a 15-second timeout, motivating this bounded
+exception. The gateway never retries that uncertain write or drops its table.
+
 Every commit path enforces target binding, including legacy file-export routes. Reauthorize
 before provider writes and atomically consume before CREATE. A definitive table conflict can
 retain review for a different name. Partial/uncertain outcomes require inspecting the target;
