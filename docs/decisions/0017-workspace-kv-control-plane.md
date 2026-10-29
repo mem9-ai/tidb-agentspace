@@ -1,6 +1,6 @@
 # ADR 0017: Portable KV metadata for the Workspace control plane
 
-- Status: Proposed; storage independence and the global/regional three-plane split are owner-requested direction; detailed contracts remain under review
+- Status: Proposed; portable KV, hosted object storage as source of truth and the global/regional three-plane split are owner-requested direction; detailed contracts remain under review
 - Date: 2026-10-29
 - Parent: [GH-74](https://github.com/siddontang/tidb.ai/issues/74)
 - Specification: [Multi-tenant Workspace control plane](../../specs/gh-74/spec.md)
@@ -42,6 +42,12 @@ regional service, including after a policy-heartbeat interval or regional restar
 supersedes the earlier authorization-lease-expiry shutdown proposal. Persist verified local
 policy without synchronization TTL; enforce real credential expiry and received revocations.
 
+After reviewing an object-backed metastore reference, the owner requested object storage as
+the hosted metadata source of truth. The [object-metastore design](../../specs/gh-74/object-metastore.md)
+requires recovery of every acknowledged commit from objects, including the accepted WAL
+tail. This supersedes the earlier SQL-first hosted evaluation order; local files remain the
+local authority. Object checkpoints that lag a local/Raft-only ACK are a different profile.
+
 ## Proposed decision
 
 1. Domain services use typed repositories over `MetaStore`, with versioned JSON records,
@@ -56,14 +62,16 @@ policy without synchronization TTL; enforce real credential expiry and received 
 3. Use one ordinary JSON state file per bounded group for the first local adapter, owned by one
    authority process. Exclusive root ownership, synced temporary writes, atomic replacement,
    directory sync and explicit recovery are required. Local files do not imply multi-host HA.
-4. TiDB File System is an explicit hosted candidate using service-owned metadata storage,
-   separate from public File Systems and DuckDB backing stores, with out-of-band bootstrap
-   credentials. Evaluate one metadata authority or immutable snapshots with conditional HEAD
-   publication; verify fresh reads, durability, path-incarnation/stale-writer protection and
-   upload limits. A mount or layer checkpoint does not establish that contract. TiDB/MySQL
-   may implement the same KV contract with physical scope/record tables and transactions.
-   A later S3 adapter must use conditional snapshot publication or a proven conforming engine.
-   Independent per-record PUTs are insufficient. No hosted engine is selected here.
+4. Prefer an object-native engine for hosted metadata: accepted WAL, SSTs, manifests and
+   recovery/routing evidence are durable in objects before ACK; local caches are disposable.
+   Evaluate pinned SlateDB first, without claiming current conformance or selecting a runtime
+   binding. Pool groups in physical shards; verify CAS/atomic batches, durable visibility and
+   read/write ownership. SQL may be a rebuildable query projection or an explicit alternative
+   database-authority profile, never an uncoordinated second writer. TiDB File System remains
+   a service-owned candidate, separate from customer/DuckDB storage and with independent
+   bootstrap credentials. Qualify publication, path incarnation, payload limits and object
+   recovery of its namespace/catalog as well as file bytes. Bounded snapshot+HEAD supports
+   small inventories; neither it nor independent per-key PUTs establishes hosted scale.
 5. Store provider credentials through a separate internal `CredentialStore`. Local private
    files remain an explicit local profile; hosted encryption/IAM needs a chosen managed
    profile. Public metadata/projections never expose native passwords or provider tokens.
@@ -158,7 +166,7 @@ specification revision.
 
 ## Verification and revisit
 
-[META-01 through META-58](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
+[META-01 through META-66](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
 cover adapter conformance, crash/unknown outcomes, authorization before I/O, provider-account
 quotas, credential separation, full legacy import, no duplicate provider effects and restore.
 The TiDB File System case includes concurrent publication, path replacement, bootstrap and
@@ -173,6 +181,10 @@ Autonomy cases blackhole Global through serving/session renewal, regional restar
 retention and resynchronization; shared-process local tests are not hosted availability evidence.
 API/auth cases cover origin/contract ownership, local exchange/refresh/reauthentication,
 credential/grant lifetimes, refresh replay, audience isolation, browsers and safe data retries.
+Object-profile cases cover accepted-WAL object-only recovery, durable visibility, obsolete
+readers/writers, compaction/GC closure, projection rebuild, regional bootstrap/secret recovery
+and measured batching/cost/isolation. Engine defaults or object-backed file bytes do not
+establish these properties without acceptance evidence.
 This ADR does not claim those tests or a production migration exist. Repository checks only
 verify the current source/documents.
 

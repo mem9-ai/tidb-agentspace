@@ -70,6 +70,11 @@ They preserve the owner's logical-KV/local-file direction, TiDB File System cand
 global/regional control plus regional data-plane separation. Resource placement, dispatch,
 consistency, isolation and migration remain proposed behavior, distinct from the running
 single-Workspace service.
+For hosted persistence, read the [object-metastore design](specs/gh-74/object-metastore.md):
+object storage is the preferred source of truth for all acknowledged commits, including WAL;
+local caches and search projections are rebuildable. This supersedes the earlier SQL-first
+evaluation order; SlateDB and TiDB File System require conformance evidence before selection.
+Local development still uses ordinary files; the running JSON store is unchanged.
 For millions of Workspaces or a million-resource Workspace, also read the
 [metadata scale profile](specs/gh-74/metadata-scale.md): Workspace ownership is distinct from
 atomic-group granularity, shared-cell routing, query indexes and workload capacity evidence.

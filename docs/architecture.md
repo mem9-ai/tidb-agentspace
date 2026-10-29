@@ -54,11 +54,18 @@ optional mix of three distinct resource types. [Supabase Platform](https://supab
 
 The [multi-tenant control-plane design](../specs/gh-74/spec.md) and
 [proposed ADR 0017](decisions/0017-workspace-kv-control-plane.md) define a logical KV metadata
-layer, scope-atomic records/indexes, ordinary local-file persistence, replaceable hosted
-adapters including a service-owned TiDB File System candidate, Organization/Workspace
+layer, scope-atomic records/indexes, ordinary local-file persistence, hosted object storage
+as the preferred source of truth, a service-owned TiDB File System candidate, Organization/Workspace
 authorization and identity-preserving resource/credential
 migration. This is a proposal, not implemented multi-tenancy or a completed migration. The
 current fixed Workspace, local owner session and JSON/vault persistence remain in use.
+
+The [object-metastore design](../specs/gh-74/object-metastore.md) requires object recovery of
+every acknowledged metadata commit, including the accepted WAL tail; local caches and query
+projections are disposable. Evaluate an existing object-native engine, initially SlateDB,
+before building a new storage engine. Durability waits, group CAS, fresh authorization reads,
+fencing and namespace/secret recovery remain unimplemented proof obligations. SQL authority
+plus asynchronous object backup is a separate durability profile.
 
 The owner-requested future deployment separates three planes. See the specification's
 [authority and regional placement](../specs/gh-74/spec.md#2-architecture-and-ownership)
