@@ -83,6 +83,16 @@ for new regional requests; offline regional policy leases are a separate decisio
 payloads stay on the declared regional data path. A region outage preserves resource identity
 and pending state; it never silently recreates a resource elsewhere. This remains design-only.
 
+The [metadata scale profile](../specs/gh-74/metadata-scale.md) targets millions of Workspaces
+and individual million-resource Workspaces. Pool small tenants in shared cells and partition
+hot tenants by resource/edge identity. A Workspace is not one JSON blob, CAS lock, database,
+queue or process. Resource-local groups hold atomic intent/observed bundles; name/request
+claims and quota rights use recoverable coordination. Large grants are indexed edges, and
+lists use bounded server-side keyset queries with freshness rather than loading the whole
+inventory. Scale backend selection requires incremental writes, indexed discovery, fairness
+and measured skew/recovery/cost evidence. Local files remain a bounded development profile;
+TiDB File System support does not imply those scale capabilities without a conforming engine.
+
 ## Console information architecture
 
 | Page             | Primary task                                  | Important states and interactions                                                                                                                    |

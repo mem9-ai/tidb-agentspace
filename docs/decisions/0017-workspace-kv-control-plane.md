@@ -26,17 +26,23 @@ state against its local data plane. A Workspace can span regions, so a resource'
 part of its immutable routing/ownership context, not only a Console label. The current
 single-process gateway and its existing region strings do not implement this topology.
 
+The owner requires planning for millions of Workspaces and individual Workspaces containing
+up to a million resources. This invalidates the earlier one-Workspace snapshot/CAS as a
+production partition. The [scale profile](../../specs/gh-74/metadata-scale.md) replaces that
+granularity; no capacity benchmark or hosted engine selection is claimed.
+
 ## Proposed decision
 
 1. Domain services use typed repositories over `MetaStore`, with versioned JSON records,
    explicit ownership, bounded prefix scans and maintained indexes. They do not issue SQL,
    object-store requests or raw filesystem operations for metadata.
-2. Require fresh snapshot reads and revision-conditional atomic batches **within one scope**.
-   Global Organization/Workspace and regional Workspace are separate scopes and authorities.
-   Desired resource/name/operation/outbox/indexes commit globally together; regional
-   inbox/execution/binding/observed-state records commit together locally. Cross-plane work
-   uses recoverable coordination, without a global/regional transaction.
-3. Use one ordinary JSON state file per scope for the first local adapter, owned by one
+2. Require fresh reads and revision-conditional atomic batches within **bounded groups**.
+   Workspace is an ownership boundary, not a shared resource write lock. A desired resource/
+   operation/outbox commits in its global resource group; actual binding/inbox/attempt/state
+   commits in its regional group. Name/request claims, grants and quota pools have separate
+   groups; staged coordination confirms prerequisites before effects, without requiring a
+   Workspace-wide or global/regional transaction.
+3. Use one ordinary JSON state file per bounded group for the first local adapter, owned by one
    authority process. Exclusive root ownership, synced temporary writes, atomic replacement,
    directory sync and explicit recovery are required. Local files do not imply multi-host HA.
 4. TiDB File System is an explicit hosted candidate using service-owned metadata storage,
@@ -72,21 +78,28 @@ single-process gateway and its existing region strings do not implement this top
     audience/request grants and explicit in-flight semantics. Offline policy leases are a
     separate revocation/SLO decision. Start with modules in one local API deployment; split
     hosted services only after the regional isolation and failure acceptance cases pass.
+11. Pool sparse tenants across metadata cells and shard hot tenants by resource/edge identity.
+    Keep policy roots small, exact grants as partitioned edges, strict quota rights in bounded
+    pools, and list/task projections indexed with explicit lag. Use keyset/live or pinned
+    snapshot/export contracts, fair shared workers and ownership-fenced partition movement.
+    Millions of resources require the scale profile's incremental/query/discovery/isolation
+    evidence; core file durability or conditional object writes alone are insufficient.
 
 ## Alternatives and consequences
 
 - A relational domain schema could enforce some relationships in SQL, but would make other
   adapters reproduce database-specific query behavior. Logical KV records with typed
   repositories keep that policy explicit and portable.
-- A separate file for every logical record is inspectable but requires a transaction/journal
-  protocol to update grants, guards and indexes together. A bounded per-scope JSON snapshot
-  gives the first local version a simpler atomic boundary.
+- A separate uncoordinated file per logical record cannot atomically publish a resource-local
+  bundle. A bounded group snapshot gives the local version a clear boundary; names/rights
+  use staged coordination. A snapshot/lock for an entire large Workspace is rejected.
 - An eventual `get/put/list` abstraction is too weak for revocation, uniqueness and concurrent
   lifecycle changes. Portability cannot hide the consistency required by those operations.
 - A global transaction across every tenant would make custom object-backed storage much more
   complicated. Scope boundaries deliberately expose cross-scope workflows and their recovery.
-- Scope CAS creates contention within a busy Workspace. Coalesce observational writes and
-  keep bulk events/results outside hot metadata. Measure before changing partitioning.
+- Group CAS serializes one resource's lifecycle, while other resources proceed independently.
+  Separate policy, query projections and telemetry; shard ordered indexes and measure hot
+  keys. Logical KV independence does not promise equal performance from every backend.
 - Storage independence is not free: relationship checks, codecs, index updates, conformance,
   crash recovery and import verification are product responsibilities.
 - Independent regional execution adds sagas and stale status projections. The initial fresh
@@ -114,13 +127,15 @@ specification revision.
 
 ## Verification and revisit
 
-[META-01 through META-28](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
+[META-01 through META-37](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
 cover adapter conformance, crash/unknown outcomes, authorization before I/O, provider-account
 quotas, credential separation, full legacy import, no duplicate provider effects and restore.
 The TiDB File System case includes concurrent publication, path replacement, bootstrap and
 public/private storage separation; its current product adapter is not a metadata CAS adapter.
 Regional cases cover placement, dispatch/results, fresh cross-authority admission, service/
 credential isolation, capacity/outages, data movement and distributed import/restore.
+Scale cases cover sparse/large tenants, group contention, staged claims, pagination, grant
+edges, strict quota pools, fairness, partition movement and reproducible workload/cost evidence.
 This ADR does not claim those tests or a production migration exist. Repository checks only
 verify the current source/documents.
 

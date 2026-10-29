@@ -70,6 +70,9 @@ They preserve the owner's logical-KV/local-file direction, TiDB File System cand
 global/regional control plus regional data-plane separation. Resource placement, dispatch,
 consistency, isolation and migration remain proposed behavior, distinct from the running
 single-Workspace service.
+For millions of Workspaces or a million-resource Workspace, also read the
+[metadata scale profile](specs/gh-74/metadata-scale.md): Workspace ownership is distinct from
+atomic-group granularity, shared-cell routing, query indexes and workload capacity evidence.
 
 | Task                                                      | Required starting points                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

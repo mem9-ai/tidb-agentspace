@@ -39,4 +39,4 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Proposed decisions
 
-- [0017: Portable Workspace KV control plane](0017-workspace-kv-control-plane.md) — global/regional control and regional data planes, regional resource placement, logical records/indexes, local files and hosted backend candidates, tenant authorization and identity-preserving migration; design only.
+- [0017: Portable Workspace KV control plane](0017-workspace-kv-control-plane.md) — global/regional planes, resource placement, pooled cells and bounded atomic groups for large tenants, local/hosted KV candidates, tenant authorization and identity-preserving migration; design only.
