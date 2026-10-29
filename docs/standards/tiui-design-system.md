@@ -267,7 +267,15 @@ verified, and record that as a remaining gap.
   Revisit for new destinations, formats or persistent/large exports.
 - **Preview-first file workspace (owner correction, GH-76):** open a file to its content or
   bounded tabular sample. SQL/Bash expands in place, with Data preview and Query result/Command
-  output sharing the content area. Keep tools mounted through tool, content, method and browser
+  output sharing the content area. Following the GH-82 owner correction, initial preview and
+  unexecuted Analyze show no result navigation. Reveal usable preview/result tabs only when
+  explicit execution starts; retain them for running, success, error and canceled states.
+  Never present a disabled result tab as an apparent Analyze entry. Clearing execution state
+  returns to preview and its original-file actions; preserve existing results when merely
+  switching tools/methods. Check these transitions in both themes/viewports, including keyboard
+  navigation and export context. See the result-discovery evidence in the linked verification;
+  revisit when introducing persistent sessions or separate analysis routes.
+  Keep tools mounted through tool, content, method and browser
   toggles; retain independent in-memory drafts/results/errors and run only explicitly. Source
   editing remains a secondary action with save/discard guards; Parquet has no source editor.
   CSV/Parquet preview uses the server's fixed reader, shows types/schema and a clearly labeled

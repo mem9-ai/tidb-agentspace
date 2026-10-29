@@ -54,9 +54,11 @@ export function FileAnalysisEditor({
   const [busy, setBusy] = useState(false);
   const [contentView, setContentView] = useState<string | null>('preview');
   const [exportOpen, setExportOpen] = useState(false);
+  const hasExecution = !!(result || busy || error);
+  const visibleContentView = hasExecution ? contentView : 'preview';
   useEffect(() => {
-    if (active) onContentViewChange(contentView === 'result' ? 'result' : 'preview');
-  }, [active, contentView, onContentViewChange]);
+    if (active) onContentViewChange(visibleContentView === 'result' ? 'result' : 'preview');
+  }, [active, visibleContentView, onContentViewChange]);
   const execution = useRef<AbortController | null>(null);
   const pending = useRef(false);
   useEffect(() => {
@@ -223,12 +225,14 @@ export function FileAnalysisEditor({
           </Button>
         </Alert>
       )}
-      <Tabs value={contentView} onChange={setContentView} keepMounted>
-        <Tabs.List px="md">
+      <Tabs value={visibleContentView} onChange={setContentView} keepMounted>
+        <Tabs.List
+          px="md"
+          hidden={!hasExecution}
+          style={{ display: hasExecution ? undefined : 'none' }}
+        >
           <Tabs.Tab value="preview">{isTabularFile(path) ? 'Data preview' : 'Preview'}</Tabs.Tab>
-          <Tabs.Tab value="result" disabled={!result && !busy && !error}>
-            {sql ? 'Query result' : 'Command output'}
-          </Tabs.Tab>
+          <Tabs.Tab value="result">{sql ? 'Query result' : 'Command output'}</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="preview">{preview}</Tabs.Panel>
         <Tabs.Panel value="result">
