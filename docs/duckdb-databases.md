@@ -39,7 +39,7 @@ public file interface.
 For the optional API for CSV, JSON and Parquet in public File Systems, see
 [Workspace file sources](#workspace-file-sources).
 
-The native Rust executable bundles DuckDB 2.0.0. Supply the exact matching platform/version
+The native Rust executable statically links the pinned official DuckDB 2.0.0 prebuilt libraries, avoiding a C++ source build. See [build setup](rust-backend.md#build-check-and-package). Supply the exact matching platform/version
 of the native tidbfs artifact from [drive9-ai/duckdb](https://github.com/drive9-ai/duckdb).
 Its release build statically links its runtime dependencies. No Community Extensions
 publication, Ti CLI, DuckDB CLI or runtime extension download is required by this product.

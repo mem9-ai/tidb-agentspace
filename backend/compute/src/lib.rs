@@ -1,3 +1,5 @@
+#[path = "duckdb-runtime.rs"]
+mod duckdb_runtime;
 mod native;
 pub use native::{one_statement, safe_error};
 use serde::{Deserialize, Serialize};
@@ -8,6 +10,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use workspace_contracts::{Result, ServiceError};
 fn err(status: u16, code: &str) -> ServiceError {
     ServiceError::new(status, code)
+}
+pub fn runtime_info() -> Value {
+    json!({"duckdb":{"version":env!("WORKSPACE_DUCKDB_VERSION"),"linkage":"static","target":env!("WORKSPACE_DUCKDB_TARGET"),"archiveSha256":env!("WORKSPACE_DUCKDB_ARCHIVE_SHA256")}})
 }
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

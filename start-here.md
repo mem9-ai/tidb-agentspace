@@ -88,7 +88,8 @@ SlateDB transactions. [ADR 0020](docs/decisions/0020-modular-rust-backend.md) de
 modules and single-binary/multiple-process composition; [ADR 0022](docs/decisions/0022-native-slatedb-transactions.md)
 defines coherent durable reads. [GH-88](specs/gh-88/spec.md) is the historical language-parity baseline;
 its document compatibility direction is superseded by ADR 0024. Node sources remain test oracles
-and tooling, not a production or rollback API. See the [Rust guide](docs/rust-backend.md).
+and tooling, not a production or rollback API. Native builds now verify and link pinned official
+DuckDB static libraries instead of compiling its C++ sources; see the [Rust guide](docs/rust-backend.md).
 
 For millions of Workspaces or a million-resource Workspace, also read the
 [metadata scale profile](specs/gh-74/metadata-scale.md): Workspace ownership is distinct from
