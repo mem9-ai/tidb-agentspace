@@ -1,5 +1,7 @@
 # GH-88: Rust backend migration and deployment composition
 
+> The owner superseded the local document-preservation and Node handoff profile with [ADR 0024](../../docs/decisions/0024-fresh-record-metadata.md). This specification remains historical parity evidence; fresh storage rejects format 1. Cloud deletion is excluded from the authorized local reset.
+
 - Parent: [GH-88](https://github.com/siddontang/tidb.ai/issues/88); related metadata intent: GH-74.
 - Status: Owner-selected architecture; implementation in staged, independently evaluated slices.
 - Baseline: `7cf93b148c2f2830f1063ec6f24affb60c0f4416`, including independent SlateDB service GH-87.

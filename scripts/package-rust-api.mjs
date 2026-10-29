@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile, chmod } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile, chmod, lstat } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { basename, resolve } from 'node:path';
@@ -18,6 +18,11 @@ export async function packageRustApi({ root, sourceSha, binary, destination }) {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
   if (head !== sourceSha) throw new Error('Package the checked-out reviewed revision.');
   execFileSync('git', ['diff', '--exit-code', 'HEAD'], { cwd: root, stdio: 'ignore' });
+  if (execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim())
+    throw new Error('Package only clean reviewed source, including newly added files.');
+  const executable = await lstat(binary);
+  if (!executable.isFile() || executable.isSymbolicLink())
+    throw new Error('Package an ordinary native executable, not a symbolic link.');
   const temporary = await mkdtemp(resolve(tmpdir(), 'workspace-rust-package-'));
   try {
     const staged = resolve(temporary, 'api');

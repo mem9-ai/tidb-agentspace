@@ -128,15 +128,10 @@ impl Providers {
         })
     }
     pub async fn binding(&self, doc: &str, id: &str) -> Result<Value> {
-        Ok(self.repository.read_document(doc).await?["bindings"][id].clone())
+        self.repository.binding(doc, id).await
     }
     pub async fn save_binding(&self, doc: &str, id: &str, binding: Value) -> Result<()> {
-        self.repository
-            .transaction_document(doc, move |v| {
-                v["bindings"][id] = binding;
-                Ok(((), true))
-            })
-            .await
+        self.repository.save_binding(doc, id, binding).await
     }
     pub async fn sql(&self, binding: &Value, statement: &str, setup: bool) -> Result<Value> {
         if statement.trim().is_empty() || statement.len() > 65536 {
@@ -495,7 +490,7 @@ impl Providers {
             .map_err(|_| err(503, "DB9_CREATION_UNCONFIRMED"))
     }
     async fn account(&self) -> Result<Value> {
-        let mut saved = self.repository.read_document("db9").await?["account"].clone();
+        let mut saved = self.repository.account("db9").await?;
         if saved.is_null() {
             self.save_account(json!({"state":"requested"})).await?;
             let data = self
@@ -525,12 +520,7 @@ impl Providers {
         Ok(saved)
     }
     async fn save_account(&self, value: Value) -> Result<()> {
-        self.repository
-            .transaction_document("db9", |d| {
-                d["account"] = value;
-                Ok(((), true))
-            })
-            .await
+        self.repository.save_account("db9", value).await
     }
     pub async fn provision_database(&self, r: &Value) -> Result<Value> {
         let _guard = self.setup.lock().await;

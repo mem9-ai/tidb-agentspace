@@ -42,11 +42,12 @@ pub struct Config {
     pub bind: SocketAddr,
     pub workspace_id: String,
     pub authority_id: String,
-    pub import_id: String,
+    #[serde(default)]
+    pub initialize_workspace: bool,
     pub metadata: MetaBinding,
     pub insecure_loopback: bool,
     pub console_origins: Vec<String>,
-    pub recover_gateway_owner: Option<String>,
+    pub recover_writer_owner: Option<String>,
     #[serde(default)]
     pub product: Option<workspace_product::Config>,
 }
@@ -62,13 +63,10 @@ impl Config {
         if !result.insecure_loopback
             || !result.bind.ip().is_loopback()
             || !result.bind.is_ipv4()
-            || result.workspace_id != "ws_agentlab"
+            || result.workspace_id.is_empty()
             || !result.authority_id.starts_with("region:")
-            || result.import_id.is_empty()
         {
-            bail!(
-                "The Workspace migration profile requires explicit IPv4 loopback and regional identity"
-            );
+            bail!("The Workspace API requires explicit IPv4 loopback and regional identity");
         }
         match &result.metadata {
             MetaBinding::InProcess { authority_id } if authority_id != &result.authority_id => {
@@ -115,8 +113,8 @@ impl WorkspaceServer {
             metadata,
             &config.authority_id,
             &config.workspace_id,
-            &config.import_id,
-            config.recover_gateway_owner.as_deref(),
+            config.initialize_workspace,
+            config.recover_writer_owner.as_deref(),
         )
         .await?;
         let workspace = Arc::new(Workspace::new(repository));
@@ -532,7 +530,7 @@ async fn credential_for_response(
     input: &Credential,
 ) -> std::result::Result<(), ServiceError> {
     credential(app, headers).await?;
-    workspace_domain::principal(&app.workspace.repository().read().await?, input)?;
+    app.workspace.authenticate(input).await?;
     Ok(())
 }
 fn product_response(

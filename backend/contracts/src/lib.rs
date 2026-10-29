@@ -14,25 +14,31 @@ pub struct Scope {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Gateway {
-    pub scope: Scope,
+pub struct WriterGuard {
     pub owner_id: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase", deny_unknown_fields)]
 pub enum MetaRequest {
-    Snapshot {
+    Get {
         scope: Scope,
         #[serde(default)]
-        gateway: Option<Gateway>,
+        guard: Option<WriterGuard>,
+        keys: Vec<String>,
+    },
+    List {
+        scope: Scope,
+        #[serde(default)]
+        guard: Option<WriterGuard>,
+        prefix: String,
+        after: Option<String>,
+        limit: usize,
     },
     Commit {
         scope: Scope,
         #[serde(default)]
-        gateway: Option<Gateway>,
-        #[serde(rename = "expectedRevision")]
-        expected_revision: Option<String>,
+        guard: Option<WriterGuard>,
         #[serde(rename = "mutationId")]
         mutation_id: String,
         changes: Vec<Value>,
@@ -40,7 +46,7 @@ pub enum MetaRequest {
     Resolve {
         scope: Scope,
         #[serde(default)]
-        gateway: Option<Gateway>,
+        guard: Option<WriterGuard>,
         #[serde(rename = "mutationId")]
         mutation_id: String,
     },

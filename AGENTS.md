@@ -72,8 +72,8 @@ follow its task-specific references before implementation. Keep detailed rules c
   domain types and `unknown` at untrusted boundaries; avoid `any` and unchecked casts.
 - Backend business services target Rust under [ADR 0020](docs/decisions/0020-modular-rust-backend.md):
   shared domain modules support in-process and independently deployed service composition.
-  Follow [the migration contract](specs/gh-88/spec.md); existing Node ESM is transitional and
-  receives scoped compatibility fixes until Rust parity. Keep Node build/test tooling ESM.
+  Follow [the migration contract](specs/gh-88/spec.md); Node ESM under `server/` is retained only for isolated regression oracles and tooling.
+  Fresh storage follows [ADR 0024](docs/decisions/0024-fresh-record-metadata.md); do not restore document import/handoff paths. Keep Node build/test tooling ESM.
 - Use PascalCase for React components/types, camelCase for functions/variables, and descriptive
   kebab-case for new non-component files. Follow established public API field names.
 - Prefer small feature modules and shared UI primitives. Extract from the prototype's large

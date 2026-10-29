@@ -127,9 +127,9 @@ concrete reason; use existing platform capabilities where sufficient.
 | `npm run lint`                                | Check code, with zero warnings allowed                                         |
 | `npm run typecheck`                           | Check strict frontend TypeScript                                               |
 | `npm run build:console`                       | Build only the static Console in `dist/console/`                               |
-| `npm run build:api`                           | Build only the dependency-free API in `dist/api/`                              |
+| `npm run build:api`                           | Build only the native Rust API executable                                      |
 | `npm run dev:console` / `npm run dev:api`     | Run either development process independently                                   |
-| `npm run start:console` / `npm run start:api` | Run built Console / source API separately                                      |
+| `npm run start:console` / `npm run start:api` | Run built Console / native API separately                                      |
 | `npm run api:generate`                        | Regenerate OpenAPI and Console client types from the contract source           |
 | `npm run api:check`                           | Fail if OpenAPI or generated client types have drifted; does not rewrite files |
 | `npm test`                                    | Run API and repository-tool behavior tests with isolated temporary data        |
@@ -147,13 +147,7 @@ screenshots. If a check cannot run, report the specific gap instead of claiming 
 Use the root Cargo workspace, pinned `rust-toolchain.toml` and root `Cargo.lock`.
 `npm run backend:build` builds the Rust modules. Default API/development launchers require
 `WORKSPACE_BACKEND_CONFIG` pointing to the private regional deployment; they never fall back
-to Node or seed another data file. `start:legacy-api` is the explicit compatibility command; `npm run backend:check` runs workspace
-format/Clippy/tests and real isolated S3/Node-parity tests in addition to `npm run check`.
-The same checks are available through Cargo directly; Node remains build/test tooling and
-the retained compatibility/rollback API. See [the Rust runtime guide](docs/rust-backend.md) for the
-common binary, module map, partial Workspace/Key profile and private deployment plans.
-Do not switch a live entry point to a partial profile or use real provider mutations for
-language migration. Rust role changes must preserve regional ownership and gateway fencing.
+to another backend or seed another data file. `npm run backend:check` runs workspace format/Clippy/tests and real isolated S3/native API tests in addition to `npm run check`. Node remains build/test tooling and an isolated behavior oracle; it is not a serving or rollback backend. Fresh installations follow [ADR 0024](docs/decisions/0024-fresh-record-metadata.md), replacing the retired document/import bridge. See [the Rust guide](docs/rust-backend.md) for module composition, private plans and explicit empty-Workspace bootstrap.
 
 ## Commits and review
 

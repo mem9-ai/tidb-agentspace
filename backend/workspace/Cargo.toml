@@ -6,7 +6,6 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-base64.workspace = true
 chrono.workspace = true
 getrandom.workspace = true
 hex.workspace = true

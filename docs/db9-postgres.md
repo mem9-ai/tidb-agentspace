@@ -1,8 +1,7 @@
 # db9 PostgreSQL runtime and recovery
 
-For the current Rust API, configure the private deployment as described in the
-[Rust runtime guide](rust-backend.md). The environment-variable startup examples below use
-the explicit Node compatibility profile; API and credential boundaries apply to both.
+The Rust API uses the private deployment described in the
+[Rust runtime guide](rust-backend.md), with record metadata under [ADR 0024](decisions/0024-fresh-record-metadata.md).
 
 The owner-selected db9 anonymous/free service provides PostgreSQL-compatible resources. It is
 independent of TiDB Cloud PG Starter. The accepted [GH-40 specification](../specs/gh-40/spec.md)
@@ -10,29 +9,31 @@ and [ADR 0011](decisions/0011-db9-postgres.md) define the boundary.
 
 ## Run
 
-Use the pinned runtime and install with `npm ci`, then:
+Set `product.providers.postgresProvider` to `db9-anonymous` in the private regional API
+configuration. Optionally enable `mysqlProvider: "tidb-cloud-zero"` and
+`filesProvider: "drive9-anonymous"` independently. Start the reviewed native artifact:
 
 ```sh
-WORKSPACE_POSTGRES_PROVIDER=db9-anonymous \
-  WORKSPACE_MYSQL_PROVIDER=tidb-cloud-zero \
-  WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run start:legacy-api
+workspace-backend serve --config /absolute/private/regional-api-plan.json
 ```
 
 Choose PostgreSQL · db9 in Create database. Anonymous registration needs no user email/card.
-The backend uses official REST endpoints and native `pg` 8.23.1; no CLI is installed or required.
+The backend uses official REST endpoints and its native Rust PostgreSQL driver; no CLI is installed or required.
 `postgresql` is the public kind, `db9-anonymous` its provider, and `automatic` the region request.
 The service does not promise a region or database expiry not supplied by the provider. Token
 expiry is an internal account concern, not a database lifetime.
 
-Default `WORKSPACE_POSTGRES_PROVIDER=disabled` prevents new PostgreSQL creation. Existing
+The default `postgresProvider: "disabled"` prevents new PostgreSQL creation. Existing
 configured PG bindings remain usable; historical simulated PG is never rebound or exposed.
 
 ## Credentials and isolation
 
-The sibling `<state-file>.db9.json` vault contains one anonymous account and resource-scoped
-native bindings, with mode 0600. Never commit, log or send it to the Console. Startup rejects
-insecure existing vault permissions. It is local prototype credential storage; production
-secret management and public identity remain unimplemented.
+The regional Meta service stores the anonymous account at `credentials/accounts/db9` and
+resource-specific bindings/credentials in separate encrypted records. The API never sends these
+records to the Console. Private configuration, encryption keys, service credentials and object
+storage must be protected and recovered together; see [metadata operations](meta-service.md).
+The former owner-only JSON vault exists only in isolated regression fixtures, with no serving
+or migration path. Production secret management and public identity remain unimplemented.
 
 The provider token handles account/database management. Customer SQL uses a generated native
 non-superuser role owning the `workspace` schema; admin credentials are discarded from its
@@ -89,6 +90,6 @@ the original outcome. Raw provider/native errors stay internal and public errors
 
 Refresh the anonymous token using the stored anonymous ID/secret when needed for management;
 refresh never changes account identity or creates databases. Native user SQL does not use that
-token. Back up state and the vault together; losing them can lose access to an anonymous account.
+token. Preserve the regional object-store metadata and its encryption keys together; losing them can lose access to an anonymous account.
 Reverting code or disabling creation does not erase cloud data. Preserve bindings when rolling
 back, and never expose retired simulated PG records as live. See [verification](db9-verification.md).

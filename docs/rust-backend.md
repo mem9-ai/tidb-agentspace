@@ -5,10 +5,11 @@
 - Full regional API implementation: [GH-92](https://github.com/siddontang/tidb.ai/issues/92).
 - Rust **1.99.1**, a root Cargo workspace and committed `Cargo.lock`.
 - The Rust full profile serves Workspace/Keys, lifecycle, SQL/browser, files, analysis,
-  result/file exports and confirmed imports. Node remains a compatibility oracle, rollback
-  implementation and build/migration tooling; Rust never forwards business operations to it.
+  result/file exports and confirmed imports. Node remains an isolated regression oracle and build/test tooling; Rust never forwards business operations to it.
 - This is the existing loopback guest product profile. Production identity, typed multi-tenant
   repositories, Global policy distribution and million-resource sharding remain GH-74 work.
+
+The fresh record profile supersedes the document migration baseline; see [ADR 0024](decisions/0024-fresh-record-metadata.md). Old format-1 installations are rejected, and no import or Node rollback backend is retained.
 
 ## Modules
 
@@ -17,7 +18,7 @@
 | `backend/contracts`   | Metadata port, scoped context and structured errors                                    |
 | `meta-service`        | Encrypted SlateDB/S3 authority, durable commits, fencing and mTLS server               |
 | `backend/meta-client` | Authority-bound remote Meta adapter; TLS 1.3/mTLS, bounded requests, no retries        |
-| `backend/workspace`   | Workspace/Key domain, authorization and five-document compatibility repository         |
+| `backend/workspace`   | Workspace/Key domain, authorization and versioned record repositories                  |
 | `backend/providers`   | Private Drive9, Zero and db9 lifecycle/vault adapters; native MySQL/PostgreSQL drivers |
 | `backend/compute`     | Bundled DuckDB 2.0 and Bashkit; disposable workers from the same executable            |
 | `backend/product`     | Regional resources, database browser, files, snapshots, analysis, exports/imports      |
@@ -27,7 +28,7 @@
 Domain operations are shared by Console and agent requests. Providers and computation are
 separate crates behind regional application operations. Metadata supports in-process and remote
 ports; those are implemented deployment modes. Provider/compute crates do not claim independent
-public RPC services. Workers are separate processes even in an all-in-one deployment.
+public RPC services. Workers are separate processes even in an all-in-one deployment. Each worker returns one bounded JSON reply and flushes the same stdout handle before process/runtime exit. Awaiting Tokio `write_all` alone is not a completion barrier for its background writer. Buffered-output and flush-failure regression cases enforce this IPC boundary; diagnostics report only exit status or response byte count, never request contents or credentials.
 
 ## Build, check and package
 
@@ -40,7 +41,7 @@ npm run package:api:rust -- FULL_REVIEWED_SOURCE_SHA
 
 `backend:check` runs workspace format, Clippy with warnings denied, Rust tests, and isolated
 real RustFS/S3 metadata, ownership, Node/Rust parity and provider-recovery integration tests.
-Ordinary `npm test` skips explicitly gated S3 cases; those skips are not integration evidence.
+Heavy native test files run serially to bound concurrent RustFS/role startup and packaging resources; concurrency behavior is exercised explicitly inside those tests. Ordinary `npm test` skips explicitly gated S3 cases; those skips are not integration evidence.
 CI uses two Cargo jobs and omits native/Rust debug symbols to bound cold-build time and memory. Functional checks and warnings-as-errors remain enabled. Initial bundled DuckDB compilation
 is substantially slower than an incremental Rust build. Reuse installed RustFS locally.
 
@@ -56,13 +57,10 @@ native tidbfs extension is a separately supplied artifact, with its checksum pre
 Set `WORKSPACE_BACKEND_CONFIG` to the absolute private deployment file; optionally set
 `WORKSPACE_BACKEND_BINARY` to the absolute reviewed artifact. The default binary is the local
 Cargo debug build. Missing configuration fails explicitly, with no alternate data file or
-Node fallback. For deliberate compatibility work, use `start:legacy-api` / `dev:legacy-api`.
+fallback backend. The old Node serving commands were removed.
 The optional npm launcher is tooling; the distributed native artifact runs directly without it.
 
-The existing `build:api` / `package` commands retain the Node compatibility artifact used by
-existing deployment tests and rollback. `build:api:rust` / `package:api:rust` produce the Rust
-serving artifact. The Console remains an independently built static artifact. A Node process
-serving Vite/static files or running migration/test tools is not a Rust business dependency.
+`build:api` builds Rust and `package` creates the native API and separate static Console artifacts. The API contains no Node backend, provider state or frontend assets. Node sources under `server/` are regression oracles and tooling, without a serving entry point.
 
 ## One executable, independent roles
 
@@ -97,7 +95,7 @@ A full regional API configuration is:
   "bind": "127.0.0.1:4318",
   "workspaceId": "ws_agentlab",
   "authorityId": "region:local-compat",
-  "importId": "verified-existing-import-id",
+  "initializeWorkspace": false,
   "insecureLoopback": true,
   "consoleOrigins": ["http://127.0.0.1:5173", "http://127.0.0.1:4173"],
   "metadata": { "transport": "inProcess", "authorityId": "region:local-compat" },
@@ -149,10 +147,7 @@ missing or incompatible artifacts fail before allocating private storage.
 ## Compatibility and boundaries
 
 The full profile serves the unchanged generated `public/openapi.json`. Resource IDs, native
-IDs, regional placement, opaque fields, contents, Key digests/grants/expiry/revocation and all
-four native vaults retain their existing schema. The compatibility repository is bounded to
-12 MiB per document with 64 KiB encrypted chunks; this is not the future scalable resource
-index. Never route millions of resources through this compatibility profile.
+IDs, regional placement, opaque fields, contents, Key digests/grants/expiry/revocation and private Binding and Credential records use the fresh versioned schema. Domain aggregate views are bounded to 4096 records/24 MiB; ordinary authorization uses point reads. Public pagination, provider claims and sharding still require separate implementation.
 
 The API retains the eight-hour local owner cookie, backend authorization, grant filtering,
 Host/Origin/CORS policy, eight admitted requests, bounded bodies/timeouts and secret-once Key
@@ -183,38 +178,12 @@ create-only file/table writes, bounded SQL and partial-write errors. Prepared im
 actor binding, five-minute expiration, source-version comparison, field/type confirmation and
 single-use submission. Handles are process-local as before; restart requires a new preparation.
 
-## Migration, local cutover and rollback
+## Fresh bootstrap and deployment
 
-Follow the complete [Meta migration guide](meta-service.md) before switching an entry point.
-The public API never initializes missing expected documents or silently seeds demo resources.
+Follow [Meta setup](meta-service.md) to initialize a new deployment. `initializeWorkspace` defaults false and missing Workspace metadata fails closed. Set it true only for deliberate first creation, then disable it after verification. The common executable can host independent metadata and Workspace roles, while local supervision remains optional tooling.
 
-1. Drain the old writer and export all **current** five Meta documents to owner-only files;
-   sync files/directories and retain checksums. Preserve provider mode settings and the native
-   extension path/checksum alongside existing metadata keys, runtime configuration and backups.
-2. Resume the old API while checking an isolated regional copy. Do not run two gateways on
-   the same compatibility documents. Compare existing native reads and contract/behavior
-   fixtures without provisioning replacements or exposing private credentials.
-3. After complete checks pass, drain the old API again and export fresh current state. Start
-   the reviewed Rust artifact against the **original** regional authority/import and provider
-   configuration. Keep the old listener stopped. Verify IDs/counts/Key grants/vaults, health,
-   native reads and the existing Portal using the original API origin.
-4. Update the local launcher to start the Rust artifact and retain a private rollback manifest.
-   Do not overwrite unrelated Portal edits or re-import stale source JSON.
-5. On failure, drain Rust, export current state if necessary, and restart Node against the same
-   current regional Meta. Its gateway ownership contract is identical. Restore JSON only from
-   a verified fresh export if deliberately abandoning Meta after all target writers stop.
+Resources, Keys, files, bindings and credentials are independent encrypted records. Reads use bounded prefix pages; writes condition only changed records on their versions. Existing domain/bootstrap operations reconstruct bounded projections rather than storing or rewriting JSON documents. Key authentication uses its digest index and canonical record; resource authorization performs a point read. Native credentials remain internal.
 
-The shared `legacy-gateway` record excludes simultaneous Node/Rust writers. Every document
-operation checks its owner inside the metadata transaction. Clean shutdown drains requests
-and releases the gateway before metadata closes. An uncertain claim/release requires explicit
-reconciliation with the exact stopped owner; there is no timeout-based ownership takeover.
-Metadata uses native concurrent SlateDB transactions with a pinned durable read frontier;
-see [ADR 0022](decisions/0022-native-slatedb-transactions.md). The compatibility repository's
-document queue and single API owner remain until resource-level migration. Metadata commits finish durably after caller disconnect; computation cancellation kills its
-worker and releases query slots/private temporary snapshots.
+The API has one active writer per Workspace until provider lifecycle claims support concurrent API writers. `recoverWriterOwner` names the exact stopped owner after a crash; there is no lease timeout or global dependency. Storage version 2 intentionally rejects the old five-document installation. JSON import/export, legacy vault codecs and Node/Rust handoff are retired under [ADR 0024](decisions/0024-fresh-record-metadata.md).
 
-Evidence is recorded in the implementation PR and private local cutover manifest. Live
-provider availability is environment-dependent; offline CI verifies protocol/lifecycle
-fixtures and real S3 durability without cloud credentials. Public hosting, distributed policy
-sync/revocation, provider-side execution and production OS/container compute isolation remain
-separate work; local snapshot workers are not a hostile-public-compute sandbox.
+Package reviewed clean source with a full SHA and binary/archive checksums. Keep configuration and state outside the artifact. Deploy all version-coupled API/Meta roles, verify readiness, authorized/denied reads and the Portal. A source upgrade cannot silently reset an incompatible root. The owner authorized one disposable local reset; cloud instances are outside that operation. Production identity, distributed policy, sharding and automatic HA remain future work.

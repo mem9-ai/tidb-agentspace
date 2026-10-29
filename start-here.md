@@ -79,20 +79,16 @@ Global and every Region have independent Meta Service deployments and SlateDB in
 shared code/contracts do not mean one database partitioned by authority prefixes.
 Global records private regional S3/storage descriptors; Region retains independent bootstrap
 config and object-backed shard catalogs, with no Global lookup/renewal gate on startup.
-Local development can still use ordinary files. For the implemented independent Rust/SlateDB
-service, S3 integration and lossless legacy storage migration/rollback, follow the
-[runtime guide](docs/meta-service.md). The full regional product API now has a Rust implementation under GH-92, including database,
-file, analysis and export operations. The accepted architecture uses shared Rust modules and
-one executable with in-process or independently deployed metadata/API roles; see
-[ADR 0020](docs/decisions/0020-modular-rust-backend.md), the
-[migration contract](specs/gh-88/spec.md) and [runtime guide](docs/rust-backend.md).
-Node remains the compatibility oracle, rollback implementation and build/migration tooling.
-The original Workspace/Key-only Rust profile stays explicitly partial when `product` is omitted.
-Metadata requests use native concurrent SlateDB transactions with a pinned durable read
-frontier, as recorded in [ADR 0022](docs/decisions/0022-native-slatedb-transactions.md).
-Use the selected SlateDB engine and thin service contract; alternative-engine adapters are
-not implementation prerequisites. The document compatibility queue is separate from engine
-transaction concurrency and remains until resource-level repository migration.
+Local development can still use ordinary files. For the implemented independent Rust/SlateDB service and fresh local bootstrap, follow the
+[runtime guide](docs/meta-service.md). [ADR 0024](docs/decisions/0024-fresh-record-metadata.md)
+retires the five-document/chunk/import bridge. The owner explicitly allowed resetting the local
+test deployment while excluding cloud deletion; this does not authorize arbitrary customer resets.
+The regional product API is Rust, using independent record repositories and native concurrent
+SlateDB transactions. [ADR 0020](docs/decisions/0020-modular-rust-backend.md) defines shared Rust
+modules and single-binary/multiple-process composition; [ADR 0022](docs/decisions/0022-native-slatedb-transactions.md)
+defines coherent durable reads. [GH-88](specs/gh-88/spec.md) is the historical language-parity baseline;
+its document compatibility direction is superseded by ADR 0024. Node sources remain test oracles
+and tooling, not a production or rollback API. See the [Rust guide](docs/rust-backend.md).
 
 For millions of Workspaces or a million-resource Workspace, also read the
 [metadata scale profile](specs/gh-74/metadata-scale.md): Workspace ownership is distinct from
@@ -186,7 +182,7 @@ boundaries, creation recovery and provider compatibility limits.
 | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | [src/](src/)                                                                                                                                    | React Console; feature modules in `src/features/`, shared TiUI adapters in `src/ui/`            |
 | [src/api/](src/api/) and [Console configuration](console/public/config.json)                                                                    | Generated-type HTTP client, API transport, and runtime API-origin selection                     |
-| [server/index.mjs](server/index.mjs)                                                                                                            | Retained Node compatibility/rollback API and request handling                                   |
+| [server/index.mjs](server/index.mjs)                                                                                                            | Isolated regression oracle for public API behavior                                              |
 | [Authorization](server/access-policy.mjs) and [store](server/store.mjs)                                                                         | Shared resource-grant rules and local persistence                                               |
 | [File analysis](server/file-analysis.mjs) and [Console panel](src/features/files/FileAnalysisPanel.tsx)                                         | Selected-file snapshot workers, permissions, DuckDB/Just Bash analysis and result presentation  |
 | [Providers](server/providers/) and [file transfer](server/file-transfer.mjs)                                                                    | Upstream resource adapters, SQL drivers, and bounded file transfers                             |

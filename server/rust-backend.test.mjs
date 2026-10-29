@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash, randomUUID } from 'node:crypto';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -10,9 +10,8 @@ import { createApp } from './index.mjs';
 import { seed } from './store.mjs';
 import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
 import { metadataCertificates } from './test-support/meta-tls.mjs';
-import { migrateLegacy } from './meta/migrate.mjs';
 import { createMetaClient } from './meta/client.mjs';
-import { documentScope, decodeDocument } from './meta/document-store.mjs';
+import { seedRecords, readState, readBinding } from './test-support/record-fixture.mjs';
 
 const base = '/api/v1/workspaces/ws_agentlab';
 const suffixes = ['', '.providers.json', '.databases.json', '.duckdb.json', '.db9.json'];
@@ -214,8 +213,8 @@ async function parityCases(request) {
 
 for (const mode of ['inProcess', 'remote']) {
   test(
-    `Rust Workspace/Key matches Node through ${mode} metadata and survives language handoff`,
-    { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180_000 },
+    `record-backed Workspace/Key authorization through ${mode} metadata survives restart`,
+    { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
     async (t) => {
       const fixture = await metaFixture();
       const children = [];
@@ -225,7 +224,6 @@ for (const mode of ['inProcess', 'remote']) {
       });
       const global = await fixture.service('global');
       const region = await fixture.service('rust-region');
-      const secondary = await fixture.service('rust-secondary');
       const state = seed();
       state.opaque = { keep: ['unknown', { value: 42 }] };
       state.resources.push({
@@ -258,48 +256,30 @@ for (const mode of ['inProcess', 'remote']) {
         '{"bindings":{}}',
         JSON.stringify({ bindings: {}, account: { refreshToken: 'original-private-account' } }),
       ];
-      const source = resolve(fixture.directory, 'workspace.json');
-      const baseline = resolve(fixture.directory, 'baseline', 'workspace.json');
-      await mkdir(resolve(fixture.directory, 'baseline'), { mode: 0o700 });
-      for (let i = 0; i < raw.length; i++) {
-        await writeFile(source + suffixes[i], raw[i], { mode: 0o600 });
+
+      const baseline = resolve(fixture.directory, 'baseline.json');
+      for (let i = 0; i < raw.length; i++)
         await writeFile(baseline + suffixes[i], raw[i], { mode: 0o600 });
-      }
-      const node = await createApp({ dataFile: baseline });
-      await new Promise((r) => node.listen(0, '127.0.0.1', r));
+      const oracle = await createApp({ dataFile: baseline });
+      await new Promise((r) => oracle.listen(0, '127.0.0.1', r));
       let expected;
       try {
-        expected = await parityCases(await connect(`http://127.0.0.1:${node.address().port}`));
+        expected = await parityCases(await connect(`http://127.0.0.1:${oracle.address().port}`));
       } finally {
-        await new Promise((r) => node.close(r));
+        await new Promise((r) => oracle.close(r));
       }
-      const bridge = resolve(fixture.directory, 'bridge.json');
-      const importId = 'original-import';
-      await privateWrite(bridge, {
-        format: 1,
-        workspaceId: state.workspace.id,
-        importId,
-        global: global.clientConfig,
-        region: region.clientConfig,
-        regionStorage: { bucket: region.server.s3.bucket, prefix: 'metadata', engine: 'slatedb' },
+      await seedRecords(region.client, region.server.authorityId, state, {
+        drive9: JSON.parse(raw[1]),
+        zero: JSON.parse(raw[2]),
+        duckdb: JSON.parse(raw[3]),
+        db9: JSON.parse(raw[4]),
       });
-      assert.equal(
-        (
-          await migrateLegacy({
-            sourceFile: source,
-            configFile: bridge,
-            backupDirectory: resolve(fixture.directory, 'backup'),
-            sourceFrozen: true,
-          })
-        ).verified,
-        true,
-      );
       await global.stop();
-      await region.stop();
-      await secondary.stop();
       let server = region.server,
         clientConfig = region.clientConfig;
-      if (mode === 'remote') {
+      if (mode === 'inProcess') await region.stop();
+      else {
+        await region.stop();
         const certificates = await metadataCertificates(fixture.directory);
         server = {
           ...server,
@@ -314,227 +294,63 @@ for (const mode of ['inProcess', 'remote']) {
           tls: certificates.client,
         };
       }
-      const serverFile = resolve(fixture.directory, 'region-server.json');
+      const serverFile = resolve(fixture.directory, 'server.json');
       await privateWrite(serverFile, server);
-      const globalFile = resolve(fixture.directory, 'global-server.json');
-      await privateWrite(globalFile, global.server);
-      const secondaryFile = resolve(fixture.directory, 'secondary-server.json');
-      await privateWrite(secondaryFile, secondary.server);
-      const listen = await port(),
-        origin = `http://127.0.0.1:${listen}`;
-      const workspaceFile = resolve(fixture.directory, 'workspace-service.json');
-      const workspaceConfig = {
-        bind: `127.0.0.1:${listen}`,
-        workspaceId: state.workspace.id,
-        authorityId: server.authorityId,
-        importId,
-        insecureLoopback: true,
-        consoleOrigins: ['http://127.0.0.1:5173'],
-        metadata:
-          mode === 'inProcess'
-            ? { transport: 'inProcess', authorityId: server.authorityId }
-            : { transport: 'remote', client: clientConfig },
-      };
-      await privateWrite(workspaceFile, workspaceConfig);
-      const metadataRoles = [{ kind: 'metadata', configFile: serverFile }];
+      const roles = [{ kind: 'metadata', configFile: serverFile }];
       let metadataHost;
       if (mode === 'remote') {
-        metadataHost = await launch(fixture.directory, metadataRoles);
+        metadataHost = await launch(fixture.directory, roles);
         children.push(metadataHost);
         await until(async () => {
           const c = await createMetaClient(clientConfig);
           c.close();
         });
-        const wrongToken = resolve(fixture.directory, 'wrong-client-token');
-        await writeFile(wrongToken, randomUUID() + randomUUID(), { mode: 0o600 });
-        for (const broken of [
-          { ...clientConfig, tokenFile: wrongToken },
-          { ...clientConfig, installationId: 'another-installation' },
-          {
-            ...clientConfig,
-            tls: {
-              ...clientConfig.tls,
-              certificateFile: server.tls.certificateFile,
-              privateKeyFile: server.tls.privateKeyFile,
-            },
-          },
-        ]) {
-          const brokenFile = resolve(fixture.directory, randomUUID() + '.json');
-          await privateWrite(brokenFile, {
-            ...workspaceConfig,
-            bind: `127.0.0.1:${await port()}`,
-            metadata: { transport: 'remote', client: broken },
-          });
-          const denied = await launch(fixture.directory, [
-            { kind: 'workspace', configFile: brokenFile },
-          ]);
-          children.push(denied);
-          assert.notEqual((await denied.exited).code, 0);
-        }
-      } else
-        metadataRoles.push(
-          { kind: 'metadata', configFile: globalFile },
-          { kind: 'metadata', configFile: secondaryFile },
-        );
-      const rust = await launch(fixture.directory, [
-        ...(mode === 'inProcess' ? metadataRoles : []),
-        { kind: 'workspace', configFile: workspaceFile },
-      ]);
-      children.push(rust);
-      const request = await until(() => connect(origin));
-      assert.deepEqual(await parityCases(request), expected);
-      assert.equal(
-        (
-          await request(base + '/queries', {
-            method: 'POST',
-            body: { resourceId: 'db_memory', sql: 'SELECT 1' },
-          })
-        ).status,
-        404,
-      );
-      const client = await createMetaClient(clientConfig);
-      t.after(() => client.close());
-      await assert.rejects(
-        client.call({
-          op: 'snapshot',
-          scope: documentScope('global', state.workspace.id, 'workspace'),
-        }),
-        { code: 'META_AUTHORITY_MISMATCH' },
-      );
-      const duplicateFile = resolve(fixture.directory, 'duplicate-workspace.json');
-      await privateWrite(duplicateFile, {
-        ...workspaceConfig,
-        bind: `127.0.0.1:${await port()}`,
-        metadata: { transport: 'remote', client: clientConfig },
-      });
-      const duplicate = await launch(fixture.directory, [
-        { kind: 'workspace', configFile: duplicateFile },
-      ]);
-      children.push(duplicate);
-      assert.notEqual((await duplicate.exited).code, 0);
-      const gateScope = {
+      }
+      const bind = await port(),
+        origin = `http://127.0.0.1:${bind}`,
+        workspaceFile = resolve(fixture.directory, 'workspace-service.json');
+      const workspaceConfig = {
+        bind: `127.0.0.1:${bind}`,
+        workspaceId: state.workspace.id,
         authorityId: server.authorityId,
-        ownerKind: 'system',
-        ownerId: 'compatibility',
-        family: 'legacy-gateway',
-        partitionId: state.workspace.id,
+        insecureLoopback: true,
+        consoleOrigins: ['http://127.0.0.1:5173'],
+        metadata:
+          mode === 'inProcess'
+            ? { transport: mode, authorityId: server.authorityId }
+            : { transport: mode, client: clientConfig },
       };
-      const owner = (await client.call({ op: 'snapshot', scope: gateScope })).records.ownerId;
-      assert.ok(owner);
-      await assert.rejects(
-        client.call({
-          op: 'snapshot',
-          scope: documentScope(server.authorityId, state.workspace.id, 'workspace'),
-        }),
-        { code: 'META_GATEWAY_REQUIRED' },
-      );
-      await privateWrite(bridge, {
-        format: 1,
-        workspaceId: state.workspace.id,
-        importId,
-        region: clientConfig,
-      });
-      await assert.rejects(createApp({ dataFile: source, metaConfig: bridge }), {
-        code: 'META_GATEWAY_ACTIVE',
-      });
-      const recoverFile = resolve(fixture.directory, 'recover-workspace.json');
-      const recoverPort = await port();
-      await privateWrite(recoverFile, {
-        ...workspaceConfig,
-        bind: `127.0.0.1:${recoverPort}`,
-        recoverGatewayOwner: owner,
-        metadata: { transport: 'remote', client: clientConfig },
-      });
-      const replacement = await launch(fixture.directory, [
-        { kind: 'workspace', configFile: recoverFile },
-      ]);
-      children.push(replacement);
-      const replacementRequest = await until(() => connect(`http://127.0.0.1:${recoverPort}`));
-      assert.equal((await request(base)).body.error.code, 'META_GATEWAY_FENCED');
-      if (mode === 'remote') {
-        await rust.stop();
-        assert.equal((await replacementRequest(base)).status, 200);
-      }
-      await replacement.stop();
-      await rust.stop();
-      client.close();
-      if (metadataHost) await metadataHost.stop();
-      const restored = await fixture.service('handoff', {
-        previous: { server },
-        clientTls: clientConfig.tls,
-      });
-      const workspace = JSON.parse(
-        decodeDocument(
-          await restored.client.call({
-            op: 'snapshot',
-            scope: documentScope(server.authorityId, state.workspace.id, 'workspace'),
-          }),
-        ),
-      );
-      assert.equal(workspace.workspace.name, 'Rust migration');
-      assert.deepEqual(workspace.opaque, state.opaque);
-      assert.deepEqual(workspace.files, state.files);
-      assert.deepEqual(workspace.resources, state.resources);
-      for (let i = 0; i < state.keys.length; i++) {
-        for (const key of ['digest', 'scopes', 'resourceIds', 'expiresAt', 'revokedAt'])
-          assert.deepEqual(workspace.keys[i][key], state.keys[i][key]);
-      }
-      for (let i = 1; i < raw.length; i++)
-        assert.equal(
-          decodeDocument(
-            await restored.client.call({
-              op: 'snapshot',
-              scope: documentScope(
-                server.authorityId,
-                state.workspace.id,
-                ['workspace', 'drive9', 'zero', 'duckdb', 'db9'][i],
-              ),
-            }),
-          ).toString(),
-          raw[i],
-        );
-      for (let i = 0; i < raw.length; i++)
-        assert.equal(await readFile(source + suffixes[i], 'utf8'), raw[i]);
-      await privateWrite(bridge, {
-        format: 1,
-        workspaceId: state.workspace.id,
-        importId,
-        region: restored.clientConfig,
-      });
-      const returned = await createApp({ dataFile: source, metaConfig: bridge });
-      await new Promise((r) => returned.listen(0, '127.0.0.1', r));
+      await privateWrite(workspaceFile, workspaceConfig);
+      const activeRoles = [
+        ...(mode === 'inProcess' ? roles : []),
+        { kind: 'workspace', configFile: workspaceFile },
+      ];
+      let api = await launch(fixture.directory, activeRoles);
+      children.push(api);
+      let request = await until(() => connect(origin));
+      assert.deepEqual(await parityCases(request), expected);
+      await api.stop();
+      api = await launch(fixture.directory, activeRoles);
+      children.push(api);
+      request = await until(() => connect(origin));
+      assert.equal((await request(base, { token: originalToken })).status, 200);
+      assert.equal((await request(base + '/keys', { token: originalToken })).status, 403);
+      await api.stop();
+      const verifier =
+        mode === 'inProcess'
+          ? await fixture.service('verify', { previous: region })
+          : { client: await createMetaClient(clientConfig) };
       try {
-        const request = await connect(`http://127.0.0.1:${returned.address().port}`);
-        assert.equal(
-          (await request(base, { token: originalToken })).body.data.name,
-          'Rust migration',
-        );
-        assert.equal(
-          (
-            await request(base + '/settings', {
-              method: 'PATCH',
-              body: { workspaceName: 'Returned through Node', name: 'Owner' },
-            })
-          ).status,
-          200,
+        const final = await readState(verifier.client, server.authorityId);
+        assert.equal(final.workspace.name, 'Rust migration');
+        assert.equal(final.keys.length, 5);
+        assert.deepEqual(
+          await readBinding(verifier.client, server.authorityId, 'drive9', 'orphan'),
+          { apiKey: privateNativeToken },
         );
       } finally {
-        await new Promise((r) => returned.close(r));
+        if (mode === 'remote') verifier.client.close();
       }
-      await privateWrite(workspaceFile, {
-        ...workspaceConfig,
-        metadata: { transport: 'remote', client: restored.clientConfig },
-      });
-      const restart = await launch(fixture.directory, [
-        { kind: 'workspace', configFile: workspaceFile },
-      ]);
-      children.push(restart);
-      const requestAgain = await until(() => connect(origin));
-      assert.equal(
-        (await requestAgain(base, { token: originalToken })).body.data.name,
-        'Returned through Node',
-      );
-      assert.equal((await requestAgain('/api/health')).status, 200);
     },
   );
 }
@@ -618,11 +434,13 @@ test(
       await client.call({
         op: 'commit',
         scope,
-        expectedRevision: null,
         mutationId: randomUUID(),
-        changes: [{ key: 'survives', value: true }],
+        changes: [{ key: 'survives', value: true, expectedVersion: null }],
       });
-      assert.equal((await client.call({ op: 'snapshot', scope })).records.survives, true);
+      assert.equal(
+        (await client.call({ op: 'get', scope, keys: ['survives'] })).records.survives.value,
+        true,
+      );
       const root = await fixture.s3(
         'GET',
         `/${global.server.s3.bucket}/missing-global-root/control/installation.json`,
@@ -635,5 +453,85 @@ test(
     await host.stop();
     const restored = await fixture.service('restart-region', { previous: region });
     assert.equal((await restored.client.health()).authorityId, region.server.authorityId);
+  },
+);
+
+test(
+  'fresh Workspace initialization creates no sample resources and isolates new Keys across Workspaces',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
+  async (t) => {
+    const f = await metaFixture();
+    const children = [];
+    t.after(async () => {
+      for (const child of children.toReversed()) await child.stop();
+      await f.close();
+    });
+    const region = await f.service('fresh');
+    const configs = [];
+    for (const workspaceId of ['ws_agentlab', 'ws_another']) {
+      const bind = await port(),
+        path = resolve(f.directory, workspaceId + '.json');
+      const config = {
+        bind: `127.0.0.1:${bind}`,
+        workspaceId,
+        authorityId: region.server.authorityId,
+        initializeWorkspace: true,
+        insecureLoopback: true,
+        consoleOrigins: ['http://127.0.0.1:5173'],
+        metadata: { transport: 'remote', client: region.clientConfig },
+        product: {},
+      };
+      await privateWrite(path, config);
+      const api = await launch(f.directory, [{ kind: 'workspace', configFile: path }]);
+      children.push(api);
+      const request = await until(() => connect('http://' + config.bind));
+      configs.push({ config, path, api, request });
+    }
+    const [{ config, path, api, request }, other] = configs;
+    const boot = await request(base + '/bootstrap');
+    assert.equal(boot.status, 200);
+    for (const name of ['resources', 'keys', 'files', 'events'])
+      assert.deepEqual(boot.body[name], []);
+    const created = await request(base + '/resources', {
+      method: 'POST',
+      body: { kind: 'filesystem', name: 'fresh-files', region: 'aws-ap-southeast-1' },
+    });
+    assert.equal(created.status, 201);
+    const id = created.body.data.id;
+    const key = await request(base + '/keys', {
+      method: 'POST',
+      body: {
+        name: 'Fresh scoped key',
+        resourceIds: [id],
+        scopes: ['resources:read', 'files:read'],
+        expiresInDays: 7,
+      },
+    });
+    assert.equal(key.status, 201);
+    assert.equal((await request(base + '/resources', { token: key.body.secret })).status, 200);
+    assert.equal(
+      (await other.request('/api/v1/workspaces/ws_another/resources', { token: key.body.secret }))
+        .status,
+      401,
+    );
+    assert.equal(
+      (await request('/api/v1/workspaces/ws_another/resources', { token: key.body.secret })).status,
+      404,
+    );
+    assert.equal((await request(base + '/keys', { token: key.body.secret })).status, 403);
+    await api.stop();
+    await privateWrite(path, { ...config, initializeWorkspace: false });
+    const restarted = await launch(f.directory, [{ kind: 'workspace', configFile: path }]);
+    children.push(restarted);
+    const again = await until(() => connect('http://' + config.bind));
+    assert.equal(
+      (await again(base + '/resources', { token: key.body.secret })).body.data[0].id,
+      id,
+    );
+    assert.equal(
+      (await again(base + `/keys/${key.body.data.id}`, { method: 'DELETE' })).status,
+      200,
+    );
+    assert.equal((await again(base + '/resources', { token: key.body.secret })).status, 401);
   },
 );

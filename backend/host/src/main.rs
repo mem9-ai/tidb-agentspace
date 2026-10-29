@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
             let profile = if config.product.is_some() {
                 "full regional API"
             } else {
-                "workspace-keys-only migration profile"
+                "workspace-keys-only profile"
             };
             match WorkspaceServer::open(config, port).await {
                 Ok(server) => {
@@ -81,7 +81,7 @@ async fn main() -> Result<()> {
                     println!("Rust {profile} listening on {bind}.");
                 }
                 Err(_) => eprintln!(
-                    "Workspace startup unavailable for {authority}; inspect import and gateway ownership. Other roles continue."
+                    "Workspace startup unavailable for {authority}; inspect record metadata and Workspace writer ownership. Other roles continue."
                 ),
             }
         } else {
