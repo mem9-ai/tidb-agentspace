@@ -85,7 +85,7 @@ Add the analyze action to Key configuration and document the same generated API 
 
 Merge the reviewed specification first; implement against its frozen Git revision in a separate
 PR. Run `npm run check`, adversarial native/provider/API tests, task-owned live CSV/JSON/Parquet
-verification and browser inspection. Merge only latest-head green CI with correct sign-offs,
+verification and browser inspection. Merge only latest-head green CI with reviewed changes,
 then update and verify the local preview before closing #34. Use existing anonymous resources
 and task-owned sample files. No new paid/public infrastructure, native CLI dependency, generic
 external URLs, persistent mounts, upstream writes or Just Bash work is included.

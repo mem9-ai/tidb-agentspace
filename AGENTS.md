@@ -111,14 +111,11 @@ follow its task-specific references before implementation. Keep detailed rules c
 
 ## Git and delivery
 
-- Use Conventional Commit subjects: `type(scope): description`. Include a DCO `Signed-off-by`
-  trailer using the contributor's actual identity; do not sign for a different contributor.
-- When acting for Siddon, preserve the configured Git name and existing author attribution,
-  use `git -c user.email=siddontang@gmail.com commit --signoff`, and verify the trailer before
-  pushing. Do not rewrite existing commits to change attribution without authorization.
+- Use Conventional Commit subjects: `type(scope): description`. Preserve contributor
+  attribution; do not rewrite existing commits to change it without authorization.
 - Follow `.github/PULL_REQUEST_TEMPLATE.md` and `docs/ci-cd.md`. During the early prototype
   phase, the project owner authorizes agents to merge task-scoped PRs after reviewing the
-  diff, verifying sign-offs, and confirming all CI checks pass on the latest PR head.
+  diff and confirming all CI checks pass on the latest PR head.
   No additional confirmation or separate human approval is required in this phase.
   Mark a completed draft ready before merging. Do not submit a self-approval, bypass any
   enforced GitHub checks/reviews, merge failing/conflicting changes, or broaden task scope.
