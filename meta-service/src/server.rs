@@ -202,14 +202,23 @@ impl MetaService {
 }
 impl workspace_contracts::Metadata for MetaService {
     fn execute(&self, request: Request) -> workspace_contracts::Call<'_> {
+        let engine = self.state.engine.clone();
+        let capacity = self.state.capacity.clone();
         Box::pin(async move {
-            self.state
-                .engine
-                .lock()
-                .await
-                .execute(request)
-                .await
-                .map_err(|e| workspace_contracts::ServiceError::new(e.0, e.1))
+            let permit = capacity
+                .try_acquire_owned()
+                .map_err(|_| workspace_contracts::ServiceError::new(429, "META_BUSY"))?;
+            tokio::spawn(async move {
+                let _permit = permit;
+                engine
+                    .lock()
+                    .await
+                    .execute(request)
+                    .await
+                    .map_err(|e| workspace_contracts::ServiceError::new(e.0, e.1))
+            })
+            .await
+            .map_err(|_| workspace_contracts::ServiceError::new(503, "META_COMMIT_UNKNOWN"))?
         })
     }
     fn health(&self) -> workspace_contracts::Call<'_> {

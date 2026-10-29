@@ -16,6 +16,10 @@ async fn stopped(mut receiver: watch::Receiver<bool>) {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.as_slice() == ["worker"] {
+        workspace_compute::worker_entry().await?;
+        return Ok(());
+    }
     if args.len() != 3 || args[0] != "serve" || args[1] != "--config" {
         bail!("Use workspace-backend serve --config <private-deployment.json>");
     }
@@ -60,6 +64,11 @@ async fn main() -> Result<()> {
         };
         if let Some(port) = port {
             let bind = config.bind;
+            let profile = if config.product.is_some() {
+                "full regional API"
+            } else {
+                "workspace-keys-only migration profile"
+            };
             match WorkspaceServer::open(config, port).await {
                 Ok(server) => {
                     let workspace = server.workspace.clone();
@@ -69,9 +78,7 @@ async fn main() -> Result<()> {
                         if server.serve(stopped(receiver)).await.is_err() {eprintln!("Workspace listener unavailable for {authority}; other roles continue.");}
                         if workspace.close().await.is_err() {eprintln!("Workspace ownership release is uncertain; reconcile regionally before restart.");}
                     }));
-                    println!(
-                        "Rust Workspace/Key migration profile listening on {bind}; other product modules are not migrated."
-                    );
+                    println!("Rust {profile} listening on {bind}.");
                 }
                 Err(_) => eprintln!(
                     "Workspace startup unavailable for {authority}; inspect import and gateway ownership. Other roles continue."

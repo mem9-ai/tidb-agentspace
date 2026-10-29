@@ -36,7 +36,9 @@
     "meta:api": "node server/meta/start-api.mjs",
     "meta:gateway": "node server/meta/gateway-ownership.mjs",
     "backend:build": "cargo build --workspace --locked",
-    "backend:check": "npm run backend:build && cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --workspace --locked && WORKSPACE_META_TEST=1 WORKSPACE_BACKEND_TEST=1 node --test server/meta-service.test.mjs server/rust-backend.test.mjs"
+    "backend:check": "npm run backend:build && cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --workspace --locked && WORKSPACE_META_TEST=1 WORKSPACE_BACKEND_TEST=1 node --test server/meta-service.test.mjs server/rust-backend.test.mjs server/rust-product.test.mjs",
+    "build:api:rust": "cargo build --locked -p workspace-backend",
+    "package:api:rust": "node scripts/package-rust-api.mjs"
   },
   "dependencies": {
     "@codemirror/lang-sql": "6.10.0",

@@ -114,3 +114,12 @@ domain and loopback HTTP profile, with local/remote Meta ports. See the
 [runtime guide](../../docs/rust-backend.md) for implemented routes, behavioral evidence,
 encoding/admission limits and remaining migration work. RUST-01–08/11 have partial evidence
 from the isolated integration suite; RUST-09/10/12 and the parent intent remain open.
+
+## Full regional serving implementation
+
+GH-92 implements RUST-09/10 and extends RUST-06/08 evidence to provider lifecycle, SQL/browser,
+files, analysis, exports and confirmed imports. The unchanged public contract is checked against
+shared Node/Rust fixtures, with separate native/S3 evidence. See the [runtime guide](../../docs/rust-backend.md).
+RUST-12 requires the actual current-state backup, configured local switch and post-switch health/Portal
+verification recorded in delivery evidence; implementation alone does not close the parent.
+GH-74 typed policy, hosted identity and scalable metadata work remain separate.

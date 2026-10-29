@@ -18,3 +18,4 @@ workspace-contracts.workspace = true
 workspace-domain.workspace = true
 workspace-meta-client.workspace = true
 workspace-meta-service.workspace = true
+workspace-compute.workspace = true

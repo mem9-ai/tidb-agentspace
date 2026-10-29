@@ -47,6 +47,8 @@ pub struct Config {
     pub insecure_loopback: bool,
     pub console_origins: Vec<String>,
     pub recover_gateway_owner: Option<String>,
+    #[serde(default)]
+    pub product: Option<workspace_product::Config>,
 }
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
@@ -86,12 +88,16 @@ impl Config {
                 bail!("Console origins must be exact HTTP loopback origins");
             }
         }
+        if let Some(product) = &self.product {
+            product.validate()?;
+        }
         Ok(())
     }
 }
 #[derive(Clone)]
 struct App {
     workspace: Arc<Workspace>,
+    product: Option<Arc<workspace_product::Product>>,
     config: Config,
     sessions: Arc<Mutex<BTreeMap<String, Instant>>>,
     capacity: Arc<Semaphore>,
@@ -114,11 +120,23 @@ impl WorkspaceServer {
         )
         .await?;
         let workspace = Arc::new(Workspace::new(repository));
+        let product = if let Some(config) = config.product.clone() {
+            match workspace_product::Product::new(workspace.clone(), config).await {
+                Ok(p) => Some(Arc::new(p)),
+                Err(e) => {
+                    let _ = workspace.close().await;
+                    return Err(e.into());
+                }
+            }
+        } else {
+            None
+        };
         Ok(Self {
             workspace: workspace.clone(),
             listener,
             app: App {
                 workspace,
+                product,
                 config,
                 sessions: Arc::new(Mutex::new(BTreeMap::new())),
                 capacity: Arc::new(Semaphore::new(8)),
@@ -260,9 +278,11 @@ async fn handle(
     Extension(permit): Extension<Arc<OwnedSemaphorePermit>>,
     request: Request,
 ) -> Response {
+    let cancellation = tokio_util::sync::CancellationToken::new();
+    let _on_disconnect = cancellation.clone().drop_guard();
     let result = tokio::spawn(async move {
         let _permit = permit;
-        dispatch(app, request).await
+        dispatch(app, request, cancellation).await
     })
     .await;
     match result {
@@ -271,11 +291,28 @@ async fn handle(
         Err(_) => error(reject(503, "API_UNAVAILABLE")),
     }
 }
-async fn dispatch(app: App, request: Request) -> std::result::Result<Response, ServiceError> {
+async fn dispatch(
+    app: App,
+    request: Request,
+    cancellation: tokio_util::sync::CancellationToken,
+) -> std::result::Result<Response, ServiceError> {
     let path = request.uri().path().to_owned();
     let method = request.method().clone();
     let headers = request.headers().clone();
     let prefix = format!("/api/v1/workspaces/{}", app.config.workspace_id);
+    if path == "/openapi.json" && method == Method::GET && app.product.is_some() {
+        return Ok((
+            [("Content-Type", "application/json")],
+            include_str!("../../../public/openapi.json"),
+        )
+            .into_response());
+    }
+    let query: BTreeMap<String, String> =
+        reqwest::Url::parse(&format!("http://localhost{}", request.uri()))
+            .map_err(|_| reject(400, "INVALID_PATH"))?
+            .query_pairs()
+            .into_owned()
+            .collect();
     // Reject another Workspace before reading metadata or constructing a principal.
     if path != "/api/health"
         && path != "/api/session"
@@ -287,11 +324,21 @@ async fn dispatch(app: App, request: Request) -> std::result::Result<Response, S
     }
     if path == "/api/health" && method == Method::GET {
         app.workspace.health().await?;
+        if let Some(product) = &app.product {
+            return Ok(Json(json!({"status":"ok","mode":product.mode().await?,"filesProvider":product.providers.config.files_provider})).into_response());
+        }
         return Ok(Json(json!({"status":"ok","mode":"demo","filesProvider":"local","migrationProfile":"workspace-keys-only"})).into_response());
     }
     let bytes = tokio::time::timeout(
         Duration::from_secs(10),
-        to_bytes(request.into_body(), 1024 * 1024),
+        to_bytes(
+            request.into_body(),
+            if path.contains("/file-exports") {
+                8 * 1024 * 1024
+            } else {
+                1024 * 1024
+            },
+        ),
     )
     .await
     .map_err(|_| reject(408, "REQUEST_TIMEOUT"))?
@@ -354,7 +401,43 @@ async fn dispatch(app: App, request: Request) -> std::result::Result<Response, S
             {
                 Operation::RevokeKey(path[6..].to_owned())
             }
-            _ => return Err(reject(404, "NOT_FOUND")),
+            _ => {
+                if let Some(product) = &app.product {
+                    let raw_upload = method == Method::PUT && route == "/files/content";
+                    let input = if raw_upload {
+                        if headers.get("content-type").and_then(|v| v.to_str().ok())
+                            != Some("application/octet-stream")
+                        {
+                            return Err(reject(415, "BINARY_REQUIRED"));
+                        }
+                        json!({})
+                    } else if [Method::POST, Method::PUT, Method::PATCH, Method::DELETE]
+                        .contains(&method)
+                    {
+                        body()?
+                    } else {
+                        json!({})
+                    };
+                    let actor = headers
+                        .get("cookie")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or_default();
+                    let condition = headers
+                        .get(if raw_upload {
+                            "if-none-match"
+                        } else {
+                            "idempotency-key"
+                        })
+                        .and_then(|v| v.to_str().ok());
+                    let (status, reply) = tokio::select! {
+                        result=product.handle(workspace_product::Request {credential:credential.clone(),actor,method:method.as_str(),route,query:&query,input,raw:&bytes,condition})=>result?,
+                        _=cancellation.cancelled()=>return Err(reject(499,if route.contains("analys")||route.contains("tabular-preview"){"ANALYSIS_CANCELED"}else{"SQL_CANCELED"})),
+                    };
+                    credential_for_response(&app, &headers, &credential).await?;
+                    return product_response(status, reply);
+                }
+                return Err(reject(404, "NOT_FOUND"));
+            }
         }
     };
     let response = app.workspace.call(credential, operation).await?;
@@ -396,4 +479,68 @@ async fn credential(
         return Ok(Credential::LocalDemoOwner);
     }
     Err(reject(401, "UNAUTHENTICATED"))
+}
+
+async fn credential_for_response(
+    app: &App,
+    headers: &HeaderMap,
+    input: &Credential,
+) -> std::result::Result<(), ServiceError> {
+    credential(app, headers).await?;
+    workspace_domain::principal(&app.workspace.repository().read().await?, input)?;
+    Ok(())
+}
+fn product_response(
+    status: u16,
+    reply: workspace_product::Reply,
+) -> std::result::Result<Response, ServiceError> {
+    match reply {
+        workspace_product::Reply::Json(value) => Ok((
+            StatusCode::from_u16(status).map_err(|_| reject(500, "INTERNAL_ERROR"))?,
+            Json(value),
+        )
+            .into_response()),
+        workspace_product::Reply::Download {
+            response,
+            size,
+            filename,
+        } => {
+            use futures::StreamExt;
+            let stream = futures::stream::try_unfold(
+                (response.bytes_stream(), 0u64),
+                move |(mut input, received)| async move {
+                    match input.next().await {
+                        Some(Ok(chunk)) if received + chunk.len() as u64 <= size => {
+                            let n = received + chunk.len() as u64;
+                            Ok(Some((chunk, (input, n))))
+                        }
+                        Some(_) => Err(std::io::Error::other("File download could not complete")),
+                        None if received == size => Ok(None),
+                        None => Err(std::io::Error::other("File download could not complete")),
+                    }
+                },
+            );
+            let mut response = axum::body::Body::from_stream(stream).into_response();
+            response.headers_mut().insert(
+                "Content-Type",
+                HeaderValue::from_static("application/octet-stream"),
+            );
+            response.headers_mut().insert(
+                "Content-Length",
+                HeaderValue::from_str(&size.to_string())
+                    .map_err(|_| reject(502, "INVALID_PROVIDER_RESPONSE"))?,
+            );
+            let filename = percent_encoding::utf8_percent_encode(
+                &filename,
+                percent_encoding::NON_ALPHANUMERIC,
+            )
+            .to_string();
+            response.headers_mut().insert(
+                "Content-Disposition",
+                HeaderValue::from_str(&format!("attachment; filename*=UTF-8''{filename}"))
+                    .map_err(|_| reject(502, "INVALID_PROVIDER_RESPONSE"))?,
+            );
+            Ok(response)
+        }
+    }
 }

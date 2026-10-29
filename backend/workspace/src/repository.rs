@@ -101,35 +101,52 @@ impl Repository {
         }
         Ok(result)
     }
-    async fn snapshot(&self) -> Result<Value> {
+    async fn snapshot_document(&self, name: &str) -> Result<Value> {
+        if !["workspace", "drive9", "zero", "duckdb", "db9"].contains(&name) {
+            return Err(error("META_INVALID_DOCUMENT"));
+        }
+        let mut document = self.document.clone();
+        document.partition_id = name.into();
         if self.closed.load(Ordering::Acquire) {
             return Err(error("META_GATEWAY_CLOSED"));
         }
         self.metadata
             .execute(MetaRequest::Snapshot {
-                scope: self.document.clone(),
+                scope: document,
                 gateway: Some(self.gateway.clone()),
             })
             .await
     }
     pub async fn read(&self) -> Result<Value> {
+        self.read_document("workspace").await
+    }
+    pub async fn read_document(&self, name: &str) -> Result<Value> {
         let _lock = self.queue.lock().await;
-        decode(&self.snapshot().await?)
+        decode(&self.snapshot_document(name).await?, name)
     }
     pub async fn transaction<T>(
         &self,
         apply: impl FnOnce(&mut Value) -> Result<(T, bool)> + Send,
     ) -> Result<T> {
+        self.transaction_document("workspace", apply).await
+    }
+    pub async fn transaction_document<T>(
+        &self,
+        name: &str,
+        apply: impl FnOnce(&mut Value) -> Result<(T, bool)> + Send,
+    ) -> Result<T> {
         let _lock = self.queue.lock().await;
-        let snapshot = self.snapshot().await?;
-        let mut document = decode(&snapshot)?;
+        let snapshot = self.snapshot_document(name).await?;
+        let mut document = decode(&snapshot, name)?;
         let (result, dirty) = apply(&mut document)?;
         if dirty {
             let bytes =
                 serde_json::to_vec(&document).map_err(|_| error("META_DOCUMENT_CORRUPT"))?;
+            let mut scope = self.document.clone();
+            scope.partition_id = name.into();
             self.metadata
                 .execute(MetaRequest::Commit {
-                    scope: self.document.clone(),
+                    scope,
                     gateway: Some(self.gateway.clone()),
                     expected_revision: revision(&snapshot)?,
                     mutation_id: Uuid::new_v4().to_string(),
@@ -172,7 +189,7 @@ fn revision(snapshot: &Value) -> Result<Option<String>> {
         _ => Err(error("META_DOCUMENT_CORRUPT")),
     }
 }
-fn decode(snapshot: &Value) -> Result<Value> {
+fn decode(snapshot: &Value, name: &str) -> Result<Value> {
     if revision(snapshot)?.is_none() || snapshot["records"]["descriptor"]["format"] != 1 {
         return Err(error("META_DOCUMENT_MISSING"));
     }
@@ -209,12 +226,16 @@ fn decode(snapshot: &Value) -> Result<Value> {
     }
     let value: Value =
         serde_json::from_slice(&bytes).map_err(|_| error("META_DOCUMENT_CORRUPT"))?;
-    if value["workspace"]["id"] != "ws_agentlab"
-        || !value["resources"].is_array()
-        || !value["keys"].is_array()
-        || !value["events"].is_array()
-        || !value["profile"].is_object()
+    if name == "workspace"
+        && (value["workspace"]["id"] != "ws_agentlab"
+            || !value["resources"].is_array()
+            || !value["keys"].is_array()
+            || !value["events"].is_array()
+            || !value["profile"].is_object())
     {
+        return Err(error("META_DOCUMENT_CORRUPT"));
+    }
+    if name != "workspace" && !value["bindings"].is_object() {
         return Err(error("META_DOCUMENT_CORRUPT"));
     }
     Ok(value)

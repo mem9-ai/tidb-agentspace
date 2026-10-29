@@ -254,9 +254,8 @@ and [the source contract](duckdb-databases.md#workspace-file-sources).
 
 Implemented delivery: the Console and API have independent builds, processes, and artifacts in
 one repository. The API serves only HTTP API/schema endpoints; the static Console uses runtime
-API-origin configuration and an OpenAPI-generated typed client. The existing backend remains
-Node ESM for the active full API; the first [Rust Workspace/Key slice](rust-backend.md)
-and composable host now run against embedded or remote metadata. See [ADR 0005](decisions/0005-independent-console-and-api.md) and the
+API-origin configuration and an OpenAPI-generated typed client. The full regional API uses Rust; its [modular backend](rust-backend.md)
+and composable host run against embedded or remote metadata. See [ADR 0005](decisions/0005-independent-console-and-api.md) and the
 [operating guide](independent-delivery.md). Production identity and hosting remain proposed.
 
 The accepted backend target is Rust, following [ADR 0020](decisions/0020-modular-rust-backend.md)
@@ -265,7 +264,7 @@ implementation; a common executable can embed roles or start them as independent
 Global/regional authority and separate Meta instances remain mandatory in either form.
 Co-located roles share process failure; production regional independence requires separate
 processes/hosts. Customer computation remains isolated. Node ESM is transitional until
-each Rust slice passes compatibility checks; the current API still uses it. The diagram
+compatibility checks pass; the full Rust regional profile now implements the existing API. The diagram
 below is a functional view, not one shared metadata database or a centralized data path.
 
 ```mermaid

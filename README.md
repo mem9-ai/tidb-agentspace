@@ -129,7 +129,7 @@ before changing persistence; full hosted multi-tenancy and automatic HA remain f
 - `src/features/keys/ResourceAccessPicker.tsx`: explicit customer key resource selection.
 - `server/store.mjs`: serialized atomic local state persistence and capability snapshot.
 - `meta-service/`: independently runnable/reusable Rust SlateDB service; `server/meta/`: private Node client, local topology and migration tools.
-- `backend/` and root `Cargo.toml`: shared Rust modules and `workspace-backend` host. The first Workspace/Key migration profile supports embedded or remote mTLS metadata; [runtime guide](docs/rust-backend.md). The complete Portal API remains on Node during staged migration.
+- `backend/` and root `Cargo.toml`: shared Rust modules and `workspace-backend` host. The first Workspace/Key migration profile supports embedded or remote mTLS metadata; [runtime guide](docs/rust-backend.md). The full regional Rust profile includes database/file/analysis/export operations; Node remains the compatibility/rollback implementation.
 - `server/generate-openapi.mjs`: canonical API contract source.
 - `public/openapi.json`, `src/api/schema.d.ts`: generated contract and client types.
 - `src/api/`: shared generated-type HTTP client and runtime API configuration.

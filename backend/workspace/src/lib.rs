@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use workspace_contracts::{Result, ServiceError};
 
+#[derive(Clone)]
 pub enum Credential {
     LocalDemoOwner,
     Bearer(String),
@@ -23,7 +24,7 @@ pub struct Response {
     pub body: Value,
 }
 pub struct Workspace {
-    repository: Repository,
+    repository: std::sync::Arc<Repository>,
 }
 const SCOPES: &[&str] = &[
     "resources:read",
@@ -71,9 +72,94 @@ fn visible(resource: &Value) -> bool {
         _ => false,
     }
 }
+#[derive(Clone)]
+pub struct Principal {
+    pub owner: bool,
+    pub actor: String,
+    pub id: String,
+    pub scopes: Vec<String>,
+    pub resource_ids: Vec<String>,
+}
+impl Principal {
+    pub fn scope(&self, action: &str) -> Result<()> {
+        if !self.owner && !self.scopes.iter().any(|s| s == "*" || s == action) {
+            return Err(reject(403, "INSUFFICIENT_SCOPE"));
+        }
+        Ok(())
+    }
+    pub fn has(&self, id: &str) -> bool {
+        self.owner || self.resource_ids.iter().any(|r| r == "*" || r == id)
+    }
+    pub fn resource(&self, state: &Value, id: &str, kind: Option<&str>) -> Result<Value> {
+        if !self.has(id) {
+            return Err(reject(403, "RESOURCE_ACCESS_DENIED"));
+        }
+        state["resources"]
+            .as_array()
+            .and_then(|v| {
+                v.iter()
+                    .find(|r| visible(r) && r["id"] == id && kind.is_none_or(|k| r["kind"] == k))
+            })
+            .cloned()
+            .ok_or_else(|| reject(404, "NOT_FOUND"))
+    }
+}
+pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
+    if let Credential::Bearer(token) = credential {
+        let digest = hex::encode(Sha256::digest(token.as_bytes()));
+        let key = state["keys"]
+            .as_array()
+            .and_then(|v| v.iter().find(|k| k["digest"] == digest))
+            .ok_or_else(|| reject(401, "INVALID_KEY"))?;
+        let expiry = key["expiresAt"]
+            .as_str()
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok());
+        if !key["revokedAt"].is_null() || expiry.is_none_or(|d| d <= Utc::now()) {
+            return Err(reject(401, "INVALID_KEY"));
+        }
+        return Ok(Principal {
+            owner: false,
+            actor: key["name"].as_str().unwrap_or("Key").into(),
+            id: key["id"]
+                .as_str()
+                .ok_or_else(|| reject(401, "INVALID_KEY"))?
+                .into(),
+            scopes: strings(&key["scopes"]).ok_or_else(|| reject(401, "INVALID_KEY"))?,
+            resource_ids: strings(&key["resourceIds"]).unwrap_or_default(),
+        });
+    }
+    Ok(Principal {
+        owner: true,
+        actor: "You".into(),
+        id: "local-owner".into(),
+        scopes: vec!["*".into()],
+        resource_ids: vec!["*".into()],
+    })
+}
 impl Workspace {
+    pub async fn authenticate(&self, credential: &Credential) -> Result<Principal> {
+        self.repository
+            .transaction(|state| {
+                let p = principal(state, credential)?;
+                if !p.owner
+                    && let Some(key) = state["keys"]
+                        .as_array_mut()
+                        .and_then(|v| v.iter_mut().find(|k| k["id"] == p.id))
+                {
+                    key["lastUsedAt"] = json!(timestamp());
+                }
+                let dirty = !p.owner;
+                Ok((p, dirty))
+            })
+            .await
+    }
+    pub fn repository(&self) -> std::sync::Arc<Repository> {
+        self.repository.clone()
+    }
     pub fn new(repository: Repository) -> Self {
-        Self { repository }
+        Self {
+            repository: std::sync::Arc::new(repository),
+        }
     }
     pub async fn health(&self) -> Result<()> {
         self.repository.read().await?;
