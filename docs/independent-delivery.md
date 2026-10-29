@@ -73,6 +73,13 @@ API request includes credentials; CORS does not grant API permissions. Unknown o
 rejected before session creation or provider access. Non-browser agents use Workspace Keys
 without relying on CORS or Console sessions.
 
+For a separate browser-verification API, keep its Console/API hostname pair distinct from
+the active user preview (for example, use `localhost` for verification and `127.0.0.1` for the
+user preview). Different ports on the same hostname do not isolate the `workspace_session`
+cookie between independent API processes. Preserve the active serving process and confirm
+the user's actual tab, URL and authenticated read after a preview update; another working
+directory or an already loaded tab can still serve an older Console build.
+
 Example with non-default ports, in two terminals:
 
 ```sh
