@@ -208,7 +208,9 @@ The shared `legacy-gateway` record excludes simultaneous Node/Rust writers. Ever
 operation checks its owner inside the metadata transaction. Clean shutdown drains requests
 and releases the gateway before metadata closes. An uncertain claim/release requires explicit
 reconciliation with the exact stopped owner; there is no timeout-based ownership takeover.
-Metadata commits finish durably after caller disconnect; computation cancellation kills its
+Metadata uses native concurrent SlateDB transactions with a pinned durable read frontier;
+see [ADR 0022](decisions/0022-native-slatedb-transactions.md). The compatibility repository's
+document queue and single API owner remain until resource-level migration. Metadata commits finish durably after caller disconnect; computation cancellation kills its
 worker and releases query slots/private temporary snapshots.
 
 Evidence is recorded in the implementation PR and private local cutover manifest. Live

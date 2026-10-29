@@ -4,7 +4,7 @@
   [GH-74 design](../specs/gh-74/spec.md) and [ADR 0019](decisions/0019-workspace-kv-control-plane.md).
 - Engine: SlateDB **0.17.0**, Rust **1.99.1**, checked-in root Cargo lockfile shared with the Rust backend workspace.
 - Scope: Independent Global/regional metadata services and an opt-in bounded compatibility
-  adapter for the existing single-Workspace Node gateway. Full multi-tenant domain migration,
+  repository for the existing single-Workspace Rust API and retained Node compatibility gateway. Full multi-tenant domain migration,
   Global/Region public APIs, automatic HA and million-resource sharding remain future work.
 
 ## Ownership and persistence
@@ -15,13 +15,12 @@ writer ownership. They reuse service code. A configured authority cannot read or
 authority's scope. Global's private directory records regional deployment descriptors; normal
 regional serving has no Global client, lookup, token renewal or storage fallback.
 
-The active Node business backend remains ESM during the [staged Rust migration](rust-backend.md).
-Its optional document-store factory replaces persistence
-for the Workspace state and all four provider vaults. It verifies the installed import before
-startup and refuses missing documents. State is refreshed before admission; private vaults
-refresh at authorized provider entry points. Mutations read a fresh revision, run the existing
-callback once and conditionally commit. Conflicts and unknown outcomes do not replay callbacks
-or provider I/O. JSON mode remains available for new local demos; a migrated source is frozen.
+The full regional business API is Rust; Node remains the compatibility oracle, rollback and
+migration tooling. Both repositories preserve the Workspace document and four provider vaults,
+verify the installed import and refuse missing documents. Mutations read a fresh revision,
+run the existing callback once and conditionally commit. Conflicts and unknown outcomes do
+not replay callbacks or provider I/O. The retained Node JSON mode remains available for new
+local demos; a migrated source is frozen. See the [Rust runtime guide](rust-backend.md).
 
 The compatibility gateway is **single-active** across Node and Rust: it acquires a revision-checked regional
 gateway owner record before opening vaults. Every document operation carries that owner and
@@ -37,12 +36,22 @@ The active legacy Workspace document remains regional. Global currently stores t
 directory and a safe import/resource inventory, not the new design's complete live identity,
 policy or desired-state domain. Do not advertise full multi-tenancy from this storage bridge.
 
-Inside a service, one serialized owner applies atomic SlateDB batches containing changes,
-revision and mutation receipt. Success waits for `await_durable()`. Reads explicitly select
-`DurabilityLevel::Remote`, so pending memory does not become authorization truth. An S3
-conditional owner record gates startup and every read/write; SlateDB also fences displaced
-writers. An unknown write poisons that process's serving path until recovery. Eight admitted
-requests bound the queue; unauthorized requests reject before body extraction/storage I/O.
+Inside a service, requests share the Engine and execute native SlateDB `SerializableSnapshot`
+transactions, as recorded in [ADR 0022](decisions/0022-native-slatedb-transactions.md). Gateway,
+receipt and revision reads plus encrypted changes/revision/receipt writes belong to one native
+transaction. The service precondition still checks the supplied revision; native OCC handles
+concurrent updates. A known conflict does not poison serving. Identical colliding submissions
+can resolve the durable receipt without replaying their mutation or any provider work.
+
+Success waits for the commit handle's `await_durable()`. Each transaction pins an MVCC sequence
+and waits up to 30 seconds for that sequence to become object-durable before reading, with
+explicit `DurabilityLevel::Remote` filters. Revision and records therefore share one immutable
+durable view. New reads can wait behind earlier pending writes; pending memory cannot become
+authorization truth. An S3 conditional owner still gates startup and fresh read/write barriers,
+separately from SlateDB's native writer fencing and transaction conflicts. Unknown writes fail
+serving closed until recovery. Eight request slots bound admission, with no service-wide
+transaction mutex; a lifecycle read/write guard only coordinates concurrent work with shutdown.
+Unauthorized requests reject before body extraction/storage I/O.
 
 There is one physical SlateDB shard per service in this first profile. Ordinary commits allow
 100 changes/1 MiB with values up to 256 KiB. Bounded snapshot groups allow 512 records/18 MiB.

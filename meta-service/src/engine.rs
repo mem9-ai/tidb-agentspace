@@ -9,14 +9,22 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use slatedb::{
-    Db, WriteBatch,
+    Db, DbTransaction, ErrorKind, IsolationLevel,
     config::{DurabilityLevel, ReadOptions, ScanOptions},
     object_store::{
         ObjectStore, ObjectStoreExt, PutMode, PutOptions, UpdateVersion, aws::AmazonS3Builder,
         path::Path,
     },
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 pub struct Engine {
     pub config: Config,
@@ -24,7 +32,9 @@ pub struct Engine {
     store: Arc<dyn ObjectStore>,
     cipher: Aes256Gcm,
     owner: Owner,
-    healthy: bool,
+    healthy: AtomicBool,
+    closed: AtomicBool,
+    lifecycle: RwLock<()>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -205,12 +215,17 @@ impl Engine {
             store,
             cipher,
             owner,
-            healthy: true,
+            healthy: AtomicBool::new(true),
+            closed: AtomicBool::new(false),
+            lifecycle: RwLock::new(()),
         })
     }
     pub async fn barrier(&self) -> Outcome<()> {
-        if !self.healthy {
+        if !self.healthy.load(Ordering::Acquire) {
             return Err(Failure(503, "META_COMMIT_UNKNOWN"));
+        }
+        if self.closed.load(Ordering::Acquire) {
+            return Err(Failure(503, "META_UNAVAILABLE"));
         }
         let path = Path::from(format!("{}/control/owner.json", self.config.s3.prefix));
         let owner: Owner = serde_json::from_slice(
@@ -230,6 +245,9 @@ impl Engine {
         {
             return Err(Failure(503, "META_OWNER_FENCED"));
         }
+        if self.db.status().close_reason.is_some() {
+            return Err(Failure(503, "META_UNAVAILABLE"));
+        }
         Ok(())
     }
     fn prefix(&self, scope: &Scope) -> Outcome<String> {
@@ -248,8 +266,8 @@ impl Engine {
             hex::encode(Sha256::digest(serde_json::to_vec(scope).map_err(corrupt)?))
         ))
     }
-    async fn get(&self, key: &str) -> Outcome<Option<Value>> {
-        self.db
+    async fn get(&self, transaction: &DbTransaction, key: &str) -> Outcome<Option<Value>> {
+        transaction
             .get_with_options(
                 key,
                 &ReadOptions {
@@ -266,24 +284,25 @@ impl Engine {
             })
             .transpose()
     }
-    fn put(&self, batch: &mut WriteBatch, key: &str, value: &Value) -> Outcome<()> {
+    fn put(&self, transaction: &DbTransaction, key: &str, value: &Value) -> Outcome<()> {
         let aad = format!("{}:{key}", self.config.installation_id);
-        batch.put(
-            key,
-            seal(
-                &self.cipher,
-                aad.as_bytes(),
-                &serde_json::to_vec(value).map_err(corrupt)?,
+        transaction
+            .put(
+                key,
+                seal(
+                    &self.cipher,
+                    aad.as_bytes(),
+                    &serde_json::to_vec(value).map_err(corrupt)?,
+                )
+                .map_err(corrupt)?,
             )
-            .map_err(corrupt)?,
-        );
+            .map_err(unavailable)?;
         Ok(())
     }
-    async fn snapshot(&self, prefix: &str) -> Outcome<Value> {
-        let revision = self.get(&format!("{prefix}revision")).await?;
+    async fn snapshot(&self, transaction: &DbTransaction, prefix: &str) -> Outcome<Value> {
+        let revision = self.get(transaction, &format!("{prefix}revision")).await?;
         let data = format!("{prefix}data/");
-        let mut iter = self
-            .db
+        let mut iter = transaction
             .scan_prefix_with_options(
                 data.as_bytes(),
                 ..,
@@ -319,17 +338,37 @@ impl Engine {
         }
         Ok(json!({"revision":revision,"records":records}))
     }
-    pub async fn execute(&mut self, request: Request) -> Outcome<Value> {
-        let (scope, gateway) = match &request {
-            Request::Snapshot { scope, gateway }
-            | Request::Commit { scope, gateway, .. }
-            | Request::Resolve { scope, gateway, .. } => (scope, gateway),
-        };
+    async fn transaction(
+        &self,
+        scope: &Scope,
+        gateway: Option<&Gateway>,
+    ) -> Outcome<DbTransaction> {
         self.prefix(scope)?;
         if let Some(gateway) = gateway {
             self.prefix(&gateway.scope)?;
         }
         self.barrier().await?;
+        let transaction = self
+            .db
+            .begin(IsolationLevel::SerializableSnapshot)
+            .await
+            .map_err(unavailable)?;
+        // Pin MVCC first, then wait for that exact sequence to become object-durable.
+        // A moving Remote filter alone could otherwise mix old revisions with newly durable records.
+        let mut status = self.db.subscribe();
+        let sequence = transaction.seqnum();
+        let closed = tokio::time::timeout(
+            Duration::from_secs(30),
+            status.wait_for(|s| s.durable_seq >= sequence || s.close_reason.is_some()),
+        )
+        .await
+        .map_err(unavailable)?
+        .map_err(unavailable)?
+        .close_reason
+        .is_some();
+        if closed || !self.healthy.load(Ordering::Acquire) {
+            return Err(Failure(503, "META_UNAVAILABLE"));
+        }
         if let Some(gateway) = gateway {
             if gateway.scope.family != "legacy-gateway"
                 || gateway.scope.owner_kind != "system"
@@ -343,7 +382,7 @@ impl Engine {
                 self.prefix(&gateway.scope)?,
                 STANDARD.encode("ownerId")
             );
-            if self.get(&path).await? != Some(json!(gateway.owner_id)) {
+            if self.get(&transaction, &path).await? != Some(json!(gateway.owner_id)) {
                 return Err(Failure(503, "META_GATEWAY_FENCED"));
             }
         }
@@ -360,12 +399,46 @@ impl Engine {
                 self.prefix(&gate_scope)?,
                 STANDARD.encode("ownerId")
             );
-            if self.get(&path).await?.is_some_and(|v| v.as_str().is_some()) {
+            if self
+                .get(&transaction, &path)
+                .await?
+                .is_some_and(|v| v.as_str().is_some())
+            {
                 return Err(Failure(503, "META_GATEWAY_REQUIRED"));
             }
         }
-        match request {
-            Request::Snapshot { scope, .. } => self.snapshot(&self.prefix(&scope)?).await,
+        Ok(transaction)
+    }
+    async fn replay(
+        &self,
+        scope: &Scope,
+        gateway: Option<&Gateway>,
+        receipt_key: &str,
+        fingerprint: &str,
+    ) -> Outcome<Option<Value>> {
+        let transaction = self.transaction(scope, gateway).await?;
+        match self.get(&transaction, receipt_key).await? {
+            Some(receipt) if receipt["fingerprint"] != fingerprint => {
+                Err(Failure(409, "META_MUTATION_MISMATCH"))
+            }
+            Some(receipt) => Ok(Some(
+                json!({"revision":receipt["revision"],"replayed":true}),
+            )),
+            None => Ok(None),
+        }
+    }
+    pub async fn execute(&self, request: Request) -> Outcome<Value> {
+        let _serving = self.lifecycle.read().await;
+        let (scope, gateway) = match &request {
+            Request::Snapshot { scope, gateway }
+            | Request::Commit { scope, gateway, .. }
+            | Request::Resolve { scope, gateway, .. } => (scope, gateway.as_ref()),
+        };
+        let transaction = self.transaction(scope, gateway).await?;
+        let result = match request {
+            Request::Snapshot { scope, .. } => {
+                self.snapshot(&transaction, &self.prefix(&scope)?).await
+            }
             Request::Resolve {
                 scope, mutation_id, ..
             } => {
@@ -374,7 +447,10 @@ impl Engine {
                 }
                 let prefix = self.prefix(&scope)?;
                 Ok(
-                    match self.get(&format!("{prefix}receipts/{mutation_id}")).await? {
+                    match self
+                        .get(&transaction, &format!("{prefix}receipts/{mutation_id}"))
+                        .await?
+                    {
                         Some(v) => json!({"outcome":"committed","revision":v["revision"]}),
                         None => json!({"outcome":"unknown"}),
                     },
@@ -385,7 +461,7 @@ impl Engine {
                 expected_revision,
                 mutation_id,
                 changes,
-                ..
+                gateway,
             } => {
                 let prefix = self.prefix(&scope)?;
                 if !valid_id(&mutation_id) {
@@ -433,18 +509,19 @@ impl Engine {
                     .map_err(corrupt)?,
                 ));
                 let receipt_key = format!("{prefix}receipts/{mutation_id}");
-                if let Some(receipt) = self.get(&receipt_key).await? {
+                if let Some(receipt) = self.get(&transaction, &receipt_key).await? {
                     if receipt["fingerprint"] != fingerprint {
                         return Err(Failure(409, "META_MUTATION_MISMATCH"));
                     }
+                    self.barrier().await?;
                     return Ok(json!({"revision":receipt["revision"],"replayed":true}));
                 }
-                if self.get(&format!("{prefix}revision")).await?
+                if self.get(&transaction, &format!("{prefix}revision")).await?
                     != expected_revision.map(Value::String)
                 {
                     return Err(Failure(409, "META_CONFLICT"));
                 }
-                let snapshot = self.snapshot(&prefix).await?;
+                let snapshot = self.snapshot(&transaction, &prefix).await?;
                 let mut projected = snapshot["records"]
                     .as_object()
                     .ok_or(Failure(503, "META_CORRUPT"))?
@@ -462,35 +539,59 @@ impl Engine {
                     return Err(Failure(413, "META_LIMIT_EXCEEDED"));
                 }
                 let revision = Uuid::new_v4().to_string();
-                let mut batch = WriteBatch::new();
                 for (key, change) in ordered {
                     let path = format!("{prefix}data/{}", STANDARD.encode(key));
                     if let Some(value) = change.get("value") {
-                        self.put(&mut batch, &path, value)?;
+                        self.put(&transaction, &path, value)?;
                     } else {
-                        batch.delete(&path);
+                        transaction.delete(&path).map_err(unavailable)?;
                     }
                 }
-                self.put(&mut batch, &format!("{prefix}revision"), &json!(revision))?;
+                self.put(&transaction, &format!("{prefix}revision"), &json!(revision))?;
                 self.put(
-                    &mut batch,
+                    &transaction,
                     &receipt_key,
                     &json!({"revision":revision,"fingerprint":fingerprint}),
                 )?;
-                let result = async { self.db.write(batch).await?.await_durable().await }.await;
-                if result.is_err() {
-                    self.healthy = false;
+                let handle = match transaction.commit().await {
+                    Ok(Some(handle)) => handle,
+                    Err(error) if error.kind() == ErrorKind::Transaction => {
+                        // Resolve only the durable receipt after an OCC collision. Never rerun changes or effects.
+                        let result = self
+                            .replay(&scope, gateway.as_ref(), &receipt_key, &fingerprint)
+                            .await?
+                            .ok_or(Failure(409, "META_CONFLICT"));
+                        self.barrier().await?;
+                        return result;
+                    }
+                    _ => {
+                        self.healthy.store(false, Ordering::Release);
+                        return Err(Failure(503, "META_COMMIT_UNKNOWN"));
+                    }
+                };
+                if handle.await_durable().await.is_err() {
+                    self.healthy.store(false, Ordering::Release);
                     return Err(Failure(503, "META_COMMIT_UNKNOWN"));
                 }
-                self.barrier().await?;
                 Ok(json!({"revision":revision,"replayed":false}))
             }
-        }
+        };
+        self.barrier().await?;
+        result
+    }
+    pub async fn check_health(&self) -> Outcome<Value> {
+        let _serving = self.lifecycle.read().await;
+        self.barrier().await?;
+        Ok(self.health())
     }
     pub fn health(&self) -> Value {
         json!({"authorityId":self.config.authority_id,"installationId":self.config.installation_id,"engine":"slatedb","engineVersion":"0.17.0","ownerId":self.owner.id,"capabilities":["legacyGatewayFencing"]})
     }
     pub async fn close(&self) -> Result<()> {
+        let _drained = self.lifecycle.write().await;
+        if self.closed.swap(true, Ordering::AcqRel) {
+            return Ok(());
+        }
         self.db.close().await?;
         let path = Path::from(format!("{}/control/owner.json", self.config.s3.prefix));
         let object = self.store.get(&path).await?;
