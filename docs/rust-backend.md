@@ -1,115 +1,121 @@
-# Modular Rust backend: first migration slice
+# Modular Rust backend
 
-- Direction: [ADR 0020](decisions/0020-modular-rust-backend.md), [GH-88 specification](../specs/gh-88/spec.md).
-- Implemented slice: GH-90, following the accepted specification at
-  `b90b68a0d3b437413c11845cdb1ba73af357b99f`.
-- Runtime: Rust **1.99.1**, one root Cargo workspace and committed root `Cargo.lock`.
-- Status: Real Workspace/Key business logic and composable metadata services. The full
-  provider/data/analysis API is still on Node; the active Portal is not cut over to this partial profile.
+- Direction: [ADR 0020](decisions/0020-modular-rust-backend.md) and the
+  [GH-88 contract](../specs/gh-88/spec.md), accepted at `b90b68a0d3b437413c11845cdb1ba73af357b99f`.
+- Full regional API implementation: [GH-92](https://github.com/siddontang/tidb.ai/issues/92).
+- Rust **1.99.1**, a root Cargo workspace and committed `Cargo.lock`.
+- The Rust full profile serves Workspace/Keys, lifecycle, SQL/browser, files, analysis,
+  result/file exports and confirmed imports. Node remains a compatibility oracle, rollback
+  implementation and build/migration tooling; Rust never forwards business operations to it.
+- This is the existing loopback guest product profile. Production identity, typed multi-tenant
+  repositories, Global policy distribution and million-resource sharding remain GH-74 work.
 
-## Modules and dependency direction
+## Modules
 
-| Crate/source          | Implemented responsibility                                                                                                          |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `backend/contracts`   | Metadata port, scoped request/context and structured error types; no HTTP/storage dependency                                        |
-| `meta-service`        | Existing independent encrypted SlateDB/S3 engine, local port and mTLS HTTP server, now a library plus compatible thin binary        |
-| `backend/meta-client` | Remote Meta port with authority/installation checks, TLS 1.3/mTLS, no proxy/redirect/automatic retry and bounded responses/timeouts |
-| `backend/workspace`   | Workspace read/settings, Key issue/list/revoke/auth and filtered events; guarded legacy repository behind the metadata port         |
-| `backend/api`         | Explicit loopback migration profile, HTTP methods, local-demo sessions, Host/Origin/CORS and admission/body limits                  |
-| `backend/host`        | Private deployment plan, real role composition, dependency wiring and ordered shutdown; common `workspace-backend` executable       |
+| Crate                 | Responsibility                                                                         |
+| --------------------- | -------------------------------------------------------------------------------------- |
+| `backend/contracts`   | Metadata port, scoped context and structured errors                                    |
+| `meta-service`        | Encrypted SlateDB/S3 authority, durable commits, fencing and mTLS server               |
+| `backend/meta-client` | Authority-bound remote Meta adapter; TLS 1.3/mTLS, bounded requests, no retries        |
+| `backend/workspace`   | Workspace/Key domain, authorization and five-document compatibility repository         |
+| `backend/providers`   | Private Drive9, Zero and db9 lifecycle/vault adapters; native MySQL/PostgreSQL drivers |
+| `backend/compute`     | Bundled DuckDB 2.0 and Bashkit; disposable workers from the same executable            |
+| `backend/product`     | Regional resources, database browser, files, snapshots, analysis, exports/imports      |
+| `backend/api`         | Public HTTP contract, sessions, Host/Origin/CORS, request/cancellation/stream limits   |
+| `backend/host`        | Configuration, dependency wiring, real role composition and ordered shutdown           |
 
-The domain crate does not depend on Axum, HTTP clients, SlateDB or S3. It uses the same
-metadata port for embedded and remote execution. Neither mode forwards an operation to Node.
-The workspace engine is still the bounded compatibility document profile from GH-86, not
-the future typed multi-tenant repositories or million-resource collection/index profile.
+Domain operations are shared by Console and agent requests. Providers and computation are
+separate crates behind regional application operations. Metadata supports in-process and remote
+ports; those are implemented deployment modes. Provider/compute crates do not claim independent
+public RPC services. Workers are separate processes even in an all-in-one deployment.
 
-## Build and verify
+## Build, check and package
 
 ```sh
 cargo build --workspace --locked
-cargo build --release --locked -p workspace-backend
 npm run backend:check
 npm run check
+npm run package:api:rust -- FULL_REVIEWED_SOURCE_SHA
 ```
 
-`.cargo/config.toml` keeps build outputs under `meta-service/target/`, preserving existing
-metadata launch/test paths. The common debug executable is
-`meta-service/target/debug/workspace-backend`; the release executable is in the corresponding
-`release/` directory. The original `workspace-meta-service --config ...` launcher remains
-compatible and delegates to the shared library. Building/running either Rust executable
-does not require Node or the Console; npm commands are optional shared test/build tooling.
+`backend:check` runs workspace format, Clippy with warnings denied, Rust tests, and isolated
+real RustFS/S3 metadata, ownership, Node/Rust parity and provider-recovery integration tests.
+Ordinary `npm test` skips explicitly gated S3 cases; those skips are not integration evidence.
+CI uses two Cargo jobs and omits native/Rust debug symbols to bound cold-build time and memory. Functional checks and warnings-as-errors remain enabled. Initial bundled DuckDB compilation
+is substantially slower than an incremental Rust build. Reuse installed RustFS locally.
 
-`backend:check` runs workspace build, Rust formatting/Clippy/tests and eight real isolated
-RustFS/S3 integration cases. Existing metadata tests retain ACK/WAL, crash, fencing, encryption,
-mTLS and persistent local-bootstrap coverage. New tests run the same Workspace/Key requests
-against Node and both Rust modes, including a remote mTLS deployment, original Key validity,
-scope/expiry/revocation, Host/Origin/preflight, unknown fields, source/vault preservation,
-Node/Rust ownership exclusion, explicit stale-owner fencing and language handoff in both
-directions. They also reject overlapping storage/duplicate authorities before opening writers
-and verify that a failed Global role does not stop a healthy regional role or seed a root.
+The debug executable is `meta-service/target/debug/workspace-backend`. For an optimized
+artifact, build `cargo build --release --locked -p workspace-backend` and supply that executable
+as the package command's second argument. Packaging requires the current clean reviewed Git
+revision, writes source SHA/binary SHA-256/platform/architecture and archive checksums, and
+includes only the binary, Cargo lockfile, contract and instructions. It excludes private
+configuration, state, credentials, Console assets and Node runtime dependencies. A verified
+native tidbfs extension is a separately supplied artifact, with its checksum preserved.
 
-CI runs `backend:check` without cloud credentials using pinned Rust/RustFS. Ordinary `npm test`
-explicitly skips the four metadata and four Rust backend S3 integration cases; those skips
-are not integration evidence. Shared quality and backend checks are both required.
+`npm start`, `start:api`, `dev:api` and the API portion of `npm run dev` now start Rust.
+Set `WORKSPACE_BACKEND_CONFIG` to the absolute private deployment file; optionally set
+`WORKSPACE_BACKEND_BINARY` to the absolute reviewed artifact. The default binary is the local
+Cargo debug build. Missing configuration fails explicitly, with no alternate data file or
+Node fallback. For deliberate compatibility work, use `start:legacy-api` / `dev:legacy-api`.
+The optional npm launcher is tooling; the distributed native artifact runs directly without it.
 
-## One executable, different deployment plans
+The existing `build:api` / `package` commands retain the Node compatibility artifact used by
+existing deployment tests and rollback. `build:api:rust` / `package:api:rust` produce the Rust
+serving artifact. The Console remains an independently built static artifact. A Node process
+serving Vite/static files or running migration/test tools is not a Rust business dependency.
 
-Run the same executable with a private deployment file:
+## One executable, independent roles
 
 ```sh
-workspace-backend serve --config deployment.json
+workspace-backend serve --config /absolute/private/deployment.json
 ```
 
-All configuration and private material use owner-only ordinary files. Deployment role
-references are absolute paths, avoiding a working-directory-dependent choice of authority.
-The following paths are illustrative deployment locations, not checked-in runtime data.
-
-For one process containing Global Meta, regional Meta and the regional Workspace module:
+A deployment file selects real roles; private files are owner-only ordinary files and all
+references are absolute. A co-located plan can contain:
 
 ```json
 {
   "format": 1,
   "services": [
-    { "kind": "metadata", "configFile": "/srv/workspace/config/global-meta.json" },
-    { "kind": "metadata", "configFile": "/srv/workspace/config/region-meta.json" },
-    { "kind": "workspace", "configFile": "/srv/workspace/config/region-workspace.json" }
+    { "kind": "metadata", "configFile": "/srv/config/global-meta.json" },
+    { "kind": "metadata", "configFile": "/srv/config/region-meta.json" },
+    { "kind": "workspace", "configFile": "/srv/config/region-api.json" }
   ]
 }
 ```
 
-For independently deployed services, give each process a single-role plan. The Global
-process receives only its Global metadata configuration. The Region Meta process receives
-only its regional metadata configuration. The Workspace process uses a remote regional port.
-Multiple regions follow the same pattern with separate identities, objects, keys and endpoints.
-Global control, provider/data and execution-worker roles are not implemented by this slice;
-unknown role names/configuration fields reject rather than starting a placeholder service.
+For separate processes, use one role per deployment file. Each Global/Region Meta has a
+separate engine, installation, bucket/non-overlapping root, encryption key and identity.
+The host rejects duplicates/overlapping roots before opening writers; actual IAM/DNS alias
+isolation remains an operator responsibility. Global never opens Region metadata as a second
+writer. `initialize` defaults false; it is only for deliberate empty-root initialization.
 
-Metadata role configuration uses the existing [Meta Service fields](meta-service.md#hosted-configuration-and-evidence-limits).
-`initialize` defaults to false. Set it true only for deliberate initialization of an empty
-new root; never use it to repair missing expected metadata. `recoverOwner` is an optional
-explicit stopped engine-owner identity, using the same recovery protocol as the thin binary.
-The host rejects duplicate authorities, installations, key/token material, listener addresses
-and overlapping object roots before starting roles. Operators still own actual IAM/DNS/storage
-alias isolation; comparing configuration does not prove that two endpoints are different stores.
-
-An embedded regional Workspace configuration is:
+A full regional API configuration is:
 
 ```json
 {
-  "bind": "127.0.0.1:4320",
+  "bind": "127.0.0.1:4318",
   "workspaceId": "ws_agentlab",
   "authorityId": "region:local-compat",
-  "importId": "the-verified-import-id",
+  "importId": "verified-existing-import-id",
   "insecureLoopback": true,
-  "consoleOrigins": ["http://127.0.0.1:5173"],
-  "metadata": {
-    "transport": "inProcess",
-    "authorityId": "region:local-compat"
+  "consoleOrigins": ["http://127.0.0.1:5173", "http://127.0.0.1:4173"],
+  "metadata": { "transport": "inProcess", "authorityId": "region:local-compat" },
+  "product": {
+    "providers": {
+      "filesProvider": "drive9-anonymous",
+      "mysqlProvider": "tidb-cloud-zero",
+      "postgresProvider": "db9-anonymous"
+    },
+    "compute": {
+      "extensionPath": "/srv/artifacts/tidbfs.duckdb_extension",
+      "extensionSha256": "verified-64-character-sha256"
+    }
   }
 }
 ```
 
-For a separate Workspace process, replace `metadata` with:
+For a separate regional API process, replace `metadata` with:
 
 ```json
 {
@@ -117,79 +123,96 @@ For a separate Workspace process, replace `metadata` with:
   "client": {
     "origin": "https://region-meta.example.internal:7443",
     "authorityId": "region:local-compat",
-    "installationId": "the-regional-installation-id",
-    "tokenFile": "/srv/workspace/secrets/meta-token",
+    "installationId": "existing-region-installation",
+    "tokenFile": "/srv/secrets/region-token",
     "tls": {
-      "caFile": "/srv/workspace/pki/ca.crt",
-      "certificateFile": "/srv/workspace/pki/client.crt",
-      "privateKeyFile": "/srv/workspace/secrets/client.key"
+      "caFile": "/srv/pki/ca.crt",
+      "certificateFile": "/srv/pki/client.crt",
+      "privateKeyFile": "/srv/secrets/client.key"
     }
   }
 }
 ```
 
-Remote metadata requires TLS 1.3/mTLS; explicit HTTP loopback test clients may use
-`insecureLoopback: true`. The Workspace HTTP profile itself currently requires explicit IPv4
-loopback and `insecureLoopback: true`; production identity/public hosting is not supplied by
-this slice. It has no Global endpoint/client or token-renewal path. A remote commit failure
-can be unknown: neither transport retries it or replays a business callback.
+Remote Meta requires TLS 1.3/mTLS; explicit loopback tests can use HTTP with
+`insecureLoopback: true` in the client. Regional API startup/authentication/requests do not
+use Global or require Global token renewal. Independent regional processes continue serving
+when Global is unavailable. Co-location shares a process/host failure domain. A role task
+failure leaves healthy roles running; the host is not an automatic HA supervisor.
 
-## Supported profile and compatibility
+Omitting `product` deliberately selects the original `workspace-keys-only` partial profile.
+It does not advertise the full contract and must not replace a complete Portal API.
+`product: {}` enables the full local/demo profile, including snapshot computation without
+native tidbfs. Creating/querying native DuckDB databases requires the verified extension;
+missing or incompatible artifacts fail before allocating private storage.
 
-| Method    | Route                                      | Authorization                                                                                        |
-| --------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| GET       | `/api/health`                              | Local health; verifies current regional metadata and reports `migrationProfile: workspace-keys-only` |
-| POST      | `/api/session`                             | Local demo session, eight-hour HttpOnly/SameSite cookie; not production login                        |
-| GET       | `/api/v1/workspaces`                       | Owner or Workspace Key with `resources:read`                                                         |
-| GET       | `/api/v1/workspaces/ws_agentlab`           | Owner or Workspace Key with `resources:read`                                                         |
-| PATCH     | `/api/v1/workspaces/ws_agentlab/settings`  | Owner only                                                                                           |
-| GET, POST | `/api/v1/workspaces/ws_agentlab/keys`      | Owner only; Key creation persists a digest and returns its secret once                               |
-| DELETE    | `/api/v1/workspaces/ws_agentlab/keys/{id}` | Owner only; durable revocation                                                                       |
-| GET       | `/api/v1/workspaces/ws_agentlab/events`    | Owner or read-scoped Key; resource grants and hidden/retired resource rules apply                    |
+## Compatibility and boundaries
 
-Other routes return structured 404 and are outside this profile's advertised surface. This
-profile does not serve the full OpenAPI document or claim full API/provider compatibility.
-Existing Node API/generator/client contracts remain the active product baseline. The same
-successful Workspace/Key response shapes and stable error codes are compared in integration
-tests. Invalid/non-object JSON and incorrect content type fail with the existing API codes.
-Name limits follow JavaScript UTF-16 length and trimming semantics. Corrupt/missing Key expiry
-and malformed non-null revocation state fail closed; invalid metadata is not repaired to
-grant access. Rust accepts valid Unicode JSON; an unsupported legacy encoding fails preflight
-without overwriting its source. It never intentionally generates a broken surrogate at a
-description truncation boundary.
+The full profile serves the unchanged generated `public/openapi.json`. Resource IDs, native
+IDs, regional placement, opaque fields, contents, Key digests/grants/expiry/revocation and all
+four native vaults retain their existing schema. The compatibility repository is bounded to
+12 MiB per document with 64 KiB encrypted chunks; this is not the future scalable resource
+index. Never route millions of resources through this compatibility profile.
 
-The HTTP profile admits eight requests, bounds bodies to 1 MiB/10 seconds and retains at
-most 4096 unexpired demo sessions. Provider credentials and native storage never enter its
-public responses. Metadata transaction completion remains serialized/durable after a caller
-disconnects. Key last-use writes retain the compatibility behavior; scalable telemetry and
-typed authorization are separate GH-74 work.
+The API retains the eight-hour local owner cookie, backend authorization, grant filtering,
+Host/Origin/CORS policy, eight admitted requests, bounded bodies/timeouts and secret-once Key
+creation. Files/content uploads require octet-stream; downloads stream with backpressure and
+expected-length validation. Export bodies allow 8 MiB; other request bodies allow 1 MiB.
+Native credentials, Key digests and private DuckDB storage do not enter public resource lists,
+usage rows or worker snapshots. Owner sessions are not production login.
 
-## Handoff, recovery and limits
+Provider creation persists intent before a non-idempotent request. Unknown Zero/Drive9
+creation outcomes are not retried. db9 can recover the one deterministic database name under
+the original anonymous account. Configuring bindings keep their generated restricted native
+roles; restart/setup never rotates credentials or creates a replacement database. Pending
+binding values are validated before interpolating server-generated setup SQL.
 
-Use isolated generated fixtures for development. Do not point a partial profile at the
-active Portal's metadata or start a second writer against live roots. The integration suite
-creates private temporary imports with native credential fixtures and cleans them up.
+Native SQL drivers use verified TLS, fresh bounded connections, one statement, exact decimal/int8/
+JSON/temporal text preservation and binary base64. Query results retain duplicate columns,
+1,000-row/1 MiB limits and safe errors. Neither SQL nor uncertain writes are automatically
+retried. Provider compatibility limits in the existing Zero/db9 guides still apply.
 
-The Rust repository checks the verified regional import, then acquires the same
-`legacy-gateway` record as Node. A second Node or Rust writer rejects. Every document call
-carries its owner and is checked inside the metadata transaction boundary. Recovery uses
-optional `recoverGatewayOwner` with the exact stopped gateway identity; there is no lease
-timeout or Global renewal. A displaced process rejects reads and writes and cannot release
-the newer owner's guard. An uncertain claim/release needs explicit regional reconciliation.
+DuckDB is bundled into the executable at the existing engine major. The verified tidbfs
+artifact is loaded only by native database workers. Selected-file SQL/preview/imports use
+bundled CSV/JSON/Parquet support; they do not require provider extensions. Bashkit implements
+the existing allowlisted virtual shell instead of spawning a host shell. See
+[ADR 0021](decisions/0021-native-rust-computation.md) for the worker boundary and limits.
 
-Workspace updates preserve the existing document's resources/files/opaque fields. All four
-native vault documents remain untouched by this slice. Shutdown drains the Workspace HTTP
-service and releases its gateway before stopping metadata listeners/engines. A failed role
-reports its own failure and leaves healthy roles running. Monitor each configured endpoint;
-this host is not an automatic HA supervisor or a distributed health registry.
+Exports preserve column order, CSV formula escaping, source/destination authorization,
+create-only file/table writes, bounded SQL and partial-write errors. Prepared imports retain
+actor binding, five-minute expiration, source-version comparison, field/type confirmation and
+single-use submission. Handles are process-local as before; restart requires a new preparation.
 
-Embedded roles share a process/host failure domain. Deploy Global and Regions in separate
-processes/hosts for regional outage independence. Global never initiates a second regional
-SlateDB writer. Customer analysis still requires isolated worker processes/containers when
-migrated later, even when distributed from the same binary.
+## Migration, local cutover and rollback
 
-Before eventual live cutover, apply the complete [migration/rollback guide](meta-service.md):
-drain old writers, preserve verified private backups and provider runtime settings, and
-export current state rather than restoring stale JSON after target writes. Full provider
-lifecycle/data/analysis/export parity, typed Global/regional policy, public identity, automatic
-HA and million-resource sharding remain tracked under GH-88/GH-74. Stage A is not that endpoint.
+Follow the complete [Meta migration guide](meta-service.md) before switching an entry point.
+The public API never initializes missing expected documents or silently seeds demo resources.
+
+1. Drain the old writer and export all **current** five Meta documents to owner-only files;
+   sync files/directories and retain checksums. Preserve provider mode settings and the native
+   extension path/checksum alongside existing metadata keys, runtime configuration and backups.
+2. Resume the old API while checking an isolated regional copy. Do not run two gateways on
+   the same compatibility documents. Compare existing native reads and contract/behavior
+   fixtures without provisioning replacements or exposing private credentials.
+3. After complete checks pass, drain the old API again and export fresh current state. Start
+   the reviewed Rust artifact against the **original** regional authority/import and provider
+   configuration. Keep the old listener stopped. Verify IDs/counts/Key grants/vaults, health,
+   native reads and the existing Portal using the original API origin.
+4. Update the local launcher to start the Rust artifact and retain a private rollback manifest.
+   Do not overwrite unrelated Portal edits or re-import stale source JSON.
+5. On failure, drain Rust, export current state if necessary, and restart Node against the same
+   current regional Meta. Its gateway ownership contract is identical. Restore JSON only from
+   a verified fresh export if deliberately abandoning Meta after all target writers stop.
+
+The shared `legacy-gateway` record excludes simultaneous Node/Rust writers. Every document
+operation checks its owner inside the metadata transaction. Clean shutdown drains requests
+and releases the gateway before metadata closes. An uncertain claim/release requires explicit
+reconciliation with the exact stopped owner; there is no timeout-based ownership takeover.
+Metadata commits finish durably after caller disconnect; computation cancellation kills its
+worker and releases query slots/private temporary snapshots.
+
+Evidence is recorded in the implementation PR and private local cutover manifest. Live
+provider availability is environment-dependent; offline CI verifies protocol/lifecycle
+fixtures and real S3 durability without cloud credentials. Public hosting, distributed policy
+sync/revocation, provider-side execution and production OS/container compute isolation remain
+separate work; local snapshot workers are not a hostile-public-compute sandbox.

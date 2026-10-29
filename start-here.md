@@ -81,14 +81,14 @@ Global records private regional S3/storage descriptors; Region retains independe
 config and object-backed shard catalogs, with no Global lookup/renewal gate on startup.
 Local development can still use ordinary files. For the implemented independent Rust/SlateDB
 service, S3 integration and lossless legacy storage migration/rollback, follow the
-[runtime guide](docs/meta-service.md). The active full product API remains on Node; the opt-in
-compatibility profile supports the existing Workspace, with full hosted multi-tenancy and
-the design's million-resource scale target still pending. The backend target is now unified
-Rust with shared domain modules and single-executable or independent service deployment;
-read [ADR 0020](docs/decisions/0020-modular-rust-backend.md) and the
-[phased migration contract](specs/gh-88/spec.md). Existing Node serving is transitional. The first Rust Workspace/Key module and
-composable executable now have real local/remote metadata parity tests; follow the
-[Rust runtime guide](docs/rust-backend.md). This partial profile does not replace the full API.
+[runtime guide](docs/meta-service.md). The full regional product API now has a Rust implementation under GH-92, including database,
+file, analysis and export operations. The accepted architecture uses shared Rust modules and
+one executable with in-process or independently deployed metadata/API roles; see
+[ADR 0020](docs/decisions/0020-modular-rust-backend.md), the
+[migration contract](specs/gh-88/spec.md) and [runtime guide](docs/rust-backend.md).
+Node remains the compatibility oracle, rollback implementation and build/migration tooling.
+The original Workspace/Key-only Rust profile stays explicitly partial when `product` is omitted.
+
 For millions of Workspaces or a million-resource Workspace, also read the
 [metadata scale profile](specs/gh-74/metadata-scale.md): Workspace ownership is distinct from
 atomic-group granularity, shared-cell routing, query indexes and workload capacity evidence.
@@ -172,7 +172,7 @@ boundaries, creation recovery and provider compatibility limits.
 | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | [src/](src/)                                                                                                                                    | React Console; feature modules in `src/features/`, shared TiUI adapters in `src/ui/`            |
 | [src/api/](src/api/) and [Console configuration](console/public/config.json)                                                                    | Generated-type HTTP client, API transport, and runtime API-origin selection                     |
-| [server/index.mjs](server/index.mjs)                                                                                                            | Current API entry point and request handling                                                    |
+| [server/index.mjs](server/index.mjs)                                                                                                            | Retained Node compatibility/rollback API and request handling                                   |
 | [Authorization](server/access-policy.mjs) and [store](server/store.mjs)                                                                         | Shared resource-grant rules and local persistence                                               |
 | [File analysis](server/file-analysis.mjs) and [Console panel](src/features/files/FileAnalysisPanel.tsx)                                         | Selected-file snapshot workers, permissions, DuckDB/Just Bash analysis and result presentation  |
 | [Providers](server/providers/) and [file transfer](server/file-transfer.mjs)                                                                    | Upstream resource adapters, SQL drivers, and bounded file transfers                             |
@@ -194,7 +194,9 @@ An existing accepted example is the [independent Console/API specification](spec
 ## Set up and verify
 
 Select Node from [.node-version](.node-version) and npm from [package.json](package.json),
-following [reproducible setup](CONTRIBUTING.md#reproducible-setup). Use the committed lockfile:
+following [reproducible setup](CONTRIBUTING.md#reproducible-setup). Use the committed lockfile. Before starting the default Rust API, follow
+[regional Meta/import setup](docs/rust-backend.md) and set `WORKSPACE_BACKEND_CONFIG` to its
+absolute private deployment file. Missing configuration never falls back to another data file.
 
 ```sh
 npm ci

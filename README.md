@@ -22,19 +22,22 @@ npm run preview
 ```
 
 `preview` serves only the built Console at http://127.0.0.1:4173. Start the API separately with
-`npm run start:api`. Console requests and agent examples use the API origin in `/config.json`.
+`WORKSPACE_BACKEND_CONFIG=/absolute/private/deployment.json npm run start:api`. Build the native backend with `npm run backend:build` and follow [Rust setup](docs/rust-backend.md) for regional metadata/import configuration. Console requests and agent examples use the API origin in `/config.json`.
 Run `npm run api:generate` after contract changes to generate both OpenAPI and client types.
 
 The frontend and backend build and run independently in this repository:
 
-| Component | Build                   | Development           | Run built output                           |
-| --------- | ----------------------- | --------------------- | ------------------------------------------ |
-| Console   | `npm run build:console` | `npm run dev:console` | `npm run start:console`                    |
-| API       | `npm run build:api`     | `npm run dev:api`     | `cd dist/api` then `node server/index.mjs` |
+| Component              | Build                    | Development              | Run built output                                                     |
+| ---------------------- | ------------------------ | ------------------------ | -------------------------------------------------------------------- |
+| Console                | `npm run build:console`  | `npm run dev:console`    | `npm run start:console`                                              |
+| Rust API               | `npm run build:api:rust` | `npm run dev:api`        | `workspace-backend serve --config /absolute/private/deployment.json` |
+| Node compatibility API | `npm run build:api`      | `npm run dev:legacy-api` | `cd dist/api` then `node server/index.mjs`                           |
 
-The API build requires only Node and no frontend dependencies. The Console output is static;
+The Rust API artifact requires no Node runtime or frontend dependencies. The retained Node compatibility artifact uses Node. The Console output is static;
 its API origin can change without rebuilding JavaScript. See [independent delivery](docs/independent-delivery.md)
 for configuration, separate artifacts, contract checks, and current deployment limits.
+
+The provider environment examples below apply to the explicit Node compatibility profile. The active Rust API uses private `product.providers` configuration in [the runtime guide](docs/rust-backend.md).
 
 To enable real Singapore anonymous File System creation (explicit opt-in):
 
@@ -129,7 +132,7 @@ before changing persistence; full hosted multi-tenancy and automatic HA remain f
 - `src/features/keys/ResourceAccessPicker.tsx`: explicit customer key resource selection.
 - `server/store.mjs`: serialized atomic local state persistence and capability snapshot.
 - `meta-service/`: independently runnable/reusable Rust SlateDB service; `server/meta/`: private Node client, local topology and migration tools.
-- `backend/` and root `Cargo.toml`: shared Rust modules and `workspace-backend` host. The first Workspace/Key migration profile supports embedded or remote mTLS metadata; [runtime guide](docs/rust-backend.md). The complete Portal API remains on Node during staged migration.
+- `backend/` and root `Cargo.toml`: shared Rust modules and `workspace-backend` host. The first Workspace/Key migration profile supports embedded or remote mTLS metadata; [runtime guide](docs/rust-backend.md). The full regional Rust profile includes database/file/analysis/export operations; Node remains the compatibility/rollback implementation.
 - `server/generate-openapi.mjs`: canonical API contract source.
 - `public/openapi.json`, `src/api/schema.d.ts`: generated contract and client types.
 - `src/api/`: shared generated-type HTTP client and runtime API configuration.

@@ -16,3 +16,7 @@ uuid.workspace = true
 workspace-contracts.workspace = true
 workspace-domain.workspace = true
 workspace-meta-client.workspace = true
+workspace-product.workspace = true
+futures.workspace = true
+percent-encoding.workspace = true
+tokio-util.workspace = true

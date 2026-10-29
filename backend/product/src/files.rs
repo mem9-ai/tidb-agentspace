@@ -1,0 +1,621 @@
+use super::*;
+use reqwest::Method;
+use sha2::{Digest, Sha256};
+use workspace_providers::{bounded, fs_path};
+const LIMIT: usize = 16 * 1024 * 1024;
+pub(super) struct FileRequest<'a> {
+    pub method: &'a str,
+    pub route: &'a str,
+    pub query: &'a BTreeMap<String, String>,
+    pub input: Value,
+    pub raw: &'a [u8],
+    pub condition: Option<&'a str>,
+}
+pub(super) struct LocalWrite<'a> {
+    pub path: &'a str,
+    pub kind: &'a str,
+    pub content: &'a str,
+    pub create_only: bool,
+}
+pub(super) struct FileJob<'a> {
+    pub resource_id: &'a str,
+    pub path: &'a str,
+    pub bytes: Vec<u8>,
+    pub mode: &'a str,
+    pub engine: &'a str,
+    pub format: &'a str,
+    pub script: &'a str,
+    pub parsing: Option<Value>,
+}
+impl Product {
+    pub(super) async fn files(
+        &self,
+        credential: &Credential,
+        p: &Principal,
+        request: FileRequest<'_>,
+    ) -> Result<(u16, Reply)> {
+        let FileRequest {
+            method,
+            route,
+            query: q,
+            input,
+            raw,
+            condition,
+        } = request;
+        let read = method == "GET";
+        let resource_id = if route == "/files/content" || read {
+            q.get("resourceId")
+                .map(String::as_str)
+                .ok_or_else(|| err(404, "NOT_FOUND"))?
+        } else {
+            text(&input, "resourceId")?
+        };
+        let (_, r) = self
+            .context(
+                credential,
+                if read { "files:read" } else { "files:write" },
+                Some((resource_id, Some("filesystem"))),
+            )
+            .await?;
+        if read && route == "/files" {
+            let path = q.get("path").map(|p| clean_path(p)).transpose()?;
+            if r["provider"] == DRIVE9 {
+                return Ok((
+                    200,
+                    Reply::Json(
+                        json!({"data":self.providers.file_list(resource_id,path.as_deref().unwrap_or("/")).await?}),
+                    ),
+                ));
+            }
+            let state = self.workspace.repository().read().await?;
+            let data = state["files"]
+                .as_array()
+                .expect("files")
+                .iter()
+                .filter(|f| {
+                    f["resourceId"] == resource_id
+                        && path
+                            .as_ref()
+                            .is_none_or(|p| parent(f["path"].as_str().unwrap_or("")) == *p)
+                })
+                .map(|f| file_view(f.clone()))
+                .collect::<Vec<_>>();
+            return Ok((200, Reply::Json(json!({"data":data}))));
+        }
+        let path = clean_path(if route == "/files/content" {
+            q.get("path").map(String::as_str).unwrap_or("")
+        } else {
+            text(&input, "path")?
+        })?;
+        if path == "/" {
+            return Err(err(400, "INVALID_PATH"));
+        }
+        if route == "/files/content" {
+            if r["provider"] != DRIVE9 {
+                return Err(err(400, "LOCAL_FILE_API"));
+            }
+            if read {
+                let info = self.providers.file_stat(resource_id, &path).await?;
+                if info["directory"] == true {
+                    return Err(err(400, "NOT_A_FILE"));
+                }
+                let size = info["size"].as_u64().unwrap_or(0);
+                if q.get("preview").map(String::as_str) == Some("1") {
+                    let unavailable = |reason: &str| {
+                        Ok((
+                            200,
+                            Reply::Json(json!({"size":size,"unavailableReason":reason})),
+                        ))
+                    };
+                    if size > 128 * 1024 {
+                        return unavailable(
+                            "This file exceeds the 128 KiB preview limit. Download it to view locally.",
+                        );
+                    }
+                    let response = self
+                        .providers
+                        .file_request(Some(resource_id), &fs_path(&path), Method::GET, None, &[])
+                        .await?;
+                    let bytes = match bounded(response, 128 * 1024).await {
+                        Ok(v) => v,
+                        Err(e) if e.code == "CONTENT_TOO_LARGE" => {
+                            return unavailable(
+                                "The file grew beyond the preview limit. Download it to view locally.",
+                            );
+                        }
+                        Err(e) => return Err(e),
+                    };
+                    if bytes.iter().any(|b| *b < 9 || (*b > 13 && *b < 32)) {
+                        return unavailable(
+                            "This binary file cannot be previewed. Download it to open in another application.",
+                        );
+                    }
+                    let text = match std::str::from_utf8(&bytes) {
+                        Ok(t) => t.trim_start_matches('\u{feff}'),
+                        Err(_) => {
+                            return unavailable(
+                                "This binary file cannot be previewed. Download it to open in another application.",
+                            );
+                        }
+                    };
+                    return Ok((200, Reply::Json(json!({"size":bytes.len(),"content":text}))));
+                }
+                let response = self
+                    .providers
+                    .file_request(Some(resource_id), &fs_path(&path), Method::GET, None, &[])
+                    .await?;
+                return Ok((
+                    200,
+                    Reply::Download {
+                        response,
+                        size,
+                        filename: path.rsplit('/').next().unwrap_or("download").into(),
+                    },
+                ));
+            }
+            if raw.len() > 1024 * 1024 {
+                return Err(err(413, "FILE_TOO_LARGE"));
+            }
+            self.context(
+                credential,
+                "files:write",
+                Some((resource_id, Some("filesystem"))),
+            )
+            .await?;
+            self.providers
+                .file_write(
+                    resource_id,
+                    &path,
+                    raw.to_vec(),
+                    condition == Some("*"),
+                    || async {
+                        self.context(
+                            credential,
+                            "files:write",
+                            Some((resource_id, Some("filesystem"))),
+                        )
+                        .await?;
+                        Ok(())
+                    },
+                )
+                .await?;
+            self.record("file.uploaded", &path, &p.actor, Some(resource_id))
+                .await?;
+            return Ok((200, Reply::Json(json!({"saved":true,"size":raw.len()}))));
+        }
+        if method == "DELETE" {
+            if r["provider"] == DRIVE9 {
+                self.providers
+                    .file_request(
+                        Some(resource_id),
+                        &fs_path(&path),
+                        Method::DELETE,
+                        None,
+                        &[],
+                    )
+                    .await?;
+                self.record("file.deleted", &path, &p.actor, Some(resource_id))
+                    .await?;
+            } else {
+                self.workspace
+                    .repository()
+                    .transaction(|state| {
+                        let p = principal(state, credential)?;
+                        p.scope("files:write")?;
+                        p.resource(state, resource_id, Some("filesystem"))?;
+                        let files = state["files"].as_array_mut().expect("files");
+                        if !files
+                            .iter()
+                            .any(|f| f["resourceId"] == resource_id && f["path"] == path)
+                        {
+                            return Err(err(404, "NOT_FOUND"));
+                        }
+                        if files.iter().any(|f| {
+                            f["resourceId"] == resource_id
+                                && f["path"]
+                                    .as_str()
+                                    .is_some_and(|s| s.starts_with(&(path.clone() + "/")))
+                        }) {
+                            return Err(err(409, "DIRECTORY_NOT_EMPTY"));
+                        }
+                        files.retain(|f| !(f["resourceId"] == resource_id && f["path"] == path));
+                        event(state, "file.deleted", &path, &p.actor, Some(resource_id));
+                        Ok(((), true))
+                    })
+                    .await?;
+            }
+            return Ok((200, Reply::Json(json!({"deleted":true}))));
+        }
+        let kind = text(&input, "type").map_err(|_| err(400, "INVALID_TYPE"))?;
+        if !["file", "directory"].contains(&kind) {
+            return Err(err(400, "INVALID_TYPE"));
+        }
+        let content = input["content"].as_str().unwrap_or("");
+        if kind == "file" && (!input["content"].is_string() || content.len() > 256 * 1024) {
+            return Err(err(413, "FILE_TOO_LARGE"));
+        }
+        if r["provider"] == DRIVE9 {
+            if kind == "directory" {
+                self.providers
+                    .file_request(
+                        Some(resource_id),
+                        &(fs_path(&path) + "?mkdir=1"),
+                        Method::POST,
+                        None,
+                        &[],
+                    )
+                    .await?;
+            } else {
+                self.providers
+                    .file_write(
+                        resource_id,
+                        &path,
+                        content.as_bytes().to_vec(),
+                        false,
+                        || async {
+                            self.context(
+                                credential,
+                                "files:write",
+                                Some((resource_id, Some("filesystem"))),
+                            )
+                            .await?;
+                            Ok(())
+                        },
+                    )
+                    .await?;
+            }
+            self.record(
+                if kind == "directory" {
+                    "directory.created"
+                } else {
+                    "file.saved"
+                },
+                &path,
+                &p.actor,
+                Some(resource_id),
+            )
+            .await?;
+            return Ok((
+                200,
+                Reply::Json(
+                    json!({"data":{"id":format!("{resource_id}:{path}"),"resourceId":resource_id,"path":path,"type":kind,"size":if kind=="file"{content.len()}else{0},"updatedAt":timestamp()}}),
+                ),
+            ));
+        }
+        let file = self
+            .write_local(credential, &r, &path, kind, content, false)
+            .await?;
+        Ok((200, Reply::Json(json!({"data":file}))))
+    }
+    pub(super) async fn write_local(
+        &self,
+        credential: &Credential,
+        r: &Value,
+        path: &str,
+        kind: &str,
+        content: &str,
+        create_only: bool,
+    ) -> Result<Value> {
+        self.write_local_authorized(
+            credential,
+            r,
+            LocalWrite {
+                path,
+                kind,
+                content,
+                create_only,
+            },
+            |_| Ok(()),
+        )
+        .await
+    }
+    pub(super) async fn write_local_authorized(
+        &self,
+        credential: &Credential,
+        r: &Value,
+        write: LocalWrite<'_>,
+        authorize: impl FnOnce(&Value) -> Result<()> + Send,
+    ) -> Result<Value> {
+        let LocalWrite {
+            path,
+            kind,
+            content,
+            create_only,
+        } = write;
+        let id = text(r, "id")?;
+        self.workspace.repository().transaction(|state|{authorize(state)?;
+let p=principal(state,credential)?;p.scope("files:write")?;p.resource(state,id,Some("filesystem"))?;
+let files=state["files"].as_array_mut().expect("files");
+let dir=parent(path);
+if dir!="/"&&!files.iter().any(|f|f["resourceId"]==id&&f["path"]==dir&&f["type"]=="directory"){return Err(err(404,"PARENT_MISSING"));}
+let position=files.iter().position(|f|f["resourceId"]==id&&f["path"]==path);
+if create_only&&position.is_some(){return Err(err(409,"EXPORT_TARGET_EXISTS"));}
+if position.is_some_and(|i|files[i]["type"]!=kind){return Err(err(409,"TYPE_CONFLICT"));}
+if position.is_none()&&files.iter().filter(|f|f["resourceId"]==id).count()>=2000{return Err(err(409,"FREE_TIER_LIMIT"));}
+let mut f=json!({"id":position.map(|i|files[i]["id"].clone()).unwrap_or(json!(uuid::Uuid::new_v4().to_string())),"resourceId":id,"path":path,"type":kind,"updatedAt":timestamp()});
+if kind=="file"{f["content"]=json!(content);}
+if let Some(i)=position{for(k,v)in f.as_object().expect("file"){files[i][k]=v.clone();}f=files[i].clone();}else{files.push(f.clone());}
+if !create_only{event(state,if position.is_some(){"file.updated"}else{"file.created"},path,&p.actor,Some(id));}
+Ok((file_view(f),true))}).await
+    }
+    pub(super) async fn snapshot(
+        &self,
+        credential: &Credential,
+        r: &Value,
+        path: &str,
+        metadata_only: bool,
+        limit: usize,
+    ) -> Result<(Value, Vec<u8>)> {
+        let id = text(r, "id")?;
+        self.context(credential, "files:read", Some((id, Some("filesystem"))))
+            .await?;
+        if r["provider"] == DRIVE9 {
+            let before = self.providers.file_stat(id, path).await?;
+            if before["directory"] == true {
+                return Err(err(400, "NOT_A_FILE"));
+            }
+            if metadata_only {
+                let mut v = before;
+                v["versionAvailable"] = json!(v["revision"].is_string());
+                return Ok((v, vec![]));
+            }
+            let size = before["size"].as_u64().unwrap_or(0) as usize;
+            if size > limit {
+                return Err(err(413, "ANALYSIS_INPUT_LIMIT"));
+            }
+            let revision = before["revision"]
+                .as_str()
+                .ok_or_else(|| err(409, "FILE_VERSION_UNAVAILABLE"))?;
+            let response = self
+                .providers
+                .file_request(
+                    Some(id),
+                    &fs_path(path),
+                    Method::GET,
+                    None,
+                    &[("If-Match", revision.into())],
+                )
+                .await?;
+            let bytes = bounded(response, limit.min(size)).await.map_err(|e| {
+                if e.code == "CONTENT_TOO_LARGE" {
+                    err(413, "ANALYSIS_INPUT_LIMIT")
+                } else {
+                    e
+                }
+            })?;
+            let after = self.providers.file_stat(id, path).await?;
+            if bytes.len() != size
+                || after["size"] != before["size"]
+                || after["revision"] != before["revision"]
+            {
+                return Err(err(409, "FILE_CHANGED"));
+            }
+            self.context(credential, "files:read", Some((id, Some("filesystem"))))
+                .await?;
+            return Ok((json!({"size":size}), bytes));
+        }
+        let state = self.workspace.repository().read().await?;
+        let file = state["files"]
+            .as_array()
+            .and_then(|v| {
+                v.iter()
+                    .find(|f| f["resourceId"] == id && f["path"] == path)
+            })
+            .ok_or_else(|| err(404, "NOT_FOUND"))?;
+        if file["type"] == "directory" {
+            return Err(err(400, "NOT_A_FILE"));
+        }
+        let bytes = file["content"].as_str().unwrap_or("").as_bytes().to_vec();
+        if !metadata_only && bytes.len() > limit {
+            return Err(err(413, "ANALYSIS_INPUT_LIMIT"));
+        }
+        Ok((json!({"size":bytes.len()}), bytes))
+    }
+    pub(super) async fn analysis(
+        &self,
+        credential: &Credential,
+        route: &str,
+        input: Value,
+    ) -> Result<Value> {
+        let resource_id = text(&input, "resourceId")?;
+        let (_, resource) = self
+            .context(
+                credential,
+                "files:read",
+                Some((resource_id, Some("filesystem"))),
+            )
+            .await?;
+        let path = clean_path(text(&input, "path")?)?;
+        if resource["status"] != "active" {
+            return Err(err(409, "FILESYSTEM_UNAVAILABLE"));
+        }
+        let format = format(&path);
+        if route == "/file-analyses/capabilities" {
+            let (info, _) = self
+                .snapshot(credential, &resource, &path, true, LIMIT)
+                .await?;
+            let size = info["size"].as_u64().unwrap_or(0);
+            let reason = if format.is_none() {
+                "This file type is not supported for analysis. Download it to use another tool."
+            } else if size > LIMIT as u64 {
+                "This file exceeds the 16 MiB analysis limit. Download it to analyze locally."
+            } else if info["versionAvailable"] == false {
+                "The file version cannot be verified. Download it to analyze locally."
+            } else {
+                ""
+            };
+            let engines = format
+                .as_ref()
+                .map(|f| {
+                    f.1.iter()
+                        .map(|e| {
+                            let reason = if reason.is_empty() && size == 0 && *e == "duckdb" {
+                                "This file is empty. Add tabular data before running a query."
+                            } else {
+                                reason
+                            };
+                            let mut v =
+                                json!({"engine":e,"available":reason.is_empty(),"reason":reason});
+                            if *e == "bash" {
+                                v["input"] = bash_input(&path);
+                            }
+                            v
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let default = format.as_ref().map(|f| f.1[0]);
+            let preferred = engines.first();
+            return Ok(
+                json!({"engine":default,"engines":engines,"format":format.as_ref().map(|f|f.0),"size":size,"available":preferred.is_some_and(|e|e["available"]==true),"reason":preferred.map(|e|e["reason"].clone()).unwrap_or(json!(reason)),"readOnly":true,"limits":analysis_limits()}),
+            );
+        }
+        let preview = route == "/files/tabular-preview";
+        if preview {
+            if input.as_object().is_none_or(|v| {
+                v.keys()
+                    .any(|k| !["resourceId", "path"].contains(&k.as_str()))
+            }) {
+                return Err(err(400, "INVALID_PREVIEW"));
+            }
+            if !format
+                .as_ref()
+                .is_some_and(|f| ["csv", "parquet"].contains(&f.0))
+            {
+                return Err(err(422, "UNSUPPORTED_PREVIEW"));
+            }
+        } else {
+            self.context(
+                credential,
+                "files:analyze",
+                Some((resource_id, Some("filesystem"))),
+            )
+            .await?;
+        }
+        let (format, engines) = format.ok_or_else(|| err(422, "UNSUPPORTED_ANALYSIS"))?;
+        let engine = if preview {
+            "duckdb"
+        } else {
+            text(&input, "engine").map_err(|_| err(422, "UNSUPPORTED_ANALYSIS"))?
+        };
+        if !engines.contains(&engine) {
+            return Err(err(422, "UNSUPPORTED_ANALYSIS"));
+        }
+        let script = if preview {
+            ""
+        } else {
+            let key = if engine == "duckdb" { "sql" } else { "command" };
+            if input.as_object().is_none_or(|v| {
+                v.keys()
+                    .any(|k| !["resourceId", "path", "engine", key].contains(&k.as_str()))
+            }) {
+                return Err(err(400, "INVALID_ANALYSIS"));
+            }
+
+            input[key]
+                .as_str()
+                .filter(|s| !s.trim().is_empty() && s.len() <= 65536)
+                .ok_or_else(|| err(400, "INVALID_ANALYSIS"))?
+        };
+        let _slot = self
+            .compute
+            .analysis_slots
+            .try_acquire()
+            .map_err(|_| err(429, "ANALYSIS_BUSY"))?;
+        let started = std::time::Instant::now();
+        let (_, bytes) = self
+            .snapshot(credential, &resource, &path, false, LIMIT)
+            .await?;
+        let result = self
+            .run_file_worker(FileJob {
+                resource_id,
+                path: &path,
+                bytes,
+                mode: if preview { "preview" } else { "analysis" },
+                engine,
+                format,
+                script,
+                parsing: None,
+            })
+            .await?;
+        self.context(
+            credential,
+            if preview {
+                "files:read"
+            } else {
+                "files:analyze"
+            },
+            Some((resource_id, Some("filesystem"))),
+        )
+        .await?;
+        let mut result = result;
+        result["durationMs"] = json!(started.elapsed().as_millis() as u64);
+        if result.to_string().len() > if preview { 128 * 1024 } else { 1024 * 1024 } {
+            return Err(err(422, "ANALYSIS_OUTPUT_LIMIT"));
+        }
+        Ok(result)
+    }
+    pub(super) async fn run_file_worker(&self, job: FileJob<'_>) -> Result<Value> {
+        let FileJob {
+            resource_id,
+            path,
+            bytes,
+            mode,
+            engine,
+            format,
+            script,
+            parsing,
+        } = job;
+        let directory = tempfile::tempdir().map_err(|_| err(503, "ANALYSIS_UNAVAILABLE"))?;
+        let source = directory.path().join("selected-snapshot");
+        {
+            use std::io::Write;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&source)
+                .map_err(|_| err(503, "ANALYSIS_UNAVAILABLE"))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                file.set_permissions(std::fs::Permissions::from_mode(0o600))
+                    .map_err(|_| err(503, "ANALYSIS_UNAVAILABLE"))?;
+            }
+            file.write_all(&bytes)
+                .map_err(|_| err(503, "ANALYSIS_UNAVAILABLE"))?;
+        }
+        let mut result=self.compute.worker(json!({"mode":mode,"engine":engine,"format":format,"script":script,"sourcePath":source,"workspacePath":path,"parsing":parsing})).await?;
+        result["resourceId"] = json!(resource_id);
+        result["path"] = json!(path);
+        result["readOnly"] = json!(true);
+        result["inputBytes"] = json!(bytes.len());
+        result["fileVersion"] = json!(hex::encode(Sha256::digest(&bytes)));
+        if mode == "analysis" {
+            result["engine"] = json!(engine);
+        } else {
+            result["format"] = json!(format);
+        }
+        Ok(result)
+    }
+}
+fn parent(path: &str) -> String {
+    let p = path.rsplit_once('/').map(|(p, _)| p).unwrap_or("");
+    if p.is_empty() { "/".into() } else { p.into() }
+}
+pub(super) fn format(path: &str) -> Option<(&'static str, Vec<&'static str>)> {
+    let ext = path.rsplit('.').next()?.to_lowercase();
+    match ext.as_str() {
+        "csv" => Some(("csv", vec!["duckdb", "bash"])),
+        "parquet" => Some(("parquet", vec!["duckdb"])),
+        "log" | "txt" | "text" | "md" | "json" | "jsonl" | "ndjson" | "yaml" | "yml" | "out"
+        | "err" | "tsv" => Some(("text", vec!["bash"])),
+        _ => None,
+    }
+}
+pub fn bash_input(path: &str) -> Value {
+    let a = "/workspace/input.log";
+    json!({"path":path,"workingDirectory":"/workspace","aliases":if path==a||path.starts_with(&(a.to_owned()+"/"))||a.starts_with(&(path.to_owned()+"/")){Vec::<&str>::new()}else{vec![a]},"fileVariable":"FILE"})
+}
+pub fn analysis_limits() -> Value {
+    json!({"inputBytes":LIMIT,"scriptBytes":65536,"outputBytes":1024*1024,"rows":1000,"timeoutMs":15000,"concurrency":2,"workerHeapMiB":128,"duckdbMemoryMB":128})
+}
