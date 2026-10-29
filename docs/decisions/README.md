@@ -38,3 +38,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0016: Selected Bash file variable](0016-bash-selected-file-variable.md) — discoverable, quoted `$FILE` for each fresh selected-file execution; initial examples retain absolute paths.
 
 - [0017: Preview-first file workspace](0017-preview-first-file-workspace.md) — implemented unified reading/analysis experience and bounded read-authorized tabular preview.
+
+- [0018: Contextual file exports](0018-contextual-file-exports.md) — accepted original/output separation and confirmed bounded database import; implementation pending.
