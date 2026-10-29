@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
             let profile = if config.product.is_some() {
                 "full regional API"
             } else {
-                "workspace-keys-only migration profile"
+                "workspace-keys-only profile"
             };
             match WorkspaceServer::open(config, port).await {
                 Ok(server) => {

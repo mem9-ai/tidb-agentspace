@@ -1,5 +1,5 @@
+// Regression oracle only. Product serving and packaging use the Rust backend.
 import http from 'node:http';
-import { createMetaStoreFactory } from './meta/document-store.mjs';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -84,33 +84,32 @@ async function body(req, limit = 1024 * 1024) {
   return parsed;
 }
 export async function createApp({
-  dataFile = process.env.WORKSPACE_DATA_FILE || resolve(root, '.data/workspace.json'),
+  dataFile,
   storeFactory,
-  metaConfig = process.env.WORKSPACE_META_CONFIG,
   allowedOrigins = consoleOrigins(),
-  filesProvider = process.env.WORKSPACE_FILES_PROVIDER || 'local',
+  filesProvider = 'local',
   drive9Transport,
   analysisRunner,
   analysisSnapshot,
   analysisOptions,
   sqlExecute,
   zeroTransport,
-  postgresProvider = process.env.WORKSPACE_POSTGRES_PROVIDER || 'disabled',
+  postgresProvider = 'disabled',
   db9Transport,
   postgresExecute,
-  mysqlProvider = process.env.WORKSPACE_MYSQL_PROVIDER || 'local',
+  mysqlProvider = 'local',
   duckdbExtensionPath,
   duckdbExtensionSha256,
   duckdbExecute,
   duckdbSourceDirectory,
 } = {}) {
+  if (!dataFile) throw new Error('The regression oracle requires an explicit isolated data file.');
   if (!['local', drive9Provider].includes(filesProvider))
     throw new Error('Unknown File System provider.');
   if (!['local', zeroProvider].includes(mysqlProvider)) throw new Error('Unknown MySQL provider.');
   if (!['disabled', db9Provider].includes(postgresProvider))
     throw new Error('Unknown PostgreSQL provider.');
-  const persistence =
-    storeFactory || (metaConfig ? await createMetaStoreFactory(metaConfig, dataFile) : createStore);
+  const persistence = storeFactory || createStore;
   const drive9 = await createDrive9({
     credentialsFile: dataFile + '.providers.json',
     storeFactory: persistence,
@@ -996,5 +995,3 @@ export async function startServer(options = {}) {
   );
   return server;
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
-  await startServer();

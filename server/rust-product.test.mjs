@@ -10,8 +10,7 @@ import { resolve } from 'node:path';
 import { createApp } from './index.mjs';
 import { seed } from './store.mjs';
 import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
-import { migrateLegacy } from './meta/migrate.mjs';
-import { documentScope, decodeDocument } from './meta/document-store.mjs';
+import { seedRecords, readState, readBinding } from './test-support/record-fixture.mjs';
 const contract = JSON.parse(
   await readFile(new URL('../public/openapi.json', import.meta.url), 'utf8'),
 );
@@ -553,7 +552,7 @@ async function scenarios(request, provider) {
 }
 for (const transport of ['remote', 'inProcess']) {
   test(
-    `complete Rust API preserves Node data/analysis/export and credentials through ${transport} metadata`,
+    `Rust API satisfies data, analysis, export and credential contracts through ${transport} metadata`,
     { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
     async (t) => {
       const f = await metaFixture();
@@ -704,21 +703,14 @@ for (const transport of ['remote', 'inProcess']) {
       provider.reset();
       const global = await f.service('global');
       const region = await f.service('complete');
-      const bridge = resolve(f.directory, 'bridge.json');
-      await privateWrite(bridge, {
-        format: 1,
-        importId: 'complete-import',
-        workspaceId: 'ws_agentlab',
-        global: global.clientConfig,
-        region: region.clientConfig,
-        regionStorage: { engine: 'slatedb', bucket: region.server.s3.bucket, prefix: 'metadata' },
-      });
-      await migrateLegacy({
-        sourceFile: original,
-        configFile: bridge,
-        backupDirectory: resolve(f.directory, 'backup'),
-        sourceFrozen: true,
-      });
+      await seedRecords(
+        region.client,
+        region.server.authorityId,
+        state,
+        Object.fromEntries(
+          ['drive9', 'zero', 'duckdb', 'db9'].map((name, i) => [name, raw[i + 1]]),
+        ),
+      );
       await global.stop();
       if (transport === 'inProcess') await region.stop();
       const regionConfig = resolve(f.directory, 'embedded-region.json');
@@ -729,7 +721,6 @@ for (const transport of ['remote', 'inProcess']) {
         bind: `127.0.0.1:${bind}`,
         workspaceId: 'ws_agentlab',
         authorityId: region.server.authorityId,
-        importId: 'complete-import',
         insecureLoopback: true,
         consoleOrigins: ['http://127.0.0.1:5173'],
         metadata:
@@ -774,25 +765,19 @@ for (const transport of ['remote', 'inProcess']) {
       await new Promise((r) => child.once('exit', r));
       const verifier =
         transport === 'inProcess' ? await f.service('verify', { previous: region }) : region;
-      for (let i = 1; i < raw.length; i++) {
-        const snap = await verifier.client.call({
-          op: 'snapshot',
-          scope: documentScope(
-            region.server.authorityId,
-            'ws_agentlab',
-            ['workspace', 'drive9', 'zero', 'duckdb', 'db9'][i],
-          ),
-        });
-        assert.deepEqual(JSON.parse(decodeDocument(snap)), raw[i]);
-      }
-      const final = JSON.parse(
-        decodeDocument(
-          await verifier.client.call({
-            op: 'snapshot',
-            scope: documentScope(verifier.server.authorityId, 'ws_agentlab', 'workspace'),
-          }),
-        ),
-      );
+      for (let i = 1; i < raw.length; i++)
+        for (const [id, binding] of Object.entries(raw[i].bindings)) {
+          assert.deepEqual(
+            await readBinding(
+              verifier.client,
+              region.server.authorityId,
+              ['workspace', 'drive9', 'zero', 'duckdb', 'db9'][i],
+              id,
+            ),
+            binding,
+          );
+        }
+      const final = await readState(verifier.client, verifier.server.authorityId);
       assert.deepEqual(final.opaque, state.opaque);
       assert.deepEqual(final.resources, expectedResources);
       assert.deepEqual(final.keys[0].resourceIds, ['*']);
@@ -824,21 +809,7 @@ test(
       await privateWrite(source + suffixes[i], i === 0 ? state : { bindings: {} });
     const global = await f.service('global');
     const region = await f.service('lifecycle');
-    const bridge = resolve(f.directory, 'bridge.json');
-    await privateWrite(bridge, {
-      format: 1,
-      importId: 'lifecycle',
-      workspaceId: 'ws_agentlab',
-      global: global.clientConfig,
-      region: region.clientConfig,
-      regionStorage: { engine: 'slatedb', bucket: region.server.s3.bucket, prefix: 'metadata' },
-    });
-    await migrateLegacy({
-      sourceFile: source,
-      configFile: bridge,
-      backupDirectory: resolve(f.directory, 'backup'),
-      sourceFrozen: true,
-    });
+    await seedRecords(region.client, region.server.authorityId, state);
     await global.stop();
     const bind = await port();
     const config = resolve(f.directory, 'rust.json');
@@ -846,7 +817,6 @@ test(
       bind: `127.0.0.1:${bind}`,
       workspaceId: 'ws_agentlab',
       authorityId: region.server.authorityId,
-      importId: 'lifecycle',
       insecureLoopback: true,
       consoleOrigins: ['http://127.0.0.1:5173'],
       metadata: { transport: 'remote', client: region.clientConfig },

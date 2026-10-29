@@ -57,18 +57,14 @@ export async function startRustApi({ configFile, binary } = {}) {
       stop();
       reject(
         new Error(
-          'Rust API startup did not become ready. Inspect configuration, metadata and gateway ownership.',
+          'Rust API startup did not become ready. Inspect configuration, metadata and Workspace writer ownership.',
         ),
       );
     }, 30000);
     child.stdout.on('data', (bytes) => {
       process.stdout.write(bytes);
       output = (output + bytes.toString()).slice(-8192);
-      if (
-        /Rust (?:full regional API|workspace-keys-only migration profile) listening on /.test(
-          output,
-        )
-      ) {
+      if (/Rust (?:full regional API|workspace-keys-only profile) listening on /.test(output)) {
         clearTimeout(timer);
         resolve();
       }

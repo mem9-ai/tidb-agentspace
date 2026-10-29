@@ -4,7 +4,7 @@
 
 - `.github/workflows/ci.yml`: clean installation and `npm run check` on PRs, pushes to
   `main`, merge-queue candidates, and manual requests. Introduced commits are also checked
-  for a DCO sign-off. A successful quality job uploads both build directories for review.
+  for a DCO sign-off. A successful quality job uploads the Console build directory for review.
 - `.github/workflows/release.yml`: a manual, main-branch-only internal artifact build. It
   runs the same quality gate, checks commit sign-off, and packages the runtime, frontend,
   API contract, source SHA, and checksums. It does not deploy to a cloud provider.
@@ -82,7 +82,7 @@ Console/API builds.
 Checks run without cloud credentials. The test suite uses temporary directories and ephemeral
 ports; it never reads a contributor's persisted workspace data.
 
-When adding backend modules, update the explicit runtime list in `scripts/build-api.mjs`. The packaging test boots the extracted API to catch missing imports and checks that local data, credentials, and test modules stay out of the archive.
+The API artifact is a native Rust executable. The packaging integration test checks source identity, exclusion of private state and execution without Node. Console and native API builds remain independent; the required backend job owns Rust and real S3 checks.
 
 The default job runs on Linux with the exact Node/npm versions. When adding OS-sensitive
 behavior, add a focused macOS/Windows matrix rather than claiming all-platform coverage from
@@ -148,21 +148,9 @@ write path, preserve sign-offs, and recheck the new head; do not bypass reposito
 
 ## Internal artifact delivery
 
-Use the manual `Internal artifact` workflow on `main`. Each artifact contains:
+Use the manual `Internal artifact` workflow on reviewed `main`. It runs the shared quality gate, builds the pinned native Rust backend and produces separate native API and static Console archives. Each includes its source SHA and component instructions; checksums cover both. Private configuration, data, provider credentials and Node business modules are excluded.
 
-- separate `workspace-console.tar.gz` and `workspace-api.tar.gz` archives;
-- static Console assets in one archive and runtime API modules plus OpenAPI in the other;
-- `build-info.json` with source SHA, runtime, and package version;
-- component-specific internal runtime READMEs;
-- a SHA-256 checksum file covering both component archives.
-
-Packaging requires no cloud secrets and performs no external deployment. The local guest
-owner endpoint grants local administrative access, so this artifact is only suitable for a
-trusted local evaluation. Do not place it behind a public proxy and call it production-ready.
-
-See [independent delivery](independent-delivery.md) for component commands, runtime API
-configuration, persistent data, compatibility, and rollback. Source-based CI currently uploads
-the `dist/` build directory; the internal-artifact workflow emits the separate delivery archives.
+The workflow packages artifacts only. The native API runs `workspace-backend serve --config /absolute/private/deployment.json`; Console hosting and its API origin remain independent. Native builds use bounded parallelism/debug symbols and the pinned Rust toolchain. See [independent delivery](independent-delivery.md) for commands and [ADR 0023](decisions/0023-fresh-record-metadata.md) for the explicit fresh-storage boundary.
 
 ## Actual deployment policy for the next phase
 

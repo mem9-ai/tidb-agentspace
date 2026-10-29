@@ -43,7 +43,7 @@ struct Owner {
     installation_id: String,
     released: bool,
 }
-pub use workspace_contracts::{Gateway, MetaRequest as Request, Scope};
+pub use workspace_contracts::{MetaRequest as Request, Scope, WriterGuard};
 #[derive(Debug)]
 pub struct Failure(pub u16, pub &'static str);
 type Outcome<T> = std::result::Result<T, Failure>;
@@ -92,6 +92,13 @@ fn unseal(cipher: &Aes256Gcm, key: &[u8], bytes: &[u8]) -> Result<Vec<u8>> {
         )
         .map_err(|_| anyhow::anyhow!("Cannot decrypt metadata"))
 }
+fn record_key(key: &str, prefix: bool) -> bool {
+    (prefix || !key.is_empty())
+        && key.len() <= 512
+        && key
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"/_-.:".contains(&b))
+}
 impl Engine {
     pub async fn open(config: Config, initialize: bool, recover: Option<&str>) -> Result<Self> {
         config.validate()?;
@@ -117,7 +124,7 @@ impl Engine {
         let store: Arc<dyn ObjectStore> = Arc::new(builder.build()?);
         let path = Path::from(format!("{}/control/installation.json", config.s3.prefix));
         let expected = Installation {
-            format: 1,
+            format: 2,
             authority_id: config.authority_id.clone(),
             installation_id: config.installation_id.clone(),
             environment: config.environment.clone(),
@@ -125,7 +132,7 @@ impl Engine {
             key_check: STANDARD.encode(seal(
                 &cipher,
                 path.as_ref().as_bytes(),
-                b"workspace-meta-v1",
+                b"workspace-meta-records-v2",
             )?),
         };
         match store.get(&path).await {
@@ -140,7 +147,7 @@ impl Engine {
                         &cipher,
                         path.as_ref().as_bytes(),
                         &STANDARD.decode(got.key_check)?,
-                    )? != b"workspace-meta-v1"
+                    )? != b"workspace-meta-records-v2"
                 {
                     bail!("Installation mismatch");
                 }
@@ -262,7 +269,7 @@ impl Engine {
             return Err(Failure(400, "META_INVALID_SCOPE"));
         }
         Ok(format!(
-            "groups/{}/",
+            "records/v2/{}/",
             hex::encode(Sha256::digest(serde_json::to_vec(scope).map_err(corrupt)?))
         ))
     }
@@ -299,62 +306,14 @@ impl Engine {
             .map_err(unavailable)?;
         Ok(())
     }
-    async fn snapshot(&self, transaction: &DbTransaction, prefix: &str) -> Outcome<Value> {
-        let revision = self.get(transaction, &format!("{prefix}revision")).await?;
-        let data = format!("{prefix}data/");
-        let mut iter = transaction
-            .scan_prefix_with_options(
-                data.as_bytes(),
-                ..,
-                &ScanOptions {
-                    durability_filter: DurabilityLevel::Remote,
-                    ..Default::default()
-                },
-            )
-            .await
-            .map_err(unavailable)?;
-        let mut records = BTreeMap::new();
-        let mut size = 0;
-        while let Some(kv) = iter.next().await.map_err(unavailable)? {
-            let key = std::str::from_utf8(&kv.key).map_err(corrupt)?;
-            let name = key
-                .strip_prefix(&data)
-                .ok_or(Failure(503, "META_CORRUPT"))?;
-            let name =
-                String::from_utf8(STANDARD.decode(name).map_err(corrupt)?).map_err(corrupt)?;
-            let aad = format!("{}:{key}", self.config.installation_id);
-            let clear = unseal(&self.cipher, aad.as_bytes(), &kv.value).map_err(corrupt)?;
-            size += clear.len();
-            if size > 18 * 1024 * 1024 || records.len() >= 512 {
-                return Err(Failure(413, "META_LIMIT_EXCEEDED"));
-            }
-            records.insert(
-                name,
-                serde_json::from_slice::<Value>(&clear).map_err(corrupt)?,
-            );
-        }
-        if revision.is_none() && !records.is_empty() {
-            return Err(Failure(503, "META_CORRUPT"));
-        }
-        Ok(json!({"revision":revision,"records":records}))
-    }
-    async fn transaction(
-        &self,
-        scope: &Scope,
-        gateway: Option<&Gateway>,
-    ) -> Outcome<DbTransaction> {
+    async fn transaction(&self, scope: &Scope) -> Outcome<DbTransaction> {
         self.prefix(scope)?;
-        if let Some(gateway) = gateway {
-            self.prefix(&gateway.scope)?;
-        }
         self.barrier().await?;
         let transaction = self
             .db
             .begin(IsolationLevel::SerializableSnapshot)
             .await
             .map_err(unavailable)?;
-        // Pin MVCC first, then wait for that exact sequence to become object-durable.
-        // A moving Remote filter alone could otherwise mix old revisions with newly durable records.
         let mut status = self.db.subscribe();
         let sequence = transaction.seqnum();
         let closed = tokio::time::timeout(
@@ -369,196 +328,260 @@ impl Engine {
         if closed || !self.healthy.load(Ordering::Acquire) {
             return Err(Failure(503, "META_UNAVAILABLE"));
         }
-        if let Some(gateway) = gateway {
-            if gateway.scope.family != "legacy-gateway"
-                || gateway.scope.owner_kind != "system"
-                || gateway.scope.owner_id != "compatibility"
-                || gateway.scope.partition_id != scope.owner_id
-            {
-                return Err(Failure(403, "META_INVALID_GATEWAY"));
-            }
-            let path = format!(
-                "{}data/{}",
-                self.prefix(&gateway.scope)?,
-                STANDARD.encode("ownerId")
-            );
-            if self.get(&transaction, &path).await? != Some(json!(gateway.owner_id)) {
-                return Err(Failure(503, "META_GATEWAY_FENCED"));
-            }
-        }
-        if scope.family == "legacy-document" && gateway.is_none() {
-            let gate_scope = Scope {
-                authority_id: scope.authority_id.clone(),
-                owner_kind: "system".into(),
-                owner_id: "compatibility".into(),
-                family: "legacy-gateway".into(),
-                partition_id: scope.owner_id.clone(),
-            };
-            let path = format!(
-                "{}data/{}",
-                self.prefix(&gate_scope)?,
-                STANDARD.encode("ownerId")
-            );
-            if self
-                .get(&transaction, &path)
-                .await?
-                .is_some_and(|v| v.as_str().is_some())
-            {
-                return Err(Failure(503, "META_GATEWAY_REQUIRED"));
-            }
-        }
         Ok(transaction)
     }
-    async fn replay(
+    fn record_path(prefix: &str, key: &str) -> String {
+        format!("{prefix}data/{}", hex::encode(key))
+    }
+    async fn guard(
+        &self,
+        transaction: &DbTransaction,
+        prefix: &str,
+        guard: Option<&WriterGuard>,
+        management: bool,
+    ) -> Outcome<()> {
+        let owner = self
+            .get(transaction, &Self::record_path(prefix, "system/writer"))
+            .await?;
+        let active = owner.as_ref().and_then(|r| r["value"]["ownerId"].as_str());
+        if let Some(guard) = guard {
+            if active != Some(guard.owner_id.as_str()) {
+                return Err(Failure(503, "META_WRITER_FENCED"));
+            }
+        } else if active.is_some() && !management {
+            return Err(Failure(503, "META_WRITER_REQUIRED"));
+        }
+        Ok(())
+    }
+    async fn receipt(
         &self,
         scope: &Scope,
-        gateway: Option<&Gateway>,
+        guard: Option<&WriterGuard>,
         receipt_key: &str,
         fingerprint: &str,
+        management: bool,
     ) -> Outcome<Option<Value>> {
-        let transaction = self.transaction(scope, gateway).await?;
-        match self.get(&transaction, receipt_key).await? {
-            Some(receipt) if receipt["fingerprint"] != fingerprint => {
+        let tx = self.transaction(scope).await?;
+        self.guard(&tx, &self.prefix(scope)?, guard, management)
+            .await?;
+        match self.get(&tx, receipt_key).await? {
+            Some(v) if v["fingerprint"] != fingerprint => {
                 Err(Failure(409, "META_MUTATION_MISMATCH"))
             }
-            Some(receipt) => Ok(Some(
-                json!({"revision":receipt["revision"],"replayed":true}),
-            )),
+            Some(v) => Ok(Some(json!({"version":v["version"],"replayed":true}))),
             None => Ok(None),
         }
     }
     pub async fn execute(&self, request: Request) -> Outcome<Value> {
         let _serving = self.lifecycle.read().await;
-        let (scope, gateway) = match &request {
-            Request::Snapshot { scope, gateway }
-            | Request::Commit { scope, gateway, .. }
-            | Request::Resolve { scope, gateway, .. } => (scope, gateway.as_ref()),
+        let scope = match &request {
+            Request::Get { scope, .. }
+            | Request::List { scope, .. }
+            | Request::Commit { scope, .. }
+            | Request::Resolve { scope, .. } => scope,
         };
-        let transaction = self.transaction(scope, gateway).await?;
+        let prefix = self.prefix(scope)?;
+        let tx = self.transaction(scope).await?;
         let result = match request {
-            Request::Snapshot { scope, .. } => {
-                self.snapshot(&transaction, &self.prefix(&scope)?).await
+            Request::Get { keys, guard, .. } => {
+                if keys.is_empty() || keys.len() > 512 || keys.iter().any(|k| !record_key(k, false))
+                {
+                    return Err(Failure(400, "META_INVALID_REQUEST"));
+                }
+                self.guard(
+                    &tx,
+                    &prefix,
+                    guard.as_ref(),
+                    keys.iter().all(|k| k == "system/writer"),
+                )
+                .await?;
+                let mut records = serde_json::Map::new();
+                let mut bytes = 0;
+                for key in keys {
+                    let value = self
+                        .get(&tx, &Self::record_path(&prefix, &key))
+                        .await?
+                        .unwrap_or(Value::Null);
+                    bytes += serde_json::to_vec(&value).map_err(corrupt)?.len();
+                    if bytes > 18 * 1024 * 1024 {
+                        return Err(Failure(413, "META_LIMIT_EXCEEDED"));
+                    }
+                    records.insert(key, value);
+                }
+                json!({"records":records})
+            }
+            Request::List {
+                prefix: selected,
+                after,
+                limit,
+                guard,
+                ..
+            } => {
+                if !record_key(&selected, true)
+                    || !(1..=512).contains(&limit)
+                    || after
+                        .as_ref()
+                        .is_some_and(|k| !record_key(k, false) || !k.starts_with(&selected))
+                {
+                    return Err(Failure(400, "META_INVALID_REQUEST"));
+                }
+                self.guard(&tx, &prefix, guard.as_ref(), false).await?;
+                let data = Self::record_path(&prefix, &selected);
+                let start = after
+                    .as_ref()
+                    .map(|k| {
+                        std::ops::Bound::Excluded(hex::encode(&k[selected.len()..]).into_bytes())
+                    })
+                    .unwrap_or(std::ops::Bound::Unbounded);
+                let mut iter = tx
+                    .scan_prefix_with_options(
+                        data.as_bytes(),
+                        (start, std::ops::Bound::<Vec<u8>>::Unbounded),
+                        &ScanOptions {
+                            durability_filter: DurabilityLevel::Remote,
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .map_err(unavailable)?;
+                let mut records = Vec::new();
+                let mut size = 0;
+                let mut cursor: Option<String> = None;
+                let mut more = false;
+                while let Some(kv) = iter.next().await.map_err(unavailable)? {
+                    if records.len() >= limit {
+                        more = true;
+                        break;
+                    }
+                    let path = std::str::from_utf8(&kv.key).map_err(corrupt)?;
+                    let key = String::from_utf8(
+                        hex::decode(
+                            path.strip_prefix(&format!("{prefix}data/"))
+                                .ok_or(Failure(503, "META_CORRUPT"))?,
+                        )
+                        .map_err(corrupt)?,
+                    )
+                    .map_err(corrupt)?;
+                    let clear = unseal(
+                        &self.cipher,
+                        format!("{}:{path}", self.config.installation_id).as_bytes(),
+                        &kv.value,
+                    )
+                    .map_err(corrupt)?;
+                    if size + clear.len() > 18 * 1024 * 1024 {
+                        more = true;
+                        break;
+                    }
+                    size += clear.len();
+                    let value: Value = serde_json::from_slice(&clear).map_err(corrupt)?;
+                    records
+                        .push(json!({"key":key,"version":value["version"],"value":value["value"]}));
+                    cursor = Some(key);
+                }
+                json!({"records":records,"nextCursor":if more {cursor} else {None}})
             }
             Request::Resolve {
-                scope, mutation_id, ..
+                mutation_id, guard, ..
             } => {
                 if !valid_id(&mutation_id) {
-                    return Err(Failure(400, "META_INVALID_MUTATION"));
+                    return Err(Failure(400, "META_INVALID_REQUEST"));
                 }
-                let prefix = self.prefix(&scope)?;
-                Ok(
-                    match self
-                        .get(&transaction, &format!("{prefix}receipts/{mutation_id}"))
-                        .await?
-                    {
-                        Some(v) => json!({"outcome":"committed","revision":v["revision"]}),
-                        None => json!({"outcome":"unknown"}),
-                    },
-                )
+                self.guard(&tx, &prefix, guard.as_ref(), false).await?;
+                match self
+                    .get(&tx, &format!("{prefix}receipts/{mutation_id}"))
+                    .await?
+                {
+                    Some(r) => json!({"outcome":"committed","version":r["version"]}),
+                    None => json!({"outcome":"unknown"}),
+                }
             }
             Request::Commit {
                 scope,
-                expected_revision,
                 mutation_id,
                 changes,
-                gateway,
+                guard,
             } => {
-                let prefix = self.prefix(&scope)?;
-                if !valid_id(&mutation_id) {
-                    return Err(Failure(400, "META_INVALID_MUTATION"));
-                }
-                let legacy = scope.family == "legacy-document";
-                if changes.is_empty()
-                    || changes.len() > if legacy { 260 } else { 100 }
-                    || serde_json::to_vec(&changes).map_err(corrupt)?.len()
-                        > if legacy {
-                            18 * 1024 * 1024
-                        } else {
-                            1024 * 1024
-                        }
+                if !valid_id(&mutation_id)
+                    || changes.is_empty()
+                    || changes.len() > 4096
+                    || serde_json::to_vec(&changes).map_err(corrupt)?.len() > 18 * 1024 * 1024
                 {
-                    return Err(Failure(413, "META_LIMIT_EXCEEDED"));
+                    return Err(Failure(400, "META_INVALID_REQUEST"));
                 }
                 let mut ordered = BTreeMap::new();
-                for change in &changes {
-                    let obj = change
+                for change in changes {
+                    let map = change
                         .as_object()
-                        .ok_or(Failure(400, "META_INVALID_CHANGE"))?;
-                    let key = obj
-                        .get("key")
-                        .and_then(Value::as_str)
-                        .ok_or(Failure(400, "META_INVALID_CHANGE"))?;
-                    if key.is_empty()
-                        || key.len() > 512
-                        || obj.len() != 2
-                        || !(obj.contains_key("value")
-                            || obj.get("delete") == Some(&Value::Bool(true)))
-                        || obj.get("value").is_some_and(|v| {
-                            !safe_json(v)
-                                || serde_json::to_vec(v).map_or(true, |b| b.len() > 256 * 1024)
+                        .ok_or(Failure(400, "META_INVALID_REQUEST"))?;
+                    let key = change["key"]
+                        .as_str()
+                        .filter(|k| record_key(k, false))
+                        .ok_or(Failure(400, "META_INVALID_REQUEST"))?
+                        .to_owned();
+                    let expected = map
+                        .get("expectedVersion")
+                        .ok_or(Failure(400, "META_INVALID_REQUEST"))?;
+                    if !(expected.is_null() || expected.as_str().is_some_and(valid_id))
+                        || map.keys().any(|k| {
+                            !["key", "value", "delete", "expectedVersion"].contains(&k.as_str())
                         })
-                        || ordered.insert(key.to_owned(), change.clone()).is_some()
+                        || (map.contains_key("value") == (change["delete"] == true))
+                        || map.get("delete").is_some_and(|v| v != true)
+                        || !safe_json(&change)
+                        || map.get("value").is_some_and(|v| {
+                            serde_json::to_vec(v).map_or(true, |b| b.len() > 12 * 1024 * 1024)
+                        })
+                        || ordered.insert(key, change).is_some()
                     {
-                        return Err(Failure(400, "META_INVALID_CHANGE"));
+                        return Err(Failure(400, "META_INVALID_REQUEST"));
                     }
                 }
+                let management = ordered.keys().all(|k| k == "system/writer");
+                self.guard(&tx, &prefix, guard.as_ref(), management).await?;
                 let fingerprint = hex::encode(Sha256::digest(
-                    serde_json::to_vec(
-                        &json!({"scope":scope,"expected":expected_revision,"changes":ordered}),
-                    )
-                    .map_err(corrupt)?,
+                    serde_json::to_vec(&ordered).map_err(corrupt)?,
                 ));
                 let receipt_key = format!("{prefix}receipts/{mutation_id}");
-                if let Some(receipt) = self.get(&transaction, &receipt_key).await? {
+                if let Some(receipt) = self.get(&tx, &receipt_key).await? {
                     if receipt["fingerprint"] != fingerprint {
                         return Err(Failure(409, "META_MUTATION_MISMATCH"));
                     }
                     self.barrier().await?;
-                    return Ok(json!({"revision":receipt["revision"],"replayed":true}));
+                    return Ok(json!({"version":receipt["version"],"replayed":true}));
                 }
-                if self.get(&transaction, &format!("{prefix}revision")).await?
-                    != expected_revision.map(Value::String)
-                {
-                    return Err(Failure(409, "META_CONFLICT"));
-                }
-                let snapshot = self.snapshot(&transaction, &prefix).await?;
-                let mut projected = snapshot["records"]
-                    .as_object()
-                    .ok_or(Failure(503, "META_CORRUPT"))?
-                    .clone();
-                for (key, change) in &ordered {
-                    if let Some(value) = change.get("value") {
-                        projected.insert(key.clone(), value.clone());
-                    } else {
-                        projected.remove(key);
-                    }
-                }
-                if projected.len() > 512
-                    || serde_json::to_vec(&projected).map_err(corrupt)?.len() > 18 * 1024 * 1024
-                {
-                    return Err(Failure(413, "META_LIMIT_EXCEEDED"));
-                }
-                let revision = Uuid::new_v4().to_string();
+                let version = Uuid::new_v4().to_string();
                 for (key, change) in ordered {
-                    let path = format!("{prefix}data/{}", STANDARD.encode(key));
+                    let path = Self::record_path(&prefix, &key);
+                    let current = self.get(&tx, &path).await?;
+                    let actual = current
+                        .as_ref()
+                        .map(|r| r["version"].clone())
+                        .unwrap_or(Value::Null);
+                    if actual != change["expectedVersion"] {
+                        return Err(Failure(409, "META_CONFLICT"));
+                    }
                     if let Some(value) = change.get("value") {
-                        self.put(&transaction, &path, value)?;
+                        self.put(&tx, &path, &json!({"version":version,"value":value}))?;
                     } else {
-                        transaction.delete(&path).map_err(unavailable)?;
+                        tx.delete(&path).map_err(unavailable)?;
                     }
                 }
-                self.put(&transaction, &format!("{prefix}revision"), &json!(revision))?;
                 self.put(
-                    &transaction,
+                    &tx,
                     &receipt_key,
-                    &json!({"revision":revision,"fingerprint":fingerprint}),
+                    &json!({"version":version,"fingerprint":fingerprint}),
                 )?;
-                let handle = match transaction.commit().await {
+                let handle = match tx.commit().await {
                     Ok(Some(handle)) => handle,
-                    Err(error) if error.kind() == ErrorKind::Transaction => {
-                        // Resolve only the durable receipt after an OCC collision. Never rerun changes or effects.
+                    Err(e) if e.kind() == ErrorKind::Transaction => {
                         let result = self
-                            .replay(&scope, gateway.as_ref(), &receipt_key, &fingerprint)
+                            .receipt(
+                                &scope,
+                                guard.as_ref(),
+                                &receipt_key,
+                                &fingerprint,
+                                management,
+                            )
                             .await?
                             .ok_or(Failure(409, "META_CONFLICT"));
                         self.barrier().await?;
@@ -573,11 +596,11 @@ impl Engine {
                     self.healthy.store(false, Ordering::Release);
                     return Err(Failure(503, "META_COMMIT_UNKNOWN"));
                 }
-                Ok(json!({"revision":revision,"replayed":false}))
+                json!({"version":version,"replayed":false})
             }
         };
         self.barrier().await?;
-        result
+        Ok(result)
     }
     pub async fn check_health(&self) -> Outcome<Value> {
         let _serving = self.lifecycle.read().await;
@@ -585,7 +608,7 @@ impl Engine {
         Ok(self.health())
     }
     pub fn health(&self) -> Value {
-        json!({"authorityId":self.config.authority_id,"installationId":self.config.installation_id,"engine":"slatedb","engineVersion":"0.17.0","ownerId":self.owner.id,"capabilities":["legacyGatewayFencing"]})
+        json!({"authorityId":self.config.authority_id,"installationId":self.config.installation_id,"engine":"slatedb","engineVersion":"0.17.0","ownerId":self.owner.id,"capabilities":["recordsV1","workspaceWriterFencing"]})
     }
     pub async fn close(&self) -> Result<()> {
         let _drained = self.lifecycle.write().await;

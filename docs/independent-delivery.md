@@ -1,202 +1,53 @@
-# Independent Console and API delivery
+# Independent Console and Rust API delivery
 
-Status: Implemented for the loopback prototype. Public production hosting and identity are
-not implemented. [ADR 0005](decisions/0005-independent-console-and-api.md) records the boundary.
+The Console and business API build, run and package independently. The Console is static React; the API is a native Rust executable. Optional Node launchers, regression oracles and local RustFS supervision are tooling. No Node business backend or JSON migration/rollback API is packaged.
 
-## Rust regional API
+| Component       | Build                                     | Run                                                                  |
+| --------------- | ----------------------------------------- | -------------------------------------------------------------------- |
+| Console         | `npm run build:console` → `dist/console/` | Static hosting or `npm run start:console`                            |
+| Rust API / Meta | `npm run build:api`                       | `workspace-backend serve --config /absolute/private/deployment.json` |
 
-The [full Rust profile](rust-backend.md) serves the existing API independently of the Console:
-`npm run build:api:rust`, then `workspace-backend serve --config /absolute/private/deployment.json`.
-`npm run package:api:rust -- FULL_REVIEWED_SOURCE_SHA` creates a native API artifact with source
-SHA and checksums, without Node runtime dependencies or Console assets. Private regional Meta
-configuration and verified native extension artifacts remain external to the package.
-Root `npm start`, `start:api`, `dev:api` and `npm run dev` select Rust and require
-`WORKSPACE_BACKEND_CONFIG`. Use `start:legacy-api` / `dev:legacy-api` for the Node compatibility
-API below. Its artifact and provider environment settings are retained for tests and rollback. Preserve the configured API origin when changing the local listener.
+Use the pinned Node/npm versions for Console and tooling and the pinned Cargo workspace for the native backend. `npm run check` verifies repository policy, formatting, lint, generated API/client consistency, isolated behavior tests, types and the Console production build. `npm run backend:check` separately builds and verifies Rust plus real S3, transport, native artifact and full API integration cases. Neither suite uses developer data or cloud credentials.
 
-## Compatibility repository and commands
+## Configuration and startup
 
-Use the pinned Node/npm versions and `npm ci` from the repository root. One npm lockfile owns
-all dependencies, including the isolated contract generator workspace. The backend includes mysql2, DuckDB Node bindings, Just Bash and their pinned runtime dependency closures for SQL and read-only file analysis;
-frontend and contract-generator dependencies are excluded. See [ADR 0006](decisions/0006-zero-sql-gateway.md).
-
-| Component | Source                           | Build                                     | Run from source / serve output                        |
-| --------- | -------------------------------- | ----------------------------------------- | ----------------------------------------------------- |
-| Console   | `src/`, `console/public/`        | `npm run build:console` → `dist/console/` | `npm run dev:console` / `npm run start:console`       |
-| API       | `server/`, `public/openapi.json` | `npm run build:api` → `dist/api/`         | `npm run dev:legacy-api` / `npm run start:legacy-api` |
-
-`npm run dev` starts both development servers as a convenience. `npm run build` builds both
-independent outputs. `npm start` starts only the source API; `npm run preview` serves only
-built Console output. There is no API proxy inside the Console server.
-
-For independent local runs, use two terminals:
+Follow [Meta bootstrap](meta-service.md) for a new local deployment. It creates independent Global/Region Meta roots and an empty Workspace. Fresh installation format 2 rejects old document roots; [ADR 0023](decisions/0023-fresh-record-metadata.md) records the explicit local reset boundary. No cloud resources are created automatically.
 
 ```sh
-npm run start:legacy-api
+npm run backend:build
+npm run meta:local -- init --directory .data/meta-runtime --api-port 4318
+npm run meta:local -- serve --directory .data/meta-runtime
 ```
+
+In a separate terminal:
 
 ```sh
-npm run build:console
-npm run start:console
+npm run dev:console
 ```
 
-Open `http://127.0.0.1:4173`. The API is at `http://127.0.0.1:4318`; navigating to that API
-origin's `/` returns a JSON 404. `/api/health` and `/openapi.json` are available without the
-Console. To run the built backend independently, copy `dist/api/` anywhere and execute
-`node server/index.mjs` from that directory. No `npm install` or frontend assets are needed.
+The local operator manages the native roles and RustFS. For independent deployment, use a metadata role plan and an API role plan, with private absolute configuration references; see [the Rust guide](rust-backend.md). `WORKSPACE_BACKEND_CONFIG=/absolute/private/api-plan.json npm run start:api` is an optional launcher for the API role. Its metadata dependency must already be available. There is no alternate JSON data source or fallback backend.
 
-## Configuration
+The Console loads `/config.json` before creating its API client. `apiOrigin` selects the regional API without rebuilding JavaScript; an empty string uses the page origin. For the optional local static runner, set `WORKSPACE_API_ORIGIN` and `WORKSPACE_CONSOLE_PORT`. Console origins must be allowlisted in private API configuration. Credentialed CORS, Host/Origin restrictions, HttpOnly local owner sessions and backend action/resource authorization remain required.
 
-| Setting                              | Default                                                       | Behavior                                                                                                                                                                                                    |
-| ------------------------------------ | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Console `/config.json` → `apiOrigin` | `http://127.0.0.1:4318`                                       | Exact HTTP(S) origin; set an empty string for an explicitly configured same-origin gateway. No paths, userinfo, or secrets. Read before Console startup.                                                    |
-| `WORKSPACE_API_ORIGIN`               | unset                                                         | Local static runner override for the response at `/config.json`; does not rebuild JavaScript. Generic static hosts serve the edited JSON file.                                                              |
-| `WORKSPACE_CONSOLE_PORT`             | `4173`                                                        | Port of the optional Node static runner. Vite development uses `5173`.                                                                                                                                      |
-| `WORKSPACE_CONSOLE_DIRECTORY`        | `dist/console/`                                               | Optional static runner's content directory.                                                                                                                                                                 |
-| `WORKSPACE_API_PORT`                 | `4318`                                                        | API listen port; binding remains loopback.                                                                                                                                                                  |
-| `WORKSPACE_CONSOLE_ORIGINS`          | HTTP `localhost` and `127.0.0.1` on ports `5173` and `4173`   | Comma-separated exact allowed browser origins; an empty value allows no separate Console origins. The API's own origin is always accepted. Only HTTP loopback origins are accepted in this guest prototype. |
-| `WORKSPACE_DATA_FILE`                | `.data/workspace.json` relative to the API source/output root | Use an absolute path on persistent storage across artifact replacement. Provider credentials stay in sibling `.providers.json` (Files), `.databases.json` (Zero) and `.db9.json` (PostgreSQL) files.        |
-| `WORKSPACE_FILES_PROVIDER`           | `local`                                                       | Existing explicit `drive9-anonymous` opt-in remains unchanged.                                                                                                                                              |
+Production identity and direct multi-region public API discovery remain proposed in [the regional API/auth design](../specs/gh-74/regional-api-auth.md). The current public contract has one configured origin. Separate internal Meta authorities do not implement production global policy distribution by themselves.
 
-DuckDB database resources require a separately provided verified native tidbfs artifact; see [DuckDB runtime setup](duckdb-databases.md). File snapshot analysis uses the installed native engine without that extension; see [ADR 0010](decisions/0010-read-only-file-analysis.md).
+## Contract and packaging
 
-`WORKSPACE_MYSQL_PROVIDER=tidb-cloud-zero` enables real anonymous MySQL creation; default `local` retains demos. Trials expire and existing bindings are preserved.
+`server/generate-openapi.mjs` owns the public contract; `npm run api:generate` regenerates OpenAPI and Console types, and `npm run api:check` rejects drift. Console and agent requests share the Rust domain operations. Internal record protocol changes do not require changing the public contract when the observed product API remains the same.
 
-`WORKSPACE_POSTGRES_PROVIDER=db9-anonymous` enables anonymous db9 PostgreSQL creation; the
-default is `disabled`. Existing native bindings survive disabling creation. Preserve the
-owner-only `.db9.json` vault beside the state file across releases; see [recovery](db9-postgres.md).
-
-Use the same hostname for Console and API (`127.0.0.1` for both, or `localhost` for both).
-They can use different ports. The HttpOnly SameSite=Strict cookie is not shared between
-`localhost` and `127.0.0.1`; cross-site cookie authentication is not implemented. Every browser
-API request includes credentials; CORS does not grant API permissions. Unknown origins are
-rejected before session creation or provider access. Non-browser agents use Workspace Keys
-without relying on CORS or Console sessions.
-
-For a separate browser-verification API, keep its Console/API hostname pair distinct from
-the active user preview (for example, use `localhost` for verification and `127.0.0.1` for the
-user preview). Different ports on the same hostname do not isolate the `workspace_session`
-cookie between independent API processes. Preserve the active serving process and confirm
-the user's actual tab, URL and authenticated read after a preview update; another working
-directory or an already loaded tab can still serve an older Console build.
-
-Example with non-default ports, in two terminals:
+After building both components from reviewed clean source, run:
 
 ```sh
-WORKSPACE_API_PORT=4418 WORKSPACE_CONSOLE_ORIGINS=http://127.0.0.1:4273 \
-  WORKSPACE_DATA_FILE=/absolute/persistent/workspace.json npm run start:legacy-api
+npm run build
+npm run package -- FULL_REVIEWED_SOURCE_SHA
 ```
 
-```sh
-WORKSPACE_CONSOLE_PORT=4273 WORKSPACE_API_ORIGIN=http://127.0.0.1:4418 npm run start:console
-```
+The package contains a platform-specific native API archive, a separate `workspace-console.tar.gz`, source/build metadata and SHA-256 sums. The native API requires neither Node nor frontend dependencies; its common executable can host API, Meta and isolated compute roles. Private configuration, service tokens, encryption keys, user files and provider credentials stay outside every artifact. The optional native tidbfs extension is supplied separately with its verified checksum.
 
-A malformed/missing Console configuration shows a startup error and Retry. An API connection
-or authorization failure continues to use the Console's existing error/retry behavior. Generated
-agent instructions, code samples, schema links, file preview/upload/download, and API explorer
-must all point at the configured API origin.
+The release workflow packages reviewed main-branch source; it does not deploy. Public hosting still requires a configured target, real identity, environment protection, verification and recovery under [CI/CD policy](ci-cd.md). A source rollback cannot make a different metadata layout readable. The authorized disposable local reset is not a general production migration strategy.
 
-## Contract-first changes
+## Verification
 
-Planned multi-plane delivery follows [the regional API/auth design](../specs/gh-74/regional-api-auth.md):
-generate separate Global and Region public contracts/clients with shared schemas, direct
-regional data/auth endpoints and isolated credential stores. Per-operation OpenAPI server
-overrides are possible, but server lists do not implement discovery or token refresh. Regional
-endpoint caches/session renewal must survive Global failure. This is not the current runtime:
-`apiOrigin`, `/openapi.json`, local cookies/CORS and package commands above remain unchanged.
-Implement a reviewed versioned configuration/contract transition before advertising multi-origin support.
+Tests cover separate Console/API origins, authentication, scoped Keys, cross-Workspace and cross-resource denials, files, database protocols, analysis and exports. Native/S3 integration verifies both in-process and remote Meta, fresh initialization, durable restart and authority/writer isolation. Native artifact validation runs selected-file computation with no Node executable in PATH.
 
-1. Define requests, responses, errors, and permissions in `server/generate-openapi.mjs` before
-   implementing the interaction. Console aggregation and session endpoints are documented;
-   owner-only privileges do not become Workspace Key privileges.
-2. Run `npm run api:generate` to update OpenAPI and the generated TypeScript declarations.
-3. Implement the API and update `src/api/client.ts` / consumers using the generated types.
-   Binary uploads must use an identity body serializer; JSON serialization corrupts raw bytes.
-4. Add meaningful behavior and contract cases. Run `npm run check`, which checks generation
-   drift, tests, lint, types, and both builds. JSON Schema checks cover structure/required fields;
-   separate behavior tests establish authorization, state changes, and provider safety. No claim
-   is made that schema validation alone proves all semantics or every error case.
-
-## Artifacts, promotion, and rollback
-
-After checks, run `npm run package -- <full-source-sha>`. Packaging does not deploy anything.
-The manual internal-artifact workflow uses the same packager. It produces:
-
-- `release/workspace-api.tar.gz`: `api/server/`, `api/public/openapi.json`, a minimal package
-  manifest, bundled SQL runtime dependencies for the build platform, instructions, and source metadata. No Console, frontend dependencies, or tests.
-- `release/workspace-console.tar.gz`: `console/static/`, an optional local static runner,
-  instructions, and source metadata. No backend or local data.
-- `release/SHA256SUMS` and `release/build-info.json`: component hashes and exact source identity.
-
-Extract and run each component separately. Serve `console/static/` using a static host, or use
-`WORKSPACE_CONSOLE_DIRECTORY=static node serve-console.mjs` from the extracted Console directory.
-Edit `static/config.json` for the API origin before serving. Start the extracted API using
-`node server/index.mjs` from `api/`, with an external persistent data path. Local guest artifacts
-must remain on trusted loopback hosts; they are not suitable for a public proxy.
-
-A configured staging/production target, real identity, protected promotion, and exercised rollback
-are still required before public hosting. Follow [CI/CD policy](ci-cd.md). For compatible internal
-versions, retain both artifact hashes, promote one component at a time, verify `/api/health`, an
-authorized request and a denied request, and check the Console against that API. On a failed
-check, restore the previous component artifact and its Console configuration; keep persistent
-data outside either artifact. Breaking contracts require coordinated migration/versioning.
-
-## Browser verification
-
-The split delivery is checked with the built Console on a different origin/port from a fresh,
-fixture-backed API. Verification covers startup/session, reads, scoped key creation/revocation,
-API explorer and generated URLs, a local file write, and keyboard navigation. Desktop light
-and dark at 1280px and narrow layout at 390px are inspected. Screenshots and observed results
-are recorded with the PR; the UI components remain TiUI 2.9.1 with the existing shared overrides.
-
-Observed on 2026-10-28 using the production Console build and standalone API build, a fresh
-local store, Console port 4273 and API port 4418. `npm ci` and `npm run check` passed with 58
-tests. No cloud credentials or real resource provisioning were used. Browser warning/error
-logs were empty during the checked flows. Existing build warnings remain for bundle size
-and UIKit's transitive phone-number parser; no checks or warnings were suppressed.
-
-| Flow                    | Observed result                                                                                                               |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Startup and reload      | Configuration loads before session creation; resources render across origins; the route and Light/Dark choice survive reload. |
-| SQL                     | `SELECT 1 AS connected` returns one row through the configured API.                                                           |
-| Files                   | Create `split-api.txt`, edit and save 48 bytes; the listing and stored size update.                                           |
-| Keys                    | Create a seven-day key restricted to `shared-files`, close reveal, then revoke successfully.                                  |
-| API explorer            | Resource requests return 200 on desktop and narrow layouts. Schema links and cURL examples use port 4418.                     |
-| Agent instructions      | Downloaded instructions include the configured API and OpenAPI origins.                                                       |
-| Settings                | Save workspace description through the generated client.                                                                      |
-| Navigation and keyboard | Narrow navigation reaches API explorer; search opens and Escape dismisses it.                                                 |
-| Layout                  | 1280×900 Light/Dark and 390×844 Dark inspected; narrow document width is 390px, with no page-wide horizontal overflow.        |
-
-![Light desktop Console, 1280×900](images/independent-console-light.jpg)
-
-![Dark desktop API explorer, 1280×900](images/independent-console-dark.jpg)
-
-![Narrow API explorer, 390px viewport](images/independent-console-narrow.jpg)
-
-## Optional metadata service
-
-The [Rust Meta Service](meta-service.md) builds and runs independently of the Node API and
-Console. `cargo build --release --locked --manifest-path meta-service/Cargo.toml` produces
-its binary; deploy one independent installation per Global/Region authority. It serves no
-Console or public product routes. The Node API package includes its private client and
-migration/export tools and connects to its configured regional service. `WORKSPACE_META_CONFIG`
-is server-only configuration and never part of the Console runtime config.
-
-The initial compatibility gateway is single-active and explicitly bounded. Metadata services
-can be deployed independently; this does not enable multiple legacy Node provisioning writers,
-full hosted identity or automatic HA. Follow the runtime guide's migration, ownership, TLS,
-bootstrap and recovery requirements before selecting this profile.
-
-## Accepted Rust backend target
-
-[ADR 0020](decisions/0020-modular-rust-backend.md) selects a Rust Cargo workspace with shared
-domain modules and a common executable for embedded or independently deployed roles. The
-Console remains a separate static artifact. Current Node serving/packages are transitional;
-[GH-88](../specs/gh-88/spec.md) requires per-module parity before changing a live entry point.
-A common binary does not combine metadata authorities or eliminate isolated compute workers.
-
-The first [Rust migration profile](rust-backend.md) now supplies a common executable, reusable
-metadata library and real Workspace/Key domain with local/remote ports. It builds without
-frontend/Node dependencies, while the full Node artifact remains available for differential tests and rollback. The full regional Rust profile is documented in that guide.
-The root Cargo workspace owns one lockfile; standalone service binaries remain independently
-deployable. A partial profile is not a replacement for the advertised full API package.
+For visible frontend changes, use the [TiUI standard](standards/tiui-design-system.md), inspect desktop and narrow layouts and retain screenshots. For a backend cutover, verify the existing Portal against the selected API origin and record the actual source/artifact identity. Do not overwrite unrelated Console edits while updating backend roles.

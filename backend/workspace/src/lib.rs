@@ -138,20 +138,10 @@ pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
 }
 impl Workspace {
     pub async fn authenticate(&self, credential: &Credential) -> Result<Principal> {
-        self.repository
-            .transaction(|state| {
-                let p = principal(state, credential)?;
-                if !p.owner
-                    && let Some(key) = state["keys"]
-                        .as_array_mut()
-                        .and_then(|v| v.iter_mut().find(|k| k["id"] == p.id))
-                {
-                    key["lastUsedAt"] = json!(timestamp());
-                }
-                let dirty = !p.owner;
-                Ok((p, dirty))
-            })
-            .await
+        match credential {
+            Credential::LocalDemoOwner => principal(&json!({}), credential),
+            Credential::Bearer(token) => self.repository.authenticate_key(token).await,
+        }
     }
     pub fn repository(&self) -> std::sync::Arc<Repository> {
         self.repository.clone()
@@ -162,8 +152,7 @@ impl Workspace {
         }
     }
     pub async fn health(&self) -> Result<()> {
-        self.repository.read().await?;
-        Ok(())
+        self.repository.health().await
     }
     pub async fn close(&self) -> Result<()> {
         self.repository.close().await
@@ -188,7 +177,7 @@ fn execute_operation(
         let digest = hex::encode(Sha256::digest(token.as_bytes()));
         let keys = state["keys"]
             .as_array_mut()
-            .ok_or_else(|| reject(503, "META_DOCUMENT_CORRUPT"))?;
+            .ok_or_else(|| reject(503, "META_RECORD_CORRUPT"))?;
         let key = keys
             .iter_mut()
             .find(|k| k["digest"] == digest)
@@ -225,7 +214,7 @@ fn execute_operation(
         Operation::ListKeys => {
             let keys = state["keys"].as_array().expect("validated keys");
             if keys.iter().any(|k| !k.is_object()) {
-                return Err(reject(503, "META_DOCUMENT_CORRUPT"));
+                return Err(reject(503, "META_RECORD_CORRUPT"));
             }
             json!({"data":keys.iter().map(key_view).collect::<Vec<_>>()})
         }

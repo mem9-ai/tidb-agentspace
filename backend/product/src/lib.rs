@@ -52,9 +52,6 @@ pub enum Reply {
 impl Product {
     pub async fn new(workspace: Arc<Workspace>, config: Config) -> Result<Self> {
         config.validate()?;
-        for doc in ["drive9", "zero", "duckdb", "db9"] {
-            workspace.repository().read_document(doc).await?;
-        }
         let providers = Providers::new(config.providers, workspace.repository())?;
         let compute = Compute::new(config.compute).await;
         Ok(Self {
@@ -70,13 +67,13 @@ impl Product {
         scope: &str,
         id: Option<(&str, Option<&str>)>,
     ) -> Result<(Principal, Value)> {
-        let state = self.workspace.repository().read().await?;
-        let p = principal(&state, credential)?;
+        let p = self.workspace.authenticate(credential).await?;
         p.scope(scope)?;
         let value = if let Some((id, kind)) = id {
-            p.resource(&state, id, kind)?
+            let resource = self.workspace.repository().resource(id).await?;
+            p.resource(&json!({"resources":[resource]}), id, kind)?
         } else {
-            state
+            self.workspace.repository().read().await?
         };
         Ok((p, value))
     }
@@ -131,7 +128,7 @@ impl Product {
                     .ok_or_else(|| err(404, "NOT_FOUND"))?;
                 current
                     .as_object_mut()
-                    .ok_or_else(|| err(503, "META_DOCUMENT_CORRUPT"))?
+                    .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
                     .remove("connectionError");
                 for (k, v) in info
                     .as_object()
@@ -215,23 +212,23 @@ impl Product {
                 let state = visible(self.workspace.repository().read().await?);
                 for r in state["resources"]
                     .as_array()
-                    .ok_or_else(|| err(503, "META_DOCUMENT_CORRUPT"))?
+                    .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
                 {
                     self.update_resource(r.clone(), false).await?;
                 }
                 let mut state = visible(self.workspace.repository().read().await?);
                 for file in state["files"]
                     .as_array_mut()
-                    .ok_or_else(|| err(503, "META_DOCUMENT_CORRUPT"))?
+                    .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
                 {
                     *file = file_view(file.clone());
                 }
                 for key in state["keys"]
                     .as_array_mut()
-                    .ok_or_else(|| err(503, "META_DOCUMENT_CORRUPT"))?
+                    .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
                 {
                     key.as_object_mut()
-                        .ok_or_else(|| err(503, "META_DOCUMENT_CORRUPT"))?
+                        .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
                         .remove("digest");
                     if key["resourceIds"].is_null() {
                         key["resourceIds"] = json!([]);
@@ -256,7 +253,7 @@ impl Product {
                 let mut data = vec![];
                 for r in visible(state)["resources"]
                     .as_array()
-                    .ok_or_else(|| err(503, "META_DOCUMENT_CORRUPT"))?
+                    .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
                 {
                     if p.has(text(r, "id")?) {
                         data.push(self.update_resource(r.clone(), false).await?);
@@ -307,7 +304,7 @@ impl Product {
                 let resource=self.workspace.repository().transaction(|state|{if let Some(slot)=&slot&& !state["idempotency"][slot].is_null(){let prior=&state["idempotency"][slot];
 if prior["fingerprint"]!=fingerprint{return Err(err(409,"IDEMPOTENCY_CONFLICT"));}
 return Ok((state["resources"].as_array().and_then(|v|v.iter().find(|r|r["id"]==prior["resource"]["id"])).unwrap_or(&prior["resource"]).clone(),false));}
-let resources=state["resources"].as_array().ok_or_else(||err(503,"META_DOCUMENT_CORRUPT"))?;
+let resources=state["resources"].as_array().ok_or_else(||err(503,"META_RECORD_CORRUPT"))?;
 if resources.iter().any(|r|r["name"]==name){return Err(err(409,"NAME_EXISTS"));}
 if(kind=="filesystem"&&resources.iter().any(|r|r["kind"]==kind&&r["region"]==region&&r["provider"].as_str().unwrap_or("local")==provider))||(kind!="filesystem"&&resources.iter().filter(|r|r["kind"]==kind&&(kind!="postgresql"||r["provider"]==DB9)).count()>=5){return Err(err(409,"FREE_TIER_LIMIT"));}
 let r=json!({"id":format!("{}_{}",if kind=="filesystem"{"fs"}else{"db"},secret(6)?),"name":name,"kind":kind,"region":region,"status":if provider=="local"{"active"}else{"provisioning"},"provider":provider,"createdAt":timestamp()});state["resources"].as_array_mut().expect("resources").push(r.clone());event(state,"resource.created",name,&p.actor,r["id"].as_str());
