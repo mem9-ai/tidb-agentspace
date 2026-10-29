@@ -90,9 +90,11 @@ through Secret/ConfigMap/volume, never through source code:
 - `TIDB_PUBLIC_ORIGIN` / `WORKSPACE_TRUSTED_ORIGINS` — reviewed public origins.
 - `TIDB_TRUSTED_PROXY_IPS` — the actual trusted proxy source addresses.
 - `WORKSPACE_PUBLIC_PATH=/studio` when mounted under that gateway prefix.
-- `TIDB_SSO_ISSUER`, `TIDB_SSO_CLIENT_ID`, `TIDB_SSO_CLIENT_SECRET`,
+- `TIDB_SSO_ISSUER`, `TIDB_SSO_CLIENT_ID`,
   `TIDB_SSO_REDIRECT_URI`, `TIDB_SSO_OWNER_SUBJECTS`, and optional SSO fields
-  documented in `.env.example`.
+  documented in `.env.example`. SSO uses public-client code + PKCE without an
+  OAuth client secret; see [ADR 0015](0015-public-client-sso.md) for registration
+  requirements and migration.
 
 Validate the gateway/SSO flow and unauthorized access separately before public exposure.
 A successful image rollout proves API readiness; it does not prove public `/studio`

@@ -89,6 +89,9 @@ For CSV/Parquet SQL and text/log analysis, read [ADR 0010](docs/decisions/0010-r
 and [verification](docs/file-analysis-verification.md). The Console/API implement selected-file
 snapshot workers; provider-hosted Exec, large remote scans and public compute isolation remain future work.
 
+For TiDB Account sign-in, read [ADR 0015](docs/decisions/0015-public-client-sso.md) for the
+public-client registration, code + PKCE exchange, configuration migration and retained owner boundary.
+
 For db9 PostgreSQL, read [setup/recovery](docs/db9-postgres.md) and
 [ADR 0011](docs/decisions/0011-db9-postgres.md) for anonymous account ownership, native role/TLS
 boundaries, creation recovery and provider compatibility limits.

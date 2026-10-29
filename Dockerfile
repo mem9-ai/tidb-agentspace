@@ -48,8 +48,8 @@ USER node
 
 # The API listens on WORKSPACE_API_PORT (default 4318) and exposes GET
 # /api/health. WORKSPACE_DATA_FILE must be set to an absolute path on a
-# persistent volume by the deployment; all other runtime configuration and
-# every secret (SSO client secret, trusted origins, ...) are injected by the
-# environment, never baked into this image.
+# persistent volume by the deployment. Runtime configuration (public origins,
+# SSO client ID, callback, ...) is injected by the environment, never baked
+# into this image.
 EXPOSE 4318
 CMD ["node", "server/index.mjs"]

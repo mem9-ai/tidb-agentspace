@@ -7,7 +7,6 @@ function config(issuer) {
   return loadSsoConfig({
     TIDB_SSO_ISSUER: issuer,
     TIDB_SSO_CLIENT_ID: 'test-client',
-    TIDB_SSO_CLIENT_SECRET: 'test-secret',
     TIDB_SSO_REDIRECT_URI: 'https://workspace.example/api/auth/tidbcloud/callback',
   });
 }

@@ -30,3 +30,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0012: DuckDB catalog reader](0012-duckdb-catalog-reader.md) — bounded read-only reuse for server-generated browsing, while customer SQL remains disposable.
 
 - [0014: Automatic Console publishing](0014-console-auto-publishing.md) — a scoped GitHub App synchronizes tested static artifacts to the existing Netlify site.
+
+- [0015: Public-client TiDB Account sign-in](0015-public-client-sso.md) — code + S256 PKCE without a client secret; provider registration and owner authorization remain explicit.
