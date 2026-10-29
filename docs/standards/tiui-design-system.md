@@ -168,7 +168,10 @@ verified, and record that as a remaining gap.
   pause new reads during active SQL/list/row operations, and clear resource-scoped data on
   database changes. Preserve URLs, keyboard expanded/controls semantics, retry, filtering and
   whole-browser collapse. See [verification](../database-workspace-verification.md#inline-table-columns).
-  Revisit for multiple open tables, schema trees or durable metadata caching.
+  Use the bounded route-local metadata reuse in [ADR 0007](../decisions/0007-database-browser.md)
+  when returning to a table; refresh/retry must bypass it. Preserve loading/error feedback and
+  measure cold reads separately from cache hits. Revisit for multiple open tables, schema trees
+  or durable metadata caching.
 - **Database work area density (owner correction 2026-10-28):** prioritize the table list,
   editor and first query rows within a typical desktop viewport. Following GH-61, use one
   compact resource toolbar above both browser and editor: name/protocol in the selector,

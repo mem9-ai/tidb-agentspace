@@ -69,6 +69,35 @@ async function providerFixture() {
       };
     if (statement.includes('AS owned'))
       return { columns: ['owned'], rows: [{ owned: true }], rowCount: 1, affectedRows: 0 };
+    if (statement.includes('AS recordKind')) {
+      assert.equal(statement.match(/TABLE_SCHEMA = DATABASE\(\)/g)?.length, 3);
+      return {
+        columns: ['recordKind', 'name', 'type'],
+        rows: [
+          {
+            recordKind: 'column',
+            name: 'id',
+            type: 'integer',
+            nullable: 'NO',
+            defaultValue: null,
+            columnKey: 'PRI',
+            extra: '',
+            position: 1,
+          },
+          {
+            recordKind: 'index',
+            name: 'PRIMARY',
+            nonUnique: 0,
+            columnName: 'id',
+            position: 1,
+            prefixLength: null,
+          },
+          { recordKind: 'table', name: 'demo_table', type: 'BASE TABLE' },
+        ],
+        rowCount: 3,
+        affectedRows: 0,
+      };
+    }
     if (/information_schema\.(TABLES|tables)/.test(statement))
       return {
         columns: ['name', 'type'],
@@ -320,8 +349,12 @@ async function scenarios(request, provider) {
     assert.deepEqual(q.body.rows, [{ checked: 1 }]);
     assert.equal(q.body.mode, 'live');
     await run(base + `/resources/${id}/tables`);
+    const beforeMetadata = provider.statements.length;
     const table = await run(base + `/resources/${id}/table?name=demo_table`);
+    if (id === 'db_live') assert.equal(provider.statements.length - beforeMetadata, 1);
     assert.equal(table.body.columns[0].key, 'PRI');
+    assert.equal(table.body.indexes[0].columns[0].name, 'id');
+    assert.equal(table.body.recordKind, undefined);
     await run(base + `/resources/${id}/table/rows?name=demo_table`);
   }
   const file = {

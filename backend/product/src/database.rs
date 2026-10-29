@@ -275,7 +275,25 @@ impl Product {
                 hex::encode(name.as_bytes())
             )
         };
-        let candidates = if native {
+        // Table, columns and indexes share one bounded request and one fresh TLS connection.
+        let metadata = if native && !pg && !duck && action == "table" {
+            Some(
+                self.execute_database(r, &mysql_table_metadata_sql(&filter), true, json!([]))
+                    .await?["rows"]
+                    .as_array()
+                    .cloned()
+                    .ok_or_else(|| err(502, "INVALID_METADATA"))?,
+            )
+        } else {
+            None
+        };
+        let candidates = if let Some(rows) = &metadata {
+            json!(
+                rows.iter()
+                    .filter(|row| row["recordKind"] == "table")
+                    .collect::<Vec<_>>()
+            )
+        } else if native {
             self.execute_database(r, &format!("{select}{filter} LIMIT 1"), true, json!([]))
                 .await?["rows"]
                 .clone()
@@ -318,12 +336,18 @@ impl Product {
                 "SELECT COLUMN_NAME AS name, COLUMN_TYPE AS type, IS_NULLABLE AS nullable, COLUMN_DEFAULT AS defaultValue, COLUMN_KEY AS columnKey, EXTRA AS extra FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE(){filter} ORDER BY ORDINAL_POSITION"
             )
         };
-        let columns = self
-            .execute_database(r, &columns_sql, true, json!([]))
-            .await?["rows"]
-            .as_array()
-            .cloned()
-            .ok_or_else(|| err(502, "INVALID_METADATA"))?;
+        let columns = if let Some(rows) = &metadata {
+            rows.iter()
+                .filter(|row| row["recordKind"] == "column")
+                .cloned()
+                .collect()
+        } else {
+            self.execute_database(r, &columns_sql, true, json!([]))
+                .await?["rows"]
+                .as_array()
+                .cloned()
+                .ok_or_else(|| err(502, "INVALID_METADATA"))?
+        };
         let index_sql = if pg {
             format!(
                 "SELECT i.relname AS name, x.indisunique AS \"uniqueValue\", x.indisprimary AS \"primaryValue\", x.indkey::text AS \"positionKeys\" FROM pg_catalog.pg_index x JOIN pg_catalog.pg_class t ON t.oid = x.indrelid JOIN pg_catalog.pg_namespace s ON s.oid = t.relnamespace JOIN pg_catalog.pg_class i ON i.oid = x.indexrelid WHERE s.nspname = 'workspace' AND t.relname = {} ORDER BY i.relname",
@@ -339,12 +363,18 @@ impl Product {
                 "SELECT INDEX_NAME AS name, NON_UNIQUE AS nonUnique, COLUMN_NAME AS columnName, SEQ_IN_INDEX AS position, SUB_PART AS prefixLength FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE(){filter} ORDER BY INDEX_NAME, SEQ_IN_INDEX"
             )
         };
-        let parts = self
-            .execute_database(r, &index_sql, true, json!([]))
-            .await?["rows"]
-            .as_array()
-            .cloned()
-            .ok_or_else(|| err(502, "INVALID_METADATA"))?;
+        let parts = if let Some(rows) = &metadata {
+            rows.iter()
+                .filter(|row| row["recordKind"] == "index")
+                .cloned()
+                .collect()
+        } else {
+            self.execute_database(r, &index_sql, true, json!([]))
+                .await?["rows"]
+                .as_array()
+                .cloned()
+                .ok_or_else(|| err(502, "INVALID_METADATA"))?
+        };
         let mut indexes = vec![];
         let mut primary = BTreeSet::new();
         let mut unique = BTreeSet::new();
@@ -410,6 +440,22 @@ let s=if s.starts_with('"')&&s.ends_with('"'){s[1..s.len()-1].replace("\"\"","\"
             json!({"name":table["name"],"type":table["type"],"columns":columns.iter().map(|c|{let name=c["name"].as_str().unwrap_or("");json!({"name":name,"type":c["type"],"nullable":c["nullable"]=="YES","default":if c["defaultValue"].is_null(){Value::Null}else{json!(c["defaultValue"].as_str().map(str::to_owned).unwrap_or(c["defaultValue"].to_string()))},"key":if pg||duck{if primary.contains(name){"PRI"}else if unique.contains(name){"UNI"}else{""}}else{c["columnKey"].as_str().unwrap_or("")},"extra":c["extra"].as_str().unwrap_or("")})}).collect::<Vec<_>>(),"indexes":indexes,"query":table_query,"mode":"live"}),
         )
     }
+}
+fn mysql_table_metadata_sql(filter: &str) -> String {
+    let scope = format!("WHERE TABLE_SCHEMA = DATABASE(){filter}");
+    format!(
+        "SELECT 'table' AS recordKind, TABLE_NAME AS name, TABLE_TYPE AS type,
+        NULL AS nullable, NULL AS defaultValue, NULL AS columnKey, NULL AS extra,
+        NULL AS nonUnique, NULL AS columnName, NULL AS position, NULL AS prefixLength
+        FROM information_schema.TABLES {scope}
+        UNION ALL
+        SELECT 'column', COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY, EXTRA,
+        NULL, NULL, ORDINAL_POSITION, NULL FROM information_schema.COLUMNS {scope}
+        UNION ALL
+        SELECT 'index', INDEX_NAME, NULL, NULL, NULL, NULL, NULL, NON_UNIQUE, COLUMN_NAME,
+        SEQ_IN_INDEX, SUB_PART FROM information_schema.STATISTICS {scope}
+        ORDER BY recordKind, position, name LIMIT 1001"
+    )
 }
 fn number(v: &Value) -> i64 {
     v.as_i64()
