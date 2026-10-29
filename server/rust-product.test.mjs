@@ -516,242 +516,255 @@ async function scenarios(request, provider) {
   await run(base + '/usage');
   return trace;
 }
-test(
-  'complete Rust API preserves Node database/file/analysis/export behavior and five-document credentials',
-  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
-  async (t) => {
-    const f = await metaFixture();
-    const provider = await providerFixture();
-    let child;
-    let node;
-    t.after(async () => {
-      if (child && child.exitCode === null) {
-        child.kill('SIGTERM');
-        await new Promise((r) => child.once('exit', r));
-      }
-      if (node?.listening) await new Promise((r) => node.close(r));
-      await provider.close();
-      await f.close();
-    });
-    const state = seed();
-    state.opaque = { preserve: 'original data' };
-    state.resources.push(
-      {
-        id: 'fs_live',
-        kind: 'filesystem',
-        name: 'live-files',
-        status: 'active',
-        region: 'aws-ap-southeast-1',
-        provider: 'drive9-anonymous',
-        createdAt: state.workspace.createdAt,
-      },
-      {
-        id: 'db_live',
-        kind: 'mysql',
-        name: 'live-mysql',
-        status: 'active',
-        region: 'automatic',
-        provider: 'tidb-cloud-zero',
-        createdAt: state.workspace.createdAt,
-      },
-      {
-        id: 'db_pg',
-        kind: 'postgresql',
-        name: 'live-postgres',
-        status: 'active',
-        region: 'automatic',
-        provider: 'db9-anonymous',
-        createdAt: state.workspace.createdAt,
-      },
-      {
-        id: 'db_duck',
-        kind: 'duckdb',
-        name: 'live-duckdb',
-        status: 'active',
-        region: 'aws-ap-southeast-1',
-        provider: 'duckdb-drive9',
-        createdAt: state.workspace.createdAt,
-      },
-    );
-    state.keys = [
-      {
-        id: 'original-key',
-        name: 'original',
-        prefix: 'original',
-        createdAt: state.workspace.createdAt,
-        lastUsedAt: null,
-        digest: createHash('sha256').update(secret).digest('hex'),
-        scopes: [
-          'resources:read',
-          'resources:write',
-          'files:read',
-          'files:write',
-          'files:analyze',
-          'queries:execute',
-          'usage:read',
-        ],
-        resourceIds: ['*'],
-        expiresAt: new Date(Date.now() + 86400000).toISOString(),
-        revokedAt: null,
-      },
-    ];
-    const raw = [
-      state,
-      {
-        bindings: {
-          fs_live: { state: 'bound', apiKey: nativeSecret, tenantId: 'original' },
-          private_duck: { state: 'bound', apiKey: nativeSecret, tenantId: 'original-private' },
-        },
-      },
-      {
-        bindings: {
-          db_live: {
-            state: 'ready',
-            instanceId: 'original-mysql',
-            expiresAt: new Date(Date.now() + 86400000).toISOString(),
-            connection: {
-              kind: 'mysql',
-              region: 'automatic',
-              host: 'unit.fixture.tidbcloud.com',
-              port: 4000,
-              user: 'w_original',
-              password: nativeSecret,
-              database: 'workspace',
-            },
-          },
-        },
-      },
-      { bindings: { db_duck: { state: 'ready', storageId: 'private_duck' } } },
-      {
-        bindings: {
-          db_pg: {
-            state: 'ready',
-            instanceId: 'original-postgres',
-            connection: {
-              kind: 'postgresql',
-              region: 'automatic',
-              host: 'pg.db9.io',
-              port: 5432,
-              user: 'tenant.wabcdef123456',
-              password: nativeSecret,
-              database: 'postgres',
-            },
-          },
-        },
-      },
-    ];
-    const original = resolve(f.directory, 'workspace.json');
-    const baseline = resolve(f.directory, 'baseline', 'workspace.json');
-    await mkdir(resolve(f.directory, 'baseline'), { mode: 0o700 });
-    for (let i = 0; i < raw.length; i++) {
-      await privateWrite(original + suffixes[i], raw[i]);
-      await privateWrite(baseline + suffixes[i], raw[i]);
-    }
-    node = await createApp({
-      dataFile: baseline,
-      filesProvider: 'drive9-anonymous',
-      mysqlProvider: 'tidb-cloud-zero',
-      postgresProvider: 'db9-anonymous',
-      drive9Transport: provider.transport,
-      zeroTransport: provider.transport,
-      db9Transport: provider.transport,
-      sqlExecute: provider.execute,
-      postgresExecute: provider.execute,
-    });
-    await new Promise((r) => node.listen(0, '127.0.0.1', r));
-    const expected = await scenarios(
-      await connect(`http://127.0.0.1:${node.address().port}`),
-      provider,
-    );
-    await new Promise((r) => node.close(r));
-    const expectedResources = JSON.parse(await readFile(baseline)).resources;
-    provider.reset();
-    const global = await f.service('global');
-    const region = await f.service('complete');
-    const bridge = resolve(f.directory, 'bridge.json');
-    await privateWrite(bridge, {
-      format: 1,
-      importId: 'complete-import',
-      workspaceId: 'ws_agentlab',
-      global: global.clientConfig,
-      region: region.clientConfig,
-      regionStorage: { engine: 'slatedb', bucket: region.server.s3.bucket, prefix: 'metadata' },
-    });
-    await migrateLegacy({
-      sourceFile: original,
-      configFile: bridge,
-      backupDirectory: resolve(f.directory, 'backup'),
-      sourceFrozen: true,
-    });
-    await global.stop();
-    const bind = await port();
-    const config = resolve(f.directory, 'workspace-rust.json');
-    await privateWrite(config, {
-      bind: `127.0.0.1:${bind}`,
-      workspaceId: 'ws_agentlab',
-      authorityId: region.server.authorityId,
-      importId: 'complete-import',
-      insecureLoopback: true,
-      consoleOrigins: ['http://127.0.0.1:5173'],
-      metadata: { transport: 'remote', client: region.clientConfig },
-      product: {
-        providers: {
-          filesProvider: 'drive9-anonymous',
-          mysqlProvider: 'tidb-cloud-zero',
-          postgresProvider: 'db9-anonymous',
-          testMode: true,
-          drive9Endpoint: provider.origin,
-          sqlFixture: provider.origin + '/sql',
-        },
-      },
-    });
-    const deployment = resolve(f.directory, 'deployment.json');
-    await privateWrite(deployment, {
-      format: 1,
-      services: [{ kind: 'workspace', configFile: config }],
-    });
-    const log = createWriteStream(resolve(f.directory, 'backend.log'), { mode: 0o600 });
-    child = spawn(
-      resolve('meta-service/target/debug/workspace-backend'),
-      ['serve', '--config', deployment],
-      { stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-    child.stdout.pipe(log);
-    child.stderr.pipe(log);
-    const request = await until(() => connect(`http://127.0.0.1:${bind}`));
-    const actual = await scenarios(request, provider);
-    assert.deepEqual(actual, expected);
-    assert.equal(provider.creates, 0);
-    const schema = await fetch(`http://127.0.0.1:${bind}/openapi.json`);
-    assert.equal(schema.status, 200);
-    assert.deepEqual(await schema.json(), JSON.parse(await readFile('public/openapi.json')));
-    child.kill('SIGTERM');
-    await new Promise((r) => child.once('exit', r));
-    for (let i = 1; i < raw.length; i++) {
-      const snap = await region.client.call({
-        op: 'snapshot',
-        scope: documentScope(
-          region.server.authorityId,
-          'ws_agentlab',
-          ['workspace', 'drive9', 'zero', 'duckdb', 'db9'][i],
-        ),
+for (const transport of ['remote', 'inProcess']) {
+  test(
+    `complete Rust API preserves Node data/analysis/export and credentials through ${transport} metadata`,
+    { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+    async (t) => {
+      const f = await metaFixture();
+      const provider = await providerFixture();
+      let child;
+      let node;
+      t.after(async () => {
+        if (child && child.exitCode === null) {
+          child.kill('SIGTERM');
+          await new Promise((r) => child.once('exit', r));
+        }
+        if (node?.listening) await new Promise((r) => node.close(r));
+        await provider.close();
+        await f.close();
       });
-      assert.deepEqual(JSON.parse(decodeDocument(snap)), raw[i]);
-    }
-    const final = JSON.parse(
-      decodeDocument(
-        await region.client.call({
+      const state = seed();
+      state.opaque = { preserve: 'original data' };
+      state.resources.push(
+        {
+          id: 'fs_live',
+          kind: 'filesystem',
+          name: 'live-files',
+          status: 'active',
+          region: 'aws-ap-southeast-1',
+          provider: 'drive9-anonymous',
+          createdAt: state.workspace.createdAt,
+        },
+        {
+          id: 'db_live',
+          kind: 'mysql',
+          name: 'live-mysql',
+          status: 'active',
+          region: 'automatic',
+          provider: 'tidb-cloud-zero',
+          createdAt: state.workspace.createdAt,
+        },
+        {
+          id: 'db_pg',
+          kind: 'postgresql',
+          name: 'live-postgres',
+          status: 'active',
+          region: 'automatic',
+          provider: 'db9-anonymous',
+          createdAt: state.workspace.createdAt,
+        },
+        {
+          id: 'db_duck',
+          kind: 'duckdb',
+          name: 'live-duckdb',
+          status: 'active',
+          region: 'aws-ap-southeast-1',
+          provider: 'duckdb-drive9',
+          createdAt: state.workspace.createdAt,
+        },
+      );
+      state.keys = [
+        {
+          id: 'original-key',
+          name: 'original',
+          prefix: 'original',
+          createdAt: state.workspace.createdAt,
+          lastUsedAt: null,
+          digest: createHash('sha256').update(secret).digest('hex'),
+          scopes: [
+            'resources:read',
+            'resources:write',
+            'files:read',
+            'files:write',
+            'files:analyze',
+            'queries:execute',
+            'usage:read',
+          ],
+          resourceIds: ['*'],
+          expiresAt: new Date(Date.now() + 86400000).toISOString(),
+          revokedAt: null,
+        },
+      ];
+      const raw = [
+        state,
+        {
+          bindings: {
+            fs_live: { state: 'bound', apiKey: nativeSecret, tenantId: 'original' },
+            private_duck: { state: 'bound', apiKey: nativeSecret, tenantId: 'original-private' },
+          },
+        },
+        {
+          bindings: {
+            db_live: {
+              state: 'ready',
+              instanceId: 'original-mysql',
+              expiresAt: new Date(Date.now() + 86400000).toISOString(),
+              connection: {
+                kind: 'mysql',
+                region: 'automatic',
+                host: 'unit.fixture.tidbcloud.com',
+                port: 4000,
+                user: 'w_original',
+                password: nativeSecret,
+                database: 'workspace',
+              },
+            },
+          },
+        },
+        { bindings: { db_duck: { state: 'ready', storageId: 'private_duck' } } },
+        {
+          bindings: {
+            db_pg: {
+              state: 'ready',
+              instanceId: 'original-postgres',
+              connection: {
+                kind: 'postgresql',
+                region: 'automatic',
+                host: 'pg.db9.io',
+                port: 5432,
+                user: 'tenant.wabcdef123456',
+                password: nativeSecret,
+                database: 'postgres',
+              },
+            },
+          },
+        },
+      ];
+      const original = resolve(f.directory, 'workspace.json');
+      const baseline = resolve(f.directory, 'baseline', 'workspace.json');
+      await mkdir(resolve(f.directory, 'baseline'), { mode: 0o700 });
+      for (let i = 0; i < raw.length; i++) {
+        await privateWrite(original + suffixes[i], raw[i]);
+        await privateWrite(baseline + suffixes[i], raw[i]);
+      }
+      node = await createApp({
+        dataFile: baseline,
+        filesProvider: 'drive9-anonymous',
+        mysqlProvider: 'tidb-cloud-zero',
+        postgresProvider: 'db9-anonymous',
+        drive9Transport: provider.transport,
+        zeroTransport: provider.transport,
+        db9Transport: provider.transport,
+        sqlExecute: provider.execute,
+        postgresExecute: provider.execute,
+      });
+      await new Promise((r) => node.listen(0, '127.0.0.1', r));
+      const expected = await scenarios(
+        await connect(`http://127.0.0.1:${node.address().port}`),
+        provider,
+      );
+      await new Promise((r) => node.close(r));
+      const expectedResources = JSON.parse(await readFile(baseline)).resources;
+      provider.reset();
+      const global = await f.service('global');
+      const region = await f.service('complete');
+      const bridge = resolve(f.directory, 'bridge.json');
+      await privateWrite(bridge, {
+        format: 1,
+        importId: 'complete-import',
+        workspaceId: 'ws_agentlab',
+        global: global.clientConfig,
+        region: region.clientConfig,
+        regionStorage: { engine: 'slatedb', bucket: region.server.s3.bucket, prefix: 'metadata' },
+      });
+      await migrateLegacy({
+        sourceFile: original,
+        configFile: bridge,
+        backupDirectory: resolve(f.directory, 'backup'),
+        sourceFrozen: true,
+      });
+      await global.stop();
+      if (transport === 'inProcess') await region.stop();
+      const regionConfig = resolve(f.directory, 'embedded-region.json');
+      await privateWrite(regionConfig, region.server);
+      const bind = await port();
+      const config = resolve(f.directory, 'workspace-rust.json');
+      await privateWrite(config, {
+        bind: `127.0.0.1:${bind}`,
+        workspaceId: 'ws_agentlab',
+        authorityId: region.server.authorityId,
+        importId: 'complete-import',
+        insecureLoopback: true,
+        consoleOrigins: ['http://127.0.0.1:5173'],
+        metadata:
+          transport === 'remote'
+            ? { transport, client: region.clientConfig }
+            : { transport, authorityId: region.server.authorityId },
+        product: {
+          providers: {
+            filesProvider: 'drive9-anonymous',
+            mysqlProvider: 'tidb-cloud-zero',
+            postgresProvider: 'db9-anonymous',
+            testMode: true,
+            drive9Endpoint: provider.origin,
+            sqlFixture: provider.origin + '/sql',
+          },
+        },
+      });
+      const deployment = resolve(f.directory, 'deployment.json');
+      await privateWrite(deployment, {
+        format: 1,
+        services: [
+          ...(transport === 'inProcess' ? [{ kind: 'metadata', configFile: regionConfig }] : []),
+          { kind: 'workspace', configFile: config },
+        ],
+      });
+      const log = createWriteStream(resolve(f.directory, 'backend.log'), { mode: 0o600 });
+      child = spawn(
+        resolve('meta-service/target/debug/workspace-backend'),
+        ['serve', '--config', deployment],
+        { stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      child.stdout.pipe(log);
+      child.stderr.pipe(log);
+      const request = await until(() => connect(`http://127.0.0.1:${bind}`));
+      const actual = await scenarios(request, provider);
+      assert.deepEqual(actual, expected);
+      assert.equal(provider.creates, 0);
+      const schema = await fetch(`http://127.0.0.1:${bind}/openapi.json`);
+      assert.equal(schema.status, 200);
+      assert.deepEqual(await schema.json(), JSON.parse(await readFile('public/openapi.json')));
+      child.kill('SIGTERM');
+      await new Promise((r) => child.once('exit', r));
+      const verifier =
+        transport === 'inProcess' ? await f.service('verify', { previous: region }) : region;
+      for (let i = 1; i < raw.length; i++) {
+        const snap = await verifier.client.call({
           op: 'snapshot',
-          scope: documentScope(region.server.authorityId, 'ws_agentlab', 'workspace'),
-        }),
-      ),
-    );
-    assert.deepEqual(final.opaque, state.opaque);
-    assert.deepEqual(final.resources, expectedResources);
-    assert.deepEqual(final.keys[0].resourceIds, ['*']);
-    assert.equal(final.keys[0].digest, state.keys[0].digest);
-  },
-);
+          scope: documentScope(
+            region.server.authorityId,
+            'ws_agentlab',
+            ['workspace', 'drive9', 'zero', 'duckdb', 'db9'][i],
+          ),
+        });
+        assert.deepEqual(JSON.parse(decodeDocument(snap)), raw[i]);
+      }
+      const final = JSON.parse(
+        decodeDocument(
+          await verifier.client.call({
+            op: 'snapshot',
+            scope: documentScope(verifier.server.authorityId, 'ws_agentlab', 'workspace'),
+          }),
+        ),
+      );
+      assert.deepEqual(final.opaque, state.opaque);
+      assert.deepEqual(final.resources, expectedResources);
+      assert.deepEqual(final.keys[0].resourceIds, ['*']);
+      assert.equal(final.keys[0].digest, state.keys[0].digest);
+    },
+  );
+}
 
 test(
   'Rust provider lifecycle retains one creation intent across retries, unknown responses and restart',
