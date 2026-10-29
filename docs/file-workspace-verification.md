@@ -74,3 +74,50 @@ The implementation PR records the final candidate, full local check and remote C
 Known build warnings remain the pre-existing large bundle and transitive phone-library eval
 warnings. Public compute isolation, durable query sessions, provider Exec and large remote
 scans remain outside this change.
+
+## Result navigation correction (GH-82)
+
+Owner feedback on 2026-10-29 identified a disabled Query result tab in the initial preview
+as an apparent Analyze entry that could not be clicked. This small fix follows
+[GH-82](https://github.com/siddontang/tidb.ai/issues/82), reproduced against
+`aa286c42b1ea5e613d4ac026f725792dcb0bcc91`. It refines the existing preview-first interaction;
+there is no API, permission, provider, dependency or persisted-data change.
+
+Initial preview and an expanded but unexecuted editor now show no result navigation. Explicit
+Run reveals usable preview/result tabs and selects the running result. Completed, failed and
+canceled execution retains those tabs. Hiding tools or switching methods preserves each
+method's draft/result. A method with no execution shows preview; selecting a sample that clears
+execution also returns to preview and its original-file actions. Preview/result panels remain
+mounted; hidden navigation is absent from both the visible interface and keyboard tab order.
+
+Browser checks used a private local copy of the existing workspace state with the same
+Singapore file provider. Existing Parquet/CSV samples were read; no cloud resource, file or
+table was created or changed. Observed checks:
+
+- Initial Parquet and unexecuted SQL/Bash: no visible result tabs; preview and Download original
+  remain available. Merely expanding Analyze does not execute a script.
+- SQL aggregation returned APAC 30/EU 20. Result tabs are enabled; arrow keys switch preview
+  and result. Hiding/reopening tools retains the query/result and result export.
+- Invalid SQL retains a recoverable error tab. Run exposes result navigation while busy and
+  disables hiding tools; Cancel keeps the cancellation message reachable.
+- Selecting Preview rows after an error clears execution, removes result navigation, and
+  restores preview/original actions rather than leaving an empty result panel selected.
+- CSV Bash grep returned two APAC lines. Switching to unexecuted SQL shows preview with no
+  result tabs; returning to Bash restores its command/output and Export output. Original-file
+  controls remain absent from the result view. Export dialogs retain their source labels.
+- Light/Dark at 1280×800 and 390×844: no initial result navigation, readable preview/actions,
+  no document overflow. Narrow SQL execution also reveals usable tabs and results. Existing
+  TiUI 2.9.1 Tabs, supported layout props, shared theme and SQL Editor 0.0.6 remain in use.
+
+Screenshots are full-page captures at the named viewport, so controls below the fold are visible:
+
+- [Initial Dark, 1280×800](screenshots/file-result-discovery/initial-dark-1280x800.png)
+- [Initial Light, 1280×800](screenshots/file-result-discovery/initial-light-1280x800.png)
+- [Initial Dark, 390×844](screenshots/file-result-discovery/initial-dark-390x844.png)
+- [Initial Light, 390×844](screenshots/file-result-discovery/initial-light-390x844.png)
+- [Completed Bash result, Dark desktop](screenshots/file-result-discovery/bash-result-dark-1280x800.png)
+- [Completed SQL result, Dark narrow](screenshots/file-result-discovery/sql-result-dark-390x844.png)
+
+The PR records its candidate SHA, final `npm run check` and current-head CI. Browser interaction
+checks cover this scoped presentation correction; backend behavior remains under the existing
+152-test quality gate. Revisit the rule for persistent sessions or separate analysis routes.
