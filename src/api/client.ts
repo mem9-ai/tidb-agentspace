@@ -18,6 +18,8 @@ export type FileAnalysisResult =
 export type FileAnalysisInput = JsonBody<operations['analyzeFile']>;
 export type FileAnalysisCapabilities =
   operations['fileAnalysisCapabilities']['responses'][200]['content']['application/json'];
+export type TabularFilePreview =
+  operations['tabularFilePreview']['responses'][200]['content']['application/json'];
 export type WriteFileInput = JsonBody<operations['writeFile']>;
 export type ResultExportInput = JsonBody<operations['exportResult']>;
 export type ResultExportOutput =
@@ -36,6 +38,13 @@ export function configureApi(config: unknown) {
 }
 
 export const workspaceApi = {
+  tabularFilePreview: (resourceId: string, path: string, signal?: AbortSignal) =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/files/tabular-preview', {
+        params: { path: { workspaceId }, query: { resourceId, path } },
+        signal,
+      }),
+    ),
   exportResult: (body: ResultExportInput) =>
     responseData(client.POST('/workspaces/{workspaceId}/result-exports', { params, body })),
   fileAnalysisCapabilities: (resourceId: string, path: string, signal?: AbortSignal) =>

@@ -340,6 +340,47 @@ const paths = {
       },
     ),
   },
+  [ws + '/files/tabular-preview']: {
+    get: operation(
+      'tabularFilePreview',
+      'Read a fixed bounded CSV/Parquet schema and sample',
+      'files:read',
+      {
+        parameters: [
+          { name: 'resourceId', in: 'query', required: true, schema: str },
+          { name: 'path', in: 'query', required: true, schema: str },
+        ],
+        output: object({
+          resourceId: str,
+          path: str,
+          format: { enum: ['csv', 'parquet'] },
+          readOnly: { const: true },
+          inputBytes: { type: 'integer' },
+          durationMs: { type: 'integer' },
+          fileVersion: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+          columns: { type: 'array', maxItems: 50, items: str },
+          columnTypes: { type: 'array', maxItems: 50, items: str },
+          schema: {
+            type: 'array',
+            maxItems: 50,
+            items: object({ column_name: str, column_type: str }),
+          },
+          rows: {
+            type: 'array',
+            maxItems: 20,
+            items: { type: 'object', additionalProperties: true },
+          },
+          rowCount: { type: 'integer', minimum: 0, maximum: 20 },
+          totalRows: {
+            type: ['string', 'null'],
+            description: 'Exact Parquet metadata row count; null for CSV. Not the sample count.',
+          },
+          typesInferred: { type: 'boolean' },
+          truncated: { type: 'boolean' },
+        }),
+      },
+    ),
+  },
   [ws + '/file-analyses/capabilities']: {
     get: operation(
       'fileAnalysisCapabilities',
@@ -430,22 +471,45 @@ const paths = {
             },
           ],
         },
-        output: object({
-          engine: { enum: ['duckdb', 'bash'] },
-          resourceId: str,
-          path: str,
-          readOnly: { const: true },
-          inputBytes: { type: 'integer' },
-          durationMs: { type: 'integer' },
-          columns: { type: 'array', items: str },
-          schema: { type: 'array', items: object({ column_name: str, column_type: str }) },
-          columnTypes: { type: 'array', items: str },
-          rows: { type: 'array', items: { type: 'object', additionalProperties: true } },
-          rowCount: { type: 'integer' },
-          stdout: str,
-          stderr: str,
-          exitCode: { type: 'integer' },
-        }),
+        output: object(
+          {
+            engine: { enum: ['duckdb', 'bash'] },
+            resourceId: str,
+            path: str,
+            readOnly: { const: true },
+            inputBytes: { type: 'integer' },
+            durationMs: { type: 'integer' },
+            columns: { type: 'array', items: str },
+            schema: { type: 'array', items: object({ column_name: str, column_type: str }) },
+            columnTypes: { type: 'array', items: str },
+            rows: { type: 'array', items: { type: 'object', additionalProperties: true } },
+            rowCount: { type: 'integer' },
+            stdout: str,
+            stderr: str,
+            exitCode: { type: 'integer' },
+            fileVersion: {
+              type: 'string',
+              pattern: '^[a-f0-9]{64}$',
+              description: 'Saved-byte digest when supported; compare with tabular preview.',
+            },
+          },
+          [
+            'engine',
+            'resourceId',
+            'path',
+            'readOnly',
+            'inputBytes',
+            'durationMs',
+            'columns',
+            'schema',
+            'columnTypes',
+            'rows',
+            'rowCount',
+            'stdout',
+            'stderr',
+            'exitCode',
+          ],
+        ),
       },
     ),
   },
@@ -807,6 +871,8 @@ paths['/api/session'] = {
 };
 for (const [path, item] of Object.entries(paths))
   if (path.includes('{workspaceId}')) item.parameters = [workspaceId, ...(item.parameters || [])];
+paths[ws + '/files/tabular-preview'].get.description +=
+  ' Fixed CSV/Parquet schema/sample only: accepts resourceId/path, no custom SQL or engine settings. Requires files:read, not files:analyze. Whole version-verified snapshot up to 16 MiB, 15 seconds and shared two-worker budget; at most 20 rows, 50 columns, 128 KiB. CSV types are inferred and totalRows unknown; Parquet count is metadata. No automatic retry. Download unsupported or over-budget files.';
 paths[ws + '/file-analyses'].post.description +=
   ' Also requires files:read. Discover engines from capabilities: CSV supports DuckDB SQL over table file or Just Bash over its raw UTF-8 text. Bash exposes the selected absolute Workspace path; discover input.path, input.workingDirectory and compatibility aliases on its engine option. Paths refer only to the virtual selected-file snapshot. Parquet supports only DuckDB, and other recognized text only Just Bash. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.';
 paths[ws + '/result-exports'].post.description +=

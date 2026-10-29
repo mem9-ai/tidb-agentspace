@@ -63,3 +63,8 @@ For PostgreSQL through db9, read [ADR 0011](../decisions/0011-db9-postgres.md) a
 and distinguish provider compatibility limits from gateway value preservation.
 
 For DuckDB browsing performance, follow [ADR 0012](../decisions/0012-duckdb-catalog-reader.md): reuse only bounded server-generated read-only catalog sessions. Do not turn customer SQL or file-source workers into shared sessions to reduce attachment cost. Measure cold and warm paths separately and retain authorization on every request.
+
+For preview-first file UI and bounded tabular samples, follow
+[ADR 0017](../decisions/0017-preview-first-file-workspace.md) and the
+[TiUI file workspace rule](tiui-design-system.md#theme-responsive-behavior-and-interaction).
+Fixed preview uses read permission; custom SQL/Bash retains explicit analyze permission.

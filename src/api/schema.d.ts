@@ -92,6 +92,29 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/workspaces/{workspaceId}/files/tabular-preview': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+      };
+      cookie?: never;
+    };
+    /**
+     * Read a fixed bounded CSV/Parquet schema and sample
+     * @description Required workspace key scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Fixed CSV/Parquet schema/sample only: accepts resourceId/path, no custom SQL or engine settings. Requires files:read, not files:analyze. Whole version-verified snapshot up to 16 MiB, 15 seconds and shared two-worker budget; at most 20 rows, 50 columns, 128 KiB. CSV types are inferred and totalRows unknown; Parquet count is metadata. No automatic retry. Download unsupported or over-budget files.
+     */
+    get: operations['tabularFilePreview'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/workspaces/{workspaceId}/file-analyses/capabilities': {
     parameters: {
       query?: never;
@@ -1462,6 +1485,173 @@ export interface operations {
       };
     };
   };
+  tabularFilePreview: {
+    parameters: {
+      query: {
+        resourceId: string;
+        path: string;
+      };
+      header?: never;
+      path: {
+        /** @description This local prototype has one workspace. */
+        workspaceId: 'ws_agentlab';
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            resourceId: string;
+            path: string;
+            /** @enum {unknown} */
+            format: 'csv' | 'parquet';
+            /** @constant */
+            readOnly: true;
+            inputBytes: number;
+            durationMs: number;
+            fileVersion: string;
+            columns: string[];
+            columnTypes: string[];
+            schema: {
+              column_name: string;
+              column_type: string;
+            }[];
+            rows: {
+              [key: string]: unknown;
+            }[];
+            rowCount: number;
+            /** @description Exact Parquet metadata row count; null for CSV. Not the sample count. */
+            totalRows: string | null;
+            typesInferred: boolean;
+            truncated: boolean;
+          };
+        };
+      };
+      /** @description Invalid request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Missing, invalid, expired, or revoked credential */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Insufficient permission */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource or endpoint not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Conflict or free-tier limit */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Content too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Unsupported content type */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL syntax, result limit, or unsupported demo query */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider quota or rate limit */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider unavailable or invalid response */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider binding needs operator recovery */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
   fileAnalysisCapabilities: {
     parameters: {
       query: {
@@ -1716,6 +1906,8 @@ export interface operations {
             stdout: string;
             stderr: string;
             exitCode: number;
+            /** @description Saved-byte digest when supported; compare with tabular preview. */
+            fileVersion?: string;
           };
         };
       };
