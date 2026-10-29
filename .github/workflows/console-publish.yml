@@ -1,0 +1,182 @@
+name: Publish Studio Console
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'console/**'
+      - 'tools/api-contract/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.node-version'
+      - '.npmrc'
+      - '.env*'
+      - 'tsconfig*.json'
+      - 'vite.config.*'
+      - 'scripts/console-publish*.mjs'
+      - '.github/workflows/console-publish.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One running publication and one pending run. Never cancel a run halfway through merge.
+concurrency:
+  group: studio-console-publication
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'mem9-ai/tidb.ai' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      current: ${{ steps.source.outputs.current }}
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Record the latest main commit
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Skip superseded Console inputs
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.commit.outputs.sha }}
+        run: node scripts/console-publish.mjs current "$SOURCE_SHA"
+      - name: Select the pinned npm version
+        if: steps.source.outputs.current == 'true'
+        run: npm install --global npm@11.6.2 --ignore-scripts
+      - if: steps.source.outputs.current == 'true'
+        run: npm ci
+      - if: steps.source.outputs.current == 'true'
+        run: npm run check
+      - name: Build public Console without deployment credentials
+        if: steps.source.outputs.current == 'true'
+        run: env -i PATH="$PATH" HOME="$HOME" CI=true npm run build:console -- --base=/studio/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.source.outputs.current == 'true'
+        with:
+          name: studio-console-${{ steps.commit.outputs.sha }}
+          path: dist/console/
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    needs: build
+    if: needs.build.outputs.current == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Check publishing configuration
+        env:
+          APP_ID: ${{ vars.STUDIO_PUBLISH_APP_ID }}
+          APP_KEY: ${{ secrets.STUDIO_PUBLISH_APP_PRIVATE_KEY }}
+        run: |
+          if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
+            echo 'Configure STUDIO_PUBLISH_APP_ID and STUDIO_PUBLISH_APP_PRIVATE_KEY; see docs/console-publishing.md.' >&2
+            exit 1
+          fi
+      - name: Check current Console inputs
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.build.outputs.sha }}
+        run: node scripts/console-publish.mjs current "$SOURCE_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.source.outputs.current == 'true'
+        with:
+          repository: mem9-ai/drive9-fe
+          ref: main
+          path: website
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        if: steps.source.outputs.current == 'true'
+        with:
+          name: studio-console-${{ needs.build.outputs.sha }}
+          path: ${{ runner.temp }}/studio-console
+      - name: Import and validate public files
+        id: artifact
+        if: steps.source.outputs.current == 'true'
+        env:
+          SOURCE_SHA: ${{ needs.build.outputs.sha }}
+        run: node scripts/console-publish.mjs prepare website "$RUNNER_TEMP/studio-console" "$SOURCE_SHA"
+      - name: Validate website routes and artifact checksums
+        if: steps.source.outputs.current == 'true'
+        working-directory: website
+        run: node --test scripts/*.test.mjs tests/*.test.mjs
+      - name: Mint a repository-scoped publication token
+        id: app
+        if: steps.source.outputs.current == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        with:
+          app-id: ${{ vars.STUDIO_PUBLISH_APP_ID }}
+          private-key: ${{ secrets.STUDIO_PUBLISH_APP_PRIVATE_KEY }}
+          owner: mem9-ai
+          repositories: drive9-fe
+          permission-contents: write
+          permission-pull-requests: write
+          permission-checks: read
+      - name: Create or update the single artifact PR
+        id: pr
+        if: steps.artifact.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
+        with:
+          token: ${{ steps.app.outputs.token }}
+          path: website
+          branch: automation/studio-console
+          base: main
+          add-paths: |
+            vendor/studio/
+            vendor/studio-build.json
+          author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          signoff: true
+          commit-message: 'chore(studio): update Console artifact'
+          title: 'chore(studio): update Console artifact'
+          body: |
+            Automated Console-only publication from mem9-ai/tidb.ai at `${{ needs.build.outputs.sha }}`.
+
+            Pinned toolchain, source quality checks, artifact allowlist/checksums and website tests passed.
+            Only `vendor/studio/` and `vendor/studio-build.json` are published. No private source or source maps.
+            Evidence: https://github.com/mem9-ai/tidb.ai/actions/runs/${{ github.run_id }}
+      - name: Wait for the independent website check
+        if: steps.pr.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR_HEAD: ${{ steps.pr.outputs.pull-request-head-sha }}
+        run: node scripts/console-publish.mjs wait "$PR_HEAD"
+      - name: Recheck source before merge
+        id: latest
+        if: steps.pr.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.build.outputs.sha }}
+        run: node scripts/console-publish.mjs current "$SOURCE_SHA"
+      - name: Merge the tested candidate after required website checks pass
+        if: steps.latest.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.pull-request-number }}
+          PR_HEAD: ${{ steps.pr.outputs.pull-request-head-sha }}
+          EXPECTED_TREE: ${{ steps.artifact.outputs.tree }}
+        run: |
+          node scripts/console-publish.mjs verify "$PR_NUMBER" "$EXPECTED_TREE" "$PR_HEAD"
+          gh pr merge "$PR_NUMBER" --repo mem9-ai/drive9-fe --squash --match-head-commit "$PR_HEAD"
+          echo 'Console artifact merged after the independent website check passed. Confirm the Netlify deploy before reporting it live.' >> "$GITHUB_STEP_SUMMARY"
