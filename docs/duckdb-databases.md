@@ -1,8 +1,7 @@
 # DuckDB databases
 
-For the current Rust API, configure the private deployment as described in the
-[Rust runtime guide](rust-backend.md). The environment-variable startup examples below use
-the explicit Node compatibility profile; API and credential boundaries apply to both.
+The Rust API uses the private deployment described in the
+[Rust runtime guide](rust-backend.md), with record metadata under [ADR 0024](decisions/0024-fresh-record-metadata.md).
 
 Status: implemented for the loopback prototype. [ADR 0008](decisions/0008-duckdb-private-storage.md)
 and [GH-28](../specs/gh-28/spec.md) define the accepted isolation and acceptance boundary.
@@ -40,38 +39,43 @@ public file interface.
 For the optional API for CSV, JSON and Parquet in public File Systems, see
 [Workspace file sources](#workspace-file-sources).
 
-Use Node/npm from the repository pins and `npm ci`. The pinned `@duckdb/node-api@2.0.0-r.1`
-provides DuckDB 2.0.0. Supply the exact matching platform/version of the native tidbfs artifact
-from [drive9-ai/duckdb](https://github.com/drive9-ai/duckdb). Its release build statically links
-its runtime dependencies. No Community Extensions publication, Ti CLI, DuckDB CLI or runtime
-extension download is required by this product.
+The native Rust executable bundles DuckDB 2.0.0. Supply the exact matching platform/version
+of the native tidbfs artifact from [drive9-ai/duckdb](https://github.com/drive9-ai/duckdb).
+Its release build statically links its runtime dependencies. No Community Extensions
+publication, Ti CLI, DuckDB CLI or runtime extension download is required by this product.
 
-```sh
-WORKSPACE_DUCKDB_EXTENSION=/absolute/runtime/tidbfs.duckdb_extension \
-WORKSPACE_DUCKDB_EXTENSION_SHA256=<verified-64-character-sha256> \
-WORKSPACE_MYSQL_PROVIDER=tidb-cloud-zero \
-WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run start:legacy-api
+Configure the private regional API's `product.compute`:
+
+```json
+{
+  "extensionPath": "/absolute/runtime/tidbfs.duckdb_extension",
+  "extensionSha256": "verified-64-character-sha256"
+}
 ```
 
-The File System flag controls separately created public File Systems. DuckDB always uses a
+Set `product.providers.filesProvider` to `drive9-anonymous` for public File System creation.
+Start the reviewed native executable with its deployment plan, as in the Rust runtime guide.
+
+The File System provider setting controls separately created public File Systems. DuckDB always uses a
 separate Singapore anonymous backing store. Configure the artifact on each API host; never
 accept its path/hash from an HTTP request. Capability `duckdb.available` is false without a
 verified artifact; creation returns 503 before reserving/provisioning a resource. A credential-free worker probe also verifies that the artifact actually loads with this native runtime before exposing availability. The hash is
 rechecked before provisioning and every worker launch. This checks operator-selected bytes;
 it is not a substitute for reviewing their source/provenance. Native storage remains experimental.
 
-The independent API build bundles native Node bindings and their installed dependency closure
-for the build platform, so no runtime install is needed. It does not bundle the operator's
-tidbfs binary, state or credentials. Keep the separately supplied artifact available at its
-configured path after promotion/rollback. CI tests native SQL with temporary local databases
-and injected storage provisioning; it never creates cloud resources.
+The independent API package contains the native Rust executable and its build/contract
+metadata, without Node dependencies. It does not bundle the operator's tidbfs artifact, state
+or credentials. Keep the separately supplied artifact available at its configured path after
+promotion/rollback. CI tests native SQL with temporary local databases and injected storage
+provisioning; it never creates cloud resources.
 
 ## Persistence and recovery
 
-For state `.data/workspace.json`, private `.duckdb.json` records bind public database IDs to
-opaque backing-store IDs. The sibling `.providers.json` holds upstream File System tokens;
-public state never contains the binding, token, native filename or endpoint. Private files are
-owner-only and ignored by Git. Back up and restore these files together without exposing them.
+Regional Meta stores each public database's private DuckDB binding and its backing-store
+credentials as separate encrypted records, committed atomically where paired. Public records
+never contain the private token, native filename or endpoint. Preserve the regional object-store
+metadata and its encryption keys together; see [metadata operations](meta-service.md). The old
+sibling JSON vaults remain only in isolated regression fixtures, with no serving/import path.
 
 Creation persists binding intent before the upstream POST. Retries with the same Idempotency-Key
 reuse the public database and store. A lost provision response is never repeated automatically.
