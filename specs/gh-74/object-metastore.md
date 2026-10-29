@@ -4,9 +4,10 @@
 - Date: 2026-10-29.
 - Parent: [control-plane specification](spec.md), [scale profile](metadata-scale.md), and
   [proposed ADR 0019](../../docs/decisions/0019-workspace-kv-control-plane.md).
-- Implementation: None. The running service still uses
-  [`createStore`](../../server/store.mjs), process memory and whole-file JSON replacement.
-  There is no implemented object-backed MetaStore, WAL, LSM or distributed writer protocol.
+- Implementation: The [GH-86 runtime guide](../../docs/meta-service.md) covers independent
+  Rust services with SlateDB 0.17.0, authenticated transport, S3-durable commits and a bounded
+  legacy Node adapter/importer. Full domain migration, automatic HA and scale remain phased.
+  The optional JSON demo profile still uses [`createStore`](../../server/store.mjs).
 
 ## 1. Persistence direction and reference
 
@@ -15,8 +16,8 @@ including every acknowledged commit. Local development keeps ordinary files as i
 These are explicit deployment profiles behind the same logical KV contract. The owner has
 selected **SlateDB** for both hosted Global and regional metadata, accepting object-durable
 write latency for control-plane mutations. This supersedes the earlier candidate-only
-evaluation and SQL-first recommendation. Release/binding selection and conformance remain
-implementation gates, not a reason to leave the architectural engine choice open.
+evaluation and SQL-first recommendation. GH-86 pins the Rust service/release; remaining
+production and scale conformance is separate from that engine choice.
 
 The [Redpanda metastore article](https://www.redpanda.com/blog/cloud-topics-metastore)
 describes partitioned LSMs with object-backed SSTs/manifests, local caching and Raft-backed

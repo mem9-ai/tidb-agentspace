@@ -57,14 +57,16 @@ The [multi-tenant control-plane design](../specs/gh-74/spec.md) and
 layer, scope-atomic records/indexes, ordinary local-file persistence, hosted object storage
 as the preferred source of truth, a service-owned TiDB File System candidate, Organization/Workspace
 authorization and identity-preserving resource/credential
-migration. This is a proposal, not implemented multi-tenancy or a completed migration. The
-current fixed Workspace, local owner session and JSON/vault persistence remain in use.
+migration. The [initial Rust Meta Service](meta-service.md) implements independent SlateDB/S3
+services and a bounded legacy import/storage bridge. The fixed Workspace and local owner
+session remain; full multi-tenancy and the new domain/public API split are still proposed.
 
 The [object-metastore design](../specs/gh-74/object-metastore.md) requires object recovery of
 every acknowledged metadata commit, including the accepted WAL tail; local caches and query
 projections are disposable. The owner has selected SlateDB for hosted Global and regional
-metadata, accepting durable control-plane write latency. Durability waits, group CAS, fresh authorization reads,
-fencing and namespace/secret recovery remain unimplemented proof obligations. SQL authority
+metadata, accepting durable control-plane write latency. The initial profile tests durable
+waits, conditional batches, committed reads, manual ownership fencing and legacy recovery;
+production/scale proof obligations remain in the runtime guide. SQL authority
 plus asynchronous object backup is a separate durability profile.
 
 Hosted Global and each Region own independently deployed Meta Services and distinct SlateDB

@@ -1,4 +1,4 @@
-import { createStore } from '../store.mjs';
+import { createStore, withFreshStore } from '../store.mjs';
 
 export const drive9Provider = 'drive9-anonymous';
 export const drive9Region = 'aws-ap-southeast-1';
@@ -22,8 +22,12 @@ export async function boundedBytes(response, limit) {
   return Buffer.concat(chunks);
 }
 
-export async function createDrive9({ credentialsFile, transport = fetch }) {
-  const vault = await createStore(credentialsFile, () => ({ bindings: {} }));
+export async function createDrive9({
+  credentialsFile,
+  transport = fetch,
+  storeFactory = createStore,
+}) {
+  const vault = await storeFactory(credentialsFile, () => ({ bindings: {} }));
   const provisioning = new Map();
   async function request(resourceId, path, options = {}) {
     const binding = vault.read().bindings[resourceId];
@@ -143,110 +147,113 @@ export async function createDrive9({ credentialsFile, transport = fetch }) {
     });
     return status(resourceId);
   }
-  return {
-    // Backend-only binding for private database workers; never serialize through the product API.
-    internalConnection(resourceId) {
-      const binding = vault.read().bindings[resourceId];
-      if (!binding?.apiKey)
-        throw fileError(
-          503,
-          'PROVIDER_BINDING_MISSING',
-          'Database storage needs operator recovery.',
-        );
-      return { endpoint, apiKey: binding.apiKey };
-    },
-    status,
-    provision(resourceId) {
-      if (!provisioning.has(resourceId)) {
-        const pending = provisionOnce(resourceId).finally(() => provisioning.delete(resourceId));
-        provisioning.set(resourceId, pending);
-      }
-      return provisioning.get(resourceId);
-    },
-    async list(resourceId, path) {
-      const result = await json(resourceId, fsPath(path) + '?list=1');
-      if (!Array.isArray(result.entries))
-        throw fileError(502, 'INVALID_PROVIDER_RESPONSE', 'Invalid directory listing.');
-      return result.entries.map((entry) => {
-        if (
-          !entry ||
-          typeof entry !== 'object' ||
-          typeof entry.name !== 'string' ||
-          !entry.name ||
-          [...entry.name].some(
-            (char) => char.charCodeAt(0) < 32 || char === '/' || char === '\\',
-          ) ||
-          ['.', '..'].includes(entry.name) ||
-          !Number.isSafeInteger(entry.size) ||
-          entry.size < 0 ||
-          typeof entry.isDir !== 'boolean'
-        )
-          throw fileError(502, 'INVALID_PROVIDER_RESPONSE', 'Invalid file metadata.');
-        const filePath = (path === '/' ? '' : path) + '/' + entry.name;
+  return withFreshStore(
+    {
+      // Backend-only binding for private database workers; never serialize through the product API.
+      internalConnection(resourceId) {
+        const binding = vault.read().bindings[resourceId];
+        if (!binding?.apiKey)
+          throw fileError(
+            503,
+            'PROVIDER_BINDING_MISSING',
+            'Database storage needs operator recovery.',
+          );
+        return { endpoint, apiKey: binding.apiKey };
+      },
+      status,
+      provision(resourceId) {
+        if (!provisioning.has(resourceId)) {
+          const pending = provisionOnce(resourceId).finally(() => provisioning.delete(resourceId));
+          provisioning.set(resourceId, pending);
+        }
+        return provisioning.get(resourceId);
+      },
+      async list(resourceId, path) {
+        const result = await json(resourceId, fsPath(path) + '?list=1');
+        if (!Array.isArray(result.entries))
+          throw fileError(502, 'INVALID_PROVIDER_RESPONSE', 'Invalid directory listing.');
+        return result.entries.map((entry) => {
+          if (
+            !entry ||
+            typeof entry !== 'object' ||
+            typeof entry.name !== 'string' ||
+            !entry.name ||
+            [...entry.name].some(
+              (char) => char.charCodeAt(0) < 32 || char === '/' || char === '\\',
+            ) ||
+            ['.', '..'].includes(entry.name) ||
+            !Number.isSafeInteger(entry.size) ||
+            entry.size < 0 ||
+            typeof entry.isDir !== 'boolean'
+          )
+            throw fileError(502, 'INVALID_PROVIDER_RESPONSE', 'Invalid file metadata.');
+          const filePath = (path === '/' ? '' : path) + '/' + entry.name;
+          return {
+            id: `${resourceId}:${filePath}`,
+            resourceId,
+            path: filePath,
+            type: entry.isDir ? 'directory' : 'file',
+            size: entry.size,
+            updatedAt:
+              Number.isFinite(entry.mtime) && entry.mtime > 0 && entry.mtime <= 8.64e12
+                ? new Date(entry.mtime * 1000).toISOString()
+                : null,
+          };
+        });
+      },
+      async stat(resourceId, path, options = {}) {
+        const response = await request(resourceId, fsPath(path), { ...options, method: 'HEAD' });
+        const raw = response.headers.get('content-length');
+        const size = raw === null ? NaN : Number(raw);
+        if (!Number.isSafeInteger(size) || size < 0)
+          throw fileError(502, 'INVALID_PROVIDER_RESPONSE', 'File size is unavailable.');
+        const revision = response.headers.get('etag');
         return {
-          id: `${resourceId}:${filePath}`,
-          resourceId,
-          path: filePath,
-          type: entry.isDir ? 'directory' : 'file',
-          size: entry.size,
-          updatedAt:
-            Number.isFinite(entry.mtime) && entry.mtime > 0 && entry.mtime <= 8.64e12
-              ? new Date(entry.mtime * 1000).toISOString()
-              : null,
+          size,
+          directory: response.headers.get('x-dat9-isdir') === 'true',
+          ...(revision ? { revision } : {}),
+          ...(response.headers.get('x-dat9-revision')
+            ? { dataRevision: response.headers.get('x-dat9-revision') }
+            : {}),
+          ...(response.headers.get('x-dat9-resource-id')
+            ? { resourceIdentity: response.headers.get('x-dat9-resource-id') }
+            : {}),
         };
-      });
+      },
+      read(resourceId, path, options = {}) {
+        return request(resourceId, fsPath(path), options);
+      },
+      async write(resourceId, path, bytes, createOnly = false, beforeWrite = () => {}) {
+        const info = await status(resourceId);
+        if (info.status !== 'active')
+          throw fileError(409, 'PROVIDER_NOT_READY', 'Wait until this File System is active.');
+        if (!info.uploadLimitBytes || bytes.length > info.uploadLimitBytes)
+          throw fileError(
+            413,
+            'FILE_TOO_LARGE',
+            `This File System currently accepts uploads up to ${info.uploadLimitBytes} bytes.`,
+          );
+        beforeWrite();
+        const response = await request(resourceId, fsPath(path), {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            ...(createOnly ? { 'X-Dat9-Expected-Revision': '0' } : {}),
+          },
+          body: bytes,
+        });
+        await response.body?.cancel();
+      },
+      async mkdir(resourceId, path) {
+        const response = await request(resourceId, fsPath(path) + '?mkdir=1', { method: 'POST' });
+        await response.body?.cancel();
+      },
+      async remove(resourceId, path) {
+        // No recursive option: non-empty directories must remain protected.
+        const response = await request(resourceId, fsPath(path), { method: 'DELETE' });
+        await response.body?.cancel();
+      },
     },
-    async stat(resourceId, path, options = {}) {
-      const response = await request(resourceId, fsPath(path), { ...options, method: 'HEAD' });
-      const raw = response.headers.get('content-length');
-      const size = raw === null ? NaN : Number(raw);
-      if (!Number.isSafeInteger(size) || size < 0)
-        throw fileError(502, 'INVALID_PROVIDER_RESPONSE', 'File size is unavailable.');
-      const revision = response.headers.get('etag');
-      return {
-        size,
-        directory: response.headers.get('x-dat9-isdir') === 'true',
-        ...(revision ? { revision } : {}),
-        ...(response.headers.get('x-dat9-revision')
-          ? { dataRevision: response.headers.get('x-dat9-revision') }
-          : {}),
-        ...(response.headers.get('x-dat9-resource-id')
-          ? { resourceIdentity: response.headers.get('x-dat9-resource-id') }
-          : {}),
-      };
-    },
-    read(resourceId, path, options = {}) {
-      return request(resourceId, fsPath(path), options);
-    },
-    async write(resourceId, path, bytes, createOnly = false, beforeWrite = () => {}) {
-      const info = await status(resourceId);
-      if (info.status !== 'active')
-        throw fileError(409, 'PROVIDER_NOT_READY', 'Wait until this File System is active.');
-      if (!info.uploadLimitBytes || bytes.length > info.uploadLimitBytes)
-        throw fileError(
-          413,
-          'FILE_TOO_LARGE',
-          `This File System currently accepts uploads up to ${info.uploadLimitBytes} bytes.`,
-        );
-      beforeWrite();
-      const response = await request(resourceId, fsPath(path), {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          ...(createOnly ? { 'X-Dat9-Expected-Revision': '0' } : {}),
-        },
-        body: bytes,
-      });
-      await response.body?.cancel();
-    },
-    async mkdir(resourceId, path) {
-      const response = await request(resourceId, fsPath(path) + '?mkdir=1', { method: 'POST' });
-      await response.body?.cancel();
-    },
-    async remove(resourceId, path) {
-      // No recursive option: non-empty directories must remain protected.
-      const response = await request(resourceId, fsPath(path), { method: 'DELETE' });
-      await response.body?.cancel();
-    },
-  };
+    vault,
+  );
 }

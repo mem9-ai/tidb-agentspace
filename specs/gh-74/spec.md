@@ -27,13 +27,19 @@ authorized databases and File Systems using the Console or Workspace Keys. Resta
 moving the control plane preserves the same product resource IDs, upstream instances, native
 roles, files, and grants. Changing metadata backends does not change domain behavior.
 
-The current service has one fixed `ws_agentlab`, an unauthenticated loopback owner-session
+At the source baseline, the service has one fixed `ws_agentlab`, an unauthenticated loopback owner-session
 bootstrap, process-local sessions, a public JSON state file, and four sibling private vault
 files. `createStore` serializes mutations inside one process and replaces a whole JSON file
 with `writeFile` plus `rename`; it has no cross-process ownership or directory-sync protocol.
 Provider adapters also have process-local provisioning maps. These are not distributed locks.
 Local file contents are embedded in JSON; live customer data remains upstream. Activity is
 limited to 200 records, with no complete Run or failure history.
+
+The initial [GH-86 implementation](../../docs/meta-service.md) adds independent Rust/SlateDB
+services, S3 persistence and an opt-in bounded legacy adapter/importer/exporter. It retains
+the existing Node gateway and public domain behavior. The complete typed multi-tenant schema,
+global/regional public API split and scale profile below are still future phases; do not
+treat the compatibility document as a million-resource Workspace layout.
 
 The new abstraction is **logical KV plus bounded indexes**, not an ORM and not an arbitrary
 JSON document with unrestricted queries. It supplies a useful consistency contract across

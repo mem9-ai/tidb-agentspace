@@ -3,7 +3,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { fork } from 'node:child_process';
 import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createStore } from '../store.mjs';
+import { createStore, withFreshStore } from '../store.mjs';
 import { createDuckdbCatalog } from './duckdb-catalog.mjs';
 import { sqlError, sqlLimits } from './sql-common.mjs';
 
@@ -86,18 +86,21 @@ export function runDuckdbWorker({
 }
 export async function createDuckdb({
   credentialsFile,
+  storeFactory = createStore,
   drive9,
   extensionPath = process.env.WORKSPACE_DUCKDB_EXTENSION,
   extensionSha256 = process.env.WORKSPACE_DUCKDB_EXTENSION_SHA256,
   execute = runDuckdbWorker,
 }) {
-  try {
-    if ((await stat(credentialsFile)).mode & 0o077)
-      throw new Error('DuckDB bindings require owner-only permissions.');
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
+  if (storeFactory === createStore) {
+    try {
+      if ((await stat(credentialsFile)).mode & 0o077)
+        throw new Error('DuckDB bindings require owner-only permissions.');
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
   }
-  const vault = await createStore(credentialsFile, () => ({ bindings: {} }));
+  const vault = await storeFactory(credentialsFile, () => ({ bindings: {} }));
   let available = await verifyDuckdbRuntime(extensionPath, extensionSha256);
   if (available) {
     try {
@@ -132,7 +135,7 @@ export async function createDuckdb({
     if (!catalogRead) await catalog?.invalidateIdle();
     signal?.throwIfAborted();
     const input = {
-      connection: drive9.internalConnection(binding.storageId),
+      connection: await drive9.internalConnection(binding.storageId),
       extensionPath,
       sql,
       signal,
@@ -227,25 +230,28 @@ export async function createDuckdb({
       }
     }
   }
-  return {
-    available,
-    requireRuntime,
-    verifyRuntime,
-    status,
-    provision(resource) {
-      if (!provisioning.has(resource.id))
-        provisioning.set(
-          resource.id,
-          provisionOnce(resource).finally(() => provisioning.delete(resource.id)),
-        );
-      return provisioning.get(resource.id);
+  return withFreshStore(
+    {
+      available,
+      requireRuntime,
+      verifyRuntime,
+      status,
+      provision(resource) {
+        if (!provisioning.has(resource.id))
+          provisioning.set(
+            resource.id,
+            provisionOnce(resource).finally(() => provisioning.delete(resource.id)),
+          );
+        return provisioning.get(resource.id);
+      },
+      execute: executeQuery,
+      catalog(resource, sql, signal) {
+        return executeQuery(resource, sql, signal, undefined, true);
+      },
+      close() {
+        return catalog?.close();
+      },
     },
-    execute: executeQuery,
-    catalog(resource, sql, signal) {
-      return executeQuery(resource, sql, signal, undefined, true);
-    },
-    close() {
-      return catalog?.close();
-    },
-  };
+    vault,
+  );
 }

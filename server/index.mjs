@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { createMetaStoreFactory } from './meta/document-store.mjs';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -84,6 +85,8 @@ async function body(req, limit = 1024 * 1024) {
 }
 export async function createApp({
   dataFile = process.env.WORKSPACE_DATA_FILE || resolve(root, '.data/workspace.json'),
+  storeFactory,
+  metaConfig = process.env.WORKSPACE_META_CONFIG,
   allowedOrigins = consoleOrigins(),
   filesProvider = process.env.WORKSPACE_FILES_PROVIDER || 'local',
   drive9Transport,
@@ -103,27 +106,33 @@ export async function createApp({
 } = {}) {
   if (!['local', drive9Provider].includes(filesProvider))
     throw new Error('Unknown File System provider.');
+  if (!['local', zeroProvider].includes(mysqlProvider)) throw new Error('Unknown MySQL provider.');
+  if (!['disabled', db9Provider].includes(postgresProvider))
+    throw new Error('Unknown PostgreSQL provider.');
+  const persistence =
+    storeFactory || (metaConfig ? await createMetaStoreFactory(metaConfig, dataFile) : createStore);
   const drive9 = await createDrive9({
     credentialsFile: dataFile + '.providers.json',
+    storeFactory: persistence,
     transport: drive9Transport,
   });
-  if (!['local', zeroProvider].includes(mysqlProvider)) throw new Error('Unknown MySQL provider.');
   const zero = await createZero({
     credentialsFile: dataFile + '.databases.json',
+    storeFactory: persistence,
     transport: zeroTransport,
     execute: sqlExecute,
   });
   const duckdb = await createDuckdb({
     credentialsFile: dataFile + '.duckdb.json',
+    storeFactory: persistence,
     drive9,
     extensionPath: duckdbExtensionPath,
     extensionSha256: duckdbExtensionSha256,
     execute: duckdbExecute,
   });
-  if (!['disabled', db9Provider].includes(postgresProvider))
-    throw new Error('Unknown PostgreSQL provider.');
   const db9 = await createDb9({
     credentialsFile: dataFile + '.db9.json',
+    storeFactory: persistence,
     transport: db9Transport,
     execute: postgresExecute,
   });
@@ -151,7 +160,7 @@ export async function createApp({
     availableCapabilities.filesystem.storageGiB = null;
     availableCapabilities.filesystem.maxFiles = null;
   }
-  const store = await createStore(dataFile);
+  const store = await persistence(dataFile);
   const sessions = new Map();
   const fileAnalysis = createFileAnalysis({
     snapshot: analysisSnapshot || createAnalysisSnapshot({ store, drive9 }),
@@ -198,9 +207,9 @@ export async function createApp({
     } catch (error) {
       info = {
         ...(resource.provider === db9Provider
-          ? db9.status(resource.id)
+          ? await db9.status(resource.id)
           : resource.provider === zeroProvider
-            ? zero.status(resource.id)
+            ? await zero.status(resource.id)
             : resource.provider === duckdbProvider
               ? await duckdb.status(resource.id)
               : {}),
@@ -229,6 +238,11 @@ export async function createApp({
       if (applyHttpPolicy(req, res, allowedOrigins, fail)) return;
       const url = new URL(req.url, `http://${req.headers.host}`),
         path = url.pathname;
+      if (path === '/openapi.json' && req.method === 'GET') {
+        const schema = JSON.parse(await readFile(resolve(root, 'public/openapi.json'), 'utf8'));
+        return send(200, schema);
+      }
+      await store.refresh?.();
       if (path === '/api/health' && req.method === 'GET')
         return send(200, {
           status: 'ok',
@@ -243,10 +257,6 @@ export async function createApp({
               : 'demo',
           filesProvider,
         });
-      if (path === '/openapi.json' && req.method === 'GET') {
-        const schema = JSON.parse(await readFile(resolve(root, 'public/openapi.json'), 'utf8'));
-        return send(200, schema);
-      }
       if (path === '/api/session' && req.method === 'POST') {
         await body(req);
         const token = randomBytes(32).toString('hex');
@@ -954,22 +964,33 @@ export async function createApp({
       });
     }
   });
+  let cleanup;
   app.on('close', () => {
     fileExports.close();
-    void duckdb.close();
+    cleanup = Promise.allSettled([duckdb.close(), persistence.close?.()]);
   });
+  const close = app.close.bind(app);
+  app.close = (callback) =>
+    close((error) => {
+      Promise.resolve(cleanup).then(() => callback?.(error));
+    });
   return app;
 }
 export async function startServer(options = {}) {
   const server = await createApp(options);
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(
-      options.port ?? Number(process.env.WORKSPACE_API_PORT || 4318),
-      '127.0.0.1',
-      resolve,
-    );
-  });
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(
+        options.port ?? Number(process.env.WORKSPACE_API_PORT || 4318),
+        '127.0.0.1',
+        resolve,
+      );
+    });
+  } catch (error) {
+    await new Promise((resolve) => server.close(resolve));
+    throw error;
+  }
   console.log(
     `Workspace API: http://127.0.0.1:${server.address().port} (loopback Workspace gateway)`,
   );

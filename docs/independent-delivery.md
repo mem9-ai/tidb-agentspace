@@ -154,3 +154,17 @@ and UIKit's transitive phone-number parser; no checks or warnings were suppresse
 ![Dark desktop API explorer, 1280×900](images/independent-console-dark.jpg)
 
 ![Narrow API explorer, 390px viewport](images/independent-console-narrow.jpg)
+
+## Optional metadata service
+
+The [Rust Meta Service](meta-service.md) builds and runs independently of the Node API and
+Console. `cargo build --release --locked --manifest-path meta-service/Cargo.toml` produces
+its binary; deploy one independent installation per Global/Region authority. It serves no
+Console or public product routes. The Node API package includes its private client and
+migration/export tools and connects to its configured regional service. `WORKSPACE_META_CONFIG`
+is server-only configuration and never part of the Console runtime config.
+
+The initial compatibility gateway is single-active and explicitly bounded. Metadata services
+can be deployed independently; this does not enable multiple legacy Node provisioning writers,
+full hosted identity or automatic HA. Follow the runtime guide's migration, ownership, TLS,
+bootstrap and recovery requirements before selecting this profile.

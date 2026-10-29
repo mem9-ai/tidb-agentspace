@@ -4,7 +4,7 @@
 - Date: 2026-10-29
 - Parent: [GH-74](https://github.com/siddontang/tidb.ai/issues/74)
 - Specification: [Multi-tenant Workspace control plane](../../specs/gh-74/spec.md)
-- Implementation: None in this design change; existing single-Workspace JSON persistence remains active
+- Implementation: Initial independent Rust/SlateDB service, bounded Node compatibility adapter and lossless importer/exporter in the [GH-86 runtime guide](../meta-service.md); full domain/scale design remains phased
 
 ## Context
 
@@ -69,8 +69,9 @@ IAM/KMS access and shard catalog so that this directory adds no serving/restart 
    directory sync and explicit recovery are required. Local files do not imply multi-host HA.
 4. Prefer an object-native engine for hosted metadata: accepted WAL, SSTs, manifests and
    recovery/routing evidence are durable in objects before ACK; local caches are disposable.
-   Use the owner-selected SlateDB engine, with release/binding selection and conformance still
-   required in implementation. Pool groups in physical shards; verify CAS/atomic batches, durable visibility and
+   Use the owner-selected independent Rust service with SlateDB 0.17.0. The initial bounded
+   profile and remaining conformance gates are recorded in the runtime guide. Pool groups in
+   physical shards; verify CAS/atomic batches, durable visibility and
    read/write ownership. SQL may be a rebuildable query projection or an explicit alternative
    database-authority profile, never an uncoordinated second writer. TiDB File System remains
    a service-owned candidate, separate from customer/DuckDB storage and with independent
@@ -204,6 +205,12 @@ Storage-directory cases verify complete/private locators, matching installations
 regional bootstrap/shards, queried configuration progress and fenced root changes.
 This ADR does not claim those tests or a production migration exist. Repository checks only
 verify the current source/documents.
+
+GH-86 supplies executable evidence for the initial storage profile, including real local S3,
+durability blocking, fencing, TLS negatives and exact legacy import/updated rollback export.
+See the [runtime coverage and limitations](../meta-service.md#hosted-configuration-and-evidence-limits).
+That implementation does not establish the full acceptance list, production IAM/HA/KMS or
+million-resource capacity. Local migration does not change native provider identity or data.
 
 Revisit scope limits and storage choices after local conformance measurements, before adding
 a hosted adapter or cross-Organization provider pool, and before promising production

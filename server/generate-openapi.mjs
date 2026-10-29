@@ -874,6 +874,10 @@ paths['/api/health'] = {
     operationId: 'getHealth',
     security: [],
     responses: {
+      503: response(
+        ref('Error'),
+        'Configured metadata authority is unavailable; no fallback state is seeded',
+      ),
       200: response(
         object({ status: { const: 'ok' }, mode: { enum: ['demo', 'hybrid'] }, filesProvider: str }),
       ),

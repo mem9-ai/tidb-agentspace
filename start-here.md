@@ -79,7 +79,11 @@ Global and every Region have independent Meta Service deployments and SlateDB in
 shared code/contracts do not mean one database partitioned by authority prefixes.
 Global records private regional S3/storage descriptors; Region retains independent bootstrap
 config and object-backed shard catalogs, with no Global lookup/renewal gate on startup.
-Local development still uses ordinary files; the running JSON store is unchanged.
+Local development can still use ordinary files. For the implemented independent Rust/SlateDB
+service, S3 integration and lossless legacy storage migration/rollback, follow the
+[runtime guide](docs/meta-service.md). Node remains the business backend; the opt-in
+compatibility profile supports the existing Workspace, with full hosted multi-tenancy and
+the design's million-resource scale target still pending.
 For millions of Workspaces or a million-resource Workspace, also read the
 [metadata scale profile](specs/gh-74/metadata-scale.md): Workspace ownership is distinct from
 atomic-group granularity, shared-cell routing, query indexes and workload capacity evidence.

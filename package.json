@@ -27,7 +27,14 @@
     "build:api": "node scripts/build-api.mjs",
     "start:console": "node scripts/serve-console.mjs",
     "start:api": "node server/index.mjs",
-    "package": "node scripts/package-runtime.mjs"
+    "package": "node scripts/package-runtime.mjs",
+    "meta:build": "cargo build --locked --manifest-path meta-service/Cargo.toml",
+    "meta:check": "npm run meta:build && cargo fmt --manifest-path meta-service/Cargo.toml --check && cargo clippy --manifest-path meta-service/Cargo.toml --locked --all-targets -- -D warnings && cargo test --manifest-path meta-service/Cargo.toml --locked && WORKSPACE_META_TEST=1 node --test server/meta-service.test.mjs",
+    "meta:migrate": "node server/meta/migrate.mjs",
+    "meta:local": "node server/meta/local-runtime.mjs",
+    "meta:export": "node server/meta/export-legacy.mjs",
+    "meta:api": "node server/meta/start-api.mjs",
+    "meta:gateway": "node server/meta/gateway-ownership.mjs"
   },
   "dependencies": {
     "@codemirror/lang-sql": "6.10.0",
