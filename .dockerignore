@@ -1,0 +1,13 @@
+# Keep the build context lean and never ship local-only or secret material.
+.git
+.github
+node_modules
+dist
+release
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.cursor
+coverage

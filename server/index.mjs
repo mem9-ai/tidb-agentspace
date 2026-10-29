@@ -338,6 +338,10 @@ export async function createApp({
             'SSO_REQUIRED',
             'Sign in with your TiDB Account. The anonymous demo session is disabled.',
           );
+        // Host and forwarded headers are caller-controlled. Only the actual
+        // loopback peer may acquire the anonymous local owner's credentials.
+        if (!['127.0.0.1', '::1'].includes(clientSource(req)))
+          fail(403, 'LOCAL_ONLY', 'The anonymous demo session requires a loopback connection.');
         const token = mintSession({
           principal: 'You',
           principalId: 'local-owner',
@@ -1084,18 +1088,15 @@ export async function createApp({
   return app;
 }
 export async function startServer(options = {}) {
+  const host = options.host ?? process.env.WORKSPACE_API_HOST ?? '127.0.0.1';
+  if (!['127.0.0.1', '0.0.0.0'].includes(host))
+    throw new Error('WORKSPACE_API_HOST must be 127.0.0.1 or 0.0.0.0.');
   const server = await createApp(options);
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(
-      options.port ?? Number(process.env.WORKSPACE_API_PORT || 4318),
-      '127.0.0.1',
-      resolve,
-    );
+    server.listen(options.port ?? Number(process.env.WORKSPACE_API_PORT || 4318), host, resolve);
   });
-  console.log(
-    `Workspace API: http://127.0.0.1:${server.address().port} (loopback Workspace gateway)`,
-  );
+  console.log(`Workspace API: http://${host}:${server.address().port}`);
   return server;
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))

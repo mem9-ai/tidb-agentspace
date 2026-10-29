@@ -1,0 +1,192 @@
+name: Deploy API to dev
+
+# Continuous deployment of the TiDB Workspace API server to the dev
+# Kubernetes environment. Modeled on the tidbcloud/fs dev CD: build a
+# multi-arch image, push it to the container registry, then roll the existing
+# in-cluster Deployment to the new image and wait for the rollout, undoing it
+# on failure.
+#
+# Releases only update the existing Deployment image.
+# All environment identifiers remain runtime inputs, never repository values.
+
+on:
+  # Pull requests run only the quality gate (including the no-push
+  # amd64/arm64 image build); they never reach the deploy job. This is where
+  # the pre-merge Docker validation actually executes.
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'public/openapi.json'
+      - 'scripts/build-api.mjs'
+      - 'scripts/sql-runtime-dependencies.mjs'
+      - 'scripts/deploy-dev*'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.node-version'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.github/workflows/dev-cd.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Concurrency is split by whether the run can deploy:
+#
+# - Pull requests (verify only): one group per PR ref, cancel-in-progress so a
+#   newer commit on the same PR supersedes the older verify run.
+# - Push to main and manual dispatch (can deploy): ONE shared constant group
+#   with cancel-in-progress FALSE. Deploy-capable runs therefore queue behind
+#   one another and are never cancelled mid-rollout/rollback — a second main
+#   push waits for the first run to finish instead of killing it at the
+#   workflow level. The deploy job's own constant group keeps that invariant
+#   even if this block is later changed.
+concurrency:
+  group: dev-cd-${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Run the same quality gate as CI, and prove the image builds for both
+  # architectures on PRs (no push). Releases build once after the tests pass.
+  # The repository enforces that every workflow runs `npm run check`.
+  verify:
+    name: Quality gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Select the pinned npm version
+        run: npm install --global npm@11.6.2 --ignore-scripts
+      - run: npm ci
+      - run: npm run check
+      - name: Set up QEMU for cross-platform builds
+        if: github.event_name == 'pull_request'
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+      - name: Set up Docker Buildx
+        if: github.event_name == 'pull_request'
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Build image for both architectures (no push)
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg NODE_VERSION=24.22.1 \
+            --provenance=false \
+            .
+
+  deploy:
+    name: Build and deploy to dev
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: verify
+    # Never deploy from a pull request — PRs run the quality gate only.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Serialize by the actual deployment target, NOT the source ref: every
+    # deploy run (main push or any manual ref) shares this one constant group,
+    # so two runs can never interleave `set image` / `rollout` / `rollout undo`
+    # on the single dev Deployment. cancel-in-progress is false so an in-flight
+    # rollout is never abandoned half-applied.
+    concurrency:
+      group: dev-cd-deploy-target
+      cancel-in-progress: false
+    # The protected environment is the explicit secret/approval boundary: the
+    # deployment secrets below are available only to this job, not to the
+    # quality gate or any repository script that runs earlier.
+    environment: dev
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      IMAGE_TAG: sha-${{ github.sha }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+      ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+      AWS_ASSUME_ARN: ${{ secrets.AWS_ASSUME_ARN }}
+      EKS_CLUSTER: ${{ secrets.DEV_EKS_CLUSTER }}
+      DEPLOY_NAMESPACE: ${{ secrets.DEV_DEPLOY_NAMESPACE }}
+      K8S_DEPLOYMENT: ${{ secrets.DEV_API_DEPLOYMENT }}
+      # Container name within the Deployment. Set this secret when the
+      # container name differs from the Deployment name.
+      K8S_CONTAINER: ${{ secrets.DEV_API_CONTAINER || secrets.DEV_API_DEPLOYMENT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Set up QEMU for cross-platform builds
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+
+      - name: Set up kubectl
+        env:
+          # Match the dev EKS control-plane minor within the +/-1 client skew.
+          KUBECTL_VERSION: v1.35.8
+          BIN_DIR: ${{ runner.temp }}/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$BIN_DIR"
+          curl -fsSLO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256" -o kubectl.sha256
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+          install -m 0755 kubectl "$BIN_DIR/kubectl"
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+          kubectl version --client
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
+        with:
+          role-to-assume: ${{ env.AWS_ASSUME_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
+
+      - name: Build and push image
+        env:
+          IMAGE_BASE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg NODE_VERSION=24.22.1 \
+            --provenance=false \
+            --tag "$IMAGE_BASE:$IMAGE_TAG" \
+            --metadata-file "$RUNNER_TEMP/image.json" \
+            --push \
+            .
+          DIGEST=$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const digest = JSON.parse(readFileSync(process.argv[1], "utf8"))["containerimage.digest"];
+            if (!/^sha256:[a-f0-9]{64}$/.test(digest)) throw new Error("Missing image digest");
+            process.stdout.write(digest);
+          ' "$RUNNER_TEMP/image.json")
+          echo "IMAGE_REF=$IMAGE_BASE@$DIGEST" >> "$GITHUB_ENV"
+
+      - name: Update kubeconfig
+        run: |
+          set -euo pipefail
+          aws eks update-kubeconfig \
+            --name "$EKS_CLUSTER" \
+            --region "$AWS_REGION"
+
+      - name: Deploy image and verify readiness (restore previous image on failure)
+        run: node scripts/deploy-dev.mjs
