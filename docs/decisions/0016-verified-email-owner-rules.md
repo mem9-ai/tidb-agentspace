@@ -69,5 +69,7 @@ duplicates, malformed or missing claims, false/string email verification, decept
 and the organization filter. Local signed OIDC callback tests exercise both email- and domain-authorized
 accounts as distinct audit actors with shared owner access, plus denial without a session for
 bad signature/issuer/audience/expiry/nonce and ineligible email. Callback-supplied email cannot
-grant access. These tests do not prove an actual provider registration emits verified email;
+grant access. A restart/revocation regression also proves that rule removal alone leaves
+existing sessions usable, sessions expire at eight hours and disappear on restart, and
+persisted Workspace Keys survive restart until explicitly revoked. These tests do not prove an actual provider registration emits verified email;
 a real account login is still required for deployment acceptance.

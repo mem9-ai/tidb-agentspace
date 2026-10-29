@@ -1497,3 +1497,91 @@ test('email owner rules: callback never grants a session for unverified identity
     await new Promise((r) => server.close(r));
   }
 });
+
+test('email owner rules: revocation needs session invalidation and separate persisted Key revocation', async (t) => {
+  const dataFile = join(directory, 'email-rule-revocation.json');
+  const config = emailOwnerConfig();
+  let server;
+  let address;
+  const start = async (ssoConfig) => {
+    server = await createApp({
+      dataFile,
+      mysqlProvider: 'local',
+      filesProvider: 'local',
+      ssoConfig,
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    address = `http://127.0.0.1:${server.address().port}`;
+  };
+  const login = async () => {
+    const flow = await startLogin(address);
+    control.nonce = flow.nonce;
+    return callback(address, {
+      flowCookie: flow.flowCookie,
+      params: { code: 'c', state: flow.state },
+    });
+  };
+  const keysPath = '/api/v1/workspaces/ws_agentlab/keys';
+  const resourcesPath = '/api/v1/workspaces/ws_agentlab/resources';
+  try {
+    await start(config);
+    control.extraClaims = { email: 'employee@pingcap.com', email_verified: true };
+    const first = await login();
+    assert.equal(first.status, 302);
+    const cookie = /aw_session=[a-f0-9]+/.exec(first.headers.get('set-cookie'))[0];
+    const second = await login();
+    assert.equal(second.status, 302);
+    const expiringCookie = /aw_session=[a-f0-9]+/.exec(second.headers.get('set-cookie'))[0];
+    const created = await fetch(address + keysPath, {
+      method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'persisted-key',
+        scopes: ['resources:read'],
+        resourceIds: ['*'],
+        expiresInDays: 7,
+      }),
+    });
+    assert.equal(created.status, 201);
+    const key = await created.json();
+    const bearer = { Authorization: `Bearer ${key.secret}` };
+    // Inject removal to prove authorization is not rechecked per request. Runtime env is startup-only.
+    config.ownerEmailRules = [];
+    assert.equal((await login()).status, 403);
+    assert.equal((await fetch(address + keysPath, { headers: { Cookie: cookie } })).status, 200);
+    const later = Date.now() + 8 * 60 * 60 * 1000;
+    const now = t.mock.method(Date, 'now', () => later);
+    try {
+      assert.equal(
+        (await fetch(address + keysPath, { headers: { Cookie: expiringCookie } })).status,
+        401,
+      );
+    } finally {
+      now.mock.restore();
+    }
+    assert.equal((await fetch(address + keysPath, { headers: { Cookie: cookie } })).status, 200);
+    await new Promise((r) => server.close(r));
+    // New application instance, same persisted data: sessions are gone, the Workspace Key is not.
+    await start(emailOwnerConfig({ ownerEmailRules: [], ownerSubjects: ['operator'] }));
+    assert.equal((await fetch(address + keysPath, { headers: { Cookie: cookie } })).status, 401);
+    assert.equal((await login()).status, 403);
+    assert.equal((await fetch(address + resourcesPath, { headers: bearer })).status, 200);
+    control.userId = 'operator';
+    control.extraClaims = {};
+    const operator = await login();
+    assert.equal(operator.status, 302);
+    const operatorCookie = /aw_session=[a-f0-9]+/.exec(operator.headers.get('set-cookie'))[0];
+    assert.equal(
+      (
+        await fetch(address + keysPath + '/' + key.data.id, {
+          method: 'DELETE',
+          headers: { Cookie: operatorCookie },
+        })
+      ).status,
+      200,
+    );
+    assert.equal((await fetch(address + resourcesPath, { headers: bearer })).status, 401);
+  } finally {
+    if (server?.listening) await new Promise((r) => server.close(r));
+  }
+});
