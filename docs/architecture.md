@@ -45,10 +45,92 @@ customer.
 
 The first-run path is: create/open a Workspace, add one resource, create a scoped Workspace
 Key, complete a useful request from an agent, then inspect the resulting data and usage.
-A new workspace should not require provisioning all three resource types. The prototype preseeds a MySQL demo and local File System; real resources are explicitly created. PG is not currently offered.
+A new workspace should not require provisioning every resource type. The prototype preseeds a MySQL demo and local File System; real resources are explicitly created. PostgreSQL is available through the opt-in db9 adapter; TiDB Cloud PG Starter remains planned.
 
 Supabase's project-level grouping is a useful product reference; TiDB Workspace groups an
 optional mix of three distinct resource types. [Supabase Platform](https://supabase.com/docs/guides/platform)
+
+## Global and regional deployment (proposed)
+
+The [multi-tenant control-plane design](../specs/gh-74/spec.md) and
+[proposed ADR 0019](decisions/0019-workspace-kv-control-plane.md) define a logical KV metadata
+layer, scope-atomic records/indexes, ordinary local-file persistence, hosted object storage
+as the preferred source of truth, a service-owned TiDB File System candidate, Organization/Workspace
+authorization and identity-preserving resource/credential
+migration. This is a proposal, not implemented multi-tenancy or a completed migration. The
+current fixed Workspace, local owner session and JSON/vault persistence remain in use.
+
+The [object-metastore design](../specs/gh-74/object-metastore.md) requires object recovery of
+every acknowledged metadata commit, including the accepted WAL tail; local caches and query
+projections are disposable. The owner has selected SlateDB for hosted Global and regional
+metadata, accepting durable control-plane write latency. Durability waits, group CAS, fresh authorization reads,
+fencing and namespace/secret recovery remain unimplemented proof obligations. SQL authority
+plus asynchronous object backup is a separate durability profile.
+
+Hosted Global and each Region own independently deployed Meta Services and distinct SlateDB
+instances, object roots, WAL/manifests, compaction and ownership state. They may share service
+code and client contracts; a single SlateDB instance partitioned by Global/Region prefixes
+does not provide this isolation. Each authority may shard its own metadata independently.
+
+Global maintains a private [regional metadata storage directory](../specs/gh-74/object-metastore.md#6-global-storage-directory-and-independent-regional-bootstrap)
+with S3 endpoints/buckets/prefixes, installation/engine identity, catalog locator, WAL roots,
+IAM/KMS references and configuration generations. Region boots from independently installed
+durable configuration and regional objects/identities; its detailed shard map stays local.
+Global queries the Region service rather than opening a second SlateDB writer. The directory
+does not gate regional serving/restart or appear in public regional API discovery.
+
+The owner-requested future deployment separates three planes. See the specification's
+[authority and regional placement](../specs/gh-74/spec.md#2-architecture-and-ownership)
+for canonical records, routing, dispatch, failure and migration semantics.
+
+| Plane            | Responsibility                                                                                                                                           |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Global control   | Identity, Organization/Workspace policy and Keys, product/account quotas, region eligibility, resource placement/desired state and durable task dispatch |
+| Regional control | Local capacity, admitted task execution/recovery, provider bindings, regional credentials, observed state and data-plane configuration                   |
+| Regional data    | SQL/file requests, managed connections, private DuckDB storage and bounded analysis workers within the declared location policy                          |
+
+Workspace is a global logical boundary and can hold resources in several regions. Each
+resource has an assigned `regionId`; `homeRegion` is a default for future creation. Preserve
+upstream/legacy region values separately, and verify actual provider location before making
+residency claims. Global and regional metadata use separate authorities over the same KV
+interface, including separate service-owned TiDB File System roots where selected. Global
+status projections do not replace regional execution records or durable installed local policy.
+
+Local functional tests may package the modules in one API. Hosted independence requires separate
+Global/regional processes, stores/failure domains and direct regional entry points, even with
+one Region. The design requires authenticated
+Global-initiated command/policy delivery and result/health/journal queries, with no Region ->
+Global callback, broker publication, introspection or policy pull. Region uses atomically
+installed durable policy with no Global heartbeat, renewal deadline or synchronization-age
+shutdown. Known regional serving, session renewal, accepted work and restart continue while
+Global is unavailable. Local verifiers/refresh, routing, Vault/KMS/PKI and leadership must be
+independent; real credential expiry and received denials still apply. New Global-coordinated
+changes may wait. Revocation remains pending for an unreachable Region without a finite
+propagation guarantee; Global needs per-target applied evidence to mark it effective.
+The [channel contract](../specs/gh-74/control-channel.md) requires TLS 1.3/mTLS in production
+and permits explicitly selected loopback test relaxation. SQL/file payloads remain regional.
+A region outage preserves identity/pending state without replacement provisioning. This is design-only.
+Resolved telemetry may be archived/compacted in Region without Global ACK; recovery pulls
+missing observations or a snapshot and preserves regional policy/deny floors and resource IDs.
+
+The [regional API/auth contract](../specs/gh-74/regional-api-auth.md) separates public Global,
+public Region and private control OpenAPI/client origins. SQL/files/results and regional
+auth go directly to Region, including token exchange/refresh and independent reauthentication.
+Short access-token expiry is separate from a durable, explicitly approved continuity grant
+and rotatable credential versions. Existing 7/30/90-day Keys retain their hard expiry; they
+are not silently converted into persistent grants. A Global-only expiring root cannot provide
+unbounded regional reauthentication merely by increasing JWT TTL. This is proposed behavior;
+the current one-origin generator/client remains implemented until an explicit migration.
+
+The [metadata scale profile](../specs/gh-74/metadata-scale.md) targets millions of Workspaces
+and individual million-resource Workspaces. Pool small tenants in shared cells and partition
+hot tenants by resource/edge identity. A Workspace is not one JSON blob, CAS lock, database,
+queue or process. Resource-local groups hold atomic intent/observed bundles; name/request
+claims and quota rights use recoverable coordination. Large grants are indexed edges, and
+lists use bounded server-side keyset queries with freshness rather than loading the whole
+inventory. Scale backend selection requires incremental writes, indexed discovery, fairness
+and measured skew/recovery/cost evidence. Local files remain a bounded development profile;
+TiDB File System support does not imply those scale capabilities without a conforming engine.
 
 ## Console information architecture
 
@@ -174,8 +256,10 @@ API-origin configuration and an OpenAPI-generated typed client. The existing bac
 Node ESM. See [ADR 0005](decisions/0005-independent-console-and-api.md) and the
 [operating guide](independent-delivery.md). Production identity and hosting remain proposed.
 
-The proposed production service starts with one modular Workspace service and a
-provisioning/reconciliation worker. A future language migration needs its own scoped decision;
+The proposed implementation starts with global-control, regional-control and regional-data
+modules in one API deployment plus provisioning/reconciliation work. The hosted authority
+split is defined above; the diagram below is a functional view, not one shared metadata
+database or a requirement to centralize every data request. A future language migration needs its own scoped decision;
 the current implementation retains Node ESM and existing provider clients. Separate deployment
 into microservices only when independent scaling or ownership justifies it.
 
@@ -186,7 +270,7 @@ flowchart TB
   mcp[MCP transport: future] --> gateway
   gateway --> policy[Workspace Key: action + resource policy]
   policy --> core[Workspace domain operations]
-  core --> metadata[(Independent metadata database + outbox)]
+  core --> metadata[Independent KV metadata authorities and outboxes]
   core --> usage[Usage attribution + product billing]
   core --> audit[Activity / metrics / request tracing]
   core --> worker[Provisioning and reconciliation worker]
@@ -287,8 +371,10 @@ creating another potentially billable resource.
 Core metadata includes product accounts/tenants, principals, workspaces, resource/provider
 bindings, key digests/grants, secret references, operations, idempotency records, outbox events,
 audit records, usage events, quota allocations, and product billing attribution. Keep it in
-an independent database, outside customer-deletable application instances. Real file contents
-belong in the File System provider rather than the control-plane metadata database.
+independent control-plane MetaStores, outside customer-deletable application resources.
+Global desired/policy records and regional execution/binding records follow the authority
+split in GH-74; a relational database is one optional adapter. Real file contents belong in
+the regional data store/provider rather than hot control-plane metadata.
 
 Proposed production resources:
 

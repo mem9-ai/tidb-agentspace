@@ -64,6 +64,35 @@ within the task's scope. A proposed architecture does not establish a runtime ca
 
 ## Read for your task
 
+For multi-tenant metadata, storage adapters, ownership, or migration design, read
+[GH-74](specs/gh-74/spec.md) and [proposed ADR 0019](docs/decisions/0019-workspace-kv-control-plane.md).
+They preserve the owner's logical-KV/local-file direction, TiDB File System candidate and
+global/regional control plus regional data-plane separation. Resource placement, dispatch,
+consistency, isolation and migration remain proposed behavior, distinct from the running
+single-Workspace service.
+For hosted persistence, read the [object-metastore design](specs/gh-74/object-metastore.md):
+object storage is the preferred source of truth for all acknowledged commits, including WAL;
+local caches and search projections are rebuildable. The owner has selected SlateDB for
+hosted Global and regional metadata, superseding candidate-only/SQL-first evaluation.
+Release/binding, durability and service conformance still require implementation evidence.
+Global and every Region have independent Meta Service deployments and SlateDB instances;
+shared code/contracts do not mean one database partitioned by authority prefixes.
+Global records private regional S3/storage descriptors; Region retains independent bootstrap
+config and object-backed shard catalogs, with no Global lookup/renewal gate on startup.
+Local development still uses ordinary files; the running JSON store is unchanged.
+For millions of Workspaces or a million-resource Workspace, also read the
+[metadata scale profile](specs/gh-74/metadata-scale.md): Workspace ownership is distinct from
+atomic-group granularity, shared-cell routing, query indexes and workload capacity evidence.
+For Global/Region communication, read the [control-channel contract](specs/gh-74/control-channel.md):
+Global initiates commands, policy delivery and information reads; Region has no upstream
+callback/admission dependency. Region must keep serving known authorized work during Global
+failure using durable policy, independent local authentication/session refresh and regional
+state/recovery. Policy-sync age never expires access; actual credential expiry and received
+denials still apply. Production mTLS and regional autonomy require implementation evidence.
+For direct regional OpenAPI/SDK routes and credential lifetime/renewal, read the
+[regional API/auth contract](specs/gh-74/regional-api-auth.md). It separates explicit continuity
+grants from existing expiring Keys and preserves the current single-origin implementation status.
+
 | Task                                                      | Required starting points                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Intent, specification, or agent delivery                  | [Development system](docs/standards/intent-driven-development.md), [GitHub workflow](docs/standards/github-contribution-workflow.md), and [feature template](docs/templates/feature-spec.md)                                                                                |
