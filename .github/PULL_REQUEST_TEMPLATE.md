@@ -42,4 +42,3 @@ Separate accepted guidance from implementation status. See `docs/standards/knowl
 - [ ] Applicable TiUI rules and reusable-knowledge updates are addressed, with gaps stated.
 - [ ] Resource/action authorization and credential boundaries are preserved.
 - [ ] No credentials, local data, or personal agent settings are included.
-- [ ] Introduced commits have the appropriate contributor's `Signed-off-by` trailer.

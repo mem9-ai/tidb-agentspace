@@ -45,7 +45,7 @@ capability-discovered and still validated by the backend. No provider secrets en
 
 Only repository changes and internal delivery artifacts are in scope. CI must be credential-free;
 provider tests use fixtures. Run `npm run check`, inspect browser behavior, review the diff and
-sign-offs, and follow the existing PR/merge policy. No public hosting target is configured.
+attribution, and follow the existing PR/merge policy. No public hosting target is configured.
 Operate and roll back compatible component artifacts as described in
 [independent delivery](../../docs/independent-delivery.md); preserve data outside artifacts.
 Breaking contract changes require separate version/migration design.

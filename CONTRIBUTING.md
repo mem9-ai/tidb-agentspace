@@ -134,7 +134,6 @@ concrete reason; use existing platform capabilities where sufficient.
 | `npm run api:check`                           | Fail if OpenAPI or generated client types have drifted; does not rewrite files |
 | `npm test`                                    | Run API and repository-tool behavior tests with isolated temporary data        |
 | `npm run check`                               | Run the same complete quality gate used by CI                                  |
-| `npm run check:signoff -- BASE HEAD`          | Check commit sign-offs for a Git revision range                                |
 
 Use `npm run lint:fix` for supported mechanical fixes and review its diff. Tests must be
 repeatable on clean machines and must not need cloud secrets, paid resources, or the
@@ -145,19 +144,12 @@ screenshots. If a check cannot run, report the specific gap instead of claiming 
 ## Commits and review
 
 Use `type(scope): description`, for example `feat(keys): restrict keys to selected resources`.
-Use `git commit --signoff` with your own identity. When an agent acts for Siddon, use
-`siddontang@gmail.com` for the sign-off while preserving the configured name and existing
-attribution. Do not configure a shared identity for other contributors.
-
-CI checks sign-offs on introduced non-merge commits, including dependency-update commits.
-The [CI/CD policy](docs/ci-cd.md#commit-sign-off) documents the exact Dependabot email alias
-accepted for its existing trailer; unsigned bots and unrelated identities still fail.
-Merge commits are excluded from the checker; commits created on a contributor's behalf
-still require their sign-off. A squash commit is an ordinary commit and needs its own sign-off.
+Preserve the contributor's actual identity and existing author attribution. Do not rewrite
+commit history to change attribution without authorization.
 
 A reviewer checks product behavior, API compatibility, authorization, credential boundaries,
 and the quality of the tests. During early prototyping, the project owner has authorized
-agents to merge task-scoped PRs after reviewing the diff, verifying sign-offs, and confirming
+agents to merge task-scoped PRs after reviewing the diff and confirming
 all CI checks pass on the latest PR head. A completed draft can be marked ready and merged
 without another confirmation or a separate human approval. Do not submit a self-approval,
 bypass enforced GitHub protections, or merge failing/conflicting changes. Maintainers remain

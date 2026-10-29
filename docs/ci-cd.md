@@ -3,10 +3,10 @@
 ## What is implemented
 
 - `.github/workflows/ci.yml`: clean installation and `npm run check` on PRs, pushes to
-  `main`, merge-queue candidates, and manual requests. Introduced commits are also checked
-  for a DCO sign-off. A successful quality job uploads both build directories for review.
+  `main`, merge-queue candidates, and manual requests. A successful quality job uploads
+  both build directories for review.
 - `.github/workflows/release.yml`: a manual, main-branch-only internal artifact build. It
-  runs the same quality gate, checks commit sign-off, and packages the runtime, frontend,
+  runs the same quality gate and packages the runtime, frontend,
   API contract, source SHA, and checksums. It does not deploy to a cloud provider.
 - `.github/workflows/dev-cd.yml`: credential-free PR verification, then digest-pinned API
   deployment to a configured EKS dev environment on every `main` push or manual request.
@@ -34,9 +34,9 @@ mark completed draft PRs ready and merge task-scoped changes without another con
 or a separate human approval after all of the following are true:
 
 - The diff has been reviewed for behavior, scope, compatibility, and credentials.
-- `Quality`, `Commit sign-off`, and any other CI checks pass on the latest PR head.
+- `Quality` and any other CI checks pass on the latest PR head.
 - The PR has no merge conflict, and any enforced GitHub requirements are satisfied.
-- Contributor attribution is preserved, with the required sign-off on created commits.
+- Contributor attribution is preserved.
 
 Use the reviewed head SHA as the merge precondition. Never use an administrator bypass,
 submit a self-approval, weaken a check, or merge a failing dependency update to save time.
@@ -49,11 +49,11 @@ sync the local checkout with `main`.
 Before shared production deployment, a repository maintainer should configure:
 
 1. Protect `main` with a ruleset: require PRs, an independent human approval, resolution of
-   review conversations, and the `Quality` and `Commit sign-off` status checks.
+   review conversations, and the `Quality` status check.
 2. Dismiss stale approvals after new commits; require approval of the latest reviewable
    push. Block force pushes/deletion, and apply the policy to administrators where supported.
 3. If a merge queue is enabled, keep the `merge_group` event so required checks run on the
-   actual candidate. Require sign-off on the final squash commit if squash merging is used.
+   actual candidate.
 4. Limit Actions to approved sources and read-only default token permissions. Use hosted
    disposable runners for untrusted PRs. Review changes to workflows, agent rules,
    authorization, contracts, and billing as sensitive engineering changes.
@@ -77,7 +77,7 @@ report do not grant merge or deployment rights.
 Use the [GitHub contribution workflow](standards/github-contribution-workflow.md) for Issue
 intake, specification/implementation PR links, and requirement evidence. A specification PR
 does not close its parent feature intent. Local-agent handoff comments and labels do not replace
-the review, latest-head checks, sign-offs, or hosting requirements in this policy. No automatic
+the review, latest-head checks, or hosting requirements in this policy. No automatic
 agent dispatcher is installed by the Issue templates. The current local agent can perform
 authorized delivery under the existing policy. Independent acceptance uses a frozen baseline
 and verifiable results; it does not require a second model or model credentials in CI.
@@ -101,23 +101,11 @@ receives deployment credentials, and checkout credentials are not persisted. Avo
 PR titles, branch names, or other untrusted event text into shell code; pass needed values
 through environment variables and validate them.
 
-## Commit sign-off
+## Commit metadata
 
-DCO validation checks the actual Git trailer block for an author or committer sign-off on
-each introduced non-merge commit. Parse raw commit messages with `git interpret-trailers
---parse --no-divider`: Dependabot's `---` metadata separator is message content, not a patch
-boundary. Only the final trailer block counts. Names and emails must match, with one explicit identity
-alias: `dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>` may sign with
-`Signed-off-by: dependabot[bot] <support@github.com>`. This pair was verified in the repository's
-Dependabot commits on 2026-10-27 and is documented in the
-[upstream report](https://github.com/dependabot/dependabot-core/issues/3480).
-
-This recognizes an existing attestation; it does not exempt bots or generate a sign-off for
-them. Unsigned messages, mismatched names, unknown aliases, unrelated bots, and sign-off text
-outside the trailer block must fail. Regression tests cover both acceptance and rejection.
-Preserve original author attribution. Revisit the alias only with evidence of an upstream
-identity change, not to allow an arbitrary failed PR. DCO is an attestation convention, not
-cryptographic signature or identity verification.
+CI and release workflows validate code and build artifacts, not commit trailers or author
+name/email matching. The repository does not require a DCO sign-off. Preserve contributor
+attribution; optional existing trailers do not affect the quality checks.
 
 ## Dependency update triage
 
@@ -150,7 +138,7 @@ combination and keeps the complete workflow contents visible on the PR branch. G
 [OAuth scope rules](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps)
 allow a merge without the `workflow` scope when the same workflow path and contents already
 exist on another repository branch. Sync branches only through an existing authorized Git
-write path, preserve sign-offs, and recheck the new head; do not bypass repository protections.
+write path, preserve attribution, and recheck the new head; do not bypass repository protections.
 
 ## Internal artifact delivery
 

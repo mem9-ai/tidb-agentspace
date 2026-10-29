@@ -125,7 +125,7 @@ Complete this section with references to independently observed results:
   runtime, dependency lock digest, and fixtures.
 - Requirement IDs mapped to check outcomes or completed reviews, including every required gap.
 - Commands actually run, their results, and sanitized evidence references.
-- Diff review, compatibility, documentation, contract/client alignment, and sign-offs.
+- Diff review, compatibility, documentation, contract/client alignment, and contributor attribution.
 - Artifact digest and delivery outcome where applicable; target health, cleanup, and recovery
   results for authorized external operations.
 

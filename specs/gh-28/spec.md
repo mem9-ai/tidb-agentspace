@@ -62,7 +62,7 @@ COPY and host file/network access. No automatic SQL retry after uncertain writes
 
 Design PR references the parent. Implementation pins this accepted spec SHA and maps every
 case to evidence. Run npm run check, review authorization/secret boundaries and the diff,
-verify sign-offs and latest-head CI, then follow the authorized prototype merge policy.
+verify latest-head CI, then follow the authorized prototype merge policy.
 Update the local preview only after live verification. Preserve previous resources, files and
 keys. Keep private state and runtime artifacts outside Git; the supplied DuckDB repository is
 read-only reference material. Limit live validation to task-owned anonymous databases and

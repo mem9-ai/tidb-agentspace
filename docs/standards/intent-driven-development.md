@@ -46,7 +46,7 @@ from shared documents without needing the original chat or a new model-service i
 | Frozen acceptance              | Acceptance comes from the accepted specification and versioned checks. The implementer cannot weaken that baseline to obtain a pass.                                                                   |
 | Independent evidence           | Independent acceptance means a separately defined baseline and verifiable results; it does not require another AI agent, another model call, or another service.                                       |
 | Smallest useful harness        | Start with existing repository commands, meaningful behavior tests, contract checks and CI. Add tooling only for a demonstrated gap and within an explicitly requested scope.                          |
-| Evidence before delivery       | The same local agent can prepare a PR and perform an authorized merge after diff review, sign-offs, acceptance and latest-head CI. Follow the existing merge policy and enforced GitHub requirements.  |
+| Evidence before delivery       | The same local agent can prepare a PR and perform an authorized merge after diff review, acceptance and latest-head CI. Follow the existing merge policy and enforced GitHub requirements.             |
 | Bounded completion             | Missing requirements return to design; failed checks return to implementation. Stop at the agreed endpoint, preserve partial work, and report blockers instead of launching an unattended repair loop. |
 
 The minimum loop is: Issue intent → accepted spec PR → local implementation → frozen
@@ -78,7 +78,7 @@ capabilities, ambiguous behavior, public contracts, and consequential changes.
 Record the intent author, specification author, acceptance contributors, implementer, and
 reviewer where applicable. Credit accepted specifications and counterexamples even if a
 different person or agent implements the feature. Repository submissions retain normal
-licensing, attribution, and DCO requirements; no agent fabricates a contributor's sign-off.
+licensing and attribution requirements; no agent fabricates contributor attribution.
 
 ## Design principles
 
@@ -312,7 +312,7 @@ do not replay external mutations merely because a worker restarted.
 - The shared quality gate and applicable focused checks pass on the candidate source.
 - The diff has been reviewed for scope, compatibility, credentials, and sensitive changes.
 - Documentation, generated contracts, affected clients, and implementation agree.
-- Required attribution, sign-offs, and hosting protections are satisfied.
+- Required attribution and hosting protections are satisfied.
 - For an artifact: its digest and source are recorded. For a deployment: environment authority,
   health verification, observation, and recovery evidence are also recorded.
 
@@ -500,7 +500,7 @@ Each stage should produce a useful contribution path without requiring the next 
 | 1 Contributor workflow       | Publish principles/template; accept one intent/spec PR without requiring implementation                | A maintainer can refine and accept it with explicit unresolved decisions and contributor credit                  |
 | 2 Specification pilot        | One bounded feature, frozen acceptance baseline, isolated implementation, requirement report           | Implementation passes behavior and quality gates; a portability trial identifies and resolves material ambiguity |
 | 3 Reproducible local harness | Versioned acceptance, existing repository commands, requirement evidence and resumable handoffs        | A local session can resume work and identify modified baselines, failed requirements and stale evidence          |
-| 4 Authorized local delivery  | Local diff review, current-head CI, sign-offs and the existing merge policy                            | Reject stale, failing, conflicting, unsigned or unauthorized candidates before merging                           |
+| 4 Authorized local delivery  | Local diff review, current-head CI and the existing merge policy                                       | Reject stale, failing, conflicting or unauthorized candidates before merging                                     |
 | 5 Protected delivery         | Configured staging/production targets, verified artifacts, scoped identity, health/recovery procedures | Release and recover in an authorized test environment; verify tenant boundaries and audit the result             |
 
 For the first pilot, prefer a bounded feature using existing local domain operations and

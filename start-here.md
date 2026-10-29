@@ -110,7 +110,7 @@ boundaries, creation recovery and provider compatibility limits.
 | [Client type generator](tools/api-contract/generate-client.mjs) and [client declarations](src/api/schema.d.ts)                                  | Isolated build-time generation of Console API types                                            |
 | [API tests](server/api.test.mjs), [provider tests](server/drive9.test.mjs), and colocated feature tests                                         | Behavior, isolation, persistence, and regression evidence                                      |
 | [Contract tests](server/contract.test.mjs) and [deployment tests](server/deployment.test.mjs)                                                   | Actual HTTP schema checks, cross-origin behavior, and retained authorization                   |
-| [scripts/](scripts/) and [.github/workflows/](.github/workflows/)                                                                               | Runtime/repository/sign-off checks, packaging, and CI                                          |
+| [scripts/](scripts/) and [.github/workflows/](.github/workflows/)                                                                               | Runtime/repository checks, packaging, and CI                                                   |
 | [Standards](docs/standards/) and [decisions](docs/decisions/)                                                                                   | Reusable engineering rules and architectural decisions                                         |
 | [Issue forms](.github/ISSUE_TEMPLATE/), [PR template](.github/PULL_REQUEST_TEMPLATE.md), and [feature template](docs/templates/feature-spec.md) | Intake, task handoffs, evidence, and specification authoring                                   |
 
@@ -154,7 +154,7 @@ Report the checks and results that actually ran.
    amendment; ordinary Issue edits do not replace the accepted baseline.
 4. Open a PR with task/parent/spec links and requirement-to-evidence mapping. A design PR
    references its parent feature without prematurely closing it.
-5. Review the actual candidate, run applicable checks, preserve attribution and sign-offs,
+5. Review the actual candidate, run applicable checks, preserve attribution,
    and follow current merge policy. Record evidence before completing the promised endpoint.
 
 The [GitHub workflow](docs/standards/github-contribution-workflow.md) owns roles, labels,

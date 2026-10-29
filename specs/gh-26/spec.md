@@ -97,7 +97,7 @@ versions and test on CI's platform without cloud credentials; do not require Ti 
 
 Run `npm run check`, meaningful engine/authorization/limit tests and bounded live/browser
 verification. Use only task-owned sample files in an authorized existing trial. Ship only after
-the implementation's latest-head CI and diff/sign-off review pass. Code rollback disables the
+the implementation's latest-head CI and diff review pass. Code rollback disables the
 analysis entry points and disposes workers; original remote files must remain unchanged.
 No public or paid deployment is authorized by this specification.
 

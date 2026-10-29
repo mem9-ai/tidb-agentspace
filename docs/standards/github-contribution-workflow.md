@@ -141,7 +141,7 @@ reconciliation. Preserve partial work and failure evidence rather than silently 
 
 ### Merge and complete the promised endpoint
 
-Use the current review, sign-off, latest-head, and hosting requirements in CI/CD policy. The
+Use the current review, latest-head, and hosting requirements in CI/CD policy. The
 prototype's existing task-scoped merge authorization remains unchanged. Neither a ready
 label nor successful tests extends that authority to a new environment or cloud operation.
 
@@ -233,9 +233,9 @@ Neither command approves its own specification or waives a delivery gate.
    generated client, authorization, persistence and compatibility as relevant. An independent
    baseline is required; a second AI agent or external model call is not.
 4. Review the actual diff and open/update the implementation PR with the source/spec revisions,
-   requirement-to-check mapping, checks actually run, and any gaps. Preserve DCO sign-offs.
+   requirement-to-check mapping, checks actually run, and any gaps. Preserve contributor attribution.
 5. Wait for CI on the current candidate. Before merging, recheck the current head, relevant base,
-   acceptance, diff, sign-offs, merge conflicts and enforced GitHub requirements. Changed inputs
+   acceptance, diff, merge conflicts and enforced GitHub requirements. Changed inputs
    invalidate affected evidence. Resolve failures or reevaluate rather than reuse stale green
    results. The same local agent may merge when the existing prototype policy authorizes it;
    do not submit a self-approval or bypass an enforced requirement.
