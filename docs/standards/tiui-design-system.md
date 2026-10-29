@@ -254,6 +254,19 @@ verified, and record that as a remaining gap.
   Success links open the saved file/table. Follow [ADR 0013](../decisions/0013-result-snapshot-exports.md)
   for authority and partial-write handling, and [verification](../result-export-verification.md)
   for themes, narrow layouts and API limits. Revisit for larger exports or additional formats.
+- **File upload feedback (owner correction, GH-99):** label the local-file entry Upload;
+  reserve Import for parsing/mapping data into another resource. Keep a persistent TiUI
+  progress panel with filename, destination, actual transfer percentage when known, and
+  clear preparing/saving/completed/error states. Transmitted bytes are not a saved file:
+  wait for the API acknowledgement before reporting success, and show unknown server work
+  without an invented percentage. Keep completion/failure visible until dismissed or replaced;
+  never classify an acknowledged upload as failed because list refresh failed. Preserve
+  structured errors, conditional-create protection and upload limits; do not automatically
+  retry a write after an uncertain network outcome. TiUI 2.9.1 Progress.Root/Section supports
+  explicit indeterminate ARIA with Section `withAria={false}`. Verify the bar, busy locking,
+  recovery, original-byte downloads and both themes at desktop/narrow sizes. See
+  [upload verification](../drive9-verification.md#upload-progress-and-recovery-gh-99).
+  Revisit for multiple concurrent, resumable or provider-reported upload stages.
 - **Contextual file exports (owner correction, GH-79; implemented 2026-10-29):** Preview
   operates on the saved original. Following the GH-84 owner correction, place one Export action
   beside the Preview heading, using the same shared content-panel header as results; remove

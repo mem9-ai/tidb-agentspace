@@ -13,6 +13,8 @@ import { FileBrowserPanel } from './features/files/FileBrowserPanel';
 import { FileBrowserList } from './features/files/FileBrowserList';
 import { ResourceKindIcon as KindIcon } from './ui/ResourceKindIcon';
 import { FileWorkspaceHeader } from './features/files/FileWorkspaceHeader';
+import { FileUploadStatus } from './features/files/FileUploadStatus';
+import { useFileUpload } from './features/files/use-file-upload';
 import { FileSystemsList } from './features/files/FileSystemsList';
 import {
   useRemoteFiles,
@@ -1052,6 +1054,16 @@ function FileWorkspace({
   }
   const upload = useRef<HTMLInputElement>(null);
   const files = remote ? listing.files : data.files.filter((f) => f.resourceId === system);
+  const fileUpload = useFileUpload({
+    resource: selectedSystem,
+    directory: path,
+    files,
+    onBusyChange: setBusy,
+    onSaved: async () => {
+      listing.refresh();
+      await refresh();
+    },
+  });
   const openFile = useCallback(
     async (file: WorkspaceFile, view: FileView = 'preview') => {
       setPreviewView(view);
@@ -1128,44 +1140,6 @@ function FileWorkspace({
       setBusy(false);
     }
   }
-  async function uploadFile(file: globalThis.File) {
-    if (remote) {
-      const target = (path === '/' ? '' : path) + '/' + file.name;
-      if (file.size > (selectedSystem?.uploadLimitBytes || 0)) {
-        notify('This file exceeds the current upload limit.');
-        return;
-      }
-      setBusy(true);
-      try {
-        await workspaceApi.uploadFile({ resourceId: system, path: target }, file);
-        listing.refresh();
-        await refresh();
-        notify('File uploaded to Singapore');
-      } catch (cause) {
-        notify(cause instanceof Error ? cause.message : 'Upload failed.');
-      } finally {
-        setBusy(false);
-      }
-      return;
-    }
-    if (file.size > 256 * 1024) {
-      notify('Choose a UTF-8 text file smaller than 256 KiB.');
-      return;
-    }
-    try {
-      const buffer = await file.arrayBuffer();
-      const text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
-      if (text.includes('\0')) throw new Error('binary');
-      const target = (path === '/' ? '' : path) + '/' + file.name;
-      if (files.some((f) => f.path === target)) {
-        notify('A file with this name already exists. Open it to edit.');
-        return;
-      }
-      await saveFile(target, 'file', text);
-    } catch {
-      notify('This prototype accepts UTF-8 text files only.');
-    }
-  }
   async function remove() {
     if (!deleting) return;
     setBusy(true);
@@ -1211,10 +1185,13 @@ function FileWorkspace({
         hidden
         aria-label="Upload a file"
         onChange={(e) => {
-          if (e.target.files?.[0]) void uploadFile(e.target.files[0]);
+          if (e.target.files?.[0]) void fileUpload.upload(e.target.files[0]);
           e.target.value = '';
         }}
       />
+      {fileUpload.status?.resourceId === system && (
+        <FileUploadStatus status={fileUpload.status} onDismiss={fileUpload.dismiss} />
+      )}
       {error && !editing && !newItem && !deleting && (
         <Alert color="red" mb={20}>
           {error}
