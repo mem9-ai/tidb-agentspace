@@ -1,6 +1,6 @@
 # GH-74: Object storage as metadata source of truth
 
-- Status: Owner-requested hosted persistence direction; engine/protocol selection remains proposed.
+- Status: Owner-selected SlateDB for hosted metadata; service/protocol details remain proposed.
 - Date: 2026-10-29.
 - Parent: [control-plane specification](spec.md), [scale profile](metadata-scale.md), and
   [proposed ADR 0017](../../docs/decisions/0017-workspace-kv-control-plane.md).
@@ -12,8 +12,11 @@
 
 For the hosted profile, object storage should hold the authoritative recoverable metadata,
 including every acknowledged commit. Local development keeps ordinary files as its authority.
-These are explicit deployment profiles behind the same logical KV contract. This supersedes
-the earlier recommendation to benchmark TiDB/MySQL first and defer an object-backed engine.
+These are explicit deployment profiles behind the same logical KV contract. The owner has
+selected **SlateDB** for both hosted Global and regional metadata, accepting object-durable
+write latency for control-plane mutations. This supersedes the earlier candidate-only
+evaluation and SQL-first recommendation. Release/binding selection and conformance remain
+implementation gates, not a reason to leave the architectural engine choice open.
 
 The [Redpanda metastore article](https://www.redpanda.com/blog/cloud-topics-metastore)
 describes partitioned LSMs with object-backed SSTs/manifests, local caching and Raft-backed
@@ -172,13 +175,88 @@ recoverable current state and unresolved effects, compacts resolved telemetry lo
 returns cursor-expired/resnapshot to a later Global query. It never retains all WAL forever
 waiting for Global ingestion or initiates a Global callback to unblock compaction.
 
-## 6. Engine and backend choices
+## 6. Global storage directory and independent regional bootstrap
 
-Evaluate **SlateDB first** as an object-native engine candidate, behind the existing proposed
-MetaStore boundary. This is a proposed evaluation order, not a selected/pinned dependency or
-claim of conformance. Pin a release and verify its format/runtime/storage APIs before a PoC.
+Global must know where each Region's metadata lives. Store a private **regional metadata
+deployment descriptor** in Global's own SlateDB, alongside the region catalog. It identifies
+the recoverable object roots and desired deployment configuration; Region remains the sole
+normal writer of its own metadata. Knowing a bucket/path grants no S3 or KMS permission.
+
+Proposed descriptor fields, not an implemented API:
+
+| Field                                                      | Meaning                                                                                             |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `regionId`, `metaDeploymentId`, `environmentId`            | Product Region, immutable metadata installation identity and environment; verify on every bootstrap |
+| `engine`, `engineRelease`, `formatVersion`                 | `slatedb`, pinned deployment release and supported metadata format                                  |
+| `mainStorage`                                              | Provider, HTTPS endpoint, actual storage region, bucket and installation prefix; no secret values   |
+| `walStorage`                                               | Explicit separate WAL location when configured, otherwise an explicit same-as-main setting          |
+| `catalogKey`                                               | Stable regional shard/cell catalog entry within the registered root; not a list of every resource   |
+| `encryptionKeyRef`                                         | Regional KMS/key identifier; access requires a separately authorized regional identity              |
+| `runtimeIdentityRef`, `recoveryIdentityRef`                | References to scoped deployment/recovery identities; never access keys or refresh tokens            |
+| `configGeneration`, `desiredState`                         | Monotonic desired configuration and provisioning/active/draining/retired lifecycle                  |
+| `observedGeneration`, `observedDeploymentId`, `observedAt` | Last safe status queried by Global; freshness/progress, not a serving lease                         |
+
+For example, a Region's main root could be
+`s3://example-control-meta/prod/regions/rgn-a/installations/meta-a/`. This is illustrative;
+the actual AWS/S3 storage location must satisfy metadata residency independently of the
+product Region's name. Within that root, Region's object-backed catalog maps cells/shards
+to SlateDB prefixes and active ownership generations. The first profile co-locates WAL and
+main storage; any later split must register both and include both in recovery/backup.
+Engine file layout remains engine-owned. Global does not need every manifest filename or
+a resource-by-resource S3 mapping to locate and recover a deployment.
+
+This descriptor is private operator/control-plane metadata. Public regional API descriptors
+expose authorized service origins and capabilities, not buckets, KMS refs or service identities.
+Workspace Keys cannot create/edit storage descriptors or supply storage endpoints. Trusted
+deployment configuration validates endpoints, namespace, environment and identities before I/O.
+Normal Global credentials have no regional metadata write permission. Direct object inspection
+or recovery uses separately authorized scoped operator tooling; Global never opens a regional
+SlateDB as a second writer to query its state. It queries the Region's service over mTLS.
+
+Bootstrap and update protocol:
+
+1. Operators bootstrap Global from an out-of-band descriptor of **Global's own** S3 root,
+   installation and IAM/KMS identities. The locator cannot live only in the database it unlocks.
+2. Before regional activation, Global records the desired regional descriptor and the deployment
+   system installs a matching durable regional bootstrap configuration and scoped workload
+   identity. They are independent copies with explicit generations, not a per-start Global lookup.
+3. Region starts from its deployment configuration, verifies its own object installation and
+   shard catalog, acquires ownership and replays SlateDB. It uses regional IAM/KMS access and
+   installed trust. Missing/mismatched state fails closed; it never creates an empty catalog
+   or falls back to asking Global for permission to serve known resources.
+4. Global pushes permitted configuration changes and queries applied generation/identity/status.
+   A lost acknowledgement leaves Global pending until a later query proves application. Region
+   sends no registration callback or upstream heartbeat. Observation age cannot expire the
+   installed configuration or regional policy.
+5. Region manages shards and rebalances inside its already registered roots locally. Global
+   can query their current layout when needed. Internal shard changes need no per-shard Global
+   write/ACK; accepted work and cold restart continue if Global disappears. New external storage
+   roots/placements require coordinated configuration before use and may wait for Global.
+
+A root change is an explicit fenced migration/recovery workflow, not an edit that redirects
+a running writer to a different bucket. Bind activation to installation/configuration/ownership
+generations; old descriptors cannot reopen an obsolete authority. Preserve original IDs,
+secrets and unknown effects, verify the complete target, and retain source/backup references
+until cutover/recovery proof permits GC. Global failure after an accepted regional workflow
+does not leave Region waiting for a final upstream ACK to finish or safely abort.
+
+Thus Global stores the fleet's deployment/recovery directory, while each Region has everything
+needed to open its own authority independently. Registry freshness and regional availability
+are separate facts. Losing Global does not erase a Region's locator, identity or metadata.
+
+## 7. Selected engine and integration gates
+
+Use **SlateDB** behind the proposed MetaStore boundary for hosted Global and regional
+metadata. Pin a release and verify its format/runtime/storage APIs during implementation.
 Keep the current ESM domain/API code; decide supported bindings versus a private regional
 metadata process after that evaluation, without introducing another public API framework.
+
+Control-plane writes may accept object-storage latency while reads use the current owner
+and caches under the required freshness contract. A SQL/file request must not require a
+new canonical metadata commit merely to update a last-used timestamp; keep bounded usage/
+telemetry separate. Real policy, credential-rotation/replay and operation changes still
+require durable commits. Sparse per-tenant writes do not establish low fleet-wide volume;
+measure aggregate flush cost, contention and tail latency with the scale workload.
 
 Two integration traps are already documented upstream:
 
@@ -190,13 +268,14 @@ Two integration traps are already documented upstream:
   writer. They cannot be assumed to implement fresh authorization reads. Verify durable
   visibility, group CAS/atomic batches, ownership and recovery together, not just get/put.
 
-The candidate must also satisfy indexed scans, durable changes, safe GC/checkpoints,
+The adapter must also satisfy indexed scans, durable changes, safe GC/checkpoints,
 encrypted storage/credential recovery, sharded placement and the scale/failure gates.
-Do not select a library merely because it writes SSTs to S3. Do not build a general LSM,
-Raft or transaction system from scratch before testing an existing engine.
+The engine decision does not certify those properties or select a release/binding. Build
+the domain adapter and service around SlateDB rather than writing a new LSM/Raft engine.
 
-TiDB File System remains an explicit owner-requested candidate. It can provide the metadata
-authority or storage beneath an engine only when the complete contract is verified. If
+TiDB File System remains an alternative profile/storage integration for separate evaluation;
+it is no longer a competing default engine choice. It can provide the metadata authority or
+storage beneath an engine only when the complete contract is verified. If
 file bytes are in S3 but the only namespace/inode/manifest mapping lives in an unrecoverable
 TiDB catalog, the combination does not meet object-only metadata recovery. Require a verified
 object-backed recovery closure for that catalog, or label it a separate filesystem-authority
@@ -208,11 +287,11 @@ silently dual-write two authorities or advertise SQL plus asynchronous object ex
 same durability contract. A bounded snapshot+conditional-HEAD S3 adapter is useful for small
 inventories/conformance, but is not the million-resource serving engine.
 
-## 7. Implementation and acceptance gates
+## 8. Implementation and acceptance gates
 
 First implement the common contract, bounded local files and lossless importer as already
-planned. The first hosted engine evaluation should target this object-authoritative profile
-rather than implement both SQL and custom S3 databases. No new runtime or live migration is
+planned. The hosted implementation targets SlateDB and this object-authoritative profile
+rather than implementing both SQL and custom S3 databases. No new runtime or live migration is
 started by this document.
 
 The proposed META-59–66 cases in the main specification require object-only recovery of an
@@ -221,3 +300,5 @@ unknown commit reconciliation; safe compaction/GC/backups; projection rebuild; i
 regional cold recovery including credentials; and measured sharded latency/cost/isolation.
 Existing repository tests do not exercise those protocols. Hosted HA or million-resource
 claims remain gated on executable evidence against a pinned engine/provider configuration.
+META-67–69 additionally cover the private Global directory, independent regional bootstrap,
+Global-queried configuration status, shard autonomy and safe storage-root migration.

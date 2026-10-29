@@ -72,8 +72,11 @@ consistency, isolation and migration remain proposed behavior, distinct from the
 single-Workspace service.
 For hosted persistence, read the [object-metastore design](specs/gh-74/object-metastore.md):
 object storage is the preferred source of truth for all acknowledged commits, including WAL;
-local caches and search projections are rebuildable. This supersedes the earlier SQL-first
-evaluation order; SlateDB and TiDB File System require conformance evidence before selection.
+local caches and search projections are rebuildable. The owner has selected SlateDB for
+hosted Global and regional metadata, superseding candidate-only/SQL-first evaluation.
+Release/binding, durability and service conformance still require implementation evidence.
+Global records private regional S3/storage descriptors; Region retains independent bootstrap
+config and object-backed shard catalogs, with no Global lookup/renewal gate on startup.
 Local development still uses ordinary files; the running JSON store is unchanged.
 For millions of Workspaces or a million-resource Workspace, also read the
 [metadata scale profile](specs/gh-74/metadata-scale.md): Workspace ownership is distinct from

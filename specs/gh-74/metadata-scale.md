@@ -252,12 +252,12 @@ over its declared small inventory; the hosted scale profile requires incremental
 indexes/checkpoints and rejects a backend missing them. Exact implementation signatures
 are an implementation-design gate, not a new public API in this documentation change.
 
-| Profile                                             | Appropriate role                                                                                     | Required evidence                                                                                                            |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Plain local files                                   | Local development and bounded deployment; small files per atomic group                               | Core durability/isolation, explicit capacity bounds and migration path                                                       |
-| Object-native KV engine, initially evaluate SlateDB | Preferred hosted object-authoritative profile; shared shards, incremental records and indexes        | Object-durable accepted WAL, fresh read/write ownership, recovery/GC and all scale gates                                     |
-| TiDB/MySQL transactional KV mapping                 | Alternative database authority or rebuildable collection/search projection                           | Group-level transaction/query conformance or replay/watermark evidence; not a second authority                               |
-| TiDB File System or S3 snapshot publication         | Bounded groups, immutable payloads/backup; possible storage beneath a proven metadata service/engine | Incremental/paged access, independent publication, durable indexed change discovery and all scale gates before a scale claim |
+| Profile                                     | Appropriate role                                                                                     | Required evidence                                                                                                            |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Plain local files                           | Local development and bounded deployment; small files per atomic group                               | Core durability/isolation, explicit capacity bounds and migration path                                                       |
+| SlateDB on object storage                   | Preferred hosted object-authoritative profile; shared shards, incremental records and indexes        | Object-durable accepted WAL, fresh read/write ownership, recovery/GC and all scale gates                                     |
+| TiDB/MySQL transactional KV mapping         | Alternative database authority or rebuildable collection/search projection                           | Group-level transaction/query conformance or replay/watermark evidence; not a second authority                               |
+| TiDB File System or S3 snapshot publication | Bounded groups, immutable payloads/backup; possible storage beneath a proven metadata service/engine | Incremental/paged access, independent publication, durable indexed change discovery and all scale gates before a scale claim |
 
 A full JSON rewrite/parse or one HEAD for an entire Workspace fails this workload. One HEAD
 per resource removes that single writer, but does not by itself provide indexed listing,
@@ -266,8 +266,8 @@ B-tree/LSM/service, choose and verify an existing engine first; do not casually 
 database to keep a filesystem-only implementation. File System metadata remains a candidate,
 with explicit implementation cost and limits rather than an assumed million-resource claim.
 
-The [object-metastore design](object-metastore.md) supersedes the earlier SQL-first evaluation
-order. It requires object recovery of every acknowledged batch, pools logical groups into
+The [object-metastore design](object-metastore.md) records the owner-selected SlateDB
+engine, superseding the earlier SQL-first and candidate-only evaluation. It requires object recovery of every acknowledged batch, pools logical groups into
 physical engine shards, and keeps local disks and search projections disposable. Object
 storage capacity alone does not establish throughput: durable flush batching, object request
 cost, ownership/read barriers, replay time and compaction interference need measurement.
@@ -281,7 +281,7 @@ latency percentiles, conflicts, amplification, memory/GC, feed lag and per-resou
 Run repair/backup/export/rebalance and provider-failure fixtures concurrently with a small
 unrelated tenant's requests. Agree latency/availability/cost targets before calling the scale
 gate passed. No synthetic fixture creates live cloud resources. Main-spec META-29–37 define
-the required outcomes, with object-profile cases META-59–66; none is delivered as a passing
+the required outcomes, with object/directory cases META-59–69; none is delivered as a passing
 benchmark by this document.
 
 Primary references checked on 2026-10-29:

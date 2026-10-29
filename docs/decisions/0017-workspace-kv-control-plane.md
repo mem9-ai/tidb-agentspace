@@ -1,6 +1,6 @@
 # ADR 0017: Portable KV metadata for the Workspace control plane
 
-- Status: Proposed; portable KV, hosted object storage as source of truth and the global/regional three-plane split are owner-requested direction; detailed contracts remain under review
+- Status: Proposed; portable KV, SlateDB on object storage and the global/regional three-plane split are owner-accepted direction; detailed contracts remain under review
 - Date: 2026-10-29
 - Parent: [GH-74](https://github.com/siddontang/tidb.ai/issues/74)
 - Specification: [Multi-tenant Workspace control plane](../../specs/gh-74/spec.md)
@@ -29,7 +29,7 @@ single-process gateway and its existing region strings do not implement this top
 The owner requires planning for millions of Workspaces and individual Workspaces containing
 up to a million resources. This invalidates the earlier one-Workspace snapshot/CAS as a
 production partition. The [scale profile](../../specs/gh-74/metadata-scale.md) replaces that
-granularity; no capacity benchmark or hosted engine selection is claimed.
+granularity; no capacity benchmark or hosted implementation is claimed.
 
 The owner requires a Global -> Region invocation/dependency graph with no reverse call or
 unsolicited regional reporting. Global queries any regional information it needs. Production
@@ -48,6 +48,11 @@ requires recovery of every acknowledged commit from objects, including the accep
 tail. This supersedes the earlier SQL-first hosted evaluation order; local files remain the
 local authority. Object checkpoints that lag a local/Raft-only ACK are a different profile.
 
+The owner then selected SlateDB for hosted Global and regional metadata, accepting durable
+write latency for relatively infrequent control-plane mutations. Global must maintain each
+Region's private S3/storage locator. Region must independently retain its bootstrap config,
+IAM/KMS access and shard catalog so that this directory adds no serving/restart dependency.
+
 ## Proposed decision
 
 1. Domain services use typed repositories over `MetaStore`, with versioned JSON records,
@@ -64,8 +69,8 @@ local authority. Object checkpoints that lag a local/Raft-only ACK are a differe
    directory sync and explicit recovery are required. Local files do not imply multi-host HA.
 4. Prefer an object-native engine for hosted metadata: accepted WAL, SSTs, manifests and
    recovery/routing evidence are durable in objects before ACK; local caches are disposable.
-   Evaluate pinned SlateDB first, without claiming current conformance or selecting a runtime
-   binding. Pool groups in physical shards; verify CAS/atomic batches, durable visibility and
+   Use the owner-selected SlateDB engine, with release/binding selection and conformance still
+   required in implementation. Pool groups in physical shards; verify CAS/atomic batches, durable visibility and
    read/write ownership. SQL may be a rebuildable query projection or an explicit alternative
    database-authority profile, never an uncoordinated second writer. TiDB File System remains
    a service-owned candidate, separate from customer/DuckDB storage and with independent
@@ -122,6 +127,13 @@ local authority. Object checkpoints that lag a local/Raft-only ACK are a differe
     separates durable grants, credential versions and short access tokens: a new continuity
     grant needs explicit owner authorization; legacy 7/30/90-day Keys keep their real expiry.
     No child credential gains Global privileges or outlives an explicit authorization end.
+15. Global's own SlateDB holds a private region metadata deployment directory: installation,
+    main/WAL object roots, regional catalog locator, engine/format, IAM/KMS refs and desired/
+    observed config generations. Region starts from independently installed durable config
+    and its own objects/identities. Internal shard maps stay regional. Global queries the
+    Region service and never opens a second regional writer; normal Global roles have no
+    regional object-write permission. Root changes use fenced migration rather than raw
+    locator edits. Public API discovery excludes these private storage descriptors.
 
 ## Alternatives and consequences
 
@@ -166,7 +178,7 @@ specification revision.
 
 ## Verification and revisit
 
-[META-01 through META-66](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
+[META-01 through META-69](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
 cover adapter conformance, crash/unknown outcomes, authorization before I/O, provider-account
 quotas, credential separation, full legacy import, no duplicate provider effects and restore.
 The TiDB File System case includes concurrent publication, path replacement, bootstrap and
@@ -185,6 +197,8 @@ Object-profile cases cover accepted-WAL object-only recovery, durable visibility
 readers/writers, compaction/GC closure, projection rebuild, regional bootstrap/secret recovery
 and measured batching/cost/isolation. Engine defaults or object-backed file bytes do not
 establish these properties without acceptance evidence.
+Storage-directory cases verify complete/private locators, matching installations, autonomous
+regional bootstrap/shards, queried configuration progress and fenced root changes.
 This ADR does not claim those tests or a production migration exist. Repository checks only
 verify the current source/documents.
 

@@ -2,18 +2,18 @@
 
 ## Identity, authority, and delivery
 
-| Field                                       | Value                                                                                                                                                                                                                                                             |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Parent intent                               | [Issue #74](https://github.com/siddontang/tidb.ai/issues/74)                                                                                                                                                                                                      |
-| Status                                      | Draft specification for review; no runtime or migration implementation                                                                                                                                                                                            |
-| Date                                        | 2026-10-29                                                                                                                                                                                                                                                        |
-| Intent contributor / accountable maintainer | Siddon Tang                                                                                                                                                                                                                                                       |
-| Source baseline                             | `ee1bd56f5a4a53d7864493634bf7d0eb228b878f`                                                                                                                                                                                                                        |
-| Accepted direction                          | Logical KV metadata, replaceable storage, local files first, hosted object storage as source of truth, TiDB File System as a candidate, global/regional control and regional data planes, regional resources, tenant isolation, and identity-preserving migration |
-| Proposed choices                            | Scope-atomic commits, record/index layouts, roles, adapter protocols, API evolution, limits, and the migration procedure below                                                                                                                                    |
-| Dependencies                                | ADRs 0001, 0004, 0005, 0006, 0008, 0010, 0011 and proposed [ADR 0017](../../docs/decisions/0017-workspace-kv-control-plane.md)                                                                                                                                    |
-| Risk                                        | Tenant authorization, credentials, concurrency, provider lifecycle, and migration; implementation requires the acceptance suite below                                                                                                                             |
-| Delivery endpoint                           | Reviewable specification and ADR in a design PR; the parent feature remains open                                                                                                                                                                                  |
+| Field                                       | Value                                                                                                                                                                                                                                                                          |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Parent intent                               | [Issue #74](https://github.com/siddontang/tidb.ai/issues/74)                                                                                                                                                                                                                   |
+| Status                                      | Draft specification for review; no runtime or migration implementation                                                                                                                                                                                                         |
+| Date                                        | 2026-10-29                                                                                                                                                                                                                                                                     |
+| Intent contributor / accountable maintainer | Siddon Tang                                                                                                                                                                                                                                                                    |
+| Source baseline                             | `ee1bd56f5a4a53d7864493634bf7d0eb228b878f`                                                                                                                                                                                                                                     |
+| Accepted direction                          | Logical KV metadata, replaceable storage, local files first, hosted SlateDB with object storage as source of truth, TiDB File System as a candidate, global/regional control and regional data planes, regional resources, tenant isolation, and identity-preserving migration |
+| Proposed choices                            | Scope-atomic commits, record/index layouts, roles, adapter protocols, API evolution, limits, and the migration procedure below                                                                                                                                                 |
+| Dependencies                                | ADRs 0001, 0004, 0005, 0006, 0008, 0010, 0011 and proposed [ADR 0017](../../docs/decisions/0017-workspace-kv-control-plane.md)                                                                                                                                                 |
+| Risk                                        | Tenant authorization, credentials, concurrency, provider lifecycle, and migration; implementation requires the acceptance suite below                                                                                                                                          |
+| Delivery endpoint                           | Reviewable specification and ADR in a design PR; the parent feature remains open                                                                                                                                                                                               |
 
 This document specifies intended behavior. It neither changes the running Portal nor
 authorizes live migration, provider provisioning, account registration, credential rotation,
@@ -41,8 +41,11 @@ files, TiDB File System, TiDB/MySQL, object storage, or a conforming KV engine. 
 remain a valid local backend; multi-server availability is an additional backend/deployment
 capability. Hosted metadata should use object storage as its recoverable source of truth,
 including every acknowledged commit; local files remain authoritative for the local profile.
-The [object-metastore design](object-metastore.md) supersedes the earlier SQL-first hosted
-evaluation order. This requirement is not implemented by the existing JSON store or by
+The owner has selected SlateDB for hosted Global and regional metadata, accepting durable
+write latency for control-plane changes. The [object-metastore design](object-metastore.md)
+supersedes the earlier candidate-only and SQL-first hosted evaluation. The engine choice is
+accepted direction; release/binding and protocol conformance remain implementation gates.
+This requirement is not implemented by the existing JSON store or by
 asynchronous database backups. The owner also requires separate global control, regional control and regional
 data-plane responsibilities. Current resource region strings do not implement that topology.
 
@@ -83,7 +86,7 @@ Global-admission and Region-published result proposals.
 
 Both metadata authorities use typed repositories over the same `MetaStore` contract. Each
 can select a conforming adapter for its explicit persistence profile. The hosted default
-direction is an object-native engine; ordinary files support local use, while TiDB File
+engine is SlateDB; ordinary files support local use, while TiDB File
 System and TiDB/MySQL remain candidates/alternative profiles. Sharing an interface does not
 require sharing a physical root or database.
 
@@ -156,6 +159,15 @@ record owns binding/execution/observed state. A global list can include an async
 regional status projection with `observedAt`, `observedGeneration` and explicit stale/unknown
 state. That projection cannot authorize access, settle an unknown create or free capacity.
 Regional reconcilers use their own canonical records, not a periodically copied global JSON.
+
+Global's private `region/<regionId>` group records a `metadata-deployment` descriptor:
+engine/release, installation/environment identity, S3 endpoint/storage region/bucket/prefix,
+regional catalog locator, WAL location, IAM/KMS references and desired/applied configuration
+generations. The [storage-directory contract](object-metastore.md#6-global-storage-directory-and-independent-regional-bootstrap)
+defines the fields, bootstrap and fenced root changes. Global locates each Region's metadata;
+Region starts from an independently installed durable configuration and its own objects.
+Internal shard maps remain regional. Global queries service status rather than opening a
+regional SlateDB writer; metadata paths and identities are private operator information.
 
 Global account records contain ownership/entitlement and capacity reservations; regional
 records hold the allowed provider access and native binding refs. Native resource secrets,
@@ -540,7 +552,7 @@ this staged protocol, not an assumed Workspace-wide transaction or independent u
 The [object-metastore design](object-metastore.md) defines the preferred hosted profile:
 object-backed accepted WAL, SSTs and manifests; disposable local caches; and optional
 rebuildable query projections. It covers commit/visibility, shard ownership, recovery and
-engine evaluation. The adapters below preserve the same domain contract while declaring
+the selected SlateDB engine's integration gates. The adapters below preserve the same domain contract while declaring
 their own authority and limits; they are not interchangeable durability claims.
 
 ### 5.1 Ordinary local files: first implementation
@@ -678,7 +690,7 @@ rules must not expire data required for a supported recovery window.
 This bounded S3 design rewrites the bounded scope snapshot and serializes writes through one
 HEAD per scope. It is suitable to evaluate for low metadata write rates, not a throughput
 promise or the preferred million-resource engine. The hosted production direction instead
-evaluates an existing object-native engine with incremental indexed access and durable WAL
+uses SlateDB with incremental indexed access and durable WAL
 batches as specified in [object metastore](object-metastore.md). Do not build a general
 database on S3 just to satisfy the local use case.
 
@@ -750,25 +762,26 @@ If the endpoint only meets immutable-blob storage requirements, it can store sta
 snapshots while another authority controls publication; it cannot claim full MetaStore
 support. Keep primary data and backup failure domains/recovery credentials explicit.
 
-### 5.5 Candidate comparison
+### 5.5 Selected engine and alternative profiles
 
-| Backend                 | Recommendation                                                                 | Additional work before claiming support                                                                                             |
-| ----------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Plain local files       | First local adapter; no database service required                              | Exclusive root owner, durable replace, recovery, backup, bounded indexes                                                            |
-| SlateDB                 | First engine to evaluate for the preferred hosted object-authoritative profile | Object-durable ACK and visibility, read/write ownership, group CAS/atomicity, indexed changes, restore, runtime and measured scale  |
-| TiDB File System        | Explicit candidate; qualify the authority/recovery profile                     | Publication/CAS, stale-writer reads/writes, payload limits and recovery of namespace/catalog from objects for an object-truth claim |
-| TiDB / MySQL            | Alternative database authority or rebuildable query projection                 | Transaction/primary-read conformance for authority; checkpoint/change replay and lag for projections                                |
-| Custom S3 snapshot+HEAD | Bounded small-inventory adapter candidate                                      | Conditional publication, receipt recovery, snapshot retention, GC and latency/cost testing                                          |
-| etcd                    | Alternative consistent KV authority                                            | Scope revision mapping, transactional limits, snapshot pagination/compaction and operations; not object-authoritative by default    |
+| Backend                 | Recommendation                                                 | Additional work before claiming support                                                                                             |
+| ----------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Plain local files       | First local adapter; no database service required              | Exclusive root owner, durable replace, recovery, backup, bounded indexes                                                            |
+| SlateDB                 | Owner-selected engine for hosted Global and regional metadata  | Object-durable ACK and visibility, read/write ownership, group CAS/atomicity, indexed changes, restore, runtime and measured scale  |
+| TiDB File System        | Explicit candidate; qualify the authority/recovery profile     | Publication/CAS, stale-writer reads/writes, payload limits and recovery of namespace/catalog from objects for an object-truth claim |
+| TiDB / MySQL            | Alternative database authority or rebuildable query projection | Transaction/primary-read conformance for authority; checkpoint/change replay and lag for projections                                |
+| Custom S3 snapshot+HEAD | Bounded small-inventory adapter candidate                      | Conditional publication, receipt recovery, snapshot retention, GC and latency/cost testing                                          |
+| etcd                    | Alternative consistent KV authority                            | Scope revision mapping, transactional limits, snapshot pagination/compaction and operations; not object-authoritative by default    |
 
 Current official SlateDB documentation describes a single writer, multiple readers, writer
 fencing and transactions. These do not establish multi-writer service behavior or guarantee
 that a chosen asynchronous acknowledgement is durable. Follow the pinned engine's explicit
 durability wait/flush and verify reads cannot expose pending state as committed authorization.
-The [object-metastore design](object-metastore.md) records the candidate's upstream evidence
+The [object-metastore design](object-metastore.md) records the selected engine's upstream evidence
 and remaining proof obligations. etcd's default KV guarantees are
 stronger than an eventually consistent cache, but stale/serializable read modes are unsuitable
-for canonical authorization. Neither engine is selected or installed by this design.
+for canonical authorization. SlateDB is the owner-selected hosted engine; it is not installed
+or certified by this design. etcd remains an alternative profile, not the default.
 
 ## 6. Authorization and isolation
 
@@ -1292,6 +1305,14 @@ Additional cases for the hosted object-authoritative profile:
 | META-65 | Cold-recover Region with Global endpoints/stores/signers/KMS blackholed and empty metadata disks. Regional objects plus declared independent IAM/KMS/CredentialStore/bootstrap recover routing, installed policy, denial/refresh state, secrets and operations without Global renewal. A TiDB File System object-truth claim must also recover its namespace/catalog.                      |
 | META-66 | On a pinned engine/provider, measure pooled sparse tenants and a sharded million-resource Workspace: object flush/ACK p50/p95/p99, throughput, PUT/GET bytes/cost, batching, WAL replay/cold start, compaction/GC, read barriers, skew and unrelated-tenant isolation. No whole-Workspace rewrite/HEAD or per-tenant engine is required; compare against agreed SLOs before a scale claim. |
 
+Additional cases for the private storage directory and bootstrap:
+
+| ID      | Observable case                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| META-67 | Global's private directory identifies each Region's actual installation, engine release, S3 main/WAL roots, catalog and IAM/KMS refs. Untrusted endpoints and malformed/mismatched descriptors reject before storage I/O; object installation/format mismatches reject before serving. Required WAL roots are included. Public discovery/Workspace Keys cannot expose or edit these records or obtain credentials; normal Global roles cannot open regional SlateDB writers. |
+| META-68 | Restart Region with Global and its directory unavailable. The durable regional bootstrap config and independently scoped IAM/KMS recover the registered objects/catalog without Global lookup/renewal. Regional shard changes inside registered roots continue; Global later queries the new layout. Corrupt/mismatched initialized config never triggers empty seeding or an upstream fallback.                                                                             |
+| META-69 | Push/replay configuration generations, lose acknowledgement, and migrate storage roots with stale descriptors/owners. Global keeps desired/applied status distinct and obtains progress only by querying Region. Activation requires verified installation/ownership/copy evidence; no raw bucket edit, second writer, rollback, callback or final Global ACK can compromise regional recovery or repeat external effects.                                                   |
+
 Implementation acceptance needs shared adapter conformance, API negative tests with injected
 providers, local crash/failure injection on supported OSes, a private migration-fixture suite,
 and backup/restore exercises. Security/lifecycle cases cannot be replaced by screenshot or
@@ -1299,15 +1320,15 @@ document-presence checks. Live account creation is not necessary for ordinary CI
 
 ## 11. Incremental implementation and review decisions
 
-| Phase | Coherent deliverable                                                                                                       | Gate                                                                                                              |
-| ----- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| A     | MetaStore contract, codecs, typed repositories and local file authority; single-Workspace compatibility                    | META-01–06, 13 and existing API gate                                                                              |
-| B     | Offline importer, private backup/journal, legacy compatibility and read-only target validation                             | META-14–17; no live cutover by default                                                                            |
-| C     | Organization/Workspace identity, membership and Key isolation, discovery and explicit environment identity                 | META-07–09, 12, 16; identity integration decision                                                                 |
-| D     | Global intent/dispatch, one local region inbox/execution, durable provider recovery and reservations                       | META-10–11, 22–26; local command/admission and provider recovery evidence                                         |
-| E     | Evaluate and select one hosted object-authoritative engine; retain explicit alternative profiles                           | META-59–66, applicable hosted cases (META-18, 19 or 21), full shared conformance and META-20 performance evidence |
-| F     | Separate hosted global/regional control and regional data services, per-authority storage/vaults and trusted discovery     | META-22–28, full authorization/adapter conformance, declared residency and failure/recovery evidence              |
-| G     | Pooled metadata cells, resource-level groups, indexed queries/grants, quota rights, fair discovery/work and repartitioning | META-29–37; declared workload/SLO/cost targets and reproducible load/failure evidence                             |
+| Phase | Coherent deliverable                                                                                                       | Gate                                                                                        |
+| ----- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| A     | MetaStore contract, codecs, typed repositories and local file authority; single-Workspace compatibility                    | META-01–06, 13 and existing API gate                                                        |
+| B     | Offline importer, private backup/journal, legacy compatibility and read-only target validation                             | META-14–17; no live cutover by default                                                      |
+| C     | Organization/Workspace identity, membership and Key isolation, discovery and explicit environment identity                 | META-07–09, 12, 16; identity integration decision                                           |
+| D     | Global intent/dispatch, one local region inbox/execution, durable provider recovery and reservations                       | META-10–11, 22–26; local command/admission and provider recovery evidence                   |
+| E     | Implement the selected hosted SlateDB adapter and private storage descriptors                                              | META-59–64/67, full shared conformance and META-20; hosted autonomy and scale add F/G gates |
+| F     | Separate hosted global/regional control and regional data services, per-authority storage/vaults and trusted discovery     | META-22–28/65/68–69, full authorization/adapter conformance and declared residency/recovery |
+| G     | Pooled metadata cells, resource-level groups, indexed queries/grants, quota rights, fair discovery/work and repartitioning | META-29–37/66; declared workload/SLO/cost targets and reproducible load/failure evidence    |
 
 Every phase preserves existing credential/private-storage/API boundaries until its reviewed
 replacement is complete. Hosted multi-tenant service requires C/D and F's independently
@@ -1326,17 +1347,17 @@ META-43 and Global-blackhole/regional restart/retention/recovery META-46–50. S
 META-45 under prolonged Global disconnection. No policy-age timeout or shared Global gateway
 may be introduced as a shortcut. Global-only coordination can wait; known regional work continues.
 
-| Open decision                                                   | Proposed default                                                                                                                                                         | Blocks                                 |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
-| Accept the scope-atomic KV contract and local snapshot budgets? | Adopt this specification after review; measure before increasing budgets                                                                                                 | Phase A                                |
-| Which hosted metadata engine?                                   | Object storage is the preferred source of truth; evaluate pinned SlateDB first, qualify TiDB File System recovery, keep SQL as optional projection/alternative authority | Phase E only                           |
-| Which hosted identity and session provider?                     | No vendor selected; issuer/subject model plus independent regional verification/session renewal required                                                                 | Hosted C/F                             |
-| Regional identity/recovery and revocation observability?        | Independent local verification/refresh/storage; durable policy with no synchronization TTL; unreachable target remains pending                                           | First hosted deployment                |
-| Which initial regions and verified provider placements?         | Local compatibility region first; select hosted regions from per-kind verified capability and residency evidence                                                         | Phase F, not the logical split         |
-| Which managed secret service / residency profile?               | Local private files first; regional encryption/IAM/PKI and recovery cannot depend on Global broker/KMS                                                                   | Hosted deployment                      |
-| Provider-account commercial ownership and eligibility?          | One Organization owns its account; no cross-customer pool by default                                                                                                     | New hosted provider allocation         |
-| Retention, backup window and operational SLOs?                  | Bound hot metadata; measure and declare recovery objectives before hosted release                                                                                        | Hosted deployment; not document review |
-| When to add complete Runs/results/review?                       | Separate product specification using Workspace ownership and private result storage                                                                                      | That feature only                      |
+| Open decision                                                   | Proposed default                                                                                                                                                  | Blocks                                 |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Accept the scope-atomic KV contract and local snapshot budgets? | Adopt this specification after review; measure before increasing budgets                                                                                          | Phase A                                |
+| Which SlateDB release and runtime binding?                      | SlateDB is selected; pin a supported release/binding and verify object durability, fresh reads and recovery. SQL indexes and alternative profiles remain optional | Phase E only                           |
+| Which hosted identity and session provider?                     | No vendor selected; issuer/subject model plus independent regional verification/session renewal required                                                          | Hosted C/F                             |
+| Regional identity/recovery and revocation observability?        | Independent local verification/refresh/storage; durable policy with no synchronization TTL; unreachable target remains pending                                    | First hosted deployment                |
+| Which initial regions and verified provider placements?         | Local compatibility region first; select hosted regions from per-kind verified capability and residency evidence                                                  | Phase F, not the logical split         |
+| Which managed secret service / residency profile?               | Local private files first; regional encryption/IAM/PKI and recovery cannot depend on Global broker/KMS                                                            | Hosted deployment                      |
+| Provider-account commercial ownership and eligibility?          | One Organization owns its account; no cross-customer pool by default                                                                                              | New hosted provider allocation         |
+| Retention, backup window and operational SLOs?                  | Bound hot metadata; measure and declare recovery objectives before hosted release                                                                                 | Hosted deployment; not document review |
+| When to add complete Runs/results/review?                       | Separate product specification using Workspace ownership and private result storage                                                                               | That feature only                      |
 
 ## 12. Design verification and references
 
@@ -1384,6 +1405,8 @@ the source baseline above. No production tenant migration or new backend support
   explicit continuity grants, local token/refresh/reauthentication and safe unknown-effect retries.
 - Reviewed current JSON persistence against object-authoritative hosted recovery, accepted WAL
   visibility, shard ownership, projection rebuild, secret recovery and compaction/retention.
-- No new adapter, tenant isolation, migration or recovery test is claimed to pass: META-01–66
+- Recorded the owner's SlateDB selection and reviewed private Global storage descriptors,
+  independent regional bootstrap/shard catalogs and fenced configuration/root changes.
+- No new adapter, tenant isolation, migration or recovery test is claimed to pass: META-01–69
   are an implementation acceptance baseline. No live state, provider credential or existing
   resource was migrated or reprovisioned for this design.

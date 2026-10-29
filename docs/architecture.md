@@ -62,10 +62,17 @@ current fixed Workspace, local owner session and JSON/vault persistence remain i
 
 The [object-metastore design](../specs/gh-74/object-metastore.md) requires object recovery of
 every acknowledged metadata commit, including the accepted WAL tail; local caches and query
-projections are disposable. Evaluate an existing object-native engine, initially SlateDB,
-before building a new storage engine. Durability waits, group CAS, fresh authorization reads,
+projections are disposable. The owner has selected SlateDB for hosted Global and regional
+metadata, accepting durable control-plane write latency. Durability waits, group CAS, fresh authorization reads,
 fencing and namespace/secret recovery remain unimplemented proof obligations. SQL authority
 plus asynchronous object backup is a separate durability profile.
+
+Global maintains a private [regional metadata storage directory](../specs/gh-74/object-metastore.md#6-global-storage-directory-and-independent-regional-bootstrap)
+with S3 endpoints/buckets/prefixes, installation/engine identity, catalog locator, WAL roots,
+IAM/KMS references and configuration generations. Region boots from independently installed
+durable configuration and regional objects/identities; its detailed shard map stays local.
+Global queries the Region service rather than opening a second SlateDB writer. The directory
+does not gate regional serving/restart or appear in public regional API discovery.
 
 The owner-requested future deployment separates three planes. See the specification's
 [authority and regional placement](../specs/gh-74/spec.md#2-architecture-and-ownership)

@@ -39,4 +39,4 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Proposed decisions
 
-- [0017: Portable Workspace KV control plane](0017-workspace-kv-control-plane.md) — Global-initiated encrypted control, independent regional serving, pooled cells/bounded groups, hosted object storage as source of truth, KV candidates and identity-preserving migration; design only.
+- [0017: Portable Workspace KV control plane](0017-workspace-kv-control-plane.md) — Global-initiated encrypted control, independent regional serving, pooled cells/bounded groups, selected hosted SlateDB/object storage, private regional storage directory and identity-preserving migration; design only.
