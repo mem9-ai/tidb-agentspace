@@ -102,6 +102,8 @@ follow its task-specific references before implementation. Keep detailed rules c
 
 - Run `npm run check` before declaring a change ready. It checks the runtime, repository
   policy, formatting, lint, generated API contract, tests, types, and production build.
+- For Rust backend/module/transport changes, also run `npm run backend:check` (workspace
+  format/Clippy/tests and isolated real S3/compatibility cases); follow [the Rust runtime guide](docs/rust-backend.md).
 - Run targeted checks during development. Add meaningful behavior/regression tests for API,
   authorization, persistence, and billing changes; do not add tests that merely restate code.
 - For visible UI changes, inspect the browser and provide a screenshot plus the checked

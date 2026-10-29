@@ -1780,6 +1780,8 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "rustls-platform-verifier",
+ "serde",
+ "serde_json",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
@@ -3068,6 +3070,75 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
+name = "workspace-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+ "workspace-contracts",
+ "workspace-domain",
+ "workspace-meta-client",
+]
+
+[[package]]
+name = "workspace-backend"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "workspace-api",
+ "workspace-contracts",
+ "workspace-domain",
+ "workspace-meta-client",
+ "workspace-meta-service",
+]
+
+[[package]]
+name = "workspace-contracts"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "workspace-domain"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "getrandom 0.3.4",
+ "hex",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "uuid",
+ "workspace-contracts",
+]
+
+[[package]]
+name = "workspace-meta-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "workspace-contracts",
+]
+
+[[package]]
 name = "workspace-meta-service"
 version = "0.1.0"
 dependencies = [
@@ -3087,6 +3158,7 @@ dependencies = [
  "subtle",
  "tokio",
  "uuid",
+ "workspace-contracts",
 ]
 
 [[package]]

@@ -106,3 +106,11 @@ installed RustFS version. Production services, billable provider changes and des
 native migrations are outside this authorization. Do not disturb the running Portal or
 private migrated state while testing a partial Rust profile. No additional model/execution
 dispatcher is required. Follow the current reviewed, signed, latest-head-green PR workflow.
+
+## Stage A implementation status
+
+GH-90 provides the Cargo workspace, reusable metadata library, composable host, Workspace/Key
+domain and loopback HTTP profile, with local/remote Meta ports. See the
+[runtime guide](../../docs/rust-backend.md) for implemented routes, behavioral evidence,
+encoding/admission limits and remaining migration work. RUST-01–08/11 have partial evidence
+from the isolated integration suite; RUST-09/10/12 and the parent intent remain open.

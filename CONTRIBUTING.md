@@ -142,6 +142,17 @@ contributor's `.data/` directory. Add regression tests for behavior changes. For
 inspect desktop and narrow layouts, keyboard behavior, loading/error/empty states, and provide
 screenshots. If a check cannot run, report the specific gap instead of claiming success.
 
+## Rust backend modules
+
+Use the root Cargo workspace, pinned `rust-toolchain.toml` and root `Cargo.lock`.
+`npm run backend:build` builds the Rust modules; `npm run backend:check` runs workspace
+format/Clippy/tests and real isolated S3/Node-parity tests in addition to `npm run check`.
+The same checks are available through Cargo directly; Node remains build/test tooling and
+the transitional product API. See [the Rust runtime guide](docs/rust-backend.md) for the
+common binary, module map, partial Workspace/Key profile and private deployment plans.
+Do not switch a live entry point to a partial profile or use real provider mutations for
+language migration. Rust role changes must preserve regional ownership and gateway fencing.
+
 ## Commits and review
 
 Use `type(scope): description`, for example `feat(keys): restrict keys to selected resources`.

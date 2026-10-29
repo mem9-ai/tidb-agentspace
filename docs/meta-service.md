@@ -2,7 +2,7 @@
 
 - Status: Implemented initial storage profile for GH-86, following the owner-approved
   [GH-74 design](../specs/gh-74/spec.md) and [ADR 0019](decisions/0019-workspace-kv-control-plane.md).
-- Engine: SlateDB **0.17.0**, Rust **1.99.1**, checked-in Cargo lockfile.
+- Engine: SlateDB **0.17.0**, Rust **1.99.1**, checked-in root Cargo lockfile shared with the Rust backend workspace.
 - Scope: Independent Global/regional metadata services and an opt-in bounded compatibility
   adapter for the existing single-Workspace Node gateway. Full multi-tenant domain migration,
   Global/Region public APIs, automatic HA and million-resource sharding remain future work.
@@ -15,14 +15,15 @@ writer ownership. They reuse service code. A configured authority cannot read or
 authority's scope. Global's private directory records regional deployment descriptors; normal
 regional serving has no Global client, lookup, token renewal or storage fallback.
 
-The Node business backend stays ESM. Its optional document-store factory replaces persistence
+The active Node business backend remains ESM during the [staged Rust migration](rust-backend.md).
+Its optional document-store factory replaces persistence
 for the Workspace state and all four provider vaults. It verifies the installed import before
 startup and refuses missing documents. State is refreshed before admission; private vaults
 refresh at authorized provider entry points. Mutations read a fresh revision, run the existing
 callback once and conditionally commit. Conflicts and unknown outcomes do not replay callbacks
 or provider I/O. JSON mode remains available for new local demos; a migrated source is frozen.
 
-The compatibility gateway is **single-active**: it acquires a revision-checked regional
+The compatibility gateway is **single-active** across Node and Rust: it acquires a revision-checked regional
 gateway owner record before opening vaults. Every document operation carries that owner and
 is checked atomically by Rust. A second gateway rejects with `META_GATEWAY_ACTIVE`; an old
 gateway is fenced after explicit recovery. Unguarded legacy clients cannot access documents
@@ -194,7 +195,9 @@ gateway exit, stop every old gateway, inspect its private `legacy-gateway` scope
 `recoverGatewayOwner` in the regional serving configuration to that exact stopped owner ID.
 A stale recovery setting cannot steal a newer owner. This workflow is entirely regional and
 has no Global expiry or heartbeat. `server/meta/gateway-ownership.mjs --config <serving-file>`
-prints only the opaque gateway owner for authorized operators. Deploy the updated Rust
+prints only the opaque gateway owner for authorized operators. The Rust Workspace profile
+uses this same owner/fencing protocol and preserves the existing document format.
+Deploy the updated Rust
 service before the Node adapter; the adapter requires the gateway-fencing capability.
 
 ## Hosted configuration and evidence limits
