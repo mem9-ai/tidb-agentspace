@@ -2321,7 +2321,7 @@ function WorkspaceSettings({ data, refresh, notify, copy, sso }: Shared & { sso:
             />
             <div className="account-row">
               <span className="profile-avatar">{name.slice(0, 1).toUpperCase()}</span>
-              <div>
+              <div className="account-session-summary">
                 <strong>{sso.enabled ? 'TiDB Account session' : 'Guest session'}</strong>
                 <Text component="p">
                   {sso.enabled
@@ -2357,8 +2357,8 @@ function WorkspaceSettings({ data, refresh, notify, copy, sso }: Shared & { sso:
       </form>
       <Alert className="notice quiet" color="peacock" icon={<KeyRound size={17} />}>
         <span>
-          For automation, create a scoped API key. The browser’s guest session cannot administer
-          real TiDB Cloud accounts.
+          For automation, create a scoped API key. Signing in does not grant TiDB Cloud account
+          administration access.
         </span>
       </Alert>
     </>
