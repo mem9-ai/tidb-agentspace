@@ -328,7 +328,6 @@ test(
           clientId: 'native-client',
           ownerSubjects: ['alice'],
         },
-        product: {},
       },
     });
     const { readFile } = await import('node:fs/promises');
