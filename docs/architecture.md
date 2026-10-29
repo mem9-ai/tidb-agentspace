@@ -67,6 +67,11 @@ metadata, accepting durable control-plane write latency. Durability waits, group
 fencing and namespace/secret recovery remain unimplemented proof obligations. SQL authority
 plus asynchronous object backup is a separate durability profile.
 
+Hosted Global and each Region own independently deployed Meta Services and distinct SlateDB
+instances, object roots, WAL/manifests, compaction and ownership state. They may share service
+code and client contracts; a single SlateDB instance partitioned by Global/Region prefixes
+does not provide this isolation. Each authority may shard its own metadata independently.
+
 Global maintains a private [regional metadata storage directory](../specs/gh-74/object-metastore.md#6-global-storage-directory-and-independent-regional-bootstrap)
 with S3 endpoints/buckets/prefixes, installation/engine identity, catalog locator, WAL roots,
 IAM/KMS references and configuration generations. Region boots from independently installed

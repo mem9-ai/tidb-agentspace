@@ -84,7 +84,35 @@ This is the regional storage path; Global has its own independent deployment. Ne
 the other's metadata authority, bucket credentials or availability dependency. Global reads
 regional status through Global-initiated service requests, not a shared writable bucket.
 
-An engine instance belongs to a bounded **physical metadata shard**, pooling many tenants
+For the hosted profile, **each control-plane authority has an independently deployed Meta
+Service and its own SlateDB databases**:
+
+```mermaid
+flowchart TB
+  G[Global control] --> GM[Global Meta Service]
+  GM --> GS[Global SlateDB databases and S3 roots]
+  G -->|mTLS commands and queries| A[Region A control]
+  G -->|mTLS commands and queries| B[Region B control]
+  A --> AM[Region A Meta Service]
+  AM --> AS[Region A SlateDB databases and S3 roots]
+  B --> BM[Region B Meta Service]
+  BM --> BS[Region B SlateDB databases and S3 roots]
+```
+
+The services may reuse the same source, binary, client protocol and MetaStore contract.
+Their processes/endpoints, installation identities, engine instances, ownership state,
+WALs, manifests, compaction/GC and object roots are independent. An authority cannot be a
+tenant prefix inside another authority's open SlateDB instance. Global's registry contains
+regional storage descriptors, not live handles or writer access to those databases.
+
+Provision disjoint service-owned S3 roots with independently scoped IAM/KMS access; separate
+buckets are the normal production layout, while bucket sharing requires explicit permission,
+residency and failure-domain review. Merely using different prefixes in one database does
+not establish independent services or engine instances. Losing/restarting Global or Region A
+must not stop Region B's metadata service. Local single-process functional tests remain an
+explicit development exception and make no hosted isolation/availability claim.
+
+Within one authority, an engine instance belongs to a bounded **physical metadata shard**, pooling many tenants
 and many logical groups. Do not create an LSM, bucket, Raft group or resident process per
 Workspace/resource. Route by the scale profile's group/resource identity; a large Workspace
 spans shards, while a small Workspace need not occupy dedicated compute. Increase or isolate
@@ -248,8 +276,10 @@ are separate facts. Losing Global does not erase a Region's locator, identity or
 
 Use **SlateDB** behind the proposed MetaStore boundary for hosted Global and regional
 metadata. Pin a release and verify its format/runtime/storage APIs during implementation.
-Keep the current ESM domain/API code; decide supported bindings versus a private regional
-metadata process after that evaluation, without introducing another public API framework.
+Keep the current ESM domain/API code. Hosted APIs connect only to their own authority's
+private Meta Service; Global and different Regions never share one service/engine deployment.
+The proposed Rust service versus supported binding implementation is a separate choice from
+these mandatory instance/ownership boundaries. No additional public API framework is implied.
 
 Control-plane writes may accept object-storage latency while reads use the current owner
 and caches under the required freshness contract. A SQL/file request must not require a

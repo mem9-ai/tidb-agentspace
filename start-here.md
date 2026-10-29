@@ -75,6 +75,8 @@ object storage is the preferred source of truth for all acknowledged commits, in
 local caches and search projections are rebuildable. The owner has selected SlateDB for
 hosted Global and regional metadata, superseding candidate-only/SQL-first evaluation.
 Release/binding, durability and service conformance still require implementation evidence.
+Global and every Region have independent Meta Service deployments and SlateDB instances;
+shared code/contracts do not mean one database partitioned by authority prefixes.
 Global records private regional S3/storage descriptors; Region retains independent bootstrap
 config and object-backed shard catalogs, with no Global lookup/renewal gate on startup.
 Local development still uses ordinary files; the running JSON store is unchanged.

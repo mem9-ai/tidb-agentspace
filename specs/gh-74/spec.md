@@ -90,6 +90,13 @@ engine is SlateDB; ordinary files support local use, while TiDB File
 System and TiDB/MySQL remain candidates/alternative profiles. Sharing an interface does not
 require sharing a physical root or database.
 
+Hosted Global and every Region each own an independently deployed Meta Service and distinct
+SlateDB databases. Shared source/client contracts do not share runtime processes, engine
+instances, WAL/manifest/compaction state, storage roots or writer ownership. A single shared
+SlateDB with per-authority prefixes does not meet this boundary. Within one authority,
+multiple physical shards may pool tenants. The [object-metastore topology](object-metastore.md#3-physical-shards-beneath-logical-atomic-groups)
+defines this distinction; the all-in-one local functional profile is not hosted isolation.
+
 | Entity             | Ownership / meaning                                                                                   |
 | ------------------ | ----------------------------------------------------------------------------------------------------- |
 | User               | Product identity bound to an authentication issuer and subject; not an email address as a primary key |

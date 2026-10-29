@@ -90,6 +90,9 @@ IAM/KMS access and shard catalog so that this directory adds no serving/restart 
    desired state and dispatch. Each region owns actual bindings, native credential access,
    execution recovery and observed state; its data plane handles SQL/files/workers. Distinct
    global/regional metadata roots use the same MetaStore interface with separate identities.
+   Hosted Global and each Region have independent Meta Service deployments and distinct
+   SlateDB instances/roots/WALs/manifests/ownership; sharing service code does not share the
+   live database. Per-authority prefixes inside one SlateDB instance are insufficient.
    Return safe status/usage evidence only to Global-initiated queries; derived global views
    do not become regional execution authority.
 9. Assign one `regionId` before dispatch and verify provider placement separately. Preserve
