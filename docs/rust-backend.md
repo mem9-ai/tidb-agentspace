@@ -28,7 +28,7 @@ The fresh record profile supersedes the document migration baseline; see [ADR 00
 Domain operations are shared by Console and agent requests. Providers and computation are
 separate crates behind regional application operations. Metadata supports in-process and remote
 ports; those are implemented deployment modes. Provider/compute crates do not claim independent
-public RPC services. Workers are separate processes even in an all-in-one deployment.
+public RPC services. Workers are separate processes even in an all-in-one deployment. Each worker returns one bounded JSON reply and flushes the same stdout handle before process/runtime exit. Awaiting Tokio `write_all` alone is not a completion barrier for its background writer. Buffered-output and flush-failure regression cases enforce this IPC boundary; diagnostics report only exit status or response byte count, never request contents or credentials.
 
 ## Build, check and package
 

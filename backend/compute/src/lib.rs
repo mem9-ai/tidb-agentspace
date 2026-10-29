@@ -110,9 +110,16 @@ impl Compute {
             }
             let status = child.wait().await.map_err(|_| err(502, failure))?;
             if !status.success() {
+                eprintln!("Compute worker exited before a confirmed reply ({status}).");
                 return Err(err(422, failure));
             }
-            let v: Value = serde_json::from_slice(&output).map_err(|_| err(422, failure))?;
+            let v: Value = serde_json::from_slice(&output).map_err(|_| {
+                eprintln!(
+                    "Compute worker returned invalid JSON ({} bytes).",
+                    output.len()
+                );
+                err(422, failure)
+            })?;
             if let Some(code) = v["error"]["code"].as_str() {
                 return Err(err(
                     v["error"]["status"].as_u64().unwrap_or(422) as u16,
@@ -205,16 +212,68 @@ pub async fn worker_entry() -> Result<()> {
         Err(e) => json!({"error":{"status":e.status,"code":e.code}}),
     };
     let output = serde_json::to_vec(&value).map_err(|_| err(422, "ANALYSIS_FAILED"))?;
-    if output.len() > 1024 * 1024 {
-        tokio::io::stdout()
-            .write_all(b"{\"error\":{\"status\":422,\"code\":\"ANALYSIS_OUTPUT_LIMIT\"}}")
-            .await
-            .map_err(|_| err(500, "ANALYSIS_FAILED"))?;
+    write_worker_reply(&mut tokio::io::stdout(), &output).await
+}
+
+async fn write_worker_reply<W: tokio::io::AsyncWrite + Unpin>(
+    writer: &mut W,
+    output: &[u8],
+) -> Result<()> {
+    let output = if output.len() > 1024 * 1024 {
+        b"{\"error\":{\"status\":422,\"code\":\"ANALYSIS_OUTPUT_LIMIT\"}}".as_slice()
     } else {
-        tokio::io::stdout()
-            .write_all(&output)
-            .await
-            .map_err(|_| err(500, "ANALYSIS_FAILED"))?;
+        output
+    };
+    writer
+        .write_all(output)
+        .await
+        .map_err(|_| err(500, "ANALYSIS_FAILED"))?;
+    // Tokio stdout writes can still be queued on a blocking thread after write_all returns.
+    // Complete the same handle's flush before the disposable process/runtime can exit.
+    writer
+        .flush()
+        .await
+        .map_err(|_| err(500, "ANALYSIS_FAILED"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn worker_reply_is_complete_before_buffered_writer_exit() {
+        for output in [
+            br#"{"result":{"stdout":"alice,1\n","exitCode":0}}"#.to_vec(),
+            vec![b'x'; 1024 * 1024 + 1],
+        ] {
+            let expected = if output.len() > 1024 * 1024 {
+                br#"{"error":{"status":422,"code":"ANALYSIS_OUTPUT_LIMIT"}}"#.as_slice()
+            } else {
+                output.as_slice()
+            };
+            let (sender, mut receiver) = tokio::io::duplex(1024);
+            let mut writer = tokio::io::BufWriter::with_capacity(2048, sender);
+            write_worker_reply(&mut writer, &output).await.unwrap();
+            // The writer stays alive: visibility must come from the reply's flush, not Drop.
+            let mut received = vec![0; expected.len()];
+            tokio::time::timeout(Duration::from_secs(1), receiver.read_exact(&mut received))
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(received, expected);
+            let _: Value = serde_json::from_slice(&received).unwrap();
+        }
     }
-    Ok(())
+    #[tokio::test]
+    async fn worker_reply_reports_buffered_flush_failure() {
+        let (sender, receiver) = tokio::io::duplex(1024);
+        drop(receiver);
+        let mut writer = tokio::io::BufWriter::with_capacity(2048, sender);
+        assert_eq!(
+            write_worker_reply(&mut writer, b"{}")
+                .await
+                .unwrap_err()
+                .code,
+            "ANALYSIS_FAILED"
+        );
+    }
 }

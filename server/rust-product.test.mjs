@@ -342,7 +342,11 @@ async function scenarios(request, provider) {
   let trace = [];
   async function run(path, options, expected = 200) {
     const r = await request(path, options);
-    assert.equal(r.status, expected, JSON.stringify({ path, status: r.status, body: r.body }));
+    assert.equal(
+      r.status,
+      expected,
+      JSON.stringify({ path, command: options?.body?.command, status: r.status, body: r.body }),
+    );
     trace.push([path.replace(/preparation[^/]*/g, 'preparation'), r.status, r.body.error?.code]);
     return r;
   }
@@ -944,7 +948,19 @@ for (const transport of ['remote', 'inProcess']) {
       child.stdout.pipe(log);
       child.stderr.pipe(log);
       const request = await until(() => connect(`http://127.0.0.1:${bind}`));
-      const actual = await scenarios(request, provider);
+      let actual;
+      try {
+        actual = await scenarios(request, provider);
+      } catch (error) {
+        const output = await readFile(resolve(f.directory, 'backend.log'), 'utf8');
+        for (const line of output
+          .split('\n')
+          .filter((line) =>
+            /^Compute worker (exited before a confirmed reply|returned invalid JSON)/.test(line),
+          ))
+          t.diagnostic(line);
+        throw error;
+      }
       assert.deepEqual(actual, expected);
       assert.equal(provider.creates, 0);
       const schema = await fetch(`http://127.0.0.1:${bind}/openapi.json`);
