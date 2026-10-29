@@ -251,8 +251,24 @@ verified, and record that as a remaining gap.
   Success links open the saved file/table. Follow [ADR 0013](../decisions/0013-result-snapshot-exports.md)
   for authority and partial-write handling, and [verification](../result-export-verification.md)
   for themes, narrow layouts and API limits. Revisit for larger exports or additional formats.
-- **File analysis (accepted and implemented, 2026-10-28):** keep Analyze in the selected
-  file's side panel. Separate file format from analysis method: use capability options to
+- **Preview-first file workspace (owner correction, GH-76):** open a file to its content or
+  bounded tabular sample. SQL/Bash expands in place, with Data preview and Query result/Command
+  output sharing the content area. Keep tools mounted through tool, content, method and browser
+  toggles; retain independent in-memory drafts/results/errors and run only explicitly. Source
+  editing remains a secondary action with save/discard guards; Parquet has no source editor.
+  CSV/Parquet preview uses the server's fixed reader, shows types/schema and a clearly labeled
+  sample; CSV types are inferred and its total is unknown, while Parquet count comes from metadata.
+  Fixed preview requires read access; custom execution still requires analyze access. Keep
+  original Download, unavailable/retry states and saved-version mismatch guidance. Refresh
+  preview/capabilities after saving without unmounting tools. Legacy analyze links expand tools.
+  Use TiUI disclosures, Tabs, Table and the existing shared execution/results/theme adapters.
+  Inspect retained state, source guards, busy/cancel/errors, 16px editors and 15px table cells,
+  both themes at 1280×800 and 390×844 with internal scrolling and no page overflow. See
+  [ADR 0017](../decisions/0017-preview-first-file-workspace.md) and
+  [verification](../file-workspace-verification.md). This supersedes the top-level Preview/Analyze
+  split in older reading/analysis evidence. Revisit for durable sessions or large-file range reads.
+- **File analysis (accepted and implemented, 2026-10-28):** keep analysis in the selected
+  unified file workspace with tools expanded on demand. Separate file format from analysis method: use capability options to
   offer DuckDB SQL and Just Bash for CSV; keep SQL as its default. Parquet remains SQL-only
   and recognized text remains Bash-only. Use a labeled TiUI SegmentedControl when multiple
   methods exist, explain parsed rows versus raw text, retain separate in-memory drafts/results/errors,
@@ -296,7 +312,7 @@ verified, and record that as a remaining gap.
   an inline right-hand panel, keeping the file list usable on desktop. Do not use a centered
   modal or a backdrop for routine reading. On narrow screens show the reading panel with a
   clear Back to files action. Default Markdown to rendered content and keep an explicit
-  source-editing tab; preserve unsaved drafts when switching files, changing file systems,
+  source-editing action; preserve unsaved drafts when switching files, changing file systems,
   or closing the panel. Keep save failures recoverable in place. Reuse TiUI Paper, Tabs,
   Textarea, Table, and CodeBlock; semantic document markup is appropriate for Markdown.
   Treat content as untrusted: no raw HTML execution, unsafe links, or automatic remote image

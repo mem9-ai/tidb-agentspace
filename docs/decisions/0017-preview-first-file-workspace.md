@@ -1,6 +1,6 @@
 # 0017: Preview-first file workspace
 
-- Status: Accepted owner direction, 2026-10-29; implementation pending.
+- Status: Accepted owner direction, 2026-10-29; implemented; see [verification](../file-workspace-verification.md).
 - Contract and acceptance: [GH-76 specification](../../specs/gh-76/spec.md).
 - Supersedes the top-level Preview/Analyze separation, preserving ADR 0010 and 0014–0016
   execution, method and path boundaries.

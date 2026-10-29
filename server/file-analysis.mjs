@@ -1,4 +1,5 @@
 import { fork } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +10,7 @@ import {
   analysisFormat,
   analysisLimits,
   validateAnalysis,
+  tabularPreviewLimits,
 } from './file-analysis-contract.mjs';
 
 function abortError(signal) {
@@ -73,6 +75,18 @@ export function createFileAnalysis({
   let active = 0;
   return {
     limits,
+    async preview(resource, input, signal) {
+      if (Object.keys(input).some((key) => !['resourceId', 'path'].includes(key)))
+        throw analysisError(400, 'INVALID_PREVIEW', 'Use only a File System and a file path.');
+      const format = analysisFormat(input.path)?.format;
+      if (!['csv', 'parquet'].includes(format))
+        throw analysisError(
+          422,
+          'UNSUPPORTED_PREVIEW',
+          'Tabular preview supports CSV and Parquet.',
+        );
+      return this.execute(resource, input, signal, true);
+    },
     async capabilities(resource, path, signal) {
       const info = await snapshot(resource, path, signal, true);
       const format = analysisFormat(path);
@@ -109,8 +123,11 @@ export function createFileAnalysis({
         limits,
       };
     },
-    async execute(resource, input, externalSignal) {
-      const { format, script } = validateAnalysis(input);
+    async execute(resource, input, externalSignal, preview = false) {
+      const { format, script } = preview
+        ? { format: analysisFormat(input.path).format }
+        : validateAnalysis(input);
+      const runLimits = preview ? { ...limits, ...tabularPreviewLimits } : limits;
       if (active >= limits.concurrency)
         throw analysisError(
           429,
@@ -150,31 +167,35 @@ export function createFileAnalysis({
         await writeFile(sourcePath, source.bytes, { mode: 0o600 });
         const result = await runner(
           {
-            engine: input.engine,
+            engine: preview ? 'duckdb' : input.engine,
+            preview,
             format,
             script,
             sourcePath,
             workspacePath: input.path,
             directory,
-            limits,
+            limits: runLimits,
           },
           signal,
         );
         if (signal.aborted) throw abortError(signal);
         const output = {
           ...result,
-          engine: input.engine,
+          ...(preview ? { format } : { engine: input.engine }),
           resourceId: resource.id,
           path: input.path,
           readOnly: true,
           inputBytes: source.bytes.length,
+          fileVersion: createHash('sha256').update(source.bytes).digest('hex'),
           durationMs: Math.round(performance.now() - started),
         };
-        if (Buffer.byteLength(JSON.stringify(output)) > limits.outputBytes)
+        if (Buffer.byteLength(JSON.stringify(output)) > runLimits.outputBytes)
           throw analysisError(
             422,
             'ANALYSIS_OUTPUT_LIMIT',
-            'Analysis output exceeds 1 MiB. Reduce the result size.',
+            preview
+              ? 'Preview exceeds 128 KiB. Download the file instead.'
+              : 'Analysis output exceeds 1 MiB. Reduce the result size.',
           );
         return output;
       } catch (error) {

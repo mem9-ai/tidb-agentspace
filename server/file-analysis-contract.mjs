@@ -8,6 +8,11 @@ export const analysisLimits = Object.freeze({
   workerHeapMiB: 128,
   duckdbMemoryMB: 128,
 });
+export const tabularPreviewLimits = Object.freeze({
+  rows: 20,
+  columns: 50,
+  outputBytes: 128 * 1024,
+});
 export const analysisCommands = Object.freeze([
   'cat',
   'grep',

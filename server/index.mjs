@@ -452,6 +452,7 @@ export async function createApp({
       }
       if (
         (route === '/file-analyses/capabilities' && req.method === 'GET') ||
+        (route === '/files/tabular-preview' && req.method === 'GET') ||
         (route === '/file-analyses' && req.method === 'POST')
       ) {
         requireScope('files:read');
@@ -466,13 +467,16 @@ export async function createApp({
         const onClose = () => controller.abort();
         res.on('close', onClose);
         try {
-          const result = execute
-            ? await fileAnalysis.execute(resource, input, controller.signal)
-            : await fileAnalysis.capabilities(
-                resource,
-                input.path,
-                AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
-              );
+          const result =
+            route === '/files/tabular-preview'
+              ? await fileAnalysis.preview(resource, input, controller.signal)
+              : execute
+                ? await fileAnalysis.execute(resource, input, controller.signal)
+                : await fileAnalysis.capabilities(
+                    resource,
+                    input.path,
+                    AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
+                  );
           if (execute) await recordFile('file.analyzed', resource.id, input.path, principal);
           return send(200, result);
         } finally {

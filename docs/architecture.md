@@ -115,14 +115,19 @@ Provider credentials never enter workers. This is a read-only local
 prototype; public compute isolation and larger remote scans remain future work. See
 [ADR 0010](decisions/0010-read-only-file-analysis.md).
 
-File System opens files in a non-modal reading panel beside the desktop file list. On narrow
-screens the panel has an explicit return to the list. Markdown is rendered by default;
-JSON, CSV, common source files, and plain text have text-based previews with an Edit source
-tab. Save keeps the current file open. The local JSON API accepts UTF-8 text up to
-256 KiB; live resources additionally support bounded binary transfers through the gateway; automatic preview has a separate 128 KiB budget plus line/complexity limits.
-Oversized, unsupported, invalid, or failed previews show a reason and retain Download and
-navigation. Text source editing remains available; correcting a draft can restore its preview.
-Binary files can be uploaded/downloaded on live resources, but image, PDF, and media rendering are not implemented. See the
+File System opens a unified non-modal file workspace beside the desktop browser. Preview is
+primary; SQL/Bash expands in place and preview/results share the content area without losing
+in-memory drafts or outputs. Markdown renders by default; text source editing is an explicit
+secondary action with save/discard guards. The local JSON API accepts UTF-8 up to 256 KiB;
+live resources also support bounded binary transfers. Text previews retain their separate
+128 KiB and complexity limits. CSV/Parquet use a fixed server-generated sample of at most
+20 rows/50 columns/128 KiB, with the existing 16 MiB whole-snapshot and 15-second budgets.
+CSV types are inferred and total count unknown; Parquet reports metadata row count. Fixed
+preview needs read access, while custom SQL/Bash still needs read plus analyze. Versioned
+results warn when compared to another saved preview. Download/navigation remain available
+on unsupported, invalid or over-budget input. Image/PDF/media rendering and large remote
+scans remain future work. See [ADR 0017](decisions/0017-preview-first-file-workspace.md),
+[verification](file-workspace-verification.md) and the
 [file reading standard](standards/tiui-design-system.md#theme-responsive-behavior-and-interaction).
 
 File System creation and fresh demo workspaces default to AWS Singapore (`aws-ap-southeast-1`),
