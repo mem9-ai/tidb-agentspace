@@ -1,42 +1,55 @@
-name: Internal artifact
-
+name: Temporary Studio publication acceptance
 on:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
-  group: internal-artifact
+  group: studio-publication-acceptance
   cancel-in-progress: false
-
 jobs:
-  package:
-    name: Verify and package
+  quality:
+    if: github.ref == 'refs/heads/diagnostics/studio-publish-acceptance'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
-      - name: Require reviewed main-branch source
-        run: test "$GITHUB_REF" = refs/heads/main
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version-file: .node-version
-          cache: npm
+          package-manager-cache: false
       - name: Select the pinned npm version
         run: npm install --global npm@11.6.2 --ignore-scripts
       - run: npm ci
       - run: npm run check
-      - name: Verify source sign-offs
-        run: node scripts/check-signoff.mjs '' "$GITHUB_SHA"
-      - name: Package the internal runtime
-        run: node scripts/package-runtime.mjs "$GITHUB_SHA"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+  acceptance:
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          name: internal-workspace-${{ github.sha }}
-          path: release/
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        id: app
+        with:
+          app-id: ${{ vars.STUDIO_PUBLISH_APP_ID }}
+          private-key: ${{ secrets.STUDIO_PUBLISH_APP_PRIVATE_KEY }}
+          owner: mem9-ai
+          permission-contents: write
+          permission-pull-requests: write
+          permission-checks: read
+      - run: node scripts/studio-publish-acceptance.mjs
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: studio-publication-acceptance
+          path: studio-acceptance.json
+          retention-days: 3
           if-no-files-found: error
-          retention-days: 14
