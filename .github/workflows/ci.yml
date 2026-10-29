@@ -59,7 +59,7 @@ jobs:
         run: node scripts/check-signoff.mjs "$BASE_SHA" "$HEAD_SHA"
 
   metadata:
-    name: Rust metadata and S3 integration
+    name: Rust backend and S3 integration
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -86,4 +86,4 @@ jobs:
           unzip -q "$runtime_dir/rustfs.zip" -d "$runtime_dir"
           chmod +x "$runtime_dir/rustfs"
           printf '%s\n' "$runtime_dir" >> "$GITHUB_PATH"
-      - run: npm run meta:check
+      - run: npm run backend:check

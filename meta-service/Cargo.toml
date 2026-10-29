@@ -22,3 +22,4 @@ slatedb = { version = "=0.17.0", default-features = false, features = ["aws"] }
 subtle = "=2.6.1"
 tokio = { version = "=1.48.0", features = ["macros", "rt-multi-thread", "signal", "sync"] }
 uuid = { version = "=1.18.1", features = ["v4"] }
+workspace-contracts = { workspace = true }

@@ -33,47 +33,7 @@ struct Owner {
     installation_id: String,
     released: bool,
 }
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Scope {
-    pub authority_id: String,
-    pub owner_kind: String,
-    pub owner_id: String,
-    pub family: String,
-    pub partition_id: String,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Gateway {
-    scope: Scope,
-    owner_id: String,
-}
-#[derive(Deserialize)]
-#[serde(tag = "op", rename_all = "camelCase", deny_unknown_fields)]
-pub enum Request {
-    Snapshot {
-        scope: Scope,
-        #[serde(default)]
-        gateway: Option<Gateway>,
-    },
-    Commit {
-        scope: Scope,
-        #[serde(default)]
-        gateway: Option<Gateway>,
-        #[serde(rename = "expectedRevision")]
-        expected_revision: Option<String>,
-        #[serde(rename = "mutationId")]
-        mutation_id: String,
-        changes: Vec<Value>,
-    },
-    Resolve {
-        scope: Scope,
-        #[serde(default)]
-        gateway: Option<Gateway>,
-        #[serde(rename = "mutationId")]
-        mutation_id: String,
-    },
-}
+pub use workspace_contracts::{Gateway, MetaRequest as Request, Scope};
 #[derive(Debug)]
 pub struct Failure(pub u16, pub &'static str);
 type Outcome<T> = std::result::Result<T, Failure>;
@@ -124,6 +84,7 @@ fn unseal(cipher: &Aes256Gcm, key: &[u8], bytes: &[u8]) -> Result<Vec<u8>> {
 }
 impl Engine {
     pub async fn open(config: Config, initialize: bool, recover: Option<&str>) -> Result<Self> {
+        config.validate()?;
         let key =
             hex::decode(std::str::from_utf8(&private_file(&config.encryption_key_file)?)?.trim())?;
         let cipher = Aes256Gcm::new_from_slice(&key)

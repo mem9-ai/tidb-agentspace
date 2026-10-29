@@ -255,7 +255,8 @@ and [the source contract](duckdb-databases.md#workspace-file-sources).
 Implemented delivery: the Console and API have independent builds, processes, and artifacts in
 one repository. The API serves only HTTP API/schema endpoints; the static Console uses runtime
 API-origin configuration and an OpenAPI-generated typed client. The existing backend remains
-Node ESM. See [ADR 0005](decisions/0005-independent-console-and-api.md) and the
+Node ESM for the active full API; the first [Rust Workspace/Key slice](rust-backend.md)
+and composable host now run against embedded or remote metadata. See [ADR 0005](decisions/0005-independent-console-and-api.md) and the
 [operating guide](independent-delivery.md). Production identity and hosting remain proposed.
 
 The accepted backend target is Rust, following [ADR 0020](decisions/0020-modular-rust-backend.md)

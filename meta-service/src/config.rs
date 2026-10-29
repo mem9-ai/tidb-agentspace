@@ -75,6 +75,11 @@ impl Config {
     pub fn load(path: &Path) -> Result<Self> {
         let c: Self = serde_json::from_slice(&private_file(path)?)
             .map_err(|_| anyhow::anyhow!("Invalid private service configuration"))?;
+        c.validate()?;
+        Ok(c)
+    }
+    pub fn validate(&self) -> Result<()> {
+        let c = self;
         if !valid_id(&c.installation_id)
             || !valid_id(&c.encryption_key_id)
             || !(c.authority_id == "global"
@@ -109,6 +114,6 @@ impl Config {
                 bail!("Object storage requires HTTPS outside loopback tests");
             }
         }
-        Ok(c)
+        Ok(())
     }
 }

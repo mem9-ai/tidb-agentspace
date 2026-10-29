@@ -1,0 +1,3 @@
+[build]
+# Preserve the existing independent Meta Service build/test location.
+target-dir = "meta-service/target"

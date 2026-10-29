@@ -176,3 +176,9 @@ domain modules and a common executable for embedded or independently deployed ro
 Console remains a separate static artifact. Current Node serving/packages are transitional;
 [GH-88](../specs/gh-88/spec.md) requires per-module parity before changing a live entry point.
 A common binary does not combine metadata authorities or eliminate isolated compute workers.
+
+The first [Rust migration profile](rust-backend.md) now supplies a common executable, reusable
+metadata library and real Workspace/Key domain with local/remote ports. It builds without
+frontend/Node dependencies, while the full Node artifact remains the active compatibility API.
+The root Cargo workspace owns one lockfile; standalone service binaries remain independently
+deployable. A partial profile is not a replacement for the advertised full API package.
