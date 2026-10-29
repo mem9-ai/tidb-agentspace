@@ -47,6 +47,8 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Proposed decisions
 
+- [0023: Database import workspace](0023-database-import-workspace.md) — proposed destination-owned local/public-file CSV/Parquet preparation, reviewed new-table writes and target-bound tickets under GH-103.
+
 - [0019: Portable Workspace KV control plane](0019-workspace-kv-control-plane.md) — Global-initiated encrypted control, independent regional serving, pooled cells/bounded groups, selected hosted SlateDB/object storage, private regional storage directory and identity-preserving migration; phased implementation.
 
 - [0021: Native Rust computation](0021-native-rust-computation.md) — bundled DuckDB, restricted Bashkit snapshot workers, native SQL and Node-free regional serving.
