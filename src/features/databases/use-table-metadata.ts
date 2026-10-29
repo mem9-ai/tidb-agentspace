@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { workspaceApi, type TableDetail } from '../../api/client';
 import { TableMetadataCache } from './table-metadata-cache';
+import { readDatabase } from './database-read';
 
 type Snapshot = { key: string; data?: TableDetail; error?: string; loading: boolean };
 export type TableMetadata = {
@@ -31,7 +32,7 @@ export function useTableMetadata(
     }
     const controller = new AbortController();
     setSnapshot({ key, loading: true });
-    workspaceApi.table(resourceId, name, controller.signal).then(
+    readDatabase((signal) => workspaceApi.table(resourceId, name, signal), controller.signal).then(
       (data) => {
         if (controller.signal.aborted) return;
         const next = { key, data, loading: false };

@@ -54,6 +54,10 @@ remain 64 KiB SQL, four concurrent PG queries, 15 seconds including connection, 
 1 MiB retained results. Closing/overflow/timeouts can leave a write outcome unknown; inspect
 before retrying. Table browsing is restricted to workspace, lists at most 500 tables/views and
 previews 100 unordered rows. It requires queries:execute and the database resource grant.
+The Rust table-description operation reuses one fresh native session for its three generated
+metadata statements, sharing the 15-second/1,000-row/1 MiB operation budget. It never reuses a
+customer SQL session or returns a partial description. Console database reads also have an
+explicit whole-read deadline and retryable error; see [verification](postgres-column-latency-verification.md).
 
 ## Provider compatibility
 

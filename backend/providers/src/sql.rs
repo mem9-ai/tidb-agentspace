@@ -333,25 +333,26 @@ mod wire_tests {
         stream.write_u32((body.len() + 4) as u32).await.unwrap();
         stream.write_all(body).await.unwrap();
     }
-    async fn fields(stream: &mut tokio::net::TcpStream) {
+    async fn fields(stream: &mut tokio::net::TcpStream, text: bool) {
         let mut b = 1u16.to_be_bytes().to_vec();
         b.extend(b"checked\0");
         b.extend(0u32.to_be_bytes());
         b.extend(0u16.to_be_bytes());
-        b.extend(23u32.to_be_bytes());
-        b.extend(4u16.to_be_bytes());
+        b.extend(if text { 25u32 } else { 23u32 }.to_be_bytes());
+        b.extend(if text { -1i16 } else { 4i16 }.to_be_bytes());
         b.extend(u32::MAX.to_be_bytes());
         b.extend(0u16.to_be_bytes());
         send(stream, b'T', &b).await;
     }
     #[tokio::test]
     async fn pg_wire_keeps_empty_fields_avoids_explain_and_terminates_connections() {
-        for (empty, batch, failing, row_count) in [
-            (false, false, false, 1),
-            (true, false, false, 1),
-            (false, true, false, 1),
-            (false, true, true, 1),
-            (false, true, false, 600),
+        for (empty, batch, failing, row_count, row_bytes) in [
+            (false, false, false, 1, 1u32),
+            (true, false, false, 1, 1),
+            (false, true, false, 1, 1),
+            (false, true, true, 1, 1),
+            (false, true, false, 600, 1),
+            (false, true, false, 1, 600_000),
         ] {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let port = listener.local_addr().unwrap().port();
@@ -381,7 +382,7 @@ mod wire_tests {
                         }
                         b'D' => {
                             send(&mut socket, b't', &0u16.to_be_bytes()).await;
-                            fields(&mut socket).await;
+                            fields(&mut socket, row_bytes > 1).await;
                         }
                         b'S' => send(&mut socket, b'Z', b"I").await,
                         b'Q' => {
@@ -402,11 +403,14 @@ mod wire_tests {
                                 )
                                 .await;
                             } else {
-                                fields(&mut socket).await;
+                                fields(&mut socket, row_bytes > 1).await;
                                 for _ in 0..if empty { 0 } else { row_count } {
                                     let mut row = 1u16.to_be_bytes().to_vec();
-                                    row.extend(1u32.to_be_bytes());
-                                    row.push(b'1');
+                                    row.extend(row_bytes.to_be_bytes());
+                                    row.extend(vec![
+                                        if row_bytes > 1 { b'x' } else { b'1' };
+                                        row_bytes as usize
+                                    ]);
                                     send(&mut socket, b'D', &row).await;
                                 }
                                 send(
@@ -464,7 +468,7 @@ mod wire_tests {
                 .await
                 .map(|v| vec![v])
             };
-            let overflow = row_count == 600;
+            let overflow = row_count == 600 || row_bytes > 1;
             if failing || overflow {
                 assert_eq!(
                     result.unwrap_err().code,

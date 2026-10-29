@@ -20,6 +20,7 @@ import { Heading } from '../../ui/WorkspaceHeading';
 import { WorkspaceBrowserPanel } from '../../ui/WorkspaceBrowserPanel';
 import { DatabaseTableItem } from './DatabaseTableItem';
 import type { TableMetadata } from './use-table-metadata';
+import { readDatabase } from './database-read';
 import './database-browser.css';
 
 function useRead<T>(load: (signal: AbortSignal) => Promise<T>, refreshVersion = 0) {
@@ -30,7 +31,7 @@ function useRead<T>(load: (signal: AbortSignal) => Promise<T>, refreshVersion = 
   useEffect(() => {
     const controller = new AbortController();
     setState({ loading: true });
-    load(controller.signal).then(
+    readDatabase(load, controller.signal).then(
       (data) => {
         if (!controller.signal.aborted) setState({ data, loading: false });
       },
