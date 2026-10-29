@@ -2,18 +2,18 @@
 
 ## Identity, authority, and delivery
 
-| Field                                       | Value                                                                                                                                                                                                     |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Parent intent                               | [Issue #74](https://github.com/siddontang/tidb.ai/issues/74)                                                                                                                                              |
-| Status                                      | Draft specification for review; no runtime or migration implementation                                                                                                                                    |
-| Date                                        | 2026-10-29                                                                                                                                                                                                |
-| Intent contributor / accountable maintainer | Siddon Tang                                                                                                                                                                                               |
-| Source baseline                             | `ee1bd56f5a4a53d7864493634bf7d0eb228b878f`                                                                                                                                                                |
-| Accepted direction                          | Logical KV metadata, a replaceable persistence layer, bounded retrieval, ordinary local files first, TiDB File System as a hosted candidate, explicit tenant isolation, and identity-preserving migration |
-| Proposed choices                            | Scope-atomic commits, record/index layouts, roles, adapter protocols, API evolution, limits, and the migration procedure below                                                                            |
-| Dependencies                                | ADRs 0001, 0004, 0005, 0006, 0008, 0010, 0011 and proposed [ADR 0017](../../docs/decisions/0017-workspace-kv-control-plane.md)                                                                            |
-| Risk                                        | Tenant authorization, credentials, concurrency, provider lifecycle, and migration; implementation requires the acceptance suite below                                                                     |
-| Delivery endpoint                           | Reviewable specification and ADR in a design PR; the parent feature remains open                                                                                                                          |
+| Field                                       | Value                                                                                                                                                                                                                                 |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Parent intent                               | [Issue #74](https://github.com/siddontang/tidb.ai/issues/74)                                                                                                                                                                          |
+| Status                                      | Draft specification for review; no runtime or migration implementation                                                                                                                                                                |
+| Date                                        | 2026-10-29                                                                                                                                                                                                                            |
+| Intent contributor / accountable maintainer | Siddon Tang                                                                                                                                                                                                                           |
+| Source baseline                             | `ee1bd56f5a4a53d7864493634bf7d0eb228b878f`                                                                                                                                                                                            |
+| Accepted direction                          | Logical KV metadata, replaceable storage, local files first, TiDB File System as a hosted candidate, global/regional control planes and regional data planes, regional resources, tenant isolation, and identity-preserving migration |
+| Proposed choices                            | Scope-atomic commits, record/index layouts, roles, adapter protocols, API evolution, limits, and the migration procedure below                                                                                                        |
+| Dependencies                                | ADRs 0001, 0004, 0005, 0006, 0008, 0010, 0011 and proposed [ADR 0017](../../docs/decisions/0017-workspace-kv-control-plane.md)                                                                                                        |
+| Risk                                        | Tenant authorization, credentials, concurrency, provider lifecycle, and migration; implementation requires the acceptance suite below                                                                                                 |
+| Delivery endpoint                           | Reviewable specification and ADR in a design PR; the parent feature remains open                                                                                                                                                      |
 
 This document specifies intended behavior. It neither changes the running Portal nor
 authorizes live migration, provider provisioning, account registration, credential rotation,
@@ -37,8 +37,10 @@ limited to 200 records, with no complete Run or failure history.
 
 The new abstraction is **logical KV plus bounded indexes**, not an ORM and not an arbitrary
 JSON document with unrestricted queries. It supplies a useful consistency contract across
-files, TiDB File System, TiDB/MySQL, object storage, or a conforming KV engine. Local files remain a valid local
-backend; multi-server availability is an additional backend/deployment capability.
+files, TiDB File System, TiDB/MySQL, object storage, or a conforming KV engine. Local files
+remain a valid local backend; multi-server availability is an additional backend/deployment
+capability. The owner also requires separate global control, regional control and regional
+data-plane responsibilities. Current resource region strings do not implement that topology.
 
 ### Scope and exclusions
 
@@ -54,19 +56,24 @@ and automatic migration of customer application data between providers.
 ## 2. Architecture and ownership
 
 ```mermaid
-flowchart LR
-  C[Console or agent] --> A[Product API and authentication]
-  A --> D[Workspace domain services and authorization]
-  D --> R[Typed repositories and indexes]
-  R --> M[MetaStore contract]
-  M --> F[Local files]
-  M --> Q[TiDB or MySQL adapter]
-  M --> O[S3 or conforming KV adapter]
-  M --> T[TiDB File System adapter]
-  D --> B[Provider broker]
-  B --> V[CredentialStore]
-  B --> P[Customer databases and File Systems]
+flowchart TB
+  C[Console or agent] --> G[Global control plane]
+  G --> GM[Global MetaStore: identity, policy, desired state and routing]
+  G -->|Durable regional commands| RA[Region A control plane]
+  G -->|Durable regional commands| RB[Region B control plane]
+  RA --> RM[Region A MetaStore and CredentialStore]
+  RB --> RN[Region B MetaStore and CredentialStore]
+  RA --> DA[Region A data plane: gateways, databases, files and workers]
+  RB --> DB[Region B data plane: gateways, databases, files and workers]
+  C -->|Authorized regional data request| DA
+  C -->|Authorized regional data request| DB
+  DA -. Fresh admission .-> G
+  DB -. Fresh admission .-> G
 ```
+
+Both metadata authorities use typed repositories over the same `MetaStore` contract. Each
+can select ordinary local files, TiDB File System, TiDB/MySQL or another conforming adapter;
+sharing an interface does not require sharing a physical root or database.
 
 | Entity             | Ownership / meaning                                                                                   |
 | ------------------ | ----------------------------------------------------------------------------------------------------- |
@@ -84,6 +91,114 @@ editing `orgId` or `workspaceId`. Moving resources between customers requires a 
 reviewed transfer design. An application's `externalCustomerId` is attribution only; our
 customer's own end-user tenancy needs its own resource/application boundary.
 
+### 2.1 Three planes and authority
+
+| Plane                | Authoritative responsibilities                                                                                                                                                                                         | Deliberately kept elsewhere                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Global control plane | Product identity, Organizations, Workspaces, membership and Keys; region catalog/eligibility; product quota/account ownership; resource ID/name/placement and desired lifecycle; durable dispatch and aggregate status | SQL/file payloads, native credentials, live sessions and regional execution claims                              |
+| Region control plane | Validate local placement/capacity; accept/deduplicate commands; provisioning/deletion/recovery; actual provider bindings, regional account access, native credential refs, observed state and data-plane configuration | Global policy decisions, changing a resource's owner/region, globally allocating another customer's account     |
+| Region data plane    | SQL/file access, managed connections, DuckDB storage and bounded analysis workers; enforce admitted tenant/action/resource/region context before I/O                                                                   | Global membership/billing administration, direct metadata access by customer SQL, choosing a replacement region |
+
+Global services decide **who may request what and where**. Regional control decides how a
+permitted desired state becomes real using that region's adapters. Regional data services
+execute the permitted data work. Region control and data services use separate service
+identities and credential purposes even when initially packaged in one local process.
+"Global" describes product authority, not one process, one worldwide transaction or a promise
+that all metadata is replicated everywhere. Deployments must declare the location of global
+identity/policy metadata separately from resource data residency.
+
+### 2.2 Workspace and resource placement
+
+An Organization and Workspace are global logical objects. A Workspace may contain resources
+in several regions. `homeRegion` is the Workspace's suggested creation default, not a claim
+that every resource resides there. Organization policy may restrict allowed regions. Resource
+names remain unique across the whole Workspace, including different regions.
+
+Every resource receives one immutable `regionId` (our execution/control-plane region) before
+dispatch, plus `routingEpoch` and a provider-location descriptor. The region catalog maps our
+stable IDs to allowlisted service endpoints, provider-specific locations, supported kinds,
+modes and lifecycle (`active`, `draining`, `disabled`). Creation chooses an active region
+from the intersection of product eligibility, Organization policy and verified provider
+capability; draining regions accept existing permitted work but no new placements.
+Neither a client-supplied URL nor a region code by itself authorizes dispatch.
+
+Keep three facts separate: requested/default placement, assigned product `regionId`, and
+verified upstream location. Existing provider values such as `automatic` remain preserved
+as compatibility/provider metadata; they are not a real geographic region. Automatic
+selection for a new resource must resolve our `regionId` before dispatch. A provider that
+does not attest upstream location is explicitly `provider-managed`/`unverified` and cannot
+satisfy a geographic residency policy by adopting the gateway's region label. Likewise, a
+local demo's product region does not mean its files physically left the developer's machine.
+
+Changing `homeRegion` affects future defaults only. Changing an existing resource's region
+requires a separately specified transfer/copy, credential and data-consistency protocol;
+it is not a `PATCH region` or automatic failover. This design provisions a new resource/ID
+for an explicit cross-region copy and leaves in-place relocation/active-active out of scope.
+Hidden DuckDB backing storage must have compatible verified placement with its database.
+
+### 2.3 Metadata, credentials and residency
+
+Keep global Organization/Workspace records and regional Workspace records in independently
+owned `MetaStore` deployments. Global records own desired state and dispatch; a regional
+record owns binding/execution/observed state. A global list can include an asynchronous
+regional status projection with `observedAt`, `observedGeneration` and explicit stale/unknown
+state. That projection cannot authorize access, settle an unknown create or free capacity.
+Regional reconcilers use their own canonical records, not a periodically copied global JSON.
+
+Global account records contain ownership/entitlement and capacity reservations; regional
+records hold the allowed provider access and native binding refs. Native resource secrets,
+file/query bytes, results and detailed logs stay in the declared regional storage/vault.
+An upstream account with inseparable multi-region privileges needs an explicitly reviewed
+credential broker/profile; merely storing its token in a regional vault does not make it
+region-scoped. Export only allowlisted safe status, audit attribution and usage summaries
+to global control; detailed usage ledgers remain a separate product design.
+
+For TiDB File System metadata, use a distinct service-owned global root and region-owned
+roots/filesystems with separate access identities and bootstrap secret refs. A shared logical
+KV layout is not permission for one regional service to read another region or the entire
+global catalog. Metadata backup, encryption keys, failover destinations and service logs
+must follow the declared location policy; a prefix alone is not a residency guarantee.
+
+### 2.4 Dispatch and data request paths
+
+A create follows global admission -> durable desired resource/operation/outbox -> account
+reservation -> target-region inbox -> regional execution -> durable observed result -> global
+status projection. Use one product resource ID and operation ID throughout. Transport is
+at-least-once; inbox/outbox records and generation checks handle duplicate, reordered and
+lost messages. A broker or polling transport can be selected later without moving domain
+decisions into the transport. Global and regional stores do not share a transaction.
+
+For queries/files, discover an authorized region endpoint and route bytes to that region's
+data plane. A compatibility gateway may stream to it while preserving the API URL, but
+must declare that proxy location in the data-flow/residency profile. Global control should
+not carry SQL result/file bytes. One Workspace Key still covers its granted resources;
+service-issued internal admission is audience/action/resource/request bound, and upstream
+provider credentials never reach the caller. Section 6 defines fresh authorization across
+the split; regional policy replicas are not an implicit offline permission cache.
+
+Cross-region file analysis is rejected by default. An explicit later transfer design must
+authorize source read, destination execution and allowed data movement before any snapshot
+I/O. Two resources in the same Workspace do not imply permission to copy bytes between
+their regions. Regional membership/configuration is managed by trusted operators, not by
+customer Workspace Keys.
+
+### 2.5 Failure and deployment profiles
+
+If one region is unavailable, global lists preserve its resource IDs and last-known state;
+operations remain pending/unknown and retain reservations. Other reachable regions can
+continue when their dependencies and global admission are healthy. No automatic create,
+secret fallback or redirect to another region is allowed. Global admission failure denies
+new data requests and external lifecycle steps in the initial fresh-policy profile; bounded
+work already admitted may finish. Availability independent of global control would require
+an explicit bounded-staleness/revocation contract, which is not selected here.
+
+Start with one global module, one local region-control module and one local data-plane
+module in the existing API package, with separate repositories/service contexts. This does
+not require three new deployment services now. A later hosted split preserves the same
+command/admission contracts and gives each region independent storage and identities.
+Region redundancy, disaster recovery and cross-region replication need their own measured
+SLOs and recovery design; region labels alone supply none of them.
+
 ## 3. MetaStore contract
 
 ### 3.1 Atomic scope
@@ -91,9 +206,15 @@ customer's own end-user tenancy needs its own resource/application boundary.
 All keys belong to one explicit scope:
 
 ```text
-directory/<shard>       identity and routing hints; never authorization truth
-organization/<orgId>   organization, members, workspace directory, provider accounts and quotas
-workspace/<workspaceId> workspace, members, resources, keys, bindings, operations and indexes
+Global MetaStore:
+  directory/<shard>       identity/routing hints; never authorization truth
+  organization/<orgId>   membership, workspace directory, account ownership and global quotas
+  workspace/<workspaceId> policy, desired resources/placement, names, keys, operations/outbox
+  region/<regionId>       trusted region catalog, endpoints, lifecycle and declared capabilities
+
+Region-owned MetaStore:
+  region-workspace/<regionId>/<workspaceId> bindings, observed resources, operations/inbox and indexes
+  region-control/<regionId> regional capacity, service configuration and account-access descriptors
 ```
 
 The scope is chosen by a trusted repository after authorization. Public callers cannot
@@ -101,17 +222,22 @@ supply raw KV scopes, key prefixes, storage paths, SQL tables, bucket names, or 
 Directory shards prevent a global routing record from becoming the write bottleneck.
 An immutable Workspace descriptor binds it to its Organization; mismatches fail closed.
 
-**An atomic scope commit is required. A cross-scope transaction is not required.** A Workspace
-resource, its name guard, operation intent, and current-state indexes are changed together.
-An Organization member change and a Workspace change use explicit coordination, rather than
-an adapter silently approximating a global transaction.
+**An atomic scope commit is required. A cross-scope transaction is not required.** A global
+desired resource, name guard, intent/outbox and authoritative indexes commit together. A
+regional inbox/operation, observed resource, binding ref and execution indexes commit in
+their regional Workspace scope. Organization reservations, global desired state and regional
+effects use explicit coordination. Neither namespace strings nor a shared adapter grant a
+regional process access to global or other-region scopes.
 
 ### 3.2 Proposed internal interface
 
 The following TypeScript is contract notation, not an exported SDK or implemented module.
 
 ```ts
-type Scope = { kind: 'organization' | 'workspace' | 'directory'; id: string };
+type Scope =
+  | { kind: 'organization' | 'workspace' | 'directory'; id: string }
+  | { kind: 'region' | 'region-control'; regionId: string }
+  | { kind: 'region-workspace'; regionId: string; workspaceId: string };
 type Revision = string; // opaque, never reused, local to the scope
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 type Change = { key: string; value: JsonValue } | { key: string; delete: true };
@@ -194,7 +320,9 @@ Proposed modules: `server/meta/contract.mjs`, `server/meta/adapters/`,
 Domain services call typed operations such as `findResourceByName`, `listResources`,
 `authorizeWorkspaceKey`, `reserveProviderCapacity`, and `claimOperation`. Only repositories
 know key layout; only storage adapters know SQL, file layout, object APIs, or engine revisions.
-Only the provider broker can resolve private bindings and credentials after authorization.
+Only the regional provider broker can resolve private bindings and credentials after
+authorization. Repositories select the configured global or region-owned authority; domain
+code cannot choose a global store as a fallback when its regional store is unavailable.
 
 Record codecs validate schema versions and tenant relationships on reads and writes. A
 newer unsupported schema is an explicit unavailable/error state, not a record to skip.
@@ -233,6 +361,9 @@ Example envelope:
   "kind": "postgresql",
   "provider": "db9-anonymous",
   "region": "automatic",
+  "regionId": "aws-ap-southeast-1",
+  "routingEpoch": 1,
+  "providerPlacement": { "status": "provider-managed", "location": null },
   "desiredState": "present",
   "status": "provisioning",
   "generation": 1,
@@ -244,28 +375,39 @@ Example envelope:
 
 ### 4.2 Authoritative record families
 
-The rows below are logical collections. They are not required SQL tables.
+The rows below are logical collections. They are not required SQL tables. Unqualified
+Organization/Workspace rows belong to the global authority; regional rows belong only to
+the indicated region. `region` is preserved legacy/provider metadata; `regionId` is the
+new explicit product placement and must not invent upstream location.
 
-| Scope / key                                                     | Required fields beyond the common envelope                                                                                                                             | Rules                                                                                             |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Organization `organization`                                     | `name`, `status`, `authVersion`, `planRef`                                                                                                                             | `planRef` does not assert billing is implemented                                                  |
-| Organization `members/<userId>`                                 | `userId`, `role`, `status`, `authVersion`                                                                                                                              | owner/admin/member; no granting ownership by email matching                                       |
-| Organization `workspaces/<workspaceId>`                         | `name`, `status`, `creationOperationId`                                                                                                                                | Directory entry for an owned Workspace; pending entries are not ready Workspaces                  |
-| Organization `workspace-names/<normalizedName>`                 | `workspaceId`, reservation state                                                                                                                                       | Uniqueness guard, committed with the directory entry                                              |
-| Organization `provider-accounts/<accountId>`                    | `provider`, `ownerOrgId`, `status`, `credentialRef`, `quotaPolicyRef`                                                                                                  | Internal; no account credentials or native admin access in public projections                     |
-| Organization `account-reservations/<accountId>/<operationId>`   | `workspaceId`, `resourceId`, units, state                                                                                                                              | Accounts for capacity shared across Workspaces; uncertain creations retain their reservation      |
-| Workspace `workspace`                                           | `orgId`, `name`, `status`, `homeRegion`, `authVersion`                                                                                                                 | `orgId` cannot change in place                                                                    |
-| Workspace `members/<userId>`                                    | `role`, `status`, `authVersion`                                                                                                                                        | admin/developer/viewer within the Organization boundary                                           |
-| Workspace `resources/<resourceId>`                              | `orgId`, `workspaceId`, `name`, `kind`, `provider`, `region`, `desiredState`, `status`, `generation`, `observedGeneration`, optional `expiresAt`, safe error reference | Descriptive state; public serializers select allowed fields                                       |
-| Workspace `resource-names/<normalizedName>`                     | `resourceId`                                                                                                                                                           | Unique across resource kinds, preserving existing behavior; reserved while provisioning/uncertain |
-| Workspace `keys/<keyId>`                                        | `name`, `digestAlgorithm`, `digest`, `prefix`, `scopes`, `resourceIds`, `expiresAt`, `revokedAt`, `authVersion`, optional `lastUsedAt`                                 | Missing legacy grants become empty/denied, never wildcard; digest is never returned               |
-| Workspace `bindings/<resourceId>`                               | `providerAccountId`, `providerResourceId`, `state`, `credentialRef`, provider-specific non-secret connection metadata                                                  | Internal repository only; ownership checked against the public resource                           |
-| Workspace `internal-storage/<resourceId>`                       | internal backing ID, provider, credential/binding ref, state                                                                                                           | DuckDB backing storage; not a public resource or a Key target                                     |
-| Workspace `operations/<operationId>`                            | kind, actor ID, resource ID, desired generation, state, request ID, fingerprint, attempt, optional claim/receipt/error                                                 | Durable lifecycle intent, not full query history                                                  |
-| Workspace `idempotency/<principalId>/<action>/<requestKeyHash>` | request fingerprint, operation/resource IDs, response status, created/retention times                                                                                  | Same input returns same identity; mismatched input conflicts                                      |
-| Workspace `events/<time>/<eventId>`                             | actor ID, action, target, outcome, request/operation ID, safe error reference                                                                                          | Append records through service policy; never contain credential values                            |
-| Workspace `quotas/<policyId>`                                   | policy version, limits, reserved/allocated units                                                                                                                       | Product limits; independent of actual provider-account limits                                     |
-| Workspace `compat/legacy-import`                                | import manifest ID, source schema, opaque archive refs, original counters                                                                                              | Preserves legacy information without presenting it as current telemetry                           |
+| Scope / key                                                     | Required fields beyond the common envelope                                                                                                                                                                                               | Rules                                                                                                   |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Organization `organization`                                     | `name`, `status`, `authVersion`, `planRef`                                                                                                                                                                                               | `planRef` does not assert billing is implemented                                                        |
+| Organization `members/<userId>`                                 | `userId`, `role`, `status`, `authVersion`                                                                                                                                                                                                | owner/admin/member; no granting ownership by email matching                                             |
+| Organization `workspaces/<workspaceId>`                         | `name`, `status`, `creationOperationId`                                                                                                                                                                                                  | Directory entry for an owned Workspace; pending entries are not ready Workspaces                        |
+| Organization `workspace-names/<normalizedName>`                 | `workspaceId`, reservation state                                                                                                                                                                                                         | Uniqueness guard, committed with the directory entry                                                    |
+| Organization `provider-accounts/<accountId>`                    | `provider`, `ownerOrgId`, `status`, `allowedRegionIds`, opaque regional access refs, `quotaPolicyRef`                                                                                                                                    | Ownership/entitlement only; no native secrets in the global account record                              |
+| Organization `account-reservations/<accountId>/<operationId>`   | `workspaceId`, `resourceId`, `regionId`, units, state                                                                                                                                                                                    | Enforce shared provider quota and any genuine per-region dimension without duplicating account capacity |
+| Workspace `workspace`                                           | `orgId`, `name`, `status`, `homeRegion`, `authVersion`                                                                                                                                                                                   | `orgId` cannot change in place                                                                          |
+| Workspace `members/<userId>`                                    | `role`, `status`, `authVersion`                                                                                                                                                                                                          | admin/developer/viewer within the Organization boundary                                                 |
+| Workspace `resources/<resourceId>`                              | `orgId`, `workspaceId`, `name`, `kind`, `provider`, legacy `region`, `regionId`, `routingEpoch`, `providerPlacement`, `desiredState`, `generation`; safe status projection with `observedGeneration`, `observedAt`, optional `expiresAt` | Canonical global placement/intent; projected regional status is not execution authority                 |
+| Workspace `resource-names/<normalizedName>`                     | `resourceId`                                                                                                                                                                                                                             | Unique across resource kinds, preserving existing behavior; reserved while provisioning/uncertain       |
+| Workspace `keys/<keyId>`                                        | `name`, `digestAlgorithm`, `digest`, `prefix`, `scopes`, `resourceIds`, `expiresAt`, `revokedAt`, `authVersion`, optional `lastUsedAt`                                                                                                   | Missing legacy grants become empty/denied, never wildcard; digest is never returned                     |
+| Regional Workspace `resources/<resourceId>`                     | `orgId`, `workspaceId`, `regionId`, `routingEpoch`, admitted desired generation, `observedGeneration`, state, observation sequence/time                                                                                                  | Actual regional state; ownership/placement must match global intent                                     |
+| Regional Workspace `bindings/<resourceId>`                      | `regionId`, `providerAccountId`, `providerResourceId`, `state`, `credentialRef`, provider-specific non-secret connection metadata                                                                                                        | Internal regional repository only; verify tenant and placement before resolution                        |
+| Regional Workspace `internal-storage/<resourceId>`              | `regionId`, internal backing ID, provider, credential/binding ref, placement evidence and state                                                                                                                                          | DuckDB backing storage; not a public resource or a Key target; same permitted data location             |
+| Workspace `operations/<operationId>`                            | kind, actor ID, resource ID, desired generation, state, request ID, fingerprint, attempt, optional claim/receipt/error                                                                                                                   | Durable lifecycle intent, not full query history                                                        |
+| Workspace `outbox/<operationId>/<generation>`                   | `orgId`, `workspaceId`, `resourceId`, `regionId`, `routingEpoch`, desired generation, action, request fingerprint and reservation refs                                                                                                   | Committed with global intent; no provider secrets; delivery ACK alone is not execution success          |
+| Regional Workspace `inbox/<operationId>/<generation>`           | original operation ID, fingerprint, placement, receive state and local operation ref                                                                                                                                                     | Duplicate content reuses one operation; changed content/region conflicts                                |
+| Regional Workspace `operations/<operationId>`                   | original actor, action, desired generation, state, attempt/lease, unknown-effect marker, result/receipt refs                                                                                                                             | Owns regional external effects; never a second operation identity on redelivery                         |
+| Regional Workspace `result-outbox/<operationId>/<sequence>`     | desired/observed generation, routing epoch, monotonically increasing observation sequence, safe status and reservation disposition                                                                                                       | Durable replayable observation; global projection rejects stale/wrong-region results                    |
+| Workspace `idempotency/<principalId>/<action>/<requestKeyHash>` | request fingerprint, operation/resource IDs, response status, created/retention times                                                                                                                                                    | Same input returns same identity; mismatched input conflicts                                            |
+| Workspace `events/<time>/<eventId>`                             | actor ID, action, target, outcome, request/operation ID, safe error reference                                                                                                                                                            | Append records through service policy; never contain credential values                                  |
+| Workspace `quotas/<policyId>`                                   | policy version, limits, reserved/allocated units                                                                                                                                                                                         | Product limits; independent of actual provider-account limits                                           |
+| Workspace `compat/legacy-import`                                | import manifest ID, source schema, opaque archive refs, original counters                                                                                                                                                                | Preserves legacy information without presenting it as current telemetry                                 |
+| Region `region`                                                 | `regionId`, lifecycle, allowlisted endpoints/audiences, supported kinds/modes, capability version and residency evidence                                                                                                                 | Operator-owned global catalog; not client-discovered arbitrary URLs                                     |
+| Region control `accounts/<accountId>`                           | `ownerOrgId`, `regionId`, allowed provider access, `credentialRef`, capability/quota evidence                                                                                                                                            | Regional credential context; global ownership/capacity is checked separately                            |
+| Region control `capacity/<poolId>`                              | limits, units, reservations keyed by original operation identity                                                                                                                                                                         | Physical regional capacity, independent of global product/account quotas                                |
 
 Directory scopes contain `users/<userId>`, identity mappings by issuer+subject, and optional
 user/legacy-Key Workspace routing hints. Lookups always verify the canonical Organization,
@@ -283,9 +425,10 @@ they must not be copied into `resources`, indexes, events or error messages.
 | Get Workspace/resource/Key by ID         | Direct record lookup                                                  | Latest canonical state                                                            |
 | Find resource by exact name              | `resource-names/<normalizedName>` then canonical record               | Same scope revision                                                               |
 | List resources in Workspace              | Scan `resources/`, or `indexes/resources-by-kind/<kind>/<resourceId>` | Same scope revision; bounded page                                                 |
-| List resources needing reconciliation    | `indexes/resources-by-status/<status>/<resourceId>`                   | Updated with canonical record                                                     |
+| List resources by region                 | Global `indexes/resources-by-region/<regionId>/<resourceId>`          | Atomic with canonical placement; status freshness reported separately             |
+| List resources needing reconciliation    | Regional `indexes/resources-by-status/<status>/<resourceId>`          | Updated with regional canonical record; global projection is not scheduler input  |
 | List Organization Workspaces/members     | Their authoritative prefix                                            | Same Organization revision                                                        |
-| List operations by state / runnable time | `indexes/operations/<state>/<dueTime>/<operationId>`                  | Updated with operation                                                            |
+| List operations by state / runnable time | Per-authority `indexes/operations/<state>/<dueTime>/<operationId>`    | Global dispatch or regional execution, each updated with its local operation      |
 | List recent activity                     | Reverse time index `indexes/events/recent/<reverseTime>/<eventId>`    | Same revision; timestamps tie-break on ID                                         |
 | Find a legacy Key's Workspace            | Sharded digest routing hint, then canonical Key digest/grants         | Hint is not authoritative                                                         |
 | Find Workspaces available to a user      | User-directory hint, then canonical membership                        | Stale positive is filtered; stale negative can delay discovery, not authorization |
@@ -314,8 +457,10 @@ name and available product quota in that snapshot, then publishes one batch cont
 `resources/<id>`, `resource-names/customer-analytics`, kind/status indexes, an operation and
 its runnable index, an idempotency record, and the quota reservation. All use one
 `expectedRevision: R42`. A competing name/quota claim changes the scope revision and makes
-this entire batch conflict. No separate SQL uniqueness constraint or sequence of independent
-KV PUTs is part of the domain algorithm.
+this entire batch conflict. The batch also includes region placement and the dispatch outbox;
+the runnable index schedules global dispatch, not an immediate provider call. A subsequent
+regional batch admits the same intent into the region's inbox/execution records. No separate
+SQL uniqueness constraint or sequence of independent KV PUTs is part of the domain algorithm.
 
 ## 5. Persistence adapters
 
@@ -330,6 +475,9 @@ meta-root/
   scopes/organization/<encoded-id>/state.json
   scopes/workspace/<encoded-id>/state.json
   scopes/directory/<encoded-shard>/state.json
+  scopes/region/<encoded-region>/state.json
+  regions/<encoded-region>/scopes/region-workspace/<encoded-workspace>/state.json
+  regions/<encoded-region>/scopes/region-control/state.json
   secrets/<opaque-ref>/<version>.json    separate permissions and service interface
   local-data/<resource-id>/...           customer local file content, outside metadata
   backups/<backup-id>/manifest.json
@@ -574,10 +722,41 @@ plus the selected File System grant, preserving existing behavior.
    linearizable read supplies a coherent admission point bracketed by the unchanged
    Organization policy. Apply this to human and Workspace-Key admission, including
    Organization/Workspace suspension. No persisted allow-cache can replace these checks.
-5. For mutations, include the Workspace authorization/resource predicates in the revision
-   used for the scope commit. Conflict means reauthorize; never reuse a prior grant on a
-   rebased write. When a queued worker is ready for external I/O, evaluate its current
-   operation authority and current policy again, using the original submitting principal.
+5. For global mutations, include Workspace authorization/desired-resource predicates in the
+   revision used for the global commit. Conflict means reauthorize; never reuse a prior
+   grant on a rebased write. Regional requests additionally use the protocol below. When a
+   queued worker is ready for external I/O, evaluate its current operation authority and
+   current policy again, using the original submitting principal.
+
+For regional admission, extend the read validation to **O1 -> W1 -> R -> W2 -> O2**. After
+preliminary global authorization/routing, the target region reads its current regional
+Workspace scope R and returns a private non-secret admission context. Global control verifies
+O1=O2 and W1=W2, plus canonical resource ownership, region, routing epoch, desired generation
+and R's matching regional ownership/state. R's read is then a coherent policy/resource
+admission point bracketed by unchanged global policy; any mismatch restarts bounded
+evaluation. No distributed transaction or stale replicated policy is assumed.
+Bracket R with unchanged reads of any additional admission policy scope as well, including
+the region catalog's lifecycle/capability revision; disabled regions deny new admissions.
+
+The resulting internal grant binds issuer/audience, principal, Organization/Workspace/resource,
+region, action, request/operation ID, payload fingerprint, global policy revisions, expected
+regional revision, routing epoch/generation, nonce and a short declared expiry. Use
+authenticated service transport and an allowlisted issuer. Regions cannot mint a global
+permission or resolve a caller-supplied credential ref. A grant is not a public bearer Key,
+provider token or permission to execute future commands. Replay of a mutation resolves its
+original receipt; changed requests, audiences, regions and generations are rejected before
+secret/provider/data I/O. A regional mutation CAS conflict requires a fresh admission.
+Data reads use the admitted regional snapshot/binding context or reject its changed version;
+they cannot apply an old grant to a newer binding or generation.
+
+The initial contract requires live global admission for each new data request, session
+command and queued external step. Dispatched intent does not preserve an old user's grants
+forever. Replicated policy may accelerate negative/discovery checks but cannot supply a stale
+positive. Persist only operation/receipt identity, not a reusable authorization grant. A
+bounded in-flight action can complete after a later revocation; replaying a grant does not
+start another action. Background system cleanup uses an explicit narrow service authority,
+not impersonation of a revoked user. Offline regional admission with policy leases would
+weaken the current revocation boundary and needs a separate accepted policy/SLO amendment.
 
 There is no assertion of an atomic snapshot across Organization and Workspace scopes. A
 revocation completed before a new admission check denies that admission. Work admitted
@@ -599,7 +778,8 @@ bypass revocation. Key `resourceIds: ["*"]` covers only the bound Workspace, inc
 future public resources; it never includes another Workspace or private DuckDB backing data.
 
 Untrusted resource IDs, prefixes, names, filenames and search hints are not proof of ownership.
-Every record reference verifies `orgId`/`workspaceId` in the repository. Backend-enforced
+Every record reference verifies `orgId`/`workspaceId` and, for regional state, `regionId`,
+generation and routing epoch in the repository. Backend-enforced
 checks cover single reads, lists, search, usage, events, results, retries and background jobs.
 Unauthorized Workspace/resource probing returns a consistent `404 NOT_FOUND`; an authenticated
 principal inside an accessible Workspace with a missing action receives `403 INSUFFICIENT_SCOPE`.
@@ -613,9 +793,11 @@ isolated workers. Never route customer SQL to the control-plane database. Do not
 metadata root or CredentialStore into analysis workers.
 
 Initially a provider account belongs to one Organization, possibly serving multiple
-Workspaces in it. Workspace and account quotas are separate canonical records. Reserve
-account capacity in the Organization scope and reference the reservation from the Workspace
-operation; reconcile this cross-scope workflow. Timeout/uncertain provider creation does not
+Workspaces in it. Workspace, account and regional-capacity quotas are separate canonical
+records. Reserve global account capacity in the Organization scope, then regional physical
+capacity under the same operation ID; reference both from the regional execution. A genuine
+provider per-region quota is a dimension of that account, not a fresh independent account.
+Reconcile these cross-scope workflows. Timeout/uncertain provider creation does not
 release the reservation. Cross-Organization account pooling is not enabled by the schema;
 it requires provider-policy, isolation, quota and commercial review before implementation.
 Do not multiply anonymous registrations to evade provider limits or call a per-account free
@@ -626,8 +808,9 @@ allowance an independent free allowance for every Workspace.
 The separate internal interface is `putVersion(ownerContext, importOrOperationId, value)`,
 `resolveVersion(serviceContext, secretRef)`, and `markRetired(ownerContext, secretRef)`.
 Values are opaque private payloads; refs and immutable versions have owner, provider,
-resource/account purpose and integrity metadata. Service identity and the validated binding
-context must match before resolving a ref. Public APIs do not expose a generic secret-read
+resource/account purpose, authority/region and integrity metadata. Service identity and the
+validated tenant/region/binding context must match before resolving a ref. A regional data
+worker never receives a global account secret or another region's secret. Public APIs do not expose a generic secret-read
 operation, vault path, secret bytes or provider administration token.
 
 Local mode may use ordinary 0700 directories and 0600 private files, plus exclusive create,
@@ -655,20 +838,33 @@ adopts a mismatched scope. Directory/user search hints update only after the can
 
 ### Provider provisioning
 
-1. Authorize; in a Workspace commit reserve the resource name/product quota and persist a
-   resource and operation intent. Do not invoke a provider before this commit is confirmed.
-2. Reserve provider-account capacity in the Organization scope under the same operation ID.
-   A crash between reservations is resolved by that identity, not a second resource create.
-3. Claim the operation by Workspace CAS with `attemptId`, owner and lease deadline. The claim
-   is durable coordination; a process-local `Map` is not its authority.
-4. Before a non-idempotent provider request, durably mark the attempt `request-may-have-been-sent`.
+1. Global control authorizes, selects a permitted active region, and in one Workspace commit
+   reserves the name/product quota and persists desired resource placement, operation and
+   dispatch outbox. IDs, `regionId`, routing epoch and generation are fixed before delivery.
+2. Reserve provider-account capacity in the global Organization scope under the same operation
+   ID. Only a confirmed reservation makes the outbox dispatchable. A crash between scopes
+   resumes that identity; it never creates a second resource or ignores an unknown reservation.
+3. The target regional control plane authenticates the dispatcher, checks its audience,
+   canonical intent/placement and current authority, then atomically records its inbox,
+   regional resource and execution operation. Duplicate delivery with the same fingerprint
+   reuses these records; different content under the same identity conflicts. Reserve regional
+   capacity before provider I/O and hold global capacity while regional disposition is unknown.
+4. Claim the regional operation by regional Workspace CAS with `attemptId`, owner and lease
+   deadline. Obtain fresh admission before each external step. A process-local `Map` and an
+   acknowledged message are not execution authority.
+5. Before a non-idempotent provider request, durably mark the attempt `request-may-have-been-sent`.
    A restarted/expired claim with that marker enters reconciliation; it does not issue the
    same non-idempotent create again. Even a crash just before sending is conservatively unknown.
-5. Persist any returned credential version/receipt, then publish binding/state under a CAS
+6. Persist any returned regional credential version/receipt, then publish regional binding/state under a CAS
    that still matches the operation/attempt/generation. Uncertain secret/metadata outcomes
    retain the provider identity and capacity reservation for recovery.
-6. Validate the existing native binding/role, mark the resource active, and mark the
-   reservation allocated. Reconcile the final cross-scope state if only one side committed.
+7. Validate the existing native binding/role and provider location evidence, then mark regional
+   state active and persist a result outbox. Global control applies only observations matching
+   the resource/region/routing epoch/generation, advancing the observation sequence without
+   regressing newer state. Mark reservations allocated and reconcile partial finalization.
+   Lost result delivery leaves global status pending/stale until replay; it never repeats create.
+   Unexpected/unverified provider placement that violates the requested policy quarantines
+   the binding for reconciliation; it is neither active success nor permission to create elsewhere.
 
 Proposed operation states: `pending`, `reserved`, `executing`, `needs_reconciliation`,
 `succeeded`, `failed`, `canceled`. `failed` means a confirmed terminal failure, not an unknown
@@ -680,9 +876,11 @@ create just because the lease expired.
 Provider-specific recovery remains authoritative: db9 may recover a uniquely matching
 saved instance name; Zero/Drive9 unknown creation cannot be blindly repeated. Preserve
 `requested`, `received`, `configuring`, admin/native-role setup information and expiry rather
-than flattening all pending records to a generic failure. Deletion follows the same durable
-intent/receipt pattern, hides access first, and retains uncertain bindings. Workspace/tenant
-deletion cannot immediately garbage-collect upstream ownership or secret references.
+than flattening all pending records to a generic failure. Deletion first tombstones global
+desired access and dispatches the same durable regional intent/receipt protocol. An unreachable
+region stays deleting/unknown; global control does not claim physical erasure or free provider
+capacity until authoritative regional/provider evidence permits it. Workspace/tenant deletion
+cannot immediately garbage-collect upstream ownership or secret references.
 
 Metadata outbox records may enqueue workers, but duplicate delivery is expected. The durable
 operation, generation checks and provider-specific reconciliation govern side effects.
@@ -693,17 +891,18 @@ rollback of customer SQL/file mutations.
 
 These are proposed contracts for a later implementation PR; generated OpenAPI is unchanged.
 
-| Operation                                                       | Principal / policy                                                     | Observable behavior                                                                 |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `GET /api/v1/organizations`                                     | Authenticated user                                                     | Accessible Organizations only; bounded cursor page                                  |
-| `POST /api/v1/organizations`                                    | Authenticated user, applicable account policy                          | Organization+owner initialized through durable intent; stable idempotent identity   |
-| `GET /api/v1/organizations/{orgId}/workspaces`                  | Organization member, canonical authorization                           | Assigned Workspaces; owner/admin may see all                                        |
-| `POST /api/v1/organizations/{orgId}/workspaces`                 | Organization owner/admin                                               | `202` with Workspace and initialization operation; requires Idempotency-Key         |
-| `GET /api/v1/workspaces/{workspaceId}/bootstrap`                | Authorized human Workspace access                                      | Workspace-scoped public projection; no global owner bypass, digests or private refs |
-| Existing resource/file/query routes                             | Workspace human role or Key plus action/resource                       | Explicit Workspace from path, authenticated before data/provider I/O                |
-| Existing Workspace Key routes                                   | Organization owner/admin or Workspace admin                            | Bound Workspace only; cannot grant a wider scope than role/policy permits           |
-| `GET /api/v1/workspaces/{workspaceId}/operations/{operationId}` | Authorized principal and resource visibility                           | Safe state, request ID, retry/reconciliation guidance; no provider secrets          |
-| `POST /api/v1/workspaces/{workspaceId}/resources`               | Existing creation scope plus Workspace wildcard / human role and quota | New clients receive `202` with operation; no unconfirmed synchronous success        |
+| Operation                                                       | Principal / policy                                                     | Observable behavior                                                                                               |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/organizations`                                     | Authenticated user                                                     | Accessible Organizations only; bounded cursor page                                                                |
+| `GET /api/v1/regions`                                           | Authenticated user/Key, applicable product policy                      | Allowed active/draining regions with per-kind/mode capabilities and endpoint discovery; no internal URLs/secrets  |
+| `POST /api/v1/organizations`                                    | Authenticated user, applicable account policy                          | Organization+owner initialized through durable intent; stable idempotent identity                                 |
+| `GET /api/v1/organizations/{orgId}/workspaces`                  | Organization member, canonical authorization                           | Assigned Workspaces; owner/admin may see all                                                                      |
+| `POST /api/v1/organizations/{orgId}/workspaces`                 | Organization owner/admin                                               | `202` with Workspace and initialization operation; requires Idempotency-Key                                       |
+| `GET /api/v1/workspaces/{workspaceId}/bootstrap`                | Authorized human Workspace access                                      | Workspace-scoped public projection; no global owner bypass, digests or private refs                               |
+| Existing resource/file/query routes                             | Workspace human role or Key plus action/resource                       | Explicit Workspace from path, authenticated before data/provider I/O                                              |
+| Existing Workspace Key routes                                   | Organization owner/admin or Workspace admin                            | Bound Workspace only; cannot grant a wider scope than role/policy permits                                         |
+| `GET /api/v1/workspaces/{workspaceId}/operations/{operationId}` | Authorized principal and resource visibility                           | Safe state, request ID, retry/reconciliation guidance; no provider secrets                                        |
+| `POST /api/v1/workspaces/{workspaceId}/resources`               | Existing creation scope plus Workspace wildcard / human role and quota | New contract selects explicit `regionId`; `202` returns the same global resource/operation and assigned placement |
 
 Membership administration needs owner/admin-only actions and final-owner protection; its
 exact request shapes and identity-provider login/session integration must be reviewed before
@@ -716,6 +915,24 @@ async negotiation or a versioned contract. The compatibility handler can return 
 after confirming the existing synchronous completion semantics; an unfinished/unknown action
 returns a documented structured error with an operation ID, not a fabricated active resource.
 This compatibility/async transition must be pinned in the implementation's OpenAPI revision.
+
+New resource projections include `regionId`, safe provider-placement verification state,
+desired/observed generation, and status freshness. Preserve the existing `region` field and
+its semantics for compatibility; do not rename `automatic` into a location. Resource lists
+support an authorized region filter, with global name uniqueness. The Console can offer an
+All regions view and resource-specific region labels; a Workspace selector is separate from
+the region filter. Resource details show the assigned region, available endpoint and stale/
+unavailable status. A form validates the selected region against per-kind capabilities;
+changing a filter/default does not relocate an existing resource. No UI change ships here.
+
+Region endpoints come from authenticated discovery and trusted routing, never arbitrary
+URLs in a create body or dispatch message. A wrong-region request is rejected before data
+I/O or resolved through trusted discovery after authorization; it is not blindly redirected
+with its Key to a caller-supplied endpoint. Proposed errors include `REGION_UNAVAILABLE`,
+`REGION_NOT_ALLOWED`, `RESOURCE_REGION_MISMATCH`, `PLACEMENT_UNVERIFIED` and
+`CROSS_REGION_TRANSFER_REQUIRED`; unauthorized callers still receive the existing uniform
+ownership error. Global resource detail may serve a labeled status projection; a fresh
+regional detail request must report unavailability rather than substitute stale state.
 
 New stable errors include `META_UNAVAILABLE`, `META_CONFLICT`, `META_COMMIT_UNKNOWN`,
 `IDEMPOTENCY_CONFLICT`, `PAGE_RESTART_REQUIRED`, `META_LIMIT_EXCEEDED`,
@@ -736,7 +953,7 @@ retry returns the same Key identity and an explicit secret-unavailable state, no
 minted token or reconstructed secret. Revocation/reissue is an explicit operation.
 
 An agent's path is: authenticate -> list authorized Workspaces/resources/capabilities ->
-choose an explicit Workspace -> perform a permitted request -> inspect its operation/error
+choose an explicit Workspace and resource region -> perform a permitted request -> inspect its operation/error
 when necessary. Capabilities distinguish environment/provider availability, limits, scope
 requirements and unimplemented telemetry. The Console stores selected Workspace in the URL
 and removes the hardcoded client constant during implementation.
@@ -790,6 +1007,17 @@ selected Organization. Native credentials keep their original bytes and identity
 ownership and capacity are not cloned for a second tenant. Existing retired IDs remain
 reserved, so they cannot be reused for unrelated resources.
 
+Import global ownership/policy/desired descriptors into global scopes, and bindings, native
+credential refs, execution recovery and local bytes into their explicitly mapped regional
+authority. M0 must record an operator-selected execution-region mapping for every resource,
+including hidden DuckDB storage, plus the separate provider-location evidence. Preserve the
+original `region` string exactly. A local installation can use a declared `local` compatibility
+region while retaining upstream location separately; it must not claim hosted geographic
+placement. `automatic`, demo labels and an endpoint hostname alone do not verify residency.
+Ambiguous or policy-incompatible mappings block hosted activation and remain quarantined;
+no importer rewrites location, duplicates an account, copies customer data across regions or
+provisions a replacement. The default local import leaves the existing provider route intact.
+
 ### 9.3 Phases and checkpoints
 
 **M0 — Inventory and dry-run.** Resolve the intended source installation and target backend;
@@ -829,7 +1057,8 @@ is an explicit controlled credential mutation with the same saved account identi
 run concurrent legacy and target refreshers.
 
 Account-level token refresh and credential rotation serialize through the canonical
-Organization account operation and expected credential version. A late worker cannot
+Organization account operation and the regional credential broker's expected credential
+version. The global operation references the regional version without receiving its bytes. A late worker cannot
 publish an older account secret ref over a newer version. Preserve unresolved versions and
 provider receipts for recovery; metadata fencing alone does not undo a provider-side token
 invalidation or make a refresh/rotation request idempotent.
@@ -871,33 +1100,48 @@ silently resurrected. One legacy `ws_agentlab` can be imported with its ID intac
 multiple installations with that same ID into one hosted namespace requires a separate
 collision plan, such as a dedicated legacy gateway mapping, before cutover.
 
+A distributed restore manifest identifies global and every required regional authority,
+their revision lineages, pending inbox/outbox/results, account reservations and required
+regional secret versions. A missing regional vault or a status projection ahead of recovered
+execution blocks activation for affected resources. Reconcile durable intents and receipts
+before enabling their dispatch, preserve post-backup revocations, and never replay an unknown
+provider create because one side was restored earlier. Recovery into another region is a
+data-transfer/residency decision, not a backend path change.
+
 ## 10. Mandatory requirements and acceptance baseline
 
 These cases are requirements for later implementation, not passing tests delivered by prose.
 
-| ID      | Requirement and observable acceptance case                                                                                                                                                                                                                                                                                                                                                          |
-| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| META-01 | Run the same repository behavior suite on local files and every claimed backend; domain services use no backend-specific query/locking calls.                                                                                                                                                                                                                                                       |
-| META-02 | Two commits from the same scope revision race to claim one name; exactly one succeeds, with complete resource/guard/index/operation state and no partial writes. Different Workspace scopes remain independent.                                                                                                                                                                                     |
-| META-03 | Inject failure before temp/object write, after write, after rename/HEAD publication, before acknowledgement, and after a later commit; reopen returns valid old/new state, resolves receipts or reports unknown, and never seeds an empty scope.                                                                                                                                                    |
-| META-04 | Retry one mutation ID with same/different content and after receipt retention; replay is stable, mismatches conflict, lost proof is unknown. Scope/revision IDs never ABA-match after restore.                                                                                                                                                                                                      |
-| META-05 | Local root opened by a second writer is rejected; stale lock is not stolen on TTL/PID assumptions. Missing/corrupt/wrong-environment roots fail startup.                                                                                                                                                                                                                                            |
-| META-06 | Record/name/status/runnable indexes agree after concurrent create/update/delete and restart. Pages are bounded and deterministically ordered; a changed revision or filter rejects the cursor. Oversized batches fail before any publication.                                                                                                                                                       |
-| META-07 | User/Key from Organization A requests B's Workspace/resource through read, list, search, bootstrap, usage, events and operation routes; all are denied before secret/provider/engine/file I/O, verified with spies. Poison directory hints and conflicting envelope ownership do not bypass checks.                                                                                                 |
-| META-08 | A Workspace wildcard remains inside one Workspace and excludes hidden storage. Exact grants do not expand. Missing grants deny. Revocation/expiry/membership changes deny new admissions and new queued external steps; pre-admitted effect semantics are observed explicitly.                                                                                                                      |
-| META-09 | A viewer cannot obtain read/write SQL through `queries:execute`, a Key cannot administer members/other Keys, and a final Organization owner cannot be removed. Hosted mode cannot obtain a guest local-owner session.                                                                                                                                                                               |
-| META-10 | Concurrent claims, process death and lease expiry around provider creation never produce a second non-idempotent create. Late receipts reconcile under original IDs; stale workers cannot overwrite a newer generation. Unknowns retain capacity/name/secret references.                                                                                                                            |
-| META-11 | Account quotas are enforced across two Workspaces of one Organization; another Organization cannot bind that account. Product and provider quotas are independently enforced; partial reservations reconcile without free-tier circumvention.                                                                                                                                                       |
-| META-12 | Cross-scope Workspace initialization crashes at each boundary; repeated requests expose only the same owned Workspace or a pending operation, with no orphan ready directory or ownership mismatch.                                                                                                                                                                                                 |
-| META-13 | CredentialStore rejects wrong service/tenant/resource contexts, stores no plaintext in metadata/events/errors, and recovers an unconfirmed secret write/publication. Analysis workers cannot read metadata/vault/host paths.                                                                                                                                                                        |
-| META-14 | Import a fixture containing all resource kinds, shared provider account, all provider recovery states, expired/revoked/missing-grant Keys, orphan bindings, hidden DuckDB storage, retired PG, unknown fields, local Unicode/zero-byte files, counters and idempotency records. Preserve all identities/bytes/states; quarantine ambiguity; public discovery never reveals private/retired records. |
-| META-15 | Interrupt and resume every migration checkpoint. Source remains unchanged; same import reuses IDs/secret versions; altered source fails; target cannot serve until verification/activation. Provider create/register/setup/delete/rotate spies remain unused during import.                                                                                                                         |
-| META-16 | Existing fixture Bearer tokens and old Workspace/resource URLs retain identical allowed/denied behavior after import; unknown Key plaintext is never invented. Legacy idempotency records prevent duplicate provider work.                                                                                                                                                                          |
-| META-17 | Exercise backup restore with a missing vault/version/KMS permission and with post-cutover writes; incomplete restore fails closed, and old-source rollback is refused until newer state is reconciled.                                                                                                                                                                                              |
-| META-18 | For an S3 claim, race conditional HEAD publication, return 412/409, lose successful replies, stale a read cache and run GC with active readers/backups; only complete committed snapshots authorize, with no lost references. Other S3-compatible systems must pass independently.                                                                                                                  |
-| META-19 | For a SQL/engine claim, inject transaction conflict, leader/reconnect failure and stale replica reads; scope-atomic/durable/fresh semantics remain intact. Stale/default asynchronous engine modes are refused.                                                                                                                                                                                     |
-| META-20 | Measure declared adapter limits and local snapshot rewrite/prefix scan latency with increasing resource/Key counts; publish hardware/version/workload/results before selecting hosted capacity. Exceeding scope budget is explicit and preserves state.                                                                                                                                             |
-| META-21 | For a TiDB File System claim, verify fresh/conditional reads, atomic durable publication, two publishers from one revision, lost replies, inode replacement/restore and stale writers, actual upload/multipart limits, unavailable bootstrap credentials, and isolation from public customer/DuckDB storage. A mount, advisory lock or layer checkpoint alone is not passing evidence.              |
+| ID      | Requirement and observable acceptance case                                                                                                                                                                                                                                                                                                                                                           |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| META-01 | Run the same repository behavior suite on local files and every claimed backend; domain services use no backend-specific query/locking calls.                                                                                                                                                                                                                                                        |
+| META-02 | Two commits from the same scope revision race to claim one name; exactly one succeeds, with complete resource/guard/index/operation state and no partial writes. Different Workspace scopes remain independent.                                                                                                                                                                                      |
+| META-03 | Inject failure before temp/object write, after write, after rename/HEAD publication, before acknowledgement, and after a later commit; reopen returns valid old/new state, resolves receipts or reports unknown, and never seeds an empty scope.                                                                                                                                                     |
+| META-04 | Retry one mutation ID with same/different content and after receipt retention; replay is stable, mismatches conflict, lost proof is unknown. Scope/revision IDs never ABA-match after restore.                                                                                                                                                                                                       |
+| META-05 | Local root opened by a second writer is rejected; stale lock is not stolen on TTL/PID assumptions. Missing/corrupt/wrong-environment roots fail startup.                                                                                                                                                                                                                                             |
+| META-06 | Record/name/status/runnable indexes agree after concurrent create/update/delete and restart. Pages are bounded and deterministically ordered; a changed revision or filter rejects the cursor. Oversized batches fail before any publication.                                                                                                                                                        |
+| META-07 | User/Key from Organization A requests B's Workspace/resource through read, list, search, bootstrap, usage, events and operation routes; all are denied before secret/provider/engine/file I/O, verified with spies. Poison directory hints and conflicting envelope ownership do not bypass checks.                                                                                                  |
+| META-08 | A Workspace wildcard remains inside one Workspace and excludes hidden storage. Exact grants do not expand. Missing grants deny. Revocation/expiry/membership changes deny new admissions and new queued external steps; pre-admitted effect semantics are observed explicitly.                                                                                                                       |
+| META-09 | A viewer cannot obtain read/write SQL through `queries:execute`, a Key cannot administer members/other Keys, and a final Organization owner cannot be removed. Hosted mode cannot obtain a guest local-owner session.                                                                                                                                                                                |
+| META-10 | Concurrent claims, process death and lease expiry around provider creation never produce a second non-idempotent create. Late receipts reconcile under original IDs; stale workers cannot overwrite a newer generation. Unknowns retain capacity/name/secret references.                                                                                                                             |
+| META-11 | Account quotas are enforced across two Workspaces of one Organization; another Organization cannot bind that account. Product and provider quotas are independently enforced; partial reservations reconcile without free-tier circumvention.                                                                                                                                                        |
+| META-12 | Cross-scope Workspace initialization crashes at each boundary; repeated requests expose only the same owned Workspace or a pending operation, with no orphan ready directory or ownership mismatch.                                                                                                                                                                                                  |
+| META-13 | CredentialStore rejects wrong service/tenant/resource contexts, stores no plaintext in metadata/events/errors, and recovers an unconfirmed secret write/publication. Analysis workers cannot read metadata/vault/host paths.                                                                                                                                                                         |
+| META-14 | Import a fixture containing all resource kinds, shared provider account, all provider recovery states, expired/revoked/missing-grant Keys, orphan bindings, hidden DuckDB storage, retired PG, unknown fields, local Unicode/zero-byte files, counters and idempotency records. Preserve all identities/bytes/states; quarantine ambiguity; public discovery never reveals private/retired records.  |
+| META-15 | Interrupt and resume every migration checkpoint. Source remains unchanged; same import reuses IDs/secret versions; altered source fails; target cannot serve until verification/activation. Provider create/register/setup/delete/rotate spies remain unused during import.                                                                                                                          |
+| META-16 | Existing fixture Bearer tokens and old Workspace/resource URLs retain identical allowed/denied behavior after import; unknown Key plaintext is never invented. Legacy idempotency records prevent duplicate provider work.                                                                                                                                                                           |
+| META-17 | Exercise backup restore with a missing vault/version/KMS permission and with post-cutover writes; incomplete restore fails closed, and old-source rollback is refused until newer state is reconciled.                                                                                                                                                                                               |
+| META-18 | For an S3 claim, race conditional HEAD publication, return 412/409, lose successful replies, stale a read cache and run GC with active readers/backups; only complete committed snapshots authorize, with no lost references. Other S3-compatible systems must pass independently.                                                                                                                   |
+| META-19 | For a SQL/engine claim, inject transaction conflict, leader/reconnect failure and stale replica reads; scope-atomic/durable/fresh semantics remain intact. Stale/default asynchronous engine modes are refused.                                                                                                                                                                                      |
+| META-20 | Measure declared adapter limits and local snapshot rewrite/prefix scan latency with increasing resource/Key counts; publish hardware/version/workload/results before selecting hosted capacity. Exceeding scope budget is explicit and preserves state.                                                                                                                                              |
+| META-21 | For a TiDB File System claim, verify fresh/conditional reads, atomic durable publication, two publishers from one revision, lost replies, inode replacement/restore and stale writers, actual upload/multipart limits, unavailable bootstrap credentials, and isolation from public customer/DuckDB storage. A mount, advisory lock or layer checkpoint alone is not passing evidence.               |
+| META-22 | One Workspace holds resources in two regions; names remain globally unique. Creation validates regional eligibility/kind/mode and freezes placement before dispatch. Draining/disabled regions and unverified/automatic provider location cannot satisfy an incompatible placement/residency policy. Changing homeRegion never relocates an existing resource.                                       |
+| META-23 | Crash each global-outbox/regional-inbox/result boundary; duplicate/reordered/lost messages reuse the same resource/operation identity and reservation. Fingerprint, region, routing-epoch and generation mismatches reject before effects. Late observations cannot regress state; unknown provider requests are reconciled without another create.                                                  |
+| META-24 | Exercise O1/W1/R/W2/O2 plus catalog-version races, wrong-region audiences, expired/replayed grants, queued steps after revocation and global admission outage. No stale positive policy or reused grant permits a new action; bounded pre-admitted work follows the documented rule. Regional CAS conflict requires renewed authorization.                                                           |
+| META-25 | A Region A service cannot read Region B/global private stores, resolve its credentials, or route customer SQL to metadata. Test public/private TiDB File System roots and bootstrap identities with spies before secret/provider/data I/O; ownership prefixes alone never substitute for service authorization.                                                                                      |
+| META-26 | Race global product/account reservations and regional capacity across two Workspaces/regions. Partial delivery/outage retains unknown allocations. An unavailable region preserves IDs and stale/pending status without fallback provisioning, fake deletion success or quota release; reachable regions continue only with healthy admission/dependencies.                                          |
+| META-27 | Query/file bytes and detailed logs follow the declared regional path. Cross-region analysis and unapproved proxy/backup destinations reject before data movement. DuckDB backing location must satisfy its resource policy; membership in one Workspace never authorizes regional export.                                                                                                            |
+| META-28 | Import and restore global plus regional fixtures with original region strings, automatic/unverified provider placement, private backing storage, pending dispatch/results and missing regional vaults. Preserve identities/bytes/grants and explicit execution-region mappings; quarantine ambiguity, reconcile generations/revocations, and never infer a new location or repeat an unknown create. |
 
 Implementation acceptance needs shared adapter conformance, API negative tests with injected
 providers, local crash/failure injection on supported OSes, a private migration-fixture suite,
@@ -906,28 +1150,32 @@ document-presence checks. Live account creation is not necessary for ordinary CI
 
 ## 11. Incremental implementation and review decisions
 
-| Phase | Coherent deliverable                                                                                       | Gate                                                                                                       |
-| ----- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| A     | MetaStore contract, codecs, typed repositories and local file authority; single-Workspace compatibility    | META-01–06, 13 and existing API gate                                                                       |
-| B     | Offline importer, private backup/journal, legacy compatibility and read-only target validation             | META-14–17; no live cutover by default                                                                     |
-| C     | Organization/Workspace identity, membership and Key isolation, discovery and explicit environment identity | META-07–09, 12, 16; identity integration decision                                                          |
-| D     | Durable provider operations, cross-scope reservations and reconciler                                       | META-10–11; provider recovery evidence                                                                     |
-| E     | One hosted adapter selected by actual deployment needs                                                     | Applicable hosted cases (META-18, 19 or 21), plus full shared conformance and META-20 performance evidence |
+| Phase | Coherent deliverable                                                                                                   | Gate                                                                                                       |
+| ----- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| A     | MetaStore contract, codecs, typed repositories and local file authority; single-Workspace compatibility                | META-01–06, 13 and existing API gate                                                                       |
+| B     | Offline importer, private backup/journal, legacy compatibility and read-only target validation                         | META-14–17; no live cutover by default                                                                     |
+| C     | Organization/Workspace identity, membership and Key isolation, discovery and explicit environment identity             | META-07–09, 12, 16; identity integration decision                                                          |
+| D     | Global intent/dispatch, one local region inbox/execution, durable provider recovery and reservations                   | META-10–11, 22–26; local command/admission and provider recovery evidence                                  |
+| E     | One hosted adapter selected by actual deployment needs                                                                 | Applicable hosted cases (META-18, 19 or 21), plus full shared conformance and META-20 performance evidence |
+| F     | Separate hosted global/regional control and regional data services, per-authority storage/vaults and trusted discovery | META-22–28, full authorization/adapter conformance, declared residency and failure/recovery evidence       |
 
 Every phase preserves the current credential/private-storage/API boundaries until its reviewed
 replacement is complete. Public multi-tenant deployment requires C and D; passing phase A
-does not make a loopback service production-ready. Backend implementation updates the explicit
+does not make a loopback service production-ready. Multi-region hosted deployment additionally
+requires F and a conforming hosted storage/identity profile. Backend implementation updates the explicit
 API packaging list and generated OpenAPI/client/tests when contracts change.
 
-| Open decision                                                   | Proposed default                                                                          | Blocks                                 |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------- |
-| Accept the scope-atomic KV contract and local snapshot budgets? | Adopt this specification after review; measure before increasing budgets                  | Phase A                                |
-| Which hosted metadata adapter?                                  | Evaluate TiDB File System alongside TiDB/MySQL and conforming KV when deployment needs it | Phase E only                           |
-| Which hosted identity and session provider?                     | No vendor selected; issuer+subject model required                                         | Hosted phase C                         |
-| Which managed secret service / residency profile?               | Local private-file mode first; explicit managed encryption/IAM profile                    | Hosted deployment                      |
-| Provider-account commercial ownership and eligibility?          | One Organization owns its account; no cross-customer pool by default                      | New hosted provider allocation         |
-| Retention, backup window and operational SLOs?                  | Bound hot metadata; measure and declare recovery objectives before hosted release         | Hosted deployment; not document review |
-| When to add complete Runs/results/review?                       | Separate product specification using Workspace ownership and private result storage       | That feature only                      |
+| Open decision                                                   | Proposed default                                                                                                 | Blocks                                 |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Accept the scope-atomic KV contract and local snapshot budgets? | Adopt this specification after review; measure before increasing budgets                                         | Phase A                                |
+| Which hosted metadata adapter?                                  | Evaluate TiDB File System alongside TiDB/MySQL and conforming KV when deployment needs it                        | Phase E only                           |
+| Which hosted identity and session provider?                     | No vendor selected; issuer+subject model required                                                                | Hosted phase C                         |
+| Global dependency versus offline regional authorization?        | Fresh global admission initially; bounded policy leases need an explicit revocation/SLO amendment                | Phase F availability contract          |
+| Which initial regions and verified provider placements?         | Local compatibility region first; select hosted regions from per-kind verified capability and residency evidence | Phase F, not the logical split         |
+| Which managed secret service / residency profile?               | Local private-file mode first; explicit managed encryption/IAM profile                                           | Hosted deployment                      |
+| Provider-account commercial ownership and eligibility?          | One Organization owns its account; no cross-customer pool by default                                             | New hosted provider allocation         |
+| Retention, backup window and operational SLOs?                  | Bound hot metadata; measure and declare recovery objectives before hosted release                                | Hosted deployment; not document review |
+| When to add complete Runs/results/review?                       | Separate product specification using Workspace ownership and private result storage                              | That feature only                      |
 
 ## 12. Design verification and references
 
@@ -956,11 +1204,14 @@ the source baseline above. No production tenant migration or new backend support
 - Reviewed the proposed name/quota race against one scope CAS, Organization/Workspace policy
   reads against the O1/W/O2 admission rule, S3 snapshot publication against a conditional HEAD,
   and unknown provider/secret outcomes against retained operation identities.
+- Extended review to global desired state versus regional observed authority, O1/W1/R/W2/O2
+  admission with catalog validation, inbox/outbox replay, regional outage/quota retention,
+  unverified upstream placement, data movement and multi-authority restore boundaries.
 - Reviewed all five current persistence files, legacy idempotency/grants, retired PostgreSQL
   visibility, and DuckDB private-storage references against the migration mapping.
 - `npm ci` used the committed lockfile; `npm run check` passed on the design checkout with
   Node 24.22.1/npm 11.6.2, 132 existing tests, generated-contract checks and independent builds.
   Formatting/repository links and the documentation diff were checked again after final edits.
-- No new adapter, tenant isolation, migration or recovery test is claimed to pass: META-01–21
+- No new adapter, tenant isolation, migration or recovery test is claimed to pass: META-01–28
   are an implementation acceptance baseline. No live state, provider credential or existing
   resource was migrated or reprovisioned for this design.

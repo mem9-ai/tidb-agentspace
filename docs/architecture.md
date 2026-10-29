@@ -50,7 +50,7 @@ A new workspace should not require provisioning every resource type. The prototy
 Supabase's project-level grouping is a useful product reference; TiDB Workspace groups an
 optional mix of three distinct resource types. [Supabase Platform](https://supabase.com/docs/guides/platform)
 
-## Console information architecture
+## Global and regional deployment (proposed)
 
 The [multi-tenant control-plane design](../specs/gh-74/spec.md) and
 [proposed ADR 0017](decisions/0017-workspace-kv-control-plane.md) define a logical KV metadata
@@ -59,6 +59,31 @@ adapters including a service-owned TiDB File System candidate, Organization/Work
 authorization and identity-preserving resource/credential
 migration. This is a proposal, not implemented multi-tenancy or a completed migration. The
 current fixed Workspace, local owner session and JSON/vault persistence remain in use.
+
+The owner-requested future deployment separates three planes. See the specification's
+[authority and regional placement](../specs/gh-74/spec.md#2-architecture-and-ownership)
+for canonical records, routing, dispatch, failure and migration semantics.
+
+| Plane            | Responsibility                                                                                                                                           |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Global control   | Identity, Organization/Workspace policy and Keys, product/account quotas, region eligibility, resource placement/desired state and durable task dispatch |
+| Regional control | Local capacity, admitted task execution/recovery, provider bindings, regional credentials, observed state and data-plane configuration                   |
+| Regional data    | SQL/file requests, managed connections, private DuckDB storage and bounded analysis workers within the declared location policy                          |
+
+Workspace is a global logical boundary and can hold resources in several regions. Each
+resource has an assigned `regionId`; `homeRegion` is a default for future creation. Preserve
+upstream/legacy region values separately, and verify actual provider location before making
+residency claims. Global and regional metadata use separate authorities over the same KV
+interface, including separate service-owned TiDB File System roots where selected. Global
+status projections do not replace regional execution records or fresh authorization.
+
+Initially one local API may package all three modules. The hosted design requires authenticated
+dispatch, regional inbox/result recovery, scoped service identities and fresh global admission
+for new regional requests; offline regional policy leases are a separate decision. SQL/file
+payloads stay on the declared regional data path. A region outage preserves resource identity
+and pending state; it never silently recreates a resource elsewhere. This remains design-only.
+
+## Console information architecture
 
 | Page             | Primary task                                  | Important states and interactions                                                                                                                    |
 | ---------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -159,8 +184,10 @@ API-origin configuration and an OpenAPI-generated typed client. The existing bac
 Node ESM. See [ADR 0005](decisions/0005-independent-console-and-api.md) and the
 [operating guide](independent-delivery.md). Production identity and hosting remain proposed.
 
-The proposed production service starts with one modular Workspace service and a
-provisioning/reconciliation worker. A future language migration needs its own scoped decision;
+The proposed implementation starts with global-control, regional-control and regional-data
+modules in one API deployment plus provisioning/reconciliation work. The hosted authority
+split is defined above; the diagram below is a functional view, not one shared metadata
+database or a requirement to centralize every data request. A future language migration needs its own scoped decision;
 the current implementation retains Node ESM and existing provider clients. Separate deployment
 into microservices only when independent scaling or ownership justifies it.
 
@@ -171,7 +198,7 @@ flowchart TB
   mcp[MCP transport: future] --> gateway
   gateway --> policy[Workspace Key: action + resource policy]
   policy --> core[Workspace domain operations]
-  core --> metadata[(Independent metadata database + outbox)]
+  core --> metadata[Independent KV metadata authorities and outboxes]
   core --> usage[Usage attribution + product billing]
   core --> audit[Activity / metrics / request tracing]
   core --> worker[Provisioning and reconciliation worker]
@@ -272,8 +299,10 @@ creating another potentially billable resource.
 Core metadata includes product accounts/tenants, principals, workspaces, resource/provider
 bindings, key digests/grants, secret references, operations, idempotency records, outbox events,
 audit records, usage events, quota allocations, and product billing attribution. Keep it in
-an independent database, outside customer-deletable application instances. Real file contents
-belong in the File System provider rather than the control-plane metadata database.
+independent control-plane MetaStores, outside customer-deletable application resources.
+Global desired/policy records and regional execution/binding records follow the authority
+split in GH-74; a relational database is one optional adapter. Real file contents belong in
+the regional data store/provider rather than hot control-plane metadata.
 
 Proposed production resources:
 

@@ -66,8 +66,10 @@ within the task's scope. A proposed architecture does not establish a runtime ca
 
 For multi-tenant metadata, storage adapters, ownership, or migration design, read
 [GH-74](specs/gh-74/spec.md) and [proposed ADR 0017](docs/decisions/0017-workspace-kv-control-plane.md).
-They preserve the owner's logical-KV/local-file direction while distinguishing proposed
-consistency, isolation and migration behavior from the running single-Workspace service.
+They preserve the owner's logical-KV/local-file direction, TiDB File System candidate and
+global/regional control plus regional data-plane separation. Resource placement, dispatch,
+consistency, isolation and migration remain proposed behavior, distinct from the running
+single-Workspace service.
 
 | Task                                                      | Required starting points                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

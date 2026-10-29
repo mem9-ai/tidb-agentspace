@@ -1,6 +1,6 @@
 # ADR 0017: Portable KV metadata for the Workspace control plane
 
-- Status: Proposed; logical KV abstraction, ordinary local files and evaluating TiDB File System are owner-requested direction, while the detailed contract is under review
+- Status: Proposed; storage independence and the global/regional three-plane split are owner-requested direction; detailed contracts remain under review
 - Date: 2026-10-29
 - Parent: [GH-74](https://github.com/siddontang/tidb.ai/issues/74)
 - Specification: [Multi-tenant Workspace control plane](../../specs/gh-74/spec.md)
@@ -20,14 +20,22 @@ possible backends, explicitly including TiDB File System. Ordinary filesystem fi
 be sufficient for local use; a particular relational schema or database service must not
 become a domain prerequisite.
 
+The owner also requires global control, region control and regional data-plane boundaries.
+Business policy and placement belong globally; regional control executes admitted desired
+state against its local data plane. A Workspace can span regions, so a resource's region is
+part of its immutable routing/ownership context, not only a Console label. The current
+single-process gateway and its existing region strings do not implement this topology.
+
 ## Proposed decision
 
 1. Domain services use typed repositories over `MetaStore`, with versioned JSON records,
    explicit ownership, bounded prefix scans and maintained indexes. They do not issue SQL,
    object-store requests or raw filesystem operations for metadata.
 2. Require fresh snapshot reads and revision-conditional atomic batches **within one scope**.
-   Organization and Workspace are separate scopes. A resource, name reservation, operation
-   and authoritative indexes commit together. No cross-scope transaction is promised.
+   Global Organization/Workspace and regional Workspace are separate scopes and authorities.
+   Desired resource/name/operation/outbox/indexes commit globally together; regional
+   inbox/execution/binding/observed-state records commit together locally. Cross-plane work
+   uses recoverable coordination, without a global/regional transaction.
 3. Use one ordinary JSON state file per scope for the first local adapter, owned by one
    authority process. Exclusive root ownership, synced temporary writes, atomic replacement,
    directory sync and explicit recovery are required. Local files do not imply multi-host HA.
@@ -48,6 +56,22 @@ become a domain prerequisite.
 7. Keep Workspace Keys scoped to one Workspace; wildcard grants never cross Workspaces or
    expose DuckDB's private backing storage. KV namespacing complements provider/native data
    isolation and does not replace it.
+8. Global control owns identity, policy, eligibility, names, product/account reservations,
+   desired state and dispatch. Each region owns actual bindings, native credential access,
+   execution recovery and observed state; its data plane handles SQL/files/workers. Distinct
+   global/regional metadata roots use the same MetaStore interface with separate identities.
+   Export only safe status/usage projections globally; replicas do not become authority.
+9. Assign one `regionId` before dispatch and verify provider placement separately. Preserve
+   legacy `region` values, including `automatic`, without inventing geographic residency.
+   Workspace `homeRegion` is a future-create default. Changing regions requires an explicit
+   transfer design, not a metadata patch or automatic failover. Shared Workspace ownership
+   does not permit cross-region file analysis/data export.
+10. Use authenticated at-least-once command/result delivery with stable operation identity,
+    fingerprints, regional inbox deduplication and generation/routing checks. Fresh global
+    policy admission remains required for new regional requests/external steps, with bounded
+    audience/request grants and explicit in-flight semantics. Offline policy leases are a
+    separate revocation/SLO decision. Start with modules in one local API deployment; split
+    hosted services only after the regional isolation and failure acceptance cases pass.
 
 ## Alternatives and consequences
 
@@ -65,6 +89,10 @@ become a domain prerequisite.
   keep bulk events/results outside hot metadata. Measure before changing partitioning.
 - Storage independence is not free: relationship checks, codecs, index updates, conformance,
   crash recovery and import verification are product responsibilities.
+- Independent regional execution adds sagas and stale status projections. The initial fresh
+  global admission contract adds latency and a global availability dependency; it cannot
+  promise offline regional service without changing its revocation policy. Resource data,
+  global identity metadata, backups and proxies each need explicit location declarations.
 
 ## Migration and compatibility
 
@@ -73,6 +101,10 @@ account/recovery state, legacy Key digests, idempotency data, local files, retir
 hidden DuckDB storage. Original IDs, native roles/passwords and provider account identities
 remain unchanged. Unknown or orphan data is preserved privately and reconciled, not silently
 discarded. Missing credentials block activation rather than trigger fresh provisioning.
+Import also requires explicit execution-region mappings and separate upstream-location
+evidence. Global desired records and regional bindings/vaults must agree; restore reconciles
+both authorities and pending commands/results before enabling affected resources. An unknown
+provider location or missing regional vault cannot be repaired by relabeling or recreation.
 
 Existing Workspace/resource URLs and Key validation remain compatible. A migration must not
 reuse `ws_agentlab` as a tenant-independent alias. Existing unauthenticated local-owner setup
@@ -82,11 +114,13 @@ specification revision.
 
 ## Verification and revisit
 
-[META-01 through META-21](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
+[META-01 through META-28](../../specs/gh-74/spec.md#10-mandatory-requirements-and-acceptance-baseline)
 cover adapter conformance, crash/unknown outcomes, authorization before I/O, provider-account
 quotas, credential separation, full legacy import, no duplicate provider effects and restore.
 The TiDB File System case includes concurrent publication, path replacement, bootstrap and
 public/private storage separation; its current product adapter is not a metadata CAS adapter.
+Regional cases cover placement, dispatch/results, fresh cross-authority admission, service/
+credential isolation, capacity/outages, data movement and distributed import/restore.
 This ADR does not claim those tests or a production migration exist. Repository checks only
 verify the current source/documents.
 
