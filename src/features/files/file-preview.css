@@ -54,16 +54,7 @@
   min-height: 160px;
   overflow: auto;
 }
-.file-preview-footer {
-  padding: 12px 20px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.file-preview-header,
-.file-preview-footer {
+.file-preview-header {
   flex-shrink: 0;
 }
 .file-preview-message {

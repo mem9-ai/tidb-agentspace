@@ -19,10 +19,8 @@ export default function FileAnalysisPanel({
   previewVersion,
   onRefreshPreview,
   savedContent,
-  onContentViewChange,
 }: {
   savedContent: string;
-  onContentViewChange: (view: 'preview' | 'result') => void;
   preview: ReactNode;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
@@ -185,8 +183,6 @@ export default function FileAnalysisPanel({
             cap={option}
             editorId={descriptionId + '-' + option.engine}
             expanded={expanded}
-            active={selected === option.engine}
-            onContentViewChange={onContentViewChange}
             blocked={blocked || loading || !!error}
             preview={selected === option.engine ? preview : null}
             previewVersion={previewVersion}

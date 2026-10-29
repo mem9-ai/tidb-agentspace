@@ -25,8 +25,6 @@ export function FileAnalysisEditor({
   preview,
   editorId,
   expanded,
-  active,
-  onContentViewChange,
   blocked,
   previewVersion,
   onRefreshPreview,
@@ -34,8 +32,6 @@ export function FileAnalysisEditor({
   preview: ReactNode;
   editorId: string;
   expanded: boolean;
-  active: boolean;
-  onContentViewChange: (view: 'preview' | 'result') => void;
   blocked: boolean;
   previewVersion?: string;
   onRefreshPreview: () => void;
@@ -56,9 +52,6 @@ export function FileAnalysisEditor({
   const [exportOpen, setExportOpen] = useState(false);
   const hasExecution = !!(result || busy || error);
   const visibleContentView = hasExecution ? contentView : 'preview';
-  useEffect(() => {
-    if (active) onContentViewChange(visibleContentView === 'result' ? 'result' : 'preview');
-  }, [active, visibleContentView, onContentViewChange]);
   const execution = useRef<AbortController | null>(null);
   const pending = useRef(false);
   useEffect(() => {

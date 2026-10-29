@@ -20,7 +20,8 @@ Closing/navigating to another file still cancels execution and discards transien
 Edit source is a secondary action. Dirty content is identified and blocks saved-file analysis;
 Keep editing/Discard changes guards remain. Saving refreshes the fixed preview and capabilities
 without discarding tools. An old result with a different saved-byte version gets a visible warning.
-Original Download remains available; unsaved text retains Download draft. Parquet has no text
+Original download remains available through the Preview header's Export dialog; unsaved text
+retains Download draft and save controls in the header. Parquet has no text
 source editor. Text/Markdown rendering remains bounded and isolated from renderer exceptions.
 
 ## API and bounds
