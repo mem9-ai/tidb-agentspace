@@ -5,15 +5,17 @@ struct DatabaseExportOptions<'a> {
     types: Option<&'a [String]>,
     preparation: Option<&'a str>,
     file_source: bool,
+    database_import: bool,
 }
 use sha2::{Digest, Sha256};
 #[derive(Clone)]
 pub(super) struct Preparation {
-    actor: String,
+    pub(super) actor: String,
+    pub(super) destination: Option<String>,
     source: Value,
     version: String,
     parsed: Value,
-    expires: i64,
+    pub(super) expires: i64,
     used: bool,
 }
 fn invalid() -> ServiceError {
@@ -307,7 +309,7 @@ fn plan(
     Ok((json!(defs), create, insert))
 }
 impl Product {
-    async fn export_authorize(
+    pub(super) async fn export_authorize(
         &self,
         credential: &Credential,
         source_id: &str,
@@ -549,8 +551,16 @@ impl Product {
             if entry.used {
                 return Err(err(409, "IMPORT_ALREADY_COMMITTED"));
             }
+            if entry
+                .destination
+                .as_ref()
+                .is_some_and(|id| input["target"]["resourceId"].as_str() != Some(id))
+            {
+                return Err(err(409, "IMPORT_TARGET_MISMATCH"));
+            }
+            let file_source = entry.source["kind"] != "upload";
             let source = text(&entry.source, "resourceId")?;
-            self.export_authorize(credential, source, &input["target"], false, true)
+            self.export_authorize(credential, source, &input["target"], false, file_source)
                 .await?;
             let (fields, result, types) = mapped_fields(&entry.parsed, &input["fields"])?;
             let _ = fields;
@@ -580,7 +590,8 @@ impl Product {
                     DatabaseExportOptions {
                         types: Some(&types),
                         preparation: Some(id),
-                        file_source: true,
+                        file_source,
+                        database_import: entry.destination.is_some(),
                     },
                 )
                 .await;
@@ -666,46 +677,9 @@ impl Product {
                 }
                 bytes
             };
-            let parsed = self
-                .run_file_worker(FileJob {
-                    resource_id: source_id,
-                    path,
-                    bytes,
-                    mode: "import",
-                    engine: "duckdb",
-                    format,
-                    script: "",
-                    parsing: Some(parsing.clone()),
-                })
-                .await?;
-            validate_result(&json!({"columns":parsed["columns"],"rows":parsed["rows"]}))?;
-            let fields = suggested_fields(&parsed, format);
-            let expires = chrono::Utc::now().timestamp_millis() + 300000;
-            let id = uuid::Uuid::new_v4().to_string();
-            let version = text(&parsed, "fileVersion")?.to_owned();
-            let entry = Preparation {
-                actor: actor.into(),
-                source: source.clone(),
-                version: version.clone(),
-                parsed: parsed.clone(),
-                expires,
-                used: false,
-            };
-            let mut map = self.preparations.lock().await;
-            map.retain(|_, v| v.expires > chrono::Utc::now().timestamp_millis());
-            while map.len() >= 8 {
-                if let Some(key) = map
-                    .iter()
-                    .min_by_key(|(_, e)| e.expires)
-                    .map(|(k, _)| k.clone())
-                {
-                    map.remove(&key);
-                }
-            }
-            map.insert(id.clone(), entry);
-            return Ok(
-                json!({"preparationId":id,"expiresAt":chrono::DateTime::from_timestamp_millis(expires).map(|d|d.to_rfc3339_opts(chrono::SecondsFormat::Millis,true)),"fields":fields,"rows":parsed["rows"].as_array().expect("rows").iter().take(20).collect::<Vec<_>>(),"rowCount":parsed["rows"].as_array().expect("rows").len(),"sourceVersion":version,"inputBytes":parsed["inputBytes"],"format":format}),
-            );
+            return self
+                .prepare_import_rows(actor, source.clone(), path, bytes, parsing.clone(), None)
+                .await;
         }
         let target = &input["target"];
         if target["kind"] == "download" {
@@ -739,6 +713,59 @@ impl Product {
         self.export_file(credential, source_id, target, &content, original, true)
             .await
     }
+    pub(super) async fn prepare_import_rows(
+        &self,
+        actor: &str,
+        source: Value,
+        path: &str,
+        bytes: Vec<u8>,
+        parsing: Value,
+        destination: Option<String>,
+    ) -> Result<Value> {
+        let source_id = text(&source, "resourceId")?;
+        let format = text(&parsing, "format")?;
+        let parsed = self
+            .run_file_worker(FileJob {
+                resource_id: source_id,
+                path,
+                bytes,
+                mode: "import",
+                engine: "duckdb",
+                format,
+                script: "",
+                parsing: Some(parsing.clone()),
+            })
+            .await?;
+        validate_result(&json!({"columns":parsed["columns"],"rows":parsed["rows"]}))?;
+        let fields = suggested_fields(&parsed, format);
+        let expires = chrono::Utc::now().timestamp_millis() + 300000;
+        let id = uuid::Uuid::new_v4().to_string();
+        let version = text(&parsed, "fileVersion")?.to_owned();
+        let entry = Preparation {
+            actor: actor.into(),
+            destination,
+            source: source.clone(),
+            version: version.clone(),
+            parsed: parsed.clone(),
+            expires,
+            used: false,
+        };
+        let mut map = self.preparations.lock().await;
+        map.retain(|_, v| v.expires > chrono::Utc::now().timestamp_millis());
+        while map.len() >= 8 {
+            if let Some(key) = map
+                .iter()
+                .min_by_key(|(_, e)| e.expires)
+                .map(|(k, _)| k.clone())
+            {
+                map.remove(&key);
+            }
+        }
+        map.insert(id.clone(), entry);
+        Ok(
+            json!({"preparationId":id,"expiresAt":chrono::DateTime::from_timestamp_millis(expires).map(|d|d.to_rfc3339_opts(chrono::SecondsFormat::Millis,true)),"fields":fields,"rows":parsed["rows"].as_array().expect("rows").iter().take(20).collect::<Vec<_>>(),"rowCount":parsed["rows"].as_array().expect("rows").len(),"sourceVersion":version,"inputBytes":parsed["inputBytes"],"format":format}),
+        )
+    }
     async fn export_database(
         &self,
         credential: &Credential,
@@ -751,6 +778,7 @@ impl Product {
             types,
             preparation,
             file_source,
+            database_import,
         } = options;
         let (p, r) = self
             .export_authorize(credential, source, target, false, file_source)
@@ -765,9 +793,15 @@ impl Product {
             if entry.used {
                 return Err(err(409, "IMPORT_ALREADY_COMMITTED"));
             }
+            if entry.expires <= chrono::Utc::now().timestamp_millis() {
+                return Err(err(409, "IMPORT_PREPARATION_UNAVAILABLE"));
+            }
             entry.used = true;
         }
-        if let Err(e) = self.execute_database(&r, &create, false, json!([])).await {
+        if let Err(e) = self
+            .execute_database_with_mode(&r, &create, false, json!([]), database_import)
+            .await
+        {
             if e.code == "SQL_TABLE_EXISTS"
                 && let Some(id) = preparation
                 && let Some(entry) = self.preparations.lock().await.get_mut(id)
@@ -777,18 +811,21 @@ impl Product {
             return Err(e);
         }
         if let Some(insert) = insert {
-            self.export_authorize(credential, source, target, false, file_source)
-                .await?;
-            if self
-                .execute_database(&r, &insert, false, json!([]))
-                .await
-                .is_err()
-            {
+            let inserted = async {
+                self.export_authorize(credential, source, target, false, file_source)
+                    .await?;
+                self.execute_database_with_mode(&r, &insert, false, json!([]), database_import)
+                    .await
+            }
+            .await;
+            if inserted.is_err() {
                 return Err(err(502, "EXPORT_INCOMPLETE"));
             }
         }
         self.record(
-            if file_source {
+            if database_import {
+                "database.imported"
+            } else if file_source {
                 "file.exported"
             } else {
                 "result.exported"

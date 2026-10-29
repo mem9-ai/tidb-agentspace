@@ -14,6 +14,7 @@ import {
 import { DatabaseTableList, TableInspector } from './DatabaseBrowser';
 import { createQueryDraft, queryDraftReducer } from './query-draft';
 import { useTableMetadata } from './use-table-metadata';
+import { DatabaseImportDialog } from '../imports/DatabaseImportDialog';
 
 type Props = {
   database: Resource;
@@ -57,9 +58,11 @@ export function DatabaseWorkspace({
   const [busy, setBusy] = useState(false);
   const [listingBusy, setListingBusy] = useState(true);
   const [rowBusy, setRowBusy] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
   const [browserCollapsed, setBrowserCollapsed] = useState(false);
   const [collapsedTable, setCollapsedTable] = useState<string | null>(null);
-  const waitingForRead = busy || listingBusy || rowBusy;
+  const waitingForRead = busy || listingBusy || rowBusy || importBusy;
   const metadata = useTableMetadata(database.id, tableName, revision, waitingForRead);
   const editor = useRef<HTMLDivElement>(null);
   const showEditor = () => {
@@ -92,11 +95,26 @@ export function DatabaseWorkspace({
       <DatabaseWorkspaceHeader
         database={database}
         databases={databases}
-        busy={busy}
+        busy={busy || importBusy}
         onSelect={onSelect}
         onConnect={onConnect}
         onRetry={onRetry}
+        onImport={() => setImportOpen(true)}
+        importDisabled={listingBusy || rowBusy || metadata.loading}
       />
+      {importOpen && (
+        <DatabaseImportDialog
+          key={database.id}
+          database={database}
+          onClose={() => setImportOpen(false)}
+          onBusyChange={setImportBusy}
+          onSaved={async () => {
+            setListingBusy(true);
+            setRevision((value) => value + 1);
+            await refresh();
+          }}
+        />
+      )}
       <div
         className="resource-workspace database-workspace"
         data-browser-collapsed={browserCollapsed || undefined}
@@ -104,7 +122,7 @@ export function DatabaseWorkspace({
         <DatabaseTableList
           database={database}
           revision={revision}
-          busy={busy}
+          busy={busy || importBusy}
           tableName={tableName}
           expandedTable={tableName !== collapsedTable ? tableName : undefined}
           metadata={metadata}
@@ -129,7 +147,10 @@ export function DatabaseWorkspace({
             sql={draft.sql}
             onSqlChange={(sql) => dispatch({ type: 'edit', sql })}
             database={database}
-            readBusy={database.kind === 'duckdb' && (listingBusy || metadata.loading || rowBusy)}
+            readBusy={
+              importBusy ||
+              (database.kind === 'duckdb' && (listingBusy || metadata.loading || rowBusy))
+            }
             execute={(sql) => workspaceApi.query({ resourceId: database.id, sql })}
             onComplete={refresh}
             onExportSaved={async () => {

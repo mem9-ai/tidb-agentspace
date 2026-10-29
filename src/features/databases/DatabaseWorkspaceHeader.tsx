@@ -1,5 +1,5 @@
 import { ActionIcon, Alert, Anchor, Button, Group, Text } from '@tidbcloud/uikit';
-import { IconArrowLeft } from '@tidbcloud/uikit/icons';
+import { IconArrowLeft, IconUpload01 } from '@tidbcloud/uikit/icons';
 import type { Resource } from '../../api/client';
 import {
   ResourceConnectButton,
@@ -16,6 +16,8 @@ export function DatabaseWorkspaceHeader({
   onSelect,
   onConnect,
   onRetry,
+  onImport,
+  importDisabled,
 }: {
   database: Resource;
   databases: Resource[];
@@ -23,6 +25,8 @@ export function DatabaseWorkspaceHeader({
   onSelect: (id: string) => void;
   onConnect: () => void;
   onRetry: () => void;
+  onImport: () => void;
+  importDisabled: boolean;
 }) {
   const provider =
     database.provider === 'db9-anonymous'
@@ -78,6 +82,21 @@ export function DatabaseWorkspaceHeader({
               )}
             </ResourceDetails>
             <ResourceConnectButton onClick={onConnect} />
+            <Button
+              variant="filled"
+              leftSection={<IconUpload01 size={18} />}
+              disabled={busy || importDisabled || !live || database.status !== 'active'}
+              title={
+                !live || database.status !== 'active'
+                  ? 'Import requires an active live database.'
+                  : importDisabled
+                    ? 'Wait for the database to finish loading.'
+                    : undefined
+              }
+              onClick={onImport}
+            >
+              Import
+            </Button>
           </>
         }
       >

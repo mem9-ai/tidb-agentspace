@@ -90,8 +90,13 @@ locks or retry writes automatically. A lost response or timeout is not proof of 
 
 Limits: 64 KiB SQL, 15 seconds including native startup and storage open, 1,000 result rows /
 1 MiB output, 256 MB configured DuckDB memory and two threads per worker. Temp spilling is
-disabled. DuckDB's memory setting is not an operating-system memory limit. Each worker has a
-minimal environment and no public listener; secrets travel in private IPC, not process arguments.
+disabled. DuckDB's memory setting is not an operating-system memory limit. Confirmed database
+Import has a bounded exception: server-generated CREATE/
+INSERT statements receive 30 seconds each for cold storage commit/close. Parsing and ordinary
+SQL keep 15 seconds, and uncertain writes are never retried; see [ADR 0023](decisions/0023-database-import-workspace.md).
+
+Each worker has a separate process, minimal environment and no public listener; secrets
+travel in private IPC, not process arguments.
 
 Use SELECT, table/view/index DDL, INSERT/UPDATE/DELETE/MERGE, SHOW/DESCRIBE and CHECKPOINT.
 Settings, secrets, extension installation/loading, attach/detach, COPY/export/import and

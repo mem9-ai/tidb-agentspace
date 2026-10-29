@@ -12,6 +12,7 @@ export function WorkspaceBrowserItem({
   expanded,
   controls,
   disclosure,
+  disabled = false,
 }: {
   name: string;
   description?: string;
@@ -23,6 +24,7 @@ export function WorkspaceBrowserItem({
   expanded?: boolean;
   controls?: string;
   disclosure?: ReactNode;
+  disabled?: boolean;
 }) {
   const props = {
     label: name,
@@ -30,6 +32,7 @@ export function WorkspaceBrowserItem({
     leftSection: icon,
     rightSection: disclosure,
     active,
+    disabled,
     title: name,
     onClick,
     px: 8,

@@ -1,6 +1,6 @@
 # ADR 0023: Destination-owned database imports
 
-- Status: Proposed contract for the owner's approved Import workflow, GH-103.
+- Status: Accepted through PR #104; implemented under GH-103.
 - Date: 2026-10-29.
 - Contract: [GH-103 specification](../../specs/gh-103/spec.md).
 - Extends [ADR 0013](0013-result-snapshot-exports.md) and [ADR 0018](0018-contextual-file-exports.md).
@@ -22,9 +22,19 @@ also require source files:read/analyze and resource access. Reauthorize before s
 No scope is broadened, no automatic write retry/append/overwrite/DROP is added, and partial
 outcomes require inspection. Old APIs and preparations retain their existing contract.
 
+Live verification found cold DuckDB storage commits can exceed the ordinary 15-second SQL
+worker lifetime after CREATE becomes durable. Server-generated, confirmed database-import
+CREATE/INSERT statements therefore receive a fixed 30-second worker budget each. Parsing,
+ordinary customer SQL and older unbound exports keep their existing 15-second bounds. This
+does not change single-use tickets, admission limits, read-only parsing or unknown-outcome
+handling; no customer-supplied timeout option is exposed.
+
 The Console shares TiUI review/progress and keeps database SQL state mounted. Source/parsing
 changes invalidate review; acknowledgement and browser refresh remain distinct. No persistent
 upload staging, background job, billing or metadata migration is introduced.
 
-Implementation and verification remain pending. Revisit this boundary for append/upsert,
+The accepted specification is pinned at `69b3adfc770e346047205638475d6966a5442961`.
+Rust and Node compatibility routes, generated contracts and the Console now implement this
+boundary; see [verification](../database-import-verification.md) for evidence and limitations.
+Revisit this boundary for append/upsert,
 larger/resumable input, durable jobs, cross-Workspace transfers or production compute isolation.

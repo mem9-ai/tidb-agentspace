@@ -7,6 +7,17 @@ impl Product {
         read_only: bool,
         sources: Value,
     ) -> Result<Value> {
+        self.execute_database_with_mode(r, sql, read_only, sources, false)
+            .await
+    }
+    pub(super) async fn execute_database_with_mode(
+        &self,
+        r: &Value,
+        sql: &str,
+        read_only: bool,
+        sources: Value,
+        import_write: bool,
+    ) -> Result<Value> {
         if sql.trim().is_empty() || sql.len() > 65536 {
             return Err(err(400, "INVALID_SQL"));
         }
@@ -26,7 +37,11 @@ impl Product {
                 .providers
                 .file_connection(text(&b, "storageId")?)
                 .await?;
-            self.compute.database(id, c, sql, sources, read_only).await
+            if import_write {
+                self.compute.import_statement(id, c, sql).await
+            } else {
+                self.compute.database(id, c, sql, sources, read_only).await
+            }
         } else if [ZERO, DB9].contains(&r["provider"].as_str().unwrap_or("")) {
             self.providers.execute(r, sql).await
         } else if r["provider"].is_null() || r["provider"] == "local" {

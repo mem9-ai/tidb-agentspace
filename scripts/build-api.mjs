@@ -9,6 +9,7 @@ export const runtimeFiles = [
   'server/export-authorization.mjs',
   'server/file-exports.mjs',
   'server/file-export-contract.mjs',
+  'server/database-import-contract.mjs',
   'server/import-fields.mjs',
   'server/file-import-reader.mjs',
   'server/database-browser.mjs',
