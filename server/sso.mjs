@@ -20,6 +20,8 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 //   TIDB_SSO_SCOPES           Optional. Space-separated scopes (default "openid profile email").
 //   TIDB_SSO_OWNER_SUBJECTS   Owner allowlist. Comma-separated IMMUTABLE provider subject ids
 //                             (the OIDC `sub` claim, NOT email) that MAY become the workspace owner.
+//   TIDB_SSO_OWNER_EMAIL_RULES Optional. Comma-separated email or *@domain rules for verified ID-token emails.
+//                             Every match grants shared workspace owner access (no user isolation).
 //   (Owner authorization subject is HARD-PINNED to the OIDC `sub` claim in code; not configurable.)
 //                             Must resolve to a non-empty scalar string; arrays/objects fail closed.
 //   TIDB_SSO_DISPLAY_CLAIM    Optional. ID-token claim for a human-readable display/audit label
@@ -29,16 +31,11 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 //   TIDB_SSO_ORG_CLAIM        Optional. ID-token claim holding the org (default "org_id").
 //   TIDB_SSO_POST_LOGIN_URL   Optional. App URL to land on after login (must be same-origin as redirect).
 //
-// AUTHORIZATION MODEL (single-workspace-owner, DEFAULT-DENY):
-//   A signature-verified SSO login does NOT automatically get owner access. The OWNER decision
-//   binds ONLY to the provider's immutable subject (OIDC `sub` by default) — never to a
-//   reassignable claim such as email. The subject claim must be a non-empty scalar string;
-//   an array/object/number/empty value fails closed (no owner). Owner is granted ONLY when that
-//   subject is in TIDB_SSO_OWNER_SUBJECTS. An org-allowlist match alone must NOT grant owner; the
-//   org list, when set, is an extra filter applied before the owner-subject check. If
-//   TIDB_SSO_OWNER_SUBJECTS is empty/unset, every SSO login is denied owner. The subject is always
-//   carried as a distinct, auditable principal id regardless of the authorization outcome; the
-//   display claim is audit-only metadata.
+// AUTHORIZATION MODEL (shared workspace, DEFAULT-DENY):
+//   A verified login needs an exact OWNER_SUBJECTS match OR an explicitly configured verified-email
+//   rule. The optional org filter applies to both. With neither grant, login is denied.
+//   Identity always remains issuer + immutable sub; a matching email is eligibility, not identity.
+//   Every admitted account is an owner of the same workspace, not a separate customer tenant.
 
 const DEFAULT_SCOPES = 'openid profile email';
 const DEFAULT_SUBJECT_CLAIM = 'sub';
@@ -55,6 +52,45 @@ function requireHttpsUrl(name, value, { allowLoopbackHttp = false } = {}) {
   if (url.protocol === 'https:' || (allowLoopbackHttp && url.protocol === 'http:' && loopback))
     return url;
   throw new Error(`${name} must use https (http is allowed only for loopback redirect URIs).`);
+}
+
+function validEmailDomain(domain) {
+  const validLabel = (label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label);
+  const labels = domain.split('.');
+  return domain.length <= 253 && labels.length >= 2 && labels.every(validLabel);
+}
+
+function normalizedEmail(value) {
+  if (typeof value !== 'string') return null;
+  // ASCII dot-atom only; no controls, whitespace, quoted forms, multiple @ or wildcard local parts.
+  const match =
+    /^([a-z0-9!#$%&'+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'+/=?^_`{|}~-]+)*)@([a-z0-9.-]+)$/i.exec(value);
+  return match && match[0] === value && validEmailDomain(match[2]) ? value.toLowerCase() : null;
+}
+
+// Exact email or *@domain only. Operators explicitly accept case-insensitive mailbox matching.
+function parseOwnerEmailRules(value) {
+  if (value === undefined || value === '') return [];
+  const invalid = () =>
+    new Error('TIDB_SSO_OWNER_EMAIL_RULES must contain only email or *@domain rules.');
+  if (typeof value !== 'string' || /\p{Cc}/u.test(value)) throw invalid();
+  if (!value.trim()) return [];
+  const rules = value.split(',').map((entry) => {
+    const rule = entry.trim();
+    if (rule.startsWith('*@') && validEmailDomain(rule.slice(2))) return rule.toLowerCase();
+    const email = normalizedEmail(rule);
+    if (!email) throw invalid();
+    return email;
+  });
+  return [...new Set(rules)];
+}
+
+function hasVerifiedOwnerEmail(rules, claims) {
+  if (!rules?.length || claims.email_verified !== true) return false;
+  const email = normalizedEmail(claims.email);
+  return (
+    !!email && (rules.includes(email) || rules.includes('*' + email.slice(email.indexOf('@'))))
+  );
 }
 
 // Parse SSO configuration from the environment. Returns null when SSO is disabled
@@ -140,18 +176,14 @@ export function loadSsoConfig(env = process.env) {
     redirectUri: redirect.href,
     redirectOrigin: redirect.origin,
     scopes: get('TIDB_SSO_SCOPES') || DEFAULT_SCOPES,
-    // Owner authorization binds to the OIDC `sub` claim ONLY — this is a hard code
-    // contract, NOT operator-configurable. `sub` is the provider's immutable,
-    // non-reassignable subject identifier; a reassignable claim like email must
-    // never be the authorization subject (an email owner over a reclaimed address
-    // would be an account-takeover). `TIDB_SSO_DISPLAY_CLAIM` carries email/name
-    // for audit/display only and never participates in the owner decision.
+    // Identity remains the immutable OIDC subject, even when a verified-email rule grants access.
     subjectClaim: DEFAULT_SUBJECT_CLAIM,
     // Display/audit only; never used for the owner decision.
     displayClaim: get('TIDB_SSO_DISPLAY_CLAIM'),
     orgClaim: get('TIDB_SSO_ORG_CLAIM') || DEFAULT_ORG_CLAIM,
     allowedOrgs: csv('TIDB_SSO_ALLOWED_ORGS'),
     ownerSubjects: csv('TIDB_SSO_OWNER_SUBJECTS'),
+    ownerEmailRules: parseOwnerEmailRules(env.TIDB_SSO_OWNER_EMAIL_RULES),
     cookieSecure,
     publicPath,
     postLoginUrl: postLoginUrl || redirect.origin + publicPath + '/',
@@ -285,8 +317,8 @@ export async function verifyIdToken(config, endpoints, idToken, expectedNonce) {
 //
 // Fails closed (no owner session) when: the immutable subject claim is missing or not a non-empty
 // scalar string (arrays/objects/numbers rejected so distinct accounts can never coerce/collide
-// into one identity); an org allowlist is set and does not match; or the subject is not in
-// TIDB_SSO_OWNER_SUBJECTS. An org match alone never grants owner; an empty owner list denies all.
+// into one identity); an org filter misses; or neither subject nor verified-email rule grants access.
+// An org match alone never grants owner. Call only after ID-token verification.
 export function resolveIdentity(config, claims) {
   const raw = claims[config.subjectClaim];
   // The authorization subject MUST be an immutable scalar string. Reject anything else outright
@@ -316,8 +348,11 @@ export function resolveIdentity(config, claims) {
       });
   }
 
-  // Owner authorization: DEFAULT-DENY, matched against the immutable subject only.
-  if (!config.ownerSubjects.length || !config.ownerSubjects.includes(subject))
+  // Owner authorization: exact immutable subject OR an explicitly enabled verified-email rule.
+  if (
+    !config.ownerSubjects.includes(subject) &&
+    !hasVerifiedOwnerEmail(config.ownerEmailRules, claims)
+  )
     throw Object.assign(
       new Error('This account is not authorized as an owner for this workspace.'),
       { ssoError: 'not_authorized', identity },

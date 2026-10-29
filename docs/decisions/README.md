@@ -32,3 +32,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0014: Automatic Console publishing](0014-console-auto-publishing.md) — a scoped GitHub App synchronizes tested static artifacts to the existing Netlify site.
 
 - [0015: Public-client TiDB Account sign-in](0015-public-client-sso.md) — code + S256 PKCE without a client secret; provider registration and owner authorization remain explicit.
+
+- [0016: Verified email owner grants](0016-verified-email-owner-rules.md) — opt-in verified email rules for full owner access to the existing shared workspace; no user isolation.

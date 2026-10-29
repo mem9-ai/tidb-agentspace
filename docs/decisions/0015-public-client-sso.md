@@ -16,7 +16,8 @@ The API still owns the short-lived state, nonce and PKCE verifier, receives the 
 verifies the ID token with JWKS, and issues its existing HttpOnly session cookie. The
 Console, API routes, session lifetime, immutable `sub` identity and default-deny owner
 allowlist are unchanged. Removing an application credential does not grant workspace access
-or implement customer isolation.
+or implement customer isolation. [ADR 0016](0016-verified-email-owner-rules.md) adds an
+optional verified-email owner grant while retaining immutable identity.
 
 ## Provider requirements
 

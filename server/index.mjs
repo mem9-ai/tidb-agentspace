@@ -421,7 +421,7 @@ export async function createApp({
           // Signature/issuer/audience/nonce verification is complete here. resolveIdentity then
           // derives the auditable subject and applies DEFAULT-DENY owner authorization: it throws
           // (no session minted) for an unverified user-id claim, an org-filter miss, or a subject
-          // absent from TIDB_SSO_OWNER_SUBJECTS.
+          // absent from both the exact-subject and verified-email owner grants.
           identity = resolveIdentity(ssoConfig, idClaims);
         } catch (error) {
           res.setHeader('Set-Cookie', clearFlowCookie);
