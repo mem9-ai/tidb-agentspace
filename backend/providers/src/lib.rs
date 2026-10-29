@@ -191,6 +191,47 @@ impl Providers {
         result["durationMs"] = json!(start.elapsed().as_millis() as u64);
         Ok(result)
     }
+    /// Server-generated PostgreSQL metadata only. The session is disposable, never shared
+    /// with customer SQL, and all statements share one admission slot and time/result budget.
+    pub async fn postgres_catalog(
+        &self,
+        resource: &Value,
+        statements: &[String],
+    ) -> Result<Vec<Value>> {
+        if resource["provider"] != DB9
+            || resource["kind"] != "postgresql"
+            || statements.is_empty()
+            || statements.len() > 3
+            || statements.iter().any(|sql| !sql.starts_with("SELECT "))
+            || statements.iter().map(String::len).sum::<usize>() > 65536
+        {
+            return Err(err(400, "INVALID_SQL"));
+        }
+        let _permit = self
+            .postgres_slots
+            .try_acquire()
+            .map_err(|_| err(429, "SQL_BUSY"))?;
+        let binding = self.binding("db9", strv(resource, "id")?).await?;
+        if binding["state"] != "ready" {
+            return Err(err(503, "DATABASE_NOT_READY"));
+        }
+        if expired(&binding) {
+            return Err(err(410, "DATABASE_EXPIRED"));
+        }
+        validate_binding(&binding["connection"], resource, false)?;
+        if self.config.sql_fixture.is_some() {
+            return tokio::time::timeout(Duration::from_secs(15), async {
+                let mut results = vec![];
+                for statement in statements {
+                    results.push(self.sql(&binding["connection"], statement, false).await?);
+                }
+                Ok(results)
+            })
+            .await
+            .map_err(|_| err(504, "SQL_TIMEOUT"))?;
+        }
+        sql::execute_postgres_catalog(&binding["connection"], statements).await
+    }
     pub async fn status(&self, resource: &Value) -> Result<Value> {
         let provider = resource["provider"].as_str().unwrap_or("local");
         let id = strv(resource, "id")?;

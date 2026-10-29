@@ -275,7 +275,56 @@ impl Product {
                 hex::encode(name.as_bytes())
             )
         };
-        let candidates = if native {
+        let columns_sql = if pg {
+            format!(
+                "SELECT column_name AS name, data_type AS type, is_nullable AS nullable, column_default AS \"defaultValue\", ordinal_position AS position FROM information_schema.columns WHERE table_catalog = current_database() AND table_schema = 'workspace' AND table_name = {} ORDER BY ordinal_position",
+                pg_literal(name)
+            )
+        } else if duck {
+            format!(
+                "SELECT column_name AS name, data_type AS type, is_nullable AS nullable, column_default AS defaultValue, ordinal_position AS position FROM information_schema.columns WHERE table_catalog=current_database() AND table_schema='main' AND table_name={} ORDER BY ordinal_position",
+                literal(name)
+            )
+        } else {
+            format!(
+                "SELECT COLUMN_NAME AS name, COLUMN_TYPE AS type, IS_NULLABLE AS nullable, COLUMN_DEFAULT AS defaultValue, COLUMN_KEY AS columnKey, EXTRA AS extra FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE(){filter} ORDER BY ORDINAL_POSITION"
+            )
+        };
+        let index_sql = if pg {
+            format!(
+                "SELECT i.relname AS name, x.indisunique AS \"uniqueValue\", x.indisprimary AS \"primaryValue\", x.indkey::text AS \"positionKeys\" FROM pg_catalog.pg_index x JOIN pg_catalog.pg_class t ON t.oid = x.indrelid JOIN pg_catalog.pg_namespace s ON s.oid = t.relnamespace JOIN pg_catalog.pg_class i ON i.oid = x.indexrelid WHERE s.nspname = 'workspace' AND t.relname = {} ORDER BY i.relname",
+                pg_literal(name)
+            )
+        } else if duck {
+            format!(
+                "SELECT index_name AS name, is_unique AS uniqueValue, CAST(expressions AS VARCHAR[]) AS expressions FROM duckdb_indexes() WHERE database_name=current_database() AND schema_name='main' AND table_name={} ORDER BY index_name",
+                literal(name)
+            )
+        } else {
+            format!(
+                "SELECT INDEX_NAME AS name, NON_UNIQUE AS nonUnique, COLUMN_NAME AS columnName, SEQ_IN_INDEX AS position, SUB_PART AS prefixLength FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE(){filter} ORDER BY INDEX_NAME, SEQ_IN_INDEX"
+            )
+        };
+        // The three metadata reads reuse one fresh native session, not three TLS handshakes.
+        let pg_metadata = if native && pg && action == "table" {
+            Some(
+                self.providers
+                    .postgres_catalog(
+                        r,
+                        &[
+                            format!("{select}{filter} LIMIT 1"),
+                            columns_sql.clone(),
+                            index_sql.clone(),
+                        ],
+                    )
+                    .await?,
+            )
+        } else {
+            None
+        };
+        let candidates = if let Some(results) = &pg_metadata {
+            results[0]["rows"].clone()
+        } else if native {
             self.execute_database(r, &format!("{select}{filter} LIMIT 1"), true, json!([]))
                 .await?["rows"]
                 .clone()
@@ -303,45 +352,23 @@ impl Product {
                 json!({"name":table["name"],"type":table["type"],"columns":demo_columns().iter().map(|n|json!({"name":n,"type":if *n=="id"{"int"}else if *n=="created_at"{"datetime"}else{"varchar(255)"},"nullable":false,"default":null,"key":if *n=="id"{"PRI"}else{""},"extra":""})).collect::<Vec<_>>(),"indexes":[{"name":"PRIMARY","unique":true,"columns":[{"name":"id","position":1,"prefixLength":null}]}],"query":"SELECT * FROM agent_events LIMIT 100;","mode":"demo"}),
             );
         }
-        let columns_sql = if pg {
-            format!(
-                "SELECT column_name AS name, data_type AS type, is_nullable AS nullable, column_default AS \"defaultValue\", ordinal_position AS position FROM information_schema.columns WHERE table_catalog = current_database() AND table_schema = 'workspace' AND table_name = {} ORDER BY ordinal_position",
-                pg_literal(name)
-            )
-        } else if duck {
-            format!(
-                "SELECT column_name AS name, data_type AS type, is_nullable AS nullable, column_default AS defaultValue, ordinal_position AS position FROM information_schema.columns WHERE table_catalog=current_database() AND table_schema='main' AND table_name={} ORDER BY ordinal_position",
-                literal(name)
-            )
+        let column_result = if let Some(results) = &pg_metadata {
+            results[1].clone()
         } else {
-            format!(
-                "SELECT COLUMN_NAME AS name, COLUMN_TYPE AS type, IS_NULLABLE AS nullable, COLUMN_DEFAULT AS defaultValue, COLUMN_KEY AS columnKey, EXTRA AS extra FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE(){filter} ORDER BY ORDINAL_POSITION"
-            )
+            self.execute_database(r, &columns_sql, true, json!([]))
+                .await?
         };
-        let columns = self
-            .execute_database(r, &columns_sql, true, json!([]))
-            .await?["rows"]
+        let columns = column_result["rows"]
             .as_array()
             .cloned()
             .ok_or_else(|| err(502, "INVALID_METADATA"))?;
-        let index_sql = if pg {
-            format!(
-                "SELECT i.relname AS name, x.indisunique AS \"uniqueValue\", x.indisprimary AS \"primaryValue\", x.indkey::text AS \"positionKeys\" FROM pg_catalog.pg_index x JOIN pg_catalog.pg_class t ON t.oid = x.indrelid JOIN pg_catalog.pg_namespace s ON s.oid = t.relnamespace JOIN pg_catalog.pg_class i ON i.oid = x.indexrelid WHERE s.nspname = 'workspace' AND t.relname = {} ORDER BY i.relname",
-                pg_literal(name)
-            )
-        } else if duck {
-            format!(
-                "SELECT index_name AS name, is_unique AS uniqueValue, CAST(expressions AS VARCHAR[]) AS expressions FROM duckdb_indexes() WHERE database_name=current_database() AND schema_name='main' AND table_name={} ORDER BY index_name",
-                literal(name)
-            )
+        let index_result = if let Some(results) = &pg_metadata {
+            results[2].clone()
         } else {
-            format!(
-                "SELECT INDEX_NAME AS name, NON_UNIQUE AS nonUnique, COLUMN_NAME AS columnName, SEQ_IN_INDEX AS position, SUB_PART AS prefixLength FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE(){filter} ORDER BY INDEX_NAME, SEQ_IN_INDEX"
-            )
+            self.execute_database(r, &index_sql, true, json!([]))
+                .await?
         };
-        let parts = self
-            .execute_database(r, &index_sql, true, json!([]))
-            .await?["rows"]
+        let parts = index_result["rows"]
             .as_array()
             .cloned()
             .ok_or_else(|| err(502, "INVALID_METADATA"))?;
