@@ -134,7 +134,7 @@ export function loadSsoConfig(env = process.env) {
   const cookieSecure = redirect.protocol === 'https:';
 
   return {
-    issuer: issuer.replace(/\/$/, ''),
+    issuer,
     authorizeUrl,
     tokenUrl,
     jwksUrl,
@@ -178,10 +178,12 @@ export async function resolveEndpoints(config, fetchImpl = fetch) {
   if (config._endpoints) return config._endpoints;
   let discovered = {};
   if (config.issuer && !(config.authorizeUrl && config.tokenUrl && config.jwksUrl)) {
-    const response = await fetchImpl(config.issuer + '/.well-known/openid-configuration');
+    const response = await fetchImpl(
+      config.issuer.replace(/\/$/, '') + '/.well-known/openid-configuration',
+    );
     if (!response.ok) throw new Error(`OIDC discovery failed (${response.status}).`);
     const doc = await response.json();
-    if (doc.issuer && doc.issuer.replace(/\/$/, '') !== config.issuer)
+    if (doc.issuer !== config.issuer)
       throw new Error('OIDC discovery issuer does not match the configured issuer.');
     discovered = {
       authorizeUrl: doc.authorization_endpoint,
