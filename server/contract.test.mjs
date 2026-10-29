@@ -120,15 +120,74 @@ test('standalone API responses conform to every declared JSON operation, includi
     type: 'file',
     content: 'hello',
   });
-  await request(workspace + '/file-analyses/capabilities', 'get', undefined, {
-    suffix: '?resourceId=fs_shared&path=/contract.txt',
+  await request(workspace + '/files', 'put', {
+    resourceId: 'fs_shared',
+    path: '/preview.csv',
+    type: 'file',
+    content: 'id,region\n1,APAC\n',
+  });
+  await request(workspace + '/files/tabular-preview', 'get', undefined, {
+    suffix: '?resourceId=fs_shared&path=/preview.csv',
+  });
+  await request(workspace + '/file-exports', 'post', {
+    source: { kind: 'output', resourceId: 'fs_shared', stream: 'stdout', text: 'hello\n' },
+    target: { kind: 'download' },
+  });
+  await request(workspace + '/file-exports', 'post', {
+    source: { kind: 'original', resourceId: 'fs_shared', path: '/preview.csv' },
+    target: { kind: 'filesystem', resourceId: 'fs_shared', path: '/copied.csv' },
+  });
+  await request(workspace + '/file-exports/prepare', 'post', {
+    source: { kind: 'output', resourceId: 'fs_shared', stream: 'stdout', text: 'id\n001\n' },
+    parsing: { format: 'csv', header: true, delimiter: ',' },
+  });
+  const textCapabilities = await request(
+    workspace + '/file-analyses/capabilities',
+    'get',
+    undefined,
+    {
+      suffix: '?resourceId=fs_shared&path=/contract.txt',
+    },
+  );
+  assert.deepEqual(textCapabilities.result.engines[0].input, {
+    path: '/contract.txt',
+    workingDirectory: '/workspace',
+    aliases: ['/workspace/input.log'],
+    fileVariable: 'FILE',
   });
   await request(workspace + '/file-analyses', 'post', {
     resourceId: 'fs_shared',
     path: '/contract.txt',
     engine: 'bash',
-    command: 'cat /workspace/input.log',
+    command: 'cat "$FILE"',
   });
+  await request(workspace + '/files', 'put', {
+    resourceId: 'fs_shared',
+    path: '/contract.csv',
+    type: 'file',
+    content: 'n\n1\n2\n',
+  });
+  const csvCapabilities = await request(
+    workspace + '/file-analyses/capabilities',
+    'get',
+    undefined,
+    {
+      suffix: '?resourceId=fs_shared&path=/contract.csv',
+    },
+  );
+  assert.deepEqual(
+    csvCapabilities.result.engines.map((e) => e.engine),
+    ['duckdb', 'bash'],
+  );
+  for (const query of [
+    { engine: 'duckdb', sql: 'SELECT * FROM file' },
+    { engine: 'bash', command: 'cat /contract.csv' },
+  ])
+    await request(workspace + '/file-analyses', 'post', {
+      resourceId: 'fs_shared',
+      path: '/contract.csv',
+      ...query,
+    });
   await request(workspace + '/files', 'delete', { resourceId: 'fs_shared', path: '/contract.txt' });
   await request(workspace + '/queries', 'post', { resourceId: 'db_memory', sql: 'SELECT 1' });
   await request(workspace + '/resources/{resourceId}/setup', 'post', undefined, {
@@ -138,6 +197,32 @@ test('standalone API responses conform to every declared JSON operation, includi
     resourceId: database.result.data.id,
     sql: 'SELECT 1',
   });
+  const imported = await request(workspace + '/database-imports/prepare', 'post', {
+    resourceId: database.result.data.id,
+    source: { resourceId: 'fs_shared', path: '/preview.csv' },
+    parsing: { format: 'csv', header: true, delimiter: ',' },
+  });
+  await request(workspace + '/database-imports', 'post', {
+    resourceId: database.result.data.id,
+    preparationId: imported.result.preparationId,
+    confirmed: true,
+    table: 'database_import',
+    fields: imported.result.fields,
+  });
+  for (const target of [
+    { kind: 'download', format: 'csv' },
+    { kind: 'download', format: 'json' },
+    { kind: 'download', format: 'jsonl' },
+    { kind: 'filesystem', resourceId: 'fs_shared', path: '/result.json', format: 'json' },
+    { kind: 'database', resourceId: database.result.data.id, table: 'result_export' },
+  ])
+    await request(workspace + '/result-exports', 'post', {
+      sourceResourceId: 'db_memory',
+      result: { columns: ['connected'], rows: [{ connected: 1 }] },
+      target,
+    });
+  await request(workspace + '/result-exports', 'post', {}, { status: 400 });
+  await request(workspace + '/result-exports', 'post', {}, { owner: false, status: 401 });
   await request(workspace + '/bootstrap');
   await request(workspace + '/usage');
   await request(workspace + '/events');
@@ -178,7 +263,7 @@ test('standalone API responses conform to every declared JSON operation, includi
         .filter(([method]) => ['get', 'post', 'put', 'patch', 'delete'].includes(method))
         .map(([, operation]) => operation.operationId),
     )
-    .filter((id) => !['uploadFile', 'downloadFile'].includes(id));
+    .filter((id) => !['uploadFile', 'downloadFile', 'prepareDatabaseImportUpload'].includes(id));
   assert.deepEqual([...covered].sort(), allJsonOperations.sort());
   const validateBootstrap = ajv.compile({
     ...contract.components.schemas.Bootstrap,

@@ -10,7 +10,16 @@ const unusedOptions = {
 };
 
 export default [
-  { ignores: ['node_modules/**', 'dist/**', '.data/**', 'coverage/**', 'release/**'] },
+  {
+    ignores: [
+      'node_modules/**',
+      'dist/**',
+      '.data/**',
+      'coverage/**',
+      'release/**',
+      'meta-service/target/**',
+    ],
+  },
   js.configs.recommended,
   {
     files: ['**/*.js', '**/*.mjs'],

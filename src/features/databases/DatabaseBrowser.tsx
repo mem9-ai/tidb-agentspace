@@ -4,22 +4,26 @@ import {
   Alert,
   Badge,
   Button,
+  Group,
   Loader,
-  NavLink,
   Paper,
   Stack,
   Table,
   Text,
   TextInput,
+  Typography,
 } from '@tidbcloud/uikit';
-import { IconCode02, IconRefreshCw01, IconSearchLg } from '@tidbcloud/uikit/icons';
+import { IconCode02, IconRefreshCw01, IconSearchLg, IconDatabase01 } from '@tidbcloud/uikit/icons';
 import { workspaceApi, type Resource, type TableDetail } from '../../api/client';
 import { ChoiceTabs } from '../../ui/ChoiceTabs';
 import { Heading } from '../../ui/WorkspaceHeading';
-import { databaseEditorHash } from '../navigation/workspace-route';
+import { WorkspaceBrowserPanel } from '../../ui/WorkspaceBrowserPanel';
+import { DatabaseTableItem } from './DatabaseTableItem';
+import type { TableMetadata } from './use-table-metadata';
+import { readDatabase } from './database-read';
 import './database-browser.css';
 
-function useRead<T>(load: (signal: AbortSignal) => Promise<T>) {
+function useRead<T>(load: (signal: AbortSignal) => Promise<T>, refreshVersion = 0) {
   const [state, setState] = useState<{ data?: T; error?: string; loading: boolean }>({
     loading: true,
   });
@@ -27,7 +31,7 @@ function useRead<T>(load: (signal: AbortSignal) => Promise<T>) {
   useEffect(() => {
     const controller = new AbortController();
     setState({ loading: true });
-    load(controller.signal).then(
+    readDatabase(load, controller.signal).then(
       (data) => {
         if (!controller.signal.aborted) setState({ data, loading: false });
       },
@@ -41,7 +45,7 @@ function useRead<T>(load: (signal: AbortSignal) => Promise<T>) {
       },
     );
     return () => controller.abort();
-  }, [load, revision]);
+  }, [load, revision, refreshVersion]);
   return { ...state, retry: () => setRevision((value) => value + 1) };
 }
 function Loading({ children }: { children: string }) {
@@ -217,22 +221,16 @@ export function TableInspector({
   onQuery,
   busy,
   onLoadingChange,
+  metadata,
 }: {
   resourceId: string;
   name: string;
   onQuery: () => void;
   busy: boolean;
   onLoadingChange: (loading: boolean) => void;
+  metadata: TableMetadata;
 }) {
-  const load = useCallback(
-    (signal: AbortSignal) => workspaceApi.table(resourceId, name, signal),
-    [resourceId, name],
-  );
-  const detail = useRead(load);
-  useEffect(() => {
-    onLoadingChange(detail.loading);
-    return () => onLoadingChange(false);
-  }, [detail.loading, onLoadingChange]);
+  const detail = metadata;
   const [tab, setTab] = useState('Columns');
   return (
     <Paper className="panel database-detail" p="xl" withBorder>
@@ -280,14 +278,30 @@ export function TableInspector({
 }
 export function DatabaseTableList({
   database,
+  revision,
+  busy,
   tableName,
+  expandedTable,
+  metadata,
+  waiting,
+  collapsed,
+  onToggle,
   onSelect,
+  onQuery,
   onRefresh,
   onLoadingChange,
 }: {
   database: Resource;
+  revision: number;
+  busy: boolean;
   tableName?: string;
-  onSelect: () => void;
+  expandedTable?: string;
+  metadata: TableMetadata;
+  waiting: boolean;
+  collapsed: boolean;
+  onToggle: () => void;
+  onSelect: (name: string) => void;
+  onQuery: (name: string) => void;
   onRefresh: () => void;
   onLoadingChange: (loading: boolean) => void;
 }) {
@@ -295,7 +309,7 @@ export function DatabaseTableList({
     (signal: AbortSignal) => workspaceApi.tables(database.id, signal),
     [database.id],
   );
-  const listing = useRead(load);
+  const listing = useRead(load, revision);
   useEffect(() => {
     onLoadingChange(listing.loading);
   }, [listing.loading, onLoadingChange]);
@@ -305,33 +319,46 @@ export function DatabaseTableList({
       table.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
     ) ?? [];
   return (
-    <Paper className="panel database-table-list" p="xl" withBorder>
-      <Stack gap="md">
-        <div className="database-section-header">
-          <Heading level={2}>
-            Tables <Badge>{listing.data?.data.length ?? '…'}</Badge>
-          </Heading>
+    <WorkspaceBrowserPanel
+      className="database-table-list"
+      label="Table browser"
+      railLabel="Tables"
+      listLabel="Table list"
+      collapsed={collapsed}
+      onToggle={onToggle}
+      heading={
+        <Group gap="sm" wrap="nowrap">
+          <IconDatabase01 size={20} aria-hidden />
+          <Typography component="h2" variant="title-lg" fz={16}>
+            Tables
+          </Typography>
+          <Badge>{listing.data?.data.length ?? '…'}</Badge>
+        </Group>
+      }
+      toolbar={
+        <>
+          <TextInput
+            aria-label="Find a table"
+            placeholder="Filter tables…"
+            value={search}
+            onChange={(event) => setSearch(event.currentTarget.value)}
+            leftSection={<IconSearchLg size={18} />}
+          />
           <ActionIcon
-            size={48}
-            variant="subtle"
             aria-label="Refresh tables"
             title="Refresh tables"
             onClick={() => {
               listing.retry();
               onRefresh();
             }}
-            disabled={listing.loading}
+            disabled={listing.loading || busy || waiting || metadata.loading}
           >
             <IconRefreshCw01 size={20} />
           </ActionIcon>
-        </div>
-        <TextInput
-          aria-label="Find a table"
-          placeholder="Search tables…"
-          value={search}
-          onChange={(event) => setSearch(event.currentTarget.value)}
-          leftSection={<IconSearchLg size={18} />}
-        />
+        </>
+      }
+    >
+      <Stack gap="sm" p={8}>
         {!['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
           database.provider || '',
         ) && <Badge>Local demo</Badge>}
@@ -355,20 +382,23 @@ export function DatabaseTableList({
             )}
             <nav aria-label="Database tables">
               {matches.map((table) => (
-                <NavLink
-                  component="a"
+                <DatabaseTableItem
                   key={table.name}
                   active={tableName === table.name}
-                  href={databaseEditorHash(database.id, table.name)}
-                  onClick={onSelect}
-                  label={table.name}
-                  description={table.type === 'VIEW' ? 'View' : undefined}
+                  expanded={expandedTable === table.name}
+                  busy={busy}
+                  waiting={waiting}
+                  metadata={metadata}
+                  onToggle={() => onSelect(table.name)}
+                  onQuery={() => onQuery(table.name)}
+                  name={table.name}
+                  type={table.type}
                 />
               ))}
             </nav>
           </>
         )}
       </Stack>
-    </Paper>
+    </WorkspaceBrowserPanel>
   );
 }

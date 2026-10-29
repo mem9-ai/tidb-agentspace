@@ -61,3 +61,39 @@ contains three synthetic agent metric rows; no customer data or credentials appe
 Native remote storage remains experimental. The loopback API's SQL hardening is not a public
 multi-tenant OS sandbox. Cloud storage/billing are unmeasured; remote lock cleanup after a hard
 termination follows the existing provider session lifetime. See [operations/recovery](duckdb-databases.md).
+
+## Native database workspace correction
+
+Owner correction: [GH-50](https://github.com/siddontang/tidb.ai/issues/50), source base
+`8fb9ed400261fc4565f1af08899228cbb7595950`. The database already used tidbfs native database
+mode; this change removes the custom snapshot-source picker/counter and its editor state.
+The Console sends only the database ID and SQL. The existing selected-file query API is
+unchanged and File System Analyze remains available. No storage migration or new cloud
+resource was required. The earlier GH-34 picker acceptance is superseded in ADR 0009.
+
+Against the existing real Singapore-backed `duckdb-analytics`, Workspace API requests created
+one unique task-owned table, inserted `(50, 'native persisted')`, and read that exact row in a
+fresh worker. After `CHECKPOINT`, another fresh worker returned the same row. Native create /
+insert / reopen / checkpoint / reopen / drop took 9,531 / 9,525 / 5,495 / 5,403 / 5,348 / 9,225
+ms respectively. The task table was dropped; the existing `agent_metrics` table was untouched.
+These are individual observations, not a latency guarantee. Each SQL request uses the existing
+disposable-worker path and reopens the same remote DuckDB file.
+
+Browser verification used the independent live Console/API at 1280×800 and 390×844, Light and
+Dark. `SELECT 50 AS native_database;` returned 50 in 11,495 ms; the outer database selector was
+disabled while running. Table selection and Query table → Keep my query retained both the
+edited SQL and completed result. Keyboard collapse/expand and desktop/mobile reflow retained
+them as well. Switching to PostgreSQL reset the editor/result and selected the correct URL.
+The File sources row and editor-level resource selector were absent. Document width matched
+both viewports, SQL remained 16px, and browser error logs were empty. No configuration error
+appeared. The shared TiUI 2.9.1 adapters and SQL Editor 0.0.6 remain unchanged.
+
+`npm run check` passed all 118 tests, runtime/repository policy, formatting, lint, API/client
+alignment, strict types and both independent production builds. The existing transitive
+`google-libphonenumber` eval warnings remain non-failing. No new backend behavior needed a new
+test; existing native persistence, authorization and snapshot API tests passed unchanged.
+
+- [Native database, 1280×800 Dark](screenshots/duckdb-native/desktop-dark.jpg)
+- [Native database, 1280×800 Light](screenshots/duckdb-native/desktop-light.jpg)
+- [Native database, 390×844 Dark](screenshots/duckdb-native/mobile-dark.jpg)
+- [Native database, 390×844 Light](screenshots/duckdb-native/mobile-light.jpg)

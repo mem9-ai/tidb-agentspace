@@ -49,6 +49,8 @@ note. An intent contribution can start with a user problem and a concrete exampl
 
 ## Understand the current state
 
+[ADR 0025](docs/decisions/0025-consolidated-runtime-profiles.md) is the current integration boundary: hosted Node SSO/CD retains its JSON/vault state, and the complete native Rust/SlateDB profile remains explicit local development. `build:api` and `start:api` select Node; `backend:build`, `dev:api` and `start:api:rust` select native Rust. A source merge does not migrate hosted data or authentication.
+
 | Area                | Current interpretation                                                                                                                                                                                                                                                                                                                        |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Product runtime     | Independently runnable Console and API in a loopback-only prototype. MySQL, PostgreSQL, DuckDB and Files support explicit live-provider modes; labeled local demo behavior also exists. PostgreSQL is available through opt-in db9; retired simulated PG remains hidden. Read the README for current availability, limits, and configuration. |
@@ -64,10 +66,50 @@ within the task's scope. A proposed architecture does not establish a runtime ca
 
 ## Read for your task
 
+For multi-tenant metadata, storage adapters, ownership, or migration design, read
+[GH-74](specs/gh-74/spec.md) and [proposed ADR 0019](docs/decisions/0019-workspace-kv-control-plane.md).
+They preserve the owner's logical-KV/local-file direction, TiDB File System candidate and
+global/regional control plus regional data-plane separation. Resource placement, dispatch,
+consistency, isolation and migration remain proposed behavior, distinct from the running
+single-Workspace service.
+For hosted persistence, read the [object-metastore design](specs/gh-74/object-metastore.md):
+object storage is the preferred source of truth for all acknowledged commits, including WAL;
+local caches and search projections are rebuildable. The owner has selected SlateDB for
+hosted Global and regional metadata, superseding candidate-only/SQL-first evaluation.
+Release/binding, durability and service conformance still require implementation evidence.
+Global and every Region have independent Meta Service deployments and SlateDB instances;
+shared code/contracts do not mean one database partitioned by authority prefixes.
+Global records private regional S3/storage descriptors; Region retains independent bootstrap
+config and object-backed shard catalogs, with no Global lookup/renewal gate on startup.
+Local development can still use ordinary files. For the implemented independent Rust/SlateDB service and fresh local bootstrap, follow the
+[runtime guide](docs/meta-service.md). [ADR 0024](docs/decisions/0024-fresh-record-metadata.md)
+retires the five-document/chunk/import bridge. The owner explicitly allowed resetting the local
+test deployment while excluding cloud deletion; this does not authorize arbitrary customer resets.
+The regional product API is Rust, using independent record repositories and native concurrent
+SlateDB transactions. [ADR 0020](docs/decisions/0020-modular-rust-backend.md) defines shared Rust
+modules and single-binary/multiple-process composition; [ADR 0022](docs/decisions/0022-native-slatedb-transactions.md)
+defines coherent durable reads. [GH-88](specs/gh-88/spec.md) is the historical language-parity baseline;
+its document compatibility direction is superseded by ADR 0024. Node sources remain test oracles
+and tooling, not a production or rollback API. Native builds now verify and link pinned official
+DuckDB static libraries instead of compiling its C++ sources; see the [Rust guide](docs/rust-backend.md).
+
+For millions of Workspaces or a million-resource Workspace, also read the
+[metadata scale profile](specs/gh-74/metadata-scale.md): Workspace ownership is distinct from
+atomic-group granularity, shared-cell routing, query indexes and workload capacity evidence.
+For Global/Region communication, read the [control-channel contract](specs/gh-74/control-channel.md):
+Global initiates commands, policy delivery and information reads; Region has no upstream
+callback/admission dependency. Region must keep serving known authorized work during Global
+failure using durable policy, independent local authentication/session refresh and regional
+state/recovery. Policy-sync age never expires access; actual credential expiry and received
+denials still apply. Production mTLS and regional autonomy require implementation evidence.
+For direct regional OpenAPI/SDK routes and credential lifetime/renewal, read the
+[regional API/auth contract](specs/gh-74/regional-api-auth.md). It separates explicit continuity
+grants from existing expiring Keys and preserves the current single-origin implementation status.
+
 | Task                                                      | Required starting points                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Intent, specification, or agent delivery                  | [Development system](docs/standards/intent-driven-development.md), [GitHub workflow](docs/standards/github-contribution-workflow.md), and [feature template](docs/templates/feature-spec.md)                                                                                |
-| UI, theme, icons, layout, or frontend dependencies        | [Frontend instructions](src/AGENTS.md) and [TiUI standard](docs/standards/tiui-design-system.md)                                                                                                                                                                            |
+| UI, theme, icons, layout, or frontend dependencies        | [Frontend instructions](src/AGENTS.md), [TiUI standard](docs/standards/tiui-design-system.md), and [shared resource workspace verification](docs/resource-workspace-verification.md); reuse the resource header/bar, browser and item adapters in `src/ui/`                 |
 | Public API, authorization, or credentials                 | [Architecture](docs/architecture.md), [Workspace Key decision](docs/decisions/0001-unified-workspace-key.md), generator, and affected API tests                                                                                                                             |
 | File System providers or regions                          | [Regions and modes](docs/decisions/0003-filesystem-regions-and-modes.md), [Drive9 boundary](docs/decisions/0004-drive9-anonymous-provider.md), and [provider verification](docs/drive9-verification.md)                                                                     |
 | SQL providers, query behavior, or database availability   | [Zero SQL boundary](docs/decisions/0006-zero-sql-gateway.md) and [SQL verification](docs/starter-sql-verification.md); table browsing follows [ADR 0007](docs/decisions/0007-database-browser.md); DuckDB follows [ADR 0008](docs/decisions/0008-duckdb-private-storage.md) |
@@ -83,10 +125,54 @@ Backend action/resource authorization, service-owned provider secrets, shared do
 operations, and actual TiUI components/adapters are central project boundaries. Their detailed
 rules and verification stay in these linked sources.
 
-For implemented DuckDB database queries over CSV/JSON/Parquet, read [file sources](docs/duckdb-databases.md#workspace-file-sources),
+Database SQL and File System Analyze share execution/result adapters in `src/ui/`, alongside
+the resource header, browser and item adapters. Follow the
+[shared interaction audit](docs/resource-workspace-verification.md#shared-interaction-audit)
+for Run query, samples/limits, expansion, row actions and desktop/mobile collapse behavior.
+Its [compact toolbar correction](docs/resource-workspace-verification.md#compact-editor-toolbar)
+keeps the tool identity/context understated and consolidates auxiliary controls into Editor tools.
+The [compact resource header](docs/resource-workspace-verification.md#compact-resource-header)
+puts selection, one status badge and actions in a shared row, with supplemental metadata in Details.
+Database table rows additionally follow [inline columns](docs/database-workspace-verification.md#inline-table-columns):
+disclose schema in the browser, keep SQL/results primary, and prepare table queries explicitly.
+
+The accepted [result export contract](specs/gh-58/spec.md) and
+[ADR 0013](docs/decisions/0013-result-snapshot-exports.md) define bounded snapshot downloads and
+create-only copies into public workspace resources. Database and File System SQL now share
+CSV/JSON/JSON Lines downloads and file/new-table exports; see
+[verification, API usage and limits](docs/result-export-verification.md).
+Preview's single Export header action and Bash result exports use the same destinations with explicit source labels and a
+separate format/field/type review before database import. Read
+[ADR 0018](docs/decisions/0018-contextual-file-exports.md) and
+[verification and API usage](docs/contextual-file-export-verification.md) before export work.
+All saved-file, SQL-result and Bash-output entry buttons reuse
+[WorkspaceExportButton](src/ui/WorkspaceExportButton.tsx) for a consistent Export label and appearance.
+File System Upload uses actual transfer progress and separate server-save acknowledgement;
+follow [upload feedback and recovery](docs/drive9-verification.md#upload-progress-and-recovery-gh-99).
+Database-owned Import from local CSV/Parquet or Workspace files is implemented for MySQL,
+opt-in db9 PostgreSQL and DuckDB. Follow the accepted [GH-103 contract](specs/gh-103/spec.md),
+[ADR 0023](docs/decisions/0023-database-import-workspace.md) and
+[verification/API usage](docs/database-import-verification.md). Source/review/write phases share
+TiUI controls; new preparations bind their principal and destination, including through legacy export routes.
+
+DuckDB uses tidbfs native database mode, with ordinary Tables and SQL in the Console; see
+[customer experience](docs/duckdb-databases.md#customer-experience). For the separate optional
+query-source API over CSV/JSON/Parquet, read [file sources](docs/duckdb-databases.md#workspace-file-sources),
 [ADR 0009](docs/decisions/0009-duckdb-file-sources.md) and [GH-34](specs/gh-34/spec.md).
-For CSV/Parquet SQL and text/log analysis, read [ADR 0010](docs/decisions/0010-read-only-file-analysis.md)
-and [verification](docs/file-analysis-verification.md). The Console/API implement selected-file
+File System navigation starts with the global resource list (`#files`), followed by a selected
+resource (`#files?resourceId=…`). See [navigation verification](docs/filesystem-list-verification.md)
+for the list/return flow and preserved file links.
+
+File preview and analysis now share a preview-first workspace with on-demand tools. Read
+[ADR 0017](docs/decisions/0017-preview-first-file-workspace.md) and
+[verification](docs/file-workspace-verification.md) for fixed read-authorized CSV/Parquet samples,
+version comparison, retained drafts/results, execution-dependent result navigation, and compatibility limits.
+
+For CSV/Parquet SQL and text/log analysis, read [ADR 0010](docs/decisions/0010-read-only-file-analysis.md),
+[engine options](docs/decisions/0014-file-analysis-engine-options.md)
+and [Bash input paths](docs/decisions/0015-bash-workspace-paths.md), plus
+[the selected-file variable](docs/decisions/0016-bash-selected-file-variable.md) and
+[verification](docs/file-analysis-verification.md). The Console/API implement selected-file
 snapshot workers; provider-hosted Exec, large remote scans and public compute isolation remain future work.
 
 For TiDB Account sign-in, read [ADR 0015](docs/decisions/0015-public-client-sso.md) for the
@@ -123,7 +209,9 @@ An existing accepted example is the [independent Console/API specification](spec
 ## Set up and verify
 
 Select Node from [.node-version](.node-version) and npm from [package.json](package.json),
-following [reproducible setup](CONTRIBUTING.md#reproducible-setup). Use the committed lockfile:
+following [reproducible setup](CONTRIBUTING.md#reproducible-setup). Use the committed lockfile. Before starting the default Rust API, follow
+[regional Meta/import setup](docs/rust-backend.md) and set `WORKSPACE_BACKEND_CONFIG` to its
+absolute private deployment file. Missing configuration never falls back to another data file.
 
 ```sh
 npm ci
@@ -146,7 +234,7 @@ Report the checks and results that actually ran.
 ## Take a task through GitHub
 
 1. Find or open the relevant [Issue](https://github.com/siddontang/tidb.ai/issues), using the
-   [native forms](https://github.com/siddontang/tidb.ai/issues/new/choose). Check ownership
+   [native forms](https://github.com/mem9-ai/tidb.ai/issues/new/choose). Check ownership
    and preserve unrelated work.
 2. Read the accepted specification at its Git revision, or a sufficient small-fix reproduction.
    Identify requirement IDs, dependencies, allowed changes, and the delivery endpoint.

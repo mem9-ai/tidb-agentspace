@@ -38,3 +38,64 @@ jobs:
           path: dist/
           if-no-files-found: error
           retention-days: 7
+
+  metadata:
+    name: Rust backend and S3 integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CARGO_BUILD_JOBS: 2
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Select the pinned npm version
+        run: npm install --global npm@11.6.2 --ignore-scripts
+      - run: npm ci
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+      - name: Check Rust formatting before compiling
+        run: npm run backend:fmt
+      - name: Restore Rust dependency cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          # Keep fallback restores inside the same native-library and build configuration.
+          prefix-key: rust-v1-${{ hashFiles('Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml', 'scripts/duckdb-runtime.json') }}
+          shared-key: backend
+          workspaces: . -> meta-service/target
+          cache-bin: false
+          cache-workspace-crates: false
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
+      - name: Build native backend with Cargo timings
+        run: npm run backend:build -- --timings
+      - name: Check Rust with Clippy
+        run: npm run backend:clippy
+      - name: Run Rust unit tests
+        run: npm run backend:test
+      - name: Install verified RustFS 1.0.4 binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_dir="$RUNNER_TEMP/workspace-rustfs"
+          mkdir -p "$runtime_dir"
+          curl --fail --location --retry 3 https://github.com/rustfs/rustfs/releases/download/1.0.4/rustfs-linux-x86_64-gnu-v1.0.4.zip --output "$runtime_dir/rustfs.zip"
+          printf '%s  %s\n' '4a25e48f5b5ae610a679b5324206962c6fb0eb20a9fa7ab6cb20e178cf6c534b' "$runtime_dir/rustfs.zip" | sha256sum --check
+          unzip -q "$runtime_dir/rustfs.zip" -d "$runtime_dir"
+          chmod +x "$runtime_dir/rustfs"
+          printf '%s\n' "$runtime_dir" >> "$GITHUB_PATH"
+      - name: Run native API and real S3 integration tests
+        run: npm run backend:test:integration
+      - name: Save Cargo timing reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cargo-timings-${{ github.sha }}-${{ github.run_attempt }}
+          path: meta-service/target/cargo-timings/
+          if-no-files-found: ignore
+          retention-days: 7

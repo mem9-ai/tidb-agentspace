@@ -9,6 +9,12 @@ import { createStore, seed } from './store.mjs';
 import { createFileAnalysis } from './file-analysis.mjs';
 import { createAnalysisSnapshot } from './file-analysis-snapshot.mjs';
 import { analysisLimits, analysisError } from './file-analysis-contract.mjs';
+import {
+  legacyBashInput,
+  quoteBashPath,
+  bashPreviewCommand,
+  bashSamples,
+} from '../src/features/files/bash-analysis.ts';
 const csv = Buffer.from('id,region,amount\n1,APAC,10\n2,APAC,20\n3,EU,5\n4,EU,15\n');
 const log = Buffer.from('INFO started\nERROR timeout\nINFO retry\nERROR unavailable\n');
 const resource = { id: 'fs_shared', kind: 'filesystem', status: 'active' };
@@ -27,6 +33,126 @@ const command = (script) => ({
 function engine(bytes = csv, options = {}) {
   return createFileAnalysis({ snapshot: async () => ({ bytes, size: bytes.length }), ...options });
 }
+
+test('analysis capabilities separate file format, default engine and individual availability', async () => {
+  const a = engine();
+  const csvCap = await a.capabilities(resource, '/ORDERS.CSV');
+  assert.equal(csvCap.format, 'csv');
+  assert.equal(csvCap.engine, 'duckdb');
+  assert.equal(csvCap.available, true);
+  assert.deepEqual(csvCap.engines, [
+    { engine: 'duckdb', available: true, reason: '' },
+    {
+      engine: 'bash',
+      available: true,
+      reason: '',
+      input: {
+        path: '/ORDERS.CSV',
+        workingDirectory: '/workspace',
+        aliases: ['/workspace/input.log'],
+        fileVariable: 'FILE',
+      },
+    },
+  ]);
+  assert.deepEqual(
+    (await a.capabilities(resource, '/orders.parquet')).engines.map((e) => e.engine),
+    ['duckdb'],
+  );
+  assert.deepEqual(
+    (await a.capabilities(resource, '/README.md')).engines.map((e) => e.engine),
+    ['bash'],
+  );
+  assert.deepEqual(
+    (await a.capabilities(resource, '/data.json')).engines.map((e) => e.engine),
+    ['bash'],
+  );
+  const unknown = await a.capabilities(resource, '/image.png');
+  assert.equal(unknown.engine, null);
+  assert.equal(unknown.available, false);
+  assert.deepEqual(unknown.engines, []);
+  const empty = await engine(Buffer.alloc(0)).capabilities(resource, '/empty.csv');
+  assert.equal(empty.engine, 'duckdb');
+  assert.equal(empty.available, false);
+  assert.match(empty.engines[0].reason, /empty/);
+  assert.deepEqual(empty.engines[1], {
+    engine: 'bash',
+    available: true,
+    reason: '',
+    input: {
+      path: '/empty.csv',
+      workingDirectory: '/workspace',
+      aliases: ['/workspace/input.log'],
+      fileVariable: 'FILE',
+    },
+  });
+  for (const info of [
+    { size: analysisLimits.inputBytes + 1 },
+    { size: 12, versionAvailable: false },
+  ]) {
+    const limited = await engine(csv, { snapshot: async () => info }).capabilities(
+      resource,
+      '/orders.csv',
+    );
+    assert.equal(limited.available, false);
+    assert.equal(limited.engines.length, 2);
+    assert.ok(limited.engines.every((e) => !e.available && e.reason));
+  }
+});
+
+test('the same CSV supports real SQL and raw-text Bash without broadening format or snapshot access', async () => {
+  const a = engine();
+  const bashCsv = (value) => ({
+    resourceId: resource.id,
+    path: '/orders.csv',
+    engine: 'bash',
+    command: value,
+  });
+  assert.equal((await a.execute(resource, sql('SELECT COUNT(*) AS n FROM file'))).rows[0].n, '4');
+  const text = await a.execute(resource, bashCsv('cat /workspace/input.log'));
+  assert.equal(text.engine, 'bash');
+  assert.equal(text.stdout, csv.toString());
+  assert.equal(
+    (await a.execute(resource, bashCsv('head -1 input.log'))).stdout,
+    'id,region,amount\n',
+  );
+  const malformed = Buffer.from('id,description\n1,"unterminated');
+  assert.equal(
+    (await engine(malformed).execute(resource, bashCsv('cat input.log'))).stdout,
+    malformed.toString(),
+  );
+  assert.equal(
+    (await engine(Buffer.alloc(0)).execute(resource, bashCsv('cat input.log'))).exitCode,
+    0,
+  );
+  for (const bytes of [Buffer.from([0, 1]), Buffer.from([255])])
+    await assert.rejects(engine(bytes).execute(resource, bashCsv('cat input.log')), {
+      code: 'ANALYSIS_BINARY_TEXT',
+    });
+  assert.notEqual((await a.execute(resource, bashCsv('cat /workspace/other.csv'))).exitCode, 0);
+  let snapshots = 0;
+  const guarded = engine(csv, {
+    snapshot: async () => {
+      snapshots++;
+      return { bytes: csv, size: csv.length };
+    },
+  });
+  for (const input of [
+    { ...bashCsv('cat input.log'), path: '/orders.parquet' },
+    { ...sql('SELECT 1'), path: '/README.md' },
+    { ...bashCsv('cat input.log'), engine: 'other' },
+  ])
+    await assert.rejects(guarded.execute(resource, input), { code: 'UNSUPPORTED_ANALYSIS' });
+  for (const input of [
+    { ...sql('SELECT 1'), command: 'cat input.log' },
+    { ...bashCsv('cat input.log'), sql: 'SELECT 1' },
+    { ...bashCsv('cat input.log'), command: undefined, sql: 'SELECT 1' },
+    { ...bashCsv('cat input.log'), input: { path: '/etc/passwd' } },
+    { ...bashCsv('cat input.log'), workspacePath: '/etc/passwd' },
+    { ...bashCsv('cat "$FILE"'), env: { FILE: '/other.log' } },
+  ])
+    await assert.rejects(guarded.execute(resource, input), { code: 'INVALID_ANALYSIS' });
+  assert.equal(snapshots, 0);
+});
 
 test('real DuckDB queries CSV/Parquet snapshots, preserves precision and column/schema data', async () => {
   const unavailable = createFileAnalysis({
@@ -118,6 +244,118 @@ test('DuckDB enforces statement semantics, disabled external access and no secre
   await assert.rejects(
     engine(Buffer.from('not parquet')).execute(resource, sql('SELECT * FROM file', '/bad.parquet')),
     { code: 'ANALYSIS_FAILED' },
+  );
+});
+
+test('Just Bash Console examples use the actual input path for a selected Markdown snapshot', async () => {
+  const text = '# Selected README\n\nERROR example\n';
+  const a = engine(Buffer.from(text));
+  const run = (value) => a.execute(resource, { ...command(value), path: '/docs/README.md' });
+  const wrong = await run('head ./README.md');
+  assert.equal(wrong.exitCode, 1);
+  assert.match(wrong.stderr, /No such file or directory/);
+  for (const example of bashSamples('/docs/README.md'))
+    assert.equal((await run(example.value)).exitCode, 0);
+  const preview = await run(bashPreviewCommand('/docs/README.md'));
+  assert.equal(preview.stdout, text);
+  assert.equal((await run('head -20 input.log')).stdout, text);
+  assert.equal((await run(bashPreviewCommand(legacyBashInput.path))).stdout, text);
+  assert.equal((await run('cat /workspace/other.md')).exitCode, 1);
+});
+
+test('Bash exposes the selected Workspace path, quotes samples safely and keeps aliases read-only', async () => {
+  const text = 'INFO ready\nERROR retry\n';
+  const a = engine(Buffer.from(text));
+  const nested = '/file-analysis-demo-9de2ebb1/service.log';
+  for (const path of [
+    nested,
+    '/service.log',
+    '/etc/selected.log',
+    "/context/a' $(printf INJECTED) `printf BAD`; file.log",
+    '/context/line\nbreak.log',
+  ]) {
+    const run = (script) => a.execute(resource, { ...command(script), path });
+    const cap = await a.capabilities(resource, path);
+    assert.deepEqual(cap.engines[0].input, {
+      path,
+      workingDirectory: '/workspace',
+      aliases: ['/workspace/input.log'],
+      fileVariable: 'FILE',
+    });
+    assert.equal((await run(`cat ${quoteBashPath(path)}`)).stdout, text);
+    if (path === nested) assert.equal((await run(`cat ${path}`)).stdout, text);
+    for (const example of bashSamples(path, cap.engines[0].input.fileVariable))
+      assert.equal((await run(example.value)).exitCode, 0);
+    assert.equal((await run('cat "$FILE"')).stdout, text);
+    assert.equal((await run('cat "${FILE}"')).stdout, text);
+    assert.equal((await run(bashPreviewCommand(path))).stdout, text);
+    assert.equal((await run('pwd')).stdout, '/workspace\n');
+    assert.equal((await run('cat /workspace/input.log')).stdout, text);
+    assert.equal((await run('cat input.log')).stdout, text);
+    assert.notEqual((await run('cat /context/other.log')).exitCode, 0);
+    assert.notEqual((await run('cat /etc/passwd')).exitCode, 0);
+    for (const target of [path, '/workspace/input.log']) {
+      try {
+        assert.notEqual((await run(`printf changed > ${quoteBashPath(target)}`)).exitCode, 0);
+      } catch (error) {
+        assert.equal(error.status, 422);
+      }
+    }
+    assert.equal((await run(`cat ${quoteBashPath(path)}`)).stdout, text);
+  }
+});
+
+test('Bash alias collisions never shadow the selected file or its parent directories', async () => {
+  const text = 'selected snapshot\n';
+  const a = engine(Buffer.from(text));
+  for (const path of ['/workspace/input.log', '/workspace/input.log/nested.log']) {
+    const cap = await a.capabilities(resource, path);
+    assert.deepEqual(cap.engines[0].input, {
+      path,
+      workingDirectory: '/workspace',
+      aliases: [],
+      fileVariable: 'FILE',
+    });
+    const run = (script) => a.execute(resource, { ...command(script), path });
+    assert.equal((await run('cat "$FILE"')).stdout, text);
+    assert.equal((await run(bashPreviewCommand(path))).stdout, text);
+    assert.equal((await run(`cat ${quoteBashPath(path)}`)).stdout, text);
+    if (path === '/workspace/input.log') assert.equal((await run('cat input.log')).stdout, text);
+    else assert.notEqual((await run('cat /workspace/input.log')).exitCode, 0);
+    assert.notEqual((await run('cat /workspace/input.log/other.log')).exitCode, 0);
+  }
+});
+
+test('FILE is bound to the selected path on each fresh run without inheriting private environment', async () => {
+  const path = '/context/selected.log';
+  const a = engine(log);
+  const run = (script) => a.execute(resource, { ...command(script), path });
+  const previousFile = process.env.FILE;
+  const previousPrivate = process.env.ANALYSIS_FILE_PRIVATE_SENTINEL;
+  process.env.FILE = '/private/parent-secret.log';
+  process.env.ANALYSIS_FILE_PRIVATE_SENTINEL = 'do-not-forward';
+  try {
+    assert.equal((await run('cat "$FILE"')).stdout, log.toString());
+    assert.equal((await run('printf "%s" "$FILE"')).stdout, path);
+    assert.equal((await run('echo "$ANALYSIS_FILE_PRIVATE_SENTINEL"')).stdout, '\n');
+    assert.notEqual((await run('FILE=/other.log; cat "$FILE"')).exitCode, 0);
+    assert.equal((await run('unset FILE; printf "%s" "$FILE"')).stdout, '');
+    assert.equal((await run('cat "$FILE"')).stdout, log.toString());
+    try {
+      assert.notEqual((await run('printf changed > "$FILE"')).exitCode, 0);
+    } catch (error) {
+      assert.equal(error.status, 422);
+    }
+    assert.equal((await run('cat "$FILE"')).stdout, log.toString());
+  } finally {
+    if (previousFile === undefined) delete process.env.FILE;
+    else process.env.FILE = previousFile;
+    if (previousPrivate === undefined) delete process.env.ANALYSIS_FILE_PRIVATE_SENTINEL;
+    else process.env.ANALYSIS_FILE_PRIVATE_SENTINEL = previousPrivate;
+  }
+  assert.equal(
+    bashSamples(legacyBashInput.path).some((sample) => sample.value.includes('$FILE')),
+    false,
   );
 });
 
@@ -352,28 +590,33 @@ test('Workspace analysis checks actions, resources, workspace, expiration and re
     assert.equal(r.status, 201);
     return r.body;
   }
+  const requests = [
+    sql('SELECT COUNT(*) AS n FROM file'),
+    {
+      resourceId: 'fs_shared',
+      path: '/orders.csv',
+      engine: 'bash',
+      command: 'cat "$FILE"',
+    },
+  ];
   for (const [scopes, ids] of [
     [['files:read'], ['fs_shared']],
     [['files:analyze'], ['fs_shared']],
     [['files:read', 'files:analyze'], ['fs_other']],
   ]) {
     const k = await key(scopes, ids);
-    assert.equal(
-      (await call(base + '/file-analyses', 'POST', sql('SELECT 1'), k.secret)).status,
-      403,
-    );
+    for (const input of requests)
+      assert.equal((await call(base + '/file-analyses', 'POST', input, k.secret)).status, 403);
   }
-  assert.equal(
-    (await call(base + '/file-analyses', 'POST', sql('SELECT 1'), 'expired')).status,
-    401,
-  );
+  for (const input of requests)
+    assert.equal((await call(base + '/file-analyses', 'POST', input, 'expired')).status, 401);
   assert.equal(io, 0);
   const full = await key(['files:read', 'files:analyze']);
-  assert.equal(
-    (await call('/api/v1/workspaces/other/file-analyses', 'POST', sql('SELECT 1'), full.secret))
-      .status,
-    404,
-  );
+  for (const input of requests)
+    assert.equal(
+      (await call('/api/v1/workspaces/other/file-analyses', 'POST', input, full.secret)).status,
+      404,
+    );
   assert.equal(io, 0);
   const cap = await call(
     base + '/file-analyses/capabilities?resourceId=fs_shared&path=/orders.csv',
@@ -382,6 +625,10 @@ test('Workspace analysis checks actions, resources, workspace, expiration and re
     full.secret,
   );
   assert.equal(cap.body.available, true);
+  assert.deepEqual(
+    cap.body.engines.map((e) => e.engine),
+    ['duckdb', 'bash'],
+  );
   const result = await call(
     base + '/file-analyses',
     'POST',
@@ -390,6 +637,10 @@ test('Workspace analysis checks actions, resources, workspace, expiration and re
   );
   assert.equal(result.status, 200);
   assert.equal(result.body.rows[0].n, '4');
+  const bashResult = await call(base + '/file-analyses', 'POST', requests[1], full.secret);
+  assert.equal(bashResult.status, 200);
+  assert.equal(bashResult.body.engine, 'bash');
+  assert.equal(bashResult.body.stdout, csv.toString());
   assert.equal(
     JSON.parse(await readFile(dataFile, 'utf8')).files.find((f) => f.id === 'csv').content,
     csv.toString(),
@@ -418,9 +669,7 @@ test('Workspace analysis checks actions, resources, workspace, expiration and re
   );
   const previous = io;
   await call(base + '/keys/' + full.data.id, 'DELETE');
-  assert.equal(
-    (await call(base + '/file-analyses', 'POST', sql('SELECT 1'), full.secret)).status,
-    401,
-  );
+  for (const input of requests)
+    assert.equal((await call(base + '/file-analyses', 'POST', input, full.secret)).status, 401);
   assert.equal(io, previous);
 });

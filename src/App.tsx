@@ -10,6 +10,13 @@ import {
   type SsoAuthConfig,
 } from './api/client';
 import './features/files/file-preview.css';
+import { FileBrowserPanel } from './features/files/FileBrowserPanel';
+import { FileBrowserList } from './features/files/FileBrowserList';
+import { ResourceKindIcon as KindIcon } from './ui/ResourceKindIcon';
+import { FileWorkspaceHeader } from './features/files/FileWorkspaceHeader';
+import { FileUploadStatus } from './features/files/FileUploadStatus';
+import { useFileUpload } from './features/files/use-file-upload';
+import { FileSystemsList } from './features/files/FileSystemsList';
 import {
   useRemoteFiles,
   downloadRemoteFile,
@@ -58,10 +65,7 @@ import {
   IconCopy03 as Copy,
   IconCreditCard01 as CreditCard,
   IconDatabase01 as Database,
-  IconFileCode01 as FileCode2,
-  IconFile01 as FileText,
   IconFolder as Folder,
-  IconFolderPlus as FolderPlus,
   IconKey01 as KeyRound,
   IconLayoutGrid01 as LayoutDashboard,
   IconPlay as Play,
@@ -72,20 +76,22 @@ import {
   IconShieldTick as ShieldCheck,
   IconStars01 as Sparkles,
   IconTerminal as Terminal,
-  IconTrash01 as Trash2,
-  IconUpload01 as Upload,
   IconGitBranch01 as Workflow,
   IconZap as Zap,
 } from '@tidbcloud/uikit/icons';
 import type { IconProps } from '@tidbcloud/uikit/icons';
 import { ResourceAccessPicker } from './features/keys/ResourceAccessPicker';
 import { WorkspaceLayout } from './ui/WorkspaceLayout';
-import { DatabaseWorkspaceHeader } from './features/databases/DatabaseWorkspaceHeader';
 import { DatabaseWorkspace } from './features/databases/DatabaseWorkspace';
 import { databaseEditorHash, parseWorkspaceRoute } from './features/navigation/workspace-route';
 import type { Route, WorkspaceRoute } from './features/navigation/workspace-route';
 
-import { fileHash, parseFileLocation, type FileView } from './features/files/file-location';
+import {
+  fileHash,
+  fileSystemHash,
+  parseFileSystemLocation,
+  type FileView,
+} from './features/files/file-location';
 
 const FilePreviewPanel = lazy(() => import('./features/files/FilePreviewPanel'));
 type WorkspaceIcon = React.ComponentType<IconProps>;
@@ -148,14 +154,6 @@ function relative(value: string | null) {
       : seconds < 86400
         ? `${Math.floor(seconds / 3600)}h ago`
         : new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-function KindIcon({ kind, small = false }: { kind: Kind; small?: boolean }) {
-  const Icon = kind === 'filesystem' ? Folder : Database;
-  return (
-    <span className={`kind-icon ${kind} ${small ? 'small' : ''}`}>
-      <Icon size={small ? 17 : 22} />
-    </span>
-  );
 }
 
 function Empty({
@@ -419,6 +417,9 @@ function App() {
         active={route}
         databaseId={routeLocation.databaseId}
         databaseView={routeLocation.databaseView}
+        fileSystemId={
+          parseFileSystemLocation('#' + (routeLocation.fileLink || 'files'))?.resourceId
+        }
         navigation={Object.entries(routes).map(([id, item]) => ({ id, ...item }))}
         onSearch={() => setModal('search')}
       >
@@ -445,7 +446,13 @@ function App() {
           {toast}
         </Notification>
       )}
-      {modal === 'resource' && <CreateResource {...shared} onClose={() => setModal(null)} />}
+      {modal === 'resource' && (
+        <CreateResource
+          {...shared}
+          initialKind={route === 'files' ? 'filesystem' : 'mysql'}
+          onClose={() => setModal(null)}
+        />
+      )}
       {modal === 'key' && <CreateKey {...shared} onClose={() => setModal(null)} />}
       {modal === 'search' && (
         <SearchModal data={data} onClose={() => setModal(null)} onConnect={setConnection} />
@@ -938,8 +945,7 @@ function DatabaseDetail({
 }: Shared & { database: Resource; routeLocation: WorkspaceRoute }) {
   return (
     <section className="database-page">
-      <DatabaseWorkspaceHeader
-        database={database}
+      <DatabaseWorkspace
         onConnect={() => onConnect(database)}
         onRetry={async () => {
           try {
@@ -949,18 +955,11 @@ function DatabaseDetail({
             notify((error as Error).message);
           }
         }}
-      />
-      <DatabaseWorkspace
         database={database}
         databases={data.resources.filter((resource) => resource.kind !== 'filesystem')}
-        fileSystems={data.resources.filter((resource) => resource.kind === 'filesystem')}
         routeLocation={routeLocation}
         refresh={refresh}
         onSelect={openDatabaseEditor}
-        onExport={(result) => {
-          download('query-results.json', JSON.stringify(result.rows, null, 2), 'application/json');
-          notify('Results exported');
-        }}
       />
     </section>
   );
@@ -974,10 +973,40 @@ function download(name: string, value: string, mime = 'text/plain') {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
+function Files(shared: Shared) {
+  const context = parseFileSystemLocation(location.hash);
+  const systems = shared.data.resources.filter((resource) => resource.kind === 'filesystem');
+  if (!context)
+    return (
+      <FileSystemsList
+        resources={systems}
+        onCreate={shared.onCreate}
+        onConnect={shared.onConnect}
+      />
+    );
+  const resource = systems.find((system) => system.id === context.resourceId);
+  if (!resource)
+    return (
+      <Empty
+        title="File System unavailable"
+        description="This File System is no longer available in your workspace. Choose a File System from the list."
+        action={<Button onClick={() => go('files')}>All file systems</Button>}
+      />
+    );
+  return <FileWorkspace key={resource.id} {...shared} resource={resource} />;
+}
+function FileWorkspace({
+  data,
+  refresh,
+  notify,
+  onConnect,
+  onCreate,
+  resource,
+}: Shared & { resource: Resource }) {
   const systems = data.resources.filter((r) => r.kind === 'filesystem');
-  const [initialLocation] = useState(() => parseFileLocation(location.hash));
-  const initialResource = systems.find((r) => r.id === initialLocation?.resourceId);
+  const [initialContext] = useState(() => parseFileSystemLocation(location.hash));
+  const initialLocation = initialContext?.file;
+  const initialResource = resource;
   const initialFile =
     initialResource && initialLocation
       ? data.files.find(
@@ -996,13 +1025,8 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
       : null;
   const restoreFile = useRef(initialFile);
   const [previewView, setPreviewView] = useState<FileView>(initialLocation?.view || 'preview');
-  const [system, setSystem] = useState(
-      initialResource?.id ||
-        systems.find((r) => r.provider === 'drive9-anonymous')?.id ||
-        systems[0]?.id ||
-        '',
-    ),
-    [path, setPath] = useState(
+  const system = resource.id;
+  const [path, setPath] = useState(
       initialFile ? initialFile.path.slice(0, initialFile.path.lastIndexOf('/')) || '/' : '/',
     ),
     [search, setSearch] = useState(''),
@@ -1012,7 +1036,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
     [name, setName] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(
-      initialLocation && !initialFile
+      initialContext?.invalidFile || (initialLocation && !initialFile)
         ? 'The linked file or File System is unavailable. Select a file to continue.'
         : '',
     ),
@@ -1020,6 +1044,8 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
   const selectedSystem = systems.find((r) => r.id === system);
   const remote = selectedSystem?.provider === 'drive9-anonymous';
   const listing = useRemoteFiles(system, path, remote);
+  const [browserCollapsed, setBrowserCollapsed] = useState(false);
+  const [analysisBusy, setAnalysisBusy] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [unavailableReason, setUnavailableReason] = useState('');
   const previewRequest = useRef<AbortController | null>(null);
@@ -1027,6 +1053,26 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [previewTrigger, setPreviewTrigger] = useState<HTMLElement | null>(null);
   const dirty = !!editing && content !== (editing.content || '');
+  useEffect(() => {
+    if (!dirty) return;
+    const guardCollectionLink = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      )
+        return;
+      const link = event.target instanceof Element ? event.target.closest('a') : null;
+      if (link?.getAttribute('href') !== '#files') return;
+      event.preventDefault();
+      setPendingAction(() => () => go('files'));
+    };
+    document.addEventListener('click', guardCollectionLink);
+    return () => document.removeEventListener('click', guardCollectionLink);
+  }, [dirty]);
   function requestPreviewChange(action: () => void) {
     if (busy) return;
     restoreFile.current = null;
@@ -1035,6 +1081,16 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
   }
   const upload = useRef<HTMLInputElement>(null);
   const files = remote ? listing.files : data.files.filter((f) => f.resourceId === system);
+  const fileUpload = useFileUpload({
+    resource: selectedSystem,
+    directory: path,
+    files,
+    onBusyChange: setBusy,
+    onSaved: async () => {
+      listing.refresh();
+      await refresh();
+    },
+  });
   const openFile = useCallback(
     async (file: WorkspaceFile, view: FileView = 'preview') => {
       setPreviewView(view);
@@ -1068,21 +1124,22 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
     if (file) void openFile(file, initialLocation?.view);
   }, [openFile, initialLocation]);
   function closePreview() {
-    history.replaceState(null, '', '#files');
+    history.replaceState(null, '', fileSystemHash(system));
     previewRequest.current?.abort();
     setPreviewLoading(false);
     setEditing(null);
+    setError('');
+    setBrowserCollapsed(false);
   }
   function downloadFile(file: WorkspaceFile) {
     if (remote) downloadRemoteFile(file);
     else download(file.path.split('/').pop()!, file.content || '');
   }
-  const children = files
-    .filter(
-      (f) =>
-        (f.path.slice(0, f.path.lastIndexOf('/')) || '/') === path &&
-        f.path.split('/').pop()!.toLowerCase().includes(search.toLowerCase()),
-    )
+  const directoryFiles = files.filter(
+    (file) => (file.path.slice(0, file.path.lastIndexOf('/')) || '/') === path,
+  );
+  const children = directoryFiles
+    .filter((file) => file.path.split('/').pop()!.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) =>
       a.type === b.type ? a.path.localeCompare(b.path) : a.type === 'directory' ? -1 : 1,
     );
@@ -1110,44 +1167,6 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
       setBusy(false);
     }
   }
-  async function uploadFile(file: globalThis.File) {
-    if (remote) {
-      const target = (path === '/' ? '' : path) + '/' + file.name;
-      if (file.size > (selectedSystem?.uploadLimitBytes || 0)) {
-        notify('This file exceeds the current upload limit.');
-        return;
-      }
-      setBusy(true);
-      try {
-        await workspaceApi.uploadFile({ resourceId: system, path: target }, file);
-        listing.refresh();
-        await refresh();
-        notify('File uploaded to Singapore');
-      } catch (cause) {
-        notify(cause instanceof Error ? cause.message : 'Upload failed.');
-      } finally {
-        setBusy(false);
-      }
-      return;
-    }
-    if (file.size > 256 * 1024) {
-      notify('Choose a UTF-8 text file smaller than 256 KiB.');
-      return;
-    }
-    try {
-      const buffer = await file.arrayBuffer();
-      const text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
-      if (text.includes('\0')) throw new Error('binary');
-      const target = (path === '/' ? '' : path) + '/' + file.name;
-      if (files.some((f) => f.path === target)) {
-        notify('A file with this name already exists. Open it to edit.');
-        return;
-      }
-      await saveFile(target, 'file', text);
-    } catch {
-      notify('This prototype accepts UTF-8 text files only.');
-    }
-  }
   async function remove() {
     if (!deleting) return;
     setBusy(true);
@@ -1170,30 +1189,21 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
   }
   return (
     <>
-      <PageHeading
-        eyebrow="PERSISTENT CONTEXT"
-        title="File System"
-        description="A shared home for your agent’s context, code, and outputs."
-        actions={
-          <>
-            <Button
-              leftSection={React.createElement(Terminal, { size: 18 })}
-              onClick={() => {
-                const r = systems.find((r) => r.id === system);
-                if (r) onConnect(r);
-              }}
-            >
-              Connect
-            </Button>
-            <Button
-              variant="filled"
-              leftSection={React.createElement(Upload, { size: 18 })}
-              onClick={() => upload.current?.click()}
-              disabled={busy || !system}
-            >
-              Upload file
-            </Button>
-          </>
+      <FileWorkspaceHeader
+        resource={selectedSystem}
+        resources={systems}
+        busy={busy || analysisBusy}
+        fileCount={files.filter((file) => file.type === 'file').length}
+        sizeLabel={`${bytes(files.reduce((total, file) => total + fileSize(file), 0))}${remote ? ' in folder' : ' / 2 GiB'}`}
+        onConnect={() => {
+          if (selectedSystem) onConnect(selectedSystem);
+        }}
+        onUpload={() => upload.current?.click()}
+        onBack={() => requestPreviewChange(() => go('files'))}
+        onSelect={(nextSystem) =>
+          requestPreviewChange(() => {
+            location.hash = fileSystemHash(nextSystem);
+          })
         }
       />
       <input
@@ -1202,58 +1212,18 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
         hidden
         aria-label="Upload a file"
         onChange={(e) => {
-          if (e.target.files?.[0]) void uploadFile(e.target.files[0]);
+          if (e.target.files?.[0]) void fileUpload.upload(e.target.files[0]);
           e.target.value = '';
         }}
       />
-      <div className="file-system-summary">
-        <div className="table-resource file-system-identity">
-          <KindIcon kind="filesystem" />
-          <div>
-            <NativeSelect
-              aria-label="File system"
-              className="heading-select"
-              value={system}
-              disabled={busy}
-              onChange={(e) => {
-                const nextSystem = e.target.value;
-                requestPreviewChange(() => {
-                  closePreview();
-                  setSystem(nextSystem);
-                  setPath('/');
-                  setSearch('');
-                  setEditing(null);
-                });
-              }}
-            >
-              {systems.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </NativeSelect>
-            <small>
-              {systems[0] ? region(systems.find((r) => r.id === system)!.region) : 'No file system'}
-            </small>
-          </div>
-          <Badge color={remote ? 'green' : 'purple'}>
-            {remote ? 'Live · Anonymous trial' : 'Local demo'}
-          </Badge>
-        </div>
-        <div className="file-stat">
-          <span>
-            {files.filter((f) => f.type === 'file').length} files{remote ? ' in folder' : ''}
-          </span>
-          <span>
-            {bytes(files.reduce((n, f) => n + fileSize(f), 0))}
-            {remote ? ' in folder' : ' / 2 GiB'}
-          </span>
-          <span>
-            <span className="live-dot" />
-            {selectedSystem?.status || 'Unavailable'}
-          </span>
-        </div>
-      </div>
+      {fileUpload.status?.resourceId === system && (
+        <FileUploadStatus status={fileUpload.status} onDismiss={fileUpload.dismiss} />
+      )}
+      {error && !editing && !newItem && !deleting && (
+        <Alert color="red" mb={20}>
+          {error}
+        </Alert>
+      )}
       {(listing.error || selectedSystem?.connectionError) && (
         <Alert color="red" mb={20}>
           {listing.error || selectedSystem?.connectionError}
@@ -1268,178 +1238,72 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           </Button>
         </Alert>
       )}
-      <div className="file-workspace" data-preview={editing ? true : undefined}>
-        <Paper className="panel file-browser" withBorder>
-          <div className="file-toolbar">
-            <div className="path-crumb">
-              <ActionIcon aria-label="File system root" onClick={() => setPath('/')}>
-                <Folder size={16} />
-              </ActionIcon>
-              <UnstyledButton onClick={() => setPath('/')}>
-                {systems.find((r) => r.id === system)?.name}
-              </UnstyledButton>
-              {path
-                .split('/')
-                .filter(Boolean)
-                .map((s, i) => (
-                  <React.Fragment key={i}>
-                    <ChevronRight size={13} />
-                    <UnstyledButton
-                      onClick={() =>
-                        setPath(
-                          '/' +
-                            path
-                              .split('/')
-                              .filter(Boolean)
-                              .slice(0, i + 1)
-                              .join('/'),
-                        )
-                      }
-                    >
-                      {s}
-                    </UnstyledButton>
-                  </React.Fragment>
-                ))}
-            </div>
-            <div className="inline-controls">
-              <div className="input-with-icon">
-                <Search size={14} />
-                <TextInput
-                  aria-label="Search files"
-                  placeholder="Filter files…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-              {remote && (
-                <ActionIcon
-                  aria-label="Refresh files"
-                  onClick={() => {
-                    listing.refresh();
-                    void refresh();
-                  }}
-                  disabled={listing.loading}
-                >
-                  <RefreshCw size={18} />
-                </ActionIcon>
-              )}
-              <Button
-                leftSection={React.createElement(FolderPlus, { size: 18 })}
-                disabled={!system || busy}
-                onClick={() => {
-                  setNewItem('directory');
-                  setError('');
-                }}
-              >
-                New folder
-              </Button>
-              <Button
-                leftSection={React.createElement(Plus, { size: 18 })}
-                disabled={!system || busy}
-                onClick={() => {
-                  setNewItem('file');
-                  setError('');
-                }}
-              >
-                New file
-              </Button>
-            </div>
-          </div>
+      <div
+        className="resource-workspace file-workspace"
+        data-preview={editing ? true : undefined}
+        data-browser-collapsed={browserCollapsed || undefined}
+      >
+        <FileBrowserPanel
+          systemName={selectedSystem?.name || 'Files'}
+          count={directoryFiles.length}
+          path={path}
+          search={search}
+          onSearch={setSearch}
+          onNavigate={setPath}
+          onRefresh={() => {
+            listing.refresh();
+            void refresh();
+          }}
+          refreshing={listing.loading || analysisBusy}
+          canCreate={!!system && !busy && !analysisBusy}
+          onCreate={(type) => {
+            setNewItem(type);
+            setError('');
+          }}
+          collapsed={browserCollapsed}
+          onToggle={() => setBrowserCollapsed((value) => !value)}
+          footer={
+            <>
+              <span>{children.length} items</span>
+              <span>
+                {remote
+                  ? `Stored in Singapore · Upload up to ${bytes(selectedSystem?.uploadLimitBytes || 0)}`
+                  : 'Local persistent storage · UTF-8 text files up to 256 KiB'}
+              </span>
+            </>
+          }
+        >
           {listing.loading && remote && (
             <Text p={24}>
               <Loader size="sm" /> Loading files…
             </Text>
           )}
           {systems.length ? (
-            <Table>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Name</Table.Th>
-                  <Table.Th>Size</Table.Th>
-                  <Table.Th>Last modified</Table.Th>
-                  <Table.Th />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {path !== '/' && (
-                  <Table.Tr>
-                    <Table.Td colSpan={4}>
-                      <UnstyledButton
-                        className="file-name"
-                        onClick={() => setPath(path.slice(0, path.lastIndexOf('/')) || '/')}
-                      >
-                        <Folder size={17} />
-                        ..
-                      </UnstyledButton>
-                    </Table.Td>
-                  </Table.Tr>
-                )}
-                {children.map((f) => (
-                  <Table.Tr key={f.id} data-selected={editing?.id === f.id || undefined}>
-                    <Table.Td>
-                      <UnstyledButton
-                        className="file-name"
-                        aria-current={editing?.id === f.id ? 'true' : undefined}
-                        onClick={(event) => {
-                          if (f.type === 'directory') {
-                            setPath(f.path);
-                            setSearch('');
-                          } else {
-                            if (editing?.id === f.id) return;
-                            const trigger = event.currentTarget;
-                            requestPreviewChange(() => {
-                              setPreviewTrigger(trigger);
-                              void openFile(f);
-                            });
-                          }
-                        }}
-                      >
-                        {f.type === 'directory' ? (
-                          <Folder className="folder-icon" size={19} />
-                        ) : f.path.endsWith('.md') ? (
-                          <FileText size={18} />
-                        ) : (
-                          <FileCode2 size={18} />
-                        )}
-                        <span>
-                          <strong>{f.path.split('/').pop()}</strong>
-                          <small className="file-cell-meta">
-                            {f.type === 'directory' ? 'Folder' : bytes(fileSize(f))} ·{' '}
-                            {relative(f.updatedAt)}
-                          </small>
-                        </span>
-                      </UnstyledButton>
-                    </Table.Td>
-                    <Table.Td>{f.type === 'directory' ? '—' : bytes(fileSize(f))}</Table.Td>
-                    <Table.Td>{relative(f.updatedAt)}</Table.Td>
-                    <Table.Td>
-                      <div className="row-actions">
-                        {f.type === 'file' && (
-                          <ActionIcon
-                            className="icon-button"
-                            aria-label={`Download ${f.path}`}
-                            onClick={() => downloadFile(f)}
-                          >
-                            <ArrowDownToLine size={15} />
-                          </ActionIcon>
-                        )}
-                        <ActionIcon
-                          className="icon-button"
-                          aria-label={`Delete ${f.path}`}
-                          disabled={busy}
-                          onClick={() => {
-                            setDeleting(f);
-                            setError('');
-                          }}
-                        >
-                          <Trash2 size={15} />
-                        </ActionIcon>
-                      </div>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
+            <FileBrowserList
+              files={children}
+              path={path}
+              selectedId={editing?.id}
+              busy={busy || analysisBusy}
+              describeFile={(file) =>
+                `${file.type === 'directory' ? 'Folder' : bytes(fileSize(file))} · ${relative(file.updatedAt)}`
+              }
+              onNavigate={(nextPath) => {
+                setPath(nextPath);
+                setSearch('');
+              }}
+              onOpen={(file, trigger) => {
+                if (editing?.id === file.id) return;
+                requestPreviewChange(() => {
+                  setPreviewTrigger(trigger);
+                  void openFile(file);
+                });
+              }}
+              onDownload={downloadFile}
+              onDelete={(file) => {
+                setDeleting(file);
+                setError('');
+              }}
+            />
           ) : (
             <Empty
               title="Add your first file system"
@@ -1457,16 +1321,8 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               }
             />
           )}
-          <div className="file-browser-footer">
-            <span>{children.length} items</span>
-            <span>
-              {remote
-                ? `Stored in Singapore · Upload up to ${bytes(selectedSystem?.uploadLimitBytes || 0)}`
-                : 'Local persistent storage · UTF-8 text files up to 256 KiB'}
-            </span>
-          </div>
-        </Paper>
-        {editing && (
+        </FileBrowserPanel>
+        {editing ? (
           <Suspense
             fallback={
               <Paper withBorder p={24}>
@@ -1483,6 +1339,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
                 history.replaceState(null, '', fileHash(editing.resourceId, editing.path, view))
               }
               content={content}
+              savedContent={editing.content || ''}
               dirty={dirty}
               size={editing.size}
               loading={previewLoading}
@@ -1492,6 +1349,11 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               pendingChange={!!pendingAction}
               trigger={previewTrigger}
               onChange={setContent}
+              onAnalysisRunningChange={setAnalysisBusy}
+              onExportSaved={async () => {
+                listing.refresh();
+                await refresh();
+              }}
               onClose={() => requestPreviewChange(closePreview)}
               onKeepEditing={() => setPendingAction(null)}
               onDiscard={() => {
@@ -1520,6 +1382,13 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
               }}
             />
           </Suspense>
+        ) : (
+          <Paper className="panel file-placeholder" withBorder>
+            <Empty
+              title="Select a file"
+              description="Choose a file on the left to preview, edit or analyze its contents."
+            />
+          </Paper>
         )}
       </div>
       <Alert className="notice quiet" color="peacock" icon={<ShieldCheck size={17} />}>
@@ -1579,8 +1448,8 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
       )}
       {deleting && (
         <Modal
-          title={`Delete ${deleting.type}?`}
-          description={`“${deleting.path}” will be removed from this local workspace. Non-empty folders cannot be deleted.`}
+          title={`Delete ${deleting.type === 'directory' ? 'folder' : 'file'}?`}
+          description={`“${deleting.path}” will be removed from this File System. Non-empty folders cannot be deleted.`}
           onClose={() => setDeleting(null)}
         >
           {error && (
@@ -1591,7 +1460,7 @@ function Files({ data, refresh, notify, onConnect, onCreate }: Shared) {
           <div className="modal-actions">
             <Button onClick={() => setDeleting(null)}>Cancel</Button>
             <Button variant="filled" color="red" disabled={busy} onClick={remove}>
-              Delete {deleting.type}
+              Delete {deleting.type === 'directory' ? 'folder' : 'file'}
             </Button>
           </div>
         </Modal>
@@ -1604,7 +1473,7 @@ function Connect({ data, copy }: Shared) {
   const snippet = `# Discover your workspace resources\ncurl ${apiBaseUrl}${base}/resources \\\n  -H "Authorization: Bearer $WORKSPACE_API_KEY"`;
   const python = `import os, json, urllib.request\n\nreq = urllib.request.Request(\n    "${apiBaseUrl}${base}/resources",\n    headers={"Authorization": "Bearer " + os.environ["WORKSPACE_API_KEY"]}\n)\nwith urllib.request.urlopen(req) as response:\n    print(json.load(response))`;
   const js = `const response = await fetch(\n  "${apiBaseUrl}${base}/resources",\n  { headers: { Authorization: \`Bearer \${process.env.WORKSPACE_API_KEY}\` } }\n);\nconsole.log(await response.json());`;
-  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiBaseUrl}/api/v1\nOpenAPI: ${apiBaseUrl}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for directory listings and UTF-8 writes; Drive9 listings contain metadata only. Use /files/content?resourceId=ID&path=PATH for binary upload/download and add preview=1 for bounded text previews. Use /resources/{resourceId}/tables to list tables, /resources/{resourceId}/table?name=NAME for columns and indexes, and /resources/{resourceId}/table/rows?name=NAME for up to 100 preview rows. Encode the exact table name as a query parameter. These reads require queries:execute and resource access, just like /queries for SQL on the selected database. Resources marked tidb-cloud-zero, db9-anonymous or duckdb-drive9 execute real SQL; queries:execute permits reads and writes within the database role. Run one statement per request; results are limited to 1,000 rows / 1 MiB and queries to 15 seconds. A timeout can leave a write outcome unknown; verify before retrying.\nFor read-only file analysis, inspect GET /workspaces/${data.workspace.id}/file-analyses/capabilities?resourceId=ID&path=PATH, then POST /workspaces/${data.workspace.id}/file-analyses with resourceId, path, engine and sql or command. Require both files:read and files:analyze plus the File System grant. CSV/Parquet SQL reads table file; Just Bash reads /workspace/input.log. Each run uses one fresh saved-file snapshot, up to 16 MiB input and 15 seconds. No source writes or arbitrary native commands are permitted.\nFor DuckDB database file queries, add sources: [{name: "orders", resourceId: "FILE_SYSTEM_ID", path: "/orders.csv"}] to the query JSON, then SELECT from files.orders. Require files:read and files:analyze plus queries:execute and grants for the database and each File System. Sources are SELECT-only and query-scoped: up to four CSV/JSON/NDJSON/Parquet files, 16 MiB combined input. Never send provider URLs, credentials or host paths.\nOnly call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local Workspace gateway. File Systems marked drive9-anonymous use real Singapore trial storage. Databases marked tidb-cloud-zero connect to real temporary MySQL databases. Check expiresAt and export important data before expiration. PostgreSQL resources marked db9-anonymous use native db9 PostgreSQL. db9 NUMERIC supports 28–29 significant digits; other PostgreSQL compatibility limits may apply. Databases marked duckdb-drive9 use native DuckDB with service-managed storage. Other databases remain demos. Cloud telemetry is not measured.\nDo not upload credentials to the workspace or commit them to Git.\n`;
+  const agents = `# TiDB Agent Workspace\n\nWorkspace: ${data.workspace.id}\nAPI: ${apiBaseUrl}/api/v1\nOpenAPI: ${apiBaseUrl}/openapi.json\n\nRead WORKSPACE_API_KEY from the environment.\nDiscover resources with GET /workspaces/${data.workspace.id}/resources.\nUse /files for directory listings and UTF-8 writes; Drive9 listings contain metadata only. Use /files/content?resourceId=ID&path=PATH for binary upload/download and add preview=1 for bounded text previews. Use GET /files/tabular-preview?resourceId=ID&path=PATH for a fixed CSV/Parquet schema and up to 20 rows; this requires files:read and the resource grant, without files:analyze. Use /resources/{resourceId}/tables to list tables, /resources/{resourceId}/table?name=NAME for columns and indexes, and /resources/{resourceId}/table/rows?name=NAME for up to 100 preview rows. Encode the exact table name as a query parameter. These reads require queries:execute and resource access, just like /queries for SQL on the selected database. Resources marked tidb-cloud-zero, db9-anonymous or duckdb-drive9 execute real SQL; queries:execute permits reads and writes within the database role. Run one statement per request; results are limited to 1,000 rows / 1 MiB and queries to 15 seconds. A timeout can leave a write outcome unknown; verify before retrying.\nFor read-only file analysis, inspect GET /workspaces/${data.workspace.id}/file-analyses/capabilities?resourceId=ID&path=PATH, then POST /workspaces/${data.workspace.id}/file-analyses with resourceId, path, engine and sql or command. Require both files:read and files:analyze plus the File System grant. CSV/Parquet SQL reads table file; Just Bash reads the selected Workspace path from capabilities input.path; use quoted "$FILE" only when input.fileVariable reports FILE. Each run uses one fresh saved-file snapshot, up to 16 MiB input and 15 seconds. No source writes or arbitrary native commands are permitted.\nFor DuckDB database file queries, add sources: [{name: "orders", resourceId: "FILE_SYSTEM_ID", path: "/orders.csv"}] to the query JSON, then SELECT from files.orders. Require files:read and files:analyze plus queries:execute and grants for the database and each File System. Sources are SELECT-only and query-scoped: up to four CSV/JSON/NDJSON/Parquet files, 16 MiB combined input. Never send provider URLs, credentials or host paths.\nFor database imports, POST /workspaces/${data.workspace.id}/database-imports/prepare for an existing Workspace CSV/Parquet, or POST /workspaces/${data.workspace.id}/database-imports/prepare-upload with raw bytes and resourceId, filename, format (CSV also header and delimiter) query parameters. Review the returned sample, fields and types; POST /workspaces/${data.workspace.id}/database-imports with resourceId, preparationId, confirmed:true, table and selected fields to create a new table. Local uploads require queries:execute and the database grant; Workspace sources additionally require source files:read/analyze and its grant. Reviews bind the destination, expire after five minutes and allow at most 1,000 rows. Inspect uncertain writes before trying again.\nOnly call endpoints permitted by your key actions and resource access. Use the same key for database queries and files. Do not request upstream provider credentials.\n\nThis is a local Workspace gateway. File Systems marked drive9-anonymous use real Singapore trial storage. Databases marked tidb-cloud-zero connect to real temporary MySQL databases. Check expiresAt and export important data before expiration. PostgreSQL resources marked db9-anonymous use native db9 PostgreSQL. db9 NUMERIC supports 28–29 significant digits; other PostgreSQL compatibility limits may apply. Databases marked duckdb-drive9 use native DuckDB with service-managed storage. Other databases remain demos. Cloud telemetry is not measured.\nDo not upload credentials to the workspace or commit them to Git.\n`;
   return (
     <>
       <PageHeading
@@ -2484,10 +2353,16 @@ function WorkspaceSettings({ data, refresh, notify, copy }: Shared) {
     </>
   );
 }
-function CreateResource({ data, refresh, notify, onClose }: Shared & { onClose: () => void }) {
-  const [kind, setKind] = useState<Kind>('mysql'),
+function CreateResource({
+  data,
+  refresh,
+  notify,
+  onClose,
+  initialKind = 'mysql',
+}: Shared & { onClose: () => void; initialKind?: Kind }) {
+  const [kind, setKind] = useState<Kind>(initialKind),
     [name, setName] = useState(''),
-    [selectedRegion, setRegion] = useState(data.capabilities.mysql.regions[0]),
+    [selectedRegion, setRegion] = useState(data.capabilities[initialKind].regions[0]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   const createId = useRef(crypto.randomUUID());
@@ -2969,7 +2844,7 @@ function Connection({
           variant="filled"
           onClick={() => {
             onClose();
-            if (isFileSystem) go('files');
+            if (isFileSystem) location.hash = fileSystemHash(r.id);
             else openDatabaseEditor(r.id);
           }}
         >

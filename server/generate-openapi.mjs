@@ -4,6 +4,9 @@ import { format, resolveConfig } from 'prettier';
 import { capabilities } from './store.mjs';
 import { zeroRegion } from './providers/zero.mjs';
 import { analysisLimits } from './file-analysis-contract.mjs';
+import { fileExportSchemas } from './file-export-contract.mjs';
+import { databaseImportSchemas } from './database-import-contract.mjs';
+import { resultExportSchemas } from './result-export-contract.mjs';
 const regionSchema = {
   type: 'string',
   enum: [
@@ -100,6 +103,7 @@ const schemas = {
   },
 };
 const ref = (name) => ({ $ref: `#/components/schemas/${name}` });
+Object.assign(schemas, resultExportSchemas, fileExportSchemas, databaseImportSchemas);
 const str = { type: 'string' };
 const array = (item) => ({
   type: 'object',
@@ -338,6 +342,47 @@ const paths = {
       },
     ),
   },
+  [ws + '/files/tabular-preview']: {
+    get: operation(
+      'tabularFilePreview',
+      'Read a fixed bounded CSV/Parquet schema and sample',
+      'files:read',
+      {
+        parameters: [
+          { name: 'resourceId', in: 'query', required: true, schema: str },
+          { name: 'path', in: 'query', required: true, schema: str },
+        ],
+        output: object({
+          resourceId: str,
+          path: str,
+          format: { enum: ['csv', 'parquet'] },
+          readOnly: { const: true },
+          inputBytes: { type: 'integer' },
+          durationMs: { type: 'integer' },
+          fileVersion: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+          columns: { type: 'array', maxItems: 50, items: str },
+          columnTypes: { type: 'array', maxItems: 50, items: str },
+          schema: {
+            type: 'array',
+            maxItems: 50,
+            items: object({ column_name: str, column_type: str }),
+          },
+          rows: {
+            type: 'array',
+            maxItems: 20,
+            items: { type: 'object', additionalProperties: true },
+          },
+          rowCount: { type: 'integer', minimum: 0, maximum: 20 },
+          totalRows: {
+            type: ['string', 'null'],
+            description: 'Exact Parquet metadata row count; null for CSV. Not the sample count.',
+          },
+          typesInferred: { type: 'boolean' },
+          truncated: { type: 'boolean' },
+        }),
+      },
+    ),
+  },
   [ws + '/file-analyses/capabilities']: {
     get: operation(
       'fileAnalysisCapabilities',
@@ -349,10 +394,44 @@ const paths = {
           { name: 'path', in: 'query', required: true, schema: str },
         ],
         output: object({
-          engine: { type: ['string', 'null'], enum: ['duckdb', 'bash', null] },
+          engine: {
+            type: ['string', 'null'],
+            enum: ['duckdb', 'bash', null],
+            description: 'Default engine, retained for compatibility. Select from engines.',
+          },
+          engines: {
+            type: 'array',
+            description:
+              'Supported analysis methods with individual availability. CSV offers both engines; Parquet only DuckDB; recognized text only Bash. Availability checks metadata, not successful parsing or UTF-8 decoding.',
+            items: object(
+              {
+                engine: { enum: ['duckdb', 'bash'] },
+                available: { type: 'boolean' },
+                reason: str,
+                input: {
+                  ...object(
+                    {
+                      path: str,
+                      workingDirectory: { const: '/workspace' },
+                      aliases: { type: 'array', items: str },
+                      fileVariable: {
+                        const: 'FILE',
+                        description:
+                          'When present, Workspace sets FILE to input.path for each fresh Bash run. Use quoted "$FILE" or "${FILE}"; this is a Workspace convention, not a Bash built-in. Script assignments do not persist.',
+                      },
+                    },
+                    ['path', 'workingDirectory', 'aliases'],
+                  ),
+                  description:
+                    'Bash only: the selected absolute Workspace path in its read-only virtual snapshot, working directory, and compatible aliases. The legacy alias is omitted when it would shadow the selected path or a parent directory. Not a host path or a mount of other files.',
+                },
+              },
+              ['engine', 'available', 'reason'],
+            ),
+          },
           format: { type: ['string', 'null'] },
-          available: { type: 'boolean' },
-          reason: str,
+          available: { type: 'boolean', description: 'Availability of the default engine.' },
+          reason: { type: 'string', description: 'Unavailable reason for the default engine.' },
           size: { type: 'integer' },
           readOnly: { const: true },
           limits: object(
@@ -394,22 +473,45 @@ const paths = {
             },
           ],
         },
-        output: object({
-          engine: { enum: ['duckdb', 'bash'] },
-          resourceId: str,
-          path: str,
-          readOnly: { const: true },
-          inputBytes: { type: 'integer' },
-          durationMs: { type: 'integer' },
-          columns: { type: 'array', items: str },
-          schema: { type: 'array', items: object({ column_name: str, column_type: str }) },
-          columnTypes: { type: 'array', items: str },
-          rows: { type: 'array', items: { type: 'object', additionalProperties: true } },
-          rowCount: { type: 'integer' },
-          stdout: str,
-          stderr: str,
-          exitCode: { type: 'integer' },
-        }),
+        output: object(
+          {
+            engine: { enum: ['duckdb', 'bash'] },
+            resourceId: str,
+            path: str,
+            readOnly: { const: true },
+            inputBytes: { type: 'integer' },
+            durationMs: { type: 'integer' },
+            columns: { type: 'array', items: str },
+            schema: { type: 'array', items: object({ column_name: str, column_type: str }) },
+            columnTypes: { type: 'array', items: str },
+            rows: { type: 'array', items: { type: 'object', additionalProperties: true } },
+            rowCount: { type: 'integer' },
+            stdout: str,
+            stderr: str,
+            exitCode: { type: 'integer' },
+            fileVersion: {
+              type: 'string',
+              pattern: '^[a-f0-9]{64}$',
+              description: 'Saved-byte digest when supported; compare with tabular preview.',
+            },
+          },
+          [
+            'engine',
+            'resourceId',
+            'path',
+            'readOnly',
+            'inputBytes',
+            'durationMs',
+            'columns',
+            'schema',
+            'columnTypes',
+            'rows',
+            'rowCount',
+            'stdout',
+            'stderr',
+            'exitCode',
+          ],
+        ),
       },
     ),
   },
@@ -592,6 +694,91 @@ const paths = {
       },
     ),
   },
+  [ws + '/database-imports/prepare']: {
+    post: operation(
+      'prepareDatabaseImport',
+      'Parse a Workspace CSV/Parquet for a fixed destination database',
+      'queries:execute on destination; files:read and files:analyze on source',
+      { input: ref('DatabaseImportPreparationInput'), output: ref('FileExportPreparation') },
+    ),
+  },
+  [ws + '/database-imports/prepare-upload']: {
+    post: {
+      ...operation(
+        'prepareDatabaseImportUpload',
+        'Upload up to 1 MiB of local CSV/Parquet for private schema review',
+        'queries:execute on destination',
+        {
+          parameters: [
+            { name: 'resourceId', in: 'query', required: true, schema: str },
+            {
+              name: 'filename',
+              in: 'query',
+              required: true,
+              schema: { type: 'string', minLength: 1, maxLength: 255 },
+              description: 'A basename of at most 255 UTF-8 bytes, not a File System path.',
+            },
+            { name: 'format', in: 'query', required: true, schema: { enum: ['csv', 'parquet'] } },
+            {
+              name: 'header',
+              in: 'query',
+              schema: { enum: ['true', 'false'] },
+              description: 'Required for CSV; forbidden for Parquet.',
+            },
+            {
+              name: 'delimiter',
+              in: 'query',
+              schema: { enum: [',', '\t', ';', '|'] },
+              description: 'Required for CSV; forbidden for Parquet.',
+            },
+          ],
+          output: ref('FileExportPreparation'),
+        },
+      ),
+      requestBody: {
+        required: true,
+        content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+      },
+    },
+  },
+  [ws + '/database-imports']: {
+    post: operation(
+      'commitDatabaseImport',
+      'Confirm reviewed server rows and create a new database table',
+      'queries:execute on destination; Workspace files additionally require source files:read and files:analyze',
+      { input: ref('DatabaseImportInput'), output: ref('DatabaseImportResult') },
+    ),
+  },
+  [ws + '/file-exports/prepare']: {
+    post: operation(
+      'prepareFileExport',
+      'Parse an original file or Bash stream for explicit schema review',
+      'files:analyze',
+      {
+        input: ref('FileExportPreparationInput'),
+        output: ref('FileExportPreparation'),
+      },
+    ),
+  },
+  [ws + '/file-exports']: {
+    post: operation(
+      'exportFileContent',
+      'Copy original bytes, export Bash text or commit a confirmed database import',
+      'files:read',
+      {
+        input: ref('FileExportInput'),
+        output: ref('FileExportOutput'),
+      },
+    ),
+  },
+  [ws + '/result-exports']: {
+    post: operation(
+      'exportResult',
+      'Export a supplied result snapshot without rerunning its source query',
+      'Source database: queries:execute; source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant',
+      { input: ref('ResultExportInput'), output: ref('ResultExportOutput') },
+    ),
+  },
   [ws + '/queries']: {
     post: operation(
       'executeQuery',
@@ -743,6 +930,10 @@ paths['/api/health'] = {
     operationId: 'getHealth',
     security: [],
     responses: {
+      503: response(
+        ref('Error'),
+        'Configured metadata authority is unavailable; no fallback state is seeded',
+      ),
       200: response(
         object({ status: { const: 'ok' }, mode: { enum: ['demo', 'hybrid'] }, filesProvider: str }),
       ),
@@ -763,8 +954,28 @@ paths['/api/session'] = {
 };
 for (const [path, item] of Object.entries(paths))
   if (path.includes('{workspaceId}')) item.parameters = [workspaceId, ...(item.parameters || [])];
+for (const route of [
+  '/database-imports/prepare',
+  '/database-imports/prepare-upload',
+  '/database-imports',
+]) {
+  paths[ws + route].post.description +=
+    ' CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.';
+}
+paths[ws + '/file-exports/prepare'].post.description +=
+  ' Also requires files:read and the source File System grant. Fixed CSV/Parquet/text-line parsing, no scripts. Up to 16 MiB original or 1 MiB output text, 1000 rows/100 columns/1 MiB parsed data and 15 seconds, shared worker admission. Returns 20 sample rows and suggested field types with an actor-bound five-minute preparation. Parsing writes nothing. CSV keeps leading zeros and distinguishes quoted empty strings from NULL. Text lines are explicit one-column records.';
+paths[ws + '/file-exports'].post.description +=
+  ' Original copies require read access; Bash output requires read plus analyze. File targets require files:write and a target grant. Database commits require the exact actor preparation, confirmed=true, reviewed fields, source read/analyze and target queries:execute/grant. Original versions must match; single-use writes, no append/overwrite/retry. Output text is client-supplied authorization context, not attested command lineage. Only these two routes permit an 8 MiB JSON envelope for at most 1 MiB output text. Original downloads retain /files/content (local files use /files).';
+paths[ws + '/files/tabular-preview'].get.description +=
+  ' Fixed CSV/Parquet schema/sample only: accepts resourceId/path, no custom SQL or engine settings. Requires files:read, not files:analyze. Whole version-verified snapshot up to 16 MiB, 15 seconds and shared two-worker budget; at most 20 rows, 50 columns, 128 KiB. CSV types are inferred and totalRows unknown; Parquet count is metadata. No automatic retry. Download unsupported or over-budget files.';
 paths[ws + '/file-analyses'].post.description +=
-  ' Also requires files:read. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.';
+  ' Also requires files:read. Discover engines from capabilities: CSV supports DuckDB SQL over table file or Just Bash over its raw UTF-8 text. Bash exposes the selected absolute Workspace path; discover input.path, input.workingDirectory and compatibility aliases on its engine option. Paths refer only to the virtual selected-file snapshot. Parquet supports only DuckDB, and other recognized text only Just Bash. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.';
+paths[ws + '/result-exports'].post.description +=
+  ' Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.';
+paths[ws + '/result-exports'].post.responses[500] = response(
+  ref('Error'),
+  'Export may have completed but its activity record could not be saved',
+);
 const spec = {
   openapi: '3.1.0',
   info: {

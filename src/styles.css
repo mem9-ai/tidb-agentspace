@@ -511,63 +511,6 @@ small {
 .event-icon {
   color: var(--green);
 }
-.sql-toolbar {
-  padding: 20px 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--border);
-}
-.sql-toolbar .inline-controls {
-  min-width: 0;
-}
-.sql-database-select {
-  min-width: 240px;
-  max-width: 100%;
-}
-.sql-panel {
-  overflow: hidden;
-  margin-bottom: 16px;
-}
-.sql-input {
-  min-height: 280px;
-}
-.editor-loading {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 16px;
-  padding: 80px 24px;
-}
-.editor-bottom {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 12px 20px;
-  font-size: 13px;
-  border-top: 1px solid var(--border);
-}
-.sample-queries {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin: 16px 0 24px;
-}
-.sample-queries button {
-  color: var(--blue);
-  text-decoration: underline;
-  padding: 8px 0;
-}
-.result-footnote {
-  font-size: 13px;
-  color: var(--muted);
-  padding: 16px 24px;
-  border-top: 1px solid var(--border);
-}
 .file-system-summary {
   display: flex;
   align-items: center;
@@ -1077,16 +1020,6 @@ form > .modal-actions {
   }
   .file-toolbar .input-with-icon {
     width: 100%;
-  }
-  .sql-toolbar {
-    padding: 16px;
-  }
-  .sql-toolbar .inline-controls {
-    width: 100%;
-  }
-  .sql-database-select {
-    flex: 1;
-    min-width: 0;
   }
   .modal-actions > button {
     flex: 1;

@@ -7,10 +7,40 @@ import { tmpdir } from 'node:os';
 import { createApp } from './index.mjs';
 import { seed } from './store.mjs';
 import { openDuckdb } from './providers/duckdb-engine.mjs';
-import { runDuckdbWorker } from './providers/duckdb.mjs';
+import { runDuckdbWorker, createDuckdb } from './providers/duckdb.mjs';
 import { browseDuckdb } from './duckdb-browser.mjs';
 
 const base = '/api/v1/workspaces/ws_agentlab';
+test('DuckDB awaits credentials loaded by an asynchronous private metadata adapter', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'duckdb-meta-connection-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const extensionPath = join(directory, 'extension');
+  await writeFile(extensionPath, 'test-only-artifact');
+  const adapter = await createDuckdb({
+    credentialsFile: join(directory, 'unused.json'),
+    extensionPath,
+    extensionSha256: createHash('sha256').update('test-only-artifact').digest('hex'),
+    storeFactory: async () => ({
+      refresh: async () => {},
+      read: () => ({ bindings: { database: { state: 'ready', storageId: 'private-storage' } } }),
+    }),
+    drive9: {
+      async internalConnection(id) {
+        assert.equal(id, 'private-storage');
+        return { endpoint: 'https://api.drive9.ai', apiKey: 'fixture-private-token' };
+      },
+    },
+    execute: async ({ probe, connection }) => {
+      if (probe) return {};
+      assert.equal(connection.apiKey, 'fixture-private-token');
+      assert.equal(connection.endpoint, 'https://api.drive9.ai');
+      return { columns: ['checked'], rows: [{ checked: 1 }], rowCount: 1, affectedRows: 0 };
+    },
+  });
+  const result = await adapter.execute({ id: 'database', kind: 'duckdb' }, 'SELECT 1 AS checked');
+  assert.equal(result.rowCount, 1);
+  await adapter.close();
+});
 async function fixture(t) {
   const dir = await mkdtemp(join(tmpdir(), 'workspace-duckdb-'));
   t.after(() => rm(dir, { recursive: true, force: true }));

@@ -1,27 +1,32 @@
-import {
-  ActionIcon,
-  Alert,
-  Anchor,
-  Badge,
-  Button,
-  Group,
-  Popover,
-  Stack,
-  Text,
-} from '@tidbcloud/uikit';
-import { IconArrowLeft, IconArrowUpRight } from '@tidbcloud/uikit/icons';
+import { ActionIcon, Alert, Anchor, Button, Group, Text } from '@tidbcloud/uikit';
+import { IconArrowLeft, IconUpload01 } from '@tidbcloud/uikit/icons';
 import type { Resource } from '../../api/client';
-import { Heading } from '../../ui/WorkspaceHeading';
+import {
+  ResourceConnectButton,
+  ResourceDetails,
+  ResourceWorkspaceBar,
+  ResourceWorkspaceHeader,
+} from '../../ui/ResourceWorkspaceHeader';
 import { regionLabel } from '../resources/regions';
 
 export function DatabaseWorkspaceHeader({
   database,
+  databases,
+  busy,
+  onSelect,
   onConnect,
   onRetry,
+  onImport,
+  importDisabled,
 }: {
   database: Resource;
+  databases: Resource[];
+  busy: boolean;
+  onSelect: (id: string) => void;
   onConnect: () => void;
   onRetry: () => void;
+  onImport: () => void;
+  importDisabled: boolean;
 }) {
   const provider =
     database.provider === 'db9-anonymous'
@@ -32,74 +37,79 @@ export function DatabaseWorkspaceHeader({
           ? 'MySQL · TiDB Cloud Zero'
           : 'MySQL · Local demo';
   const expiry = database.expiresAt ? new Date(database.expiresAt) : null;
+  const live = ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
+    database.provider || '',
+  );
   return (
     <>
-      <header className="database-workspace-header">
-        <Group gap="sm" wrap="nowrap" className="database-workspace-identity">
-          <ActionIcon
-            component="a"
-            href="#databases"
-            size={48}
-            variant="subtle"
-            aria-label="All databases"
-            title="All databases"
-          >
-            <IconArrowLeft size={22} />
-          </ActionIcon>
-          <div>
-            <Heading level={1}>{database.name}</Heading>
-            <Text size="sm" c="carbon.7">
-              {provider}
-              {expiry && (
-                <>
-                  {' '}
-                  · Expires{' '}
-                  {expiry.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                </>
+      <ResourceWorkspaceHeader
+        title="Databases"
+        actions={
+          <>
+            <ActionIcon
+              component="a"
+              href="#databases"
+              variant="subtle"
+              aria-label="All databases"
+              title="All databases"
+            >
+              <IconArrowLeft size={18} />
+            </ActionIcon>
+            <ResourceDetails title="Database details">
+              <Text>{provider}</Text>
+              <Text>Status: {database.status}</Text>
+              <Text>Region: {regionLabel(database.region)}</Text>
+              {database.kind === 'postgresql' && (
+                <Text>
+                  db9 is PostgreSQL-compatible. NUMERIC supports up to 28–29 significant digits.{' '}
+                  <Anchor
+                    href="https://db9.ai/docs/sql/data-types/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Data type compatibility
+                  </Anchor>
+                </Text>
               )}
-            </Text>
-          </div>
-        </Group>
-        <Group gap="sm" className="database-workspace-actions">
-          {database.status !== 'active' && <Badge color="yellow">{database.status}</Badge>}
-          <Popover width={340} position="bottom-end" withinPortal trapFocus returnFocus>
-            <Popover.Target>
-              <Button variant="subtle">Details</Button>
-            </Popover.Target>
-            <Popover.Dropdown maw="calc(100vw - 32px)">
-              <Stack gap="sm">
-                <Heading level={2}>Database details</Heading>
-                <Text>{provider}</Text>
-                <Text>Region: {regionLabel(database.region)}</Text>
-                {database.kind === 'postgresql' && (
-                  <Text>
-                    db9 is PostgreSQL-compatible. NUMERIC supports up to 28–29 significant digits.{' '}
-                    <Anchor
-                      href="https://db9.ai/docs/sql/data-types/"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Data type compatibility
-                    </Anchor>
-                  </Text>
-                )}
-                {expiry && (
-                  <Text>
-                    Temporary database · Expires {expiry.toLocaleString()}. Export important data
-                    before expiry.
-                  </Text>
-                )}
-                {database.kind === 'duckdb' && (
-                  <Text>Persistent DuckDB with private backing storage.</Text>
-                )}
-              </Stack>
-            </Popover.Dropdown>
-          </Popover>
-          <Button onClick={onConnect} rightSection={<IconArrowUpRight size={16} />}>
-            Connect
-          </Button>
-        </Group>
-      </header>
+              {expiry && (
+                <Text>
+                  Temporary database · Expires {expiry.toLocaleString()}. Export important data
+                  before expiry.
+                </Text>
+              )}
+              {database.kind === 'duckdb' && (
+                <Text>Persistent DuckDB with private backing storage.</Text>
+              )}
+            </ResourceDetails>
+            <ResourceConnectButton onClick={onConnect} />
+            <Button
+              variant="filled"
+              leftSection={<IconUpload01 size={18} />}
+              disabled={busy || importDisabled || !live || database.status !== 'active'}
+              title={
+                !live || database.status !== 'active'
+                  ? 'Import requires an active live database.'
+                  : importDisabled
+                    ? 'Wait for the database to finish loading.'
+                    : undefined
+              }
+              onClick={onImport}
+            >
+              Import
+            </Button>
+          </>
+        }
+      >
+        <ResourceWorkspaceBar
+          resource={database}
+          resources={databases}
+          label="Database"
+          live={live}
+          mode={live ? 'Live' : 'Local demo'}
+          disabled={busy}
+          onSelect={onSelect}
+        />
+      </ResourceWorkspaceHeader>
       {(database.connectionError ||
         database.status === 'expired' ||
         database.status === 'provisioning') && (

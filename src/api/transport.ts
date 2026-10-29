@@ -42,6 +42,17 @@ export class WorkspaceApiError extends Error {
   }
 }
 
+export function uploadFailureMessage(error: unknown): string {
+  if (
+    error instanceof WorkspaceApiError &&
+    ['FILE_CONFLICT', 'FILE_CHANGED', 'FILE_EXISTS'].includes(error.code || '')
+  )
+    return 'A file with this name already exists or changed. Refresh the folder, then choose another name or open it to edit.';
+  return error instanceof Error
+    ? error.message
+    : 'Upload failed. Refresh the folder to check its status.';
+}
+
 export function createWorkspaceClient(
   origin: string,
   fetcher: typeof fetch = fetch,

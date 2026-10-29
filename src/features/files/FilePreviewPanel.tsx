@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActionIcon,
   Alert,
@@ -6,17 +6,22 @@ import {
   Button,
   Group,
   Paper,
-  Tabs,
   Text,
   Textarea,
   Loader,
 } from '@tidbcloud/uikit';
 import { IconArrowLeft, IconDownload01, IconXClose } from '@tidbcloud/uikit/icons';
 import { Heading } from '../../ui/WorkspaceHeading';
+import { WorkspaceResultPanel } from '../../ui/WorkspaceQueryResults';
+import { WorkspaceExportButton } from '../../ui/WorkspaceExportButton';
 import { FileContent, FilePreviewBoundary } from './FileContent';
-import { fileFormat } from './file-preview';
+import { fileFormat, isTabularFile } from './file-preview';
+import { TabularFilePreview, useTabularPreview } from './TabularFilePreview';
 import type { FileView } from './file-location';
 
+const FileExportDialog = lazy(() =>
+  import('../exports/FileExportDialog').then((module) => ({ default: module.FileExportDialog })),
+);
 const FileAnalysisPanel = lazy(() => import('./FileAnalysisPanel'));
 
 export default function FilePreviewPanel({
@@ -25,6 +30,7 @@ export default function FilePreviewPanel({
   initialView,
   onViewChange,
   content,
+  savedContent,
   size,
   loading = false,
   unavailableReason = '',
@@ -39,12 +45,15 @@ export default function FilePreviewPanel({
   onDownload,
   onKeepEditing,
   onDiscard,
+  onAnalysisRunningChange,
+  onExportSaved,
 }: {
   path: string;
   resourceId: string;
   initialView: FileView;
   onViewChange: (view: FileView) => void;
   content: string;
+  savedContent: string;
   size?: number;
   loading?: boolean;
   unavailableReason?: string;
@@ -59,8 +68,80 @@ export default function FilePreviewPanel({
   onDownload: () => void;
   onKeepEditing: () => void;
   onDiscard: () => void;
+  onAnalysisRunningChange: (running: boolean) => void;
+  onExportSaved: () => Promise<void>;
 }) {
   const [mode, setMode] = useState<string | null>(initialView);
+  const [expanded, setExpanded] = useState(initialView === 'analyze');
+  const [analysisRunning, setAnalysisRunning] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const reportRunning = useCallback(
+    (running: boolean) => {
+      setAnalysisRunning(running);
+      onAnalysisRunningChange(running);
+    },
+    [onAnalysisRunningChange],
+  );
+  const tabular = isTabularFile(path);
+  const tablePreview = useTabularPreview(resourceId, path, savedContent, tabular && !loading);
+  const fileActions = (
+    <Group gap="sm">
+      {dirty ? (
+        <Button
+          leftSection={<IconDownload01 size={18} />}
+          onClick={onDownload}
+          disabled={busy || loading}
+        >
+          Download draft
+        </Button>
+      ) : (
+        <WorkspaceExportButton
+          disabled={busy || analysisRunning || loading}
+          onClick={() => setExportOpen(true)}
+        />
+      )}
+      {(mode === 'source' || dirty) && (
+        <Button
+          variant="filled"
+          loading={busy}
+          disabled={!dirty || busy || loading || !!unavailableReason}
+          onClick={onSave}
+        >
+          Save changes
+        </Button>
+      )}
+    </Group>
+  );
+  const previewContent = loading ? (
+    <Group p="lg">
+      <Loader aria-label="Loading file content" />
+    </Group>
+  ) : tabular && !dirty ? (
+    <FilePreviewBoundary path={path} content={tablePreview.data?.fileVersion || tablePreview.error}>
+      <TabularFilePreview
+        {...tablePreview}
+        onRefresh={tablePreview.refresh}
+        disabled={busy || analysisRunning || dirty}
+      />
+    </FilePreviewBoundary>
+  ) : (
+    <div className="file-preview-content">
+      {unavailableReason ? (
+        <Alert color="yellow" title="Preview unavailable">
+          {unavailableReason} Use Export to download the file and open it in another tool.
+        </Alert>
+      ) : (
+        <FilePreviewBoundary path={path} content={content}>
+          <FileContent path={path} content={content} />
+        </FilePreviewBoundary>
+      )}
+    </div>
+  );
+  const preview = (
+    <WorkspaceResultPanel title={tabular ? 'Data preview' : 'Preview'} actions={fileActions}>
+      {previewContent}
+    </WorkspaceResultPanel>
+  );
   const title = useRef<HTMLSpanElement>(null);
   const header = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -88,10 +169,15 @@ export default function FilePreviewPanel({
       style={{ display: 'flex' }}
       withBorder
       className="file-preview-panel"
-      data-analysis={mode === 'analyze' || undefined}
+      data-workspace
       aria-labelledby="file-preview-title"
       onKeyDown={(event) => {
-        if (event.key === 'Escape' && !event.defaultPrevented) {
+        if (
+          event.key === 'Escape' &&
+          !event.defaultPrevented &&
+          event.target instanceof Node &&
+          event.currentTarget.contains(event.target)
+        ) {
           event.preventDefault();
           event.stopPropagation();
           onClose();
@@ -111,22 +197,43 @@ export default function FilePreviewPanel({
                 {path.split('/').pop()}
               </span>
             </Heading>
-            <Text size="sm" c="carbon.7" mt={8} className="file-preview-path">
+            <Text size="sm" c="carbon.7" mt={4} className="file-preview-path">
               {path}
             </Text>
           </div>
-          <ActionIcon aria-label="Close file preview" onClick={onClose} disabled={busy}>
-            <IconXClose size={20} />
-          </ActionIcon>
+          <Group gap={4} wrap="nowrap">
+            {fileFormat(path).kind !== 'parquet' && (
+              <Button
+                variant="subtle"
+                disabled={
+                  busy ||
+                  analysisRunning ||
+                  loading ||
+                  !!unavailableReason ||
+                  fileFormat(path).kind === 'parquet'
+                }
+                onClick={() => {
+                  const next = mode === 'source' ? 'preview' : 'source';
+                  setMode(next);
+                  onViewChange(next === 'source' ? next : expanded ? 'analyze' : 'preview');
+                }}
+              >
+                {mode === 'source' ? 'Back to preview' : 'Edit source'}
+              </Button>
+            )}
+            <ActionIcon aria-label="Close file preview" onClick={onClose} disabled={busy}>
+              <IconXClose size={20} />
+            </ActionIcon>
+          </Group>
         </Group>
-        <Group gap={10} mt={16}>
+        <Group gap={10} mt={8}>
           <Badge>
             {fileFormat(path).kind === 'code' ? 'Code' : fileFormat(path).kind.toUpperCase()}
           </Badge>
           <Text size="sm" c="carbon.7">
             {(dirty
               ? new TextEncoder().encode(content).length
-              : (size ?? new TextEncoder().encode(content).length)
+              : (tablePreview.data?.inputBytes ?? size ?? new TextEncoder().encode(content).length)
             ).toLocaleString()}{' '}
             bytes
           </Text>
@@ -149,75 +256,57 @@ export default function FilePreviewPanel({
           {error}
         </Alert>
       )}
-      <Tabs
-        value={mode}
-        onChange={(value) => {
-          setMode(value);
-          if (value === 'preview' || value === 'source' || value === 'analyze') onViewChange(value);
-        }}
-        className="file-preview-tabs"
-        style={{ display: 'flex', flexDirection: 'column' }}
-        keepMounted={false}
-      >
-        <Tabs.List px={24}>
-          <Tabs.Tab value="preview">Preview</Tabs.Tab>
-          <Tabs.Tab value="analyze">Analyze</Tabs.Tab>
-          <Tabs.Tab value="source" disabled={loading || !!unavailableReason}>
-            Edit source
-          </Tabs.Tab>
-        </Tabs.List>
-        <Tabs.Panel value="analyze" className="file-preview-content">
-          {dirty ? (
-            <Alert color="yellow">
-              Save or discard your draft before analyzing the saved file.
-            </Alert>
-          ) : (
-            <Suspense fallback={<Loader aria-label="Loading analysis" />}>
-              <FileAnalysisPanel key={resourceId + path} resourceId={resourceId} path={path} />
-            </Suspense>
-          )}
-        </Tabs.Panel>
-        <Tabs.Panel value="preview" className="file-preview-content">
-          {loading ? (
-            <Loader aria-label="Loading file content" />
-          ) : unavailableReason ? (
-            <Alert color="yellow" title="Preview unavailable">
-              {unavailableReason}
-            </Alert>
-          ) : (
-            <FilePreviewBoundary path={path} content={content}>
-              <FileContent path={path} content={content} />
-            </FilePreviewBoundary>
-          )}
-        </Tabs.Panel>
-        <Tabs.Panel value="source" className="file-preview-content">
-          <Textarea
-            label="File content"
-            aria-label="File content"
-            className="file-source-editor"
-            value={content}
-            onChange={(event) => onChange(event.currentTarget.value)}
-            spellCheck={false}
-            disabled={busy}
-            autosize
-            minRows={14}
-            maxRows={30}
+      <div hidden={mode === 'source'}>
+        <Suspense fallback={preview}>
+          <FileAnalysisPanel
+            key={resourceId + path}
+            resourceId={resourceId}
+            path={path}
+            savedContent={savedContent}
+            preview={preview}
+            expanded={expanded}
+            blocked={dirty || busy}
+            onExpandedChange={(value) => {
+              setExpanded(value);
+              onViewChange(value ? 'analyze' : 'preview');
+            }}
+            previewVersion={tablePreview.data?.fileVersion}
+            onRefreshPreview={tablePreview.refresh}
+            onRunningChange={reportRunning}
+            onExportSaved={onExportSaved}
           />
-        </Tabs.Panel>
-      </Tabs>
-      <footer className="file-preview-footer">
-        <Button leftSection={<IconDownload01 size={18} />} onClick={onDownload}>
-          {dirty ? 'Download draft' : 'Download'}
-        </Button>
-        <Button
-          variant="filled"
-          loading={busy}
-          disabled={!dirty || busy || loading || !!unavailableReason}
-          onClick={onSave}
-        >
-          Save changes
-        </Button>
-      </footer>
+        </Suspense>
+      </div>
+      <div hidden={mode !== 'source'}>
+        <WorkspaceResultPanel title="Edit source" actions={fileActions}>
+          <div className="file-preview-content">
+            <Textarea
+              label="File content"
+              aria-label="File content"
+              className="file-source-editor"
+              value={content}
+              onChange={(event) => onChange(event.currentTarget.value)}
+              spellCheck={false}
+              disabled={busy}
+              autosize
+              minRows={14}
+              maxRows={30}
+            />
+          </div>
+        </WorkspaceResultPanel>
+      </div>
+      {exportOpen && (
+        <Suspense fallback={<Loader aria-label="Loading original export" />}>
+          <FileExportDialog
+            source={{ kind: 'original', resourceId, path }}
+            sourcePath={path}
+            size={tablePreview.data?.inputBytes ?? size}
+            onDownloadOriginal={onDownload}
+            onClose={() => setExportOpen(false)}
+            onSaved={onExportSaved}
+          />
+        </Suspense>
+      )}
     </Paper>
   );
 }

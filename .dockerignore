@@ -11,3 +11,8 @@ release
 .DS_Store
 .cursor
 coverage
+
+# Native build caches and private local state are never container build inputs.
+.data
+meta-service/target
+target

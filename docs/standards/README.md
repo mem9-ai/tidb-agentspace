@@ -50,8 +50,31 @@ from DuckDB/Just Bash library support; preserve the Workspace credential and sel
 For DuckDB integrations, read [private database storage](../decisions/0008-duckdb-private-storage.md) and [the runtime guide](../duckdb-databases.md). Backing filesystems are internal bindings, not public resources or Key targets.
 For DuckDB file queries, follow [ADR 0009](../decisions/0009-duckdb-file-sources.md) and the runtime guide's source contract. Database and every File System require separate resource authorization plus query/read/analyze actions; never forward source-provider credentials into customer SQL.
 
+For File System Analyze, follow [ADR 0014](../decisions/0014-file-analysis-engine-options.md):
+file format is distinct from available methods. Discover per-engine capabilities, allow
+CSV SQL or raw-text Bash explicitly, and preserve ADR 0010's single-file authorization/isolation.
+For Bash path identity, follow [ADR 0015](../decisions/0015-bash-workspace-paths.md): preserve
+the selected Workspace path in its virtual snapshot and use discovered metadata for safely quoted samples.
+Keep initial samples filled with absolute paths; expose the quoted current-file variable only
+when supported, following [ADR 0016](../decisions/0016-bash-selected-file-variable.md).
+
 For PostgreSQL through db9, read [ADR 0011](../decisions/0011-db9-postgres.md) and
 [the runtime guide](../db9-postgres.md). Preserve the private anonymous/native credential boundary
 and distinguish provider compatibility limits from gateway value preservation.
 
+For database Import, read [ADR 0023](../decisions/0023-database-import-workspace.md),
+the accepted [GH-103 specification](../../specs/gh-103/spec.md) and
+[verification/API usage](../database-import-verification.md). Local uploads require only the
+destination query grant; Workspace files additionally require source read/analyze grants.
+Preserve the explicit review, destination-bound preparation and create-only write boundaries.
+
 For DuckDB browsing performance, follow [ADR 0012](../decisions/0012-duckdb-catalog-reader.md): reuse only bounded server-generated read-only catalog sessions. Do not turn customer SQL or file-source workers into shared sessions to reduce attachment cost. Measure cold and warm paths separately and retain authorization on every request.
+
+For preview-first file UI and bounded tabular samples, follow
+[ADR 0017](../decisions/0017-preview-first-file-workspace.md) and the
+[TiUI file workspace rule](tiui-design-system.md#theme-responsive-behavior-and-interaction).
+Fixed preview uses read permission; custom SQL/Bash retains explicit analyze permission.
+
+For backend language, module boundaries or service composition, follow [ADR 0020](../decisions/0020-modular-rust-backend.md)
+and [the Rust migration contract](../../specs/gh-88/spec.md). Rust is the accepted target;
+Node is retained only for regression oracles/tooling; fresh record metadata and native packaging follow [ADR 0024](../decisions/0024-fresh-record-metadata.md).

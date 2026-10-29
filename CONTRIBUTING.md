@@ -69,9 +69,9 @@ and the repository's quality gates. Use the [feature specification template](doc
 for new capabilities or consequential changes; a small fix can use a reproduction and
 regression test. Existing review and merge authority remains governed by the CI/CD policy.
 
-Start on GitHub with an [intent](https://github.com/siddontang/tidb.ai/issues/new?template=01-intent.yml),
-[bounded task](https://github.com/siddontang/tidb.ai/issues/new?template=02-task.yml), or
-[acceptance case](https://github.com/siddontang/tidb.ai/issues/new?template=03-acceptance.yml).
+Start on GitHub with an [intent](https://github.com/mem9-ai/tidb.ai/issues/new?template=01-intent.yml),
+[bounded task](https://github.com/mem9-ai/tidb.ai/issues/new?template=02-task.yml), or
+[acceptance case](https://github.com/mem9-ai/tidb.ai/issues/new?template=03-acceptance.yml).
 Follow the [GitHub contribution workflow](docs/standards/github-contribution-workflow.md):
 refine the intent, merge a specification PR, implement against that revision in a separate
 PR, evaluate the candidate, and complete the agreed delivery endpoint. A design PR references
@@ -127,9 +127,9 @@ concrete reason; use existing platform capabilities where sufficient.
 | `npm run lint`                                | Check code, with zero warnings allowed                                         |
 | `npm run typecheck`                           | Check strict frontend TypeScript                                               |
 | `npm run build:console`                       | Build only the static Console in `dist/console/`                               |
-| `npm run build:api`                           | Build only the dependency-free API in `dist/api/`                              |
+| `npm run build:api`                           | Build the hosted-compatible Node API runtime closure                           |
 | `npm run dev:console` / `npm run dev:api`     | Run either development process independently                                   |
-| `npm run start:console` / `npm run start:api` | Run built Console / source API separately                                      |
+| `npm run start:console` / `npm run start:api` | Run built Console / hosted-compatible Node API separately                      |
 | `npm run api:generate`                        | Regenerate OpenAPI and Console client types from the contract source           |
 | `npm run api:check`                           | Fail if OpenAPI or generated client types have drifted; does not rewrite files |
 | `npm test`                                    | Run API and repository-tool behavior tests with isolated temporary data        |
@@ -140,6 +140,20 @@ repeatable on clean machines and must not need cloud secrets, paid resources, or
 contributor's `.data/` directory. Add regression tests for behavior changes. For UI changes,
 inspect desktop and narrow layouts, keyboard behavior, loading/error/empty states, and provide
 screenshots. If a check cannot run, report the specific gap instead of claiming success.
+
+## Rust backend modules
+
+Use the root Cargo workspace, pinned `rust-toolchain.toml` and root `Cargo.lock`.
+`npm run backend:build` verifies/prepares the pinned official static DuckDB library and builds the Rust modules. For direct Cargo commands, run `npm run backend:prepare` first; see the Rust runtime guide for supported native targets. Explicit native development launchers require
+`WORKSPACE_BACKEND_CONFIG` pointing to the private regional deployment; they never fall back
+to another backend or seed another data file. `npm run backend:check` runs workspace format/Clippy/tests and real isolated S3/native API tests in addition to `npm run check`. The already installed hosted Node API and its JSON/vault persistence remain supported under [ADR 0025](docs/decisions/0025-consolidated-runtime-profiles.md); it is not a fallback for native startup or a rollback for native storage. Fresh installations follow [ADR 0024](docs/decisions/0024-fresh-record-metadata.md), replacing the retired document/import bridge. See [the Rust guide](docs/rust-backend.md) for module composition, private plans and explicit empty-Workspace bootstrap.
+
+`backend:check` checks formatting before compiling. Its individual phases are available as
+`backend:fmt`, `backend:build`, `backend:clippy`, `backend:test` and `backend:test:integration`;
+the latter requires the built executables and installed RustFS. For a compilation report,
+run `npm run backend:build -- --timings`. CI runs the same complete gate in separate steps;
+see [Rust cache and timing evidence](docs/ci-cd.md#rust-build-cache-and-timing-evidence) for
+cache boundaries and measurement.
 
 ## Commits and review
 
@@ -165,6 +179,6 @@ Keep frontend and backend independently buildable and runnable in one repository
 [independent delivery](docs/independent-delivery.md) for configuration and packaging and
 [ADR 0005](docs/decisions/0005-independent-console-and-api.md) for the accepted boundary.
 
-See [CI/CD policy](docs/ci-cd.md). The repository is hosted at `siddontang/tidb.ai` and GitHub
+See [CI/CD policy](docs/ci-cd.md). The repository is hosted at `mem9-ai/tidb.ai` and GitHub
 CI is running. Branch protections, required reviewers, deployment environments, and a real
 hosting target are not configured by the workflow files themselves.

@@ -1,5 +1,9 @@
 # ADR 0011: Anonymous db9 PostgreSQL behind Workspace Keys
 
+Runtime/storage amendment: [ADR 0020](0020-modular-rust-backend.md) selects the Rust backend;
+[ADR 0024](0024-fresh-record-metadata.md) replaces the original JSON vault/runtime with
+individual encrypted Meta records. Original integration evidence below remains historical.
+
 - Status: accepted in PR #41; implemented for owner-requested integration, 2026-10-28.
 - Parent: [GH-40](../../specs/gh-40/spec.md). See [runtime guide](../db9-postgres.md) and [verification](../db9-verification.md).
 

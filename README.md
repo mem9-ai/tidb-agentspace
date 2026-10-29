@@ -1,45 +1,51 @@
 # TiDB Agent Workspace
 
-An independent developer and agent console with real MySQL through TiDB Cloud Zero, db9 PostgreSQL, persistent DuckDB databases, and TiDB Cloud File System.
+An independent Workspace for developers and agents to use databases and files through one scoped Workspace Key. The Console is React/TiUI; the installed hosted API uses Node with SSO, while the native regional API/Meta profile uses Rust. MySQL, opt-in db9 PostgreSQL, native DuckDB and independent File Systems have separate provider capabilities and credential boundaries.
 
-New to the repository? Read [start-here.md](start-here.md) for the project goals, current
-state, reading route, source map, and the path from an Issue to verified delivery.
+Start with [start-here.md](start-here.md), [contribution rules](CONTRIBUTING.md) and [architecture](docs/architecture.md). Proposed hosted multi-tenancy and production identity remain distinct from the current trusted loopback development profile.
 
-## Run locally
+## Hosted Studio and runtime selection
 
-Use Node **24.22.1** and npm **11.6.2**. See [CONTRIBUTING.md](CONTRIBUTING.md) for version-manager setup. Shared agent instructions are in [AGENTS.md](AGENTS.md).
+The hosted Node API retains TiDB Account SSO and `/studio` routing. [`.env.example`](.env.example) documents issuer, public client, callback and owner grants. Verified-email rules grant shared workspace ownership; they do not create separate customer tenants. Existing main-only API CD preserves its JSON/vault volume; native Rust/SlateDB cutover is a separate migration. See [the integration boundary](docs/decisions/0025-consolidated-runtime-profiles.md).
+
+## Local setup
+
+Use the exact Node/npm versions in `.node-version` and `package.json`, Rust from `rust-toolchain.toml`, and installed RustFS 1.0.4.
 
 ```sh
 npm ci
-npm run dev
+npm run backend:build
+npm run meta:local -- init --directory .data/meta-runtime --api-port 4318
+npm run meta:local -- serve --directory .data/meta-runtime
 ```
 
-Open http://127.0.0.1:5173. The API listens on 127.0.0.1:4318. Both bind only to loopback. There is no sign-in screen; the frontend obtains a local owner session. Session state is in memory and resets when the server restarts. Workspace contents persist under the ignored `.data/` directory.
+Then run `npm run dev:console` in another terminal and open http://127.0.0.1:5173. The operator starts independent Global and regional Meta roles and the regional API. First creation produces an empty Workspace with no cloud provisioning or sample resources. Subsequent starts reuse its versioned encrypted SlateDB/S3 records. No JSON import is required or supported.
 
-```sh
-npm run check
-npm run preview
+Provider configuration lives in private `.data/meta-runtime/rust-api.json`, under `product.providers`:
+
+```json
+{
+  "filesProvider": "drive9-anonymous",
+  "mysqlProvider": "tidb-cloud-zero",
+  "postgresProvider": "db9-anonymous"
+}
 ```
 
-`preview` serves only the built Console at http://127.0.0.1:4173. Start the API separately with
-`npm run start:api`. Console requests and agent examples use the API origin in `/config.json`.
-Run `npm run api:generate` after contract changes to generate both OpenAPI and client types.
+These modes enable explicit resource creation in the Console; startup does not provision instances. Defaults use local demo files/MySQL with PostgreSQL disabled. Native DuckDB also requires a separately verified tidbfs extension under `product.compute`. The service manages native credentials internally; callers use scoped Workspace Keys. See [Rust configuration](docs/rust-backend.md), [db9](docs/db9-postgres.md), [MySQL](docs/starter-sql-verification.md) and [DuckDB](docs/duckdb-databases.md) for boundaries and limits.
 
-The frontend and backend build and run independently in this repository:
+## Build and verification
 
-| Component | Build                   | Development           | Run built output                           |
-| --------- | ----------------------- | --------------------- | ------------------------------------------ |
-| Console   | `npm run build:console` | `npm run dev:console` | `npm run start:console`                    |
-| API       | `npm run build:api`     | `npm run dev:api`     | `cd dist/api` then `node server/index.mjs` |
+| Component       | Build                    | Run                                                                  |
+| --------------- | ------------------------ | -------------------------------------------------------------------- |
+| Console         | `npm run build:console`  | `npm run start:console` or static hosting                            |
+| Rust API / Meta | `npm run build:api:rust` | `workspace-backend serve --config /absolute/private/deployment.json` |
 
-The API build requires only Node and no frontend dependencies. The Console output is static;
-its API origin can change without rebuilding JavaScript. See [independent delivery](docs/independent-delivery.md)
-for configuration, separate artifacts, contract checks, and current deployment limits.
+`npm run check` runs the shared Node/Console quality gate. `npm run backend:check` runs the Rust and real isolated S3/API/native artifact suites. The hosted-compatible Node API also builds with `npm run build:api` and starts with `npm run start:api`; its runtime closure stays independent of the Console. See [ADR 0025](docs/decisions/0025-consolidated-runtime-profiles.md) for the explicit storage/rollout boundary.
 
-To enable real Singapore anonymous File System creation (explicit opt-in):
+`npm run package -- FULL_REVIEWED_SOURCE_SHA` packages a reviewed clean native backend and separate Console assets with source SHA and checksums. Configuration and credentials remain outside artifacts. Console `/config.json` selects the API origin. Follow [independent delivery](docs/independent-delivery.md) and [CI/CD policy](docs/ci-cd.md).
 
 ```sh
-WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run dev
+WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run dev:api:node
 ```
 
 Create a File System in the Console. The backend provisions the trial and retains its internal
@@ -52,7 +58,7 @@ private storage, recovery, and live verification instructions.
 Enable anonymous database creation alongside the Singapore File System:
 
 ```sh
-WORKSPACE_MYSQL_PROVIDER=tidb-cloud-zero WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run dev
+WORKSPACE_MYSQL_PROVIDER=tidb-cloud-zero WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run dev:api:node
 ```
 
 Create a MySQL database in the Console, then open its SQL editor. The backend creates the
@@ -106,7 +112,7 @@ See [runtime setup and recovery](docs/duckdb-databases.md) and
 
 Unbound database instances and chart series are simulated and labeled in the UI. Demo SQL supports only `SELECT 1 [AS connected]` and `SELECT * FROM agent_events [LIMIT n]`; this is not a MySQL or PostgreSQL server. Legacy/local files remain text in JSON. File Systems marked `drive9-anonymous` store their content in the real Singapore service, with internal tokens in a separate owner-only ignored file. Database usage is not metered; local filesystem allowances are a reference snapshot. Live trial storage usage, quotas, and billing are not measured. One Workspace Key works across its permitted database and file APIs. Both action scopes and resource IDs are enforced; selected resources do not automatically expand to future resources. Path-level policies and native protocol gateways are not implemented.
 
-Persistent Starter provisioning, production secret management, native protocol gateways, real telemetry, MCP, sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). This loopback-only guest server is for local validation, not public deployment.
+Persistent Starter provisioning, production secret management, native protocol gateways, real telemetry, MCP, multi-tenant sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). The native loopback guest profile remains for local validation. Hosted Node SSO is an explicitly configured shared workspace, without customer/team isolation.
 
 The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, and TiUI SQL Editor 0.0.6. Shared overrides preserve 16px body text, 48px primary controls, spacious layouts, and Light/Dark/System modes. Inter is self-hosted. See the [TiUI standard](docs/standards/tiui-design-system.md) for compatibility, extension rules, and [migration verification](docs/tiui-migration-verification.md).
 
@@ -126,7 +132,7 @@ The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, 
 - `server/api.test.mjs`: behavior tests using temporary state and isolated ports.
 - `docs/architecture.md`: product model, page design, backend boundaries, integration strategy, and release acceptance criteria.
 
-The live adapter creates real anonymous trials only when enabled and explicitly requested. CI uses injected provider fixtures and never provisions cloud resources. Local credential files are not encrypted; public deployment is unsupported.
+The live adapter creates real anonymous trials only when enabled and explicitly requested. CI uses injected provider fixtures and never provisions cloud resources. Hosted Node credential vaults remain private plaintext files on the existing volume; native SlateDB credentials use the encrypted record profile. Multi-tenant native public deployment remains separate work.
 
 ## Collaboration and delivery
 
@@ -137,7 +143,7 @@ delivery. Start a specification with [the feature template](docs/templates/featu
 The autonomous harness remains proposed; existing quality and delivery policies apply.
 
 Use the [GitHub contribution workflow](docs/standards/github-contribution-workflow.md) to take
-an [intent Issue](https://github.com/siddontang/tidb.ai/issues/new?template=01-intent.yml)
+an [intent Issue](https://github.com/mem9-ai/tidb.ai/issues/new?template=01-intent.yml)
 through a specification PR, bounded implementation tasks, evaluation, and delivery. Different
 agents can take successive roles against the same accepted Git revision. Native Issue forms
 support intent, tasks, and acceptance cases; automatic dispatch is not yet implemented.

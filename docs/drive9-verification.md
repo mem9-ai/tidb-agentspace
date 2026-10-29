@@ -47,3 +47,53 @@ available for download, without image/PDF rendering. Multipart, redirects, and e
 files are not supported by this first adapter. Database provisioning/SQL and chart telemetry
 remain simulated. Trial storage quota, total usage, and billing are unmeasured rather than
 reported as zero. See [ADR 0004](decisions/0004-drive9-anonymous-provider.md).
+
+## Upload progress and recovery (GH-99)
+
+Owner correction, implemented 2026-10-29 on base `6d124ece96790d08dbcb06036b798fda0fb2f63d`.
+The File System entry is Upload; Import remains the parsed database-ingestion operation.
+`use-file-upload.ts` owns a persistent file/path status, and `FileUploadStatus` uses TiUI
+Paper, Loader and Progress. The generated API client still owns routes, raw/JSON serialization,
+credentials and structured errors; its upload transport uses real XMLHttpRequest upload
+events, a bounded 120-second acknowledgement timeout and no automatic retry. The percentage
+describes request transfer to the Workspace API, not upstream Drive9 persistence. Unknown
+length and the subsequent Saving phase expose indeterminate progress without `aria-valuenow`;
+only an acknowledged write produces Upload complete. Post-write refresh errors retain success
+and explain recovery. Local-demo text uploads use the same feedback and retain existing limits.
+
+Transport regression tests verify exact binary bytes, generated/encoded paths, cookies,
+conditional-create headers, actual progress versus acknowledgement, unknown/zero lengths,
+403/409/413/502 structured errors, network/timeout failure, cancellation and no automatic retry.
+Collision-code presentation retains other service errors. No API, backend, provider credentials,
+dependencies or transfer limits changed.
+
+Browser checks used an isolated fixture on a hostname separate from the active preview.
+An ignored verification proxy delayed acknowledgement by 18 seconds; production code has no
+artificial delay or timer-based percentage. Both Light/Dark were checked at 1280×800 and
+390×844: a progress bar remains visible while saving, Upload/resource actions stay disabled,
+completion re-enables them, unknown save progress has no numeric ARIA value, and narrow page
+width remains 390px. Browser tests also checked preflight size rejection, a network disconnect,
+structured service rejection, acknowledged-write/failed-refresh recovery and local text upload.
+Intermediate 50% progress and timeout/cancel behavior are covered by the transport tests;
+loopback transfers were too fast to retain a useful intermediate-percentage screenshot.
+
+Live browser proof used the existing Singapore anonymous trial and generated files in
+`/upload-verification-1793269965383/`, without provisioning a resource or exposing credentials.
+The 147-byte Markdown uploaded, rendered and downloaded byte-for-byte. A same-name upload
+was rejected by conditional create. A 614,400-byte binary also uploaded and downloaded with
+identical original bytes. SHA-256 checksums were respectively
+`438bad01e2d651d40ee984f7e7fe322fd425b7b32510229a048af7efa3f360a9` and
+`3c7e7ecba97572f06d6792084bf56a8b2e428534e1e36f0bdf009facfac29512`. These generated files remain available for manual inspection.
+The later live proof does not change the historical capability claims above.
+
+Screenshots:
+
+- [Saving, Dark desktop](screenshots/upload-status/saving-dark-1280.png)
+- [Saving, Light desktop](screenshots/upload-status/saving-light-1280.png)
+- [Saving, Dark narrow](screenshots/upload-status/saving-dark-390.png)
+- [Saving, Light narrow](screenshots/upload-status/saving-light-390.png)
+- [Network failure, Dark narrow](screenshots/upload-status/network-error-dark-390.png)
+- [Live upload and Markdown preview](screenshots/upload-status/live-markdown-dark-1280.png)
+
+The PR records the final complete quality gate, exact head, remote CI and local preview handoff.
+Multipart/resume, provider-side progress and bulk uploads remain outside this change.

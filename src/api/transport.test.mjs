@@ -5,7 +5,21 @@ import {
   resolveApiOrigin,
   responseData,
   WorkspaceApiError,
+  uploadFailureMessage,
 } from './transport.ts';
+
+test('conditional upload conflicts give actionable recovery without hiding unrelated service errors', () => {
+  for (const code of ['FILE_CONFLICT', 'FILE_CHANGED', 'FILE_EXISTS'])
+    assert.match(
+      uploadFailureMessage(new WorkspaceApiError('Generic provider error.', 409, code)),
+      /another name/,
+    );
+  assert.equal(
+    uploadFailureMessage(new WorkspaceApiError('Access denied.', 403, 'INSUFFICIENT_SCOPE')),
+    'Access denied.',
+  );
+  assert.match(uploadFailureMessage(null), /Refresh the folder/);
+});
 
 test('runtime API configuration validates the origin and supports same-origin gateways', () => {
   assert.equal(

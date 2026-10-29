@@ -13,6 +13,9 @@ import { parseSources, stageSources } from './duckdb-sources.mjs';
 import { browseDatabase, demoColumns, demoRows } from './database-browser.mjs';
 import { readUpload, previewFile, downloadFile } from './file-transfer.mjs';
 import { canAccessResource, normalizeResourceGrant } from './access-policy.mjs';
+import { createFileExports } from './file-exports.mjs';
+import { fileExportLimits } from './file-export-contract.mjs';
+import { createExportAuthorizer } from './export-authorization.mjs';
 import { createFileAnalysis } from './file-analysis.mjs';
 import { createAnalysisSnapshot } from './file-analysis-snapshot.mjs';
 import {
@@ -33,6 +36,7 @@ import {
   randomToken,
   publicSsoInfo,
 } from './sso.mjs';
+import { exportResult, createExportFile } from './result-exports.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 export const allowedScopes = [
@@ -76,14 +80,14 @@ function cleanPath(value) {
     fail(400, 'INVALID_PATH', 'Use an absolute path without . or .. segments.');
   return value.replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
 }
-async function body(req) {
+async function body(req, limit = 1024 * 1024) {
   if (!String(req.headers['content-type']).startsWith('application/json'))
     fail(415, 'JSON_REQUIRED', 'Send Content-Type: application/json.');
   let bytes = 0,
     chunks = [];
   for await (const chunk of req) {
     bytes += chunk.length;
-    if (bytes > 1024 * 1024) fail(413, 'BODY_TOO_LARGE', 'Request exceeds 1 MiB.');
+    if (bytes > limit) fail(413, 'BODY_TOO_LARGE', `Request exceeds ${limit} bytes.`);
     chunks.push(chunk);
   }
   let parsed;
@@ -98,6 +102,7 @@ async function body(req) {
 }
 export async function createApp({
   dataFile = process.env.WORKSPACE_DATA_FILE || resolve(root, '.data/workspace.json'),
+  storeFactory,
   allowedOrigins = consoleOrigins(),
   publicOrigins = trustedOrigins(),
   trustedProxyList = trustedProxies(),
@@ -123,27 +128,32 @@ export async function createApp({
   publicPath = publicPathPrefix(publicPath);
   if (!['local', drive9Provider].includes(filesProvider))
     throw new Error('Unknown File System provider.');
+  if (!['local', zeroProvider].includes(mysqlProvider)) throw new Error('Unknown MySQL provider.');
+  if (!['disabled', db9Provider].includes(postgresProvider))
+    throw new Error('Unknown PostgreSQL provider.');
+  const persistence = storeFactory || createStore;
   const drive9 = await createDrive9({
     credentialsFile: dataFile + '.providers.json',
+    storeFactory: persistence,
     transport: drive9Transport,
   });
-  if (!['local', zeroProvider].includes(mysqlProvider)) throw new Error('Unknown MySQL provider.');
   const zero = await createZero({
     credentialsFile: dataFile + '.databases.json',
+    storeFactory: persistence,
     transport: zeroTransport,
     execute: sqlExecute,
   });
   const duckdb = await createDuckdb({
     credentialsFile: dataFile + '.duckdb.json',
+    storeFactory: persistence,
     drive9,
     extensionPath: duckdbExtensionPath,
     extensionSha256: duckdbExtensionSha256,
     execute: duckdbExecute,
   });
-  if (!['disabled', db9Provider].includes(postgresProvider))
-    throw new Error('Unknown PostgreSQL provider.');
   const db9 = await createDb9({
     credentialsFile: dataFile + '.db9.json',
+    storeFactory: persistence,
     transport: db9Transport,
     execute: postgresExecute,
   });
@@ -171,7 +181,7 @@ export async function createApp({
     availableCapabilities.filesystem.storageGiB = null;
     availableCapabilities.filesystem.maxFiles = null;
   }
-  const store = await createStore(dataFile);
+  const store = await persistence(dataFile);
   // Session store. Value: { expiresAt, principal, principalId, kind }. `kind` is 'demo' for the
   // local demo session and 'sso' for a verified TiDB Account session (distinct principal id).
   const sessions = new Map();
@@ -240,6 +250,7 @@ export async function createApp({
     runner: analysisRunner,
     ...analysisOptions,
   });
+  const fileExports = createFileExports({ analysis: fileAnalysis });
   function visibleState() {
     const state = store.read();
     const retired = new Set(
@@ -279,9 +290,9 @@ export async function createApp({
     } catch (error) {
       info = {
         ...(resource.provider === db9Provider
-          ? db9.status(resource.id)
+          ? await db9.status(resource.id)
           : resource.provider === zeroProvider
-            ? zero.status(resource.id)
+            ? await zero.status(resource.id)
             : resource.provider === duckdbProvider
               ? await duckdb.status(resource.id)
               : {}),
@@ -310,6 +321,11 @@ export async function createApp({
       if (applyHttpPolicy(req, res, allowedOrigins, fail, publicOrigins)) return;
       const url = new URL(req.url, `http://${req.headers.host}`),
         path = url.pathname;
+      if (path === '/openapi.json' && req.method === 'GET') {
+        const schema = JSON.parse(await readFile(resolve(root, 'public/openapi.json'), 'utf8'));
+        return send(200, schema);
+      }
+      await store.refresh?.();
       if (path === '/api/health' && req.method === 'GET')
         return send(200, {
           status: 'ok',
@@ -324,10 +340,6 @@ export async function createApp({
               : 'demo',
           filesProvider,
         });
-      if (path === '/openapi.json' && req.method === 'GET') {
-        const schema = JSON.parse(await readFile(resolve(root, 'public/openapi.json'), 'utf8'));
-        return send(200, schema);
-      }
       if (path === '/api/session' && req.method === 'POST') {
         await body(req);
         // When SSO is configured, the anonymous demo session is disabled so it cannot bypass
@@ -662,6 +674,7 @@ export async function createApp({
       }
       if (
         (route === '/file-analyses/capabilities' && req.method === 'GET') ||
+        (route === '/files/tabular-preview' && req.method === 'GET') ||
         (route === '/file-analyses' && req.method === 'POST')
       ) {
         requireScope('files:read');
@@ -676,15 +689,119 @@ export async function createApp({
         const onClose = () => controller.abort();
         res.on('close', onClose);
         try {
-          const result = execute
-            ? await fileAnalysis.execute(resource, input, controller.signal)
-            : await fileAnalysis.capabilities(
-                resource,
-                input.path,
-                AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
-              );
+          const result =
+            route === '/files/tabular-preview'
+              ? await fileAnalysis.preview(resource, input, controller.signal)
+              : execute
+                ? await fileAnalysis.execute(resource, input, controller.signal)
+                : await fileAnalysis.capabilities(
+                    resource,
+                    input.path,
+                    AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]),
+                  );
           if (execute) await recordFile('file.analyzed', resource.id, input.path, principal);
           return send(200, result);
+        } finally {
+          res.off('close', onClose);
+        }
+      }
+      if (
+        [
+          '/result-exports',
+          '/file-exports',
+          '/file-exports/prepare',
+          '/database-imports',
+          '/database-imports/prepare',
+          '/database-imports/prepare-upload',
+        ].includes(route) &&
+        req.method === 'POST'
+      ) {
+        const uploadImport = route === '/database-imports/prepare-upload';
+        const input = uploadImport
+          ? await readUpload(req)
+          : await body(
+              req,
+              route === '/result-exports' || route.startsWith('/database-imports')
+                ? 1024 * 1024
+                : fileExportLimits.envelopeBytes,
+            );
+        const authorize = createExportAuthorizer({
+          readState: visibleState,
+          sessions,
+          sessionToken,
+          isOwner,
+          principalId,
+          providers: {
+            filesystem: drive9Provider,
+            mysql: zeroProvider,
+            postgresql: db9Provider,
+            duckdb: duckdbProvider,
+          },
+          fail,
+        });
+        const record = async (target, rowCount) => {
+          try {
+            await store.mutate((draft) =>
+              event(
+                draft,
+                route.startsWith('/database-imports')
+                  ? 'database.imported'
+                  : route === '/result-exports'
+                    ? 'result.exported'
+                    : 'file.exported',
+                `${target.path || target.table}${rowCount === undefined ? '' : ` (${rowCount} rows)`}`,
+                principal,
+                target.resourceId,
+              ),
+            );
+          } catch {
+            fail(
+              500,
+              'EXPORT_RECORD_FAILED',
+              'The export completed, but its activity record could not be saved. Inspect the destination before retrying.',
+            );
+          }
+        };
+        const controller = new AbortController();
+        const onClose = () => controller.abort();
+        res.on('close', onClose);
+        try {
+          const context = {
+            actor: isOwner ? `session:${sessionToken}` : `key:${principalId}`,
+            authorize,
+            cleanPath,
+            signal: controller.signal,
+            createFile: (options) => createExportFile({ ...options, store, drive9 }),
+            execute: (resource, sql, signal, options) =>
+              options?.databaseImport && resource.provider === duckdbProvider
+                ? duckdb.importStatement(resource, sql, signal)
+                : databaseAdapter(resource).execute(resource, sql, signal),
+            record,
+          };
+          if (uploadImport)
+            return send(
+              200,
+              await fileExports.prepareImport(Object.fromEntries(url.searchParams), context, input),
+            );
+          if (route === '/database-imports/prepare')
+            return send(200, await fileExports.prepareImport(input, context));
+          if (route === '/database-imports')
+            return send(200, await fileExports.commitImport(input, context));
+          if (route === '/file-exports/prepare')
+            return send(200, await fileExports.prepare(input, context));
+          if (route === '/file-exports') return send(200, await fileExports.export(input, context));
+          return send(
+            200,
+            await exportResult(input, {
+              authorize,
+              cleanPath,
+              signal: controller.signal,
+              createFile: (options) => createExportFile({ ...options, store, drive9 }),
+              execute: (resource, sql, signal) =>
+                databaseAdapter(resource).execute(resource, sql, signal),
+              record,
+            }),
+          );
         } finally {
           res.off('close', onClose);
         }
@@ -1082,9 +1199,16 @@ export async function createApp({
       });
     }
   });
+  let cleanup;
   app.on('close', () => {
-    void duckdb.close();
+    fileExports.close();
+    cleanup = Promise.allSettled([duckdb.close(), persistence.close?.()]);
   });
+  const close = app.close.bind(app);
+  app.close = (callback) =>
+    close((error) => {
+      Promise.resolve(cleanup).then(() => callback?.(error));
+    });
   return app;
 }
 export async function startServer(options = {}) {
@@ -1092,12 +1216,20 @@ export async function startServer(options = {}) {
   if (!['127.0.0.1', '0.0.0.0'].includes(host))
     throw new Error('WORKSPACE_API_HOST must be 127.0.0.1 or 0.0.0.0.');
   const server = await createApp(options);
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(options.port ?? Number(process.env.WORKSPACE_API_PORT || 4318), host, resolve);
-  });
-  console.log(`Workspace API: http://${host}:${server.address().port}`);
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(options.port ?? Number(process.env.WORKSPACE_API_PORT || 4318), host, resolve);
+    });
+  } catch (error) {
+    await new Promise((resolve) => server.close(resolve));
+    throw error;
+  }
+  console.log(
+    `Workspace API: http://${host}:${server.address().port} (loopback Workspace gateway)`,
+  );
   return server;
 }
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
   await startServer();

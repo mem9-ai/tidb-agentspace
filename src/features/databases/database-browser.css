@@ -1,9 +1,3 @@
-.database-workspace {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  align-items: start;
-  gap: 16px;
-}
 .database-data {
   display: flex;
   flex-direction: column;
@@ -11,8 +5,10 @@
   min-width: 0;
 }
 .database-table-list nav {
-  max-height: 600px;
-  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.database-table-list .workspace-browser-identity svg {
+  flex-shrink: 0;
 }
 .database-section-header {
   display: flex;
@@ -39,112 +35,49 @@
   max-height: 240px;
   overflow: auto;
 }
-@media (max-width: 1000px) {
-  .database-workspace {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .database-table-list nav {
-    max-height: 240px;
-  }
-}
-
 .database-editor-area {
   min-width: 0;
   scroll-margin-top: 100px;
 }
-.database-workspace > .database-table-list {
-  position: sticky;
-  top: 104px;
+.database-detail {
+  margin-bottom: 0;
 }
-.database-workspace .sql-database-select {
-  min-width: 0;
-  width: 220px;
-}
-@media (max-width: 1000px) {
-  .database-workspace > .database-table-list {
-    position: static;
-  }
-}
-
-.workspace-content.database-content {
-  padding-top: 20px;
-  padding-bottom: 20px;
-}
-.database-workspace-header {
+.database-table-columns {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-.database-workspace-identity {
+  flex-direction: column;
+  gap: 12px;
   min-width: 0;
+  margin: 0 0 8px 20px;
+  padding: 12px;
+  border-left: 1px solid var(--border);
 }
-.database-workspace-identity > div {
+.database-column-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.database-column-list li + li {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.database-column-list li {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.database-workspace-actions {
+.database-column-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.database-column-name > code {
+  min-width: 0;
+  flex: 1;
+  font-size: 16px;
+}
+.database-column-name > :last-child:not(code) {
   flex-shrink: 0;
 }
-.database-workspace .panel {
-  margin-bottom: 0;
-}
-.database-workspace .sql-panel {
-  margin-bottom: 12px;
-  --workspace-sql-content-min-height: 100%;
-  --workspace-sql-content-padding: 12px 0;
-  --workspace-sql-editor-height: clamp(120px, calc(35dvh - 130px), 180px);
-}
-.database-workspace .sql-panel-expanded {
-  --workspace-sql-editor-height: 420px;
-}
-.database-workspace .sql-input {
-  min-height: 0;
-}
-.database-workspace .sql-toolbar {
-  padding: 12px 16px;
-}
-.database-workspace .editor-bottom {
-  padding: 0 12px 0 16px;
-  gap: 4px 12px;
-  align-items: center;
-}
-.sql-editor-tools {
-  display: flex;
-  align-items: center;
-  gap: 0;
-}
-.database-workspace .panel-header {
-  padding: 12px 20px;
-}
-.database-workspace .result-panel .table-scroll {
-  max-height: clamp(220px, calc(100dvh - 590px), 420px);
-  overflow: auto;
-}
-.database-workspace .result-footnote {
-  padding: 10px 20px;
-}
-.database-workspace .database-table-list nav {
-  max-height: min(600px, calc(100dvh - 370px));
-}
-@media (max-width: 1000px) {
-  .database-workspace .database-table-list nav {
-    max-height: 160px;
-  }
-}
-@media (max-width: 700px) {
-  .database-workspace-header {
-    flex-wrap: wrap;
-  }
-  .database-workspace-actions {
-    width: 100%;
-    justify-content: flex-end;
-  }
-  .database-workspace .sql-panel {
-    --workspace-sql-editor-height: 180px;
-  }
-  .database-workspace .sql-panel-expanded {
-    --workspace-sql-editor-height: 360px;
-  }
+.database-column-list p > code {
+  font-size: 13px;
 }

@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "rustCrate": "1.20000.1",
+  "source": "https://github.com/duckdb/duckdb/releases/tag/v2.0.0",
+  "artifacts": {
+    "aarch64-apple-darwin": {
+      "platform": "darwin",
+      "arch": "arm64",
+      "asset": "duckdb-static-libs-osx-arm64.tar.gz",
+      "sha256": "c3a571e6d4a0da97534c631df463ab13c07f8cf78049625f5df936b7beaab9ce",
+      "files": {
+        "libduckdb_static.a": "17ecfc7c2d7d776de2d1ebb023184e79e1ff1edd49c93da8c80068919a7ec1c9",
+        "libcore_functions_extension.a": "ef13dd5eb899c58d7c73529bdacae580cd73863b0640214d6d1a7f10299520ee",
+        "libjson_extension.a": "bdc9b24b590f685885b127014531501569fb68e60d92dbde3863bbc84a18e7ef",
+        "libparquet_extension.a": "4e237e1c55c5db427c2942b06524f1f49da92a27b060aba7992a7ac205cfb0d4",
+        "libduckdb_loadable_extensions.a": "d986754a5a38440af85d0ce81a1664aae90c6d9895243ef5d97d2768dbfb260b",
+        "duckdb.h": "8dbc9c71a10f0a75fcacc1a3f4f7c76093a84d232fc152222ee5b6e512ab4560"
+      },
+      "size": 29034230
+    },
+    "x86_64-unknown-linux-gnu": {
+      "platform": "linux",
+      "arch": "x64",
+      "asset": "duckdb-static-libs-linux-amd64.tar.gz",
+      "sha256": "112d62c980f5447cd303a70b3dacbc09acd41ccb4ef6d154e8629f543a0f8568",
+      "files": {
+        "libduckdb_static.a": "88b820b7b04de5a780a08977ed5f4267f8dd2a684320ae65242ae9fe8e052143",
+        "libcore_functions_extension.a": "39d4d867069c644ecefd1686a177cdda792c58c4901b4b481bb9a227052a8e4d",
+        "libjson_extension.a": "7e9a435a0d6fcc214f103986f90e2f4e9dc5599cda476478a60449dfa6458f88",
+        "libparquet_extension.a": "17a99142c8188a1ab08686a87769a691db91285bab6306d5f4936848b5bcc27c",
+        "libduckdb_loadable_extensions.a": "994d997abdb10768834d2f83685a4b70ac4ac4377a78f8f1f7f5a9bc62f1fa61",
+        "duckdb.h": "8dbc9c71a10f0a75fcacc1a3f4f7c76093a84d232fc152222ee5b6e512ab4560"
+      },
+      "size": 33584665
+    }
+  }
+}
