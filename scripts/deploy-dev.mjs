@@ -27,6 +27,10 @@ export function deployDev({ namespace, deployment, container, image }, kubectl) 
     throw new Error('Existing container must have a digest-pinned image for rollback.');
   if (previous.readinessProbe?.httpGet?.path !== '/api/health')
     throw new Error('Existing container must have an HTTP readiness probe for /api/health.');
+  if (initial.spec.template.metadata?.annotations?.['workspace.tidb.ai/runtime'] !== 'rust-v1')
+    throw new Error(
+      'Bootstrap the native target and its private configuration before image-only delivery.',
+    );
   if (!initial.metadata?.uid || !initial.metadata.resourceVersion)
     throw new Error('Deployment identity is missing; no resources were changed.');
 

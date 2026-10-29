@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createApp } from './index.mjs';
+import { createApp } from './regression-api.mjs';
 import { capabilities, createStore, seed } from './store.mjs';
 import { createHash } from 'node:crypto';
 

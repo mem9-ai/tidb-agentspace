@@ -1,8 +1,10 @@
+mod http_policy;
+mod sso;
 use anyhow::{Result, bail};
 use axum::{
     Extension, Json, Router,
     body::to_bytes,
-    extract::{Request, State},
+    extract::{ConnectInfo, Request, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -46,6 +48,12 @@ pub struct Config {
     pub initialize_workspace: bool,
     pub metadata: MetaBinding,
     pub insecure_loopback: bool,
+    #[serde(default)]
+    pub public_origins: Vec<String>,
+    #[serde(default)]
+    pub public_path: String,
+    #[serde(default)]
+    pub sso: Option<sso::Config>,
     pub console_origins: Vec<String>,
     pub recover_writer_owner: Option<String>,
     #[serde(default)]
@@ -53,15 +61,31 @@ pub struct Config {
 }
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
-        let result: Self = serde_json::from_slice(&private_file(path)?)
+        let mut result: Self = serde_json::from_slice(&private_file(path)?)
             .map_err(|_| anyhow::anyhow!("Invalid private Workspace configuration"))?;
+        if result.sso.is_none() {
+            result.sso = sso::Config::environment()?;
+        }
+        if let Ok(path) = std::env::var("WORKSPACE_PUBLIC_PATH") {
+            result.public_path = path;
+        }
+        for name in ["TIDB_PUBLIC_ORIGIN", "WORKSPACE_TRUSTED_ORIGINS"] {
+            if let Ok(value) = std::env::var(name) {
+                result.public_origins.extend(
+                    value
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_owned),
+                );
+            }
+        }
         result.validate()?;
         Ok(result)
     }
     pub fn validate(&self) -> Result<()> {
         let result = self;
-        if !result.insecure_loopback
-            || !result.bind.ip().is_loopback()
+        if (result.insecure_loopback && !result.bind.ip().is_loopback())
             || !result.bind.is_ipv4()
             || result.workspace_id.is_empty()
             || !result.authority_id.starts_with("region:")
@@ -77,15 +101,7 @@ impl Config {
             }
             _ => {}
         }
-        for origin in &result.console_origins {
-            let url = reqwest::Url::parse(origin)?;
-            if url.scheme() != "http"
-                || !["localhost", "127.0.0.1"].contains(&url.host_str().unwrap_or_default())
-                || url.origin().ascii_serialization() != *origin
-            {
-                bail!("Console origins must be exact HTTP loopback origins");
-            }
-        }
+        http_policy::validate(self)?;
         if let Some(product) = &self.product {
             product.validate()?;
         }
@@ -93,11 +109,17 @@ impl Config {
     }
 }
 #[derive(Clone)]
+struct Session {
+    expires: Instant,
+    credential: Credential,
+}
+#[derive(Clone)]
 struct App {
     workspace: Arc<Workspace>,
     product: Option<Arc<workspace_product::Product>>,
     config: Config,
-    sessions: Arc<Mutex<BTreeMap<String, Instant>>>,
+    sessions: Arc<Mutex<BTreeMap<String, Session>>>,
+    sso: Option<Arc<sso::Runtime>>,
     capacity: Arc<Semaphore>,
 }
 pub struct WorkspaceServer {
@@ -129,6 +151,12 @@ impl WorkspaceServer {
         } else {
             None
         };
+        let sso = config
+            .sso
+            .clone()
+            .map(sso::Runtime::new)
+            .transpose()?
+            .map(Arc::new);
         Ok(Self {
             workspace: workspace.clone(),
             listener,
@@ -136,6 +164,7 @@ impl WorkspaceServer {
                 workspace,
                 product,
                 config,
+                sso,
                 sessions: Arc::new(Mutex::new(BTreeMap::new())),
                 capacity: Arc::new(Semaphore::new(8)),
             },
@@ -149,17 +178,26 @@ impl WorkspaceServer {
             .fallback(any(handle))
             .layer(middleware::from_fn_with_state(self.app.clone(), policy))
             .with_state(self.app);
-        axum::serve(self.listener, router)
-            .with_graceful_shutdown(stop)
-            .await?;
+        axum::serve(
+            self.listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(stop)
+        .await?;
         Ok(())
     }
 }
 fn error(error: ServiceError) -> Response {
     let message = match error.code.as_str() {
-        "UNAUTHENTICATED" => "Start a local demo session or provide a workspace API key.",
+        "UNAUTHENTICATED" => "Sign in or provide a scoped Workspace Key.",
         "INVALID_KEY" => "API key is invalid, expired, or revoked.",
-        "OWNER_REQUIRED" => "This action requires the local owner session.",
+        "OWNER_REQUIRED" => "This action requires the workspace owner session.",
+        "SSO_REQUIRED" => "Sign in with your TiDB Account.",
+        "SSO_NOT_AUTHORIZED" => "This account is not authorized for this workspace.",
+        "SSO_VERIFICATION_FAILED" => "Could not verify the TiDB Account sign-in.",
+        "SSO_STATE_INVALID" | "SSO_STATE_MISMATCH" => "Start TiDB Account sign-in again.",
+        "SSO_UNAVAILABLE" => "TiDB Account sign-in is unavailable.",
+        "SSO_RATE_LIMITED" => "Too many sign-in attempts. Try again shortly.",
         "NOT_FOUND" => "Workspace or endpoint not found.",
         "INVALID_IMPORT" => "Choose a database, a CSV/Parquet source and explicit parsing options.",
         "IMPORT_TARGET_MISMATCH" => {
@@ -215,22 +253,14 @@ fn reject(status: u16, code: &str) -> ServiceError {
 }
 async fn policy(State(app): State<App>, mut request: Request, next: Next) -> Response {
     let headers = request.headers();
-    let host = headers
-        .get("host")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or_default();
-    let hostname = host.split(':').next().unwrap_or_default();
     let origin = headers
         .get("origin")
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
-    let allowed = origin
-        .as_ref()
-        .is_none_or(|o| app.config.console_origins.contains(o) || o == &format!("http://{host}"));
-    let mut response = if !["localhost", "127.0.0.1"].contains(&hostname) {
-        error(reject(403, "LOCAL_ONLY"))
-    } else if !allowed {
-        error(reject(403, "ORIGIN_DENIED"))
+    let policy_result = http_policy::allowed(&app.config, headers, request.method());
+    let allowed = policy_result.is_ok();
+    let mut response = if let Err(e) = policy_result {
+        error(e)
     } else if request.method() == Method::OPTIONS {
         let method = headers
             .get("access-control-request-method")
@@ -329,7 +359,12 @@ async fn dispatch(
     request: Request,
     cancellation: tokio_util::sync::CancellationToken,
 ) -> std::result::Result<Response, ServiceError> {
-    let path = request.uri().path().to_owned();
+    let path = request
+        .uri()
+        .path()
+        .strip_prefix(&format!("{}/", app.config.public_path))
+        .map(|p| format!("/{p}"))
+        .unwrap_or_else(|| request.uri().path().to_owned());
     let method = request.method().clone();
     let headers = request.headers().clone();
     let prefix = format!("/api/v1/workspaces/{}", app.config.workspace_id);
@@ -346,6 +381,20 @@ async fn dispatch(
             .query_pairs()
             .into_owned()
             .collect();
+    if path.starts_with("/api/auth/") {
+        return Ok(auth_route(
+            &app,
+            &path,
+            &method,
+            &headers,
+            &query,
+            request
+                .extensions()
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|v| v.0),
+        )
+        .await);
+    }
     // Reject another Workspace before reading metadata or constructing a principal.
     if path != "/api/health"
         && path != "/api/session"
@@ -362,6 +411,10 @@ async fn dispatch(
         }
         return Ok(Json(json!({"status":"ok","mode":"demo","filesProvider":"local","migrationProfile":"workspace-keys-only"})).into_response());
     }
+    let peer = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|v| v.0.ip());
     let bytes = tokio::time::timeout(
         Duration::from_secs(10),
         to_bytes(
@@ -405,21 +458,38 @@ async fn dispatch(
     };
     if path == "/api/session" && method == Method::POST {
         body()?;
+        if app.sso.is_some() {
+            return Err(reject(403, "SSO_REQUIRED"));
+        }
+        if !app.config.insecure_loopback || !peer.is_some_and(|ip| ip.is_loopback()) {
+            return Err(reject(403, "LOCAL_ONLY"));
+        }
         app.workspace.health().await?;
         let token = secret(32)?;
         let now = Instant::now();
         let mut sessions = app.sessions.lock().await;
-        sessions.retain(|_, expires| *expires > now);
+        sessions.retain(|_, session| session.expires > now);
         if sessions.len() >= 4096 {
             return Err(reject(429, "SESSION_BUSY"));
         }
-        sessions.insert(token.clone(), now + Duration::from_secs(28800));
+        sessions.insert(
+            token.clone(),
+            Session {
+                expires: now + Duration::from_secs(28800),
+                credential: Credential::SessionOwner {
+                    id: "local-owner".into(),
+                    actor: "You".into(),
+                    expires_at: chrono::Utc::now().timestamp() + 28800,
+                },
+            },
+        );
         let mut response =
             Json(json!({"workspaceId":app.config.workspace_id,"mode":"demo"})).into_response();
         response.headers_mut().insert(
             "Set-Cookie",
             HeaderValue::from_str(&format!(
-                "aw_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800"
+                "aw_session={token}; HttpOnly; SameSite=Strict; Path={}/; Max-Age=28800",
+                app.config.public_path
             ))
             .expect("hex cookie"),
         );
@@ -461,10 +531,7 @@ async fn dispatch(
                     } else {
                         json!({})
                     };
-                    let actor = headers
-                        .get("cookie")
-                        .and_then(|v| v.to_str().ok())
-                        .unwrap_or_default();
+                    let actor = cookie(&headers, "aw_session").unwrap_or_default();
                     let condition = headers
                         .get(if raw_upload {
                             "if-none-match"
@@ -512,14 +579,10 @@ async fn credential(
                 .find_map(|v| v.strip_prefix("aw_session="))
         });
     if let Some(token) = token
-        && app
-            .sessions
-            .lock()
-            .await
-            .get(token)
-            .is_some_and(|expires| *expires > Instant::now())
+        && let Some(session) = app.sessions.lock().await.get(token)
+        && session.expires > Instant::now()
     {
-        return Ok(Credential::LocalDemoOwner);
+        return Ok(session.credential.clone());
     }
     Err(reject(401, "UNAUTHENTICATED"))
 }
@@ -586,4 +649,124 @@ fn product_response(
             Ok(response)
         }
     }
+}
+
+fn cookie<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers
+        .get("cookie")?
+        .to_str()
+        .ok()?
+        .split(';')
+        .map(str::trim)
+        .find_map(|v| v.strip_prefix(&format!("{name}=")))
+}
+fn redirect(location: &str) -> Response {
+    (StatusCode::FOUND, [("Location", location)]).into_response()
+}
+fn set_cookie(response: &mut Response, value: String) {
+    if let Ok(value) = HeaderValue::from_str(&value) {
+        response.headers_mut().append("Set-Cookie", value);
+    }
+}
+async fn auth_route(
+    app: &App,
+    path: &str,
+    method: &Method,
+    headers: &HeaderMap,
+    query: &BTreeMap<String, String>,
+    peer: Option<SocketAddr>,
+) -> Response {
+    if path == "/api/auth/config" && *method == Method::GET {
+        return Json(if app.sso.is_some(){json!({"enabled":true,"provider":"tidbcloud","label":"Continue with TiDB Account","loginPath":"/api/auth/tidbcloud/login","logoutPath":"/api/auth/tidbcloud/logout"})}else{json!({"enabled":false})}).into_response();
+    }
+    let secure = if app.config.sso.as_ref().is_some_and(|c| c.secure()) {
+        " Secure;"
+    } else {
+        ""
+    };
+    let session_cookie = |token: &str, age: u32| {
+        format!(
+            "aw_session={token}; HttpOnly; SameSite=Strict;{secure} Path={}/; Max-Age={age}",
+            app.config.public_path
+        )
+    };
+    if path == "/api/auth/tidbcloud/logout" && [Method::GET, Method::POST].contains(method) {
+        if let Some(token) = cookie(headers, "aw_session") {
+            app.sessions.lock().await.remove(token);
+        }
+        let mut response = if *method == Method::GET && app.sso.is_some() {
+            redirect(
+                &app.config
+                    .sso
+                    .as_ref()
+                    .expect("configured")
+                    .post_login(&app.config.public_path),
+            )
+        } else {
+            Json(json!({"loggedOut":true})).into_response()
+        };
+        set_cookie(&mut response, session_cookie("", 0));
+        return response;
+    }
+    let Some(sso) = &app.sso else {
+        return error(reject(404, "SSO_NOT_CONFIGURED"));
+    };
+    let flow_cookie = |token: &str, age: u32| {
+        format!(
+            "aw_sso_flow={token}; HttpOnly; SameSite=Lax;{secure} Path={}/api/auth/tidbcloud; Max-Age={age}",
+            app.config.public_path
+        )
+    };
+    if path == "/api/auth/tidbcloud/login" && *method == Method::GET {
+        // Forwarded/Host headers never establish the source address for throttling.
+        let source = peer
+            .map(|p| p.ip().to_string())
+            .unwrap_or_else(|| "unknown".into());
+        return match sso.login(&source).await {
+            Ok((url, flow)) => {
+                let mut r = redirect(&url);
+                set_cookie(&mut r, flow_cookie(&flow, 600));
+                r
+            }
+            Err(e) => error(e),
+        };
+    }
+    if path == "/api/auth/tidbcloud/callback" && *method == Method::GET {
+        let result = sso
+            .callback(cookie(headers, "aw_sso_flow").unwrap_or_default(), query)
+            .await;
+        let mut response = match result {
+            Err(e) => error(e),
+            Ok(credential) => {
+                let now = Instant::now();
+                let mut sessions = app.sessions.lock().await;
+                sessions.retain(|_, s| s.expires > now);
+                if let Some(old) = cookie(headers, "aw_session") {
+                    sessions.remove(old);
+                }
+                if sessions.len() >= 4096 {
+                    error(reject(429, "SESSION_BUSY"))
+                } else {
+                    match secret(32) {
+                        Err(e) => error(e),
+                        Ok(token) => {
+                            sessions.insert(
+                                token.clone(),
+                                Session {
+                                    expires: now + Duration::from_secs(28800),
+                                    credential,
+                                },
+                            );
+                            let mut r = redirect(&sso.config.post_login(&app.config.public_path));
+                            set_cookie(&mut r, session_cookie(&token, 28800));
+                            r
+                        }
+                    }
+                }
+            }
+        };
+        set_cookie(&mut response, flow_cookie("", 0));
+        return response;
+    }
+    error(reject(404, "NOT_FOUND"))
 }

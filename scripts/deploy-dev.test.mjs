@@ -24,7 +24,10 @@ function fixture({
     image: previousImage,
     readinessProbe: { httpGet: { path: '/api/health', port: 'http' } },
   };
-  const template = { spec: { containers: [container], volumes: [{ name: 'persistent-data' }] } };
+  const template = {
+    metadata: { annotations: { 'workspace.tidb.ai/runtime': 'rust-v1' } },
+    spec: { containers: [container], volumes: [{ name: 'persistent-data' }] },
+  };
   const calls = [];
   const metadata = { uid: 'owned-deployment', resourceVersion: '1' };
   const externalImage = `registry.example/api@sha256:${'c'.repeat(64)}`;
@@ -190,7 +193,8 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
     readFileSync(new URL('../.github/workflows/dev-cd.yml', import.meta.url), 'utf8'),
   );
   assert.deepEqual(workflow.on.push, { branches: ['main'] });
-  assert.equal(workflow.on.workflow_dispatch, null);
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.operation.options, ['inspect', 'deploy']);
+  assert.equal(workflow.on.workflow_dispatch.inputs.operation.default, 'inspect');
   assert.equal(workflow.jobs.resolve, undefined);
   assert.equal(
     workflow.jobs.deploy.if,
@@ -222,8 +226,15 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
   const releaseBuild = workflow.jobs.deploy.steps.find((step) =>
     step.run?.includes('docker buildx build'),
   );
-  assert.match(releaseBuild.run, /--platform linux\/amd64,linux\/arm64/);
+  assert.match(releaseBuild.run, /--platform linux\/amd64/);
   assert.match(releaseBuild.run, /--metadata-file/);
   assert.match(releaseBuild.run, /--push/);
   assert.equal(workflow.jobs.deploy.steps.at(-1).run, 'node scripts/deploy-dev.mjs');
+});
+
+test('image delivery refuses a legacy target before mutation', () => {
+  const f = fixture();
+  delete f.template.metadata.annotations;
+  assert.throws(() => deployDev(config, f.kubectl), /Bootstrap the native target/);
+  assert.equal(f.calls.length, 1);
 });

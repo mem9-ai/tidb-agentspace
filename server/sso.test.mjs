@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateKeyPair, SignJWT, exportJWK } from 'jose';
-import { createApp } from './index.mjs';
+import { createApp } from './regression-api.mjs';
 import { loadSsoConfig, createPkcePair, publicSsoInfo, resolveIdentity } from './sso.mjs';
 import { trustedProxies, clientSource } from './http-policy.mjs';
 import { exportFixture } from './test-support/export-fixture.mjs';

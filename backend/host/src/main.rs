@@ -24,10 +24,16 @@ async fn main() -> Result<()> {
         workspace_compute::worker_entry().await?;
         return Ok(());
     }
-    if args.len() != 3 || args[0] != "serve" || args[1] != "--config" {
+    if args.len() != 3
+        || !["serve", "initialize"].contains(&args[0].as_str())
+        || args[1] != "--config"
+    {
         bail!("Use workspace-backend serve --config <private-deployment.json>");
     }
     let plan = plan::Plan::load(Path::new(&args[2]))?;
+    if args[0] == "initialize" {
+        return initialize(plan).await;
+    }
     let (meta_stop, meta_receiver) = watch::channel(false);
     let (api_stop, api_receiver) = watch::channel(false);
     let mut metadata: BTreeMap<String, Arc<MetaService>> = BTreeMap::new();
@@ -114,5 +120,52 @@ async fn main() -> Result<()> {
             );
         }
     }
+    Ok(())
+}
+
+// Explicit one-time bootstrap. No listeners are published and no old storage is imported.
+async fn initialize(plan: plan::Plan) -> Result<()> {
+    let mut metadata: BTreeMap<String, Arc<MetaService>> = BTreeMap::new();
+    let result: Result<()> = async {
+        for role in plan.metadata {
+            if !role.initialize {
+                bail!("Initialization plan must explicitly initialize every metadata role");
+            }
+            let authority = role.config.authority_id.clone();
+            let service =
+                MetaService::open(role.config, true, role.recover_owner.as_deref()).await?;
+            metadata.insert(authority, Arc::new(service));
+        }
+        for config in plan.workspaces {
+            if !config.initialize_workspace {
+                bail!("Initialization plan must explicitly initialize the Workspace");
+            }
+            let port: Arc<dyn Metadata> = match &config.metadata {
+                MetaBinding::InProcess { authority_id } => metadata
+                    .get(authority_id)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("Missing native metadata"))?,
+                MetaBinding::Remote { .. } => {
+                    bail!("Hosted bootstrap requires explicit in-process authority ownership")
+                }
+            };
+            let server = WorkspaceServer::open(config, port).await?;
+            server.workspace.health().await?;
+            server.workspace.close().await?;
+        }
+        Ok(())
+    }
+    .await;
+    let mut close_error = false;
+    for service in metadata.values() {
+        if service.close().await.is_err() {
+            close_error = true;
+        }
+    }
+    result?;
+    if close_error {
+        bail!("Bootstrap ownership release was not confirmed");
+    }
+    println!("Fresh native metadata and Workspace initialized; ownership released.");
     Ok(())
 }

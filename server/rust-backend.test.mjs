@@ -6,7 +6,7 @@ import { createWriteStream } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import http from 'node:http';
-import { createApp } from './index.mjs';
+import { createApp } from './regression-api.mjs';
 import { seed } from './store.mjs';
 import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
 import { metadataCertificates } from './test-support/meta-tls.mjs';

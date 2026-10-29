@@ -1,3 +1,4 @@
+// Test-only Node behavioral oracle. The product runtime is backend/host.
 import { publicPathPrefix } from './http-policy.mjs';
 import http from 'node:http';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
@@ -1211,25 +1212,3 @@ export async function createApp({
     });
   return app;
 }
-export async function startServer(options = {}) {
-  const host = options.host ?? process.env.WORKSPACE_API_HOST ?? '127.0.0.1';
-  if (!['127.0.0.1', '0.0.0.0'].includes(host))
-    throw new Error('WORKSPACE_API_HOST must be 127.0.0.1 or 0.0.0.0.');
-  const server = await createApp(options);
-  try {
-    await new Promise((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(options.port ?? Number(process.env.WORKSPACE_API_PORT || 4318), host, resolve);
-    });
-  } catch (error) {
-    await new Promise((resolve) => server.close(resolve));
-    throw error;
-  }
-  console.log(
-    `Workspace API: http://${host}:${server.address().port} (loopback Workspace gateway)`,
-  );
-  return server;
-}
-
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
-  await startServer();

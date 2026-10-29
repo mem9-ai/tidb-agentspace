@@ -49,8 +49,8 @@ follow its task-specific references before implementation. Keep detailed rules c
 - Customers use one Workspace Key for the public product API, with both action and resource
   permissions. The service manages upstream cloud keys and native data credentials internally.
   Never require customers to supply provider keys or expose those secrets to a browser or agent.
-- Keep demo behavior visibly labeled. This guest prototype binds to loopback; public hosting,
-  real cloud provisioning, payments, and production identity require explicit implementation.
+- Keep demo behavior visibly labeled. Local guest sessions bind to actual loopback peers; hosted SSO requires explicit trusted origins and owner grants.
+  Real cloud provisioning, payments and multi-tenant identity remain capability-specific.
 - Enforce authorization in the backend. Cover cross-workspace/resource access, scopes,
   expiration, and revocation when changing authorization. A UI restriction is insufficient.
 - Keep the Console and API independently buildable, runnable, and packageable in this repository.
@@ -72,7 +72,7 @@ follow its task-specific references before implementation. Keep detailed rules c
   domain types and `unknown` at untrusted boundaries; avoid `any` and unchecked casts.
 - Backend business services target Rust under [ADR 0020](docs/decisions/0020-modular-rust-backend.md):
   shared domain modules support in-process and independently deployed service composition.
-  Follow [the migration contract](specs/gh-88/spec.md); Node ESM under `server/` remains the existing hosted SSO runtime and the native regression oracle; follow [the consolidated runtime boundary](docs/decisions/0025-consolidated-runtime-profiles.md).
+  Follow [the migration contract](specs/gh-88/spec.md); Node ESM under `server/` remains a test-only regression oracle. Rust owns SSO/public hosting under [the native hosted boundary](docs/decisions/0026-native-hosted-studio.md); follow [native deployment](docs/native-studio-deployment.md).
   Fresh storage follows [ADR 0024](docs/decisions/0024-fresh-record-metadata.md); do not restore document import/handoff paths. Keep Node build/test tooling ESM.
 - Use PascalCase for React components/types, camelCase for functions/variables, and descriptive
   kebab-case for new non-component files. Follow established public API field names.

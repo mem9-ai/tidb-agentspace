@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { createApp } from './index.mjs';
+import { createApp } from './regression-api.mjs';
 import { createStore, seed } from './store.mjs';
 import { createFileAnalysis } from './file-analysis.mjs';
 import { createAnalysisSnapshot } from './file-analysis-snapshot.mjs';

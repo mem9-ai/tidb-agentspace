@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { createApp } from './index.mjs';
+import { createApp } from './regression-api.mjs';
 
 const contract = JSON.parse(
   await readFile(new URL('../public/openapi.json', import.meta.url), 'utf8'),
@@ -76,6 +76,9 @@ test('standalone API responses conform to every declared JSON operation, includi
     return { result, response };
   }
   await request('/api/health');
+  await request('/api/auth/config');
+  await request('/api/auth/tidbcloud/logout', 'post');
+  await request('/api/auth/tidbcloud/logout');
   const session = await request('/api/session', 'post', {});
   cookie = session.response.headers.get('set-cookie').split(';')[0];
   const workspace = '/workspaces/{workspaceId}';
@@ -263,7 +266,16 @@ test('standalone API responses conform to every declared JSON operation, includi
         .filter(([method]) => ['get', 'post', 'put', 'patch', 'delete'].includes(method))
         .map(([, operation]) => operation.operationId),
     )
-    .filter((id) => !['uploadFile', 'downloadFile', 'prepareDatabaseImportUpload'].includes(id));
+    .filter(
+      (id) =>
+        ![
+          'uploadFile',
+          'downloadFile',
+          'prepareDatabaseImportUpload',
+          'startTidbLogin',
+          'completeTidbLogin',
+        ].includes(id),
+    );
   assert.deepEqual([...covered].sort(), allJsonOperations.sort());
   const validateBootstrap = ajv.compile({
     ...contract.components.schemas.Bootstrap,

@@ -432,7 +432,7 @@ function App() {
           {route === 'api' && <ApiExplorer {...shared} />}
           {route === 'monitoring' && <Monitoring {...shared} />}
           {route === 'billing' && <Billing {...shared} />}
-          {route === 'settings' && <WorkspaceSettings {...shared} />}
+          {route === 'settings' && <WorkspaceSettings {...shared} sso={sso} />}
         </div>
       </WorkspaceLayout>
       {toast && (
@@ -2245,7 +2245,7 @@ function Billing({ data }: Shared) {
     </>
   );
 }
-function WorkspaceSettings({ data, refresh, notify, copy }: Shared) {
+function WorkspaceSettings({ data, refresh, notify, copy, sso }: Shared & { sso: SsoAuthConfig }) {
   const [name, setName] = useState(data.profile.name),
     [workspaceName, setWorkspaceName] = useState(data.workspace.name),
     [description, setDescription] = useState(data.workspace.description),
@@ -2307,9 +2307,9 @@ function WorkspaceSettings({ data, refresh, notify, copy }: Shared) {
           <div className="panel-header">
             <div>
               <Heading level={2}>Personal account</Heading>
-              <Text component="p">Your local developer profile.</Text>
+              <Text component="p">Your workspace display profile.</Text>
             </div>
-            <Badge>Local owner</Badge>
+            <Badge>{sso.enabled ? 'Workspace owner' : 'Local owner'}</Badge>
           </div>
           <div className="settings-fields">
             <TextInput
@@ -2322,13 +2322,24 @@ function WorkspaceSettings({ data, refresh, notify, copy }: Shared) {
             <div className="account-row">
               <span className="profile-avatar">{name.slice(0, 1).toUpperCase()}</span>
               <div>
-                <strong>Guest session</strong>
+                <strong>{sso.enabled ? 'TiDB Account session' : 'Guest session'}</strong>
                 <Text component="p">
-                  Sign-in and account linking are deferred. Your local workspace is saved on this
-                  machine.
+                  {sso.enabled
+                    ? 'Signed in to this shared workspace. Admitted accounts have owner access.'
+                    : 'Local development session. Your workspace uses the configured local storage.'}
                 </Text>
               </div>
               <Badge color="green">Active</Badge>
+              {sso.enabled && sso.logoutPath && (
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    window.location.href = apiBaseUrl + sso.logoutPath;
+                  }}
+                >
+                  Sign out
+                </Button>
+              )}
             </div>
           </div>
         </Paper>
@@ -2338,7 +2349,7 @@ function WorkspaceSettings({ data, refresh, notify, copy }: Shared) {
           </Alert>
         )}
         <div className="settings-save">
-          <Text component="p">Changes apply to this local workspace.</Text>
+          <Text component="p">Changes apply to this workspace.</Text>
           <Button variant="filled" loading={busy} disabled={busy} type="submit">
             {busy ? 'Saving…' : 'Save changes'}
           </Button>
