@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { workspaceApi, type TableDetail } from '../../api/client';
+import { TableMetadataCache } from './table-metadata-cache';
 
 type Snapshot = { key: string; data?: TableDetail; error?: string; loading: boolean };
 export type TableMetadata = {
@@ -19,11 +20,13 @@ export function useTableMetadata(
   const [attempt, retry] = useReducer((value: number) => value + 1, 0);
   const key = JSON.stringify([resourceId, name, revision, attempt]);
   const [snapshot, setSnapshot] = useState<Snapshot>({ key: '', loading: false });
-  const completed = useRef<Snapshot | null>(null);
+  const cache = useRef(new TableMetadataCache());
+  const context = JSON.stringify([resourceId, revision, attempt]);
   useEffect(() => {
     if (!name || paused) return;
-    if (completed.current?.key === key) {
-      setSnapshot(completed.current);
+    const cached = cache.current.get(context, name);
+    if (cached) {
+      setSnapshot({ key, data: cached, loading: false });
       return;
     }
     const controller = new AbortController();
@@ -32,7 +35,7 @@ export function useTableMetadata(
       (data) => {
         if (controller.signal.aborted) return;
         const next = { key, data, loading: false };
-        completed.current = next;
+        cache.current.set(context, name, data);
         setSnapshot(next);
       },
       (cause: unknown) => {
@@ -42,12 +45,11 @@ export function useTableMetadata(
           error: cause instanceof Error ? cause.message : 'Could not load columns. Try again.',
           loading: false,
         };
-        completed.current = next;
         setSnapshot(next);
       },
     );
     return () => controller.abort();
-  }, [resourceId, name, key, paused]);
+  }, [resourceId, name, key, context, paused]);
   return {
     data: snapshot.key === key ? snapshot.data : undefined,
     error: snapshot.key === key ? snapshot.error : undefined,
