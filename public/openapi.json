@@ -3353,6 +3353,12 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Configured metadata authority is unavailable; no fallback state is seeded",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
           }
         }
       }

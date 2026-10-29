@@ -116,6 +116,11 @@ The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, 
 
 ## Code map
 
+The optional [Rust metadata service](docs/meta-service.md) uses SlateDB 0.17.0 and S3, with
+independent Global/Region installations, a bounded single-active Node compatibility gateway,
+and verified import/rollback of existing state and provider credentials. Start with the guide
+before changing persistence; full hosted multi-tenancy and automatic HA remain future work.
+
 - `src/App.tsx`, `src/main.tsx`, `src/styles.css`: interactive frontend prototype.
 - `server/index.mjs`: standalone API and resource/file/key/query handlers; no Console serving.
 - `server/providers/zero.mjs`, `server/providers/sql-drivers.mjs`: anonymous MySQL provisioning and bounded native SQL.
@@ -123,6 +128,7 @@ The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, 
 - `server/access-policy.mjs`: shared action/resource authorization support.
 - `src/features/keys/ResourceAccessPicker.tsx`: explicit customer key resource selection.
 - `server/store.mjs`: serialized atomic local state persistence and capability snapshot.
+- `meta-service/`: independently runnable Rust/SlateDB service; `server/meta/`: private Node client, local topology and migration tools.
 - `server/generate-openapi.mjs`: canonical API contract source.
 - `public/openapi.json`, `src/api/schema.d.ts`: generated contract and client types.
 - `src/api/`: shared generated-type HTTP client and runtime API configuration.

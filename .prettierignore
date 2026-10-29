@@ -1,4 +1,6 @@
 node_modules/
+target/
+meta-service/target/
 dist/
 .data/
 coverage/

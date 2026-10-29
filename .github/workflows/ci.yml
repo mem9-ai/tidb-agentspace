@@ -57,3 +57,33 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before || '' }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
         run: node scripts/check-signoff.mjs "$BASE_SHA" "$HEAD_SHA"
+
+  metadata:
+    name: Rust metadata and S3 integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Select the pinned npm version
+        run: npm install --global npm@11.6.2 --ignore-scripts
+      - run: npm ci
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+      - name: Install verified RustFS 1.0.4 binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_dir="$RUNNER_TEMP/workspace-rustfs"
+          mkdir -p "$runtime_dir"
+          curl --fail --location --retry 3 https://github.com/rustfs/rustfs/releases/download/1.0.4/rustfs-linux-x86_64-gnu-v1.0.4.zip --output "$runtime_dir/rustfs.zip"
+          printf '%s  %s\n' '4a25e48f5b5ae610a679b5324206962c6fb0eb20a9fa7ab6cb20e178cf6c534b' "$runtime_dir/rustfs.zip" | sha256sum --check
+          unzip -q "$runtime_dir/rustfs.zip" -d "$runtime_dir"
+          chmod +x "$runtime_dir/rustfs"
+          printf '%s\n' "$runtime_dir" >> "$GITHUB_PATH"
+      - run: npm run meta:check

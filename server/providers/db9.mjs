@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { stat } from 'node:fs/promises';
-import { createStore } from '../store.mjs';
+import { createStore, withFreshStore } from '../store.mjs';
 import { sqlError, sqlLimits } from './sql-common.mjs';
 import { executePostgres } from './postgres-driver.mjs';
 
@@ -73,17 +73,20 @@ function tokenExpiry(data) {
 
 export async function createDb9({
   credentialsFile,
+  storeFactory = createStore,
   transport = fetch,
   execute = executePostgres,
   limits = sqlLimits,
 }) {
-  try {
-    if ((await stat(credentialsFile)).mode & 0o077)
-      throw new Error('db9 credentials require owner-only file permissions.');
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
+  if (storeFactory === createStore) {
+    try {
+      if ((await stat(credentialsFile)).mode & 0o077)
+        throw new Error('db9 credentials require owner-only file permissions.');
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
   }
-  const vault = await createStore(credentialsFile, () => ({ bindings: {} }));
+  const vault = await storeFactory(credentialsFile, () => ({ bindings: {} }));
   const get = (id) => vault.read().bindings[id];
   const pending = new Map();
   let accountPending,
@@ -286,53 +289,56 @@ export async function createDb9({
       );
     }
   }
-  return {
-    status,
-    provision(resource) {
-      if (!pending.has(resource.id))
-        pending.set(
-          resource.id,
-          provision(resource)
-            .catch((error) => {
-              if (
-                [
-                  'DB9_CREATION_UNCONFIRMED',
-                  'DB9_REGISTRATION_UNCONFIRMED',
-                  'DB9_SETUP_INCOMPLETE',
-                  'DB9_REQUEST_REJECTED',
-                  'DB9_RATE_LIMIT',
-                  'DATABASE_NOT_CONFIGURED',
-                ].includes(error?.code)
-              )
-                throw error;
-              throw unconfirmed();
-            })
-            .finally(() => pending.delete(resource.id)),
-        );
-      return pending.get(resource.id);
+  return withFreshStore(
+    {
+      status,
+      provision(resource) {
+        if (!pending.has(resource.id))
+          pending.set(
+            resource.id,
+            provision(resource)
+              .catch((error) => {
+                if (
+                  [
+                    'DB9_CREATION_UNCONFIRMED',
+                    'DB9_REGISTRATION_UNCONFIRMED',
+                    'DB9_SETUP_INCOMPLETE',
+                    'DB9_REQUEST_REJECTED',
+                    'DB9_RATE_LIMIT',
+                    'DATABASE_NOT_CONFIGURED',
+                  ].includes(error?.code)
+                )
+                  throw error;
+                throw unconfirmed();
+              })
+              .finally(() => pending.delete(resource.id)),
+          );
+        return pending.get(resource.id);
+      },
+      async execute(resource, sql, signal) {
+        if (typeof sql !== 'string' || !sql.trim() || Buffer.byteLength(sql) > limits.sqlBytes)
+          throw sqlError(400, 'INVALID_SQL', 'Enter one PostgreSQL statement, up to 64 KiB.');
+        const binding = get(resource.id);
+        if (binding?.state !== 'ready')
+          throw sqlError(503, 'DATABASE_NOT_READY', 'This PostgreSQL database is not ready.');
+        if (active >= 4)
+          throw sqlError(429, 'SQL_BUSY', 'Four PostgreSQL queries are already running.');
+        active++;
+        const start = performance.now();
+        try {
+          return {
+            ...(await execute(validatePgBinding(binding.connection, resource), sql, {
+              limits,
+              signal,
+            })),
+            mode: 'live',
+            durationMs: Math.round(performance.now() - start),
+          };
+        } finally {
+          active--;
+        }
+      },
     },
-    async execute(resource, sql, signal) {
-      if (typeof sql !== 'string' || !sql.trim() || Buffer.byteLength(sql) > limits.sqlBytes)
-        throw sqlError(400, 'INVALID_SQL', 'Enter one PostgreSQL statement, up to 64 KiB.');
-      const binding = get(resource.id);
-      if (binding?.state !== 'ready')
-        throw sqlError(503, 'DATABASE_NOT_READY', 'This PostgreSQL database is not ready.');
-      if (active >= 4)
-        throw sqlError(429, 'SQL_BUSY', 'Four PostgreSQL queries are already running.');
-      active++;
-      const start = performance.now();
-      try {
-        return {
-          ...(await execute(validatePgBinding(binding.connection, resource), sql, {
-            limits,
-            signal,
-          })),
-          mode: 'live',
-          durationMs: Math.round(performance.now() - start),
-        };
-      } finally {
-        active--;
-      }
-    },
-  };
+    vault,
+  );
 }

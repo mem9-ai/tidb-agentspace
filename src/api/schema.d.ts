@@ -4971,6 +4971,15 @@ export interface operations {
           };
         };
       };
+      /** @description Configured metadata authority is unavailable; no fallback state is seeded */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
     };
   };
   createLocalSession: {
