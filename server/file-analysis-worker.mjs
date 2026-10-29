@@ -1,5 +1,6 @@
 // Disposable child: receives only one snapshot and a script, never provider/session credentials.
 import { readFile } from 'node:fs/promises';
+import { readImport } from './file-import-reader.mjs';
 import { analysisBashInput, analysisCommands, analysisError } from './file-analysis-contract.mjs';
 
 async function duckdb({ sourcePath, format, script, limits, preview }) {
@@ -190,7 +191,11 @@ async function bash({ sourcePath, workspacePath, script, limits }) {
 process.once('message', async (input) => {
   let message;
   try {
-    const result = await (input.engine === 'duckdb' ? duckdb(input) : bash(input));
+    const result = await (input.mode === 'import'
+      ? readImport(input)
+      : input.engine === 'duckdb'
+        ? duckdb(input)
+        : bash(input));
     if (Buffer.byteLength(JSON.stringify(result)) > input.limits.outputBytes)
       throw analysisError(
         422,
@@ -208,9 +213,11 @@ process.once('message', async (input) => {
         code: error.code || 'ANALYSIS_FAILED',
         message: error.status
           ? error.message
-          : input.preview
-            ? 'The file could not be previewed. Check its format or download it to another tool.'
-            : 'Analysis could not complete. Check the query or command, file format and execution limits.',
+          : input.mode === 'import'
+            ? 'The input could not be parsed. Check the format, header and separator, or use text lines.'
+            : input.preview
+              ? 'The file could not be previewed. Check its format or download it to another tool.'
+              : 'Analysis could not complete. Check the query or command, file format and execution limits.',
       },
     };
   }

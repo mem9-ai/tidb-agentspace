@@ -17,6 +17,9 @@ import { fileFormat, isTabularFile } from './file-preview';
 import { TabularFilePreview, useTabularPreview } from './TabularFilePreview';
 import type { FileView } from './file-location';
 
+const FileExportDialog = lazy(() =>
+  import('../exports/FileExportDialog').then((module) => ({ default: module.FileExportDialog })),
+);
 const FileAnalysisPanel = lazy(() => import('./FileAnalysisPanel'));
 
 export default function FilePreviewPanel({
@@ -69,6 +72,8 @@ export default function FilePreviewPanel({
   const [mode, setMode] = useState<string | null>(initialView);
   const [expanded, setExpanded] = useState(initialView === 'analyze');
   const [analysisRunning, setAnalysisRunning] = useState(false);
+  const [contentView, setContentView] = useState<'preview' | 'result'>('preview');
+  const [exportOpen, setExportOpen] = useState(false);
   const reportRunning = useCallback(
     (running: boolean) => {
       setAnalysisRunning(running);
@@ -223,6 +228,7 @@ export default function FilePreviewPanel({
             key={resourceId + path}
             resourceId={resourceId}
             path={path}
+            onContentViewChange={setContentView}
             savedContent={savedContent}
             preview={preview}
             expanded={expanded}
@@ -252,21 +258,40 @@ export default function FilePreviewPanel({
           maxRows={30}
         />
       </div>
-      <footer className="file-preview-footer">
-        <Button leftSection={<IconDownload01 size={18} />} onClick={onDownload}>
-          {dirty ? 'Download draft' : 'Download'}
-        </Button>
-        {(mode === 'source' || dirty) && (
-          <Button
-            variant="filled"
-            loading={busy}
-            disabled={!dirty || busy || loading || !!unavailableReason}
-            onClick={onSave}
-          >
-            Save changes
+      {(mode === 'source' || contentView === 'preview') && (
+        <footer className="file-preview-footer">
+          <Button leftSection={<IconDownload01 size={18} />} onClick={onDownload}>
+            {dirty ? 'Download draft' : 'Download original'}
           </Button>
-        )}
-      </footer>
+          {mode !== 'source' && (
+            <Button disabled={dirty || busy || analysisRunning} onClick={() => setExportOpen(true)}>
+              Export original
+            </Button>
+          )}
+          {(mode === 'source' || dirty) && (
+            <Button
+              variant="filled"
+              loading={busy}
+              disabled={!dirty || busy || loading || !!unavailableReason}
+              onClick={onSave}
+            >
+              Save changes
+            </Button>
+          )}
+        </footer>
+      )}
+      {exportOpen && (
+        <Suspense fallback={<Loader aria-label="Loading original export" />}>
+          <FileExportDialog
+            source={{ kind: 'original', resourceId, path }}
+            sourcePath={path}
+            size={tablePreview.data?.inputBytes ?? size}
+            onDownloadOriginal={onDownload}
+            onClose={() => setExportOpen(false)}
+            onSaved={onExportSaved}
+          />
+        </Suspense>
+      )}
     </Paper>
   );
 }

@@ -12,6 +12,9 @@ import { parseSources, stageSources } from './duckdb-sources.mjs';
 import { browseDatabase, demoColumns, demoRows } from './database-browser.mjs';
 import { readUpload, previewFile, downloadFile } from './file-transfer.mjs';
 import { canAccessResource, normalizeResourceGrant } from './access-policy.mjs';
+import { createFileExports } from './file-exports.mjs';
+import { fileExportLimits } from './file-export-contract.mjs';
+import { createExportAuthorizer } from './export-authorization.mjs';
 import { createFileAnalysis } from './file-analysis.mjs';
 import { createAnalysisSnapshot } from './file-analysis-snapshot.mjs';
 import { exportResult, createExportFile } from './result-exports.mjs';
@@ -59,14 +62,14 @@ function cleanPath(value) {
     fail(400, 'INVALID_PATH', 'Use an absolute path without . or .. segments.');
   return value.replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
 }
-async function body(req) {
+async function body(req, limit = 1024 * 1024) {
   if (!String(req.headers['content-type']).startsWith('application/json'))
     fail(415, 'JSON_REQUIRED', 'Send Content-Type: application/json.');
   let bytes = 0,
     chunks = [];
   for await (const chunk of req) {
     bytes += chunk.length;
-    if (bytes > 1024 * 1024) fail(413, 'BODY_TOO_LARGE', 'Request exceeds 1 MiB.');
+    if (bytes > limit) fail(413, 'BODY_TOO_LARGE', `Request exceeds ${limit} bytes.`);
     chunks.push(chunk);
   }
   let parsed;
@@ -155,6 +158,7 @@ export async function createApp({
     runner: analysisRunner,
     ...analysisOptions,
   });
+  const fileExports = createFileExports({ analysis: fileAnalysis });
   function visibleState() {
     const state = store.read();
     const retired = new Set(
@@ -483,71 +487,35 @@ export async function createApp({
           res.off('close', onClose);
         }
       }
-      if (route === '/result-exports' && req.method === 'POST') {
-        const input = await body(req);
-        const authorize = ({ sourceResourceId, target }) => {
-          const current = visibleState();
-          const key = isOwner ? undefined : current.keys.find((item) => item.id === principalId);
-          if (
-            isOwner
-              ? (sessions.get(sessionToken) || 0) <= Date.now()
-              : !key || key.revokedAt || Date.parse(key.expiresAt) <= Date.now()
-          )
-            fail(401, 'INVALID_KEY', 'The session or key is invalid, expired, or revoked.');
-          const resource = (id) => {
-            if (!isOwner && !canAccessResource(key.resourceIds, id))
-              fail(
-                403,
-                'RESOURCE_ACCESS_DENIED',
-                'This key cannot access a selected export resource.',
-              );
-            const selected = current.resources.find((item) => item.id === id);
-            if (!selected) fail(404, 'NOT_FOUND', 'Export resource not found.');
-            return selected;
-          };
-          const scope = (action) => {
-            if (!isOwner && !key.scopes.includes(action))
-              fail(403, 'INSUFFICIENT_SCOPE', `This action requires ${action}.`);
-          };
-          const source = resource(sourceResourceId);
-          for (const action of source.kind === 'filesystem'
-            ? ['files:read', 'files:analyze']
-            : ['queries:execute'])
-            scope(action);
-          if (target.kind === 'download') return;
-          const destination = resource(target.resourceId);
-          if (target.kind === 'filesystem') {
-            scope('files:write');
-            if (
-              destination.kind !== 'filesystem' ||
-              ![undefined, 'local', drive9Provider].includes(destination.provider)
-            )
-              fail(400, 'INVALID_EXPORT_TARGET', 'Select a public File System.');
-          } else {
-            scope('queries:execute');
-            const provider = {
-              mysql: zeroProvider,
-              postgresql: db9Provider,
-              duckdb: duckdbProvider,
-            }[destination.kind];
-            if (!provider || destination.provider !== provider)
-              fail(
-                400,
-                'INVALID_EXPORT_TARGET',
-                'Select a live database. Demo databases do not accept exports.',
-              );
-          }
-          if (destination.status !== 'active')
-            fail(409, 'EXPORT_TARGET_UNAVAILABLE', 'Wait until the export destination is active.');
-          return destination;
-        };
+      if (
+        ['/result-exports', '/file-exports', '/file-exports/prepare'].includes(route) &&
+        req.method === 'POST'
+      ) {
+        const input = await body(
+          req,
+          route === '/result-exports' ? 1024 * 1024 : fileExportLimits.envelopeBytes,
+        );
+        const authorize = createExportAuthorizer({
+          readState: visibleState,
+          sessions,
+          sessionToken,
+          isOwner,
+          principalId,
+          providers: {
+            filesystem: drive9Provider,
+            mysql: zeroProvider,
+            postgresql: db9Provider,
+            duckdb: duckdbProvider,
+          },
+          fail,
+        });
         const record = async (target, rowCount) => {
           try {
             await store.mutate((draft) =>
               event(
                 draft,
-                'result.exported',
-                `${target.path || target.table} (${rowCount} rows)`,
+                route === '/result-exports' ? 'result.exported' : 'file.exported',
+                `${target.path || target.table}${rowCount === undefined ? '' : ` (${rowCount} rows)`}`,
                 principal,
                 target.resourceId,
               ),
@@ -564,6 +532,19 @@ export async function createApp({
         const onClose = () => controller.abort();
         res.on('close', onClose);
         try {
+          const context = {
+            actor: isOwner ? `session:${sessionToken}` : `key:${principalId}`,
+            authorize,
+            cleanPath,
+            signal: controller.signal,
+            createFile: (options) => createExportFile({ ...options, store, drive9 }),
+            execute: (resource, sql, signal) =>
+              databaseAdapter(resource).execute(resource, sql, signal),
+            record,
+          };
+          if (route === '/file-exports/prepare')
+            return send(200, await fileExports.prepare(input, context));
+          if (route === '/file-exports') return send(200, await fileExports.export(input, context));
           return send(
             200,
             await exportResult(input, {
@@ -974,6 +955,7 @@ export async function createApp({
     }
   });
   app.on('close', () => {
+    fileExports.close();
     void duckdb.close();
   });
   return app;

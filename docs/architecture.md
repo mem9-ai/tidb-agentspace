@@ -130,6 +130,14 @@ scans remain future work. See [ADR 0017](decisions/0017-preview-first-file-works
 [verification](file-workspace-verification.md) and the
 [file reading standard](standards/tiui-design-system.md#theme-responsive-behavior-and-interaction).
 
+Preview actions target the saved original (Download original/Export original); execution headers
+export only their completed SQL result or Bash stdout/stderr. All share computer, public File
+System and new database table destinations. Original/Bash database imports use explicit fixed
+parsing and reviewed fields/types before confirmation, with bounded five-minute, principal-bound
+server snapshots and saved-original version checks. Copy/download preserves raw bytes; export
+never reruns execution. See [ADR 0018](decisions/0018-contextual-file-exports.md) and
+[contract, permissions and verification](contextual-file-export-verification.md).
+
 File System creation and fresh demo workspaces default to AWS Singapore (`aws-ap-southeast-1`),
 with Oregon retained as another configured region. Persisted resources keep their existing
 regions and contents. Region availability, free-tier allowances, and Drive9 Anonymous versus

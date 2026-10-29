@@ -243,7 +243,7 @@ verified, and record that as a remaining gap.
   See [interaction verification](../resource-workspace-verification.md#shared-interaction-audit).
   Revisit when adding a new execution tool or changing the installed UI packages.
 - **Result export (owner correction, GH-58):** Database and File System SQL use the same
-  Export entry and TiUI dialog for CSV/JSON/JSON Lines downloads and copies to public workspace
+  Export results entry and TiUI dialog for CSV/JSON/JSON Lines downloads and copies to public workspace
   files or new database tables. Export the completed rows without rerunning SQL. Show the
   target, row count and format semantics before the explicit action; collisions preserve the
   inputs and never overwrite or append. Lock submission/dismissal while writing, restore focus
@@ -251,6 +251,20 @@ verified, and record that as a remaining gap.
   Success links open the saved file/table. Follow [ADR 0013](../decisions/0013-result-snapshot-exports.md)
   for authority and partial-write handling, and [verification](../result-export-verification.md)
   for themes, narrow layouts and API limits. Revisit for larger exports or additional formats.
+- **Contextual file exports (owner correction, GH-79; implemented 2026-10-29):** Preview
+  operates on the saved original with Download original and Export original; SQL/Bash result
+  views expose Export results/Export output in their own result header. Never leave a source
+  Download footer beneath output. Raw copies preserve original bytes or the chosen stdout/stderr
+  stream, including empty/nonzero-exit output, without rerunning execution. Use shared TiUI
+  destination controls for computer, public File System and new database table. Parsed imports
+  require explicit format, sample, field/name/type review and a separate confirmation showing
+  source and target. Keep arbitrary output as text lines until CSV is chosen. Preserve drafts,
+  results and recoverable form values; invalidate review when parsing options or stream changes.
+  Move focus to the parsed review, return it on close, and keep a usable download link after
+  preparation. Check both themes/viewports, source/result switching, errors and busy locking.
+  [ADR 0018](../decisions/0018-contextual-file-exports.md) and
+  [verification](../contextual-file-export-verification.md) define the authority and evidence.
+  Revisit for new destinations, formats or persistent/large exports.
 - **Preview-first file workspace (owner correction, GH-76):** open a file to its content or
   bounded tabular sample. SQL/Bash expands in place, with Data preview and Query result/Command
   output sharing the content area. Keep tools mounted through tool, content, method and browser
@@ -259,7 +273,7 @@ verified, and record that as a remaining gap.
   CSV/Parquet preview uses the server's fixed reader, shows types/schema and a clearly labeled
   sample; CSV types are inferred and its total is unknown, while Parquet count comes from metadata.
   Fixed preview requires read access; custom execution still requires analyze access. Keep
-  original Download, unavailable/retry states and saved-version mismatch guidance. Refresh
+  Download original in preview, unavailable/retry states and saved-version mismatch guidance. Refresh
   preview/capabilities after saving without unmounting tools. Legacy analyze links expand tools.
   Use TiUI disclosures, Tabs, Table and the existing shared execution/results/theme adapters.
   Inspect retained state, source guards, busy/cancel/errors, 16px editors and 15px table cells,

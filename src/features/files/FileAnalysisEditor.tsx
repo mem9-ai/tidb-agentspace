@@ -11,6 +11,9 @@ import { BashAnalysisHelp } from './BashAnalysisHelp';
 import { legacyBashInput, bashPreviewCommand, bashSamples } from './bash-analysis';
 import { isTabularFile } from './file-preview';
 import './file-analysis.css';
+const FileExportDialog = lazy(() =>
+  import('../exports/FileExportDialog').then((module) => ({ default: module.FileExportDialog })),
+);
 const WorkspaceSqlInput = lazy(() => import('../sql/WorkspaceSqlInput'));
 const sqlSample = 'SELECT * FROM file LIMIT 100;';
 export function FileAnalysisEditor({
@@ -22,6 +25,8 @@ export function FileAnalysisEditor({
   preview,
   editorId,
   expanded,
+  active,
+  onContentViewChange,
   blocked,
   previewVersion,
   onRefreshPreview,
@@ -29,6 +34,8 @@ export function FileAnalysisEditor({
   preview: ReactNode;
   editorId: string;
   expanded: boolean;
+  active: boolean;
+  onContentViewChange: (view: 'preview' | 'result') => void;
   blocked: boolean;
   previewVersion?: string;
   onRefreshPreview: () => void;
@@ -46,6 +53,10 @@ export function FileAnalysisEditor({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [contentView, setContentView] = useState<string | null>('preview');
+  const [exportOpen, setExportOpen] = useState(false);
+  useEffect(() => {
+    if (active) onContentViewChange(contentView === 'result' ? 'result' : 'preview');
+  }, [active, contentView, onContentViewChange]);
   const execution = useRef<AbortController | null>(null);
   const pending = useRef(false);
   useEffect(() => {
@@ -232,6 +243,13 @@ export function FileAnalysisEditor({
             />
           ) : (
             <WorkspaceResultPanel
+              actions={
+                result?.engine === 'bash' && (
+                  <Button disabled={busy} onClick={() => setExportOpen(true)}>
+                    Export output
+                  </Button>
+                )
+              }
               badge={
                 result?.engine === 'bash' && (
                   <Badge color={result.exitCode ? 'yellow' : 'green'}>Exit {result.exitCode}</Badge>
@@ -280,6 +298,18 @@ export function FileAnalysisEditor({
           )}
         </Tabs.Panel>
       </Tabs>
+      {exportOpen && result?.engine === 'bash' && (
+        <Suspense fallback={<Loader aria-label="Loading output export" />}>
+          <FileExportDialog
+            source={{ kind: 'output', resourceId, stream: 'stdout', text: result.stdout }}
+            sourcePath={path}
+            outputStreams={{ stdout: result.stdout, stderr: result.stderr }}
+            exitCode={result.exitCode}
+            onClose={() => setExportOpen(false)}
+            onSaved={onExportSaved}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
