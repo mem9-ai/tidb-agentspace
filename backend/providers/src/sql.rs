@@ -2,7 +2,9 @@ use super::err;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use futures::TryStreamExt;
 use serde_json::{Value, json};
-use sqlx::{Column, Connection, Either, Executor, Row, TypeInfo, ValueRef};
+use sqlx::{
+    Column, ConnectOptions, Connection, Either, Executor, Row, Statement, TypeInfo, ValueRef,
+};
 use std::time::Duration;
 use workspace_contracts::Result;
 pub async fn execute_native(b: &Value, sql: &str, setup: bool) -> Result<Value> {
@@ -21,17 +23,23 @@ async fn execute(b: &Value, sql: &str, setup: bool) -> Result<Value> {
     if b["kind"] == "mysql" {
         super::mysql::execute(b, sql).await
     } else {
-        let options = sqlx::postgres::PgConnectOptions::new()
+        let options = sqlx::postgres::PgConnectOptions::new_without_pgpass()
             .host(host)
             .port(port)
             .username(user)
             .password(password)
             .database(database)
             .ssl_mode(sqlx::postgres::PgSslMode::VerifyFull)
-            .application_name("agent-workspace");
-        let mut conn = sqlx::PgConnection::connect_with(&options)
+            .application_name("agent-workspace")
+            .disable_statement_logging();
+        let conn = sqlx::PgConnection::connect_with(&options)
             .await
-            .map_err(safe)?;
+            .map_err(|e| safe_at("connect", e))?;
+        postgres_query(conn, sql, setup).await
+    }
+}
+async fn postgres_query(mut conn: sqlx::PgConnection, sql: &str, setup: bool) -> Result<Value> {
+    let result = async {
         if !setup {
             conn.execute("SET search_path TO workspace, pg_catalog")
                 .await
@@ -40,7 +48,8 @@ async fn execute(b: &Value, sql: &str, setup: bool) -> Result<Value> {
         conn.execute("SET statement_timeout = 15000")
             .await
             .map_err(safe)?;
-        let description = conn.describe(sql).await.map_err(safe)?;
+        // Prepare validates one statement and obtains fields without SQLx's EXPLAIN/nullability probes.
+        let description = conn.prepare(sql).await.map_err(safe)?;
         let names = names_unique(
             description
                 .columns()
@@ -100,6 +109,12 @@ async fn execute(b: &Value, sql: &str, setup: bool) -> Result<Value> {
         }
         Ok(json!({"columns":names,"rowCount":rows.len(),"rows":rows,"affectedRows":affected}))
     }
+    .await;
+    // Send protocol Terminate on completed requests. Closing must not overwrite a confirmed write result.
+    if let Ok(Err(e)) = tokio::time::timeout(Duration::from_secs(1), conn.close()).await {
+        let _ = safe_at("close", e);
+    }
+    result
 }
 pub(super) fn names_unique(names: Vec<String>) -> Vec<String> {
     let mut used = std::collections::BTreeSet::new();
@@ -134,7 +149,24 @@ pub(super) fn append(
     Ok(())
 }
 fn safe(e: impl Into<sqlx::Error>) -> workspace_contracts::ServiceError {
-    let e = e.into();
+    safe_at("query", e.into())
+}
+fn safe_at(phase: &str, e: sqlx::Error) -> workspace_contracts::ServiceError {
+    let category = match &e {
+        sqlx::Error::Database(d) => {
+            let code = d.code().unwrap_or_default();
+            if code.len() == 5 && code.bytes().all(|b| b.is_ascii_alphanumeric()) {
+                code.into_owned()
+            } else {
+                "database".into()
+            }
+        }
+        sqlx::Error::Io(e) => format!("io:{:?}", e.kind()),
+        sqlx::Error::Tls(_) => "tls".into(),
+        sqlx::Error::Protocol(_) => "protocol".into(),
+        _ => "client".into(),
+    };
+    eprintln!("PostgreSQL {phase} failed ({category}); no SQL retry performed.");
     if let Some(d) = e.as_database_error() {
         let code = d.code().unwrap_or_default();
         return match code.as_ref() {
@@ -255,5 +287,141 @@ mod tests {
             json!(["a,b", "NULL", "a\\b"])
         );
         assert!(pg_array("{unclosed", "TEXT").is_err());
+    }
+}
+
+#[cfg(test)]
+mod wire_tests {
+    use super::*;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
+    async fn send(stream: &mut tokio::net::TcpStream, tag: u8, body: &[u8]) {
+        stream.write_u8(tag).await.unwrap();
+        stream.write_u32((body.len() + 4) as u32).await.unwrap();
+        stream.write_all(body).await.unwrap();
+    }
+    async fn fields(stream: &mut tokio::net::TcpStream) {
+        let mut b = 1u16.to_be_bytes().to_vec();
+        b.extend(b"checked\0");
+        b.extend(0u32.to_be_bytes());
+        b.extend(0u16.to_be_bytes());
+        b.extend(23u32.to_be_bytes());
+        b.extend(4u16.to_be_bytes());
+        b.extend(u32::MAX.to_be_bytes());
+        b.extend(0u16.to_be_bytes());
+        send(stream, b'T', &b).await;
+    }
+    #[tokio::test]
+    async fn pg_wire_keeps_empty_fields_avoids_explain_and_terminates_connections() {
+        for empty in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let n = socket.read_u32().await.unwrap();
+                let mut start = vec![0; n as usize - 4];
+                socket.read_exact(&mut start).await.unwrap();
+                send(&mut socket, b'R', &0u32.to_be_bytes()).await;
+                send(&mut socket, b'S', b"client_encoding\0UTF8\0").await;
+                send(&mut socket, b'S', b"server_version\x0016.0\0").await;
+                send(&mut socket, b'K', &[0; 8]).await;
+                send(&mut socket, b'Z', b"I").await;
+                let mut statements = vec![];
+                let mut terminated = false;
+                while let Ok(tag) = socket.read_u8().await {
+                    let n = socket.read_u32().await.unwrap();
+                    let mut body = vec![0; n as usize - 4];
+                    socket.read_exact(&mut body).await.unwrap();
+                    match tag {
+                        b'P' => {
+                            let mut parts = body.split(|b| *b == 0);
+                            parts.next();
+                            let sql = String::from_utf8(parts.next().unwrap().to_vec()).unwrap();
+                            statements.push(sql);
+                            send(&mut socket, b'1', &[]).await;
+                        }
+                        b'D' => {
+                            send(&mut socket, b't', &0u16.to_be_bytes()).await;
+                            fields(&mut socket).await;
+                        }
+                        b'S' => send(&mut socket, b'Z', b"I").await,
+                        b'Q' => {
+                            let sql = std::str::from_utf8(&body[..body.len() - 1])
+                                .unwrap()
+                                .to_owned();
+                            statements.push(sql.clone());
+                            if sql.starts_with("SET ") {
+                                send(&mut socket, b'C', b"SET\0").await;
+                            } else if sql.starts_with("EXPLAIN") {
+                                send(
+                                    &mut socket,
+                                    b'E',
+                                    b"SERROR\0C0A000\0Munsupported introspection\0\0",
+                                )
+                                .await;
+                            } else {
+                                fields(&mut socket).await;
+                                if !empty {
+                                    let mut row = 1u16.to_be_bytes().to_vec();
+                                    row.extend(1u32.to_be_bytes());
+                                    row.push(b'1');
+                                    send(&mut socket, b'D', &row).await;
+                                }
+                                send(
+                                    &mut socket,
+                                    b'C',
+                                    if empty { b"SELECT 0\0" } else { b"SELECT 1\0" },
+                                )
+                                .await;
+                            }
+                            send(&mut socket, b'Z', b"I").await;
+                        }
+                        b'C' => send(&mut socket, b'3', &[]).await,
+                        b'X' => {
+                            terminated = true;
+                            break;
+                        }
+                        _ => panic!("unexpected frontend protocol tag {tag}"),
+                    }
+                }
+                (statements, terminated)
+            });
+            // TLS is disabled only for this internal loopback protocol fixture, never through product configuration.
+            let opts = sqlx::postgres::PgConnectOptions::new_without_pgpass()
+                .host("127.0.0.1")
+                .port(port)
+                .username("fixture")
+                .database("fixture")
+                .ssl_mode(sqlx::postgres::PgSslMode::Disable);
+            let conn = sqlx::PgConnection::connect_with(&opts).await.unwrap();
+            let result = postgres_query(
+                conn,
+                if empty {
+                    "SELECT 1 AS checked WHERE false"
+                } else {
+                    "SELECT 1 AS checked"
+                },
+                false,
+            )
+            .await
+            .unwrap();
+            assert_eq!(result["columns"], json!(["checked"]));
+            assert_eq!(
+                result["rows"],
+                if empty {
+                    json!([])
+                } else {
+                    json!([{"checked":1}])
+                }
+            );
+            let (statements, terminated) = tokio::time::timeout(Duration::from_secs(2), server)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(terminated);
+            assert!(!statements.iter().any(|sql| sql.starts_with("EXPLAIN")));
+        }
     }
 }

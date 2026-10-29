@@ -1,5 +1,9 @@
 # DuckDB databases
 
+For the current Rust API, configure the private deployment as described in the
+[Rust runtime guide](rust-backend.md). The environment-variable startup examples below use
+the explicit Node compatibility profile; API and credential boundaries apply to both.
+
 Status: implemented for the loopback prototype. [ADR 0008](decisions/0008-duckdb-private-storage.md)
 and [GH-28](../specs/gh-28/spec.md) define the accepted isolation and acceptance boundary.
 
@@ -46,7 +50,7 @@ extension download is required by this product.
 WORKSPACE_DUCKDB_EXTENSION=/absolute/runtime/tidbfs.duckdb_extension \
 WORKSPACE_DUCKDB_EXTENSION_SHA256=<verified-64-character-sha256> \
 WORKSPACE_MYSQL_PROVIDER=tidb-cloud-zero \
-WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run dev
+WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run start:legacy-api
 ```
 
 The File System flag controls separately created public File Systems. DuckDB always uses a

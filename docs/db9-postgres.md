@@ -1,5 +1,9 @@
 # db9 PostgreSQL runtime and recovery
 
+For the current Rust API, configure the private deployment as described in the
+[Rust runtime guide](rust-backend.md). The environment-variable startup examples below use
+the explicit Node compatibility profile; API and credential boundaries apply to both.
+
 The owner-selected db9 anonymous/free service provides PostgreSQL-compatible resources. It is
 independent of TiDB Cloud PG Starter. The accepted [GH-40 specification](../specs/gh-40/spec.md)
 and [ADR 0011](decisions/0011-db9-postgres.md) define the boundary.
@@ -11,7 +15,7 @@ Use the pinned runtime and install with `npm ci`, then:
 ```sh
 WORKSPACE_POSTGRES_PROVIDER=db9-anonymous \
   WORKSPACE_MYSQL_PROVIDER=tidb-cloud-zero \
-  WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run dev
+  WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run start:legacy-api
 ```
 
 Choose PostgreSQL · db9 in Create database. Anonymous registration needs no user email/card.
@@ -38,7 +42,14 @@ One Workspace Key can query its selected PG resource and read/write its selected
 actions and resource IDs are enforced before upstream access. Native passwords are never
 exported; Connect provides gateway examples with a Workspace Key placeholder.
 
-Queries use fresh sessions, one extended-protocol statement and no automatic retries. Budgets
+The Rust driver prepares one statement to validate it and retain field metadata, then reads
+text-protocol results to preserve native numeric/temporal/JSON text. It does not run SQLx's
+extra `EXPLAIN`/nullability probes. Completed requests send protocol Terminate; closing errors
+do not replace a confirmed result. Internal diagnostics contain only a phase/error category,
+with SQL statement logging disabled. A loopback wire fixture checks empty fields, no EXPLAIN
+and connection termination without requiring cloud credentials.
+
+Queries use fresh sessions, one statement and no automatic retries. Budgets
 remain 64 KiB SQL, four concurrent PG queries, 15 seconds including connection, 1,000 rows and
 1 MiB retained results. Closing/overflow/timeouts can leave a write outcome unknown; inspect
 before retrying. Table browsing is restricted to workspace, lists at most 500 tables/views and

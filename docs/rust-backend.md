@@ -41,7 +41,7 @@ npm run package:api:rust -- FULL_REVIEWED_SOURCE_SHA
 `backend:check` runs workspace format, Clippy with warnings denied, Rust tests, and isolated
 real RustFS/S3 metadata, ownership, Node/Rust parity and provider-recovery integration tests.
 Ordinary `npm test` skips explicitly gated S3 cases; those skips are not integration evidence.
-CI uses two Cargo jobs to bound native C++ compiler memory. Initial bundled DuckDB compilation
+CI uses two Cargo jobs and omits native/Rust debug symbols to bound cold-build time and memory. Functional checks and warnings-as-errors remain enabled. Initial bundled DuckDB compilation
 is substantially slower than an incremental Rust build. Reuse installed RustFS locally.
 
 The debug executable is `meta-service/target/debug/workspace-backend`. For an optimized
