@@ -4,8 +4,12 @@
 - Contract/acceptance: [GH-79 specification](../../specs/gh-79/spec.md).
 - Extends ADR 0013 and 0017 without changing read-only analysis or existing SQL export contracts.
 
-Preview actions target the saved original, explicitly Download original; result actions target
-the completed SQL result or chosen Bash stream. A source footer must not appear under output.
+Preview actions target the saved original; result actions target the completed SQL result or
+chosen Bash stream. Following the GH-84 owner correction, Preview has one Export action in
+its content header. Download original is a destination inside the explicitly labeled original
+file dialog. This supersedes the former standalone Download original / Export original footer
+placement without changing source/output authority or the accepted export API.
+Draft download/save stays explicit in the preview/source header. A source footer must not appear under output.
 Raw downloads/copies preserve bytes. Export never reruns SQL or Bash.
 
 Offer the same destinations through shared controls. Database import of original files or Bash

@@ -13,11 +13,13 @@ type Rows = {
 };
 
 export function WorkspaceResultPanel({
+  title = 'Results',
   badge,
   actions,
   footnote,
   children,
 }: {
+  title?: ReactNode;
   badge?: ReactNode;
   actions?: ReactNode;
   footnote?: ReactNode;
@@ -26,7 +28,9 @@ export function WorkspaceResultPanel({
   return (
     <Paper className="panel workspace-results" withBorder>
       <div className="panel-header">
-        <Heading level={2}>Results {badge}</Heading>
+        <Heading level={2}>
+          {title} {badge}
+        </Heading>
         {actions}
       </div>
       {children}

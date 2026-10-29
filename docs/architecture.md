@@ -130,7 +130,8 @@ scans remain future work. See [ADR 0017](decisions/0017-preview-first-file-works
 [verification](file-workspace-verification.md) and the
 [file reading standard](standards/tiui-design-system.md#theme-responsive-behavior-and-interaction).
 
-Preview actions target the saved original (Download original/Export original); execution headers
+Preview's content header has one Export entry for the saved original, including download in
+its labeled dialog; execution headers
 export only their completed SQL result or Bash stdout/stderr. All share computer, public File
 System and new database table destinations. Original/Bash database imports use explicit fixed
 parsing and reviewed fields/types before confirmation, with bounded five-minute, principal-bound

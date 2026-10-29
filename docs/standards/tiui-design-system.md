@@ -252,9 +252,15 @@ verified, and record that as a remaining gap.
   for authority and partial-write handling, and [verification](../result-export-verification.md)
   for themes, narrow layouts and API limits. Revisit for larger exports or additional formats.
 - **Contextual file exports (owner correction, GH-79; implemented 2026-10-29):** Preview
-  operates on the saved original with Download original and Export original; SQL/Bash result
-  views expose Export results/Export output in their own result header. Never leave a source
-  Download footer beneath output. Raw copies preserve original bytes or the chosen stdout/stderr
+  operates on the saved original. Following the GH-84 owner correction, place one Export action
+  beside the Preview heading, using the same shared content-panel header as results; remove
+  the separate transfer footer. Download is a destination inside that dialog, which still
+  identifies Original file and labels its download Download original. SQL/Bash result views
+  retain Export results/Export output in their own result header. Dirty preview/source headers
+  instead expose Download draft and Save changes; saved-original copy/import remains blocked
+  until save/discard. Keep export reachable on unavailable/oversized/failed previews, and check
+  its original-file destination, focus return and draft/result transitions in both themes and
+  viewport sizes. Revisit for new preview modes or destinations. Raw copies preserve original bytes or the chosen stdout/stderr
   stream, including empty/nonzero-exit output, without rerunning execution. Use shared TiUI
   destination controls for computer, public File System and new database table. Parsed imports
   require explicit format, sample, field/name/type review and a separate confirmation showing
@@ -281,7 +287,7 @@ verified, and record that as a remaining gap.
   CSV/Parquet preview uses the server's fixed reader, shows types/schema and a clearly labeled
   sample; CSV types are inferred and its total is unknown, while Parquet count comes from metadata.
   Fixed preview requires read access; custom execution still requires analyze access. Keep
-  Download original in preview, unavailable/retry states and saved-version mismatch guidance. Refresh
+  original download through Preview's Export dialog, unavailable/retry states and saved-version mismatch guidance. Refresh
   preview/capabilities after saving without unmounting tools. Legacy analyze links expand tools.
   Use TiUI disclosures, Tabs, Table and the existing shared execution/results/theme adapters.
   Inspect retained state, source guards, busy/cancel/errors, 16px editors and 15px table cells,

@@ -59,7 +59,8 @@ export function TabularFilePreview({
     return (
       <Alert color="yellow" title="Data preview unavailable" m="lg">
         <Text>
-          {error || 'No data preview is available.'} Download the file to open it in another tool.
+          {error || 'No data preview is available.'} Use Export to download the file and open it in
+          another tool.
         </Text>
         <Button mt="md" onClick={onRefresh} disabled={disabled}>
           Retry preview

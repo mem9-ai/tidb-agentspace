@@ -10,10 +10,13 @@
 
 ## User flow and authority
 
-Preview shows Download original and Export original. Source drafts retain Download draft;
+Preview now shows one Export action in its content header, following the GH-84 owner correction.
+The dialog identifies Original file and includes Download original as its computer destination.
+Source drafts retain Download draft and Save changes in that header;
 save/discard before copying or importing the saved original. Run selects a result view whose
 header offers Export results (SQL) or Export output (Bash). The source footer is absent there.
 Switching preview/results/methods retains scripts and results without executing them again.
+There is no separate transfer footer below the preview.
 
 The export dialog identifies the original file, completed SQL result or selected stdout/stderr,
 then offers computer, public Workspace File System and database destinations. Bash exports
@@ -125,3 +128,51 @@ Screenshots from the isolated fixture, with the dialog internally scrolled to fi
 The implementation PR records its evaluated candidate, full quality gate, remote CI and local
 preview refresh. There is no persisted-data migration or production deployment. Rolling back
 code does not remove exported files or tables; do not repeat an uncertain write automatically.
+
+## Preview header correction (GH-84)
+
+The owner requested the same content-panel action pattern for Preview as for results. This
+small correction follows [GH-84](https://github.com/siddontang/tidb.ai/issues/84), against
+`2ef2419a402c40d02dc8b236f32d9bedea5f86de`. Preview/source now reuse `WorkspaceResultPanel`
+with an explicit heading and action slot; existing SQL/Bash callers retain the default Results
+heading. One Export opens the existing original-file dialog. The old transfer footer and its
+parent/child view-reporting callback are removed; native content-panel visibility owns the action.
+
+Draft download/save actions are in the preview/source header. A dirty draft offers Download
+draft rather than original-file copy/import. No export API, source authority, format/type
+review, permission, provider or persisted-data contract changes. This supersedes only the
+former top-level Download original / Export original placement in the GH-79 design.
+
+Browser verification used a private copy of existing workspace state, additional disposable
+local text fixtures and read-only access to the existing Singapore Parquet. No real cloud
+resource/file/table was created or modified. Observed checks:
+
+- Saved Preview has exactly one Export in its header, no standalone Download original and no
+  transfer footer. SQL/Bash result views keep only their own Export results/Export output;
+  returning to Preview restores its Export without resetting execution state.
+- The existing dialog identifies Original file and offers all three destinations. Original
+  download produced a valid 526-byte Parquet with its native magic bytes. Closing/downloading
+  restores focus to Export. Destination controls retain format/field/type review for import.
+- A local Markdown draft downloaded byte-exact edited text, blocked original export and
+  retained the Keep editing guard. Saving the disposable local fixture restored Export;
+  Download original then matched the saved text exactly.
+- A 55-column CSV exceeded fixed-preview limits, and a 128 KiB-plus text fixture exceeded
+  rendering limits. Both kept enabled Export; the failed preview opened its original-file
+  download dialog. Source editing and Save changes remain available under their existing bounds.
+- Light/Dark at 1280×800 and 390×844: header actions stay readable, with 22px shared headings
+  and 48px buttons. Draft controls wrap within the narrow panel; wide data scrolls internally
+  and document width equals viewport width. The responsive file-browser disclosure retains
+  the selected preview. No dependency, global typography or palette changes.
+
+Screenshots (narrow captures use the existing browser collapse to keep file content primary):
+
+- [Dark Preview, 1280×800](screenshots/preview-export-header/preview-dark-1280x800.png)
+- [Light Preview, 1280×800](screenshots/preview-export-header/preview-light-1280x800.png)
+- [Dark Preview, 390×844](screenshots/preview-export-header/preview-dark-390x844.png)
+- [Light Preview, 390×844](screenshots/preview-export-header/preview-light-390x844.png)
+- [Original-file dialog](screenshots/preview-export-header/export-dialog-dark-1280x800.png)
+- [Explicit draft actions](screenshots/preview-export-header/draft-light-390x844.png)
+
+The PR records the final candidate, complete quality gate, latest-head CI and local preview
+refresh. Existing API/authorization/export tests remain unchanged; this correction is checked
+through browser interactions. Revisit the header pattern for additional preview modes or destinations.
