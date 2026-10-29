@@ -13,31 +13,61 @@ export function deployDev({ namespace, deployment, container, image }, kubectl) 
 
   const target = `deployment/${deployment}`;
   const scope = ['-n', namespace];
-  let current;
+  const read = () => JSON.parse(kubectl(['get', target, ...scope, '-o', 'json']));
+  const runtime = (value) =>
+    value.spec?.template?.spec?.containers?.find((c) => c.name === container);
+  let initial;
   try {
-    current = JSON.parse(kubectl(['get', target, ...scope, '-o', 'json']));
+    initial = read();
   } catch {
     throw new Error('Cannot read the existing Deployment; no resources were changed.');
   }
-  const previous = current.spec?.template?.spec?.containers?.find((c) => c.name === container);
+  const previous = runtime(initial);
   if (!previous || !digestImage.test(previous.image))
     throw new Error('Existing container must have a digest-pinned image for rollback.');
   if (previous.readinessProbe?.httpGet?.path !== '/api/health')
     throw new Error('Existing container must have an HTTP readiness probe for /api/health.');
+  if (!initial.metadata?.uid || !initial.metadata.resourceVersion)
+    throw new Error('Deployment identity is missing; no resources were changed.');
 
-  const setImage = (value) => kubectl(['set', 'image', target, `${container}=${value}`, ...scope]);
-  const wait = () => kubectl(['rollout', 'status', target, ...scope, '--timeout=300s']);
+  const setImage = (snapshot, value) => {
+    const index = snapshot.spec.template.spec.containers.findIndex((c) => c.name === container);
+    const path = `/spec/template/spec/containers/${index}/image`;
+    const patch = [
+      { op: 'test', path: '/metadata/uid', value: initial.metadata.uid },
+      { op: 'test', path: '/metadata/resourceVersion', value: snapshot.metadata.resourceVersion },
+      { op: 'test', path, value: runtime(snapshot).image },
+      { op: 'replace', path, value },
+    ];
+    kubectl(['patch', target, ...scope, '--type=json', '--patch', JSON.stringify(patch)]);
+  };
+  const wait = (expectedImage) => {
+    kubectl(['rollout', 'status', target, ...scope, '--timeout=300s']);
+    const current = read();
+    if (current.metadata?.uid !== initial.metadata.uid || runtime(current)?.image !== expectedImage)
+      throw new Error('Deployment changed during readiness verification.');
+  };
   try {
-    if (image !== previous.image) setImage(image);
-    wait();
+    if (image !== previous.image) setImage(initial, image);
+    wait(image);
   } catch {
     if (image === previous.image) throw new Error('Current deployment is not ready.');
-    // An image update can commit even if its response is lost. Restore the
-    // captured image on either update or readiness failure, without undoing
-    // unrelated Pod-template configuration or modifying persistent storage.
+    let current;
     try {
-      setImage(previous.image);
-      wait();
+      current = read();
+    } catch {
+      throw new Error('Deployment failed; current state unavailable, rollback skipped.');
+    }
+    if (
+      current.metadata?.uid !== initial.metadata.uid ||
+      ![image, previous.image].includes(runtime(current)?.image)
+    )
+      throw new Error('Deployment changed externally; rollback skipped.');
+    // The initial patch may have committed despite a lost response. Only
+    // restore our image, with atomic preconditions that reject concurrent edits.
+    try {
+      if (runtime(current).image === image) setImage(current, previous.image);
+      wait(previous.image);
     } catch {
       throw new Error('Deployment failed and rollback did not recover readiness.');
     }

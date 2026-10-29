@@ -10,11 +10,11 @@ First-installation and diagnostic automation are not part of the recurring pipel
 
 ## Release path
 
-Every push to `main` deploys. A manual dispatch can select a branch, tag or SHA through
-`deploy_ref` (default `main`). Pull requests validate without deployment credentials.
+Every push to `main` deploys. Manual dispatch is also restricted to the `main` branch;
+there is no arbitrary source-ref input. Pull requests validate without deployment credentials.
 
-1. Resolve the source to one commit. All later checkouts use that exact SHA; dispatch
-   input is passed to checkout as data, never inserted into a shell command.
+1. Both jobs check out the event commit `github.sha`, so verification and deployment
+   use the same immutable source even if `main` advances between jobs.
 2. Run `npm run check`. PRs also build the amd64/arm64 image without pushing it.
 3. After tests pass on a release, build and push the multi-architecture image **once**.
    Read the immutable digest from Buildx's output metadata, not by resolving a mutable
@@ -25,6 +25,8 @@ Every push to `main` deploys. A manual dispatch can select a branch, tag or SHA 
 5. If the update or readiness check fails, restore the captured image and verify recovery.
    The run still fails after a successful recovery; a failed rollback is reported separately.
    No PVC, Service, Pod configuration or unrelated container is changed by rollback.
+   Both updates use atomic UID/resource-version checks. If another writer has changed
+   the target image, recovery stops without overwriting that change.
 
 [`scripts/deploy-dev.mjs`](../../scripts/deploy-dev.mjs) implements the image update and
 recovery. It also restores the previous image when an update commits but its response is
@@ -34,8 +36,9 @@ fails before writing anything. Missing infrastructure is never created automatic
 
 Push and manual releases share a non-cancelling concurrency group, including rollback.
 PR verification uses its own cancellable group. The protected `dev` Environment is the
-credential boundary; protection rules must be configured in GitHub. PRs cannot enter the
-deploy job. All Actions are pinned and AWS credentials use OIDC, not static keys.
+credential boundary and **must allow only the `main` branch** in GitHub deployment branch
+rules. The workflow also checks the branch, but a branch-local check cannot protect secrets
+against a modified workflow on another branch. PRs cannot enter the deploy job. All Actions are pinned and AWS credentials use OIDC, not static keys.
 
 ## Existing runtime contract
 
