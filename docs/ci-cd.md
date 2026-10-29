@@ -193,3 +193,8 @@ Exercise rollback before enabling production delivery.
 
 GitHub references: [deployment environments and concurrency](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments)
 and [secure use of Actions](https://docs.github.com/en/actions/reference/security/secure-use).
+
+## Automatic Console publication
+
+[Console publishing](console-publishing.md) describes the main-only artifact synchronization
+workflow, one-time GitHub App setup, and Netlify verification. It is separate from API CD.
