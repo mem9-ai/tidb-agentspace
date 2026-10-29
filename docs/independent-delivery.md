@@ -168,3 +168,11 @@ The initial compatibility gateway is single-active and explicitly bounded. Metad
 can be deployed independently; this does not enable multiple legacy Node provisioning writers,
 full hosted identity or automatic HA. Follow the runtime guide's migration, ownership, TLS,
 bootstrap and recovery requirements before selecting this profile.
+
+## Accepted Rust backend target
+
+[ADR 0020](decisions/0020-modular-rust-backend.md) selects a Rust Cargo workspace with shared
+domain modules and a common executable for embedded or independently deployed roles. The
+Console remains a separate static artifact. Current Node serving/packages are transitional;
+[GH-88](../specs/gh-88/spec.md) requires per-module parity before changing a live entry point.
+A common binary does not combine metadata authorities or eliminate isolated compute workers.
