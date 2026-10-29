@@ -33,7 +33,7 @@ workspace-compute = { path = "backend/compute" }
 workspace-product = { path = "backend/product" }
 async-trait = "=0.1.89"
 bashkit = { version = "=0.19.0", default-features = false }
-duckdb = { version = "=1.20000.1", features = ["bundled", "parquet", "json", "chrono"] }
+duckdb = { version = "=1.20000.1", default-features = false, features = ["chrono"] }
 regex = "=1.12.3"
 percent-encoding = "=2.3.2"
 sqlx = { version = "=0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "chrono", "bigdecimal", "json"] }

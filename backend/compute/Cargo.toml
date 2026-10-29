@@ -19,3 +19,7 @@ hex.workspace = true
 async-trait.workspace = true
 workspace-contracts.workspace = true
 chrono.workspace = true
+
+[build-dependencies]
+serde_json.workspace = true
+sha2.workspace = true

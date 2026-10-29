@@ -20,7 +20,7 @@ The fresh record profile supersedes the document migration baseline; see [ADR 00
 | `backend/meta-client` | Authority-bound remote Meta adapter; TLS 1.3/mTLS, bounded requests, no retries        |
 | `backend/workspace`   | Workspace/Key domain, authorization and versioned record repositories                  |
 | `backend/providers`   | Private Drive9, Zero and db9 lifecycle/vault adapters; native MySQL/PostgreSQL drivers |
-| `backend/compute`     | Bundled DuckDB 2.0 and Bashkit; disposable workers from the same executable            |
+| `backend/compute`     | Prebuilt static DuckDB 2.0 and Bashkit; disposable workers from the same executable    |
 | `backend/product`     | Regional resources, database browser, files, snapshots, analysis, exports/imports      |
 | `backend/api`         | Public HTTP contract, sessions, Host/Origin/CORS, request/cancellation/stream limits   |
 | `backend/host`        | Configuration, dependency wiring, real role composition and ordered shutdown           |
@@ -33,7 +33,7 @@ public RPC services. Workers are separate processes even in an all-in-one deploy
 ## Build, check and package
 
 ```sh
-cargo build --workspace --locked
+npm run backend:build
 npm run backend:check
 npm run check
 npm run package:api:rust -- FULL_REVIEWED_SOURCE_SHA
@@ -42,11 +42,30 @@ npm run package:api:rust -- FULL_REVIEWED_SOURCE_SHA
 `backend:check` runs workspace format, Clippy with warnings denied, Rust tests, and isolated
 real RustFS/S3 metadata, ownership, Node/Rust parity and provider-recovery integration tests.
 Heavy native test files run serially to bound concurrent RustFS/role startup and packaging resources; concurrency behavior is exercised explicitly inside those tests. Ordinary `npm test` skips explicitly gated S3 cases; those skips are not integration evidence.
-CI uses two Cargo jobs and omits native/Rust debug symbols to bound cold-build time and memory. Functional checks and warnings-as-errors remain enabled. Initial bundled DuckDB compilation
-is substantially slower than an incremental Rust build. Reuse installed RustFS locally.
+CI uses two Cargo jobs and omits Rust debug symbols to bound cold-build time and memory. Functional checks and warnings-as-errors remain enabled. Reuse installed RustFS locally.
+
+DuckDB 2.0.0 uses official **prebuilt static libraries**, with release/archive and individual-file
+SHA-256 pins in `scripts/duckdb-runtime.json`. `npm run backend:build` first runs
+`backend:prepare`, which verifies or downloads the matching native artifact into ignored build
+cache. There is no bundled DuckDB C++ compilation, system-library probing or automatic fallback.
+For direct Cargo commands, first run `npm run backend:prepare`; checked-in Cargo configuration
+selects the fixed static path, and the compute build script verifies every linked library. A
+native-only build environment can supply those exact pinned files at that path and run Cargo
+without Node; the preparation script itself uses only Node built-ins, without Console packages.
+Native macOS ARM64 and Linux x86-64 GNU are currently pinned; cross builds and other targets
+fail explicitly until an appropriate artifact is pinned and verified.
+
+The core-functions, JSON, Parquet and local extension-loader libraries are registered once before
+opening a database. Existing autoload/autoinstall, external access and selected-file restrictions
+remain enforced. The API stays one executable without a DuckDB shared-library runtime dependency.
+`workspace-backend runtime-info` reports its embedded DuckDB version/target/archive identity;
+packaging rejects an executable that disagrees with the source pins and records that identity.
+The separate tidbfs extension still requires its own verified artifact. See
+[DuckDB's official library distribution](https://duckdb.org/docs/2.0/operations_manual/installing_duckdb/install_script)
+and [Rust linking options](https://duckdb.org/docs/2.0/clients/rust/troubleshoot).
 
 The debug executable is `meta-service/target/debug/workspace-backend`. For an optimized
-artifact, build `cargo build --release --locked -p workspace-backend` and supply that executable
+artifact, run `npm run backend:prepare`, then build `cargo build --release --locked -p workspace-backend` and supply that executable
 as the package command's second argument. Packaging requires the current clean reviewed Git
 revision, writes source SHA/binary SHA-256/platform/architecture and archive checksums, and
 includes only the binary, Cargo lockfile, contract and instructions. It excludes private

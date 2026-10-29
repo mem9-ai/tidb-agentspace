@@ -145,7 +145,7 @@ screenshots. If a check cannot run, report the specific gap instead of claiming 
 ## Rust backend modules
 
 Use the root Cargo workspace, pinned `rust-toolchain.toml` and root `Cargo.lock`.
-`npm run backend:build` builds the Rust modules. Default API/development launchers require
+`npm run backend:build` verifies/prepares the pinned official static DuckDB library and builds the Rust modules. For direct Cargo commands, run `npm run backend:prepare` first; see the Rust runtime guide for supported native targets. Default API/development launchers require
 `WORKSPACE_BACKEND_CONFIG` pointing to the private regional deployment; they never fall back
 to another backend or seed another data file. `npm run backend:check` runs workspace format/Clippy/tests and real isolated S3/native API tests in addition to `npm run check`. Node remains build/test tooling and an isolated behavior oracle; it is not a serving or rollback backend. Fresh installations follow [ADR 0024](docs/decisions/0024-fresh-record-metadata.md), replacing the retired document/import bridge. See [the Rust guide](docs/rust-backend.md) for module composition, private plans and explicit empty-Workspace bootstrap.
 

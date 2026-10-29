@@ -128,6 +128,7 @@ fn quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "''"))
 }
 fn setup() -> Result<Connection> {
+    crate::duckdb_runtime::initialize()?;
     let cfg = Config::default()
         .with("threads", "1")
         .and_then(|c| c.with("memory_limit", "128MB"))
@@ -663,6 +664,38 @@ fn database_query(conn: &Connection, sql: &str, read_only: bool) -> Result<Value
 mod tests {
     use super::*;
     #[test]
+    fn static_json_and_parquet_work_without_extension_downloads() {
+        let conn = setup().unwrap();
+        let name: String = conn
+            .query_row(
+                "SELECT json_extract_string('{\"name\":\"alice\"}', '$.name')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(name, "alice");
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("source.parquet");
+        conn.execute_batch(&format!(
+            "COPY (SELECT 42::BIGINT AS id) TO {} (FORMAT PARQUET)",
+            quote(path.to_str().unwrap())
+        ))
+        .unwrap();
+        let id: i64 = conn
+            .query_row(
+                &format!(
+                    "SELECT id FROM read_parquet({})",
+                    quote(path.to_str().unwrap())
+                ),
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(id, 42);
+        let settings: (bool, bool) = conn.query_row("SELECT current_setting('autoload_known_extensions')::BOOLEAN, current_setting('autoinstall_known_extensions')::BOOLEAN", [], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
+        assert_eq!(settings, (false, false));
+    }
+    #[test]
     fn statements_do_not_execute_prefixes_or_misread_literals() {
         for sql in [
             "SELECT 1; DROP TABLE t",
@@ -694,6 +727,7 @@ mod tests {
     fn native_database_preserves_values_and_persists_without_node() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("db.duckdb");
+        crate::duckdb_runtime::initialize().unwrap();
         let conn = Connection::open(&path).unwrap();
         database_query(
             &conn,
@@ -735,6 +769,7 @@ mod tests {
         );
         database_query(&conn, "CHECKPOINT", false).unwrap();
         drop(conn);
+        crate::duckdb_runtime::initialize().unwrap();
         let conn = Connection::open(&path).unwrap();
         assert_eq!(
             database_query(&conn, "SELECT count(*) AS n FROM example", true).unwrap()["rows"][0]["n"],

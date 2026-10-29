@@ -39,6 +39,18 @@ test(
     const info = JSON.parse(await readFile(resolve(directory, 'unpack/api/build-info.json')));
     assert.equal(info.sourceSha, sourceSha);
     assert.equal(info.binarySha256, packaged.binarySha256);
+    assert.equal(info.duckdb.version, '2.0.0');
+    assert.equal(info.duckdb.linkage, 'static');
+    assert.deepEqual(
+      JSON.parse(execFileSync(binary, ['runtime-info'], { encoding: 'utf8' })).duckdb,
+      info.duckdb,
+    );
+    const libraries = execFileSync(
+      process.platform === 'darwin' ? 'otool' : 'ldd',
+      process.platform === 'darwin' ? ['-L', binary] : [binary],
+      { encoding: 'utf8' },
+    );
+    assert.doesNotMatch(libraries, /libduckdb[^\s]*(?:\.so|\.dylib)/);
     const source = resolve(directory, 'selected.csv');
     await writeFile(source, 'name,n\nalice,1\n');
     const value = await new Promise((done, reject) => {

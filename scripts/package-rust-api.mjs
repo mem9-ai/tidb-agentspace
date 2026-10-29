@@ -23,6 +23,18 @@ export async function packageRustApi({ root, sourceSha, binary, destination }) {
   const executable = await lstat(binary);
   if (!executable.isFile() || executable.isSymbolicLink())
     throw new Error('Package an ordinary native executable, not a symbolic link.');
+  const runtime = JSON.parse(
+    execFileSync(binary, ['runtime-info'], { encoding: 'utf8', timeout: 15000 }),
+  ).duckdb;
+  const pins = JSON.parse(await readFile(resolve(root, 'scripts/duckdb-runtime.json'), 'utf8'));
+  if (
+    runtime?.version !== pins.version ||
+    runtime.linkage !== 'static' ||
+    pins.artifacts[runtime.target]?.platform !== process.platform ||
+    pins.artifacts[runtime.target]?.arch !== process.arch ||
+    runtime.archiveSha256 !== pins.artifacts[runtime.target]?.sha256
+  )
+    throw new Error('Native artifact does not match the pinned static DuckDB runtime.');
   const temporary = await mkdtemp(resolve(tmpdir(), 'workspace-rust-package-'));
   try {
     const staged = resolve(temporary, 'api');
@@ -40,6 +52,7 @@ export async function packageRustApi({ root, sourceSha, binary, destination }) {
         /channel\s*=\s*"([^"]+)"/,
       )?.[1],
       binarySha256: await digest(resolve(staged, 'workspace-backend')),
+      duckdb: runtime,
       audience: 'internal-local-demo',
       deployed: false,
     };
