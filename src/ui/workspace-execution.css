@@ -1,0 +1,123 @@
+.workspace-tool {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.workspace-tool .workspace-execution,
+.workspace-tool .workspace-results {
+  margin-bottom: 0;
+}
+.workspace-execution {
+  --workspace-sql-content-min-height: 100%;
+  --workspace-sql-content-padding: 12px 0;
+  --workspace-sql-editor-height: clamp(120px, calc(35dvh - 130px), 180px);
+  overflow: hidden;
+  margin-bottom: 0;
+}
+.workspace-execution[data-expanded] {
+  --workspace-sql-editor-height: 420px;
+}
+.workspace-execution .sql-input {
+  min-height: 0;
+}
+.editor-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  min-height: var(--workspace-sql-editor-height);
+  padding: 20px;
+}
+.workspace-execution-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.workspace-execution-language,
+.workspace-execution-actions {
+  display: flex;
+  align-items: center;
+}
+.workspace-execution-language {
+  gap: 6px;
+  color: var(--muted);
+}
+.workspace-execution-language svg {
+  flex-shrink: 0;
+}
+.workspace-execution-context {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.workspace-execution-actions {
+  gap: 4px;
+  justify-content: flex-end;
+}
+.workspace-results {
+  margin-bottom: 0;
+  overflow: hidden;
+}
+.workspace-results .panel-header {
+  padding: 12px 20px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.workspace-result-table {
+  max-height: 360px;
+  overflow: auto;
+}
+.workspace-result-table td code {
+  display: block;
+  min-width: 100px;
+  max-width: 480px;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.workspace-result-message {
+  margin: 0;
+  padding: 20px;
+}
+.workspace-results .result-footnote {
+  padding: 10px 20px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+.workspace-results .result-footnote svg {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 3px;
+}
+@media (max-width: 700px) {
+  .workspace-execution-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .workspace-execution-language {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .workspace-execution-actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .workspace-execution-context {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .workspace-execution {
+    --workspace-sql-editor-height: 180px;
+  }
+  .workspace-execution[data-expanded] {
+    --workspace-sql-editor-height: 360px;
+  }
+}

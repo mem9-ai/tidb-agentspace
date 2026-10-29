@@ -1,0 +1,40 @@
+.file-export-source {
+  overflow-wrap: anywhere;
+}
+.import-review {
+  min-width: 0;
+}
+.import-review-focus {
+  scroll-margin-top: 100px;
+}
+.import-fields {
+  max-height: 360px;
+  overflow: auto;
+  margin-top: 16px;
+}
+.import-field {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) 140px;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 0;
+}
+.import-sample {
+  overflow: auto;
+  max-height: 240px;
+  margin-top: 12px;
+}
+.import-sample td {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 100px;
+  max-width: 320px;
+}
+@media (max-width: 600px) {
+  .import-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border);
+  }
+}

@@ -57,6 +57,7 @@ follow its task-specific references before implementation. Keep detailed rules c
   Follow [independent delivery](docs/independent-delivery.md) and [ADR 0005](docs/decisions/0005-independent-console-and-api.md); the API must not serve Console assets.
 - Reuse domain operations across the Console and agent APIs. Keep provider-specific behavior
   behind adapters when adding real cloud integrations.
+- For preview-first file workspaces and fixed tabular reads, follow [ADR 0017](docs/decisions/0017-preview-first-file-workspace.md); custom computation still requires analyze permission.
 - For File System SQL/shell analysis, follow [ADR 0010](docs/decisions/0010-read-only-file-analysis.md): selected-file snapshots, explicit read/analyze grants, bounded disposable workers, and no provider credentials in user execution.
 - Integrate TiDB Cloud through official APIs or database protocols by default; do not make
   Ti CLI a product dependency. Follow [the integration policy](docs/architecture.md#tidb-cloud-integration-policy).
@@ -69,8 +70,10 @@ follow its task-specific references before implementation. Keep detailed rules c
   personal style, add blanket suppressions, or weaken checks to get a green build.
 - Frontend code is strict TypeScript with functional React components. Prefer explicit
   domain types and `unknown` at untrusted boundaries; avoid `any` and unchecked casts.
-- Existing backend/tooling files use ESM `.mjs`. Follow that layout until a scoped migration
-  is agreed; do not mix in CommonJS or add a second backend framework for one feature.
+- Backend business services target Rust under [ADR 0020](docs/decisions/0020-modular-rust-backend.md):
+  shared domain modules support in-process and independently deployed service composition.
+  Follow [the migration contract](specs/gh-88/spec.md); Node ESM under `server/` remains the existing hosted SSO runtime and the native regression oracle; follow [the consolidated runtime boundary](docs/decisions/0025-consolidated-runtime-profiles.md).
+  Fresh storage follows [ADR 0024](docs/decisions/0024-fresh-record-metadata.md); do not restore document import/handoff paths. Keep Node build/test tooling ESM.
 - Use PascalCase for React components/types, camelCase for functions/variables, and descriptive
   kebab-case for new non-component files. Follow established public API field names.
 - Prefer small feature modules and shared UI primitives. Extract from the prototype's large
@@ -99,6 +102,8 @@ follow its task-specific references before implementation. Keep detailed rules c
 
 - Run `npm run check` before declaring a change ready. It checks the runtime, repository
   policy, formatting, lint, generated API contract, tests, types, and production build.
+- For Rust backend/module/transport changes, also run `npm run backend:check` (workspace
+  format/Clippy/tests and isolated real S3/compatibility cases); follow [the Rust runtime guide](docs/rust-backend.md).
 - Run targeted checks during development. Add meaningful behavior/regression tests for API,
   authorization, persistence, and billing changes; do not add tests that merely restate code.
 - For visible UI changes, inspect the browser and provide a screenshot plus the checked

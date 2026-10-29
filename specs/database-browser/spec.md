@@ -87,3 +87,23 @@ This is a bounded UI correction under the existing owner-authorized iteration. N
 provider, native credential, query budget or grant changes. The previous split-view browser
 evidence remains historical; [new evidence](../../docs/database-workspace-verification.md)
 verifies this amendment, in addition to the existing API/route regression suite.
+
+## Inline columns amendment — GH-54, 2026-10-28
+
+Owner correction: [GH-54](https://github.com/siddontang/tidb.ai/issues/54), implementation base
+`8c6ff66f37aff5a44bd46610f8ac190e48f5ab7d`. The unified editor/inspection contract stays in
+place; this amends the primary table-selection interaction without an API or grant change.
+
+- DB-11: Clicking a table expands/collapses column names, types and available key/null/default/
+  extra properties beneath that row. Keep Query results active and retain SQL/results, filters
+  and whole-browser collapse state. Full inspection remains explicit, including legacy links.
+- DB-12: The row's query action selects that exact database/table, prepares dialect-safe SQL
+  and focuses the editor. Preserve Keep/Replace and explicit Run semantics. Disclosures expose
+  expanded/controls state; sibling actions must not become nested buttons or overlap icons.
+- DB-13: Share one route-local selected-table metadata snapshot with full inspection. Abort
+  obsolete reads and defer new metadata during SQL/list/row reads. Refresh/retry obtains a new
+  authorized read; errors and database changes cannot show another selection's columns.
+
+Evidence: [inline column verification](../../docs/database-workspace-verification.md#inline-table-columns),
+existing query-draft/route/native/API tests and the shared quality gate. This is an owner-
+authorized UI correction; backend tenant isolation, persistence and execution budgets remain unchanged.

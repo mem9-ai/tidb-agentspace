@@ -1,0 +1,21 @@
+[package]
+name = "workspace-backend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+hex.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+workspace-api.workspace = true
+workspace-contracts.workspace = true
+workspace-domain.workspace = true
+workspace-meta-client.workspace = true
+workspace-meta-service.workspace = true
+workspace-compute.workspace = true

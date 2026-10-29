@@ -9,6 +9,7 @@ import { generateKeyPair, SignJWT, exportJWK } from 'jose';
 import { createApp } from './index.mjs';
 import { loadSsoConfig, createPkcePair, publicSsoInfo, resolveIdentity } from './sso.mjs';
 import { trustedProxies, clientSource } from './http-policy.mjs';
+import { exportFixture } from './test-support/export-fixture.mjs';
 
 // ---------------------------------------------------------------------------
 // A local, in-process fake OIDC provider. It never talks to a real network and
@@ -1584,4 +1585,101 @@ test('email owner rules: revocation needs session invalidation and separate pers
   } finally {
     if (server?.listening) await new Promise((r) => server.close(r));
   }
+});
+
+test('SSO owners import data with session-bound reviews and cannot write after mid-import expiry', async (t) => {
+  let ownerCookie;
+  const authenticate = async (address) => {
+    const flow = await startLogin(address);
+    control.nonce = flow.nonce;
+    const response = await callback(address, {
+      flowCookie: flow.flowCookie,
+      params: { code: 'consolidated-import', state: flow.state },
+    });
+    assert.equal(response.status, 302);
+    return /aw_session=[a-f0-9]+/.exec(response.headers.get('set-cookie'))[0];
+  };
+  const fixture = await exportFixture({
+    ssoConfig: testSsoConfig(),
+    authenticate: async (address) => (ownerCookie = await authenticate(address)),
+  });
+  t.after(fixture.close);
+  const root = '/api/v1/workspaces/ws_agentlab';
+  const rawUpload = (cookie) =>
+    fetch(
+      fixture.origin +
+        root +
+        '/database-imports/prepare-upload?' +
+        new URLSearchParams({
+          resourceId: 'db_duck',
+          filename: 'orders.csv',
+          format: 'csv',
+          header: 'true',
+          delimiter: ',',
+        }),
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          ...(cookie ? { Cookie: cookie } : {}),
+        },
+        body: 'id,amount\n001,9007199254740993\n',
+      },
+    );
+  assert.equal((await rawUpload()).status, 401);
+  assert.equal(
+    (
+      await fetch(fixture.origin + '/api/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      })
+    ).status,
+    403,
+  );
+  const upload = await rawUpload(ownerCookie);
+  assert.equal(upload.status, 200);
+  const prepared = await upload.json();
+  const commit = {
+    resourceId: 'db_duck',
+    preparationId: prepared.preparationId,
+    confirmed: true,
+    table: 'sso_import',
+    fields: prepared.fields,
+  };
+  const otherCookie = await authenticate(fixture.origin);
+  const other = await fetch(fixture.origin + root + '/database-imports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: otherCookie },
+    body: JSON.stringify(commit),
+  });
+  assert.equal(other.status, 409);
+  assert.equal((await other.json()).error.code, 'IMPORT_PREPARATION_UNAVAILABLE');
+  assert.equal(fixture.statements.length, 0);
+  const imported = await fixture.request('/database-imports', 'POST', commit);
+  assert.equal(imported.status, 200, JSON.stringify(imported.body));
+  const actual = await fixture.native('SELECT * FROM sso_import');
+  assert.equal(actual.rows[0].id, '001');
+  assert.equal(actual.rows[0].amount, '9007199254740993');
+
+  const next = await rawUpload(ownerCookie);
+  const second = await next.json();
+  const before = fixture.statements.length;
+  fixture.hooks.beforeSql = (_kind, sql) => {
+    if (/^CREATE/.test(sql)) {
+      const now = Date.now();
+      t.mock.method(Date, 'now', () => now + 28800001);
+    }
+  };
+  const expired = await fixture.request('/database-imports', 'POST', {
+    ...commit,
+    preparationId: second.preparationId,
+    table: 'expired_import',
+  });
+  // CREATE already committed, so preserve the API's explicit partial-write error.
+  assert.equal(expired.status, 502, JSON.stringify(expired.body));
+  assert.equal(expired.body.error.code, 'EXPORT_INCOMPLETE');
+  assert.equal(fixture.statements.length, before + 1, 'expiry after CREATE must prevent INSERT');
+  const rows = await fixture.native('SELECT * FROM expired_import');
+  assert.equal(rows.rowCount, 0);
 });

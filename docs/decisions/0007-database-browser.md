@@ -23,6 +23,35 @@ The Console uses one SQL workspace per database, with a persistent table navigat
 editor and query results/table inspection underneath (owner correction, 2026-10-28). Table
 selection preserves the editor draft and previous results. Query table explicitly generates a
 SELECT and protects edited SQL with a replace/keep choice; it does not execute automatically.
+Following [GH-54](https://github.com/siddontang/tidb.ai/issues/54), table selection expands column
+names/properties inline and keeps Query results active. Table details is an explicit secondary
+choice. Both column views share the same selected-table API result in route-local memory;
+refresh/retry obtains a new authorized read. New metadata reads wait for active SQL/list/row
+operations rather than competing with DuckDB's single-operation admission. The API contract
+and backend authorization remain unchanged; no metadata is persisted.
+For MySQL column expansion, fetch table identity, columns and index parts in one server-generated
+`UNION ALL` catalog query instead of opening three sequential TLS sessions. Filter every branch
+to `DATABASE()` and the same hex-encoded table name, order column/index parts, and retain the
+native 15-second, 1,000-row/1 MiB error boundary across the combined result (no silent truncation).
+No shared native connection or automatic SQL retry is introduced. Both Rust and the Node
+compatibility API implement this MySQL optimization; DuckDB retains its provider-specific path.
+Rust PG metadata reads table identity, columns and indexes through one disposable native session
+under a combined 15-second/1,000-row/1 MiB budget. Every statement is server-generated, scoped
+to `workspace` and prepared separately; an error stops the remaining reads and returns no partial
+description. The application role and verified TLS remain required. Customer SQL continues to
+use independent sessions; this is neither a connection pool nor a persistent customer session.
+The route-local Console cache retains at most 16 successful table descriptions for 30 seconds;
+revisiting a table does not extend that window. Resource changes, refresh and retry discard it.
+Errors and aborted reads are not cached. Explicit refresh remains the way to observe external
+schema changes immediately. Do not add background catalog reads that compete with DuckDB work
+or cache authorization/provider credentials to hide latency. Measure actual API requests and
+cold/revisited UI paths separately when changing this behavior. See [latency verification](../database-column-latency-verification.md).
+Console table-list, metadata and row reads have a 20-second whole-read deadline, including body
+decoding. A stalled request aborts and becomes an explicit retryable error; navigation aborts
+remain silent, and failed/aborted reads never enter the success cache. This UI bound does not
+retry SQL or imply that a timed-out database write was rolled back. See
+[PG latency and timeout verification](../postgres-column-latency-verification.md).
+
 Existing `/tables` and `/sql` links both open the unified workspace and retain table identity.
 Demo tables remain labeled. See [unified workspace verification](../database-workspace-verification.md).
 

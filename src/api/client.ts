@@ -1,4 +1,5 @@
 import { createWorkspaceClient, resolveApiBaseUrl, responseData } from './transport';
+import { createUploadFetch, type UploadProgress } from './upload-transport';
 import type { components, operations } from './schema';
 
 export type Resource = components['schemas']['Resource'];
@@ -18,6 +19,16 @@ export type FileAnalysisResult =
 export type FileAnalysisInput = JsonBody<operations['analyzeFile']>;
 export type FileAnalysisCapabilities =
   operations['fileAnalysisCapabilities']['responses'][200]['content']['application/json'];
+export type TabularFilePreview =
+  operations['tabularFilePreview']['responses'][200]['content']['application/json'];
+export type FileExportSource = components['schemas']['FileExportSource'];
+export type FileExportParsing = components['schemas']['FileExportParsing'];
+export type FileExportPreparation = components['schemas']['FileExportPreparation'];
+export type FileExportPreparationInput = components['schemas']['FileExportPreparationInput'];
+export type FileExportInput = components['schemas']['FileExportInput'];
+export type FileExportOutput = components['schemas']['FileExportOutput'];
+export type DatabaseImportParsing = components['schemas']['DatabaseImportParsing'];
+export type DatabaseImportResult = components['schemas']['DatabaseImportResult'];
 export type WriteFileInput = JsonBody<operations['writeFile']>;
 export type SsoAuthConfig = {
   enabled: boolean;
@@ -26,10 +37,14 @@ export type SsoAuthConfig = {
   loginPath?: string;
   logoutPath?: string;
 };
+export type ResultExportInput = JsonBody<operations['exportResult']>;
+export type ResultExportOutput =
+  operations['exportResult']['responses'][200]['content']['application/json'];
 export const workspaceId = 'ws_agentlab';
 export const base = `/api/v1/workspaces/${workspaceId}`;
 const params = { path: { workspaceId } } as const;
 export let apiBaseUrl = window.location.origin;
+export { apiBaseUrl as apiOrigin };
 let client = createWorkspaceClient(apiBaseUrl);
 let sessionClient = createWorkspaceClient(apiBaseUrl, fetch, '');
 
@@ -40,6 +55,63 @@ export function configureApi(config: unknown) {
 }
 
 export const workspaceApi = {
+  prepareDatabaseImport: (
+    body: components['schemas']['DatabaseImportPreparationInput'],
+    signal?: AbortSignal,
+  ) =>
+    responseData(
+      client.POST('/workspaces/{workspaceId}/database-imports/prepare', { params, body, signal }),
+    ),
+  prepareDatabaseImportUpload: (
+    resourceId: string,
+    file: File,
+    parsing: DatabaseImportParsing,
+    onProgress: (progress: UploadProgress) => void,
+    signal?: AbortSignal,
+  ) =>
+    responseData(
+      createWorkspaceClient(apiBaseUrl, createUploadFetch(onProgress)).POST(
+        '/workspaces/{workspaceId}/database-imports/prepare-upload',
+        {
+          params: {
+            path: params.path,
+            query: {
+              resourceId,
+              filename: file.name,
+              format: parsing.format,
+              ...(parsing.format === 'csv'
+                ? {
+                    header: parsing.header ? ('true' as const) : ('false' as const),
+                    delimiter: parsing.delimiter,
+                  }
+                : {}),
+            },
+          },
+          body: file,
+          bodySerializer: (value) => value,
+          headers: { 'Content-Type': 'application/octet-stream' },
+          signal,
+        },
+      ),
+    ),
+  commitDatabaseImport: (body: components['schemas']['DatabaseImportInput']) =>
+    responseData(client.POST('/workspaces/{workspaceId}/database-imports', { params, body })),
+  prepareFileExport: (body: FileExportPreparationInput, signal?: AbortSignal) =>
+    responseData(
+      client.POST('/workspaces/{workspaceId}/file-exports/prepare', { params, body, signal }),
+    ),
+  exportFileContent: (body: FileExportInput) =>
+    responseData(client.POST('/workspaces/{workspaceId}/file-exports', { params, body })),
+
+  tabularFilePreview: (resourceId: string, path: string, signal?: AbortSignal) =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/files/tabular-preview', {
+        params: { path: { workspaceId }, query: { resourceId, path } },
+        signal,
+      }),
+    ),
+  exportResult: (body: ResultExportInput) =>
+    responseData(client.POST('/workspaces/{workspaceId}/result-exports', { params, body })),
   fileAnalysisCapabilities: (resourceId: string, path: string, signal?: AbortSignal) =>
     responseData(
       client.GET('/workspaces/{workspaceId}/file-analyses/capabilities', {
@@ -95,8 +167,13 @@ export const workspaceApi = {
     ),
   query: (body: JsonBody<operations['executeQuery']>, signal?: AbortSignal) =>
     responseData(client.POST('/workspaces/{workspaceId}/queries', { params, body, signal })),
-  saveFile: (body: WriteFileInput) =>
-    responseData(client.PUT('/workspaces/{workspaceId}/files', { params, body })),
+  saveFile: (body: WriteFileInput, onProgress?: (progress: UploadProgress) => void) =>
+    responseData(
+      (onProgress ? createWorkspaceClient(apiBaseUrl, createUploadFetch(onProgress)) : client).PUT(
+        '/workspaces/{workspaceId}/files',
+        { params, body },
+      ),
+    ),
   deleteFile: (body: JsonBody<operations['deleteFile']>) =>
     responseData(client.DELETE('/workspaces/{workspaceId}/files', { params, body })),
   listFiles: (resourceId: string, path?: string, signal?: AbortSignal) =>
@@ -116,14 +193,21 @@ export const workspaceApi = {
     if ('arrayBuffer' in result) throw new Error('Expected a JSON preview.');
     return result;
   },
-  uploadFile: (file: Pick<WorkspaceFile, 'resourceId' | 'path'>, body: Blob) =>
+  uploadFile: (
+    file: Pick<WorkspaceFile, 'resourceId' | 'path'>,
+    body: Blob,
+    onProgress: (progress: UploadProgress) => void,
+  ) =>
     responseData(
-      client.PUT('/workspaces/{workspaceId}/files/content', {
-        params: { path: params.path, query: file, header: { 'If-None-Match': '*' } },
-        body,
-        bodySerializer: (value) => value,
-        headers: { 'Content-Type': 'application/octet-stream' },
-      }),
+      createWorkspaceClient(apiBaseUrl, createUploadFetch(onProgress)).PUT(
+        '/workspaces/{workspaceId}/files/content',
+        {
+          params: { path: params.path, query: file, header: { 'If-None-Match': '*' } },
+          body,
+          bodySerializer: (value) => value,
+          headers: { 'Content-Type': 'application/octet-stream' },
+        },
+      ),
     ),
   createKey: (body: CreateKeyInput) =>
     responseData(client.POST('/workspaces/{workspaceId}/keys', { params, body })),

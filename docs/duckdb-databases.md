@@ -1,5 +1,8 @@
 # DuckDB databases
 
+The Rust API uses the private deployment described in the
+[Rust runtime guide](rust-backend.md), with record metadata under [ADR 0024](decisions/0024-fresh-record-metadata.md).
+
 Status: implemented for the loopback prototype. [ADR 0008](decisions/0008-duckdb-private-storage.md)
 and [GH-28](../specs/gh-28/spec.md) define the accepted isolation and acceptance boundary.
 
@@ -10,6 +13,20 @@ with its own Tables and SQL Editor. Use `queries:execute` and that database's re
 the same Workspace Key can separately permit MySQL and standalone Files. Creating DuckDB
 requires the existing `resources:write` action and workspace-wide resource grant.
 
+DuckDB is a native persistent database through tidbfs **native database mode**, not a set of
+selected source files. The service loads the extension, attaches
+`tidbfs+db:///workspace.duckdb` as `workspace`, and makes that catalog current. Tables, views,
+SQL execution, WAL and checkpoints use DuckDB's own engine. Customers use normal DuckDB SQL
+such as `CREATE TABLE`, `INSERT`, `SELECT` and `CHECKPOINT`; they do not configure storage
+secrets or attach the backing file themselves. See the plugin's
+[native database guide](https://github.com/drive9-ai/duckdb/blob/main/docs/native-database.md).
+
+The Console uses the same resource selector, Tables, SQL Editor and results layout as the
+other databases. Following the owner correction in [GH-50](https://github.com/siddontang/tidb.ai/issues/50),
+it does not show the custom File sources picker/counter or send snapshot sources with editor
+queries. File System Analyze and the separate query-source API described below are optional
+file-analysis capabilities; neither defines DuckDB storage or is needed for database SQL.
+
 The backend creates a dedicated anonymous File System and keeps the binding private. The
 backing store is absent from resource lists, File System pages, Key targets, usage and events.
 File APIs cannot address it, even with a wildcard key. Customers cannot supply/select a
@@ -19,40 +36,46 @@ public file interface.
 
 ## Operator runtime setup
 
-For CSV, JSON and Parquet in public File Systems, see [Workspace file sources](#workspace-file-sources).
+For the optional API for CSV, JSON and Parquet in public File Systems, see
+[Workspace file sources](#workspace-file-sources).
 
-Use Node/npm from the repository pins and `npm ci`. The pinned `@duckdb/node-api@2.0.0-r.1`
-provides DuckDB 2.0.0. Supply the exact matching platform/version of the native tidbfs artifact
-from [drive9-ai/duckdb](https://github.com/drive9-ai/duckdb). Its release build statically links
-its runtime dependencies. No Community Extensions publication, Ti CLI, DuckDB CLI or runtime
-extension download is required by this product.
+The native Rust executable statically links the pinned official DuckDB 2.0.0 prebuilt libraries, avoiding a C++ source build. See [build setup](rust-backend.md#build-check-and-package). Supply the exact matching platform/version
+of the native tidbfs artifact from [drive9-ai/duckdb](https://github.com/drive9-ai/duckdb).
+Its release build statically links its runtime dependencies. No Community Extensions
+publication, Ti CLI, DuckDB CLI or runtime extension download is required by this product.
 
-```sh
-WORKSPACE_DUCKDB_EXTENSION=/absolute/runtime/tidbfs.duckdb_extension \
-WORKSPACE_DUCKDB_EXTENSION_SHA256=<verified-64-character-sha256> \
-WORKSPACE_MYSQL_PROVIDER=tidb-cloud-zero \
-WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run dev
+Configure the private regional API's `product.compute`:
+
+```json
+{
+  "extensionPath": "/absolute/runtime/tidbfs.duckdb_extension",
+  "extensionSha256": "verified-64-character-sha256"
+}
 ```
 
-The File System flag controls separately created public File Systems. DuckDB always uses a
+Set `product.providers.filesProvider` to `drive9-anonymous` for public File System creation.
+Start the reviewed native executable with its deployment plan, as in the Rust runtime guide.
+
+The File System provider setting controls separately created public File Systems. DuckDB always uses a
 separate Singapore anonymous backing store. Configure the artifact on each API host; never
 accept its path/hash from an HTTP request. Capability `duckdb.available` is false without a
 verified artifact; creation returns 503 before reserving/provisioning a resource. A credential-free worker probe also verifies that the artifact actually loads with this native runtime before exposing availability. The hash is
 rechecked before provisioning and every worker launch. This checks operator-selected bytes;
 it is not a substitute for reviewing their source/provenance. Native storage remains experimental.
 
-The independent API build bundles native Node bindings and their installed dependency closure
-for the build platform, so no runtime install is needed. It does not bundle the operator's
-tidbfs binary, state or credentials. Keep the separately supplied artifact available at its
-configured path after promotion/rollback. CI tests native SQL with temporary local databases
-and injected storage provisioning; it never creates cloud resources.
+The independent API package contains the native Rust executable and its build/contract
+metadata, without Node dependencies. It does not bundle the operator's tidbfs artifact, state
+or credentials. Keep the separately supplied artifact available at its configured path after
+promotion/rollback. CI tests native SQL with temporary local databases and injected storage
+provisioning; it never creates cloud resources.
 
 ## Persistence and recovery
 
-For state `.data/workspace.json`, private `.duckdb.json` records bind public database IDs to
-opaque backing-store IDs. The sibling `.providers.json` holds upstream File System tokens;
-public state never contains the binding, token, native filename or endpoint. Private files are
-owner-only and ignored by Git. Back up and restore these files together without exposing them.
+Regional Meta stores each public database's private DuckDB binding and its backing-store
+credentials as separate encrypted records, committed atomically where paired. Public records
+never contain the private token, native filename or endpoint. Preserve the regional object-store
+metadata and its encryption keys together; see [metadata operations](meta-service.md). The old
+sibling JSON vaults remain only in isolated regression fixtures, with no serving/import path.
 
 Creation persists binding intent before the upstream POST. Retries with the same Idempotency-Key
 reuse the public database and store. A lost provision response is never repeated automatically.
@@ -71,8 +94,13 @@ locks or retry writes automatically. A lost response or timeout is not proof of 
 
 Limits: 64 KiB SQL, 15 seconds including native startup and storage open, 1,000 result rows /
 1 MiB output, 256 MB configured DuckDB memory and two threads per worker. Temp spilling is
-disabled. DuckDB's memory setting is not an operating-system memory limit. Each worker has a
-minimal environment and no public listener; secrets travel in private IPC, not process arguments.
+disabled. DuckDB's memory setting is not an operating-system memory limit. Confirmed database
+Import has a bounded exception: server-generated CREATE/
+INSERT statements receive 30 seconds each for cold storage commit/close. Parsing and ordinary
+SQL keep 15 seconds, and uncertain writes are never retried; see [ADR 0023](decisions/0023-database-import-workspace.md).
+
+Each worker has a separate process, minimal environment and no public listener; secrets
+travel in private IPC, not process arguments.
 
 Use SELECT, table/view/index DDL, INSERT/UPDATE/DELETE/MERGE, SHOW/DESCRIBE and CHECKPOINT.
 Settings, secrets, extension installation/loading, attach/detach, COPY/export/import and
@@ -103,12 +131,12 @@ not MySQL or PG protocol support. Cloud usage/allowances are unmeasured (null).
 
 ## Workspace file sources
 
-In the DuckDB workspace, choose **Add file source**, select a File System and file, and give
-it a unique table name. Browse folders or enter a directory. CSV, JSON, JSONL/NDJSON and Parquet
-are supported. **Query orders** prepares `SELECT * FROM files."orders" LIMIT 100;`; it does
-not run it. Existing edited SQL requires a replace/keep choice. Add multiple named sources
-to join them and existing database tables. Removing/changing sources clears prior results.
-Source selections stay in this page's memory; every execution reads fresh snapshots.
+This optional snapshot API is retained for compatibility. It is separate from native database
+mode and is no longer exposed in the Console database workspace. The earlier Add file source /
+Query controls are historical; [GH-50](https://github.com/siddontang/tidb.ai/issues/50) supersedes
+that Console presentation. Use File System **Analyze** for selected-file analysis in the Console.
+CSV, JSON, JSONL/NDJSON and Parquet sources can still be joined with native database tables
+through explicit API requests; every execution reads fresh snapshots.
 
 Agents use the same query API, with **all** of `queries:execute`, `files:read`, `files:analyze`,
 the DuckDB resource grant and each source File System grant. Existing Keys do not gain the

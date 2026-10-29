@@ -1,14 +1,8 @@
-/* Analysis needs room for both its editor and results; let the page scroll. */
-.file-preview-panel[data-analysis] {
-  position: static;
-  max-height: none;
-  overflow: visible;
-}
 .file-analysis {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
   min-width: 0;
+}
+.file-analysis-method {
+  margin-bottom: 16px;
 }
 .file-analysis p {
   margin: 0;
@@ -33,8 +27,28 @@
   overflow: auto;
   font-size: 16px;
 }
+.analysis-command-result {
+  padding: 20px;
+}
 .file-analysis summary {
   cursor: pointer;
   font-weight: 600;
   padding: 12px 0;
+}
+
+.bash-analysis-help {
+  padding: 8px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.bash-analysis-help code {
+  overflow-wrap: anywhere;
+}
+.analysis-input-path {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.file-analysis .bash-usage summary {
+  min-height: 44px;
+  padding: 10px 0;
+  font-size: 14px;
 }

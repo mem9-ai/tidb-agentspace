@@ -1,32 +1,38 @@
 import { useReducer, useRef, useState } from 'react';
 import { Button, Group, Paper, Stack, Text } from '@tidbcloud/uikit';
-import { workspaceApi, type QueryResult, type QuerySource, type Resource } from '../../api/client';
-import { DuckdbSources } from './DuckdbSources';
+import { workspaceApi, type Resource } from '../../api/client';
+import { DatabaseWorkspaceHeader } from './DatabaseWorkspaceHeader';
 import { ChoiceTabs } from '../../ui/ChoiceTabs';
 import { WorkspaceModal } from '../../ui/WorkspaceModal';
 import { Heading } from '../../ui/WorkspaceHeading';
 import { SqlQueryPanel } from '../sql/SqlQueryPanel';
-import { tableSelectSql, type WorkspaceRoute } from '../navigation/workspace-route';
+import {
+  databaseEditorHash,
+  tableSelectSql,
+  type WorkspaceRoute,
+} from '../navigation/workspace-route';
 import { DatabaseTableList, TableInspector } from './DatabaseBrowser';
 import { createQueryDraft, queryDraftReducer } from './query-draft';
+import { useTableMetadata } from './use-table-metadata';
+import { DatabaseImportDialog } from '../imports/DatabaseImportDialog';
 
 type Props = {
   database: Resource;
   databases: Resource[];
-  fileSystems: Resource[];
   routeLocation: WorkspaceRoute;
   refresh: () => Promise<void>;
   onSelect: (id: string) => void;
-  onExport: (result: QueryResult) => void;
+  onConnect: () => void;
+  onRetry: () => void;
 };
 export function DatabaseWorkspace({
   database,
   databases,
-  fileSystems,
   routeLocation,
   refresh,
   onSelect,
-  onExport,
+  onConnect,
+  onRetry,
 }: Props) {
   const { tableName } = routeLocation;
   const [draft, dispatch] = useReducer(
@@ -51,9 +57,13 @@ export function DatabaseWorkspace({
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
   const [listingBusy, setListingBusy] = useState(true);
-  const [inspectionBusy, setInspectionBusy] = useState(false);
-  const [sources, setSources] = useState<QuerySource[]>([]);
-  const [sourceRevision, setSourceRevision] = useState(0);
+  const [rowBusy, setRowBusy] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [browserCollapsed, setBrowserCollapsed] = useState(false);
+  const [collapsedTable, setCollapsedTable] = useState<string | null>(null);
+  const waitingForRead = busy || listingBusy || rowBusy || importBusy;
+  const metadata = useTableMetadata(database.id, tableName, revision, waitingForRead);
   const editor = useRef<HTMLDivElement>(null);
   const showEditor = () => {
     setOutputView('Query results');
@@ -62,127 +72,153 @@ export function DatabaseWorkspace({
       ?.querySelector<HTMLElement>('[aria-label="SQL query"]')
       ?.focus({ preventScroll: true });
   };
+  const queryTable = (name: string) => {
+    setCollapsedTable(null);
+    if (tableName !== name || routeLocation.databaseView !== 'sql') {
+      location.hash = databaseEditorHash(database.id, name);
+    }
+    dispatch({
+      type: 'queryTable',
+      sql: tableSelectSql(
+        name,
+        database.kind === 'duckdb'
+          ? 'duckdb'
+          : database.kind === 'postgresql'
+            ? 'postgresql'
+            : 'mysql',
+      ),
+    });
+    showEditor();
+  };
   return (
-    <div className="database-workspace">
-      <DatabaseTableList
+    <>
+      <DatabaseWorkspaceHeader
         database={database}
-        tableName={tableName}
-        onSelect={() => setOutputView('Table details')}
-        onLoadingChange={setListingBusy}
-        onRefresh={() => {
-          setListingBusy(true);
-          setRevision((value) => value + 1);
-        }}
+        databases={databases}
+        busy={busy || importBusy}
+        onSelect={onSelect}
+        onConnect={onConnect}
+        onRetry={onRetry}
+        onImport={() => setImportOpen(true)}
+        importDisabled={listingBusy || rowBusy || metadata.loading}
       />
-      <div className="database-editor-area" ref={editor}>
-        {database.kind === 'duckdb' && (
-          <DuckdbSources
-            fileSystems={fileSystems}
-            sources={sources}
-            busy={busy}
-            onChange={(next) => {
-              setSources(next);
-              setSourceRevision((value) => value + 1);
-            }}
-            onQuery={(name) => {
-              dispatch({ type: 'queryTable', sql: `SELECT * FROM files."${name}" LIMIT 100;` });
-              showEditor();
-            }}
-          />
-        )}
-        <SqlQueryPanel
-          queryContext={`${sourceRevision}:${JSON.stringify(sources)}`}
-          hasFileSources={sources.length > 0}
-          sql={draft.sql}
-          onSqlChange={(sql) => dispatch({ type: 'edit', sql })}
+      {importOpen && (
+        <DatabaseImportDialog
+          key={database.id}
           database={database}
-          readBusy={database.kind === 'duckdb' && (listingBusy || inspectionBusy)}
-          databases={databases}
-          execute={(sql, signal) =>
-            workspaceApi.query(
-              {
-                resourceId: database.id,
-                sql,
-                ...(sources.length ? { sources } : {}),
-              },
-              signal,
-            )
-          }
-          onComplete={refresh}
-          onSelect={onSelect}
-          onExport={onExport}
-          onRunningChange={setBusy}
-          onRunStart={() => setOutputView('Query results')}
-          renderResults={(results) => (
-            <ChoiceTabs
-              panelSpacing={12}
-              value={outputView}
-              onChange={setOutputView}
-              options={['Query results', 'Table details']}
-            >
-              {outputView === 'Query results' ? (
-                results
-              ) : tableName && (listingBusy || busy) ? (
-                <Paper className="panel" p="xl" withBorder>
-                  <Text>Loading database…</Text>
-                </Paper>
-              ) : tableName ? (
-                <TableInspector
-                  key={`${tableName}:${revision}`}
-                  resourceId={database.id}
-                  name={tableName}
-                  busy={busy}
-                  onLoadingChange={setInspectionBusy}
-                  onQuery={() => {
-                    dispatch({
-                      type: 'queryTable',
-                      sql: tableSelectSql(
-                        tableName,
-                        database.kind === 'duckdb'
-                          ? 'duckdb'
-                          : database.kind === 'postgresql'
-                            ? 'postgresql'
-                            : 'mysql',
-                      ),
-                    });
-                    showEditor();
-                  }}
-                />
-              ) : (
-                <Paper className="panel" withBorder p="xl">
-                  <Stack gap="lg">
-                    <Heading level={2}>Explore your tables</Heading>
-                    <Text>
-                      Select a table on the left to inspect columns, indexes and data. Your SQL
-                      stays in the editor.
-                    </Text>
-                  </Stack>
-                </Paper>
-              )}
-            </ChoiceTabs>
-          )}
+          onClose={() => setImportOpen(false)}
+          onBusyChange={setImportBusy}
+          onSaved={async () => {
+            setListingBusy(true);
+            setRevision((value) => value + 1);
+            await refresh();
+          }}
         />
-      </div>
-      {draft.pendingSql !== null && (
-        <WorkspaceModal
-          title="Replace your query?"
-          description="You have edited the current query. Keep it, or replace it with the selected table’s SELECT statement."
-          onClose={() => dispatch({ type: 'cancel' })}
-        >
-          <Group justify="flex-end">
-            <Button onClick={() => dispatch({ type: 'cancel' })}>Keep my query</Button>
-            <Button
-              variant="filled"
-              onClick={() => {
-                dispatch({ type: 'replace' });
-                showEditor();
-              }}
-            >
-              Replace query
-            </Button>
-          </Group>
-        </WorkspaceModal>
       )}
-    </div>
+      <div
+        className="resource-workspace database-workspace"
+        data-browser-collapsed={browserCollapsed || undefined}
+      >
+        <DatabaseTableList
+          database={database}
+          revision={revision}
+          busy={busy || importBusy}
+          tableName={tableName}
+          expandedTable={tableName !== collapsedTable ? tableName : undefined}
+          metadata={metadata}
+          waiting={waitingForRead}
+          collapsed={browserCollapsed}
+          onToggle={() => setBrowserCollapsed((value) => !value)}
+          onSelect={(name) => {
+            setCollapsedTable((current) => (tableName === name && current !== name ? name : null));
+            setOutputView('Query results');
+            if (tableName !== name || routeLocation.databaseView !== 'sql')
+              location.hash = databaseEditorHash(database.id, name);
+          }}
+          onQuery={queryTable}
+          onLoadingChange={setListingBusy}
+          onRefresh={() => {
+            setListingBusy(true);
+            setRevision((value) => value + 1);
+          }}
+        />
+        <div className="database-editor-area" ref={editor}>
+          <SqlQueryPanel
+            sql={draft.sql}
+            onSqlChange={(sql) => dispatch({ type: 'edit', sql })}
+            database={database}
+            readBusy={
+              importBusy ||
+              (database.kind === 'duckdb' && (listingBusy || metadata.loading || rowBusy))
+            }
+            execute={(sql) => workspaceApi.query({ resourceId: database.id, sql })}
+            onComplete={refresh}
+            onExportSaved={async () => {
+              setListingBusy(true);
+              setRevision((value) => value + 1);
+              await refresh();
+            }}
+            onRunningChange={setBusy}
+            onRunStart={() => setOutputView('Query results')}
+            renderResults={(results) => (
+              <ChoiceTabs
+                panelSpacing={12}
+                value={outputView}
+                onChange={setOutputView}
+                options={['Query results', 'Table details']}
+              >
+                {outputView === 'Query results' ? (
+                  results
+                ) : tableName && (listingBusy || busy) ? (
+                  <Paper className="panel" p="xl" withBorder>
+                    <Text>Loading database…</Text>
+                  </Paper>
+                ) : tableName ? (
+                  <TableInspector
+                    key={`${tableName}:${revision}`}
+                    resourceId={database.id}
+                    name={tableName}
+                    busy={busy}
+                    metadata={metadata}
+                    onLoadingChange={setRowBusy}
+                    onQuery={() => queryTable(tableName)}
+                  />
+                ) : (
+                  <Paper className="panel" withBorder p="xl">
+                    <Stack gap="lg">
+                      <Heading level={2}>Explore your tables</Heading>
+                      <Text>
+                        Expand a table on the left to see its columns. Use Query table to prepare a
+                        SELECT in SQL Editor, or choose this tab for indexes and data.
+                      </Text>
+                    </Stack>
+                  </Paper>
+                )}
+              </ChoiceTabs>
+            )}
+          />
+        </div>
+        {draft.pendingSql !== null && (
+          <WorkspaceModal
+            title="Replace your query?"
+            description="You have edited the current query. Keep it, or replace it with the selected table’s SELECT statement."
+            onClose={() => dispatch({ type: 'cancel' })}
+          >
+            <Group justify="flex-end">
+              <Button onClick={() => dispatch({ type: 'cancel' })}>Keep my query</Button>
+              <Button
+                variant="filled"
+                onClick={() => {
+                  dispatch({ type: 'replace' });
+                  showEditor();
+                }}
+              >
+                Replace query
+              </Button>
+            </Group>
+          </WorkspaceModal>
+        )}
+      </div>
+    </>
   );
 }

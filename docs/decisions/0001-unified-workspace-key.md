@@ -49,6 +49,13 @@ requiring the customer to manage upstream credentials.
 
 ## Verification
 
+The [proposed regional API/auth profile](../../specs/gh-74/regional-api-auth.md) extends the
+same permission model with optional regional access tokens and explicit continuity grants.
+It does not implement new routes or change existing expiring Keys. Legacy/imported `expiresAt`
+remains a hard limit; a durable grant requires separate owner approval and regional renewal
+authority. Proposed ADR 0017 distinguishes locally effective revocation from pending delivery
+to a disconnected Region; the current single-process immediate-revocation tests remain valid.
+
 API tests exercise a single key that can query PG and read/write Files, receives a denial for
 MySQL, sees filtered discovery/usage/activity, and loses access to both services on revocation.
 Additional tests cover action-only denial, invalid resource grants, and the difference between

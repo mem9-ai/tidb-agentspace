@@ -200,3 +200,18 @@ export function usage(state) {
         : (capabilities[resource.kind].monthlyRU ?? null),
     }));
 }
+
+// Remote vaults refresh only at an authorized provider entry point.
+export function withFreshStore(adapter, store) {
+  if (!store.refresh) return adapter;
+  return new Proxy(adapter, {
+    get(target, key, receiver) {
+      const method = Reflect.get(target, key, receiver);
+      if (typeof method !== 'function' || key === 'close') return method;
+      return async (...args) => {
+        await store.refresh();
+        return Reflect.apply(method, target, args);
+      };
+    },
+  });
+}

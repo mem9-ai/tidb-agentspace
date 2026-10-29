@@ -2,6 +2,8 @@
 
 ## What is implemented
 
+[ADR 0025](decisions/0025-consolidated-runtime-profiles.md) preserves hosted Node CD while integrating the full native Rust quality gate. `Quality` builds/tests Node and Console; `Rust backend and S3 integration` independently checks every native phase. The existing `dev-cd` image remains Node and keeps the installed persistent volume.
+
 - `.github/workflows/ci.yml`: clean installation and `npm run check` on PRs, pushes to
   `main`, merge-queue candidates, and manual requests. A successful quality job uploads
   both build directories for review.
@@ -22,7 +24,7 @@
   Document presence does not prove an agent read the rule or that the UI conforms to TiUI;
   the [design standard](standards/tiui-design-system.md) requires code and browser evidence.
 
-The private repository is [siddontang/tidb.ai](https://github.com/siddontang/tidb.ai).
+The private repository is [mem9-ai/tidb.ai](https://github.com/mem9-ai/tidb.ai).
 GitHub CI is running; branch protection, deployment environments, and hosting are not
 configured. At initial setup, GitHub reported that branch protection for this private
 repository requires a plan upgrade. Do not change repository visibility to work around it.
@@ -88,7 +90,7 @@ Console/API builds.
 Checks run without cloud credentials. The test suite uses temporary directories and ephemeral
 ports; it never reads a contributor's persisted workspace data.
 
-When adding backend modules, update the explicit runtime list in `scripts/build-api.mjs`. The packaging test boots the extracted API to catch missing imports and checks that local data, credentials, and test modules stay out of the archive.
+The API artifact is a native Rust executable. The packaging integration test checks source identity, exclusion of private state and execution without Node. Console and native API builds remain independent; the required backend job owns Rust and real S3 checks.
 
 The default job runs on Linux with the exact Node/npm versions. When adding OS-sensitive
 behavior, add a focused macOS/Windows matrix rather than claiming all-platform coverage from
@@ -142,21 +144,12 @@ write path, preserve attribution, and recheck the new head; do not bypass reposi
 
 ## Internal artifact delivery
 
-Use the manual `Internal artifact` workflow on `main`. Each artifact contains:
-
-- separate `workspace-console.tar.gz` and `workspace-api.tar.gz` archives;
-- static Console assets in one archive and runtime API modules plus OpenAPI in the other;
-- `build-info.json` with source SHA, runtime, and package version;
-- component-specific internal runtime READMEs;
-- a SHA-256 checksum file covering both component archives.
-
-Packaging requires no cloud secrets and performs no external deployment. The local guest
-owner endpoint grants local administrative access, so this artifact is only suitable for a
-trusted local evaluation. Do not place it behind a public proxy and call it production-ready.
-
-See [independent delivery](independent-delivery.md) for component commands, runtime API
-configuration, persistent data, compatibility, and rollback. Source-based CI currently uploads
-the `dist/` build directory; the internal-artifact workflow emits the separate delivery archives.
+The manual main-only `Internal artifact` workflow runs the shared quality gate, builds
+`build:api:rust`, and packages the reviewed native API plus static Console with source SHA
+and checksums. Those artifacts require private native deployment plans and do not replace
+the installed Node image. Node dev CD independently builds its verified `dist/api` runtime
+closure through the existing Dockerfile. No workflow resets or migrates persistent state.
+See [ADR 0025](decisions/0025-consolidated-runtime-profiles.md).
 
 ## Actual deployment policy for the next phase
 
@@ -186,3 +179,41 @@ and [secure use of Actions](https://docs.github.com/en/actions/reference/securit
 
 [Console publishing](console-publishing.md) describes the main-only artifact synchronization
 workflow, one-time GitHub App setup, and Netlify verification. It is separate from API CD.
+
+## Rust build cache and timing evidence
+
+The Rust CI job checks formatting before compiling, then runs separately named build,
+Clippy, Rust unit-test and native/S3 integration-test steps. Together these run the same
+checks as local `npm run backend:check`; warnings remain errors and integration tests still
+use isolated real RustFS. Two Cargo jobs and disabled debug symbols bound runner memory.
+
+The pinned [rust-cache action](https://github.com/Swatinem/rust-cache/tree/d1527c8f67ef9af357290475d4af4b0fab8f12e0)
+caches Cargo registry/git dependencies and dependency build artifacts in the actual target
+directory, `meta-service/target`. It prunes workspace artifacts and incremental compilation
+state; caching Cargo-installed binaries is disabled. Do not add product `.data/`, deployment
+configuration, credentials or runtime state to cache paths. The action disables incremental
+compilation in CI; local Cargo incremental behavior is unchanged.
+
+The cache namespace includes the root Cargo manifest, Cargo configuration, pinned toolchain
+file and `scripts/duckdb-runtime.json`. Native-library or build-configuration changes therefore
+invalidate even fallback restores. The action also keys on runner OS/architecture, Rust
+versions, compiler/profile environment variables, dependency manifests and lockfiles. A
+lockfile update can restore compatible older dependencies; Cargo determines what to rebuild.
+Keep the CI and artifact workflow's cache inputs and profile environment aligned when
+upgrading them. A release-profile build would need its own cache identity and measurement.
+
+Successful `main` runs populate the shared dependency cache. PR runs may save caches in
+their own merge-ref scope for repeated validation. Under [GitHub's cache access rules](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache),
+PRs can restore base/default-branch caches, but their caches cannot be restored by `main` or
+other PRs. The internal artifact workflow restores compatible `main` caches without saving.
+Cache availability is an optimization: an empty or evicted cache still runs the full build
+and all checks. Keep the workflows' token permissions read-only.
+
+CI builds with `--timings` and retains the HTML report from
+`meta-service/target/cargo-timings/` for seven days, with a distinct artifact name per run
+attempt. To evaluate a cache change, compare an initial miss with a rerun of the Rust job
+on the same commit and a fresh hosted runner. Record the action's exact/fallback cache hit,
+cache size, restore/save overhead, build/Clippy/test steps and total job duration. A PR-local
+rerun proves same-PR reuse; verify the subsequent `main` seed separately before claiming
+cross-PR reuse. Compare actual Linux CI results rather than extrapolating from a warm local
+machine. Revisit the cache policy if storage/transfer cost outweighs saved compilation time.

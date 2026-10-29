@@ -1,34 +1,39 @@
 # db9 PostgreSQL runtime and recovery
 
+The Rust API uses the private deployment described in the
+[Rust runtime guide](rust-backend.md), with record metadata under [ADR 0024](decisions/0024-fresh-record-metadata.md).
+
 The owner-selected db9 anonymous/free service provides PostgreSQL-compatible resources. It is
 independent of TiDB Cloud PG Starter. The accepted [GH-40 specification](../specs/gh-40/spec.md)
 and [ADR 0011](decisions/0011-db9-postgres.md) define the boundary.
 
 ## Run
 
-Use the pinned runtime and install with `npm ci`, then:
+Set `product.providers.postgresProvider` to `db9-anonymous` in the private regional API
+configuration. Optionally enable `mysqlProvider: "tidb-cloud-zero"` and
+`filesProvider: "drive9-anonymous"` independently. Start the reviewed native artifact:
 
 ```sh
-WORKSPACE_POSTGRES_PROVIDER=db9-anonymous \
-  WORKSPACE_MYSQL_PROVIDER=tidb-cloud-zero \
-  WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run dev
+workspace-backend serve --config /absolute/private/regional-api-plan.json
 ```
 
 Choose PostgreSQL · db9 in Create database. Anonymous registration needs no user email/card.
-The backend uses official REST endpoints and native `pg` 8.23.1; no CLI is installed or required.
+The backend uses official REST endpoints and its native Rust PostgreSQL driver; no CLI is installed or required.
 `postgresql` is the public kind, `db9-anonymous` its provider, and `automatic` the region request.
 The service does not promise a region or database expiry not supplied by the provider. Token
 expiry is an internal account concern, not a database lifetime.
 
-Default `WORKSPACE_POSTGRES_PROVIDER=disabled` prevents new PostgreSQL creation. Existing
+The default `postgresProvider: "disabled"` prevents new PostgreSQL creation. Existing
 configured PG bindings remain usable; historical simulated PG is never rebound or exposed.
 
 ## Credentials and isolation
 
-The sibling `<state-file>.db9.json` vault contains one anonymous account and resource-scoped
-native bindings, with mode 0600. Never commit, log or send it to the Console. Startup rejects
-insecure existing vault permissions. It is local prototype credential storage; production
-secret management and public identity remain unimplemented.
+The regional Meta service stores the anonymous account at `credentials/accounts/db9` and
+resource-specific bindings/credentials in separate encrypted records. The API never sends these
+records to the Console. Private configuration, encryption keys, service credentials and object
+storage must be protected and recovered together; see [metadata operations](meta-service.md).
+The former owner-only JSON vault exists only in isolated regression fixtures, with no serving
+or migration path. Production secret management and public identity remain unimplemented.
 
 The provider token handles account/database management. Customer SQL uses a generated native
 non-superuser role owning the `workspace` schema; admin credentials are discarded from its
@@ -38,11 +43,22 @@ One Workspace Key can query its selected PG resource and read/write its selected
 actions and resource IDs are enforced before upstream access. Native passwords are never
 exported; Connect provides gateway examples with a Workspace Key placeholder.
 
-Queries use fresh sessions, one extended-protocol statement and no automatic retries. Budgets
+The Rust driver prepares one statement to validate it and retain field metadata, then reads
+text-protocol results to preserve native numeric/temporal/JSON text. It does not run SQLx's
+extra `EXPLAIN`/nullability probes. Completed requests send protocol Terminate; closing errors
+do not replace a confirmed result. Internal diagnostics contain only a phase/error category,
+with SQL statement logging disabled. A loopback wire fixture checks empty fields, no EXPLAIN
+and connection termination without requiring cloud credentials.
+
+Queries use fresh sessions, one statement and no automatic retries. Budgets
 remain 64 KiB SQL, four concurrent PG queries, 15 seconds including connection, 1,000 rows and
 1 MiB retained results. Closing/overflow/timeouts can leave a write outcome unknown; inspect
 before retrying. Table browsing is restricted to workspace, lists at most 500 tables/views and
 previews 100 unordered rows. It requires queries:execute and the database resource grant.
+The Rust table-description operation reuses one fresh native session for its three generated
+metadata statements, sharing the 15-second/1,000-row/1 MiB operation budget. It never reuses a
+customer SQL session or returns a partial description. Console database reads also have an
+explicit whole-read deadline and retryable error; see [verification](postgres-column-latency-verification.md).
 
 ## Provider compatibility
 
@@ -74,6 +90,6 @@ the original outcome. Raw provider/native errors stay internal and public errors
 
 Refresh the anonymous token using the stored anonymous ID/secret when needed for management;
 refresh never changes account identity or creates databases. Native user SQL does not use that
-token. Back up state and the vault together; losing them can lose access to an anonymous account.
+token. Preserve the regional object-store metadata and its encryption keys together; losing them can lose access to an anonymous account.
 Reverting code or disabling creation does not erase cloud data. Preserve bindings when rolling
 back, and never expose retired simulated PG records as live. See [verification](db9-verification.md).

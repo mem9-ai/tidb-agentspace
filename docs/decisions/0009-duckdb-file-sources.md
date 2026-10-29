@@ -3,6 +3,15 @@
 - Status: Accepted and implemented for the loopback prototype; see [verification](../duckdb-sources-verification.md).
 - Date: 2026-10-28. [GH-34 baseline](../../specs/gh-34/spec.md).
 
+## Console presentation amendment
+
+The owner clarified in [GH-50](https://github.com/siddontang/tidb.ai/issues/50) that DuckDB's
+Console must follow the tidbfs native database model in [ADR 0008](0008-duckdb-private-storage.md).
+The custom File sources picker/counter is removed from the database workspace. This supersedes
+GH-34's Console picker acceptance; its historical verification remains evidence of that earlier
+implementation. The optional `sources` API, selected-file authorization and snapshot isolation
+below are retained unchanged. File System Analyze remains the Console entry for file analysis.
+
 ## Decision
 
 DuckDB SQL may use explicit public Workspace File System sources. Add a `sources` array to

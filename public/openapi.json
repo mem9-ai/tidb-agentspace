@@ -580,6 +580,175 @@
         }
       ]
     },
+    "/workspaces/{workspaceId}/files/tabular-preview": {
+      "get": {
+        "operationId": "tabularFilePreview",
+        "summary": "Read a fixed bounded CSV/Parquet schema and sample",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Fixed CSV/Parquet schema/sample only: accepts resourceId/path, no custom SQL or engine settings. Requires files:read, not files:analyze. Whole version-verified snapshot up to 16 MiB, 15 seconds and shared two-worker budget; at most 20 rows, 50 columns, 128 KiB. CSV types are inferred and totalRows unknown; Parquet count is metadata. No automatic retry. Download unsupported or over-budget files.",
+        "x-required-scope": "files:read",
+        "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
+        "parameters": [
+          { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "path", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "resourceId",
+                    "path",
+                    "format",
+                    "readOnly",
+                    "inputBytes",
+                    "durationMs",
+                    "fileVersion",
+                    "columns",
+                    "columnTypes",
+                    "schema",
+                    "rows",
+                    "rowCount",
+                    "totalRows",
+                    "typesInferred",
+                    "truncated"
+                  ],
+                  "properties": {
+                    "resourceId": { "type": "string" },
+                    "path": { "type": "string" },
+                    "format": { "enum": ["csv", "parquet"] },
+                    "readOnly": { "const": true },
+                    "inputBytes": { "type": "integer" },
+                    "durationMs": { "type": "integer" },
+                    "fileVersion": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                    "columns": { "type": "array", "maxItems": 50, "items": { "type": "string" } },
+                    "columnTypes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "items": { "type": "string" }
+                    },
+                    "schema": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "items": {
+                        "type": "object",
+                        "required": ["column_name", "column_type"],
+                        "properties": {
+                          "column_name": { "type": "string" },
+                          "column_type": { "type": "string" }
+                        }
+                      }
+                    },
+                    "rows": {
+                      "type": "array",
+                      "maxItems": 20,
+                      "items": { "type": "object", "additionalProperties": true }
+                    },
+                    "rowCount": { "type": "integer", "minimum": 0, "maximum": 20 },
+                    "totalRows": {
+                      "type": ["string", "null"],
+                      "description": "Exact Parquet metadata row count; null for CSV. Not the sample count."
+                    },
+                    "typesInferred": { "type": "boolean" },
+                    "truncated": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "const": "ws_agentlab" },
+          "description": "This local prototype has one workspace."
+        }
+      ]
+    },
     "/workspaces/{workspaceId}/file-analyses/capabilities": {
       "get": {
         "operationId": "fileAnalysisCapabilities",
@@ -601,6 +770,7 @@
                   "type": "object",
                   "required": [
                     "engine",
+                    "engines",
                     "format",
                     "available",
                     "reason",
@@ -609,10 +779,47 @@
                     "limits"
                   ],
                   "properties": {
-                    "engine": { "type": ["string", "null"], "enum": ["duckdb", "bash", null] },
+                    "engine": {
+                      "type": ["string", "null"],
+                      "enum": ["duckdb", "bash", null],
+                      "description": "Default engine, retained for compatibility. Select from engines."
+                    },
+                    "engines": {
+                      "type": "array",
+                      "description": "Supported analysis methods with individual availability. CSV offers both engines; Parquet only DuckDB; recognized text only Bash. Availability checks metadata, not successful parsing or UTF-8 decoding.",
+                      "items": {
+                        "type": "object",
+                        "required": ["engine", "available", "reason"],
+                        "properties": {
+                          "engine": { "enum": ["duckdb", "bash"] },
+                          "available": { "type": "boolean" },
+                          "reason": { "type": "string" },
+                          "input": {
+                            "type": "object",
+                            "required": ["path", "workingDirectory", "aliases"],
+                            "properties": {
+                              "path": { "type": "string" },
+                              "workingDirectory": { "const": "/workspace" },
+                              "aliases": { "type": "array", "items": { "type": "string" } },
+                              "fileVariable": {
+                                "const": "FILE",
+                                "description": "When present, Workspace sets FILE to input.path for each fresh Bash run. Use quoted \"$FILE\" or \"${FILE}\"; this is a Workspace convention, not a Bash built-in. Script assignments do not persist."
+                              }
+                            },
+                            "description": "Bash only: the selected absolute Workspace path in its read-only virtual snapshot, working directory, and compatible aliases. The legacy alias is omitted when it would shadow the selected path or a parent directory. Not a host path or a mount of other files."
+                          }
+                        }
+                      }
+                    },
                     "format": { "type": ["string", "null"] },
-                    "available": { "type": "boolean" },
-                    "reason": { "type": "string" },
+                    "available": {
+                      "type": "boolean",
+                      "description": "Availability of the default engine."
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Unavailable reason for the default engine."
+                    },
                     "size": { "type": "integer" },
                     "readOnly": { "const": true },
                     "limits": {
@@ -738,7 +945,7 @@
         "operationId": "analyzeFile",
         "summary": "Run bounded read-only DuckDB SQL or Just Bash on one selected file",
         "tags": ["Workspace"],
-        "description": "Required workspace key scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Also requires files:read. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.",
+        "description": "Required workspace key scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Also requires files:read. Discover engines from capabilities: CSV supports DuckDB SQL over table file or Just Bash over its raw UTF-8 text. Bash exposes the selected absolute Workspace path; discover input.path, input.workingDirectory and compatibility aliases on its engine option. Paths refer only to the virtual selected-file snapshot. Parquet supports only DuckDB, and other recognized text only Just Bash. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.",
         "x-required-scope": "files:analyze",
         "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
         "requestBody": {
@@ -822,7 +1029,12 @@
                     "rowCount": { "type": "integer" },
                     "stdout": { "type": "string" },
                     "stderr": { "type": "string" },
-                    "exitCode": { "type": "integer" }
+                    "exitCode": { "type": "integer" },
+                    "fileVersion": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$",
+                      "description": "Saved-byte digest when supported; compare with tabular preview."
+                    }
                   }
                 }
               }
@@ -1915,6 +2127,720 @@
         }
       }
     },
+    "/workspaces/{workspaceId}/database-imports/prepare": {
+      "post": {
+        "operationId": "prepareDatabaseImport",
+        "summary": "Parse a Workspace CSV/Parquet for a fixed destination database",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: queries:execute on destination; files:read and files:analyze on source. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
+        "x-required-scope": "queries:execute on destination; files:read and files:analyze on source",
+        "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DatabaseImportPreparationInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FileExportPreparation" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "const": "ws_agentlab" },
+          "description": "This local prototype has one workspace."
+        }
+      ]
+    },
+    "/workspaces/{workspaceId}/database-imports/prepare-upload": {
+      "post": {
+        "operationId": "prepareDatabaseImportUpload",
+        "summary": "Upload up to 1 MiB of local CSV/Parquet for private schema review",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: queries:execute on destination. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
+        "x-required-scope": "queries:execute on destination",
+        "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
+        "parameters": [
+          { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
+          {
+            "name": "filename",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 255 },
+            "description": "A basename of at most 255 UTF-8 bytes, not a File System path."
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "schema": { "enum": ["csv", "parquet"] }
+          },
+          {
+            "name": "header",
+            "in": "query",
+            "schema": { "enum": ["true", "false"] },
+            "description": "Required for CSV; forbidden for Parquet."
+          },
+          {
+            "name": "delimiter",
+            "in": "query",
+            "schema": { "enum": [",", "\t", ";", "|"] },
+            "description": "Required for CSV; forbidden for Parquet."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FileExportPreparation" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": { "schema": { "type": "string", "format": "binary" } }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "const": "ws_agentlab" },
+          "description": "This local prototype has one workspace."
+        }
+      ]
+    },
+    "/workspaces/{workspaceId}/database-imports": {
+      "post": {
+        "operationId": "commitDatabaseImport",
+        "summary": "Confirm reviewed server rows and create a new database table",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: queries:execute on destination; Workspace files additionally require source files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
+        "x-required-scope": "queries:execute on destination; Workspace files additionally require source files:read and files:analyze",
+        "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/DatabaseImportInput" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DatabaseImportResult" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "const": "ws_agentlab" },
+          "description": "This local prototype has one workspace."
+        }
+      ]
+    },
+    "/workspaces/{workspaceId}/file-exports/prepare": {
+      "post": {
+        "operationId": "prepareFileExport",
+        "summary": "Parse an original file or Bash stream for explicit schema review",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Also requires files:read and the source File System grant. Fixed CSV/Parquet/text-line parsing, no scripts. Up to 16 MiB original or 1 MiB output text, 1000 rows/100 columns/1 MiB parsed data and 15 seconds, shared worker admission. Returns 20 sample rows and suggested field types with an actor-bound five-minute preparation. Parsing writes nothing. CSV keeps leading zeros and distinguishes quoted empty strings from NULL. Text lines are explicit one-column records.",
+        "x-required-scope": "files:analyze",
+        "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/FileExportPreparationInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FileExportPreparation" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "const": "ws_agentlab" },
+          "description": "This local prototype has one workspace."
+        }
+      ]
+    },
+    "/workspaces/{workspaceId}/file-exports": {
+      "post": {
+        "operationId": "exportFileContent",
+        "summary": "Copy original bytes, export Bash text or commit a confirmed database import",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Original copies require read access; Bash output requires read plus analyze. File targets require files:write and a target grant. Database commits require the exact actor preparation, confirmed=true, reviewed fields, source read/analyze and target queries:execute/grant. Original versions must match; single-use writes, no append/overwrite/retry. Output text is client-supplied authorization context, not attested command lineage. Only these two routes permit an 8 MiB JSON envelope for at most 1 MiB output text. Original downloads retain /files/content (local files use /files).",
+        "x-required-scope": "files:read",
+        "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/FileExportInput" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/FileExportOutput" } }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "const": "ws_agentlab" },
+          "description": "This local prototype has one workspace."
+        }
+      ]
+    },
+    "/workspaces/{workspaceId}/result-exports": {
+      "post": {
+        "operationId": "exportResult",
+        "summary": "Export a supplied result snapshot without rerunning its source query",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: Source database: queries:execute; source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint. Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.",
+        "x-required-scope": "Source database: queries:execute; source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant",
+        "security": [{ "workspaceKey": [] }, { "localOwner": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ResultExportInput" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResultExportOutput" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "500": {
+            "description": "Export may have completed but its activity record could not be saved",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "const": "ws_agentlab" },
+          "description": "This local prototype has one workspace."
+        }
+      ]
+    },
     "/workspaces/{workspaceId}/queries": {
       "post": {
         "operationId": "executeQuery",
@@ -2796,6 +3722,12 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Configured metadata authority is unavailable; no fallback state is seeded",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
           }
         }
       }
@@ -3023,6 +3955,448 @@
               "code": { "type": "string" },
               "message": { "type": "string" },
               "requestId": { "type": "string" }
+            }
+          }
+        }
+      },
+      "ResultExportInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceResourceId", "result", "target"],
+        "properties": {
+          "sourceResourceId": { "type": "string" },
+          "result": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["columns", "rows"],
+            "properties": {
+              "columns": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 100,
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "rows": {
+                "type": "array",
+                "maxItems": 1000,
+                "items": { "type": "object", "additionalProperties": true }
+              }
+            }
+          },
+          "target": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "format"],
+                "properties": {
+                  "kind": { "const": "download" },
+                  "format": { "type": "string", "enum": ["csv", "json", "jsonl"] }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "resourceId", "path", "format"],
+                "properties": {
+                  "kind": { "const": "filesystem" },
+                  "resourceId": { "type": "string" },
+                  "path": { "type": "string", "maxLength": 512 },
+                  "format": { "type": "string", "enum": ["csv", "json", "jsonl"] }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "resourceId", "table"],
+                "properties": {
+                  "kind": { "const": "database" },
+                  "resourceId": { "type": "string" },
+                  "table": { "type": "string", "minLength": 1, "maxLength": 63 }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "ResultExportOutput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "rowCount", "format", "filename", "mimeType", "content", "bytes"],
+            "properties": {
+              "kind": { "const": "download" },
+              "rowCount": { "type": "integer", "minimum": 0, "maximum": 1000 },
+              "format": { "type": "string", "enum": ["csv", "json", "jsonl"] },
+              "filename": { "type": "string" },
+              "mimeType": { "type": "string" },
+              "content": { "type": "string" },
+              "bytes": { "type": "integer", "minimum": 0 }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "rowCount", "resourceId", "path", "format", "bytes"],
+            "properties": {
+              "kind": { "const": "filesystem" },
+              "rowCount": { "type": "integer", "minimum": 0, "maximum": 1000 },
+              "resourceId": { "type": "string" },
+              "path": { "type": "string" },
+              "format": { "type": "string", "enum": ["csv", "json", "jsonl"] },
+              "bytes": { "type": "integer", "minimum": 0 }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "rowCount", "resourceId", "table", "columns"],
+            "properties": {
+              "kind": { "const": "database" },
+              "rowCount": { "type": "integer", "minimum": 0, "maximum": 1000 },
+              "resourceId": { "type": "string" },
+              "table": { "type": "string" },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["name", "type"],
+                  "properties": { "name": { "type": "string" }, "type": { "type": "string" } }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "FileExportSource": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "resourceId", "path"],
+            "properties": {
+              "kind": { "const": "original" },
+              "resourceId": { "type": "string" },
+              "path": { "type": "string" }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "resourceId", "stream", "text"],
+            "properties": {
+              "kind": { "const": "output" },
+              "resourceId": { "type": "string" },
+              "stream": { "enum": ["stdout", "stderr"] },
+              "text": { "type": "string" }
+            }
+          }
+        ]
+      },
+      "FileExportParsing": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["format", "header", "delimiter"],
+            "properties": {
+              "format": { "const": "csv" },
+              "header": { "type": "boolean" },
+              "delimiter": { "enum": [",", "\t", ";", "|"] }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["format"],
+            "properties": { "format": { "enum": ["parquet", "lines"] } }
+          }
+        ]
+      },
+      "FileExportPreparationInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "parsing"],
+        "properties": {
+          "source": { "$ref": "#/components/schemas/FileExportSource" },
+          "parsing": { "$ref": "#/components/schemas/FileExportParsing" }
+        }
+      },
+      "FileExportPreparation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "preparationId",
+          "expiresAt",
+          "fields",
+          "rows",
+          "rowCount",
+          "sourceVersion",
+          "inputBytes",
+          "format"
+        ],
+        "properties": {
+          "preparationId": { "type": "string" },
+          "expiresAt": { "type": "string" },
+          "fields": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source", "name", "type"],
+              "properties": {
+                "source": { "type": "string" },
+                "name": { "type": "string" },
+                "type": { "enum": ["TEXT", "BIGINT", "DOUBLE", "BOOLEAN"] }
+              }
+            }
+          },
+          "rows": {
+            "type": "array",
+            "maxItems": 20,
+            "items": { "type": "object", "additionalProperties": true }
+          },
+          "rowCount": { "type": "integer", "minimum": 0, "maximum": 1000 },
+          "sourceVersion": { "type": "string" },
+          "inputBytes": { "type": "integer" },
+          "format": { "enum": ["csv", "parquet", "lines"] }
+        }
+      },
+      "FileExportInput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "target"],
+            "properties": {
+              "source": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "resourceId", "path"],
+                "properties": {
+                  "kind": { "const": "original" },
+                  "resourceId": { "type": "string" },
+                  "path": { "type": "string" }
+                }
+              },
+              "target": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "resourceId", "path"],
+                "properties": {
+                  "kind": { "const": "filesystem" },
+                  "resourceId": { "type": "string" },
+                  "path": { "type": "string" }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "target"],
+            "properties": {
+              "source": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "resourceId", "stream", "text"],
+                "properties": {
+                  "kind": { "const": "output" },
+                  "resourceId": { "type": "string" },
+                  "stream": { "enum": ["stdout", "stderr"] },
+                  "text": { "type": "string" }
+                }
+              },
+              "target": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["kind"],
+                    "properties": { "kind": { "const": "download" } }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["kind", "resourceId", "path"],
+                    "properties": {
+                      "kind": { "const": "filesystem" },
+                      "resourceId": { "type": "string" },
+                      "path": { "type": "string" }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["preparationId", "confirmed", "fields", "target"],
+            "properties": {
+              "preparationId": { "type": "string" },
+              "confirmed": { "const": true },
+              "fields": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["source", "name", "type"],
+                  "properties": {
+                    "source": { "type": "string" },
+                    "name": { "type": "string" },
+                    "type": { "enum": ["TEXT", "BIGINT", "DOUBLE", "BOOLEAN"] }
+                  }
+                }
+              },
+              "target": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "resourceId", "table"],
+                "properties": {
+                  "kind": { "const": "database" },
+                  "resourceId": { "type": "string" },
+                  "table": { "type": "string" }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "FileExportOutput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "filename", "mimeType", "content", "bytes"],
+            "properties": {
+              "kind": { "const": "download" },
+              "filename": { "type": "string" },
+              "mimeType": { "type": "string" },
+              "content": { "type": "string" },
+              "bytes": { "type": "integer" }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "resourceId", "path", "bytes"],
+            "properties": {
+              "kind": { "const": "filesystem" },
+              "resourceId": { "type": "string" },
+              "path": { "type": "string" },
+              "bytes": { "type": "integer" }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "resourceId", "table", "rowCount", "columns"],
+            "properties": {
+              "kind": { "const": "database" },
+              "resourceId": { "type": "string" },
+              "table": { "type": "string" },
+              "rowCount": { "type": "integer" },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["name", "type"],
+                  "properties": { "name": { "type": "string" }, "type": { "type": "string" } }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "DatabaseImportParsing": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["format", "header", "delimiter"],
+            "properties": {
+              "format": { "const": "csv" },
+              "header": { "type": "boolean" },
+              "delimiter": { "enum": [",", "\t", ";", "|"] }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["format"],
+            "properties": { "format": { "const": "parquet" } }
+          }
+        ]
+      },
+      "DatabaseImportPreparationInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["resourceId", "source", "parsing"],
+        "properties": {
+          "resourceId": { "type": "string", "minLength": 1 },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["resourceId", "path"],
+            "properties": {
+              "resourceId": { "type": "string", "minLength": 1 },
+              "path": { "type": "string", "minLength": 1 }
+            }
+          },
+          "parsing": { "$ref": "#/components/schemas/DatabaseImportParsing" }
+        }
+      },
+      "DatabaseImportInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["resourceId", "preparationId", "confirmed", "table", "fields"],
+        "properties": {
+          "resourceId": { "type": "string", "minLength": 1 },
+          "preparationId": { "type": "string", "minLength": 1 },
+          "confirmed": { "const": true },
+          "table": { "type": "string", "minLength": 1 },
+          "fields": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source", "name", "type"],
+              "properties": {
+                "source": { "type": "string" },
+                "name": { "type": "string" },
+                "type": { "enum": ["TEXT", "BIGINT", "DOUBLE", "BOOLEAN"] }
+              }
+            }
+          }
+        }
+      },
+      "DatabaseImportResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "resourceId", "table", "rowCount", "columns"],
+        "properties": {
+          "kind": { "const": "database" },
+          "resourceId": { "type": "string" },
+          "table": { "type": "string" },
+          "rowCount": { "type": "integer" },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "type"],
+              "properties": { "name": { "type": "string" }, "type": { "type": "string" } }
             }
           }
         }

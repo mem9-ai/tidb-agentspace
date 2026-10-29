@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { stat } from 'node:fs/promises';
-import { createStore } from '../store.mjs';
+import { createStore, withFreshStore } from '../store.mjs';
 import { executeNativeSql } from './sql-drivers.mjs';
 import { sqlError, sqlLimits, validateBinding } from './sql-common.mjs';
 
@@ -10,17 +10,20 @@ const endpoint = 'https://zero.tidbapi.com/v1beta1/instances';
 
 export async function createZero({
   credentialsFile,
+  storeFactory = createStore,
   transport = fetch,
   execute = executeNativeSql,
   limits = sqlLimits,
 }) {
-  try {
-    if ((await stat(credentialsFile)).mode & 0o077)
-      throw new Error('Zero credentials require owner-only file permissions.');
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
+  if (storeFactory === createStore) {
+    try {
+      if ((await stat(credentialsFile)).mode & 0o077)
+        throw new Error('Zero credentials require owner-only file permissions.');
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
   }
-  const vault = await createStore(credentialsFile, () => ({ bindings: {} }));
+  const vault = await storeFactory(credentialsFile, () => ({ bindings: {} }));
   const pending = new Map();
   let active = 0;
   const get = (id) => vault.read().bindings[id];
@@ -147,43 +150,46 @@ export async function createZero({
       );
     }
   }
-  return {
-    status,
-    provision(resource) {
-      if (!pending.has(resource.id))
-        pending.set(
-          resource.id,
-          provision(resource).finally(() => pending.delete(resource.id)),
-        );
-      return pending.get(resource.id);
+  return withFreshStore(
+    {
+      status,
+      provision(resource) {
+        if (!pending.has(resource.id))
+          pending.set(
+            resource.id,
+            provision(resource).finally(() => pending.delete(resource.id)),
+          );
+        return pending.get(resource.id);
+      },
+      async execute(resource, sql, signal) {
+        if (typeof sql !== 'string' || !sql.trim() || Buffer.byteLength(sql) > limits.sqlBytes)
+          throw sqlError(400, 'INVALID_SQL', 'Enter one SQL statement, up to 64 KiB.');
+        const binding = get(resource.id);
+        if (expired(binding))
+          throw sqlError(
+            410,
+            'DATABASE_EXPIRED',
+            'This Zero database has expired. Its data is no longer available.',
+          );
+        if (binding?.state !== 'ready')
+          throw sqlError(503, 'DATABASE_NOT_READY', 'This database is not ready for queries.');
+        if (active >= 4)
+          throw sqlError(
+            429,
+            'SQL_BUSY',
+            'Four queries are already running. Try again when one completes.',
+          );
+        active++;
+        const started = performance.now();
+        try {
+          const connection = validateBinding(binding.connection, resource);
+          const result = await execute(connection, sql, { limits, signal });
+          return { ...result, mode: 'live', durationMs: Math.round(performance.now() - started) };
+        } finally {
+          active--;
+        }
+      },
     },
-    async execute(resource, sql, signal) {
-      if (typeof sql !== 'string' || !sql.trim() || Buffer.byteLength(sql) > limits.sqlBytes)
-        throw sqlError(400, 'INVALID_SQL', 'Enter one SQL statement, up to 64 KiB.');
-      const binding = get(resource.id);
-      if (expired(binding))
-        throw sqlError(
-          410,
-          'DATABASE_EXPIRED',
-          'This Zero database has expired. Its data is no longer available.',
-        );
-      if (binding?.state !== 'ready')
-        throw sqlError(503, 'DATABASE_NOT_READY', 'This database is not ready for queries.');
-      if (active >= 4)
-        throw sqlError(
-          429,
-          'SQL_BUSY',
-          'Four queries are already running. Try again when one completes.',
-        );
-      active++;
-      const started = performance.now();
-      try {
-        const connection = validateBinding(binding.connection, resource);
-        const result = await execute(connection, sql, { limits, signal });
-        return { ...result, mode: 'live', durationMs: Math.round(performance.now() - started) };
-      } finally {
-        active--;
-      }
-    },
-  };
+    vault,
+  );
 }

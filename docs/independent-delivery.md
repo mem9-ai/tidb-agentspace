@@ -1,38 +1,40 @@
 # Independent Console and API delivery
 
-Status: Implemented for the loopback prototype. Public production hosting and identity are
-not implemented. [ADR 0005](decisions/0005-independent-console-and-api.md) records the boundary.
+The static React Console builds and runs independently of both API profiles. The installed hosted API uses a self-contained Node runtime closure with SSO and existing JSON/vault persistence. The native local API is a Rust executable with independent SlateDB metadata; its archive contains no Node backend, private state or Console assets.
 
-## Repository and commands
+| Component       | Build                                     | Run                                                                  |
+| --------------- | ----------------------------------------- | -------------------------------------------------------------------- |
+| Console         | `npm run build:console` → `dist/console/` | Static hosting or `npm run start:console`                            |
+| Rust API / Meta | `npm run build:api:rust`                  | `workspace-backend serve --config /absolute/private/deployment.json` |
 
-Use the pinned Node/npm versions and `npm ci` from the repository root. One npm lockfile owns
-all dependencies, including the isolated contract generator workspace. The backend includes mysql2, DuckDB Node bindings, Just Bash and their pinned runtime dependency closures for SQL and read-only file analysis;
-frontend and contract-generator dependencies are excluded. See [ADR 0006](decisions/0006-zero-sql-gateway.md).
+Use the pinned Node/npm versions for Console and tooling and the pinned Cargo workspace for the native backend. `npm run check` verifies repository policy, formatting, lint, generated API/client consistency, isolated behavior tests, types and the Console production build. `npm run backend:check` separately builds and verifies Rust plus real S3, transport, native artifact and full API integration cases. Neither suite uses developer data or cloud credentials.
 
-| Component | Source                           | Build                                     | Run from source / serve output                  |
-| --------- | -------------------------------- | ----------------------------------------- | ----------------------------------------------- |
-| Console   | `src/`, `console/public/`        | `npm run build:console` → `dist/console/` | `npm run dev:console` / `npm run start:console` |
-| API       | `server/`, `public/openapi.json` | `npm run build:api` → `dist/api/`         | `npm run dev:api` / `npm run start:api`         |
+## Consolidated profiles
 
-`npm run dev` starts both development servers as a convenience. `npm run build` builds both
-independent outputs. `npm start` starts only the source API; `npm run preview` serves only
-built Console output. There is no API proxy inside the Console server.
+[ADR 0025](decisions/0025-consolidated-runtime-profiles.md) defines the current integration:
+`build:api` / `start:api` retain the hosted Node API, SSO, environment variables and JSON/vault
+persistence; `backend:build` / `dev:api` / `start:api:rust` select native Rust with an explicit
+private configuration. The local-native instructions below do not configure the hosted Node
+image. Neither startup falls back to the other runtime. A public native cutover requires a
+separate identity/storage migration and rollout; this merge performs no data reset.
 
-For independent local runs, use two terminals:
+## Configuration and startup
 
-```sh
-npm run start:api
-```
+Follow [Meta bootstrap](meta-service.md) for a new local deployment. It creates independent Global/Region Meta roots and an empty Workspace. Fresh installation format 2 rejects old document roots; [ADR 0024](decisions/0024-fresh-record-metadata.md) records the explicit local reset boundary. No cloud resources are created automatically.
 
 ```sh
-npm run build:console
-npm run start:console
+npm run backend:build
+npm run meta:local -- init --directory .data/meta-runtime --api-port 4318
+npm run meta:local -- serve --directory .data/meta-runtime
 ```
 
-Open `http://127.0.0.1:4173`. The API is at `http://127.0.0.1:4318`; navigating to that API
-origin's `/` returns a JSON 404. `/api/health` and `/openapi.json` are available without the
-Console. To run the built backend independently, copy `dist/api/` anywhere and execute
-`node server/index.mjs` from that directory. No `npm install` or frontend assets are needed.
+In a separate terminal:
+
+```sh
+npm run dev:console
+```
+
+The local operator manages the native roles and RustFS. For independent deployment, use a metadata role plan and an API role plan, with private absolute configuration references; see [the Rust guide](rust-backend.md). `WORKSPACE_BACKEND_CONFIG=/absolute/private/api-plan.json npm run start:api:rust` is an optional launcher for the API role. Its metadata dependency must already be available. There is no alternate JSON data source or fallback backend.
 
 ## Configuration
 
@@ -63,34 +65,33 @@ API request includes credentials; CORS does not grant API permissions. Unknown o
 rejected before session creation or provider access. Non-browser agents use Workspace Keys
 without relying on CORS or Console sessions.
 
-Example with non-default ports, in two terminals:
+For a separate browser-verification API, keep its Console/API hostname pair distinct from
+the active user preview (for example, use `localhost` for verification and `127.0.0.1` for the
+user preview). Different ports on the same hostname do not isolate local owner session
+cookies between independent API processes. Preserve the active serving process and confirm
+the user's actual tab, URL and authenticated read after a preview update; another working
+directory or an already loaded tab can still serve an older Console build.
+
+Production identity and direct multi-region public API discovery remain proposed in [the regional API/auth design](../specs/gh-74/regional-api-auth.md). The current public contract has one configured origin. Separate internal Meta authorities do not implement production global policy distribution by themselves.
+
+## Contract and packaging
+
+`server/generate-openapi.mjs` owns the public contract; `npm run api:generate` regenerates OpenAPI and Console types, and `npm run api:check` rejects drift. Console and agent requests share the selected runtime's domain operations. Internal record protocol changes do not require changing the public contract when the observed product API remains the same.
+
+After building both components from reviewed clean source, run:
 
 ```sh
-WORKSPACE_API_PORT=4418 WORKSPACE_CONSOLE_ORIGINS=http://127.0.0.1:4273 \
-  WORKSPACE_DATA_FILE=/absolute/persistent/workspace.json npm run start:api
+npm run build
+npm run package -- FULL_REVIEWED_SOURCE_SHA
 ```
 
-```sh
-WORKSPACE_CONSOLE_PORT=4273 WORKSPACE_API_ORIGIN=http://127.0.0.1:4418 npm run start:console
-```
+The package contains a platform-specific native API archive, a separate `workspace-console.tar.gz`, source/build metadata and SHA-256 sums. The native API requires neither Node nor frontend dependencies; its common executable can host API, Meta and isolated compute roles. Private configuration, service tokens, encryption keys, user files and provider credentials stay outside every artifact. The optional native tidbfs extension is supplied separately with its verified checksum.
 
-A malformed/missing Console configuration shows a startup error and Retry. An API connection
-or authorization failure continues to use the Console's existing error/retry behavior. Generated
-agent instructions, code samples, schema links, file preview/upload/download, and API explorer
-must all point at the configured API origin.
+The release workflow packages reviewed main-branch source; it does not deploy. Public hosting still requires a configured target, real identity, environment protection, verification and recovery under [CI/CD policy](ci-cd.md). A source rollback cannot make a different metadata layout readable. The authorized disposable local reset is not a general production migration strategy.
 
-## Contract-first changes
+## Verification
 
-1. Define requests, responses, errors, and permissions in `server/generate-openapi.mjs` before
-   implementing the interaction. Console aggregation and session endpoints are documented;
-   owner-only privileges do not become Workspace Key privileges.
-2. Run `npm run api:generate` to update OpenAPI and the generated TypeScript declarations.
-3. Implement the API and update `src/api/client.ts` / consumers using the generated types.
-   Binary uploads must use an identity body serializer; JSON serialization corrupts raw bytes.
-4. Add meaningful behavior and contract cases. Run `npm run check`, which checks generation
-   drift, tests, lint, types, and both builds. JSON Schema checks cover structure/required fields;
-   separate behavior tests establish authorization, state changes, and provider safety. No claim
-   is made that schema validation alone proves all semantics or every error case.
+Tests cover separate Console/API origins, authentication, scoped Keys, cross-Workspace and cross-resource denials, files, database protocols, analysis and exports. Native/S3 integration verifies both in-process and remote Meta, fresh initialization, durable restart and authority/writer isolation. Native artifact validation runs selected-file computation with no Node executable in PATH.
 
 ## Artifacts, promotion, and rollback
 

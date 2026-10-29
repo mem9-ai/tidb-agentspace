@@ -1,5 +1,10 @@
 # DuckDB Workspace file source verification
 
+Historical Console evidence: [GH-50](https://github.com/siddontang/tidb.ai/issues/50) removes
+the custom database picker/counter in favor of the native database workspace. The API and its
+snapshot/authorization verification remain applicable; earlier Console picker screenshots below
+describe the GH-34 baseline. See the [ADR amendment](decisions/0009-duckdb-file-sources.md#console-presentation-amendment).
+
 Date: 2026-10-28. Baseline: [GH-34 revision 1](../specs/gh-34/spec.md), accepted at
 `8fcab93ef90843fc3b80cba4743f4ee963871c00`. Uses the existing pinned DuckDB 2.0.0 native
 runtime, Node API 2.0.0-r.1, TiUI 2.9.1 and SQL Editor 0.0.6. No new dependency or CI-policy change in this feature; synchronized with the existing analysis runtime and compact database workspace on main.
