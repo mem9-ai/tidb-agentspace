@@ -70,8 +70,10 @@ follow its task-specific references before implementation. Keep detailed rules c
   personal style, add blanket suppressions, or weaken checks to get a green build.
 - Frontend code is strict TypeScript with functional React components. Prefer explicit
   domain types and `unknown` at untrusted boundaries; avoid `any` and unchecked casts.
-- Existing backend/tooling files use ESM `.mjs`. Follow that layout until a scoped migration
-  is agreed; do not mix in CommonJS or add a second backend framework for one feature.
+- Backend business services target Rust under [ADR 0020](docs/decisions/0020-modular-rust-backend.md):
+  shared domain modules support in-process and independently deployed service composition.
+  Follow [the migration contract](specs/gh-88/spec.md); existing Node ESM is transitional and
+  receives scoped compatibility fixes until Rust parity. Keep Node build/test tooling ESM.
 - Use PascalCase for React components/types, camelCase for functions/variables, and descriptive
   kebab-case for new non-component files. Follow established public API field names.
 - Prefer small feature modules and shared UI primitives. Extract from the prototype's large

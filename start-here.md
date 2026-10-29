@@ -83,7 +83,11 @@ Local development can still use ordinary files. For the implemented independent 
 service, S3 integration and lossless legacy storage migration/rollback, follow the
 [runtime guide](docs/meta-service.md). Node remains the business backend; the opt-in
 compatibility profile supports the existing Workspace, with full hosted multi-tenancy and
-the design's million-resource scale target still pending.
+the design's million-resource scale target still pending. The backend target is now unified
+Rust with shared domain modules and single-executable or independent service deployment;
+read [ADR 0020](docs/decisions/0020-modular-rust-backend.md) and the
+[phased migration contract](specs/gh-88/spec.md). Existing Node serving is transitional;
+accepted architecture does not mean that the Rust business migration has already shipped.
 For millions of Workspaces or a million-resource Workspace, also read the
 [metadata scale profile](specs/gh-74/metadata-scale.md): Workspace ownership is distinct from
 atomic-group granularity, shared-cell routing, query indexes and workload capacity evidence.

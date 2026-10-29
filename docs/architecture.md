@@ -258,12 +258,14 @@ API-origin configuration and an OpenAPI-generated typed client. The existing bac
 Node ESM. See [ADR 0005](decisions/0005-independent-console-and-api.md) and the
 [operating guide](independent-delivery.md). Production identity and hosting remain proposed.
 
-The proposed implementation starts with global-control, regional-control and regional-data
-modules in one API deployment plus provisioning/reconciliation work. The hosted authority
-split is defined above; the diagram below is a functional view, not one shared metadata
-database or a requirement to centralize every data request. A future language migration needs its own scoped decision;
-the current implementation retains Node ESM and existing provider clients. Separate deployment
-into microservices only when independent scaling or ownership justifies it.
+The accepted backend target is Rust, following [ADR 0020](decisions/0020-modular-rust-backend.md)
+and [GH-88](../specs/gh-88/spec.md). Domain modules, ports and transport adapters share one
+implementation; a common executable can embed roles or start them as independent services.
+Global/regional authority and separate Meta instances remain mandatory in either form.
+Co-located roles share process failure; production regional independence requires separate
+processes/hosts. Customer computation remains isolated. Node ESM is transitional until
+each Rust slice passes compatibility checks; the current API still uses it. The diagram
+below is a functional view, not one shared metadata database or a centralized data path.
 
 ```mermaid
 flowchart TB

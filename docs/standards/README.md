@@ -68,3 +68,7 @@ For preview-first file UI and bounded tabular samples, follow
 [ADR 0017](../decisions/0017-preview-first-file-workspace.md) and the
 [TiUI file workspace rule](tiui-design-system.md#theme-responsive-behavior-and-interaction).
 Fixed preview uses read permission; custom SQL/Bash retains explicit analyze permission.
+
+For backend language, module boundaries or service composition, follow [ADR 0020](../decisions/0020-modular-rust-backend.md)
+and [the Rust migration contract](../../specs/gh-88/spec.md). Rust is the accepted target;
+current Node serving remains transitional until the corresponding parity/cutover gate.

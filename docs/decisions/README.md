@@ -41,6 +41,8 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 - [0018: Contextual file exports](0018-contextual-file-exports.md) — accepted original/output separation and confirmed bounded database import; implementation pending.
 
+- [0020: Modular Rust backend](0020-modular-rust-backend.md) — accepted unified Rust direction, shared modules with single-executable or independent service deployment, preserving regional authority and phased API/resource parity.
+
 ## Proposed decisions
 
 - [0019: Portable Workspace KV control plane](0019-workspace-kv-control-plane.md) — Global-initiated encrypted control, independent regional serving, pooled cells/bounded groups, selected hosted SlateDB/object storage, private regional storage directory and identity-preserving migration; phased implementation.

@@ -277,10 +277,11 @@ are separate facts. Losing Global does not erase a Region's locator, identity or
 
 Use **SlateDB** behind the proposed MetaStore boundary for hosted Global and regional
 metadata. Pin a release and verify its format/runtime/storage APIs during implementation.
-Keep the current ESM domain/API code. Hosted APIs connect only to their own authority's
-private Meta Service; Global and different Regions never share one service/engine deployment.
-The proposed Rust service versus supported binding implementation is a separate choice from
-these mandatory instance/ownership boundaries. No additional public API framework is implied.
+[ADR 0020](../../docs/decisions/0020-modular-rust-backend.md) supersedes retaining ESM as
+the long-term business backend: migrate domain/API modules to Rust in verified slices.
+Hosted APIs connect only to their own authority's metadata port, via a remote adapter or
+an embedded independently owned Meta instance. Global and different Regions never share
+one engine/database; code reuse and co-location do not merge these ownership boundaries.
 
 Control-plane writes may accept object-storage latency while reads use the current owner
 and caches under the required freshness contract. A SQL/file request must not require a

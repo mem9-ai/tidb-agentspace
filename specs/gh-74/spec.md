@@ -374,7 +374,10 @@ unresolved operation. Authorization/lifecycle state is never expired through a c
 
 Proposed modules: `server/meta/contract.mjs`, `server/meta/adapters/`,
 `server/control-plane/repositories/`, `server/control-plane/authorization.mjs`, and
-`server/credentials/`. Existing ESM and API/Console delivery boundaries remain unchanged.
+`server/credentials/`. These ESM paths describe the original design baseline.
+[ADR 0020](../../docs/decisions/0020-modular-rust-backend.md) now selects Rust module
+equivalents and shared local/remote ports through [GH-88](../gh-88/spec.md); API/Console
+delivery independence and all authority/migration requirements remain unchanged.
 
 Domain services call typed operations such as `findResourceByName`, `listResources`,
 `authorizeWorkspaceKey`, `reserveProviderCapacity`, and `claimOperation`. Only repositories
