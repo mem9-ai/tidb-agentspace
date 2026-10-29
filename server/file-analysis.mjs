@@ -75,6 +75,12 @@ export function createFileAnalysis({
   let active = 0;
   return {
     limits,
+    async read(resource, path, signal) {
+      return this.execute(resource, { path }, signal, { mode: 'read' });
+    },
+    async parse(resource, { path, parsing, bytes }, signal) {
+      return this.execute(resource, { path }, signal, { mode: 'import', parsing, bytes });
+    },
     async preview(resource, input, signal) {
       if (Object.keys(input).some((key) => !['resourceId', 'path'].includes(key)))
         throw analysisError(400, 'INVALID_PREVIEW', 'Use only a File System and a file path.');
@@ -123,11 +129,19 @@ export function createFileAnalysis({
         limits,
       };
     },
-    async execute(resource, input, externalSignal, preview = false) {
-      const { format, script } = preview
-        ? { format: analysisFormat(input.path).format }
-        : validateAnalysis(input);
-      const runLimits = preview ? { ...limits, ...tabularPreviewLimits } : limits;
+    async execute(resource, input, externalSignal, options = {}) {
+      if (options === true) options = { mode: 'preview' };
+      const mode = options.mode || 'analysis';
+      const preview = mode === 'preview';
+      const { format, script } =
+        mode === 'analysis'
+          ? validateAnalysis(input)
+          : { format: options.parsing?.format || analysisFormat(input.path)?.format };
+      const runLimits = preview
+        ? { ...limits, ...tabularPreviewLimits }
+        : mode === 'import'
+          ? { ...limits, columns: 100 }
+          : limits;
       if (active >= limits.concurrency)
         throw analysisError(
           429,
@@ -154,7 +168,10 @@ export function createFileAnalysis({
       let directory;
       try {
         if (signal.aborted) throw abortError(signal);
-        const source = await snapshot(resource, input.path, signal, false, limits.inputBytes);
+        const source =
+          options.bytes === undefined
+            ? await snapshot(resource, input.path, signal, false, limits.inputBytes)
+            : { bytes: options.bytes };
         if (signal.aborted) throw abortError(signal);
         if (source.bytes.length > limits.inputBytes)
           throw analysisError(
@@ -162,12 +179,16 @@ export function createFileAnalysis({
             'ANALYSIS_INPUT_LIMIT',
             'This file exceeds the 16 MiB analysis limit. Download it instead.',
           );
+        const fileVersion = createHash('sha256').update(source.bytes).digest('hex');
+        if (mode === 'read') return { ...source, fileVersion };
         directory = await mkdtemp(join(tmpdir(), 'workspace-analysis-'));
         const sourcePath = join(directory, 'input.' + format);
         await writeFile(sourcePath, source.bytes, { mode: 0o600 });
         const result = await runner(
           {
-            engine: preview ? 'duckdb' : input.engine,
+            engine: mode === 'analysis' ? input.engine : 'duckdb',
+            mode,
+            parsing: options.parsing,
             preview,
             format,
             script,
@@ -181,12 +202,12 @@ export function createFileAnalysis({
         if (signal.aborted) throw abortError(signal);
         const output = {
           ...result,
-          ...(preview ? { format } : { engine: input.engine }),
+          ...(mode === 'analysis' ? { engine: input.engine } : { format }),
           resourceId: resource.id,
           path: input.path,
           readOnly: true,
           inputBytes: source.bytes.length,
-          fileVersion: createHash('sha256').update(source.bytes).digest('hex'),
+          fileVersion,
           durationMs: Math.round(performance.now() - started),
         };
         if (Buffer.byteLength(JSON.stringify(output)) > runLimits.outputBytes)

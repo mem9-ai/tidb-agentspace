@@ -1,6 +1,6 @@
 # 0018: Separate original-file actions from output export
 
-- Status: Accepted owner direction, 2026-10-29; implementation pending.
+- Status: Accepted and implemented, 2026-10-29.
 - Contract/acceptance: [GH-79 specification](../../specs/gh-79/spec.md).
 - Extends ADR 0013 and 0017 without changing read-only analysis or existing SQL export contracts.
 
@@ -21,6 +21,6 @@ DuckDB storage, native shell or arbitrary connection becomes a product capabilit
 
 No persisted-data migration. A restart invalidates preparation handles, while completed files/
 tables survive code rollback. Revisit before persistent jobs, larger imports or new formats.
-The implementation PR must map FE-01–06 to behavioral/API/browser evidence and update shared
-TiUI guidance. This supersedes the ambiguous file-panel Download placement, not ADR 0013's
+See [verification and API usage](../contextual-file-export-verification.md) for FE-01–06 evidence
+and current limits. This supersedes the ambiguous file-panel Download placement, not ADR 0013's
 existing result snapshot authority or limits.

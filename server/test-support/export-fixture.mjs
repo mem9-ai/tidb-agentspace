@@ -8,7 +8,7 @@ import { seed } from '../store.mjs';
 import { openDuckdb } from '../providers/duckdb-engine.mjs';
 
 // Isolated provider-boundary fixture. No cloud credentials or requests are used.
-export async function exportFixture({ port = 0, hooks = {}, delay = 0 } = {}) {
+export async function exportFixture({ port = 0, hooks = {}, delay = 0, allowedOrigins } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'result-export-'));
   const dataFile = join(dir, 'state.json');
   const dbPath = join(dir, 'database.duckdb');
@@ -127,6 +127,7 @@ export async function exportFixture({ port = 0, hooks = {}, delay = 0 } = {}) {
   };
   const options = {
     dataFile,
+    allowedOrigins,
     duckdbExtensionPath: artifact,
     duckdbExtensionSha256: createHash('sha256').update('fixture-runtime').digest('hex'),
     duckdbExecute: async ({ sql, probe }) => (probe ? {} : execute('duckdb', sql)),
@@ -145,6 +146,29 @@ export async function exportFixture({ port = 0, hooks = {}, delay = 0 } = {}) {
         });
       }
       const path = pathname.slice('/v1/fs'.length);
+      if (new URL(url).searchParams.get('list') === '1') {
+        const parent = path === '/' ? '' : path;
+        return Response.json({
+          entries: [...files]
+            .filter(([name]) => (name.slice(0, name.lastIndexOf('/')) || '') === parent)
+            .map(([name, bytes]) => ({
+              name: name.split('/').pop(),
+              size: bytes.length,
+              isDir: false,
+              mtime: 1793232000,
+            })),
+        });
+      }
+      if (input.method === 'HEAD')
+        return files.has(path)
+          ? new Response(null, {
+              headers: {
+                'content-length': String(files.get(path).length),
+                etag: '"' + createHash('sha256').update(files.get(path)).digest('hex') + '"',
+              },
+            })
+          : new Response('', { status: 404 });
+
       if (input.method === 'PUT') {
         assert.equal(input.headers['X-Dat9-Expected-Revision'], '0');
         if (files.has(path)) return new Response('', { status: 412 });

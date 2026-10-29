@@ -99,6 +99,10 @@ The accepted [result export contract](specs/gh-58/spec.md) and
 create-only copies into public workspace resources. Database and File System SQL now share
 CSV/JSON/JSON Lines downloads and file/new-table exports; see
 [verification, API usage and limits](docs/result-export-verification.md).
+Original-file and Bash exports use the same destinations with explicit source labels and a
+separate format/field/type review before database import. Read
+[ADR 0018](docs/decisions/0018-contextual-file-exports.md) and
+[verification and API usage](docs/contextual-file-export-verification.md) before export work.
 
 DuckDB uses tidbfs native database mode, with ordinary Tables and SQL in the Console; see
 [customer experience](docs/duckdb-databases.md#customer-experience). For the separate optional

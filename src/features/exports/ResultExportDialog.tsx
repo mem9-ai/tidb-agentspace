@@ -1,25 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
-import {
-  Alert,
-  Button,
-  Group,
-  Loader,
-  NativeSelect,
-  Stack,
-  Text,
-  TextInput,
-} from '@tidbcloud/uikit';
+import { useRef, useState } from 'react';
+import { Alert, Button, Group, NativeSelect, Stack, Text } from '@tidbcloud/uikit';
 import { IconDownload01 } from '@tidbcloud/uikit/icons';
-import {
-  workspaceApi,
-  type Resource,
-  type ResultExportInput,
-  type ResultExportOutput,
-} from '../../api/client';
+import { workspaceApi, type ResultExportInput, type ResultExportOutput } from '../../api/client';
+import { ExportDestinationFields, useExportDestination } from './ExportDestinationFields';
 import { WorkspaceModal } from '../../ui/WorkspaceModal';
 import { WorkspaceApiError } from '../../api/transport';
 import { fileHash } from '../files/file-location';
 import { databaseEditorHash } from '../navigation/workspace-route';
+import { useSnapshotDownload } from './snapshot-download';
 
 type TargetKind = ResultExportInput['target']['kind'];
 type Format = 'csv' | 'json' | 'jsonl';
@@ -28,7 +16,6 @@ const formats = [
   { value: 'json', label: 'JSON (.json)' },
   { value: 'jsonl', label: 'JSON Lines (.jsonl)' },
 ];
-const liveProviders = ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'];
 
 export function ResultExportDialog({
   sourceResourceId,
@@ -49,44 +36,14 @@ export function ResultExportDialog({
   );
   const [path, setPath] = useState(`/query-results-${stamp}.csv`);
   const [table, setTable] = useState(`query_results_${stamp}`);
-  const [resources, setResources] = useState<Resource[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState('');
-  const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [outcome, setOutcome] = useState<ResultExportOutput | null>(null);
   const submitting = useRef(false);
-  useEffect(() => {
-    if (kind === 'download') return;
-    let current = true;
-    setLoading(true);
-    setLoadError('');
-    workspaceApi
-      .resources()
-      .then((value) => {
-        if (current) setResources(value.data);
-      })
-      .catch((cause: unknown) => {
-        if (current)
-          setLoadError(cause instanceof Error ? cause.message : 'Unable to load destinations.');
-      })
-      .finally(() => {
-        if (current) setLoading(false);
-      });
-    return () => {
-      current = false;
-    };
-  }, [kind, revision]);
-  const targets = resources.filter(
-    (resource) =>
-      resource.status === 'active' &&
-      (kind === 'filesystem'
-        ? resource.kind === 'filesystem'
-        : resource.kind !== 'filesystem' && liveProviders.includes(resource.provider || '')),
-  );
-  const destination = targets.find((resource) => resource.id === resourceId);
+  const destinationState = useExportDestination(kind, resourceId);
+  const download = useSnapshotDownload();
+  const { destination, loading, loadError } = destinationState;
   const action =
     kind === 'download' ? 'Download' : kind === 'filesystem' ? 'Save file' : 'Create table';
   async function submit() {
@@ -104,12 +61,7 @@ export function ResultExportDialog({
             : { kind, resourceId, table };
       const exported = await workspaceApi.exportResult({ sourceResourceId, result, target });
       if (exported.kind === 'download') {
-        const url = URL.createObjectURL(new Blob([exported.content], { type: exported.mimeType }));
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = exported.filename;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        download.start(exported.content, exported.mimeType, exported.filename);
       }
       if (exported.kind !== 'download') {
         try {
@@ -142,8 +94,8 @@ export function ResultExportDialog({
     <WorkspaceModal title="Export results" size={560} busy={busy} onClose={onClose}>
       <Stack gap="lg">
         <Text c="carbon.7">
-          {result.rows.length} {result.rows.length === 1 ? 'row' : 'rows'} from the current result.
-          The query will not run again.
+          SQL result · {result.rows.length} {result.rows.length === 1 ? 'row' : 'rows'} from the
+          current result. The query will not run again.
         </Text>
         {outcome ? (
           <>
@@ -167,6 +119,16 @@ export function ResultExportDialog({
             {notice && <Alert color="yellow">{notice}</Alert>}
             <Group justify="flex-end" wrap="wrap">
               <Button onClick={onClose}>Done</Button>
+              {outcome.kind === 'download' && (
+                <Button
+                  component="a"
+                  href={download.url}
+                  download={outcome.filename}
+                  variant="filled"
+                >
+                  Download results
+                </Button>
+              )}
               {destinationUrl && (
                 <Button component="a" href={destinationUrl} variant="filled" onClick={onClose}>
                   {outcome.kind === 'filesystem' ? 'Open file' : 'Open table'}
@@ -176,102 +138,48 @@ export function ResultExportDialog({
           </>
         ) : (
           <>
-            <NativeSelect
-              label="Destination"
-              value={kind}
-              disabled={busy}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                if (value === 'download' || value === 'filesystem' || value === 'database') {
-                  setKind(value);
-                  setResourceId('');
-                  setError('');
-                }
+            <ExportDestinationFields
+              kind={kind}
+              onKindChange={(value) => {
+                setKind(value);
+                setResourceId('');
+                setError('');
               }}
-              data={[
-                { value: 'download', label: 'Download to your computer' },
-                { value: 'filesystem', label: 'Workspace File System' },
-                { value: 'database', label: 'Workspace database' },
-              ]}
-            />
-            {kind !== 'database' && (
-              <NativeSelect
-                label="Format"
-                value={format}
-                disabled={busy}
-                data={formats}
-                onChange={(event) => {
-                  const value = event.currentTarget.value;
-                  if (value === 'csv' || value === 'json' || value === 'jsonl') {
-                    setFormat(value);
-                    setPath((current) => current.replace(/\.(csv|jsonl?)$/, `.${value}`));
-                    setError('');
-                  }
-                }}
-              />
-            )}
-            {kind !== 'download' && (
-              <>
-                {loading ? (
-                  <Group>
-                    <Loader size="sm" />
-                    <Text>Loading destinations…</Text>
-                  </Group>
-                ) : loadError ? (
-                  <Alert color="red">
-                    <Text>{loadError}</Text>
-                    <Button mt="sm" onClick={() => setRevision((value) => value + 1)}>
-                      Try again
-                    </Button>
-                  </Alert>
-                ) : (
-                  <NativeSelect
-                    label={kind === 'filesystem' ? 'File System' : 'Database'}
-                    value={resourceId}
-                    disabled={busy || !targets.length}
-                    onChange={(event) => {
-                      setResourceId(event.currentTarget.value);
+              resourceId={resourceId}
+              onResourceChange={(value) => {
+                setResourceId(value);
+                setError('');
+              }}
+              path={path}
+              onPathChange={(value) => {
+                setPath(value);
+                setError('');
+              }}
+              table={table}
+              onTableChange={(value) => {
+                setTable(value);
+                setError('');
+              }}
+              busy={busy}
+              state={destinationState}
+            >
+              {kind !== 'database' && (
+                <NativeSelect
+                  label="Format"
+                  value={format}
+                  disabled={busy}
+                  data={formats}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    if (value === 'csv' || value === 'json' || value === 'jsonl') {
+                      setFormat(value);
+                      setPath((current) => current.replace(/\.(csv|jsonl?)$/, `.${value}`));
                       setError('');
-                    }}
-                    data={[
-                      {
-                        value: '',
-                        label: targets.length
-                          ? 'Choose a destination'
-                          : 'No available destinations',
-                      },
-                      ...targets.map((resource) => ({
-                        value: resource.id,
-                        label: `${resource.name} · ${resource.kind === 'filesystem' ? (resource.provider === 'drive9-anonymous' ? 'Live' : 'Local') : resource.kind === 'mysql' ? 'MySQL' : resource.kind === 'postgresql' ? 'PostgreSQL' : 'DuckDB'}`,
-                      })),
-                    ]}
-                  />
-                )}
-                {kind === 'filesystem' ? (
-                  <TextInput
-                    label="New file path"
-                    description="Use an existing folder. An existing file will not be replaced."
-                    value={path}
-                    disabled={busy}
-                    onChange={(event) => {
-                      setPath(event.currentTarget.value);
-                      setError('');
-                    }}
-                  />
-                ) : (
-                  <TextInput
-                    label="New table name"
-                    description="An existing table will not be replaced."
-                    value={table}
-                    disabled={busy}
-                    onChange={(event) => {
-                      setTable(event.currentTarget.value);
-                      setError('');
-                    }}
-                  />
-                )}
-              </>
-            )}
+                    }
+                  }}
+                />
+              )}
+            </ExportDestinationFields>
             <Text size="sm" c="carbon.7">
               {kind === 'database'
                 ? 'Numbers and booleans keep their types. Strings, dates and nested values use text. Keys and indexes are not copied. Large results may exceed the database export limit.'

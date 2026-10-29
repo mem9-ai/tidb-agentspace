@@ -1,3 +1,4 @@
+import { importValue, importTypes } from './import-fields.mjs';
 import { randomUUID } from 'node:crypto';
 import { sqlError, sqlLimits } from './providers/sql-common.mjs';
 
@@ -143,7 +144,7 @@ function identifier(value) {
     invalid('Table and column names must contain 1–63 UTF-8 bytes without control characters.');
   return value;
 }
-export function databaseExportPlan(result, table, kind) {
+export function databaseExportPlan(result, table, kind, reviewedTypes) {
   identifier(table);
   if (!['mysql', 'postgresql', 'duckdb'].includes(kind)) invalid('Select a supported database.');
   const folded = new Set();
@@ -151,14 +152,29 @@ export function databaseExportPlan(result, table, kind) {
     kind === 'mysql'
       ? '`' + value.replaceAll('`', '``') + '`'
       : '"' + value.replaceAll('"', '""') + '"';
-  const columns = result.columns.map((name) => {
+  if (
+    reviewedTypes &&
+    (reviewedTypes.length !== result.columns.length ||
+      reviewedTypes.some((type) => !importTypes.includes(type)))
+  )
+    invalid('Provide one supported reviewed type per column.');
+  const columns = result.columns.map((name, index) => {
     identifier(name);
     if (folded.has(name.toLowerCase()))
       invalid('Database column names must be unique ignoring case.');
     folded.add(name.toLowerCase());
     const values = result.rows.map((row) => row[name]).filter((value) => value !== null);
-    const type =
-      values.length && values.every((value) => typeof value === 'boolean')
+    const type = reviewedTypes
+      ? reviewedTypes[index] === 'TEXT'
+        ? kind === 'mysql'
+          ? 'LONGTEXT'
+          : kind === 'duckdb'
+            ? 'VARCHAR'
+            : 'TEXT'
+        : reviewedTypes[index] === 'DOUBLE' && kind === 'postgresql'
+          ? 'DOUBLE PRECISION'
+          : reviewedTypes[index]
+      : values.length && values.every((value) => typeof value === 'boolean')
         ? 'BOOLEAN'
         : values.length && values.every((value) => typeof value === 'number')
           ? values.every(Number.isSafeInteger)
@@ -173,7 +189,11 @@ export function databaseExportPlan(result, table, kind) {
               : 'TEXT';
     return { name, type };
   });
+  const reviewedByName = reviewedTypes
+    ? new Map(result.columns.map((name, index) => [name, reviewedTypes[index]]))
+    : null;
   function literal(value, column) {
+    if (reviewedTypes) value = importValue(value, reviewedByName.get(column.name));
     if (value === null) return 'NULL';
     if (column.type === 'BOOLEAN') return value ? 'TRUE' : 'FALSE';
     if (['BIGINT', 'DOUBLE', 'DOUBLE PRECISION'].includes(column.type)) return String(value);
