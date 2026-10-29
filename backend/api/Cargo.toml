@@ -26,3 +26,5 @@ sha2.workspace = true
 regex.workspace = true
 jsonwebtoken.workspace = true
 chrono.workspace = true
+
+rustls.workspace = true

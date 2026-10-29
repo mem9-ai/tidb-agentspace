@@ -234,6 +234,7 @@ pub fn failure(status: u16, code: &str) -> ServiceError {
 }
 impl Runtime {
     pub fn new(config: Config) -> Result<Self> {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         Ok(Self {
             config,
             client: Client::builder()

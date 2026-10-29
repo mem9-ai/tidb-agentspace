@@ -149,9 +149,17 @@ async fn initialize(plan: plan::Plan) -> Result<()> {
                     bail!("Hosted bootstrap requires explicit in-process authority ownership")
                 }
             };
-            let server = WorkspaceServer::open(config, port).await?;
-            server.workspace.health().await?;
-            server.workspace.close().await?;
+            let repository = workspace_domain::Repository::open(
+                port,
+                &config.authority_id,
+                &config.workspace_id,
+                true,
+                config.recover_writer_owner.as_deref(),
+            )
+            .await?;
+            let workspace = workspace_domain::Workspace::new(repository);
+            workspace.health().await?;
+            workspace.close().await?;
         }
         Ok(())
     }

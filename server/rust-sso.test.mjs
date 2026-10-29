@@ -363,7 +363,13 @@ test(
       }
       return { child, exited, output: () => output };
     }
-    await run('initialize', 'bootstrap.json', true);
+    const occupied = http.createServer();
+    await new Promise((done) => occupied.listen(listen, '127.0.0.1', done));
+    try {
+      await run('initialize', 'bootstrap.json', true);
+    } finally {
+      await new Promise((done) => occupied.close(done));
+    }
     const active = await run('serve', 'deployment.json', false);
     await until(async () => {
       const r = await fetch(`http://127.0.0.1:${listen}/api/health`);
