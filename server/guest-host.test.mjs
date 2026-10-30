@@ -35,6 +35,13 @@ test(
     });
     const global = await fixture.service('global');
     const region = await fixture.service('guest-host');
+    const regionClientFile = resolve(fixture.directory, 'host-region-client.json');
+    await writeFile(regionClientFile, JSON.stringify(region.clientConfig), { mode: 0o600 });
+    const probe = resolve('meta-service/target/debug/examples/identity_probe');
+    const expired = JSON.parse(
+      (await exec(probe, [regionClientFile, '--expired-guest-check', '-', '-'])).stdout,
+    );
+    assert.equal(expired.expiredGuestRejected, true);
     await global.stop();
     await region.stop();
     global.client.close();
@@ -105,6 +112,29 @@ test(
       });
     };
     await start();
+    const regionalClient = await createMetaClient({
+      ...region.clientConfig,
+      origin: `http://${regionConfig.bind}`,
+    });
+    t.after(() => regionalClient.close());
+    await until(async () => {
+      const page = await regionalClient.call({
+        op: 'list',
+        scope: {
+          authorityId: regionConfig.authorityId,
+          ownerKind: 'system',
+          ownerId: 'guest-cleanup',
+          family: 'guest-cleanup',
+          partitionId: 'shard-00',
+        },
+        prefix: 'job/',
+        limit: 128,
+      });
+      const job = page.records.find((record) => record.value.workspaceId === expired.workspaceId);
+      assert.equal(job?.value.status.state, 'deferred');
+      assert.equal(job?.value.status.reason, 'providerCleanupDeferred');
+    });
+    regionalClient.close();
     const create = async () => {
       const response = await request('/api/auth/guest', { method: 'POST' });
       assert.equal(response.status, 200, diagnostics);
