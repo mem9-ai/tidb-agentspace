@@ -66,6 +66,29 @@ assume `ws_agentlab`. Existing Meta Scope primitives alone do not establish auth
   sufficient. External identity-provider, regional storage and key-management failures have
   their own availability limits.
 
+### Logical record example
+
+One bounded Global identity group can contain the following logical records in a single
+SlateDB transaction. The scope owner is a collision-resistant digest of a length-delimited,
+type-tagged identity; never use concatenation that permits ambiguous input. Guest identifiers
+and OIDC identities have distinct type tags. Physical scope hashing and record encryption are
+provided by the existing Meta engine; these examples are not literal S3 object paths.
+
+| Record                  | Purpose                                                                       |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| `identity`              | Verified issuer and subject, or Guest principal and verifier; identity type   |
+| `personal-organization` | Opaque organization ID and owner principal                                    |
+| `personal-workspace`    | Opaque Workspace ID, organization ID, region and lifecycle state              |
+| `owner-membership`      | Principal, Workspace ID, owner grant and policy generation                    |
+| `initialization`        | Stable operation ID, expected region/owner/generation and completion evidence |
+
+The initial conditional commit creates the records together. A repeated login checks the
+full identity before returning the existing Workspace. Indexes for organization lookup,
+administration or discovery may be asynchronously projected, but a projection cannot grant
+ownership. Region receives a complete owner policy and creates its separate Workspace records
+idempotently. No cross-authority transaction is assumed. Region-owned Guest expiry and
+deletion-operation records are retained independently through cleanup and recovery.
+
 ## Requests and isolation
 
 - Login creates a session bound to the verified identity and its authorized Workspace;
