@@ -4933,6 +4933,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "workspace-identity"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "getrandom 0.3.4",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "subtle",
+ "tokio",
+ "uuid",
+ "workspace-contracts",
+ "workspace-meta-client",
+]
+
+[[package]]
 name = "workspace-meta-client"
 version = "0.1.0"
 dependencies = [

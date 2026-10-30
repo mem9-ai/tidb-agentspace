@@ -17,6 +17,7 @@ The fresh record profile supersedes the document migration baseline; see [ADR 00
 | Crate                 | Responsibility                                                                         |
 | --------------------- | -------------------------------------------------------------------------------------- |
 | `backend/contracts`   | Metadata port, scoped context and structured errors                                    |
+| `backend/identity`    | Inactive Global personal identity reservations and temporary Guest credential checks   |
 | `meta-service`        | Encrypted SlateDB/S3 authority, durable commits, fencing and mTLS server               |
 | `backend/meta-client` | Authority-bound remote Meta adapter; TLS 1.3/mTLS, bounded requests, no retries        |
 | `backend/workspace`   | Workspace/Key domain, authorization and versioned record repositories                  |
@@ -25,6 +26,11 @@ The fresh record profile supersedes the document migration baseline; see [ADR 00
 | `backend/product`     | Regional resources, database browser, files, snapshots, analysis, exports/imports      |
 | `backend/api`         | Public HTTP contract, sessions, Host/Origin/CORS, request/cancellation/stream limits   |
 | `backend/host`        | Configuration, dependency wiring, real role composition and ordered shutdown           |
+
+The identity module reserves a complete Global personal identity group atomically and stores
+only a verifier for a temporary Guest secret. A reservation is pending regional initialization;
+it does not authorize regional access. The module is not wired into SSO, API routing, Guest
+cleanup or the hosted service. It does not establish a multi-tenant deployment.
 
 Domain operations are shared by Console and agent requests. Providers and computation are
 separate crates behind regional application operations. Metadata supports in-process and remote
