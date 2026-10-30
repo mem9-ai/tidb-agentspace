@@ -351,6 +351,55 @@ test(
       (await due()).find((job) => job.workspaceId === expiredGuestPolicy.workspaceId).status.state,
       'complete',
     );
+    // Unsupported provider cleanup stays visible across a Region restart, even while Global is down.
+    const unsupported = {
+      ...expiredGuestPolicy,
+      workspaceId: randomUUID(),
+      organizationId: randomUUID(),
+      userId: randomUUID(),
+      identity: { ...expiredGuestPolicy.identity, guestId: randomUUID() },
+    };
+    await writeFile(cleanupPolicyPath, JSON.stringify(unsupported), { mode: 0o600 });
+    await exec(probe, [config, '--region-install', cleanupPolicyPath, randomUUID()]);
+    await exec(probe, [config, '--cleanup-enqueue', cleanupPolicyPath, randomUUID()]);
+    const unsupportedPartition =
+      createHash('sha256').update(unsupported.workspaceId).digest()[0] % 64;
+    await writeFile(
+      dueInputPath,
+      JSON.stringify({ regionId: 'region:other', partition: unsupportedPartition }),
+      { mode: 0o600 },
+    );
+    const unsupportedJob = (await due()).find((job) => job.workspaceId === unsupported.workspaceId);
+    await writeFile(
+      cleanupInputPath,
+      JSON.stringify({ regionId: 'region:other', job: unsupportedJob }),
+      { mode: 0o600 },
+    );
+    const unsupportedAttempt = randomUUID();
+    const unsupportedClaim = JSON.parse(
+      (await exec(probe, [config, '--cleanup-claim', cleanupInputPath, unsupportedAttempt])).stdout,
+    );
+    await writeFile(
+      cleanupInputPath,
+      JSON.stringify({
+        regionId: 'region:other',
+        job: unsupportedClaim,
+        attemptId: unsupportedAttempt,
+      }),
+      { mode: 0o600 },
+    );
+    await exec(probe, [config, '--cleanup-defer', cleanupInputPath, randomUUID()]);
+    await assert.rejects(
+      exec(probe, [config, '--cleanup-complete', cleanupInputPath, randomUUID()]),
+    );
+    const nextRegionOwner = (await region.client.health()).ownerId;
+    await region.stop('SIGKILL');
+    region.client.close();
+    region = await fixture.service('other', { previous: region, recoverOwner: nextRegionOwner });
+    await use(region);
+    const deferred = (await due()).find((job) => job.workspaceId === unsupported.workspaceId);
+    assert.equal(deferred.status.state, 'deferred');
+    assert.equal(deferred.status.reason, 'providerDeletionUnsupported');
     await accessRegion();
     await useSession(credentials.renewal);
     const renewed = JSON.parse(

@@ -25,8 +25,21 @@ const SHARDS: u8 = 64;
 )]
 pub enum Status {
     Scheduled,
-    Claimed { attempt_id: String },
+    Claimed {
+        attempt_id: String,
+    },
+    Deferred {
+        attempt_id: String,
+        reason: DeferredReason,
+    },
     Complete,
+}
+
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum DeferredReason {
+    ProviderDeletionUnsupported,
+    ProviderOutcomeUncertain,
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -413,6 +426,45 @@ impl Queue {
             .await
     }
 
+    /// Retain a claimed job when a provider cannot delete or its outcome is uncertain. This
+    /// never removes metadata, credentials or resources, and is not evidence of deletion.
+    /// The executor must first fence and drain any in-flight effects for this job.
+    pub async fn defer(
+        &self,
+        job: &Job,
+        attempt_id: &str,
+        reason: DeferredReason,
+        mutation_id: &str,
+    ) -> Result<()> {
+        if !uuid(attempt_id) || !uuid(mutation_id) {
+            return Err(error(400, "INVALID_COMMAND"));
+        }
+        let scope = self.scope(shard(&job.workspace_id)?)?;
+        let key = key(job)?;
+        let (mut stored, version) = self
+            .record(&scope, &key)
+            .await?
+            .ok_or_else(|| error(404, "CLEANUP_NOT_FOUND"))?;
+        self.stored_policy(&stored).await?;
+        let deferred = Status::Deferred {
+            attempt_id: attempt_id.into(),
+            reason,
+        };
+        if stored.status == deferred {
+            return Ok(());
+        }
+        if stored.status
+            != (Status::Claimed {
+                attempt_id: attempt_id.into(),
+            })
+        {
+            return Err(error(409, "CLEANUP_ATTEMPT_MISMATCH"));
+        }
+        stored.status = deferred;
+        self.commit(&scope, mutation_id, &key, Value::String(version), &stored)
+            .await
+    }
+
     /// Journal one resource effect before provider I/O. Existing or uncertain effects are
     /// never reissued automatically; a separate provider-specific reconciliation is required.
     /// The provider adapter must independently match the permit to the scoped Workspace
@@ -708,6 +760,98 @@ mod tests {
                 .unwrap()
                 .code,
             "CLEANUP_REQUIRES_RECONCILIATION"
+        );
+    }
+
+    #[tokio::test]
+    async fn unsupported_deletion_remains_pending_and_cannot_be_completed_or_reissued() {
+        let metadata = metadata();
+        let queue = Queue::open(metadata.clone(), "region:a").await.unwrap();
+        let expires_at = now().unwrap() - 1;
+        let policy = guest_policy(Uuid::new_v4().to_string(), expires_at);
+        queue
+            .policies
+            .install(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        queue
+            .enqueue(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        let partition = shard(&policy.workspace_id).unwrap();
+        let job = queue.due(partition, None, 10).await.unwrap().jobs.remove(0);
+        let attempt = Uuid::new_v4().to_string();
+        let claimed = queue.claim(&job, &attempt).await.unwrap();
+        assert_eq!(
+            queue
+                .defer(
+                    &claimed,
+                    &Uuid::new_v4().to_string(),
+                    DeferredReason::ProviderDeletionUnsupported,
+                    &Uuid::new_v4().to_string()
+                )
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "CLEANUP_ATTEMPT_MISMATCH"
+        );
+        queue
+            .defer(
+                &claimed,
+                &attempt,
+                DeferredReason::ProviderDeletionUnsupported,
+                &Uuid::new_v4().to_string(),
+            )
+            .await
+            .unwrap();
+        let restarted = Queue::open(metadata, "region:a").await.unwrap();
+        let deferred = restarted
+            .due(partition, None, 10)
+            .await
+            .unwrap()
+            .jobs
+            .remove(0);
+        assert!(matches!(
+            deferred.status,
+            Status::Deferred {
+                reason: DeferredReason::ProviderDeletionUnsupported,
+                ..
+            }
+        ));
+        assert_eq!(
+            restarted
+                .complete_verified(&deferred, &attempt, &Uuid::new_v4().to_string())
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "CLEANUP_ATTEMPT_MISMATCH"
+        );
+        assert_eq!(
+            restarted
+                .claim(&deferred, &Uuid::new_v4().to_string())
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "CLEANUP_REQUIRES_RECONCILIATION"
+        );
+        assert_eq!(
+            restarted
+                .begin_resource(
+                    &deferred,
+                    &attempt,
+                    "resource",
+                    "db9-anonymous",
+                    "db_123",
+                    &Uuid::new_v4().to_string()
+                )
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "CLEANUP_ATTEMPT_MISMATCH"
         );
     }
 

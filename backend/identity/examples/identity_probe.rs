@@ -2,7 +2,7 @@
 use std::sync::Arc;
 use workspace_identity::{
     Directory, GuestRegistration, Provisioning, Registration, VerifiedIdentity,
-    cleanup::{Job, Queue},
+    cleanup::{DeferredReason, Job, Queue},
     embedded_region::EmbeddedRegion,
     onboarding::Onboarding,
     regional::{Policies, Policy, Principal},
@@ -127,7 +127,7 @@ async fn main() -> anyhow::Result<()> {
         );
         return Ok(());
     }
-    if args[2] == "--cleanup-claim" || args[2] == "--cleanup-complete" {
+    if ["--cleanup-claim", "--cleanup-complete", "--cleanup-defer"].contains(&args[2].as_str()) {
         let input: serde_json::Value = serde_json::from_slice(&std::fs::read(&args[3])?)?;
         let authority = input["regionId"]
             .as_str()
@@ -141,8 +141,20 @@ async fn main() -> anyhow::Result<()> {
             let attempt = input["attemptId"]
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("missing attempt"))?;
-            queue.complete_verified(&job, attempt, &args[4]).await?;
-            println!("{{\"complete\":true}}");
+            if args[2] == "--cleanup-defer" {
+                queue
+                    .defer(
+                        &job,
+                        attempt,
+                        DeferredReason::ProviderDeletionUnsupported,
+                        &args[4],
+                    )
+                    .await?;
+                println!("{{\"deferred\":true}}");
+            } else {
+                queue.complete_verified(&job, attempt, &args[4]).await?;
+                println!("{{\"complete\":true}}");
+            }
         }
         return Ok(());
     }

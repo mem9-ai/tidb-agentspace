@@ -17,8 +17,9 @@ against shared Organizations or additional Workspaces in a later release.
 A Guest gets the same logical tenant/Workspace isolation as an authenticated account, with
 an independently generated Guest user ID and a private high-entropy browser credential.
 Guest identity is not a shared hard-coded account or the existing loopback demo owner.
-Guest Workspaces expire 24 hours after creation. Expiry initiates automatic deletion of that
-Guest's Workspace and its cloud databases and file systems. The named account login is the
+Guest Workspaces expire 24 hours after creation. Expiry initiates automatic cleanup of that
+Guest's Workspace and its cloud databases and file systems. Providers that do not support
+verified deletion may leave resources pending until the provider removes them. The named account login is the
 existing TiDB Cloud login, not a separate Teleport provider. Account linking remains a separate
 product decision. A lost Guest credential must not be recovered by guessing an ID or matching
 email. Require rate limits, quota and abuse controls for Guest creation.
@@ -162,10 +163,14 @@ in-process scheduler or an explicitly composed service role; it does not require
 Worker deployment. Execution needs durable ownership/fencing, bounded retries and recovery
 before it can safely run across replicas. Guest expiry does not renew on login.
 Current product code does not implement complete cloud database or File System instance
-deprovisioning. Before allowing a Guest to create each provider resource, verify and implement
-its official deletion, identity/ownership proof, uncertain-outcome reconciliation and
-retry semantics. Disable Guest creation for a provider where deletion is unsupported or
-unverified; deleting only the metadata is not successful cleanup.
+deprovisioning. The owner permits Guests to create resources even when their provider cannot
+yet delete them. At expiry, immediately deny Guest access and automatically attempt supported
+deletions. Retain ownership, provider binding and credentials for resources with unsupported,
+pending or uncertain deletion; reconcile them when a supported deletion or verified provider
+expiry becomes available. Expose a truthful pending/unsupported cleanup state and never report
+that cloud resources were deleted merely because Guest access or local metadata was removed.
+Determine and implement official deletion, ownership proof, uncertain-outcome reconciliation
+and retry semantics for each provider before declaring cleanup complete.
 
 Enabling open self-service on the hosted site requires a reviewed runtime configuration,
 durable Global and regional stores, operator recovery procedures, identity-provider access,
@@ -195,6 +200,7 @@ test or image deployment alone does not prove the hosted website was switched.
    login, rollout, production isolation and scale require separate observed evidence.
 8. Independent Guest browsers get distinct User IDs and Workspaces; a Guest cannot select
    another Guest or signed-in account's resources or Keys. At 24 hours expiry blocks access
-   independently of cleanup, which deletes only the Guest's own cloud resources and survives
-   restart without claiming existing data. Test uncertain deletion and retry reconciliation.
+   independently of cleanup, which deletes only the Guest's own cloud resources where supported
+   and survives restart without claiming existing data. Unsupported or uncertain deletion stays
+   visibly pending; test retry reconciliation and eventual provider expiry where applicable.
    Reuse, session loss and upgrading follow explicit product decisions.

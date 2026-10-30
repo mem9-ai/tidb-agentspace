@@ -39,6 +39,10 @@ A reservation is pending regional initialization and does not authorize regional
 primitives are not wired into hosted SSO, API routing, a cleanup scheduler/provider deletion or the hosted
 service. A claimed cleanup job requires reconciliation after an uncertain result; it is not
 automatically retried. They do not establish a multi-tenant deployment.
+The queue can record a deferred cleanup reason for unsupported deletion or an uncertain
+provider outcome; a deferred job is not marked complete and cannot issue another delete
+attempt without a future, explicitly fenced reconciliation workflow. These records do not
+yet constitute an automatic scheduler or a customer-visible cleanup status.
 
 The existing shared-Workspace session now carries its Workspace ID and is rejected by domain
 authorization in a different Workspace. SSO produces a verified issuer and subject before
