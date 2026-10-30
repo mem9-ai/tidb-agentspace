@@ -126,10 +126,18 @@ async fn main() -> anyhow::Result<()> {
     if args[2] == "--expired-guest-check" {
         use workspace_domain::{Credential, Operation, Repository, Workspace};
         let random = || uuid::Uuid::new_v4().to_string();
+        use sha2::{Digest, Sha256};
+        // Keep the test job in the first cleanup shard for a bounded host integration test.
+        let workspace_id = loop {
+            let candidate = random();
+            if Sha256::digest(candidate.as_bytes())[0] % 64 == 0 {
+                break candidate;
+            }
+        };
         let registration = Registration {
             user_id: random(),
             organization_id: random(),
-            workspace_id: random(),
+            workspace_id,
             region_id: authority.clone(),
             operation_id: random(),
         };
@@ -235,7 +243,10 @@ async fn main() -> anyhow::Result<()> {
             "unowned Workspace was adopted"
         );
         unowned.close().await?;
-        println!("{{\"expiredGuestRejected\":true}}");
+        println!(
+            "{}",
+            serde_json::json!({"expiredGuestRejected":true,"workspaceId":registration.workspace_id})
+        );
         return Ok(());
     }
     if args[2] == "--workspace-check" {

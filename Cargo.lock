@@ -4888,6 +4888,7 @@ dependencies = [
  "workspace-compute",
  "workspace-contracts",
  "workspace-domain",
+ "workspace-identity",
  "workspace-meta-client",
  "workspace-meta-service",
 ]

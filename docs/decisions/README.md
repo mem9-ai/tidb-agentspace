@@ -55,6 +55,8 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 - [0027: Single CI evidence](0027-single-ci-evidence.md) — one automatic normal/native/browser gate, exact-commit delivery consumers and retained credential boundaries.
 
+- [0028: Guest expiry retention](0028-guest-expiry-retention.md) — reject expired Guest sessions and retain resources pending provider cleanup; hosted rollout remains incomplete.
+
 ## Proposed decisions
 
 - [0019: Portable Workspace KV control plane](0019-workspace-kv-control-plane.md) — Global-initiated encrypted control, independent regional serving, pooled cells/bounded groups, selected hosted SlateDB/object storage, private regional storage directory and identity-preserving migration; phased implementation.

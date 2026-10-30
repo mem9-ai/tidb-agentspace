@@ -44,6 +44,13 @@ pub enum MetaBinding {
 }
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GuestConfig {
+    pub global_authority_id: String,
+    pub workspace_limit: usize,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
     pub bind: SocketAddr,
     pub workspace_id: String,
@@ -62,6 +69,8 @@ pub struct Config {
     pub recover_writer_owner: Option<String>,
     #[serde(default)]
     pub product: Option<workspace_product::Config>,
+    #[serde(default)]
+    pub guest: Option<GuestConfig>,
 }
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
@@ -105,6 +114,18 @@ impl Config {
             }
             _ => {}
         }
+        if let Some(guest) = &self.guest
+            && (guest.global_authority_id != "global"
+                || guest.workspace_limit == 0
+                || guest.workspace_limit > 4096
+                || !matches!(&self.metadata, MetaBinding::InProcess { .. })
+                || self.sso.is_none()
+                || self.public_origins.is_empty())
+        {
+            bail!(
+                "Guest requires explicit co-located Global/Region authorities, SSO and trusted public origins"
+            );
+        }
         http_policy::validate(self)?;
         if let Some(product) = &self.product {
             product.validate()?;
@@ -129,8 +150,8 @@ struct App {
     current_guest: Option<regional_guest::AuthorizedGuest>,
 }
 
-/// Explicit co-located integration used by isolated local testing. Hosted enablement still
-/// requires authenticated control transport, cleanup execution and crash recovery.
+/// Explicit co-located integration. Separate services require authenticated control transport;
+/// hosted rollout also requires independent account routing and crash recovery.
 pub struct GuestRuntime {
     pub entry: Arc<guest_entry::GuestEntry>,
     pub region: Arc<regional_guest::RegionalGuest>,
@@ -152,8 +173,10 @@ impl WorkspaceServer {
         guest_runtime: Option<Arc<GuestRuntime>>,
     ) -> Result<Self> {
         config.validate()?;
-        if guest_runtime.is_some() && (!config.insecure_loopback || config.sso.is_none()) {
-            bail!("Guest integration is restricted to explicit loopback test configuration");
+        if guest_runtime.is_some()
+            && (config.sso.is_none() || (!config.insecure_loopback && config.guest.is_none()))
+        {
+            bail!("Guest requires an explicitly configured trusted host");
         }
         let listener = TcpListener::bind(config.bind).await?;
         let repository = Repository::open(
@@ -421,8 +444,7 @@ async fn dispatch(
         )
         .await);
     }
-    // An authenticated regional cookie selects exactly one managed Workspace. This
-    // experimental host is restricted to loopback until cleanup and fencing are ready.
+    // An authenticated regional cookie selects exactly one managed Workspace.
     // A valid TiDB Account session takes precedence when both cookies exist.
     let account_session = if let Some(token) = cookie(&headers, "aw_session") {
         app.sessions
@@ -454,6 +476,21 @@ async fn dispatch(
             app.product = lease.product();
             app.config.workspace_id = guest.workspace_id.clone();
             app.current_guest = Some(guest);
+            Some(lease)
+        } else if let Some(runtime) = &app.guest_runtime
+            && headers.contains_key("authorization")
+            && let Some(workspace_id) = path
+                .strip_prefix("/api/v1/workspaces/")
+                .and_then(|tail| tail.split('/').next())
+            && uuid::Uuid::parse_str(workspace_id).is_ok_and(|id| id.to_string() == workspace_id)
+        {
+            // The URL selects only a candidate. The Key and Region policy must authenticate
+            // before the pool returns a lease or any application operation is run.
+            let key = credential(&app, &headers).await?;
+            let lease = runtime.workspaces.acquire(workspace_id, &key).await?;
+            app.workspace = lease.workspace();
+            app.product = lease.product();
+            app.config.workspace_id = workspace_id.to_owned();
             Some(lease)
         } else {
             None

@@ -1,4 +1,4 @@
-//! Bounded Region-local managed Workspace registry. Mounted only in isolated tests.
+//! Bounded Region-local managed Workspace registry. The native host can opt in explicitly.
 //! The caller authenticates a Region credential before selecting a Workspace, keeps its
 //! lease through response/stream completion, and fences in-flight work before cleanup.
 
@@ -75,9 +75,8 @@ impl ManagedWorkspaces {
         })
     }
 
-    /// `credential` must be derived from a freshly authenticated Region session. A URL
-    /// Workspace ID alone never grants access. The owner/session is rechecked on each lease.
-    /// Workspace Keys need a separately authenticated regional routing/index implementation.
+    /// A URL Workspace ID alone never grants access. Regional sessions and scoped Keys
+    /// are authenticated against the managed Workspace before any lease is returned.
     pub async fn acquire(
         &self,
         workspace_id: &str,
@@ -85,6 +84,7 @@ impl ManagedWorkspaces {
     ) -> Result<Arc<ManagedWorkspace>> {
         if !uuid::Uuid::parse_str(workspace_id).is_ok_and(|id| id.to_string() == workspace_id)
             || !matches!(credential, Credential::SessionOwner { workspace_id: bound, policy_generation: Some(_), .. } if bound == workspace_id)
+                && !matches!(credential, Credential::Bearer(_))
         {
             return Err(ServiceError::new(401, "UNAUTHENTICATED"));
         }

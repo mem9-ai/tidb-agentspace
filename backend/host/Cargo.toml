@@ -16,6 +16,7 @@ tokio.workspace = true
 workspace-api.workspace = true
 workspace-contracts.workspace = true
 workspace-domain.workspace = true
+workspace-identity.workspace = true
 workspace-meta-client.workspace = true
 workspace-meta-service.workspace = true
 workspace-compute.workspace = true

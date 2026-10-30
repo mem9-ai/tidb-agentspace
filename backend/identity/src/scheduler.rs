@@ -26,6 +26,19 @@ pub trait Processor: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Result<Outcome>> + Send + 'a>>;
 }
 
+/// Retains expired Guest resources and credentials without contacting a provider.
+/// Expiry authorization is enforced independently by the regional owner policy.
+pub struct DeferProviderCleanup;
+impl Processor for DeferProviderCleanup {
+    fn process<'a>(
+        &'a self,
+        _job: &'a Job,
+        _attempt_id: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Outcome>> + Send + 'a>> {
+        Box::pin(async { Ok(Outcome::Deferred(DeferredReason::ProviderCleanupDeferred)) })
+    }
+}
+
 pub struct Scheduler {
     queue: Arc<Queue>,
     processor: Arc<dyn Processor>,
@@ -217,6 +230,28 @@ mod tests {
         first.partition = partition;
         first.tick().await.unwrap();
         assert_eq!(processor.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn postponed_provider_cleanup_stays_durable_and_is_not_reported_deleted() {
+        let (queue, policy, partition) = setup().await;
+        let mut scheduler =
+            Scheduler::new(queue.clone(), Arc::new(DeferProviderCleanup), 32).unwrap();
+        scheduler.partition = partition;
+        scheduler.tick().await.unwrap();
+        let page = queue.due(partition, None, 32).await.unwrap();
+        assert!(
+            page.jobs
+                .iter()
+                .any(|job| job.workspace_id == policy.workspace_id
+                    && matches!(
+                        job.status,
+                        Status::Deferred {
+                            reason: DeferredReason::ProviderCleanupDeferred,
+                            ..
+                        }
+                    ))
+        );
     }
 
     #[tokio::test]

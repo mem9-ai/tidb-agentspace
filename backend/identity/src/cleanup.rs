@@ -38,6 +38,8 @@ pub enum Status {
 #[derive(Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum DeferredReason {
+    /// Provider cleanup is intentionally postponed; no deletion has been attempted.
+    ProviderCleanupDeferred,
     ProviderDeletionUnsupported,
     ProviderOutcomeUncertain,
 }
@@ -428,7 +430,8 @@ impl Queue {
 
     /// Retain a claimed job when a provider cannot delete or its outcome is uncertain. This
     /// never removes metadata, credentials or resources, and is not evidence of deletion.
-    /// The executor must first fence and drain any in-flight effects for this job.
+    /// This state does not assert that in-flight effects have drained. Any later deletion
+    /// executor must fence and drain them before issuing provider requests.
     pub async fn defer(
         &self,
         job: &Job,
