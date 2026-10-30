@@ -72,12 +72,26 @@ pub struct Config {
     #[serde(default)]
     pub guest: Option<GuestConfig>,
 }
+fn guest_environment(value: &str) -> Result<Option<GuestConfig>> {
+    match value {
+        "true" => Ok(Some(GuestConfig {
+            global_authority_id: "global".into(),
+            workspace_limit: 128,
+        })),
+        "false" => Ok(None),
+        _ => bail!("WORKSPACE_GUEST_ENABLED must be true or false"),
+    }
+}
+
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
         let mut result: Self = serde_json::from_slice(&private_file(path)?)
             .map_err(|_| anyhow::anyhow!("Invalid private Workspace configuration"))?;
         if result.sso.is_none() {
             result.sso = sso::Config::environment()?;
+        }
+        if let Ok(value) = std::env::var("WORKSPACE_GUEST_ENABLED") {
+            result.guest = guest_environment(&value)?;
         }
         if let Ok(path) = std::env::var("WORKSPACE_PUBLIC_PATH") {
             result.public_path = path;

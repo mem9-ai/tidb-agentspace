@@ -69,7 +69,6 @@ test(
         redirectUri: 'https://studio.example.test/studio/api/auth/tidbcloud/callback',
       },
       product: {},
-      guest: { globalAuthorityId: 'global', workspaceLimit: 4 },
     };
     const write = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
     await write(globalFile, globalConfig);
@@ -100,7 +99,10 @@ test(
       child = spawn(
         resolve('meta-service/target/debug/workspace-backend'),
         ['serve', '--config', planFile],
-        { stdio: ['ignore', 'pipe', 'pipe'] },
+        {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, WORKSPACE_GUEST_ENABLED: 'true' },
+        },
       );
       child.stderr.on('data', (chunk) => {
         diagnostics += chunk.toString();

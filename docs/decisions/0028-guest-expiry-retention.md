@@ -17,7 +17,8 @@ must fence running effects, reconcile provider results and only then report dele
 records. The current scheduler scans 64 shards and preserves claimed or deferred work for explicit
 reconciliation after an uncertain outcome; it is not a scalable long-term retention solution.
 
-The host requires explicit `guest` configuration, separate Global and Region metadata authorities,
+The host requires explicit `guest` configuration or `WORKSPACE_GUEST_ENABLED=true`, separate Global
+and Region metadata authorities,
 a trusted HTTPS public origin and SSO configuration. When Global is absent at host startup,
 existing regional Guest sessions work but new signup is unavailable until the host reconnects;
 the current implementation requires a restart to reconnect. A Guest Workspace Key can address its Workspace directly without a browser cookie; listing
