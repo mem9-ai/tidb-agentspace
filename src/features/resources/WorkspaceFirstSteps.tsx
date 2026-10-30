@@ -12,10 +12,7 @@ export function WorkspaceFirstSteps({
       <Paper className="panel first-value-choice" withBorder p="xl">
         <IconDatabase01 size={28} aria-hidden />
         <Heading level={2}>Query your data</Heading>
-        <Text>
-          Store structured data and explore it with SQL. Choose your database engine when creating
-          it.
-        </Text>
+        <Text>Store structured data and query it with SQL.</Text>
         <Button
           variant="filled"
           leftSection={<IconPlus size={18} />}
@@ -27,9 +24,7 @@ export function WorkspaceFirstSteps({
       <Paper className="panel first-value-choice" withBorder p="xl">
         <IconFolder size={28} aria-hidden />
         <Heading level={2}>Work with files</Heading>
-        <Text>
-          Upload context or datasets, preview their contents, and analyze files in one place.
-        </Text>
+        <Text>Upload, preview, and analyze files in one place.</Text>
         <Button
           variant="filled"
           leftSection={<IconPlus size={18} />}

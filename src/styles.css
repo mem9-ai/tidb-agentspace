@@ -99,7 +99,7 @@ small {
 .page-heading p {
   margin-top: 8px;
 }
-.first-value-choice {
+.resource-grid > .first-value-choice {
   margin-bottom: 0;
   display: flex;
   flex-direction: column;
