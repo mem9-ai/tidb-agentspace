@@ -36,7 +36,7 @@ pub struct VerifiedIdentity<'a> {
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Registration {
-    pub principal_id: String,
+    pub user_id: String,
     pub organization_id: String,
     pub workspace_id: String,
     pub region_id: String,
@@ -150,7 +150,7 @@ fn decode_registration(records: &Value) -> Result<Registration> {
     let workspace = value(records, "personal-workspace")?;
     if !valid_region(&registration.region_id)
         || [
-            &registration.principal_id,
+            &registration.user_id,
             &registration.organization_id,
             &registration.workspace_id,
             &registration.operation_id,
@@ -158,12 +158,12 @@ fn decode_registration(records: &Value) -> Result<Registration> {
         .iter()
         .any(|id| Uuid::parse_str(id).is_err())
         || value(records, "personal-organization")?
-            != &json!({"id":registration.organization_id,"ownerId":registration.principal_id})
+            != &json!({"id":registration.organization_id,"ownerId":registration.user_id})
         || !["pending", "ready"].contains(&workspace["state"].as_str().unwrap_or_default())
         || workspace
             != &json!({"id":registration.workspace_id,"organizationId":registration.organization_id,"regionId":registration.region_id,"state":workspace["state"]})
         || value(records, "owner-membership")?
-            != &json!({"principalId":registration.principal_id,"workspaceId":registration.workspace_id,"role":"owner","generation":1})
+            != &json!({"userId":registration.user_id,"workspaceId":registration.workspace_id,"role":"owner","generation":1})
     {
         return Err(error(503, "IDENTITY_RECORD_CORRUPT"));
     }
@@ -378,7 +378,7 @@ impl Directory {
         let secret = hex::encode(secret_bytes);
         let verifier = hex::encode(Sha256::digest(secret_bytes));
         let registration = Registration {
-            principal_id: Uuid::new_v4().to_string(),
+            user_id: Uuid::new_v4().to_string(),
             organization_id: Uuid::new_v4().to_string(),
             workspace_id: Uuid::new_v4().to_string(),
             region_id: region.into(),
@@ -392,7 +392,7 @@ impl Directory {
             ),
             (
                 "personal-organization",
-                json!({"id":registration.organization_id,"ownerId":registration.principal_id}),
+                json!({"id":registration.organization_id,"ownerId":registration.user_id}),
             ),
             (
                 "personal-workspace",
@@ -400,7 +400,7 @@ impl Directory {
             ),
             (
                 "owner-membership",
-                json!({"principalId":registration.principal_id,"workspaceId":registration.workspace_id,"role":"owner","generation":1}),
+                json!({"userId":registration.user_id,"workspaceId":registration.workspace_id,"role":"owner","generation":1}),
             ),
             ("initialization", json!(registration)),
         ];
@@ -529,7 +529,7 @@ impl Directory {
             return Ok(registration);
         }
         let registration = Registration {
-            principal_id: Uuid::new_v4().to_string(),
+            user_id: Uuid::new_v4().to_string(),
             organization_id: Uuid::new_v4().to_string(),
             workspace_id: Uuid::new_v4().to_string(),
             region_id: region.into(),
@@ -542,7 +542,7 @@ impl Directory {
             ),
             (
                 "personal-organization",
-                json!({"id":registration.organization_id,"ownerId":registration.principal_id}),
+                json!({"id":registration.organization_id,"ownerId":registration.user_id}),
             ),
             (
                 "personal-workspace",
@@ -550,7 +550,7 @@ impl Directory {
             ),
             (
                 "owner-membership",
-                json!({"principalId":registration.principal_id,"workspaceId":registration.workspace_id,"role":"owner","generation":1}),
+                json!({"userId":registration.user_id,"workspaceId":registration.workspace_id,"role":"owner","generation":1}),
             ),
             ("initialization", json!(registration)),
         ];
@@ -961,7 +961,7 @@ pub(crate) mod tests {
         regional::Policy {
             workspace_id: Uuid::new_v4().to_string(),
             organization_id: Uuid::new_v4().to_string(),
-            principal_id: Uuid::new_v4().to_string(),
+            user_id: Uuid::new_v4().to_string(),
             region_id: "region:a".into(),
             generation: 1,
             denied: false,
@@ -1040,7 +1040,7 @@ pub(crate) mod tests {
             "POLICY_NOT_INSTALLED"
         );
         let mut changed_owner = policy.clone();
-        changed_owner.principal_id = Uuid::new_v4().to_string();
+        changed_owner.user_id = Uuid::new_v4().to_string();
         changed_owner.generation = 2;
         assert_eq!(
             policies

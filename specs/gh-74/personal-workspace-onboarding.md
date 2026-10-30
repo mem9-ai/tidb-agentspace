@@ -15,7 +15,7 @@ creating upstream databases or file systems. This is a personal default, not a r
 against shared Organizations or additional Workspaces in a later release.
 
 A Guest gets the same logical tenant/Workspace isolation as an authenticated account, with
-an independently generated Guest principal and a private high-entropy browser credential.
+an independently generated Guest user ID and a private high-entropy browser credential.
 Guest identity is not a shared hard-coded account or the existing loopback demo owner.
 Guest Workspaces expire 24 hours after creation. Expiry initiates automatic deletion of that
 Guest's Workspace and its cloud databases and file systems. The named account login is the
@@ -29,11 +29,12 @@ assume `ws_agentlab`. Existing Meta Scope primitives alone do not establish auth
 
 ## Identity and control-plane records
 
-### Principal, tenant and Workspace
+### User, tenant and Workspace
 
-A **Principal** is an actor that can be authenticated and granted permissions. A TiDB
-Account maps from its verified `(iss, sub)` to an opaque internal Principal ID; each Guest
-has a separate random Principal ID and secret. Principal IDs are not bearer credentials.
+A **User** is a TiDB Account user or an individual Guest. A TiDB Account maps from its
+verified `(iss, sub)` to an opaque internal User ID; each Guest has a separate random User ID
+and secret. User IDs are not bearer credentials. Authorization may still use a generic
+principal abstraction for users and future non-human identities.
 Email is profile data and cannot establish identity or ownership.
 
 For the initial personal product, the Organization is the tenant boundary: onboarding
@@ -45,7 +46,7 @@ one-to-one mapping does not prevent adding Organizations or Workspaces later.
 Shared Organizations are future functionality, not an implemented account-linking or access
 feature. A later design needs independently authorized membership invitations and acceptance,
 per-Workspace roles and grants, member removal and regional revocation propagation, plus
-organization-level billing and resource limits. A Principal may then belong to multiple
+organization-level billing and resource limits. A User may then belong to multiple
 Organizations, and an Organization may contain multiple Workspaces. Guest conversion or
 resource transfer needs a separate explicit protocol; signing in in the same browser is not
 proof of ownership. These additions must preserve local Region authorization during a Global
@@ -56,7 +57,7 @@ outage and must not broaden the initial personal-owner grant automatically.
   Email, display name, organization claim, and browser input are not account identities.
   Issuer and subject are case-sensitive. An identity-provider change requires an explicit,
   authenticated linking procedure; matching emails must not merge accounts.
-- Provision a Guest through a separate cryptographically random principal and secret, not by
+- Provision a Guest through a separate cryptographically random user ID and secret, not by
   fabricating a verified OIDC subject. Persist only an appropriate credential verifier and
   protect the browser secret with the existing secure cookie and origin protections. A Guest
   can only access its own Workspace. Cross-device recovery and upgrading a Guest to an account
@@ -98,10 +99,10 @@ provided by the existing Meta engine; these examples are not literal S3 object p
 
 | Record                  | Purpose                                                                       |
 | ----------------------- | ----------------------------------------------------------------------------- |
-| `identity`              | Verified issuer and subject, or Guest principal and verifier; identity type   |
-| `personal-organization` | Opaque organization ID and owner principal                                    |
+| `identity`              | Verified issuer and subject, or Guest identity and verifier; identity type    |
+| `personal-organization` | Opaque organization ID and owner User ID                                      |
 | `personal-workspace`    | Opaque Workspace ID, organization ID, region and lifecycle state              |
-| `owner-membership`      | Principal, Workspace ID, owner grant and policy generation                    |
+| `owner-membership`      | User ID, Workspace ID, owner grant and policy generation                      |
 | `initialization`        | Stable operation ID, expected region/owner/generation and completion evidence |
 
 The initial conditional commit creates the records together. A repeated login checks the
@@ -192,7 +193,7 @@ test or image deployment alone does not prove the hosted website was switched.
    tenants and local fixtures; verify bounded overload, cleanup and writer recovery. CI uses
    isolated object storage and a signed fake provider, without cloud credentials. Real hosted
    login, rollout, production isolation and scale require separate observed evidence.
-8. Independent Guest browsers get distinct principals and Workspaces; a Guest cannot select
+8. Independent Guest browsers get distinct User IDs and Workspaces; a Guest cannot select
    another Guest or signed-in account's resources or Keys. At 24 hours expiry blocks access
    independently of cleanup, which deletes only the Guest's own cloud resources and survives
    restart without claiming existing data. Test uncertain deletion and retry reconciliation.

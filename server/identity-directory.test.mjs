@@ -44,10 +44,14 @@ test(
       Array.from({ length: 6 }, () => reserve('https://issuer.example', 'alice')),
     );
     assert.ok(concurrent.every((value) => value.workspaceId === concurrent[0].workspaceId));
+    assert.ok(concurrent.every((value) => value.userId === concurrent[0].userId));
+    assert.ok(concurrent.every((value) => value.organizationId === concurrent[0].organizationId));
     assert.ok(concurrent.every((value) => value.operationId === concurrent[0].operationId));
     const bob = await reserve('https://issuer.example', 'bob');
     const otherIssuer = await reserve('https://other.example', 'alice');
     assert.notEqual(bob.workspaceId, concurrent[0].workspaceId);
+    assert.notEqual(bob.userId, concurrent[0].userId);
+    assert.notEqual(bob.organizationId, concurrent[0].organizationId);
     assert.notEqual(otherIssuer.workspaceId, concurrent[0].workspaceId);
     const createGuest = async () => {
       const result = await exec(probe, [config, '--guest-create', 'region:other', '-']);
@@ -60,6 +64,10 @@ test(
     const guestA = await createGuest();
     const guestB = await createGuest();
     assert.notEqual(guestA.registration.workspaceId, guestB.registration.workspaceId);
+    assert.notEqual(guestA.registration.userId, guestB.registration.userId);
+    assert.notEqual(guestA.registration.organizationId, guestB.registration.organizationId);
+    assert.notEqual(guestA.registration.userId, bob.userId);
+    assert.notEqual(guestA.registration.organizationId, bob.organizationId);
     await assert.rejects(authGuest(guestA, guestB.secret));
     await writeFile(regionConfig, JSON.stringify(region.clientConfig), { mode: 0o600 });
     const onboarding = await Promise.all(
@@ -95,7 +103,7 @@ test(
     const policy = {
       workspaceId: concurrent[0].workspaceId,
       organizationId: concurrent[0].organizationId,
-      principalId: concurrent[0].principalId,
+      userId: concurrent[0].userId,
       regionId: 'region:other',
       generation: 1,
       denied: false,
@@ -130,7 +138,7 @@ test(
     const expiredGuestPolicy = {
       workspaceId: randomUUID(),
       organizationId: randomUUID(),
-      principalId: randomUUID(),
+      userId: randomUUID(),
       regionId: 'region:other',
       generation: 1,
       denied: false,

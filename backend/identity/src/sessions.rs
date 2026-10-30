@@ -31,7 +31,7 @@ pub struct Access {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Grant {
-    principal_id: String,
+    user_id: String,
     generation: u64,
     revoked: bool,
 }
@@ -39,7 +39,7 @@ struct Grant {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Session {
-    principal_id: String,
+    user_id: String,
     generation: u64,
     grant_digest: String,
     expires_at: i64,
@@ -127,12 +127,9 @@ impl Sessions {
         Ok(policy)
     }
 
-    fn matches(policy: &Policy, principal_id: &str, generation: u64, current: i64) -> Result<()> {
+    fn matches(policy: &Policy, user_id: &str, generation: u64, current: i64) -> Result<()> {
         let expired = matches!(&policy.identity, OwnerIdentity::Guest { expires_at, .. } if current >= *expires_at);
-        if policy.principal_id != principal_id
-            || policy.generation != generation
-            || policy.denied
-            || expired
+        if policy.user_id != user_id || policy.generation != generation || policy.denied || expired
         {
             return Err(error(401, "SESSION_UNAUTHORIZED"));
         }
@@ -203,12 +200,12 @@ impl Sessions {
         let (access, access_digest) = token()?;
         let (renewal, grant_digest) = token()?;
         let grant = Grant {
-            principal_id: policy.principal_id.clone(),
+            user_id: policy.user_id.clone(),
             generation: policy.generation,
             revoked: false,
         };
         let session = Session {
-            principal_id: policy.principal_id.clone(),
+            user_id: policy.user_id.clone(),
             generation: policy.generation,
             grant_digest: grant_digest.clone(),
             expires_at,
@@ -219,7 +216,7 @@ impl Sessions {
             json!({"key":format!("session/{access_digest}"),"expectedVersion":null,"value":session}),
         ]).await?;
         let latest = self.policy(workspace).await?;
-        Self::matches(&latest, &policy.principal_id, policy.generation, current)?;
+        Self::matches(&latest, &policy.user_id, policy.generation, current)?;
         Ok(Credentials {
             access,
             renewal,
@@ -250,14 +247,14 @@ impl Sessions {
         let scope = self.scope(workspace)?;
         let (grant, _, grant_digest) = self.grant(&scope, renewal).await?;
         let policy = self.policy(workspace).await?;
-        Self::matches(&policy, &grant.principal_id, grant.generation, current)?;
+        Self::matches(&policy, &grant.user_id, grant.generation, current)?;
         let expires_at = session_expiry(&policy, current)?;
         if expires_at <= current {
             return Err(error(401, "SESSION_UNAUTHORIZED"));
         }
         let (token, access_digest) = token()?;
         let session = Session {
-            principal_id: grant.principal_id,
+            user_id: grant.user_id,
             generation: grant.generation,
             grant_digest,
             expires_at,
@@ -266,7 +263,7 @@ impl Sessions {
         // Revocation or a new policy during the write must not produce a usable credential.
         self.grant(&scope, renewal).await?;
         let latest = self.policy(workspace).await?;
-        Self::matches(&latest, &session.principal_id, session.generation, current)?;
+        Self::matches(&latest, &session.user_id, session.generation, current)?;
         Ok(Access { token, expires_at })
     }
 
@@ -298,13 +295,13 @@ impl Sessions {
         let grant: Grant =
             serde_json::from_value(value).map_err(|_| error(503, "SESSION_RECORD_CORRUPT"))?;
         if grant.revoked
-            || grant.principal_id != session.principal_id
+            || grant.user_id != session.user_id
             || grant.generation != session.generation
         {
             return Err(error(401, "SESSION_UNAUTHORIZED"));
         }
         let policy = self.policy(workspace).await?;
-        Self::matches(&policy, &session.principal_id, session.generation, current)
+        Self::matches(&policy, &session.user_id, session.generation, current)
     }
 
     /// A holder can revoke its own renewal grant; every access check also consults that grant.
@@ -342,7 +339,7 @@ mod tests {
         Policy {
             workspace_id: Uuid::new_v4().to_string(),
             organization_id: Uuid::new_v4().to_string(),
-            principal_id: Uuid::new_v4().to_string(),
+            user_id: Uuid::new_v4().to_string(),
             region_id: "region:a".into(),
             generation: 1,
             denied: false,

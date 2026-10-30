@@ -572,7 +572,7 @@ mod tests {
         Policy {
             workspace_id: workspace,
             organization_id: Uuid::new_v4().to_string(),
-            principal_id: Uuid::new_v4().to_string(),
+            user_id: Uuid::new_v4().to_string(),
             region_id: "region:a".into(),
             generation: 1,
             denied: false,

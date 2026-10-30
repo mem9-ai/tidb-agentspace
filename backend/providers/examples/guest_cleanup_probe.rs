@@ -27,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
     let policy = Policy {
         workspace_id: workspace.clone(),
         organization_id: Uuid::new_v4().to_string(),
-        principal_id: Uuid::new_v4().to_string(),
+        user_id: Uuid::new_v4().to_string(),
         region_id: authority.clone(),
         generation: 1,
         denied: false,

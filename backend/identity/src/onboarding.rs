@@ -85,7 +85,7 @@ impl Onboarding {
         let policy = Policy {
             workspace_id: registration.workspace_id.clone(),
             organization_id: registration.organization_id.clone(),
-            principal_id: registration.principal_id.clone(),
+            user_id: registration.user_id.clone(),
             region_id: registration.region_id.clone(),
             generation: 1,
             denied: false,
@@ -134,7 +134,7 @@ impl Onboarding {
         let policy = Policy {
             workspace_id: registration.workspace_id.clone(),
             organization_id: registration.organization_id.clone(),
-            principal_id: registration.principal_id.clone(),
+            user_id: registration.user_id.clone(),
             region_id: registration.region_id.clone(),
             generation: 1,
             denied: false,

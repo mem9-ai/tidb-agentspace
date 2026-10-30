@@ -80,13 +80,13 @@ impl EmbeddedRegion {
             || p.region_id != self.authority
             || p.workspace_id != r.workspace_id
             || p.organization_id != r.organization_id
-            || p.principal_id != r.principal_id
+            || p.user_id != r.user_id
             || p.generation != 1
             || p.denied
             || [
                 &r.workspace_id,
                 &r.organization_id,
-                &r.principal_id,
+                &r.user_id,
                 &r.operation_id,
             ]
             .iter()
@@ -203,7 +203,7 @@ impl EmbeddedRegion {
             "ownership/onboarding",
         ];
         let owner = json!({"workspaceId":command.registration.workspace_id,"organizationId":command.registration.organization_id,
-            "principalId":command.registration.principal_id,"operationId":command.registration.operation_id});
+            "userId":command.registration.user_id,"operationId":command.registration.operation_id});
         for _ in 0..8 {
             let records = self.get(&scope, &keys).await?;
             let empty = keys.iter().filter(|key| records[**key].is_null()).count();
@@ -364,8 +364,8 @@ mod tests {
             first.workspace_id
         );
         assert_eq!(
-            records["records"]["ownership/onboarding"]["value"]["principalId"],
-            first.principal_id
+            records["records"]["ownership/onboarding"]["value"]["userId"],
+            first.user_id
         );
 
         let guest = Directory::open(global_meta)
@@ -394,14 +394,14 @@ mod tests {
         let registration = crate::Registration {
             workspace_id: Uuid::new_v4().to_string(),
             organization_id: Uuid::new_v4().to_string(),
-            principal_id: Uuid::new_v4().to_string(),
+            user_id: Uuid::new_v4().to_string(),
             region_id: "region:a".into(),
             operation_id: Uuid::new_v4().to_string(),
         };
         let policy = crate::regional::Policy {
             workspace_id: registration.workspace_id.clone(),
             organization_id: registration.organization_id.clone(),
-            principal_id: registration.principal_id.clone(),
+            user_id: registration.user_id.clone(),
             region_id: registration.region_id.clone(),
             generation: 1,
             denied: false,

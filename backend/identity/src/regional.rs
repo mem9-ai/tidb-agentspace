@@ -37,7 +37,7 @@ pub enum OwnerIdentity {
 pub struct Policy {
     pub workspace_id: String,
     pub organization_id: String,
-    pub principal_id: String,
+    pub user_id: String,
     pub region_id: String,
     pub generation: u64,
     pub denied: bool,
@@ -63,7 +63,7 @@ fn uuid(value: &str) -> bool {
 pub(crate) fn validate(policy: &Policy, authority: &str) -> Result<()> {
     if !uuid(&policy.workspace_id)
         || !uuid(&policy.organization_id)
-        || !uuid(&policy.principal_id)
+        || !uuid(&policy.user_id)
         || policy.region_id != authority
         || policy.generation == 0
     {
@@ -159,7 +159,7 @@ impl Policies {
             let previous = self.read(&scope).await?;
             let version = if let Some((old, version)) = previous {
                 if old.organization_id != policy.organization_id
-                    || old.principal_id != policy.principal_id
+                    || old.user_id != policy.user_id
                     || old.identity != policy.identity
                 {
                     return Err(error(409, "POLICY_OWNER_MISMATCH"));
