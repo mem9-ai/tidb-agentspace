@@ -193,12 +193,16 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
     readFileSync(new URL('../.github/workflows/dev-cd.yml', import.meta.url), 'utf8'),
   );
   assert.deepEqual(workflow.on.push, { branches: ['main'] });
-  assert.deepEqual(workflow.on.workflow_dispatch.inputs.operation.options, ['inspect', 'deploy']);
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.operation.options, [
+    'inspect',
+    'verify',
+    'deploy',
+  ]);
   assert.equal(workflow.on.workflow_dispatch.inputs.operation.default, 'inspect');
   assert.equal(workflow.jobs.resolve, undefined);
   assert.equal(
     workflow.jobs.deploy.if,
-    "github.event_name != 'pull_request' && github.ref == 'refs/heads/main'",
+    "github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.event.inputs.operation != 'verify'",
   );
   assert.equal(
     workflow.jobs.verify.if,
@@ -208,7 +212,10 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
   assert.equal(workflow.jobs.deploy.environment, 'dev');
   assert.equal(workflow.jobs.verify.environment, undefined);
   assert.equal(workflow.jobs.image.environment, undefined);
-  assert.equal(workflow.jobs.image.if, "github.event_name == 'pull_request'");
+  assert.equal(
+    workflow.jobs.image.if,
+    "github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event.inputs.operation == 'verify')",
+  );
   assert.equal(workflow.jobs.image.needs, undefined);
   assert.equal(
     workflow.concurrency['cancel-in-progress'],

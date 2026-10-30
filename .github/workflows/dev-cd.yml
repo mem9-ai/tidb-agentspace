@@ -36,9 +36,9 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Native deployment or read-only configuration inspection
+        description: Verify native build/cache, deploy, or inspect configuration read-only
         type: choice
-        options: [inspect, deploy]
+        options: [inspect, verify, deploy]
         default: inspect
 
 permissions:
@@ -128,7 +128,7 @@ jobs:
 
   image:
     name: Native image
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event.inputs.operation == 'verify')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -178,7 +178,7 @@ jobs:
     timeout-minutes: 75
     needs: verify
     # Never deploy from a pull request — PRs run the quality gate only.
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.event.inputs.operation != 'verify'
     # Serialize by the actual deployment target, NOT the source ref: every
     # deploy run (main push or any manual ref) shares this one constant group,
     # so two runs can never interleave `set image` / `rollout` / `rollout undo`
