@@ -254,3 +254,36 @@ stated viewport to show the file context, editor and results together.
 - [File SQL, 390×844 Dark](screenshots/compact-editor/files-dark-mobile.jpg)
 - [File SQL, 390×844 Light](screenshots/compact-editor/files-light-mobile.jpg)
 - [File Bash, 1280×800 Dark](screenshots/compact-editor/bash-dark-800.jpg)
+
+## Contextual resource creation
+
+GH-29 fixes the shared Create callback losing the source resource kind. The reproduction
+was a File System action opening MySQL; overview PostgreSQL/DuckDB cards used the same
+untyped callback. Resource creation now lives in `src/features/resources/`, with explicit
+targets captured when opening the dialog. TiUI 2.9.1 and the existing Workspace theme/modal
+remain in use; no style, dependency, provider or API contract was changed.
+
+Browser regression, 2026-10-30:
+
+| Entry or transition                                | Verified result                                                                                                                                                 |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Four empty overview cards                          | MySQL, PostgreSQL, DuckDB and File System each open their own titled form; no unrelated type chooser                                                            |
+| Initial regions                                    | MySQL/PG use automatic assignment; DuckDB/File System use Singapore from capabilities                                                                           |
+| Global resource action                             | All four types remain available                                                                                                                                 |
+| Database collection header and empty-state actions | Only MySQL/PG/DuckDB; File System is absent                                                                                                                     |
+| Cancel after changing type/name                    | Reopening a File System form clears the draft and restores Singapore; reopening the database chooser resets its selection                                       |
+| Unavailable resource link in an empty workspace    | Direct Create file system/Create database plus the collection link, without silently selecting another resource                                                 |
+| Successful File System creation                    | Isolated fixture received `kind: filesystem`, Singapore and the entered name, then the Console opened its exact `#files?resourceId=…`                           |
+| Successful PostgreSQL creation                     | Isolated fixture received `kind: postgresql`, automatic region and the entered name, then the Console opened its exact database SQL URL                         |
+| Occupied File System region                        | Create stays disabled; Open existing-resource link closes the dialog and opens the exact existing File System                                                   |
+| Keyboard and responsive behavior                   | Escape restores focus to the invoking Create button; both themes checked at 1280×800 and 390×844; no horizontal document overflow; long forms scroll vertically |
+
+Submission/navigation used a loopback-only in-memory fixture with captured requests and no
+cloud I/O. Empty/stale-link forms and capabilities were also checked against the existing
+native API without submitting or provisioning a cloud resource. The backend was unchanged;
+this verification does not claim a new provider-integration or native-backend test run.
+
+![File System, Dark 1280×800](screenshots/contextual-creation/filesystem-dark-1280.jpg)
+![File System, Light 390×844](screenshots/contextual-creation/filesystem-light-390.jpg)
+![Database, Light 1280×800](screenshots/contextual-creation/database-light-1280.jpg)
+![Database, Dark 390×844](screenshots/contextual-creation/database-dark-390.jpg)

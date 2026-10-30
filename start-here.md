@@ -159,6 +159,11 @@ File System navigation starts with the global resource list (`#files`), followed
 resource (`#files?resourceId=…`). See [navigation verification](docs/filesystem-list-verification.md)
 for the list/return flow and preserved file links.
 
+Resource creation carries its target explicitly from a card or collection. The shared
+[creation dialog](src/features/resources/CreateResourceDialog.tsx) and
+[creation context](src/features/resources/resource-creation.ts) keep File System and database
+entry points correctly scoped; see [creation verification](docs/resource-workspace-verification.md#contextual-resource-creation).
+
 File preview and analysis now share a preview-first workspace with on-demand tools. Read
 [ADR 0017](docs/decisions/0017-preview-first-file-workspace.md) and
 [verification](docs/file-workspace-verification.md) for fixed read-authorized CSV/Parquet samples,

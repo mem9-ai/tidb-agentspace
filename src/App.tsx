@@ -24,6 +24,11 @@ import {
   type WorkspaceFile,
 } from './features/files/remote-files';
 import { regionLabel as region } from './features/resources/regions';
+import { CreateResourceDialog } from './features/resources/CreateResourceDialog';
+import {
+  resourceKindLabels as kindLabel,
+  type ResourceCreationTarget,
+} from './features/resources/resource-creation';
 import {
   ActionIcon,
   Alert,
@@ -45,6 +50,7 @@ import {
   Anchor,
   Notification,
   Fieldset,
+  Group,
 } from '@tidbcloud/uikit';
 import { WorkspaceModal as Modal } from './ui/WorkspaceModal';
 import { CodeExample as Code } from './ui/CodeExample';
@@ -59,7 +65,6 @@ import {
   IconCheck as Check,
   IconCheckCircle as CheckCircle2,
   IconChevronRight as ChevronRight,
-  IconHelpCircle as CircleHelp,
   IconCode02 as Code2,
   IconCommand as Command,
   IconCopy03 as Copy,
@@ -77,7 +82,6 @@ import {
   IconStars01 as Sparkles,
   IconTerminal as Terminal,
   IconGitBranch01 as Workflow,
-  IconZap as Zap,
 } from '@tidbcloud/uikit/icons';
 import type { IconProps } from '@tidbcloud/uikit/icons';
 import { ResourceAccessPicker } from './features/keys/ResourceAccessPicker';
@@ -108,12 +112,7 @@ const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string 
   billing: { label: 'Usage & billing', icon: CreditCard, group: 'Manage' },
   settings: { label: 'Settings', icon: Settings, group: 'Manage' },
 };
-const kindLabel: Record<Kind, string> = {
-  mysql: 'MySQL',
-  postgresql: 'PostgreSQL',
-  duckdb: 'DuckDB',
-  filesystem: 'File System',
-};
+
 const kindDescription: Record<Kind, string> = {
   mysql: 'Relational memory for your agents.',
   postgresql: 'PostgreSQL for your apps and agents.',
@@ -307,6 +306,7 @@ function App() {
     [error, setError] = useState(''),
     [toast, setToast] = useState(''),
     [modal, setModal] = useState<'resource' | 'key' | 'search' | null>(null),
+    [creationTarget, setCreationTarget] = useState<ResourceCreationTarget>('resource'),
     [sso, setSso] = useState<SsoAuthConfig>({ enabled: false }),
     [connection, setConnection] = useState<Resource | null>(null);
   const route = routeLocation.page;
@@ -364,7 +364,10 @@ function App() {
     refresh,
     notify,
     copy,
-    onCreate: () => setModal('resource'),
+    onCreate: (target: ResourceCreationTarget = 'resource') => {
+      setCreationTarget(target);
+      setModal('resource');
+    },
     onConnect: (r: Resource) => setConnection(r),
   };
   const ssoButton =
@@ -447,11 +450,7 @@ function App() {
         </Notification>
       )}
       {modal === 'resource' && (
-        <CreateResource
-          {...shared}
-          initialKind={route === 'files' ? 'filesystem' : 'mysql'}
-          onClose={() => setModal(null)}
-        />
+        <CreateResourceDialog {...shared} target={creationTarget} onClose={() => setModal(null)} />
       )}
       {modal === 'key' && <CreateKey {...shared} onClose={() => setModal(null)} />}
       {modal === 'search' && (
@@ -468,7 +467,7 @@ type Shared = {
   refresh: () => Promise<void>;
   notify: (s: string) => void;
   copy: (s: string) => void;
-  onCreate: () => void;
+  onCreate: (target?: ResourceCreationTarget) => void;
   onConnect: (r: Resource) => void;
 };
 function PageHeading({
@@ -514,7 +513,7 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
             <Button
               variant="filled"
               leftSection={React.createElement(Plus, { size: 18 })}
-              onClick={onCreate}
+              onClick={() => onCreate()}
             >
               Create resource
             </Button>
@@ -545,7 +544,7 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
         <Heading level={2}>
           Your resources <span>{data.resources.length}</span>
         </Heading>
-        <Button className="text-link subtle" onClick={onCreate} variant="subtle">
+        <Button className="text-link subtle" onClick={() => onCreate()} variant="subtle">
           <Plus size={14} /> Add resource
         </Button>
       </div>
@@ -598,7 +597,10 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
                 </UnstyledButton>
                 <div className="resource-card-bottom">
                   <span>{r ? region(r.region) : 'Ready when you are'}</span>
-                  <UnstyledButton onClick={() => (r ? onConnect(r) : onCreate())}>
+                  <UnstyledButton
+                    aria-label={r ? `Connect to ${r.name}` : `Create ${kindLabel[kind]}`}
+                    onClick={() => (r ? onConnect(r) : onCreate(kind))}
+                  >
                     {r ? 'Connect' : 'Create'} <ArrowUpRight size={13} />
                   </UnstyledButton>
                 </div>
@@ -780,7 +782,16 @@ function Databases({ routeLocation, ...shared }: Shared & { routeLocation: Works
           icon={Database}
           title="Database unavailable"
           description="This database is no longer available in your workspace. Choose another database to open its SQL editor."
-          action={<Button onClick={() => go('databases')}>Back to databases</Button>}
+          action={
+            <Group justify="center">
+              <Button onClick={() => go('databases')}>Back to databases</Button>
+              {!databases.length && (
+                <Button variant="filled" onClick={() => onCreate('database')}>
+                  Create database
+                </Button>
+              )}
+            </Group>
+          }
         />
       );
     }
@@ -803,7 +814,7 @@ function Databases({ routeLocation, ...shared }: Shared & { routeLocation: Works
           <Button
             variant="filled"
             leftSection={React.createElement(Plus, { size: 18 })}
-            onClick={onCreate}
+            onClick={() => onCreate('database')}
           >
             Create database
           </Button>
@@ -822,7 +833,7 @@ function Databases({ routeLocation, ...shared }: Shared & { routeLocation: Works
             title="Create your first database"
             description="Create a database, then open its SQL editor to start querying."
             action={
-              <Button variant="filled" onClick={onCreate}>
+              <Button variant="filled" onClick={() => onCreate('database')}>
                 Create database
               </Button>
             }
@@ -980,7 +991,7 @@ function Files(shared: Shared) {
     return (
       <FileSystemsList
         resources={systems}
-        onCreate={shared.onCreate}
+        onCreate={() => shared.onCreate('filesystem')}
         onConnect={shared.onConnect}
       />
     );
@@ -990,7 +1001,16 @@ function Files(shared: Shared) {
       <Empty
         title="File System unavailable"
         description="This File System is no longer available in your workspace. Choose a File System from the list."
-        action={<Button onClick={() => go('files')}>All file systems</Button>}
+        action={
+          <Group justify="center">
+            <Button onClick={() => go('files')}>All file systems</Button>
+            {!systems.length && (
+              <Button variant="filled" onClick={() => shared.onCreate('filesystem')}>
+                Create file system
+              </Button>
+            )}
+          </Group>
+        }
       />
     );
   return <FileWorkspace key={resource.id} {...shared} resource={resource} />;
@@ -1308,7 +1328,7 @@ function FileWorkspace({
             <Empty
               title="Add your first file system"
               description="Keep agent context available across sessions."
-              action={<Button onClick={onCreate}>Create resource</Button>}
+              action={<Button onClick={() => onCreate('filesystem')}>Create file system</Button>}
             />
           )}
           {systems.length > 0 && !children.length && !listing.loading && !listing.error && (
@@ -2362,235 +2382,6 @@ function WorkspaceSettings({ data, refresh, notify, copy, sso }: Shared & { sso:
         </span>
       </Alert>
     </>
-  );
-}
-function CreateResource({
-  data,
-  refresh,
-  notify,
-  onClose,
-  initialKind = 'mysql',
-}: Shared & { onClose: () => void; initialKind?: Kind }) {
-  const [kind, setKind] = useState<Kind>(initialKind),
-    [name, setName] = useState(''),
-    [selectedRegion, setRegion] = useState(data.capabilities[initialKind].regions[0]),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
-  const createId = useRef(crypto.randomUUID());
-  const liveFiles =
-    kind === 'filesystem' && data.capabilities.filesystem.provider === 'drive9-anonymous';
-  const liveMysql = kind === 'mysql' && data.capabilities.mysql.provider === 'tidb-cloud-zero';
-  const livePg = kind === 'postgresql';
-  const isDuckdb = kind === 'duckdb';
-  const unavailable = (isDuckdb || livePg) && data.capabilities[kind].available === false;
-  function changeKind(k: Kind) {
-    setKind(k);
-    setRegion(data.capabilities[k].regions[0]);
-    setError('');
-  }
-  async function create(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    try {
-      await workspaceApi.createResource({ name, kind, region: selectedRegion }, createId.current);
-      await refresh();
-      notify(
-        isDuckdb
-          ? 'DuckDB database requested'
-          : livePg
-            ? 'PostgreSQL database requested'
-            : liveMysql
-              ? 'Zero database requested'
-              : liveFiles
-                ? 'Trial File System requested'
-                : 'Demo resource created',
-      );
-      onClose();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  const existingFileSystem =
-    kind === 'filesystem'
-      ? data.resources.find(
-          (r) =>
-            r.kind === kind &&
-            r.region === selectedRegion &&
-            (r.provider || 'local') === (data.capabilities.filesystem.provider || 'local'),
-        )
-      : undefined;
-  const limited = !!existingFileSystem;
-  return (
-    <Modal
-      title="Create a resource"
-      description="Add a building block to your agent workspace."
-      onClose={onClose}
-    >
-      <form onSubmit={create}>
-        <NativeSelect
-          label="Resource type"
-          value={kind}
-          onChange={(e) => {
-            const next = e.currentTarget.value;
-            if (
-              next === 'mysql' ||
-              next === 'postgresql' ||
-              next === 'duckdb' ||
-              next === 'filesystem'
-            )
-              changeKind(next);
-          }}
-          data={[
-            {
-              value: 'mysql',
-              label:
-                data.capabilities.mysql.provider === 'tidb-cloud-zero'
-                  ? 'MySQL · TiDB Cloud Zero'
-                  : 'MySQL demo',
-            },
-            ...(data.capabilities.postgresql.available
-              ? [{ value: 'postgresql', label: 'PostgreSQL · db9' }]
-              : []),
-            { value: 'duckdb', label: 'DuckDB' },
-            { value: 'filesystem', label: 'File System' },
-          ]}
-        />
-        <TextInput
-          label="Resource name"
-          description={<>3–40 lowercase letters, numbers, and hyphens.</>}
-          required
-          pattern="[a-z][a-z0-9-]{2,39}"
-          minLength={3}
-          maxLength={40}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={kind === 'filesystem' ? 'agent-context' : 'agent-memory-dev'}
-        />
-        <NativeSelect
-          label="Region"
-          description={
-            <>
-              {livePg
-                ? 'db9 assigns the database region automatically.'
-                : isDuckdb
-                  ? 'Your DuckDB database runs in AWS Singapore.'
-                  : liveMysql
-                    ? 'TiDB Cloud Zero assigns the database region automatically.'
-                    : kind === 'filesystem'
-                      ? liveFiles
-                        ? 'Anonymous trial hosted in AWS Singapore.'
-                        : 'Defaults to AWS Singapore. The free-tier allowance applies per region.'
-                      : 'Available regions depend on the resource provider.'}
-            </>
-          }
-          value={selectedRegion}
-          onChange={(e) => {
-            const selected = data.capabilities[kind].regions.find(
-              (value) => value === e.target.value,
-            );
-            if (selected) setRegion(selected);
-          }}
-        >
-          {data.capabilities[kind].regions.map((r) => (
-            <option key={r} value={r}>
-              {region(r)}
-            </option>
-          ))}
-        </NativeSelect>
-        <div className="plan-selection">
-          <div>
-            <Zap size={17} />
-            <strong>
-              {livePg
-                ? 'PostgreSQL database'
-                : isDuckdb
-                  ? 'DuckDB database'
-                  : liveMysql
-                    ? 'Temporary MySQL database'
-                    : liveFiles
-                      ? 'Anonymous trial'
-                      : 'Free tier'}
-            </strong>
-            <Badge>
-              {livePg
-                ? 'Anonymous free tier'
-                : isDuckdb
-                  ? 'Experimental'
-                  : liveMysql
-                    ? 'Zero'
-                    : kind === 'mysql'
-                      ? 'Demo'
-                      : 'Preview'}
-            </Badge>
-          </div>
-          <Text component="p">
-            {livePg ? (
-              'A real PostgreSQL-compatible database from db9. No account or card required. Anonymous provider quotas apply; usage is not measured here.'
-            ) : isDuckdb ? (
-              'A persistent DuckDB database for SQL analytics. Workspace Keys control access; trial service limits apply.'
-            ) : liveMysql ? (
-              'No cloud account required. This real database expires within 30 days; export data before it expires.'
-            ) : liveFiles ? (
-              'Real file storage. Trial quotas are enforced by the service.'
-            ) : (
-              <>
-                {data.capabilities[kind].storageGiB} GiB storage
-                {kind === 'filesystem'
-                  ? ' · 2,000 files'
-                  : ` · ${data.capabilities[kind].monthlyRU! / 1000000}M RU / month`}
-              </>
-            )}
-          </Text>
-          <small>
-            {livePg
-              ? 'Internal credentials stay in the backend. Use your Workspace Key for SQL and schema access.'
-              : isDuckdb
-                ? 'Create tables, run SQL and browse your data from this database.'
-                : liveMysql
-                  ? 'Creates a real TiDB Cloud Zero database. Internal credentials stay in the backend. Use Workspace Keys for access.'
-                  : liveFiles
-                    ? 'Creates a real trial File System. Internal credentials are managed by the Workspace service.'
-                    : 'Local simulation. No real cloud resource will be provisioned.'}
-          </small>
-        </div>
-        {unavailable && (
-          <Alert color="yellow">
-            This database provider is not configured on this server. Contact your workspace
-            operator.
-          </Alert>
-        )}
-        {limited && (
-          <Alert className="notice" color="peacock" icon={<CircleHelp size={17} />}>
-            <span>
-              A file system for this provider already exists in this region. Use{' '}
-              {existingFileSystem?.name} to continue.
-            </span>
-          </Alert>
-        )}
-        {error && (
-          <Alert className="inline-error" color="red">
-            {error}
-          </Alert>
-        )}
-        <div className="modal-actions">
-          <Button type="button" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant="filled"
-            disabled={busy || limited || unavailable}
-            loading={busy}
-            leftSection={<Plus size={18} />}
-            type="submit"
-          >
-            {busy ? 'Creating…' : 'Create resource'}
-          </Button>
-        </div>
-      </form>
-    </Modal>
   );
 }
 function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose: () => void }) {
