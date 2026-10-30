@@ -744,7 +744,8 @@ async fn auth_route(
     if path == "/api/auth/tidbcloud/callback" && *method == Method::GET {
         let result = sso
             .callback(cookie(headers, "aw_sso_flow").unwrap_or_default(), query)
-            .await;
+            .await
+            .and_then(|login| sso::shared_workspace_owner(&sso.config, &login));
         let mut response = match result {
             Err(e) => error(e),
             Ok(credential) => {

@@ -29,6 +29,28 @@ assume `ws_agentlab`. Existing Meta Scope primitives alone do not establish auth
 
 ## Identity and control-plane records
 
+### Principal, tenant and Workspace
+
+A **Principal** is an actor that can be authenticated and granted permissions. A TiDB
+Account maps from its verified `(iss, sub)` to an opaque internal Principal ID; each Guest
+has a separate random Principal ID and secret. Principal IDs are not bearer credentials.
+Email is profile data and cannot establish identity or ownership.
+
+For the initial personal product, the Organization is the tenant boundary: onboarding
+creates one personal Organization, its owner membership, and one Workspace for each account
+or Guest. Their IDs are independently generated; ownership and membership are records, not
+properties inferred from equal IDs. Existing shared Workspaces are not adopted. This initial
+one-to-one mapping does not prevent adding Organizations or Workspaces later.
+
+Shared Organizations are future functionality, not an implemented account-linking or access
+feature. A later design needs independently authorized membership invitations and acceptance,
+per-Workspace roles and grants, member removal and regional revocation propagation, plus
+organization-level billing and resource limits. A Principal may then belong to multiple
+Organizations, and an Organization may contain multiple Workspaces. Guest conversion or
+resource transfer needs a separate explicit protocol; signing in in the same browser is not
+proof of ownership. These additions must preserve local Region authorization during a Global
+outage and must not broaden the initial personal-owner grant automatically.
+
 - Identify the person by the exact validated OIDC issuer and immutable scalar subject
   (`iss`, `sub`), after the existing signature, audience, nonce, expiry and PKCE checks.
   Email, display name, organization claim, and browser input are not account identities.

@@ -178,11 +178,20 @@ fn valid_rule(rule: &str) -> bool {
         .map(valid_domain)
         .unwrap_or_else(|| email(rule).is_some())
 }
-fn identity(config: &Config, claims: &Value) -> Result<Credential, ServiceError> {
-    let sub = claims["sub"]
-        .as_str()
-        .filter(|s| !s.trim().is_empty())
-        .ok_or_else(|| failure(401, "SSO_VERIFICATION_FAILED"))?;
+/// Constructed only after signature, issuer, audience, expiry, nonce and PKCE validation.
+/// The issuer and subject are the identity used by onboarding; email is not an identity key.
+pub(crate) struct VerifiedLogin {
+    pub(crate) issuer: String,
+    pub(crate) subject: String,
+    claims: Value,
+}
+
+pub(crate) fn shared_workspace_owner(
+    config: &Config,
+    login: &VerifiedLogin,
+) -> Result<Credential, ServiceError> {
+    let claims = &login.claims;
+    let sub = &login.subject;
     let org = &claims[&config.org_claim];
     let org_allowed = config.allowed_orgs.is_empty()
         || config.allowed_orgs.iter().any(|expected| {
@@ -204,7 +213,7 @@ fn identity(config: &Config, claims: &Value) -> Result<Credential, ServiceError>
         return Err(failure(403, "SSO_NOT_AUTHORIZED"));
     }
     Ok(Credential::SessionOwner {
-        id: format!("sso:{}:{sub}", config.issuer),
+        id: format!("sso:{}:{sub}", login.issuer),
         actor: format!("tidb:{sub}"),
         expires_at: chrono::Utc::now().timestamp() + 28800,
         revoked: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -364,7 +373,7 @@ impl Runtime {
         &self,
         flow: &str,
         query: &BTreeMap<String, String>,
-    ) -> Result<Credential, ServiceError> {
+    ) -> Result<VerifiedLogin, ServiceError> {
         let flow = self
             .flows
             .lock()
@@ -382,13 +391,11 @@ impl Runtime {
             .get("code")
             .filter(|s| !s.is_empty())
             .ok_or_else(|| failure(400, "SSO_CODE_MISSING"))?;
-        let claims = self
-            .verify(code, &flow)
+        self.verify(code, &flow)
             .await
-            .map_err(|_| failure(401, "SSO_VERIFICATION_FAILED"))?;
-        identity(&self.config, &claims)
+            .map_err(|_| failure(401, "SSO_VERIFICATION_FAILED"))
     }
-    async fn verify(&self, code: &str, flow: &Flow) -> Result<Value> {
+    async fn verify(&self, code: &str, flow: &Flow) -> Result<VerifiedLogin> {
         let e = self.endpoints().await?;
         let c = &self.config;
         let form = [
@@ -461,7 +468,16 @@ impl Runtime {
         {
             bail!("Future token")
         }
-        Ok(claims)
+        let subject = claims["sub"]
+            .as_str()
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| anyhow::anyhow!("Invalid subject"))?
+            .to_owned();
+        Ok(VerifiedLogin {
+            issuer: c.issuer.clone(),
+            subject,
+            claims,
+        })
     }
 }
 
@@ -470,6 +486,20 @@ mod tests {
     use super::*;
     fn config() -> Config {
         serde_json::from_value(json!({"issuer":"https://issuer.example/","clientId":"client","redirectUri":"https://studio.example/studio/api/auth/tidbcloud/callback","ownerEmailRules":["*@example.org"]})).unwrap()
+    }
+    fn identity(config: &Config, claims: &Value) -> Result<Credential, ServiceError> {
+        let subject = claims["sub"]
+            .as_str()
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| failure(401, "SSO_VERIFICATION_FAILED"))?;
+        shared_workspace_owner(
+            config,
+            &VerifiedLogin {
+                issuer: config.issuer.clone(),
+                subject: subject.into(),
+                claims: claims.clone(),
+            },
+        )
     }
     #[test]
     fn configuration_and_identity_fail_closed() {
