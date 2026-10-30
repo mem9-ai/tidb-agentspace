@@ -17,11 +17,11 @@ against shared Organizations or additional Workspaces in a later release.
 A Guest gets the same logical tenant/Workspace isolation as an authenticated account, with
 an independently generated Guest principal and a private high-entropy browser credential.
 Guest identity is not a shared hard-coded account or the existing loopback demo owner.
-Guest workspaces are temporary and expire for automatic cleanup; their lifetime and whether
-cleanup includes upstream cloud resources remain open decisions. The named account login is
-the existing TiDB Cloud login, not a separate Teleport provider. Account linking remains a
-separate product decision. A lost Guest credential must not be recovered by guessing an ID or
-matching email. Require rate limits, quota and abuse controls for Guest creation.
+Guest Workspaces expire 24 hours after creation. Expiry initiates automatic deletion of that
+Guest's Workspace and its cloud databases and file systems. The named account login is the
+existing TiDB Cloud login, not a separate Teleport provider. Account linking remains a separate
+product decision. A lost Guest credential must not be recovered by guessing an ID or matching
+email. Require rate limits, quota and abuse controls for Guest creation.
 
 Current code does not provide this: a configured API instance owns one Workspace, the
 SSO allowlist grants access to that shared Workspace, and the Console and generated contract
@@ -102,11 +102,13 @@ owner or disposition before any reassignment. No cloud resource deletion is impl
 Existing users receive a new empty personal Workspace unless an explicit, separately
 authorized and verified migration assigns an existing Workspace to them.
 
-Guest expiry is a durable lifecycle operation, not a browser timer: disable access at the
-recorded expiry even if cleanup is delayed, fence in-flight work and reconcile each effect.
-Preserve the operation and provider binding/credential evidence until cleanup is confirmed;
-never blindly repeat an uncertain cloud deletion. Do not automatically delete upstream
-resources until the owner explicitly chooses that cleanup scope and retention interval.
+Guest expiry is a durable lifecycle operation, not a browser timer: at creation persist an
+expiry exactly 24 hours later, disable access at expiry even if cleanup is delayed, fence
+in-flight work and reconcile each effect. Automatically delete only upstream databases and
+file systems verified to belong to that expired Guest Workspace, then remove its Workspace
+records under the retention and audit policy. Preserve the operation and provider
+binding/credential evidence until cleanup is confirmed; never blindly repeat an uncertain
+cloud deletion. Do not delete the pre-existing shared Workspace or another account's resources.
 
 Enabling open self-service on the hosted site requires a reviewed runtime configuration,
 durable Global and regional stores, operator recovery procedures, identity-provider access,
@@ -135,6 +137,7 @@ test or image deployment alone does not prove the hosted website was switched.
    isolated object storage and a signed fake provider, without cloud credentials. Real hosted
    login, rollout, production isolation and scale require separate observed evidence.
 8. Independent Guest browsers get distinct principals and Workspaces; a Guest cannot select
-   another Guest or signed-in account's resources or Keys. Expiry blocks access independently
-   of cleanup, and cleanup survives restart without claiming existing data. Reuse, session loss,
-   upgrading, the expiry interval and upstream deletion follow explicit product decisions.
+   another Guest or signed-in account's resources or Keys. At 24 hours expiry blocks access
+   independently of cleanup, which deletes only the Guest's own cloud resources and survives
+   restart without claiming existing data. Test uncertain deletion and retry reconciliation.
+   Reuse, session loss and upgrading follow explicit product decisions.
