@@ -229,7 +229,7 @@ Report the checks and results that actually ran.
 
 ## Take a task through GitHub
 
-1. Find or open the relevant [Issue](https://github.com/siddontang/tidb.ai/issues), using the
+1. Find or open the relevant [Issue](https://github.com/mem9-ai/tidb.ai/issues), using the
    [native forms](https://github.com/mem9-ai/tidb.ai/issues/new/choose). Check ownership
    and preserve unrelated work.
 2. Read the accepted specification at its Git revision, or a sufficient small-fix reproduction.
