@@ -102,9 +102,13 @@ export async function enableGuest({ namespace, deployment, container, origin }, 
           'Guest enablement failed and rollback could not be confirmed; inspect the deployment.',
         );
       }
-      throw new Error('Guest enablement verification failed; the deployment was rolled back.');
+      throw new Error('Guest enablement verification failed; the deployment was rolled back.', {
+        cause: failure,
+      });
     }
-    throw new Error('Guest verification failed; the existing deployment was not changed.');
+    throw new Error('Guest verification failed; the existing deployment was not changed.', {
+      cause: failure,
+    });
   }
 }
 
