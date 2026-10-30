@@ -69,6 +69,75 @@ export function inspectNativeTarget({ namespace, deployment, container }, kubect
     configurationObjects: objects,
   };
 }
+// Discovery stays read-only and never treats a name hint as permission to reuse a bucket.
+export function discoverProjectStorage(aws) {
+  const classify = (error) =>
+    /AccessDenied|Unauthorized|Forbidden/.test(String(error.stderr || ''))
+      ? 'permission-denied'
+      : 'unavailable';
+  let listed;
+  try {
+    listed = JSON.parse(
+      aws([
+        's3api',
+        'list-buckets',
+        '--max-items',
+        '100',
+        '--page-size',
+        '100',
+        '--output',
+        'json',
+      ]),
+    );
+  } catch (error) {
+    return { status: classify(error), buckets: [] };
+  }
+  const all = Array.isArray(listed.Buckets) ? listed.Buckets : [];
+  const candidates = all.filter(
+    (b) => typeof b.Name === 'string' && /drive9|mem9|slatedb|workspace|tidb[.-]ai/i.test(b.Name),
+  );
+  const buckets = candidates.slice(0, 8).map((bucket) => {
+    let region = bucket.BucketRegion || null;
+    let regionStatus = region ? 'available' : 'unavailable';
+    if (!region)
+      try {
+        region =
+          JSON.parse(aws(['s3api', 'head-bucket', '--bucket', bucket.Name, '--output', 'json']))
+            .BucketRegion || null;
+        regionStatus = region ? 'available' : 'unavailable';
+      } catch (error) {
+        regionStatus = classify(error);
+      }
+    let tags = {},
+      tagStatus = 'unavailable';
+    try {
+      const data = JSON.parse(
+        aws(['s3api', 'get-bucket-tagging', '--bucket', bucket.Name, '--output', 'json']),
+      );
+      tags = Object.fromEntries(
+        (data.TagSet || [])
+          .filter((t) =>
+            ['application', 'app', 'project', 'service', 'environment', 'env'].includes(
+              String(t.Key).toLowerCase(),
+            ),
+          )
+          .map((t) => [t.Key, String(t.Value).slice(0, 128)]),
+      );
+      tagStatus = 'available';
+    } catch (error) {
+      tagStatus = classify(error);
+    }
+    return { name: bucket.Name, region, regionStatus, projectTags: tags, tagStatus };
+  });
+  return {
+    status: 'listed',
+    examinedBucketCount: all.length,
+    truncated: !!listed.NextToken || candidates.length > 8,
+    buckets,
+    selection:
+      'Name hints only; confirm the intended bucket and runtime credential/workload identity before initialization.',
+  };
+}
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const result = inspectNativeTarget(
@@ -83,6 +152,18 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
           stdio: ['ignore', 'pipe', 'pipe'],
           timeout: 35000,
         }),
+    );
+    result.objectStorage = discoverProjectStorage((args) =>
+      execFileSync(
+        'aws',
+        [...args, '--cli-connect-timeout', '3', '--cli-read-timeout', '5', '--no-cli-pager'],
+        {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 12000,
+          env: { ...process.env, AWS_MAX_ATTEMPTS: '1' },
+        },
+      ),
     );
     console.log(JSON.stringify(result, null, 2));
   } catch {
