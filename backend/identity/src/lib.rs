@@ -39,6 +39,12 @@ pub struct Registration {
     pub operation_id: String,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Provisioning {
+    Pending,
+    Ready,
+}
+
 /// Only the first successful creation returns the secret. It must not be logged or persisted
 /// by callers; the browser receives it over the protected Guest session channel.
 pub struct GuestRegistration {
@@ -137,6 +143,7 @@ fn decode_registration(records: &Value) -> Result<Registration> {
     let registration: Registration =
         serde_json::from_value(value(records, "initialization")?.clone())
             .map_err(|_| error(503, "IDENTITY_RECORD_CORRUPT"))?;
+    let workspace = value(records, "personal-workspace")?;
     if !valid_region(&registration.region_id)
         || [
             &registration.principal_id,
@@ -148,8 +155,9 @@ fn decode_registration(records: &Value) -> Result<Registration> {
         .any(|id| Uuid::parse_str(id).is_err())
         || value(records, "personal-organization")?
             != &json!({"id":registration.organization_id,"ownerId":registration.principal_id})
-        || value(records, "personal-workspace")?
-            != &json!({"id":registration.workspace_id,"organizationId":registration.organization_id,"regionId":registration.region_id,"state":"pending"})
+        || !["pending", "ready"].contains(&workspace["state"].as_str().unwrap_or_default())
+        || workspace
+            != &json!({"id":registration.workspace_id,"organizationId":registration.organization_id,"regionId":registration.region_id,"state":workspace["state"]})
         || value(records, "owner-membership")?
             != &json!({"principalId":registration.principal_id,"workspaceId":registration.workspace_id,"role":"owner","generation":1})
     {
@@ -199,6 +207,97 @@ impl Directory {
             })
             .await?;
         decode(&result["records"], identity)
+    }
+
+    /// A reservation alone is not proof that the regional Workspace is ready to serve.
+    pub async fn status(
+        &self,
+        identity: VerifiedIdentity<'_>,
+    ) -> Result<Option<(Registration, Provisioning)>> {
+        let scope = scope(&identity)?;
+        let result = self
+            .metadata
+            .execute(MetaRequest::Get {
+                scope,
+                guard: None,
+                keys: RECORDS.iter().map(|s| (*s).into()).collect(),
+            })
+            .await?;
+        let records = &result["records"];
+        let Some(registration) = decode(records, &identity)? else {
+            return Ok(None);
+        };
+        let state = match value(records, "personal-workspace")?["state"].as_str() {
+            Some("pending") => Provisioning::Pending,
+            Some("ready") => Provisioning::Ready,
+            _ => return Err(error(503, "IDENTITY_RECORD_CORRUPT")),
+        };
+        Ok(Some((registration, state)))
+    }
+
+    /// Record a Region's matching durable initialization acknowledgement. Only a trusted
+    /// Global control workflow may invoke this after authenticating the Region response and
+    /// verifying the complete installed policy and cleanup prerequisites. This method does
+    /// not establish that transport or make a regional call.
+    pub async fn record_region_ready(
+        &self,
+        identity: VerifiedIdentity<'_>,
+        acknowledgement: &Registration,
+        mutation_id: &str,
+    ) -> Result<()> {
+        if Uuid::parse_str(mutation_id).is_err() {
+            return Err(error(400, "INVALID_COMMAND"));
+        }
+        let scope = scope(&identity)?;
+        for _ in 0..8 {
+            let result = self
+                .metadata
+                .execute(MetaRequest::Get {
+                    scope: scope.clone(),
+                    guard: None,
+                    keys: RECORDS.iter().map(|s| (*s).into()).collect(),
+                })
+                .await?;
+            let records = &result["records"];
+            let registration =
+                decode(records, &identity)?.ok_or_else(|| error(404, "IDENTITY_NOT_FOUND"))?;
+            if &registration != acknowledgement {
+                return Err(error(409, "REGION_ACK_MISMATCH"));
+            }
+            let workspace = &records["personal-workspace"];
+            if workspace["value"]["state"] == "ready" {
+                return Ok(());
+            }
+            let version = workspace["version"]
+                .as_str()
+                .ok_or_else(|| error(503, "IDENTITY_RECORD_CORRUPT"))?;
+            let mut updated = workspace["value"].clone();
+            updated["state"] = json!("ready");
+            let result = self.metadata.execute(MetaRequest::Commit {
+                scope: scope.clone(), guard: None, mutation_id: mutation_id.into(),
+                changes: vec![json!({"key":"personal-workspace","expectedVersion":version,"value":updated})],
+            }).await;
+            match result {
+                Ok(_) => return Ok(()),
+                Err(e) if e.code == "META_CONFLICT" => continue,
+                Err(e) if e.code == "META_COMMIT_UNKNOWN" => {
+                    let receipt = self
+                        .metadata
+                        .execute(MetaRequest::Resolve {
+                            scope: scope.clone(),
+                            guard: None,
+                            mutation_id: mutation_id.into(),
+                        })
+                        .await;
+                    if receipt.as_ref().is_ok_and(|r| r["outcome"] == "committed") {
+                        continue;
+                    }
+                    return Err(e);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err(error(503, "IDENTITY_CONFLICT_UNRESOLVED"))
     }
 
     /// Create a private temporary identity. This creates no regional resources and must only
@@ -535,6 +634,86 @@ mod tests {
         assert_ne!(a.workspace_id, b.workspace_id);
         assert_ne!(a.workspace_id, other_issuer.workspace_id);
         assert_ne!(a.organization_id, b.organization_id);
+    }
+
+    #[tokio::test]
+    async fn region_ready_requires_exact_ack_and_survives_an_unknown_reply() {
+        let metadata = Arc::new(MemoryMeta::default());
+        let directory = Directory::open(metadata.clone()).await.unwrap();
+        let registration = directory
+            .reserve(identity("https://issuer.example", "alice"), "region:a")
+            .await
+            .unwrap();
+        assert!(
+            directory
+                .status(identity("https://issuer.example", "alice"))
+                .await
+                .unwrap()
+                .unwrap()
+                .1
+                == Provisioning::Pending
+        );
+        let mut wrong = registration.clone();
+        wrong.workspace_id = Uuid::new_v4().to_string();
+        let mutation = Uuid::new_v4().to_string();
+        assert_eq!(
+            directory
+                .record_region_ready(
+                    identity("https://issuer.example", "alice"),
+                    &wrong,
+                    &mutation
+                )
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "REGION_ACK_MISMATCH"
+        );
+        metadata.lose_reply.store(true, Ordering::SeqCst);
+        assert_eq!(
+            directory
+                .record_region_ready(
+                    identity("https://issuer.example", "alice"),
+                    &registration,
+                    &mutation
+                )
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "META_COMMIT_UNKNOWN"
+        );
+        directory
+            .record_region_ready(
+                identity("https://issuer.example", "alice"),
+                &registration,
+                &mutation,
+            )
+            .await
+            .unwrap();
+        assert!(
+            directory
+                .status(identity("https://issuer.example", "alice"))
+                .await
+                .unwrap()
+                .unwrap()
+                .1
+                == Provisioning::Ready
+        );
+        assert!(
+            directory
+                .reserve(identity("https://issuer.example", "alice"), "region:a")
+                .await
+                .unwrap()
+                == registration
+        );
+        let group_id = scope(&identity("https://issuer.example", "alice"))
+            .unwrap()
+            .owner_id;
+        assert_eq!(
+            metadata.groups.lock().unwrap()[&group_id]["personal-workspace"]["value"]["state"],
+            "ready"
+        );
     }
 
     #[tokio::test]

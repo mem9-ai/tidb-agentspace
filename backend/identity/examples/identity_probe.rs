@@ -1,7 +1,7 @@
 //! Integration-test helper. It is not shipped as an API or used for authentication.
 use std::sync::Arc;
 use workspace_identity::{
-    Directory, VerifiedIdentity,
+    Directory, Provisioning, Registration, VerifiedIdentity,
     regional::{Policies, Policy, Principal},
 };
 use workspace_meta_client::{ClientConfig, RemoteMetadata};
@@ -38,6 +38,40 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     let directory = Directory::open(metadata).await?;
+    if args[2] == "--region-ready" {
+        let input: serde_json::Value = serde_json::from_slice(&std::fs::read(&args[3])?)?;
+        let registration: Registration = serde_json::from_value(input["registration"].clone())?;
+        let issuer = input["issuer"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing issuer"))?;
+        let subject = input["subject"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing subject"))?;
+        directory
+            .record_region_ready(
+                VerifiedIdentity { issuer, subject },
+                &registration,
+                &args[4],
+            )
+            .await?;
+        println!("{{\"ready\":true}}");
+        return Ok(());
+    }
+    if args[2] == "--status" {
+        let (_, state) = directory
+            .status(VerifiedIdentity {
+                issuer: &args[3],
+                subject: &args[4],
+            })
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("identity missing"))?;
+        let state = match state {
+            Provisioning::Pending => "pending",
+            Provisioning::Ready => "ready",
+        };
+        println!("{}", serde_json::json!({"state":state}));
+        return Ok(());
+    }
     if args[2] == "--guest-create" {
         let guest = directory.create_guest(&args[3]).await?;
         println!(

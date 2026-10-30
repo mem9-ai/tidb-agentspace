@@ -61,6 +61,7 @@ test(
     await assert.rejects(authGuest(guestA, guestB.secret));
     const policyPath = resolve(fixture.directory, 'regional-policy.json');
     const claimsPath = resolve(fixture.directory, 'regional-claims.json');
+    const acknowledgementPath = resolve(fixture.directory, 'regional-ack.json');
     const policy = {
       workspaceId: concurrent[0].workspaceId,
       organizationId: concurrent[0].organizationId,
@@ -85,6 +86,23 @@ test(
     const authorizeRegion = () =>
       exec(probe, [config, '--region-auth', claimsPath, policy.workspaceId]);
     await authorizeRegion();
+    await use(global);
+    const status = async () =>
+      JSON.parse(
+        (await exec(probe, [config, '--status', 'https://issuer.example', 'alice'])).stdout,
+      ).state;
+    assert.equal(await status(), 'pending');
+    await writeFile(
+      acknowledgementPath,
+      JSON.stringify({
+        issuer: 'https://issuer.example',
+        subject: 'alice',
+        registration: concurrent[0],
+      }),
+      { mode: 0o600 },
+    );
+    await exec(probe, [config, '--region-ready', acknowledgementPath, randomUUID()]);
+    assert.equal(await status(), 'ready');
     const owner = (await global.client.health()).ownerId;
     await global.stop('SIGKILL');
     global.client.close();
@@ -109,6 +127,7 @@ test(
     global = await fixture.service('global', { previous: global, recoverOwner: owner });
     await use(global);
     assert.deepEqual(await reserve('https://issuer.example', 'alice', 'region:b'), concurrent[0]);
+    assert.equal(await status(), 'ready');
     assert.deepEqual(await authGuest(guestA), guestA.registration);
     assert.deepEqual(await authGuest(guestB), guestB.registration);
     await use(region);
