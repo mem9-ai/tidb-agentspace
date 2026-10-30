@@ -15,7 +15,7 @@ const content = '# Fixture file\n\nRendered Markdown for **agents**.\n';
 function bootstrap() {
   return {
     workspace: {
-      id: 'ws_agentlab',
+      id: 'ws_personal_fixture',
       name: 'Browser fixture',
       description: '',
       plan: 'Free',
@@ -68,7 +68,9 @@ export const test = base.extend({
       const reply = (json, status = 200) => route.fulfill({ status, json });
       if (url.pathname === '/api/auth/config') return reply({ enabled: false });
       if (url.pathname === '/api/session') return reply({ ok: true });
-      const path = url.pathname.replace('/api/v1/workspaces/ws_agentlab', '');
+      if (url.pathname === '/api/v1/workspaces' && method === 'GET')
+        return reply({ data: [state.workspace] });
+      const path = url.pathname.replace(`/api/v1/workspaces/${state.workspace.id}`, '');
       if (path === '/bootstrap') return reply(state);
       if (path === '/resources' && method === 'POST') {
         if (rejectAutomaticName) {

@@ -6,6 +6,15 @@ test('contextual creation fills the matching name, restores focus and keeps read
   workspace,
 }) => {
   await workspace.open();
+  expect(workspace.requests).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: '/api/v1/workspaces', method: 'GET' }),
+      expect.objectContaining({
+        path: `/api/v1/workspaces/${workspace.state.workspace.id}/bootstrap`,
+        method: 'GET',
+      }),
+    ]),
+  );
   for (const [label, kind] of [
     ['MySQL', 'mysql'],
     ['PostgreSQL', 'postgresql'],
