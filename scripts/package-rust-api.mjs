@@ -59,7 +59,7 @@ export async function packageRustApi({ root, sourceSha, binary, destination }) {
     await writeFile(resolve(staged, 'build-info.json'), JSON.stringify(info, null, 2) + '\n');
     await writeFile(
       resolve(staged, 'README.txt'),
-      `Rust Workspace API\nSource: ${sourceSha}\nRun: ./workspace-backend serve --config /absolute/private/deployment.json\nThe same executable hosts regional API, metadata roles and disposable workers.\nNo Node runtime or Console assets are required.\nUse docs/rust-backend.md for private configuration, migration, health and rollback.\nNative tidbfs requires a separately verified DuckDB 2.0 extension and its SHA-256.\nNo local state, secrets or provider credentials are included.\nThis loopback guest profile is for trusted local evaluation; public identity and production compute isolation are separate work.\n`,
+      `Rust Workspace API\nSource: ${sourceSha}\nRun: ./workspace-backend serve --config /absolute/private/deployment.json\nThe same executable hosts regional API, metadata roles and disposable workers.\nNo Node runtime or Console assets are required.\nUse docs/rust-backend.md for private configuration, migration, health and rollback.\nNative tidbfs requires a separately verified DuckDB 2.0 extension and its SHA-256.\nNo local state, secrets or provider credentials are included.\nPublic hosting requires explicit native SSO, trusted origins and private S3 plans; see docs/native-studio-deployment.md. Customer isolation and production compute hardening remain separate work.\n`,
     );
     await mkdir(destination, { recursive: true });
     const archive = resolve(
