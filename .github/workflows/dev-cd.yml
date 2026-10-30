@@ -46,8 +46,9 @@ permissions:
 
 # Concurrency is split by whether the run can deploy:
 #
-# - Pull requests (verify only): one group per PR ref, cancel-in-progress so a
-#   newer commit on the same PR supersedes the older verify run.
+# - Pull requests and main-only build/cache verification: one group per ref,
+#   cancel-in-progress so a newer verification supersedes the older run.
+#   Cache warmup never occupies the deployment queue or receives cloud credentials.
 # - Push to main and manual dispatch (can deploy): ONE shared constant group
 #   with cancel-in-progress FALSE. Deploy-capable runs therefore queue behind
 #   one another and are never cancelled mid-rollout/rollback — a second main
@@ -55,8 +56,8 @@ permissions:
 #   workflow level. The deploy job's own constant group keeps that invariant
 #   even if this block is later changed.
 concurrency:
-  group: dev-cd-${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'deploy' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: dev-cd-${{ (github.event_name == 'pull_request' || github.event.inputs.operation == 'verify') && format('verify-{0}', github.ref) || 'deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event.inputs.operation == 'verify' }}
 
 jobs:
   # Run the complete quality/native gate before releases. PR image verification

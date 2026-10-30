@@ -219,9 +219,14 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
   assert.equal(workflow.jobs.image.needs, undefined);
   assert.equal(
     workflow.concurrency['cancel-in-progress'],
-    "${{ github.event_name == 'pull_request' }}",
+    "${{ github.event_name == 'pull_request' || github.event.inputs.operation == 'verify' }}",
+  );
+  assert.equal(
+    workflow.concurrency.group,
+    "dev-cd-${{ (github.event_name == 'pull_request' || github.event.inputs.operation == 'verify') && format('verify-{0}', github.ref) || 'deploy' }}",
   );
   assert.equal(workflow.jobs.deploy.concurrency['cancel-in-progress'], false);
+  assert.equal(workflow.jobs.deploy.concurrency.group, 'dev-cd-deploy-target');
   for (const name of ['verify', 'image', 'deploy']) {
     assert.equal(
       workflow.jobs[name].steps.find((step) => step.uses?.startsWith('actions/checkout@')).with.ref,
