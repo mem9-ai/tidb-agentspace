@@ -65,6 +65,10 @@ Key authentication. This is one layer, not a complete authorization path: the ev
 regional API must authenticate and revalidate durable sessions and revocation, and fence
 in-flight provider effects.
 The existing hosted server still uses the legacy shared-Workspace constructor.
+An unmounted bounded managed-Workspace pool verifies an already authenticated owner before
+returning a lease, evicts only idle entries and fails closed if writer release is uncertain.
+It does not yet provide public request routing, Workspace Key discovery, crash takeover or
+stream-lifetime fencing; those remain requirements before a multi-tenant host can use it.
 
 An inactive DB9 cleanup adapter can issue one deletion request for a durably claimed Guest
 resource after checking the scoped Workspace, provider binding, existing account and Region

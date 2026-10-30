@@ -26,6 +26,8 @@ test(
       'guest_signup_probe',
       '--example',
       'guest_cookie_probe',
+      '--example',
+      'guest_pool_probe',
     ]);
     await exec('cargo', [
       'build',
@@ -163,6 +165,11 @@ test(
       assert.notEqual(firstGuest.registration[field], alice[field]);
     }
     assert.ok(firstGuest.accessExpiresAt <= firstGuest.expiresAt);
+    const poolProbe = resolve('meta-service/target/debug/examples/guest_pool_probe');
+    assert.equal(
+      JSON.parse((await exec(poolProbe, [globalConfig, regionConfig])).stdout).isolated,
+      true,
+    );
     const owner = (await region.client.health()).ownerId;
     await global.stop('SIGKILL');
     global.client.close();

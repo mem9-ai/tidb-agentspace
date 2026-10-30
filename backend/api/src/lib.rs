@@ -1,5 +1,6 @@
 pub mod global_login;
 mod http_policy;
+pub mod managed_workspaces;
 pub mod regional_guest;
 mod sso;
 use anyhow::{Result, bail};
