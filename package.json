@@ -34,7 +34,7 @@
     "backend:fmt": "cargo fmt --all --check",
     "backend:clippy": "cargo clippy --workspace --all-targets --locked -- -D warnings",
     "backend:test": "cargo test --workspace --locked",
-    "backend:test:integration": "WORKSPACE_META_TEST=1 WORKSPACE_BACKEND_TEST=1 node --test --test-concurrency=1 server/meta-service.test.mjs server/rust-backend.test.mjs server/rust-product.test.mjs scripts/package-runtime.test.mjs server/local-runtime.test.mjs server/rust-sso.test.mjs",
+    "backend:test:integration": "WORKSPACE_META_TEST=1 WORKSPACE_BACKEND_TEST=1 node --test --test-concurrency=1 server/meta-service.test.mjs server/rust-backend.test.mjs server/rust-product.test.mjs server/contract.test.mjs scripts/package-runtime.test.mjs server/local-runtime.test.mjs server/rust-sso.test.mjs",
     "backend:check": "npm run backend:fmt && npm run backend:build && npm run backend:clippy && npm run backend:test && npm run backend:test:integration",
     "build:api:rust": "npm run backend:build",
     "package:api:rust": "node scripts/package-rust-api.mjs",
@@ -71,11 +71,7 @@
     "typescript-eslint": "8.72.1",
     "vite": "8.3.5",
     "yaml": "2.9.1",
-    "@duckdb/node-api": "2.0.0-r.1",
-    "jose": "6.2.13",
-    "just-bash": "3.6.0",
-    "mysql2": "3.24.6",
-    "pg": "8.23.1"
+    "jose": "6.2.13"
   },
   "engines": {
     "node": ">=24.22.1 <25",
@@ -84,10 +80,5 @@
   "packageManager": "npm@11.6.2",
   "workspaces": [
     "tools/api-contract"
-  ],
-  "overrides": {
-    "guarded-fetch": {
-      "undici": "7.30.1"
-    }
-  }
+  ]
 }

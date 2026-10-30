@@ -72,7 +72,7 @@ follow its task-specific references before implementation. Keep detailed rules c
   domain types and `unknown` at untrusted boundaries; avoid `any` and unchecked casts.
 - Backend business services target Rust under [ADR 0020](docs/decisions/0020-modular-rust-backend.md):
   shared domain modules support in-process and independently deployed service composition.
-  Follow [the migration contract](specs/gh-88/spec.md); Node ESM under `server/` remains a test-only regression oracle. Rust owns SSO/public hosting under [the native hosted boundary](docs/decisions/0026-native-hosted-studio.md); follow [native deployment](docs/native-studio-deployment.md).
+  The old Node business implementation and its dedicated regression tests are retired; do not restore them. Node ESM under `server/` is limited to build/operator tools and native integration fixtures. Follow [native verification](docs/native-backend-retirement.md). Rust owns SSO/public hosting under [the native hosted boundary](docs/decisions/0026-native-hosted-studio.md); follow [native deployment](docs/native-studio-deployment.md).
   Fresh storage follows [ADR 0024](docs/decisions/0024-fresh-record-metadata.md); do not restore document import/handoff paths. Keep Node build/test tooling ESM.
 - Use PascalCase for React components/types, camelCase for functions/variables, and descriptive
   kebab-case for new non-component files. Follow established public API field names.

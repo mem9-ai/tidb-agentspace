@@ -2,7 +2,7 @@
 
 Status: GH-13 implementation; live rollout and real-account login require separate observed evidence. The contract is [NAT-01–06](../specs/gh-13/spec.md), originally accepted at `b6bf3645547ee2f172fc93b6249a966fb3f19079`. The owner's 2026-10-30 clarification limits NAT-04 dev CD to image updates; runtime configuration and recovery remain operator-owned.
 
-Rust is the only product API runtime. Node builds the Console and runs tools/regression oracles; it is absent from the deployed API image. The existing hosted Node image/JSON/vault path is retired. The owner permits discarding its data. Fresh native metadata uses the existing S3 bucket with a new unique prefix and new independent Global/Region encryption keys and service tokens. No old data or upstream credentials are imported, and no shared bucket is deleted.
+Rust is the only product API runtime. Node builds the Console and runs operator tools and native test fixtures; it is absent from the deployed API image. The existing hosted Node image/JSON/vault path is retired. The owner permits discarding its data. Fresh native metadata uses the existing S3 bucket with a new unique prefix and new independent Global/Region encryption keys and service tokens. No old data or upstream credentials are imported, and no shared bucket is deleted.
 
 ## Authentication and gateway
 
@@ -66,7 +66,7 @@ The owner handles runtime configuration separately from CD. Source integration a
 
 Normal local development retains `meta:local init/serve`, isolated RustFS storage and explicit `insecureLoopback:true`. With no SSO, only a real loopback socket may create a guest session. For real local login, use a separate development public-client registration and an exact fixed loopback callback if the provider permits it. For example, use `publicPath:"/studio"` and `http://127.0.0.1:4318/studio/api/auth/tidbcloud/callback`, plus the exact Console origin and same-origin post-login URL. Set `postLoginUrl` to the API/gateway origin, so keep the Console behind the same local gateway for the callback landing page. Loopback HTTP omits Secure; HTTPS always sets it. If registration rejects localhost, use a stable development HTTPS gateway/tunnel with its own client/grants and exact registered callback; never reuse the production cookie/client configuration.
 
-Automated native tests use a local signed fake provider and isolated temporary S3: `npm run backend:check`. They exercise code/PKCE, signatures/issuer/audience/nonce, default-deny owner rules, hostile hosts/origins, cookie prefixes, replay/logout, expired sessions and separate Workspace Key behavior. Only explicitly local fixtures may enable `allowLoopbackHttp` for provider endpoints. CI requires no real identity or cloud credentials. `npm run check` independently verifies Console, generated API/client contracts and the test oracle. Package native artifacts only from clean reviewed source.
+Automated native tests use a local signed fake provider and isolated temporary S3: `npm run backend:check`. They exercise code/PKCE, signatures/issuer/audience/nonce, default-deny owner rules, hostile hosts/origins, cookie prefixes, replay/logout, expired sessions and separate Workspace Key behavior. Only explicitly local fixtures may enable `allowLoopbackHttp` for provider endpoints. CI requires no real identity or cloud credentials. `npm run check` independently verifies Console, generated API/client contracts and tooling. Package native artifacts only from clean reviewed source.
 
 ## Read-only discovery when S3 inputs are unknown
 

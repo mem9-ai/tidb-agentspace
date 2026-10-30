@@ -1,11 +1,3 @@
-export const fileExportLimits = Object.freeze({
-  outputBytes: 1024 * 1024,
-  envelopeBytes: 8 * 1024 * 1024,
-  rows: 1000,
-  columns: 100,
-  preparations: 8,
-  preparationMs: 5 * 60 * 1000,
-});
 const str = { type: 'string' };
 const object = (properties) => ({
   type: 'object',

@@ -1,5 +1,7 @@
 # ADR 0024: Fresh record metadata and retirement of the document bridge
 
+> Node-source/test references below are historical. The owner retired that implementation and its dedicated regression tests in GH-34; current native coverage and tooling boundaries are recorded in [native retirement verification](../native-backend-retirement.md).
+
 - Status: Accepted owner direction; implementation under [GH-105](https://github.com/siddontang/tidb.ai/issues/105).
 - Date: 2026-10-29.
 - Baseline: `cd4e9a88ab0837cf93616f2a5d184e9f92e45d49`.

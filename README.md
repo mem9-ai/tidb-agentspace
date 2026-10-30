@@ -40,7 +40,7 @@ These modes enable explicit resource creation in the Console; startup does not p
 | Console         | `npm run build:console` | `npm run start:console` or static hosting                            |
 | Rust API / Meta | `npm run build:api`     | `workspace-backend serve --config /absolute/private/deployment.json` |
 
-`npm run check` verifies Console, generated contracts and regression/tooling tests. `npm run backend:check` checks native format, build, Clippy, unit tests, isolated real S3/API/SSO and native packaging. `npm run build:api` and all API start commands select Rust. The Node oracle has no serving CLI or deployable artifact.
+`npm run check` verifies Console, generated contracts and tooling tests. `npm run backend:check` checks native format, build, Clippy, unit tests, isolated real S3/API/SSO and native packaging. `npm run build:api` and all API start commands select Rust. The old Node backend and its dedicated tests are removed; Node is build/operator tooling and a native-test driver only.
 
 `npm run package -- FULL_REVIEWED_SOURCE_SHA` packages a reviewed clean native backend and separate Console assets with source SHA and checksums. Configuration and credentials remain outside artifacts. Console `/config.json` selects the API origin. Follow [independent delivery](docs/independent-delivery.md) and [CI/CD policy](docs/ci-cd.md).
 
@@ -105,9 +105,9 @@ See [runtime setup and recovery](docs/duckdb-databases.md) and
 
 ## Prototype boundaries
 
-Unbound database instances and chart series are simulated and labeled in the UI. Demo SQL supports only `SELECT 1 [AS connected]` and `SELECT * FROM agent_events [LIMIT n]`; this is not a MySQL or PostgreSQL server. Legacy/local files remain text in JSON. File Systems marked `drive9-anonymous` store their content in the real Singapore service, with internal tokens in a separate owner-only ignored file. Database usage is not metered; local filesystem allowances are a reference snapshot. Live trial storage usage, quotas, and billing are not measured. One Workspace Key works across its permitted database and file APIs. Both action scopes and resource IDs are enforced; selected resources do not automatically expand to future resources. Path-level policies and native protocol gateways are not implemented.
+Unbound database instances and chart series are simulated and labeled in the UI. Demo SQL supports only `SELECT 1 [AS connected]` and `SELECT * FROM agent_events [LIMIT n]`; this is not a MySQL or PostgreSQL server. Local demo files are text records in encrypted native metadata. File Systems marked `drive9-anonymous` store their content in the real Singapore service, with internal credentials in encrypted native records. Database usage is not metered; local filesystem allowances are a reference snapshot. Live trial storage usage, quotas, and billing are not measured. One Workspace Key works across its permitted database and file APIs. Both action scopes and resource IDs are enforced; selected resources do not automatically expand to future resources. Path-level policies and native protocol gateways are not implemented.
 
-Persistent Starter provisioning, production secret management, native protocol gateways, real telemetry, MCP, multi-tenant sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). The native loopback guest profile remains for local validation. Hosted Node SSO is an explicitly configured shared workspace, without customer/team isolation.
+Persistent Starter provisioning, production secret management, native protocol gateways, real telemetry, MCP, multi-tenant sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). The native loopback guest profile remains for local validation. Native SSO is an explicitly configured shared workspace, without customer/team isolation.
 
 The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, and TiUI SQL Editor 0.0.6. Shared overrides preserve 16px body text, 48px primary controls, spacious layouts, and Light/Dark/System modes. Inter is self-hosted. See the [TiUI standard](docs/standards/tiui-design-system.md) for compatibility, extension rules, and [migration verification](docs/tiui-migration-verification.md).
 
@@ -115,20 +115,18 @@ The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, 
 
 - `src/App.tsx`, `src/main.tsx`, `src/styles.css`: interactive frontend prototype.
 - `backend/api/` and `backend/host/`: native HTTP/SSO policy and executable composition.
-- `server/regression-api.mjs`: explicit test-only Node behavioral oracle.
-- `server/providers/zero.mjs`, `server/providers/sql-drivers.mjs`: anonymous MySQL provisioning and bounded native SQL.
-- `server/providers/drive9.mjs`, `server/file-transfer.mjs`: internal provider adapter and bounded transfers.
-- `server/access-policy.mjs`: shared action/resource authorization support.
+- `backend/providers/`: anonymous provisioning, private provider credentials and native SQL drivers.
+- `backend/product/`: resource lifecycle, database browsing, files, analysis and exports/imports.
+- `backend/workspace/`: resource/action authorization and native record repositories.
 - `src/features/keys/ResourceAccessPicker.tsx`: explicit customer key resource selection.
-- `server/store.mjs`: serialized atomic local state persistence and capability snapshot.
 - `server/generate-openapi.mjs`: canonical API contract source.
 - `public/openapi.json`, `src/api/schema.d.ts`: generated contract and client types.
 - `src/api/`: shared generated-type HTTP client and runtime API configuration.
 - `console/public/config.json`: runtime API origin; `scripts/serve-console.mjs`: optional static runner.
-- `server/api.test.mjs`: behavior tests using temporary state and isolated ports.
+- `server/rust-product.test.mjs`, `server/rust-backend.test.mjs`, `server/contract.test.mjs`: native behavior, authorization and HTTP schema tests with isolated RustFS/S3.
 - `docs/architecture.md`: product model, page design, backend boundaries, integration strategy, and release acceptance criteria.
 
-The live adapter creates real anonymous trials only when enabled and explicitly requested. CI uses injected provider fixtures and never provisions cloud resources. Hosted Node credential vaults remain private plaintext files on the existing volume; native SlateDB credentials use the encrypted record profile. Multi-tenant native public deployment remains separate work.
+The live adapter creates real anonymous trials only when enabled and explicitly requested. CI uses injected provider fixtures and never provisions cloud resources. Native SlateDB credentials use the encrypted record profile; the old Node JSON/vault runtime is retired. Multi-tenant native public deployment remains separate work.
 
 ## Collaboration and delivery
 

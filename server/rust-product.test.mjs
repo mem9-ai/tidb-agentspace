@@ -1,16 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import http from 'node:http';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { writeFile, readFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { DuckDBInstance } from '@duckdb/node-api';
+import { writeFile, readFile } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { resolve } from 'node:path';
-import { createApp } from './regression-api.mjs';
-import { seed } from './store.mjs';
+import { workspaceFixture } from './test-support/workspace-fixture.mjs';
+import { providerFixture, nativeSecret } from './test-support/provider-fixture.mjs';
 import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
 import { seedRecords, readState, readBinding } from './test-support/record-fixture.mjs';
 const contract = JSON.parse(
@@ -39,261 +36,7 @@ function validateResponse(path, method, status, body) {
 }
 const base = '/api/v1/workspaces/ws_agentlab';
 const secret = 'retained-public-workspace-key';
-const nativeSecret = 'private-native-token-not-for-public-output';
-const suffixes = ['', '.providers.json', '.databases.json', '.duckdb.json', '.db9.json'];
 const privateWrite = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
-async function providerFixture() {
-  const files = new Map();
-  let statements = [];
-  let creates = 0;
-  let calls = 0;
-  let lost = false;
-  const databases = [];
-  let nativeCreates = { zero: 0, db9: 0, account: 0 };
-  const reset = () => {
-    files.clear();
-    files.set('/live.csv', Buffer.from('name,n\nalice,1\nbob,2\n'));
-    files.set('/binary.bin', Buffer.from([0, 255, 13, 10]));
-    statements = [];
-    creates = 0;
-    calls = 0;
-  };
-  reset();
-  const sql = (binding, statement) => {
-    statements.push(statement);
-    if (/FROM pg_roles/i.test(statement))
-      return {
-        columns: ['rolsuper', 'rolcreatedb', 'rolcreaterole'],
-        rows: [{ rolsuper: false, rolcreatedb: false, rolcreaterole: false }],
-        rowCount: 1,
-        affectedRows: 0,
-      };
-    if (statement.includes('AS owned'))
-      return { columns: ['owned'], rows: [{ owned: true }], rowCount: 1, affectedRows: 0 };
-    if (statement.includes('AS recordKind')) {
-      assert.equal(statement.match(/TABLE_SCHEMA = DATABASE\(\)/g)?.length, 3);
-      return {
-        columns: ['recordKind', 'name', 'type'],
-        rows: [
-          {
-            recordKind: 'column',
-            name: 'id',
-            type: 'integer',
-            nullable: 'NO',
-            defaultValue: null,
-            columnKey: 'PRI',
-            extra: '',
-            position: 1,
-          },
-          {
-            recordKind: 'index',
-            name: 'PRIMARY',
-            nonUnique: 0,
-            columnName: 'id',
-            position: 1,
-            prefixLength: null,
-          },
-          { recordKind: 'table', name: 'demo_table', type: 'BASE TABLE' },
-        ],
-        rowCount: 3,
-        affectedRows: 0,
-      };
-    }
-    if (/information_schema\.(TABLES|tables)/.test(statement))
-      return {
-        columns: ['name', 'type'],
-        rows: [{ name: 'demo_table', type: 'BASE TABLE' }],
-        rowCount: 1,
-        affectedRows: 0,
-      };
-    if (/information_schema\.(COLUMNS|columns)/.test(statement))
-      return {
-        columns: ['name', 'type', 'nullable', 'defaultValue', 'columnKey', 'extra', 'position'],
-        rows: [
-          {
-            name: 'id',
-            type: 'integer',
-            nullable: 'NO',
-            defaultValue: null,
-            columnKey: 'PRI',
-            extra: '',
-            position: 1,
-          },
-        ],
-        rowCount: 1,
-        affectedRows: 0,
-      };
-    if (statement.includes('information_schema.STATISTICS'))
-      return {
-        columns: ['name', 'nonUnique', 'columnName', 'position', 'prefixLength'],
-        rows: [
-          { name: 'PRIMARY', nonUnique: 0, columnName: 'id', position: 1, prefixLength: null },
-        ],
-        rowCount: 1,
-        affectedRows: 0,
-      };
-    if (statement.includes('pg_catalog.pg_index'))
-      return {
-        columns: ['name', 'uniqueValue', 'primaryValue', 'positionKeys'],
-        rows: [{ name: 'demo_pkey', uniqueValue: true, primaryValue: true, positionKeys: '1' }],
-        rowCount: 1,
-        affectedRows: 0,
-      };
-    if (/^\s*SELECT\s+1/i.test(statement)) {
-      const alias = /\bAS\s+([a-z_]+)/i.exec(statement)?.[1] || '?column?';
-      return { columns: [alias], rows: [{ [alias]: 1 }], rowCount: 1, affectedRows: 0 };
-    }
-    if (/^\s*SELECT\s+\*/i.test(statement))
-      return { columns: ['id'], rows: [{ id: 1 }], rowCount: 1, affectedRows: 0 };
-    return {
-      columns: [],
-      rows: [],
-      rowCount: 0,
-      affectedRows: /^\s*INSERT/i.test(statement) ? 1 : 0,
-    };
-  };
-  const server = http.createServer(async (req, res) => {
-    calls++;
-    const url = new URL(req.url, 'http://localhost');
-    const respond = (status, value, headers = {}) => {
-      res.writeHead(status, { 'Content-Type': 'application/json', ...headers });
-      res.end(value === undefined ? undefined : JSON.stringify(value));
-    };
-    try {
-      if (url.pathname === '/zero') {
-        nativeCreates.zero++;
-        if (lost) return req.socket.destroy();
-        return respond(200, {
-          instance: {
-            id: 'mysql-created',
-            expiresAt: new Date(Date.now() + 86400000).toISOString(),
-            connection: {
-              host: 'created.tidbcloud.com',
-              port: 4000,
-              username: 'prefix.root',
-              password: nativeSecret,
-            },
-          },
-        });
-      }
-      if (url.pathname === '/customer/anonymous-register') {
-        nativeCreates.account++;
-        return respond(200, {
-          anonymous_id: 'account',
-          anonymous_secret: nativeSecret,
-          token: 'account-token',
-          expires_at: new Date(Date.now() + 86400000).toISOString(),
-        });
-      }
-      if (url.pathname === '/customer/databases' && req.method === 'POST') {
-        nativeCreates.db9++;
-        let chunks = [];
-        for await (const c of req) chunks.push(c);
-        const body = JSON.parse(Buffer.concat(chunks));
-        const id = 'pg' + databases.length;
-        databases.push({
-          id,
-          name: body.name,
-          connection_string: `postgresql://${id}.admin@pg.db9.io:5432/postgres`,
-          admin_password: body.admin_password,
-        });
-        if (lost) return req.socket.destroy();
-        return respond(200, databases.at(-1));
-      }
-      if (url.pathname === '/customer/databases') return respond(200, databases);
-      if (url.pathname.startsWith('/customer/databases/'))
-        return respond(
-          200,
-          databases.find((d) => d.id === url.pathname.split('/').at(-1)),
-        );
-      if (url.pathname === '/sql') {
-        let chunks = [];
-        for await (const c of req) chunks.push(c);
-        const input = JSON.parse(Buffer.concat(chunks));
-        return respond(200, sql(input.binding, input.sql));
-      }
-      if (url.pathname === '/v1/status')
-        return respond(200, {
-          status: 'active',
-          max_upload_bytes: 1048576,
-          inline_threshold: 1048576,
-        });
-      if (url.pathname === '/v1/provision') {
-        creates++;
-        if (lost) return req.socket.destroy();
-        return respond(200, { api_key: nativeSecret, tenant_id: 'created-tenant' });
-      }
-      if (url.pathname.startsWith('/v1/fs')) {
-        const path = decodeURIComponent(url.pathname.slice(6)) || '/';
-        if (url.searchParams.get('list') === '1') {
-          return respond(200, {
-            entries: [...files]
-              .filter(([p]) => (p.slice(0, p.lastIndexOf('/')) || '/') === path)
-              .map(([p, b]) => ({
-                name: p.split('/').pop(),
-                size: b.length,
-                isDir: false,
-                mtime: 1770000000,
-              })),
-          });
-        }
-        if (req.method === 'PUT') {
-          let chunks = [];
-          for await (const c of req) chunks.push(c);
-          if (req.headers['x-dat9-expected-revision'] === '0' && files.has(path))
-            return respond(409, { error: 'exists' });
-          files.set(path, Buffer.concat(chunks));
-          return respond(200, {});
-        }
-        if (req.method === 'DELETE') {
-          if (!files.has(path)) return respond(404, {});
-          files.delete(path);
-          return respond(200, {});
-        }
-        const b = files.get(path);
-        if (!b) return respond(404, {});
-        const revision = '"' + createHash('sha256').update(b).digest('hex') + '"';
-        if (req.headers['if-match'] && req.headers['if-match'] !== revision)
-          return respond(412, {});
-        res.writeHead(200, {
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': b.length,
-          'X-Dat9-IsDir': 'false',
-          ETag: revision,
-        });
-        return res.end(req.method === 'HEAD' ? undefined : b);
-      }
-      return respond(404, {});
-    } catch {
-      respond(500, {});
-    }
-  });
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  const origin = `http://127.0.0.1:${server.address().port}`;
-  return {
-    origin,
-    reset,
-    set lost(value) {
-      lost = value;
-    },
-    get nativeCreates() {
-      return nativeCreates;
-    },
-    get statements() {
-      return statements;
-    },
-    get creates() {
-      return creates;
-    },
-    get calls() {
-      return calls;
-    },
-    transport: (url, options) =>
-      fetch(origin + new URL(url).pathname + new URL(url).search, options),
-    execute: async (binding, statement) => sql(binding, statement),
-    close: () => new Promise((r) => server.close(r)),
-  };
-}
 async function connect(origin) {
   const session = await fetch(origin + '/api/session', {
     method: 'POST',
@@ -322,24 +65,10 @@ async function connect(origin) {
     };
   };
 }
-async function parquetImportInput() {
-  const directory = await mkdtemp(resolve(tmpdir(), 'import-parquet-'));
-  const db = await DuckDBInstance.create(':memory:');
-  const connection = await db.connect();
-  try {
-    const path = resolve(directory, 'data.parquet');
-    await connection.run(
-      `COPY (SELECT range::BIGINT AS id FROM range(25)) TO '${path}' (FORMAT PARQUET)`,
-    );
-    return await readFile(path);
-  } finally {
-    connection.closeSync();
-    db.closeSync();
-    await rm(directory, { recursive: true, force: true });
-  }
+function parquetImportInput() {
+  return readFile(new URL('./test-support/fixtures/import.parquet', import.meta.url));
 }
 async function scenarios(request, provider) {
-  let trace = [];
   async function run(path, options, expected = 200) {
     const r = await request(path, options);
     assert.equal(
@@ -347,7 +76,6 @@ async function scenarios(request, provider) {
       expected,
       JSON.stringify({ path, command: options?.body?.command, status: r.status, body: r.body }),
     );
-    trace.push([path.replace(/preparation[^/]*/g, 'preparation'), r.status, r.body.error?.code]);
     return r;
   }
   const boot = await run(base + '/bootstrap');
@@ -440,7 +168,6 @@ async function scenarios(request, provider) {
   });
   assert.equal(download.status, 200);
   assert.deepEqual(download.body, Buffer.from([0, 255, 13, 10]));
-  trace.push(['binary-download', download.status]);
   await run(base + '/file-exports', {
     method: 'POST',
     body: {
@@ -477,7 +204,28 @@ async function scenarios(request, provider) {
     });
     assert.equal(r.body.format, format);
     assert.equal(r.body.rowCount, 3);
-    trace.push([format, r.body.content, r.body.bytes, r.body.filename, r.body.mimeType]);
+    assert.equal(r.body.bytes, Buffer.byteLength(r.body.content));
+    assert.ok(r.body.filename.endsWith('.' + (format === 'jsonl' ? 'jsonl' : format)));
+    if (format === 'json') {
+      assert.deepEqual(JSON.parse(r.body.content), [
+        { value: '=SUM(A1)', n: 1 },
+        { value: 'quote"\nline', n: null },
+        { value: '\ufeff=1', n: 3 },
+      ]);
+    }
+    if (format === 'jsonl') {
+      assert.deepEqual(
+        r.body.content
+          .trim()
+          .split('\n')
+          .map((line) => JSON.parse(line)),
+        [
+          { value: '=SUM(A1)', n: 1 },
+          { value: 'quote"\nline', n: null },
+          { value: '\ufeff=1', n: 3 },
+        ],
+      );
+    }
     if (format === 'csv') assert.match(r.body.content, /'=SUM/);
   }
   await run(base + '/result-exports', {
@@ -741,7 +489,6 @@ async function scenarios(request, provider) {
     body: { resourceId: 'fs_shared', path: '/copied.csv' },
   });
   await run(base + '/usage');
-  return trace;
 }
 for (const transport of ['remote', 'inProcess']) {
   test(
@@ -751,17 +498,15 @@ for (const transport of ['remote', 'inProcess']) {
       const f = await metaFixture();
       const provider = await providerFixture();
       let child;
-      let node;
       t.after(async () => {
         if (child && child.exitCode === null) {
           child.kill('SIGTERM');
           await new Promise((r) => child.once('exit', r));
         }
-        if (node?.listening) await new Promise((r) => node.close(r));
         await provider.close();
         await f.close();
       });
-      const state = seed();
+      const state = workspaceFixture();
       state.opaque = { preserve: 'original data' };
       state.resources.push(
         {
@@ -868,32 +613,6 @@ for (const transport of ['remote', 'inProcess']) {
           },
         },
       ];
-      const original = resolve(f.directory, 'workspace.json');
-      const baseline = resolve(f.directory, 'baseline', 'workspace.json');
-      await mkdir(resolve(f.directory, 'baseline'), { mode: 0o700 });
-      for (let i = 0; i < raw.length; i++) {
-        await privateWrite(original + suffixes[i], raw[i]);
-        await privateWrite(baseline + suffixes[i], raw[i]);
-      }
-      node = await createApp({
-        dataFile: baseline,
-        filesProvider: 'drive9-anonymous',
-        mysqlProvider: 'tidb-cloud-zero',
-        postgresProvider: 'db9-anonymous',
-        drive9Transport: provider.transport,
-        zeroTransport: provider.transport,
-        db9Transport: provider.transport,
-        sqlExecute: provider.execute,
-        postgresExecute: provider.execute,
-      });
-      await new Promise((r) => node.listen(0, '127.0.0.1', r));
-      const expected = await scenarios(
-        await connect(`http://127.0.0.1:${node.address().port}`),
-        provider,
-      );
-      await new Promise((r) => node.close(r));
-      const expectedResources = JSON.parse(await readFile(baseline)).resources;
-      provider.reset();
       const global = await f.service('global');
       const region = await f.service('complete');
       await seedRecords(
@@ -948,9 +667,8 @@ for (const transport of ['remote', 'inProcess']) {
       child.stdout.pipe(log);
       child.stderr.pipe(log);
       const request = await until(() => connect(`http://127.0.0.1:${bind}`));
-      let actual;
       try {
-        actual = await scenarios(request, provider);
+        await scenarios(request, provider);
       } catch (error) {
         const output = await readFile(resolve(f.directory, 'backend.log'), 'utf8');
         for (const line of output
@@ -961,7 +679,6 @@ for (const transport of ['remote', 'inProcess']) {
           t.diagnostic(line);
         throw error;
       }
-      assert.deepEqual(actual, expected);
       assert.equal(provider.creates, 0);
       const schema = await fetch(`http://127.0.0.1:${bind}/openapi.json`);
       assert.equal(schema.status, 200);
@@ -984,7 +701,14 @@ for (const transport of ['remote', 'inProcess']) {
         }
       const final = await readState(verifier.client, verifier.server.authorityId);
       assert.deepEqual(final.opaque, state.opaque);
-      assert.deepEqual(final.resources, expectedResources);
+      assert.deepEqual(
+        final.resources,
+        state.resources.map((resource) => ({
+          ...resource,
+          ...(resource.id === 'fs_live' ? { uploadLimitBytes: 1048576 } : {}),
+          ...(resource.id === 'db_live' ? { expiresAt: raw[2].bindings.db_live.expiresAt } : {}),
+        })),
+      );
       assert.deepEqual(final.keys[0].resourceIds, ['*']);
       assert.equal(final.keys[0].digest, state.keys[0].digest);
     },
@@ -1006,12 +730,9 @@ test(
       await provider.close();
       await f.close();
     });
-    const source = resolve(f.directory, 'workspace.json');
-    const state = seed();
+    const state = workspaceFixture();
     state.resources = [];
     state.files = [];
-    for (let i = 0; i < suffixes.length; i++)
-      await privateWrite(source + suffixes[i], i === 0 ? state : { bindings: {} });
     const global = await f.service('global');
     const region = await f.service('lifecycle');
     await seedRecords(region.client, region.server.authorityId, state);
