@@ -17,10 +17,11 @@ against shared Organizations or additional Workspaces in a later release.
 A Guest gets the same logical tenant/Workspace isolation as an authenticated account, with
 an independently generated Guest principal and a private high-entropy browser credential.
 Guest identity is not a shared hard-coded account or the existing loopback demo owner.
-Guest retention, automatic cleanup, account linking and the meaning of a separate Teleport
-login remain product decisions; do not implement automatic deletion or implicit account linking
-until those decisions are explicit. A lost Guest credential must not be recovered by guessing
-an ID or matching email. Require rate limits, quota and abuse controls for Guest creation.
+Guest workspaces are temporary and expire for automatic cleanup; their lifetime and whether
+cleanup includes upstream cloud resources remain open decisions. The named account login is
+the existing TiDB Cloud login, not a separate Teleport provider. Account linking remains a
+separate product decision. A lost Guest credential must not be recovered by guessing an ID or
+matching email. Require rate limits, quota and abuse controls for Guest creation.
 
 Current code does not provide this: a configured API instance owns one Workspace, the
 SSO allowlist grants access to that shared Workspace, and the Console and generated contract
@@ -101,6 +102,12 @@ owner or disposition before any reassignment. No cloud resource deletion is impl
 Existing users receive a new empty personal Workspace unless an explicit, separately
 authorized and verified migration assigns an existing Workspace to them.
 
+Guest expiry is a durable lifecycle operation, not a browser timer: disable access at the
+recorded expiry even if cleanup is delayed, fence in-flight work and reconcile each effect.
+Preserve the operation and provider binding/credential evidence until cleanup is confirmed;
+never blindly repeat an uncertain cloud deletion. Do not automatically delete upstream
+resources until the owner explicitly chooses that cleanup scope and retention interval.
+
 Enabling open self-service on the hosted site requires a reviewed runtime configuration,
 durable Global and regional stores, operator recovery procedures, identity-provider access,
 isolated execution, quotas and the acceptance evidence below. A source merge, simulated SSO
@@ -128,5 +135,6 @@ test or image deployment alone does not prove the hosted website was switched.
    isolated object storage and a signed fake provider, without cloud credentials. Real hosted
    login, rollout, production isolation and scale require separate observed evidence.
 8. Independent Guest browsers get distinct principals and Workspaces; a Guest cannot select
-   another Guest or signed-in account's resources or Keys. Reuse, session loss, expiry,
-   upgrading and cleanup follow explicit product decisions and never claim existing data.
+   another Guest or signed-in account's resources or Keys. Expiry blocks access independently
+   of cleanup, and cleanup survives restart without claiming existing data. Reuse, session loss,
+   upgrading, the expiry interval and upstream deletion follow explicit product decisions.
