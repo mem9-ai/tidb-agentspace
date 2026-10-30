@@ -488,6 +488,7 @@ async fn dispatch(
                     id: "local-owner".into(),
                     actor: "You".into(),
                     workspace_id: app.config.workspace_id.clone(),
+                    policy_generation: None,
                     expires_at: chrono::Utc::now().timestamp() + 28800,
                     revoked: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 },

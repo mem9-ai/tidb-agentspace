@@ -230,10 +230,12 @@ test(
       onboarding[0].workspaceId,
       guestWorkspace.workspaceId,
     ]);
+    await exec(probe, [regionConfig, '--expired-guest-check', '-', '-']);
     const policyPath = resolve(fixture.directory, 'regional-policy.json');
     const claimsPath = resolve(fixture.directory, 'regional-claims.json');
     const acknowledgementPath = resolve(fixture.directory, 'regional-ack.json');
     const sessionPath = resolve(fixture.directory, 'regional-session.json');
+    const guestSessionPath = resolve(fixture.directory, 'guest-regional-session.json');
     const cleanupPolicyPath = resolve(fixture.directory, 'cleanup-policy.json');
     const cleanupInputPath = resolve(fixture.directory, 'cleanup-input.json');
     const dueInputPath = resolve(fixture.directory, 'cleanup-due.json');
@@ -246,6 +248,36 @@ test(
       denied: false,
       identity: { kind: 'oidc', issuer: 'https://issuer.example', subject: 'alice' },
     };
+    await writeFile(
+      guestSessionPath,
+      JSON.stringify({ regionId: 'region:other', guestId: guestA.guestId, secret: guestA.secret }),
+      { mode: 0o600 },
+    );
+    const guestCredentials = JSON.parse(
+      (
+        await exec(probe, [
+          regionConfig,
+          '--guest-region-issue',
+          guestSessionPath,
+          guestWorkspace.workspaceId,
+        ])
+      ).stdout,
+    );
+    assert.ok(guestCredentials.accessExpiresAt <= guestA.expiresAt);
+    await writeFile(
+      guestSessionPath,
+      JSON.stringify({ regionId: 'region:other', token: guestCredentials.access }),
+      { mode: 0o600 },
+    );
+    await exec(probe, [
+      regionConfig,
+      '--region-access',
+      guestSessionPath,
+      guestWorkspace.workspaceId,
+    ]);
+    await assert.rejects(
+      exec(probe, [regionConfig, '--region-access', guestSessionPath, onboarding[0].workspaceId]),
+    );
     await writeFile(policyPath, JSON.stringify(policy), { mode: 0o600 });
     await writeFile(
       claimsPath,
@@ -337,6 +369,7 @@ test(
     region = await fixture.service('other', { previous: region, recoverOwner: regionOwner });
     await use(region);
     await authorizeRegion();
+    await exec(probe, [config, '--region-access', guestSessionPath, guestWorkspace.workspaceId]);
     await assert.rejects(
       exec(probe, [config, '--cleanup-claim', cleanupInputPath, cleanupAttempt]),
     );

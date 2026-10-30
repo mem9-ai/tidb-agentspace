@@ -50,6 +50,12 @@ applying the existing shared-owner allowlist. An inactive Global login applicati
 pass a verified login to the identity directory and regional onboarding; a signed fake-provider
 and isolated S3 integration test covers this composition. No hosted route calls that service,
 and it does not issue Region sessions or implement multi-tenant routing.
+The unused managed Workspace constructor checks its regional owner policy on entry, including
+owner identity and policy generation, and Guest expiry before either owner-session or Workspace
+Key authentication. This is one layer, not a complete authorization path: the eventual
+regional API must authenticate and revalidate durable sessions and revocation, and fence
+in-flight provider effects.
+The existing hosted server still uses the legacy shared-Workspace constructor.
 
 An inactive DB9 cleanup adapter can issue one deletion request for a durably claimed Guest
 resource after checking the scoped Workspace, provider binding, existing account and Region

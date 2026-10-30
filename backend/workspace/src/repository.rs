@@ -111,6 +111,86 @@ impl Repository {
             .await?;
         Ok(v["records"][key].clone())
     }
+
+    /// Check the Region-owned policy for an explicitly managed personal Workspace. This
+    /// does not apply to the legacy shared Workspace, and never contacts Global. A missing
+    /// ownership marker or policy fails closed. The caller must still authenticate the
+    /// specific session or Key, and reauthorize long-running work at effect boundaries.
+    pub async fn managed_owner(&self) -> Result<(String, u64)> {
+        let ownership = self.get("ownership/onboarding").await?;
+        let marker = &ownership["value"];
+        let user = marker["userId"]
+            .as_str()
+            .ok_or_else(|| error("MANAGED_POLICY_MISSING"))?;
+        let organization = marker["organizationId"]
+            .as_str()
+            .ok_or_else(|| error("MANAGED_POLICY_MISSING"))?;
+        if marker["workspaceId"] != self.scope.owner_id
+            || Uuid::parse_str(user).is_err()
+            || Uuid::parse_str(organization).is_err()
+        {
+            return Err(error("MANAGED_POLICY_MISSING"));
+        }
+        let mut scope = self.scope.clone();
+        scope.family = "regional-policy".into();
+        let response = self
+            .call(MetaRequest::Get {
+                scope,
+                guard: None,
+                keys: vec!["owner-policy".into()],
+            })
+            .await?;
+        let policy = &response["records"]["owner-policy"]["value"];
+        let generation = policy["generation"]
+            .as_u64()
+            .filter(|v| *v > 0)
+            .ok_or_else(|| error("MANAGED_POLICY_MISSING"))?;
+        if policy["workspaceId"] != self.scope.owner_id
+            || policy["regionId"] != self.scope.authority_id
+            || policy["organizationId"] != organization
+            || policy["userId"] != user
+            || policy["denied"] != false
+        {
+            return Err(error("MANAGED_POLICY_MISSING"));
+        }
+        match policy["identity"]["kind"].as_str() {
+            Some("oidc")
+                if policy["identity"]["issuer"]
+                    .as_str()
+                    .is_some_and(|v| !v.is_empty())
+                    && policy["identity"]["subject"]
+                        .as_str()
+                        .is_some_and(|v| !v.is_empty()) => {}
+            Some("guest") => {
+                let guest_id = policy["identity"]["guestId"]
+                    .as_str()
+                    .ok_or_else(|| error("MANAGED_POLICY_MISSING"))?;
+                let verifier = policy["identity"]["verifier"]
+                    .as_str()
+                    .ok_or_else(|| error("MANAGED_POLICY_MISSING"))?;
+                if Uuid::parse_str(guest_id).is_err()
+                    || verifier.len() != 64
+                    || !hex::decode(verifier).is_ok_and(|value| value.len() == 32)
+                {
+                    return Err(error("MANAGED_POLICY_MISSING"));
+                }
+                let expiry = policy["identity"]["expiresAt"]
+                    .as_i64()
+                    .ok_or_else(|| error("MANAGED_POLICY_MISSING"))?;
+                let created = policy["identity"]["createdAt"]
+                    .as_i64()
+                    .ok_or_else(|| error("MANAGED_POLICY_MISSING"))?;
+                if created.checked_add(86_400) != Some(expiry) {
+                    return Err(error("MANAGED_POLICY_MISSING"));
+                }
+                if chrono::Utc::now().timestamp() >= expiry {
+                    return Err(ServiceError::new(401, "GUEST_EXPIRED"));
+                }
+            }
+            _ => return Err(error("MANAGED_POLICY_MISSING")),
+        }
+        Ok((user.into(), generation))
+    }
     async fn commit(&self, changes: Vec<Value>) -> Result<()> {
         if changes.is_empty() {
             return Ok(());

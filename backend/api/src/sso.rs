@@ -222,6 +222,7 @@ pub(crate) fn shared_workspace_owner(
         id: format!("sso:{issuer}:{sub}"),
         actor: format!("tidb:{sub}"),
         workspace_id: workspace_id.into(),
+        policy_generation: None,
         expires_at: chrono::Utc::now().timestamp() + 28800,
         revoked: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })

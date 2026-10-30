@@ -12,6 +12,7 @@ pub enum Credential {
         id: String,
         actor: String,
         workspace_id: String,
+        policy_generation: Option<u64>,
         expires_at: i64,
         revoked: std::sync::Arc<std::sync::atomic::AtomicBool>,
     },
@@ -39,6 +40,7 @@ pub struct Response {
 }
 pub struct Workspace {
     repository: std::sync::Arc<Repository>,
+    managed: bool,
 }
 const SCOPES: &[&str] = &[
     "resources:read",
@@ -149,6 +151,7 @@ pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
             workspace_id,
             expires_at,
             revoked,
+            ..
         } => {
             if *expires_at <= Utc::now().timestamp()
                 || revoked.load(std::sync::atomic::Ordering::Acquire)
@@ -169,7 +172,23 @@ pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
     })
 }
 impl Workspace {
+    async fn authorize_managed(&self, credential: &Credential) -> Result<()> {
+        if self.managed {
+            let (owner, generation) = self.repository.managed_owner().await?;
+            match credential {
+                Credential::SessionOwner {
+                    id,
+                    policy_generation: Some(value),
+                    ..
+                } if id == &owner && *value == generation => {}
+                Credential::Bearer(_) => {}
+                _ => return Err(reject(401, "UNAUTHENTICATED")),
+            }
+        }
+        Ok(())
+    }
     pub async fn authenticate(&self, credential: &Credential) -> Result<Principal> {
+        self.authorize_managed(credential).await?;
         match credential {
             Credential::LocalDemoOwner | Credential::SessionOwner { .. } => principal(
                 &json!({"workspace":{"id":self.repository.workspace_id()}}),
@@ -184,6 +203,14 @@ impl Workspace {
     pub fn new(repository: Repository) -> Self {
         Self {
             repository: std::sync::Arc::new(repository),
+            managed: false,
+        }
+    }
+    /// Use only for a Workspace provisioned by trusted regional onboarding.
+    pub fn new_managed(repository: Repository) -> Self {
+        Self {
+            repository: std::sync::Arc::new(repository),
+            managed: true,
         }
     }
     pub async fn health(&self) -> Result<()> {
@@ -193,6 +220,7 @@ impl Workspace {
         self.repository.close().await
     }
     pub async fn call(&self, credential: Credential, operation: Operation) -> Result<Response> {
+        self.authorize_managed(&credential).await?;
         self.repository
             .transaction(move |state| execute_operation(state, credential, operation))
             .await
@@ -438,6 +466,7 @@ mod session_tests {
             id: "sso:issuer:alice".into(),
             actor: "tidb:alice".into(),
             workspace_id: "alice-workspace".into(),
+            policy_generation: None,
             expires_at: Utc::now().timestamp() - 1,
             revoked: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         };
@@ -451,6 +480,7 @@ mod session_tests {
             id: "sso:issuer:alice".into(),
             actor: "tidb:alice".into(),
             workspace_id: "alice-workspace".into(),
+            policy_generation: None,
             expires_at: Utc::now().timestamp() + 28800,
             revoked: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         };
@@ -479,6 +509,7 @@ mod revocation_tests {
             id: "sso:issuer:alice".into(),
             actor: "tidb:alice".into(),
             workspace_id: "alice-workspace".into(),
+            policy_generation: None,
             expires_at: Utc::now().timestamp() + 28800,
             revoked: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         };
