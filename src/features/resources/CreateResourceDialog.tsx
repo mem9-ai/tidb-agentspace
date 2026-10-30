@@ -6,10 +6,12 @@ import {
   IconZap as Zap,
 } from '@tidbcloud/uikit/icons';
 import { workspaceApi, type Data } from '../../api/client';
+import { WorkspaceApiError } from '../../api/transport';
 import { WorkspaceModal as Modal } from '../../ui/WorkspaceModal';
 import { regionLabel as region } from './regions';
 import { fileSystemHash } from '../files/file-location';
 import { databaseEditorHash } from '../navigation/workspace-route';
+import { generateResourceName } from './resource-name';
 import {
   resourceCreationContext,
   resourceKindLabels,
@@ -33,7 +35,10 @@ export function CreateResourceDialog({
   const context = resourceCreationContext(target, data.capabilities);
   const initialKind = context.initialKind;
   const [kind, setKind] = useState<ResourceKind>(initialKind),
-    [name, setName] = useState(''),
+    [nameDraft, setNameDraft] = useState(() => ({
+      value: generateResourceName(initialKind, data.resources),
+      automatic: true,
+    })),
     [selectedRegion, setRegion] = useState(context.initialRegion),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
@@ -46,11 +51,22 @@ export function CreateResourceDialog({
   const unavailable = (isDuckdb || livePg) && data.capabilities[kind].available === false;
   function changeKind(k: ResourceKind) {
     setKind(k);
+    setNameDraft((current) =>
+      current.automatic || !current.value
+        ? { value: generateResourceName(k, data.resources), automatic: true }
+        : current,
+    );
     setRegion(data.capabilities[k].regions[0]);
     setError('');
   }
   async function create(e: FormEvent) {
     e.preventDefault();
+    const automatic = nameDraft.automatic || !nameDraft.value;
+    const name =
+      !nameDraft.value || (automatic && data.resources.some((r) => r.name === nameDraft.value))
+        ? generateResourceName(kind, data.resources)
+        : nameDraft.value;
+    setNameDraft({ value: name, automatic });
     setBusy(true);
     setError('');
     try {
@@ -80,7 +96,15 @@ export function CreateResourceDialog({
           ? '#files'
           : '#databases';
     } catch (e) {
-      setError((e as Error).message);
+      if (e instanceof WorkspaceApiError && e.code === 'NAME_EXISTS') {
+        if (automatic) {
+          setNameDraft({
+            value: generateResourceName(kind, [...data.resources, { name }]),
+            automatic: true,
+          });
+          setError('That name was taken. A new name is ready; choose Create again.');
+        } else setError('This name is already in use. Choose another name.');
+      } else setError(e instanceof Error ? e.message : 'Unable to create the resource.');
     } finally {
       setBusy(false);
     }
@@ -128,14 +152,13 @@ export function CreateResourceDialog({
         <TextInput
           label="Resource name"
           disabled={busy}
-          description={<>3–40 lowercase letters, numbers, and hyphens.</>}
-          required
+          description="3–40 lowercase letters, numbers, and hyphens. Leave blank for an automatic name."
           pattern="[a-z][a-z0-9-]{2,39}"
           minLength={3}
           maxLength={40}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={kind === 'filesystem' ? 'agent-context' : 'agent-memory-dev'}
+          value={nameDraft.value}
+          onChange={(e) => setNameDraft({ value: e.target.value, automatic: false })}
+          placeholder={`${kind}-…`}
         />
         <NativeSelect
           label="Region"
