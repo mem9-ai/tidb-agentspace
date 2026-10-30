@@ -1,3 +1,4 @@
+pub mod global_login;
 mod http_policy;
 mod sso;
 use anyhow::{Result, bail};

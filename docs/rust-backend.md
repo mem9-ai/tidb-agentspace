@@ -36,14 +36,16 @@ A co-located Region initialization implementation creates only explicitly owned 
 Workspaces; a separately deployed Global must use a Region control service and never open a
 remote Region Meta store directly.
 A reservation is pending regional initialization and does not authorize regional access. These
-primitives are not wired into SSO, API routing, a cleanup scheduler/provider deletion or the hosted
+primitives are not wired into hosted SSO, API routing, a cleanup scheduler/provider deletion or the hosted
 service. A claimed cleanup job requires reconciliation after an uncertain result; it is not
 automatically retried. They do not establish a multi-tenant deployment.
 
 The existing shared-Workspace session now carries its Workspace ID and is rejected by domain
 authorization in a different Workspace. SSO produces a verified issuer and subject before
-applying the existing shared-owner allowlist. This hardening does not connect verified logins
-to the new identity directory or implement multi-tenant routing.
+applying the existing shared-owner allowlist. An inactive Global login application service can
+pass a verified login to the identity directory and regional onboarding; a signed fake-provider
+and isolated S3 integration test covers this composition. No hosted route calls that service,
+and it does not issue Region sessions or implement multi-tenant routing.
 
 An inactive DB9 cleanup adapter can issue one deletion request for a durably claimed Guest
 resource after checking the scoped Workspace, provider binding, existing account and Region
