@@ -109,6 +109,12 @@ file systems verified to belong to that expired Guest Workspace, then remove its
 records under the retention and audit policy. Preserve the operation and provider
 binding/credential evidence until cleanup is confirmed; never blindly repeat an uncertain
 cloud deletion. Do not delete the pre-existing shared Workspace or another account's resources.
+Region must persist Guest expiry and cleanup intent locally so access expiry and locally
+scheduled cleanup do not depend on Global availability. Global can observe the result later;
+Region does not report or call Global. Cleanup may run in the regional service's bounded
+in-process scheduler or an explicitly composed service role; it does not require a separate
+Worker deployment. Execution needs durable ownership/fencing, bounded retries and recovery
+before it can safely run across replicas. Guest expiry does not renew on login.
 
 Enabling open self-service on the hosted site requires a reviewed runtime configuration,
 durable Global and regional stores, operator recovery procedures, identity-provider access,
