@@ -14,7 +14,11 @@
   deployment to a configured EKS dev environment on `main` pushes changing API/runtime,
   build or delivery inputs, or a manual main request. Documentation/Console-only commits
   retain ordinary CI and independent Console publication without releasing an API image.
-  Releases only update the existing Deployment image, without a runtime annotation gate,
+  Images carry the source SHA in `org.opencontainers.image.revision`, so a new source
+  revision produces a distinct image even when the executable is unchanged. After setting
+  the image, CD reads the target container's image from Kubernetes and compares it with
+  the published immutable reference. Only the digest is logged. This confirms the image
+  field, not Pod health. Releases only update the existing Deployment image, without a runtime annotation gate,
   health wait or automatic rollback. [ADR 0013](decisions/0013-dev-kubernetes-cd.md) defines
   image delivery and the operator-owned runtime checks/recovery. Each repository must configure its own
   environment; checking in this workflow does not provision credentials or a cluster.

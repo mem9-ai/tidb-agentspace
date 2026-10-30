@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { parse } from 'yaml';
@@ -124,18 +127,21 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
   assert.equal(prBuild.with.push, false);
   assert.equal(prBuild.with.load, true);
   assert.equal(prBuild.with.platforms, 'linux/amd64');
+  assert.equal(prBuild.with.labels, 'org.opencontainers.image.revision=${{ github.sha }}');
   const releaseBuild = workflow.jobs.deploy.steps.find((step) =>
     step.uses?.startsWith('docker/build-push-action@'),
   );
   assert.equal(releaseBuild.with.platforms, 'linux/amd64');
   assert.equal(releaseBuild.with.push, true);
+  assert.equal(releaseBuild.with.labels, prBuild.with.labels);
   assert.equal(releaseBuild.if, "github.event.inputs.operation != 'inspect'");
   assert.ok(
     workflow.jobs.deploy.steps.some(
       (s) => s.env?.IMAGE_DIGEST === '${{ steps.image.outputs.digest }}',
     ),
   );
-  assert.equal(workflow.jobs.deploy.steps.at(-1).run, 'node scripts/deploy-dev.mjs');
+  assert.equal(workflow.jobs.deploy.steps.at(-2).run, 'node scripts/deploy-dev.mjs');
+  assert.equal(workflow.jobs.deploy.steps.at(-1).name, 'Confirm Deployment image');
 });
 
 test('main pushes and default manual runs publish and deploy; inspection is explicit', () => {
@@ -145,6 +151,7 @@ test('main pushes and default manual runs publish and deploy; inspection is expl
   const deployment = workflow.jobs.deploy;
   const build = deployment.steps.find((step) => step.id === 'image');
   const rollout = deployment.steps.find((step) => step.run === 'node scripts/deploy-dev.mjs');
+  const confirm = deployment.steps.find((step) => step.name === 'Confirm Deployment image');
   for (const [event, ref, requested, expected] of [
     ['push', 'refs/heads/main', undefined, true],
     ['workflow_dispatch', 'refs/heads/main', undefined, true],
@@ -159,10 +166,92 @@ test('main pushes and default manual runs publish and deploy; inspection is expl
         ? (requested ?? workflow.on.workflow_dispatch.inputs.operation.default)
         : undefined;
     const github = { event_name: event, ref, event: { inputs: { operation } } };
-    for (const step of [build, rollout]) {
+    for (const step of [build, rollout, confirm]) {
       const runs =
         runInNewContext(deployment.if, { github }) && runInNewContext(step.if, { github });
       assert.equal(runs, expected, `${event} on ${ref} (${operation ?? 'no operation'})`);
     }
+  }
+});
+
+test('workflow reads the selected Deployment image and rejects mismatch or unavailable evidence', (t) => {
+  const workflow = parse(
+    readFileSync(new URL('../.github/workflows/dev-cd.yml', import.meta.url), 'utf8'),
+  );
+  const confirm = workflow.jobs.deploy.steps.find(
+    (step) => step.name === 'Confirm Deployment image',
+  );
+  const directory = mkdtempSync(join(tmpdir(), 'deployment-image-test-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const argsFile = join(directory, 'args');
+  writeFileSync(
+    join(directory, 'kubectl'),
+    '#!/bin/sh\nprintf "%s\\n" "$@" > "$TEST_ARGS_FILE"\nprintf "%s" "$TEST_STDOUT"\nprintf "%s" "$TEST_STDERR" >&2\nexit "$TEST_EXIT"\n',
+    { mode: 0o700 },
+  );
+  const target = (containers) => JSON.stringify({ spec: { template: { spec: { containers } } } });
+  for (const [name, stdout, exit, expectedImage, success] of [
+    [
+      'matching selected container',
+      target([
+        { name: 'sidecar', image: 'example/sidecar:old' },
+        { name: 'api', image: config.image },
+      ]),
+      '0',
+      config.image,
+      true,
+    ],
+    [
+      'old image despite another matching container',
+      target([
+        { name: 'api', image: 'example/api:old' },
+        { name: 'sidecar', image: config.image },
+      ]),
+      '0',
+      config.image,
+      false,
+    ],
+    [
+      'missing selected container',
+      target([{ name: 'sidecar', image: config.image }]),
+      '0',
+      config.image,
+      false,
+    ],
+    ['invalid response', 'invalid JSON', '0', config.image, false],
+    ['kubectl failure', '', '1', config.image, false],
+    ['missing expected image', target([]), '0', '', false],
+  ]) {
+    const result = spawnSync('bash', ['-c', confirm.run], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${directory}:${dirname(process.execPath)}:${process.env.PATH}`,
+        DEPLOY_NAMESPACE: config.namespace,
+        K8S_DEPLOYMENT: config.deployment,
+        K8S_CONTAINER: config.container,
+        IMAGE_REF: expectedImage,
+        TEST_ARGS_FILE: argsFile,
+        TEST_STDOUT: stdout,
+        TEST_STDERR: 'Synthetic private detail that must not reach Actions logs',
+        TEST_EXIT: exit,
+      },
+    });
+    assert.equal(result.status, success ? 0 : 1, name);
+    assert.equal(
+      result.stdout,
+      success ? `Deployment image confirmed: sha256:${'b'.repeat(64)}\n` : '',
+      name,
+    );
+    assert.equal(result.stderr, success ? '' : 'Deployment image verification failed.\n', name);
+    assert.deepEqual(readFileSync(argsFile, 'utf8').trim().split('\n'), [
+      '--request-timeout=30s',
+      'get',
+      `deployment/${config.deployment}`,
+      '-n',
+      config.namespace,
+      '-o',
+      'json',
+    ]);
   }
 });
