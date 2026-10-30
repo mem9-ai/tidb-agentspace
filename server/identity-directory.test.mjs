@@ -28,6 +28,8 @@ test(
       'guest_cookie_probe',
       '--example',
       'guest_pool_probe',
+      '--example',
+      'guest_entry_probe',
     ]);
     await exec('cargo', [
       'build',
@@ -170,6 +172,13 @@ test(
       JSON.parse((await exec(poolProbe, [globalConfig, regionConfig])).stdout).isolated,
       true,
     );
+    const entryProbe = resolve('meta-service/target/debug/examples/guest_entry_probe');
+    const entryCookie = resolve(fixture.directory, 'guest-entry-cookie');
+    await writeFile(entryCookie, '', { mode: 0o600 });
+    const entryGuest = JSON.parse(
+      (await exec(entryProbe, [globalConfig, regionConfig, entryCookie, 'create'])).stdout,
+    );
+    assert.notEqual(entryGuest.workspaceId, firstGuest.registration.workspaceId);
     const owner = (await region.client.health()).ownerId;
     await global.stop('SIGKILL');
     global.client.close();
@@ -182,6 +191,10 @@ test(
       JSON.parse((await exec(cookieProbe, [regionConfig, path, 'access'])).stdout);
     assert.equal((await access(firstCookie)).workspaceId, firstGuest.registration.workspaceId);
     assert.equal((await access(secondCookie)).workspaceId, secondGuest.registration.workspaceId);
+    const resumedEntry = JSON.parse(
+      (await exec(entryProbe, ['-', regionConfig, entryCookie, 'resume'])).stdout,
+    );
+    assert.equal(resumedEntry.workspaceId, entryGuest.workspaceId);
     const changedCookie = resolve(fixture.directory, 'guest-wrong-workspace-cookie');
     const firstValue = await readFile(firstCookie, 'utf8');
     await writeFile(

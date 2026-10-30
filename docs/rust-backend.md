@@ -59,6 +59,9 @@ fixed-lifetime regional credential stored as a host-only `Secure`, `HttpOnly` Co
 checks the regional credential and installed policy on every request and never extends Guest
 expiry. This helper does not provide an HTTP endpoint, cross-origin enrollment, CSRF policy,
 request routing or in-flight revocation; those remain prerequisites for hosted Guest access.
+An unmounted co-located entry service resumes valid Guest cookies without Global, requires a
+configured HTTPS Origin, and rate-limits new signup by socket peer. The serving host still
+needs trusted Host/Origin policy, cross-origin control handoff and aggregate abuse controls.
 The unused managed Workspace constructor checks its regional owner policy on entry, including
 owner identity and policy generation, and Guest expiry before either owner-session or Workspace
 Key authentication. This is one layer, not a complete authorization path: the eventual

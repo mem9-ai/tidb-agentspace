@@ -1,4 +1,5 @@
 pub mod global_login;
+pub mod guest_entry;
 mod http_policy;
 pub mod managed_workspaces;
 pub mod regional_guest;
