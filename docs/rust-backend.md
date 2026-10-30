@@ -27,7 +27,8 @@ The fresh record profile supersedes the document migration baseline; see [ADR 00
 | `backend/api`         | Public HTTP contract, sessions, Host/Origin/CORS, request/cancellation/stream limits   |
 | `backend/host`        | Configuration, dependency wiring, real role composition and ordered shutdown           |
 
-The identity module reserves a complete Global personal identity group atomically and stores
+The identity module reserves a complete Global personal identity group atomically, provides an
+inactive Global-initiated onboarding interface, and stores
 only a verifier for a temporary Guest secret. It also provides Region-local owner policy and
 durable session/renewal and sharded Guest cleanup-queue primitives. Installing a policy requires a trusted Global-initiated
 channel, which is not implemented here; session issuance requires an already verified principal.

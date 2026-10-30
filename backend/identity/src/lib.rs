@@ -2,6 +2,7 @@
 //! regional access; callers must supply an already verified issuer and subject.
 
 pub mod cleanup;
+pub mod onboarding;
 pub mod regional;
 pub mod sessions;
 
@@ -182,6 +183,46 @@ fn decode(records: &Value, identity: &VerifiedIdentity<'_>) -> Result<Option<Reg
     Ok(Some(decode_registration(records)?))
 }
 
+fn decode_guest(
+    records: &Value,
+    guest_id: &str,
+    secret: &str,
+    current: i64,
+) -> Result<(Registration, i64)> {
+    let bytes = hex::decode(secret).map_err(|_| error(401, "GUEST_UNAUTHORIZED"))?;
+    if bytes.len() != 32 || secret.len() != 64 || is_empty(records)? {
+        return Err(error(401, "GUEST_UNAUTHORIZED"));
+    }
+    let identity = value(records, "identity")?;
+    let expected = identity["verifier"]
+        .as_str()
+        .and_then(|value| hex::decode(value).ok())
+        .filter(|bytes| bytes.len() == 32)
+        .ok_or_else(|| error(503, "IDENTITY_RECORD_CORRUPT"))?;
+    let created = identity["createdAt"]
+        .as_i64()
+        .ok_or_else(|| error(503, "IDENTITY_RECORD_CORRUPT"))?;
+    let expires = identity["expiresAt"]
+        .as_i64()
+        .ok_or_else(|| error(503, "IDENTITY_RECORD_CORRUPT"))?;
+    if created.checked_add(86_400) != Some(expires)
+        || identity["type"] != "guest"
+        || identity["guestId"] != guest_id
+    {
+        return Err(error(503, "IDENTITY_RECORD_CORRUPT"));
+    }
+    if current >= expires
+        || Sha256::digest(&bytes)
+            .as_slice()
+            .ct_eq(&expected)
+            .unwrap_u8()
+            != 1
+    {
+        return Err(error(401, "GUEST_UNAUTHORIZED"));
+    }
+    Ok((decode_registration(records)?, expires))
+}
+
 impl Directory {
     pub async fn open(metadata: Arc<dyn Metadata>) -> Result<Self> {
         let health = metadata.health().await?;
@@ -247,10 +288,26 @@ impl Directory {
         acknowledgement: &Registration,
         mutation_id: &str,
     ) -> Result<()> {
+        let scope = scope(&identity)?;
+        self.mark_ready(scope, acknowledgement, mutation_id, |records| {
+            decode(records, &identity)?.ok_or_else(|| error(404, "IDENTITY_NOT_FOUND"))
+        })
+        .await
+    }
+
+    async fn mark_ready<F>(
+        &self,
+        scope: Scope,
+        acknowledgement: &Registration,
+        mutation_id: &str,
+        validate: F,
+    ) -> Result<()>
+    where
+        F: Fn(&Value) -> Result<Registration>,
+    {
         if Uuid::parse_str(mutation_id).is_err() {
             return Err(error(400, "INVALID_COMMAND"));
         }
-        let scope = scope(&identity)?;
         for _ in 0..8 {
             let result = self
                 .metadata
@@ -261,8 +318,7 @@ impl Directory {
                 })
                 .await?;
             let records = &result["records"];
-            let registration =
-                decode(records, &identity)?.ok_or_else(|| error(404, "IDENTITY_NOT_FOUND"))?;
+            let registration = validate(records)?;
             if &registration != acknowledgement {
                 return Err(error(409, "REGION_ACK_MISMATCH"));
             }
@@ -399,6 +455,46 @@ impl Directory {
         self.authenticate_guest_at(guest_id, secret, now()?).await
     }
 
+    /// Global onboarding only; Region sessions must use the installed local policy instead.
+    pub async fn guest_status(
+        &self,
+        guest_id: &str,
+        secret: &str,
+    ) -> Result<(Registration, Provisioning, i64)> {
+        let scope = guest_scope(guest_id)?;
+        let result = self
+            .metadata
+            .execute(MetaRequest::Get {
+                scope,
+                guard: None,
+                keys: RECORDS.iter().map(|s| (*s).into()).collect(),
+            })
+            .await?;
+        let records = &result["records"];
+        let (registration, expires) = decode_guest(records, guest_id, secret, now()?)?;
+        let state = match value(records, "personal-workspace")?["state"].as_str() {
+            Some("pending") => Provisioning::Pending,
+            Some("ready") => Provisioning::Ready,
+            _ => return Err(error(503, "IDENTITY_RECORD_CORRUPT")),
+        };
+        Ok((registration, state, expires))
+    }
+
+    /// Caller must authenticate the Region and verify its durable cleanup-queue acknowledgement.
+    pub async fn record_guest_ready(
+        &self,
+        guest_id: &str,
+        secret: &str,
+        acknowledgement: &Registration,
+        mutation_id: &str,
+    ) -> Result<()> {
+        let scope = guest_scope(guest_id)?;
+        self.mark_ready(scope, acknowledgement, mutation_id, |records| {
+            Ok(decode_guest(records, guest_id, secret, now()?)?.0)
+        })
+        .await
+    }
+
     async fn authenticate_guest_at(
         &self,
         guest_id: &str,
@@ -406,10 +502,6 @@ impl Directory {
         current: i64,
     ) -> Result<Registration> {
         let scope = guest_scope(guest_id)?;
-        let bytes = hex::decode(secret).map_err(|_| error(401, "GUEST_UNAUTHORIZED"))?;
-        if bytes.len() != 32 || secret.len() != 64 {
-            return Err(error(401, "GUEST_UNAUTHORIZED"));
-        }
         let result = self
             .metadata
             .execute(MetaRequest::Get {
@@ -418,33 +510,7 @@ impl Directory {
                 keys: RECORDS.iter().map(|key| (*key).into()).collect(),
             })
             .await?;
-        let records = &result["records"];
-        if is_empty(records)? {
-            return Err(error(401, "GUEST_UNAUTHORIZED"));
-        }
-        let identity = value(records, "identity")?;
-        let expected = identity["verifier"]
-            .as_str()
-            .and_then(|value| hex::decode(value).ok())
-            .filter(|bytes| bytes.len() == 32)
-            .ok_or_else(|| error(503, "IDENTITY_RECORD_CORRUPT"))?;
-        let created = identity["createdAt"]
-            .as_i64()
-            .ok_or_else(|| error(503, "IDENTITY_RECORD_CORRUPT"))?;
-        let expires = identity["expiresAt"]
-            .as_i64()
-            .ok_or_else(|| error(503, "IDENTITY_RECORD_CORRUPT"))?;
-        if created.checked_add(86_400) != Some(expires)
-            || identity["type"] != "guest"
-            || identity["guestId"] != guest_id
-        {
-            return Err(error(503, "IDENTITY_RECORD_CORRUPT"));
-        }
-        let digest = Sha256::digest(&bytes);
-        if current >= expires || digest.as_slice().ct_eq(&expected).unwrap_u8() != 1 {
-            return Err(error(401, "GUEST_UNAUTHORIZED"));
-        }
-        decode_registration(records)
+        Ok(decode_guest(&result["records"], guest_id, secret, current)?.0)
     }
 
     /// Reserve the personal identity group. Region initialization is separate and still pending.
