@@ -207,28 +207,54 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
   assert.equal(workflow.jobs.deploy.needs, 'verify');
   assert.equal(workflow.jobs.deploy.environment, 'dev');
   assert.equal(workflow.jobs.verify.environment, undefined);
+  assert.equal(workflow.jobs.image.environment, undefined);
+  assert.equal(workflow.jobs.image.if, "github.event_name == 'pull_request'");
+  assert.equal(workflow.jobs.image.needs, undefined);
   assert.equal(
     workflow.concurrency['cancel-in-progress'],
     "${{ github.event_name == 'pull_request' }}",
   );
   assert.equal(workflow.jobs.deploy.concurrency['cancel-in-progress'], false);
-  for (const name of ['verify', 'deploy']) {
+  for (const name of ['verify', 'image', 'deploy']) {
     assert.equal(
       workflow.jobs[name].steps.find((step) => step.uses?.startsWith('actions/checkout@')).with.ref,
       '${{ github.sha }}',
     );
   }
-  const prBuild = workflow.jobs.verify.steps.find((step) =>
-    step.run?.includes('docker buildx build'),
+  for (const name of ['verify', 'image']) {
+    const job = workflow.jobs[name];
+    assert.ok(!JSON.stringify(job).includes('secrets.'));
+    assert.notEqual(job.permissions?.['id-token'], 'write');
+  }
+  assert.ok(workflow.jobs.verify.steps.some((s) => s.run === 'npm run check' && !s.if));
+  for (const command of [
+    'npm run backend:fmt',
+    'npm run backend:build -- --timings',
+    'npm run backend:clippy',
+    'npm run backend:test',
+    'npm run backend:test:integration',
+  ]) {
+    const step = workflow.jobs.verify.steps.find((s) => s.run === command);
+    assert.ok(step, `Release verification lost ${command}`);
+    assert.equal(step.if, "github.event.inputs.operation != 'inspect'");
+  }
+  const prBuild = workflow.jobs.image.steps.find((step) =>
+    step.uses?.startsWith('docker/build-push-action@'),
   );
-  assert.equal(prBuild.if, "github.event_name == 'pull_request'");
-  assert.ok(!prBuild.run.includes('--push'));
+  assert.equal(prBuild.with.push, false);
+  assert.equal(prBuild.with.load, true);
+  assert.equal(prBuild.with.platforms, 'linux/amd64');
   const releaseBuild = workflow.jobs.deploy.steps.find((step) =>
-    step.run?.includes('docker buildx build'),
+    step.uses?.startsWith('docker/build-push-action@'),
   );
-  assert.match(releaseBuild.run, /--platform linux\/amd64/);
-  assert.match(releaseBuild.run, /--metadata-file/);
-  assert.match(releaseBuild.run, /--push/);
+  assert.equal(releaseBuild.with.platforms, 'linux/amd64');
+  assert.equal(releaseBuild.with.push, true);
+  assert.equal(releaseBuild.if, "github.event.inputs.operation != 'inspect'");
+  assert.ok(
+    workflow.jobs.deploy.steps.some(
+      (s) => s.env?.IMAGE_DIGEST === '${{ steps.image.outputs.digest }}',
+    ),
+  );
   assert.equal(workflow.jobs.deploy.steps.at(-1).run, 'node scripts/deploy-dev.mjs');
 });
 

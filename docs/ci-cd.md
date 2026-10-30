@@ -212,3 +212,26 @@ cache size, restore/save overhead, build/Clippy/test steps and total job duratio
 rerun proves same-PR reuse; verify the subsequent `main` seed separately before claiming
 cross-PR reuse. Compare actual Linux CI results rather than extrapolating from a warm local
 machine. Revisit the cache policy if storage/transfer cost outweighs saved compilation time.
+
+## Native image latency and dependency caching
+
+Measured on 2026-10-30 for [GH-17](https://github.com/mem9-ai/tidb.ai/issues/17), source baseline `c7df521`:
+
+| Run                                                                                              | Observed time                   | Main cost                                                                                                             |
+| ------------------------------------------------------------------------------------------------ | ------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| [Ordinary main CI](https://github.com/mem9-ai/tidb.ai/actions/runs/40983415209)                  | 2m 41s total; native job 2m 38s | Warm Cargo build 19s, integration tests 50s, frontend quality 1m 48s in parallel                                      |
+| [Earlier dependency-update CI](https://github.com/mem9-ai/tidb.ai/actions/runs/40980092035)      | 9m 51s total                    | Native build 3m 19s, Clippy 1m 20s and integration tests 3m 53s before the latest main dependency cache was available |
+| [PR native delivery verification](https://github.com/mem9-ai/tidb.ai/actions/runs/40980091991)   | 19m 41s total                   | Image build 9m 37s, after serial quality/native checks; release Cargo compiled for 8m 56s inside Docker               |
+| [Previous PR delivery verification](https://github.com/mem9-ai/tidb.ai/actions/runs/40976656268) | 27m 36s total                   | Image build 13m 22s, again after the full checks                                                                      |
+| [Read-only inspection](https://github.com/mem9-ai/tidb.ai/actions/runs/40979807553)              | 17m 23s total                   | 14m 01s of verification before a 28s protected inspection job, with additional job scheduling delay                   |
+| [Console publication](https://github.com/mem9-ai/tidb.ai/actions/runs/40979799331)               | 9m 16s total                    | Website PR creation 2m 58s and waiting for its independent checks 1m 56s; separate from API image compilation         |
+
+The native PR image job now runs alongside the complete quality/native gate. It has no cloud identity, does not push an image, and smoke-tests the final runtime without network access or a writable root. Main releases still require the entire quality/native gate before entering the protected deployment job. Manual `inspect` retains `npm run check` but omits native compilation/tests because it neither packages nor deploys an API. Deploy operations retain all native/S3 checks, immutable digest verification, serialization and rollback.
+
+The Dockerfile uses pinned `cargo-chef` 0.1.77 to separate the release dependency graph from application source. The same pinned Rust version, working directory, Cargo configuration, locked dependencies and verified DuckDB inputs apply to cooking and the final build. Source-only edits rebuild application crates; manifest/lockfile/toolchain/native input changes invalidate affected layers. The final build and runtime-info smoke check always validate the real executable, not the dependency skeleton.
+
+The pinned Docker build action imports/exports GitHub cache v2 with `mode=max` under `native-api-linux-amd64-v1`, including intermediate dependency layers. Ordinary cache mounts are not sufficient to persist those layers across fresh hosted runners. Cache transfer has a three-minute bound; failed export is non-fatal and a miss still builds fully. Base images are resolved with `pull:true`. No deployment files, credentials or product state enter the Docker context or cache.
+
+GitHub cache access restrictions still separate PR merge-ref caches from default-branch caches. A repeated PR run can reuse its own cache; a successful protected main image build seeds the default-branch cache for later PRs. Do not claim cross-PR reuse before that main seed is observed. Existing Cargo dev/test caches are independent of these release image layers. Cold/warm Linux measurements and any remaining limitations belong in the linked task/PR; the table above is the pre-optimization baseline.
+
+References: [Docker GHA cache](https://docs.docker.com/build/cache/backends/gha/), [cache mounts and cache API v2](https://docs.docker.com/build/ci/github-actions/cache/), [cargo-chef 0.1.77](https://github.com/LukeMathWalker/cargo-chef/tree/v0.1.77).
