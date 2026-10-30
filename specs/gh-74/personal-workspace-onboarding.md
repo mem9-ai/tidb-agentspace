@@ -24,9 +24,9 @@ existing TiDB Cloud login, not a separate Teleport provider. Account linking rem
 product decision. A lost Guest credential must not be recovered by guessing an ID or matching
 email. Require rate limits, quota and abuse controls for Guest creation.
 
-Current code does not provide this: a configured API instance owns one Workspace, the
-SSO allowlist grants access to that shared Workspace, and the Console and generated contract
-assume `ws_agentlab`. Existing Meta Scope primitives alone do not establish authorization.
+Current hosted code does not provide this: a configured API instance owns one Workspace and
+the SSO allowlist grants access to that shared Workspace. The draft Console discovers a
+Workspace dynamically, but that alone does not establish multi-tenant authorization.
 
 ## Identity and control-plane records
 
@@ -64,6 +64,17 @@ outage and must not broaden the initial personal-owner grant automatically.
   can only access its own Workspace. Cross-device recovery and upgrading a Guest to an account
   require a separately authorized ownership-linking protocol; never transfer ownership solely
   because an account signs in in the same browser.
+- Keep an established Guest session across browser and tab closures in the same browser profile
+  until the original 24-hour deadline. Use a persistent first-party `Secure`, `HttpOnly`
+  cookie with an expiry no later than the Guest's absolute `expiresAt`; reopening the site,
+  refreshing or renewing a regional access session must not extend that deadline. The Region's
+  durable policy and server clock enforce expiry independently of cookie retention, even when
+  Global is down. Browsers may discard cookies earlier, and another profile, private session
+  or device does not inherit them. A missing or cleared credential cannot recover the Guest.
+  Global and Region origins use their own host-only cookies; install a locally renewable Region
+  session through the authenticated control flow without sharing a Global cookie or making
+  Region call Global. The Console's discovery information may identify a Region but must not
+  itself grant access or contain a credential.
 - Global owns a durable identity directory and the canonical personal Organization,
   Workspace, owner membership, placement and initialization intent. Keys use a
   collision-safe encoding or length-delimited cryptographic digest of the issuer and subject;
@@ -203,4 +214,8 @@ test or image deployment alone does not prove the hosted website was switched.
    independently of cleanup, which deletes only the Guest's own cloud resources where supported
    and survives restart without claiming existing data. Unsupported or uncertain deletion stays
    visibly pending; test retry reconciliation and eventual provider expiry where applicable.
-   Reuse, session loss and upgrading follow explicit product decisions.
+   Closing and reopening the same browser profile before expiry recovers the same Guest
+   Workspace; refresh and regional renewal never extend expiry. Clearing the cookie, using a
+   different profile or allowing the absolute deadline to pass does not recover access. Repeat
+   this test after a Region restart and during a Global outage. Guest upgrade remains a separate
+   product decision.
