@@ -287,3 +287,39 @@ this verification does not claim a new provider-integration or native-backend te
 ![File System, Light 390×844](screenshots/contextual-creation/filesystem-light-390.jpg)
 ![Database, Light 1280×800](screenshots/contextual-creation/database-light-1280.jpg)
 ![Database, Dark 390×844](screenshots/contextual-creation/database-dark-390.jpg)
+
+### Automatic resource names
+
+GH-31 replaces the generic placeholder with an actual generated value. Each resource kind
+has its own prefix and a random suffix. The Console avoids names in its current Workspace
+snapshot; the backend's existing atomic name check remains authoritative for concurrent
+requests. This is a Console convenience, not a change making the public API name optional.
+
+Verified on 2026-10-30 against an isolated loopback fixture, with no cloud provisioning:
+
+- All four overview cards fill a valid, type-prefixed name. Cancel/reopen generates a fresh
+  name. The global chooser updates automatic names on type changes, preserves nonempty
+  custom names, and resumes generation after the field is cleared.
+- Clearing the field and submitting generated a valid `filesystem-…` name. A simulated
+  concurrent `NAME_EXISTS` response filled a different suggestion and asked for explicit
+  retry. The captured request count remained one until the second click; that click succeeded
+  and opened the exact returned File System URL. The idempotency key was preserved.
+- A manually entered existing name received a conflict message and retained the entered
+  value. No automatic rename or submission retry occurred.
+- Dark and Light were inspected at 1280×800 and 390×844. At desktop the name field retains
+  16px text and 48px height. At mobile the stable document width was 390px; the form scrolls
+  vertically and Tab reaches Cancel. Escape restores focus to the invoking Create button.
+  No browser warning/error logs were recorded.
+- Three deterministic generator tests cover all prefixes/name validation, repeated entropy
+  with occupied names, and refreshed snapshots. The final PR records the full quality gate
+  and latest-head CI results.
+
+TiUI 2.9.1 TextInput, NativeSelect, Alert and the shared WorkspaceModal remain in use, with
+the existing theme and layout. Providers, API contracts, authorization and native backend
+are unchanged. Fixture submission evidence is UI/request validation, not a new live-provider
+integration test.
+
+![Automatic DuckDB name, Dark 1280×800](screenshots/resource-names/duckdb-dark-1280.jpg)
+![Automatic DuckDB name, Light 1280×800](screenshots/resource-names/duckdb-light-1280.jpg)
+![Automatic DuckDB name, Dark 390×844](screenshots/resource-names/duckdb-dark-390.jpg)
+![Automatic DuckDB name, Light 390×844](screenshots/resource-names/duckdb-light-390.jpg)

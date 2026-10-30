@@ -216,13 +216,21 @@ verified, and record that as a remaining gap.
   cards open a kind-specific form with a matching title and region; omit a redundant type picker.
   The database collection chooser contains only supported database kinds. Only the global
   resource action offers both databases and File System. Keep action labels and accessible
-  names specific, reset name/region/errors when reopening, and lock the form while creating.
+  names specific, reset region/errors and suggest a fresh automatic name when reopening,
+  and lock the form while creating. Automatic names use the resource kind as their prefix
+  (`mysql-`, `postgresql-`, `duckdb-`, `filesystem-`), a random suffix and a check against all
+  known Workspace resource names (owner correction, GH-31). Update automatic names on type
+  changes; preserve nonempty manual names. Leaving the field empty generates a name at submit.
+  Server uniqueness validation remains authoritative for concurrent creates. On an explicit
+  `NAME_EXISTS` response, offer another automatic name for an explicit retry; retain manual
+  names with a conflict message. Never automatically retry uncertain provisioning requests.
   On acknowledgement, open the exact returned resource; a missing response identity falls
   back to its collection. Preserve provider limits and offer an explicit link to an existing
   File System when its regional slot is occupied. Empty unavailable-resource links offer a
   direct, correctly scoped Create action alongside the collection link; never silently select
   another resource. Check cards, collections, empty/stale links, cancel/reopen, successful
-  navigation and both themes/viewports. See [creation verification](../resource-workspace-verification.md#contextual-resource-creation).
+  navigation, automatic/manual/empty names, conflicts and both themes/viewports. See
+  [creation verification](../resource-workspace-verification.md#contextual-resource-creation).
   Revisit for multiple same-kind regions or a changed creation response contract.
 - **Resource workspace hierarchy (owner correction 2026-10-28):** unify Database and File
   System at the page level, not only their sidebars. Use `ResourceWorkspaceHeader` and its
