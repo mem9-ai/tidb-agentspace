@@ -1,13 +1,15 @@
-import { ActionIcon, Alert, Anchor, Button, Group, Text } from '@tidbcloud/uikit';
-import { IconArrowLeft, IconUpload01 } from '@tidbcloud/uikit/icons';
+import { Alert, Anchor, Button, Group, Text } from '@tidbcloud/uikit';
+import { IconUpload01 } from '@tidbcloud/uikit/icons';
 import type { Resource } from '../../api/client';
 import {
   ResourceConnectButton,
+  ResourceCollectionButton,
   ResourceDetails,
   ResourceWorkspaceBar,
   ResourceWorkspaceHeader,
 } from '../../ui/ResourceWorkspaceHeader';
 import { regionLabel } from '../resources/regions';
+import { resourceKindLabels } from '../resources/resource-creation';
 
 export function DatabaseWorkspaceHeader({
   database,
@@ -35,7 +37,7 @@ export function DatabaseWorkspaceHeader({
         ? 'DuckDB · Experimental'
         : database.provider === 'tidb-cloud-zero'
           ? 'MySQL · TiDB Cloud Zero'
-          : 'MySQL · Local demo';
+          : `${resourceKindLabels[database.kind]} · Local demo`;
   const expiry = database.expiresAt ? new Date(database.expiresAt) : null;
   const live = ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
     database.provider || '',
@@ -46,15 +48,13 @@ export function DatabaseWorkspaceHeader({
         title="Databases"
         actions={
           <>
-            <ActionIcon
-              component="a"
-              href="#databases"
-              variant="subtle"
-              aria-label="All databases"
-              title="All databases"
-            >
-              <IconArrowLeft size={18} />
-            </ActionIcon>
+            <ResourceCollectionButton
+              label="All databases"
+              onClick={() => {
+                location.hash = 'databases';
+              }}
+              disabled={busy}
+            />
             <ResourceDetails title="Database details">
               <Text>{provider}</Text>
               <Text>Status: {database.status}</Text>

@@ -142,6 +142,11 @@ verified, and record that as a remaining gap.
 
 ## Theme, responsive behavior, and interaction
 
+Apply [product experience](product-experience.md) across pages, not only within one component:
+shared page/empty/collection patterns, one in-context primary action, consistent resource
+entry/return and minimum complete paths to value. Preserve required decisions and intentional
+domain differences. See the [cross-page audit](../product-experience-audit.md).
+
 - Resource-specific tools live under their resource, with context in the URL. The owner's
   2026-10-27 navigation correction places SQL Editor inside Databases: choose a database,
   open its editor, and keep that database selected through connection links and history.

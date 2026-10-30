@@ -1,8 +1,9 @@
-import { ActionIcon, Button, Text } from '@tidbcloud/uikit';
-import { IconArrowLeft, IconUpload01 } from '@tidbcloud/uikit/icons';
+import { Button, Text } from '@tidbcloud/uikit';
+import { IconUpload01 } from '@tidbcloud/uikit/icons';
 import type { Resource } from '../../api/client';
 import {
   ResourceConnectButton,
+  ResourceCollectionButton,
   ResourceDetails,
   ResourceWorkspaceBar,
   ResourceWorkspaceHeader,
@@ -36,15 +37,7 @@ export function FileWorkspaceHeader({
       title="File System"
       actions={
         <>
-          <ActionIcon
-            variant="subtle"
-            aria-label="All file systems"
-            title="All file systems"
-            onClick={onBack}
-            disabled={busy}
-          >
-            <IconArrowLeft size={18} />
-          </ActionIcon>
+          <ResourceCollectionButton label="All file systems" onClick={onBack} disabled={busy} />
           <ResourceDetails title="File System details">
             <Text>{resource?.name || 'No File System selected'}</Text>
             {resource && (

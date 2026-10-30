@@ -24,7 +24,9 @@ follow its task-specific references before implementation. Keep detailed rules c
   Use the already running local agent for execution and GitHub for shared records and CI.
   Follow the workflow's local-agent boundary before proposing additional execution machinery.
 - For any UI, component, typography, layout, theme, icon, or frontend dependency change,
-  read [the TiUI standard](docs/standards/tiui-design-system.md) and `src/AGENTS.md`.
+  apply [product experience](docs/standards/product-experience.md): consistent shared patterns
+  and minimum complete paths to useful value, preserving required decisions and safeguards.
+  Read [the TiUI standard](docs/standards/tiui-design-system.md) and `src/AGENTS.md`.
   Use the installed TiUI components and supported shared overrides in `src/ui/`.
   Preserve the integration findings and verification requirements in the standard.
 - Capture reusable user corrections, integration findings, and conventions in the same PR

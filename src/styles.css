@@ -99,6 +99,34 @@ small {
 .page-heading p {
   margin-top: 8px;
 }
+.resource-grid > .first-value-choice {
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: flex-start;
+}
+.first-value-choice > button {
+  margin-top: auto;
+}
+.workspace-breadcrumbs,
+.workspace-mobile-crumb {
+  min-width: 0;
+}
+.workspace-resource-crumb {
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workspace-mobile-crumb {
+  flex: 1;
+}
+.workspace-mobile-crumb > * {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .eyebrow {
   font-size: 13px;
   font-weight: 600;
@@ -304,38 +332,6 @@ small {
   max-width: min(460px, calc(100vw - 32px));
   z-index: 500;
 }
-.welcome-panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 32px;
-  gap: 24px;
-}
-.welcome-copy h2 {
-  font-size: 32px;
-  max-width: 480px;
-  margin: 16px 0;
-}
-.welcome-copy p {
-  margin-bottom: 20px;
-}
-.workspace-illustration {
-  width: 280px;
-  height: 220px;
-  flex-shrink: 0;
-}
-.workspace-illustration svg {
-  max-width: 100%;
-  height: 100%;
-}
-.illustration-label {
-  fill: var(--text);
-  font-size: 12px;
-  font-family: inherit;
-}
 .resource-card {
   min-width: 0;
 }
@@ -354,7 +350,7 @@ small {
   color: var(--muted);
   margin-left: 6px;
 }
-.resource-card > p {
+.resource-card > p:not(.resource-name) {
   min-height: 52px;
 }
 .resource-name {
@@ -377,12 +373,6 @@ small {
   margin-top: 24px;
   padding-top: 20px;
   font-size: 14px;
-}
-.resource-card-bottom button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--blue);
 }
 .count {
   margin-left: 6px;
@@ -659,32 +649,6 @@ form > .modal-actions {
   display: block;
   color: var(--muted);
 }
-.connect-hero {
-  text-align: center;
-  padding: 32px;
-  margin-bottom: 32px;
-}
-.connect-hero-icon {
-  display: inline-flex;
-  color: var(--blue);
-  margin-bottom: 20px;
-}
-.connect-hero h2 {
-  margin-bottom: 16px;
-}
-.agent-clients {
-  display: flex;
-  justify-content: center;
-  gap: 24px;
-  margin-top: 24px;
-  flex-wrap: wrap;
-}
-.agent-clients > span {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
-}
 .setup-layout {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -940,9 +904,6 @@ form > .modal-actions {
   .resource-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .workspace-illustration {
-    display: none;
-  }
   .metric-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -989,12 +950,6 @@ form > .modal-actions {
   .panel-header {
     padding: 20px;
   }
-  .welcome-panel {
-    padding: 24px;
-  }
-  .welcome-copy h2 {
-    font-size: 28px;
-  }
   .resource-card > p {
     min-height: 0;
   }
@@ -1024,9 +979,6 @@ form > .modal-actions {
   }
   .modal-actions > button {
     flex: 1;
-  }
-  .connect-hero {
-    padding: 16px 0;
   }
   .setup-steps {
     padding: 20px;

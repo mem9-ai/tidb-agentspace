@@ -32,6 +32,7 @@ type Props = {
   active: string;
   databaseId?: string;
   fileSystemId?: string;
+  resourceName?: string;
   databaseView?: 'tables' | 'sql';
   navigation: NavigationItem[];
   onSearch: () => void;
@@ -46,6 +47,7 @@ export function WorkspaceLayout({
   active,
   databaseId,
   fileSystemId,
+  resourceName,
   databaseView,
   navigation,
   onSearch,
@@ -55,7 +57,7 @@ export function WorkspaceLayout({
   useEffect(() => {
     setOpened(false);
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  }, [active, databaseId, databaseView]);
+  }, [active, databaseId, databaseView, fileSystemId]);
   const navigate = (page: string) => {
     location.hash = page;
     setOpened(false);
@@ -128,19 +130,34 @@ export function WorkspaceLayout({
           <ActionIcon hiddenFrom="sm" aria-label="Open navigation" onClick={() => setOpened(true)}>
             <IconMenu01 size={22} />
           </ActionIcon>
-          <Breadcrumbs className="workspace-breadcrumbs" separator={<IconChevronRight size={14} />}>
+          <Breadcrumbs
+            visibleFrom="sm"
+            className="workspace-breadcrumbs"
+            separator={<IconChevronRight size={14} />}
+          >
             <Text className="workspace-crumb" size="sm">
               {workspaceName}
             </Text>
-            {databaseId && (
-              <Anchor href="#databases" size="sm">
-                Databases
+            {(databaseId || fileSystemId) && (
+              <Anchor href={databaseId ? '#databases' : '#files'} size="sm">
+                {databaseId ? 'Databases' : 'File Systems'}
               </Anchor>
             )}
-            <Text size="sm" fw={600}>
-              {databaseId ? 'SQL workspace' : label}
+            <Text className="workspace-resource-crumb" title={resourceName} size="sm" fw={600}>
+              {databaseId || fileSystemId ? resourceName || 'Resource unavailable' : label}
             </Text>
           </Breadcrumbs>
+          <Group hiddenFrom="sm" className="workspace-mobile-crumb">
+            {databaseId || fileSystemId ? (
+              <Anchor href={databaseId ? '#databases' : '#files'} size="sm">
+                {databaseId ? 'Databases' : 'File Systems'}
+              </Anchor>
+            ) : (
+              <Text size="sm" fw={600}>
+                {label}
+              </Text>
+            )}
+          </Group>
           <Group gap={12} wrap="nowrap" className="header-actions">
             <ThemePicker />
             <ActionIcon visibleFrom="sm" aria-label="Search workspace" onClick={onSearch}>
