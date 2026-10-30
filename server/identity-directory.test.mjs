@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
@@ -23,7 +24,7 @@ test(
     const fixture = await metaFixture();
     t.after(() => fixture.close());
     let global = await fixture.service('global');
-    const region = await fixture.service('other');
+    let region = await fixture.service('other');
     t.after(() => {
       global.client.close();
       region.client.close();
@@ -32,7 +33,7 @@ test(
     const probe = resolve('meta-service/target/debug/examples/identity_probe');
     const use = async (service) =>
       writeFile(config, JSON.stringify(service.clientConfig), { mode: 0o600 });
-    const reserve = async (issuer, subject, regionId = 'region:a') => {
+    const reserve = async (issuer, subject, regionId = 'region:other') => {
       const result = await exec(probe, [config, issuer, subject, regionId], { timeout: 30_000 });
       return JSON.parse(result.stdout);
     };
@@ -58,9 +59,53 @@ test(
     const guestB = await createGuest();
     assert.notEqual(guestA.registration.workspaceId, guestB.registration.workspaceId);
     await assert.rejects(authGuest(guestA, guestB.secret));
+    const policyPath = resolve(fixture.directory, 'regional-policy.json');
+    const claimsPath = resolve(fixture.directory, 'regional-claims.json');
+    const policy = {
+      workspaceId: concurrent[0].workspaceId,
+      organizationId: concurrent[0].organizationId,
+      principalId: concurrent[0].principalId,
+      regionId: 'region:other',
+      generation: 1,
+      denied: false,
+      identity: { kind: 'oidc', issuer: 'https://issuer.example', subject: 'alice' },
+    };
+    await writeFile(policyPath, JSON.stringify(policy), { mode: 0o600 });
+    await writeFile(
+      claimsPath,
+      JSON.stringify({
+        regionId: 'region:other',
+        issuer: 'https://issuer.example',
+        subject: 'alice',
+      }),
+      { mode: 0o600 },
+    );
+    await use(region);
+    await exec(probe, [config, '--region-install', policyPath, randomUUID()]);
+    const authorizeRegion = () =>
+      exec(probe, [config, '--region-auth', claimsPath, policy.workspaceId]);
+    await authorizeRegion();
     const owner = (await global.client.health()).ownerId;
     await global.stop('SIGKILL');
     global.client.close();
+    await use(region);
+    await authorizeRegion();
+    const regionOwner = (await region.client.health()).ownerId;
+    await region.stop('SIGKILL');
+    region.client.close();
+    region = await fixture.service('other', { previous: region, recoverOwner: regionOwner });
+    await use(region);
+    await authorizeRegion();
+    await writeFile(
+      claimsPath,
+      JSON.stringify({
+        regionId: 'region:other',
+        issuer: 'https://issuer.example',
+        subject: 'bob',
+      }),
+      { mode: 0o600 },
+    );
+    await assert.rejects(authorizeRegion());
     global = await fixture.service('global', { previous: global, recoverOwner: owner });
     await use(global);
     assert.deepEqual(await reserve('https://issuer.example', 'alice', 'region:b'), concurrent[0]);

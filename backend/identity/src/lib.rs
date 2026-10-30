@@ -1,6 +1,8 @@
 //! Global identity directory. This module does not verify identity-provider tokens or grant
 //! regional access; callers must supply an already verified issuer and subject.
 
+pub mod regional;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -444,10 +446,15 @@ mod tests {
     struct MemoryMeta {
         groups: Mutex<BTreeMap<String, BTreeMap<String, Value>>>,
         lose_reply: AtomicBool,
+        authority: Option<String>,
     }
     impl Metadata for MemoryMeta {
         fn health(&self) -> Call<'_> {
-            Box::pin(async { Ok(json!({"authorityId":"global","capabilities":["recordsV1"]})) })
+            Box::pin(async {
+                Ok(
+                    json!({"authorityId":self.authority.as_deref().unwrap_or("global"),"capabilities":["recordsV1"]}),
+                )
+            })
         }
         fn execute(&self, request: MetaRequest) -> Call<'_> {
             Box::pin(async move {
@@ -672,5 +679,219 @@ mod tests {
             scope(&identity("issuer", "alice")).unwrap().owner_id
         );
         assert!(scope(&identity("", "alice")).is_err());
+    }
+
+    fn oidc_policy() -> regional::Policy {
+        regional::Policy {
+            workspace_id: Uuid::new_v4().to_string(),
+            organization_id: Uuid::new_v4().to_string(),
+            principal_id: Uuid::new_v4().to_string(),
+            region_id: "region:a".into(),
+            generation: 1,
+            denied: false,
+            identity: regional::OwnerIdentity::Oidc {
+                issuer: "https://issuer.example".into(),
+                subject: "alice".into(),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn regional_policy_rejects_other_accounts_and_stale_or_conflicting_updates() {
+        use regional::{Policies, Principal};
+        let metadata = Arc::new(MemoryMeta {
+            authority: Some("region:a".into()),
+            ..Default::default()
+        });
+        let policies = Policies::open(metadata, "region:a").await.unwrap();
+        let policy = oidc_policy();
+        let command = Uuid::new_v4().to_string();
+        assert_eq!(
+            policies
+                .authorize_owner(
+                    &policy.workspace_id,
+                    Principal::Oidc {
+                        issuer: "https://issuer.example",
+                        subject: "alice"
+                    }
+                )
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "POLICY_NOT_INSTALLED"
+        );
+        policies.install(&policy, &command).await.unwrap();
+        policies.install(&policy, &command).await.unwrap();
+        policies
+            .authorize_owner(
+                &policy.workspace_id,
+                Principal::Oidc {
+                    issuer: "https://issuer.example",
+                    subject: "alice",
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            policies
+                .authorize_owner(
+                    &policy.workspace_id,
+                    Principal::Oidc {
+                        issuer: "https://issuer.example",
+                        subject: "bob"
+                    }
+                )
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "POLICY_DENIED"
+        );
+        assert_eq!(
+            policies
+                .authorize_owner(
+                    &Uuid::new_v4().to_string(),
+                    Principal::Oidc {
+                        issuer: "https://issuer.example",
+                        subject: "alice"
+                    }
+                )
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "POLICY_NOT_INSTALLED"
+        );
+        let mut changed_owner = policy.clone();
+        changed_owner.principal_id = Uuid::new_v4().to_string();
+        changed_owner.generation = 2;
+        assert_eq!(
+            policies
+                .install(&changed_owner, &Uuid::new_v4().to_string())
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "POLICY_OWNER_MISMATCH"
+        );
+        let mut denied = policy.clone();
+        denied.denied = true;
+        denied.generation = 2;
+        policies
+            .install(&denied, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        assert_eq!(
+            policies
+                .install(&policy, &command)
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "POLICY_STALE"
+        );
+        assert_eq!(
+            policies
+                .authorize_owner(
+                    &policy.workspace_id,
+                    Principal::Oidc {
+                        issuer: "https://issuer.example",
+                        subject: "alice"
+                    }
+                )
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "POLICY_DENIED"
+        );
+        let mut conflicting = denied;
+        conflicting.denied = false;
+        assert_eq!(
+            policies
+                .install(&conflicting, &Uuid::new_v4().to_string())
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "POLICY_GENERATION_MISMATCH"
+        );
+    }
+
+    #[tokio::test]
+    async fn regional_guest_policy_expires_without_global_and_rejects_other_secrets() {
+        use regional::{OwnerIdentity, Policies, Principal};
+        let metadata = Arc::new(MemoryMeta {
+            authority: Some("region:a".into()),
+            ..Default::default()
+        });
+        let policies = Policies::open(metadata, "region:a").await.unwrap();
+        let mut policy = oidc_policy();
+        let guest_id = Uuid::new_v4().to_string();
+        let secret_bytes = [42u8; 32];
+        let secret = hex::encode(secret_bytes);
+        let current = now().unwrap();
+        policy.identity = OwnerIdentity::Guest {
+            guest_id: guest_id.clone(),
+            verifier: hex::encode(Sha256::digest(secret_bytes)),
+            created_at: current - 86_400,
+            expires_at: current,
+        };
+        policies
+            .install(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        assert_eq!(
+            policies
+                .authorize_owner(
+                    &policy.workspace_id,
+                    Principal::Guest {
+                        guest_id: &guest_id,
+                        secret: &secret
+                    }
+                )
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "POLICY_DENIED"
+        );
+        let mut active = oidc_policy();
+        active.identity = OwnerIdentity::Guest {
+            guest_id: guest_id.clone(),
+            verifier: hex::encode(Sha256::digest(secret_bytes)),
+            created_at: current,
+            expires_at: current + 86_400,
+        };
+        policies
+            .install(&active, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        policies
+            .authorize_owner(
+                &active.workspace_id,
+                Principal::Guest {
+                    guest_id: &guest_id,
+                    secret: &secret,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            policies
+                .authorize_owner(
+                    &active.workspace_id,
+                    Principal::Guest {
+                        guest_id: &guest_id,
+                        secret: &hex::encode([43u8; 32])
+                    }
+                )
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "POLICY_DENIED"
+        );
     }
 }
