@@ -16,7 +16,14 @@ import { ResourceKindIcon as KindIcon } from './ui/ResourceKindIcon';
 import { FileWorkspaceHeader } from './features/files/FileWorkspaceHeader';
 import { FileUploadStatus } from './features/files/FileUploadStatus';
 import { useFileUpload } from './features/files/use-file-upload';
-import { FileSystemsList } from './features/files/FileSystemsList';
+import { ResourceCollectionPage } from './features/resources/ResourceCollectionPage';
+import {
+  resourceWorkspaceHref,
+  resourceServiceLabel,
+} from './features/resources/resource-presentation';
+import { WorkspacePageHeader as PageHeading } from './ui/WorkspacePageHeader';
+import { WorkspaceEmptyState as Empty } from './ui/WorkspaceEmptyState';
+import { WorkspaceFirstSteps } from './features/resources/WorkspaceFirstSteps';
 import {
   useRemoteFiles,
   downloadRemoteFile,
@@ -66,7 +73,6 @@ import {
   IconCheckCircle as CheckCircle2,
   IconChevronRight as ChevronRight,
   IconCode02 as Code2,
-  IconCommand as Command,
   IconCopy03 as Copy,
   IconCreditCard01 as CreditCard,
   IconDatabase01 as Database,
@@ -79,7 +85,6 @@ import {
   IconSearchLg as Search,
   IconSettings01 as Settings,
   IconShieldTick as ShieldCheck,
-  IconStars01 as Sparkles,
   IconTerminal as Terminal,
   IconGitBranch01 as Workflow,
 } from '@tidbcloud/uikit/icons';
@@ -104,7 +109,7 @@ type Kind = Resource['kind'];
 const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string }> = {
   overview: { label: 'Overview', icon: LayoutDashboard, group: 'Workspace' },
   databases: { label: 'Databases', icon: Database, group: 'Workspace' },
-  files: { label: 'File System', icon: Folder, group: 'Workspace' },
+  files: { label: 'File Systems', icon: Folder, group: 'Workspace' },
   connect: { label: 'Connect an agent', icon: Workflow, group: 'Build' },
   keys: { label: 'API keys', icon: KeyRound, group: 'Build' },
   api: { label: 'API explorer', icon: Terminal, group: 'Build' },
@@ -153,27 +158,6 @@ function relative(value: string | null) {
       : seconds < 86400
         ? `${Math.floor(seconds / 3600)}h ago`
         : new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function Empty({
-  icon: Icon = Folder,
-  title,
-  description,
-  action,
-}: {
-  icon?: WorkspaceIcon;
-  title: string;
-  description: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="empty">
-      <Icon size={28} />
-      <Heading level={3}>{title}</Heading>
-      <Text component="p">{description}</Text>
-      {action}
-    </div>
-  );
 }
 
 function Sparkline({ large = false, range = '24h' }: { large?: boolean; range?: string }) {
@@ -225,81 +209,6 @@ function Sparkline({ large = false, range = '24h' }: { large?: boolean; range?: 
     </svg>
   );
 }
-function WorkspaceIllustration() {
-  return (
-    <div className="workspace-illustration" aria-hidden="true">
-      <svg viewBox="0 0 420 210">
-        <defs>
-          <pattern id="dots" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
-            <circle cx="1" cy="1" r=".7" fill="var(--border-strong)" />
-          </pattern>
-        </defs>
-        <rect width="420" height="210" fill="url(#dots)" />
-        <g fill="none" stroke="var(--border-strong)" strokeWidth="1.4">
-          <path d="M100 106H179Q193 106 193 92V48H281" />
-          <path d="M100 106H281" />
-          <path d="M100 106H179Q193 106 193 120V165H281" />
-        </g>
-        <circle cx="193" cy="106" r="4" fill="var(--accent-text)" />
-        <g>
-          <rect
-            x="36"
-            y="75"
-            width="64"
-            height="64"
-            rx="15"
-            fill="var(--surface)"
-            stroke="var(--border)"
-          />
-          <path
-            d="m68 91 17 10v19l-17 10-17-10v-19Zm0 6-12 7v13l12 7 12-7v-13Z"
-            fill="var(--accent-text)"
-          />
-          <rect
-            x="281"
-            y="26"
-            width="112"
-            height="43"
-            rx="8"
-            fill="var(--surface)"
-            stroke="var(--border)"
-          />
-          <text x="299" y="52" fill="var(--text-secondary)" fontSize="12" fontFamily="monospace">
-            {'{ memory }'}
-          </text>
-          <rect
-            x="281"
-            y="85"
-            width="112"
-            height="43"
-            rx="8"
-            fill="var(--surface)"
-            stroke="var(--border)"
-          />
-          <text x="299" y="111" fill="var(--text-secondary)" fontSize="12" fontFamily="monospace">
-            {'[ vectors ]'}
-          </text>
-          <rect
-            x="281"
-            y="144"
-            width="112"
-            height="43"
-            rx="8"
-            fill="var(--surface)"
-            stroke="var(--border)"
-          />
-          <text x="299" y="170" fill="var(--text-secondary)" fontSize="12" fontFamily="monospace">
-            {'/ context'}
-          </text>
-        </g>
-      </svg>
-      <div className="illustration-label">
-        <span className="live-dot" /> One workspace. Connected by design.
-      </div>
-    </div>
-  );
-}
-
 function App() {
   const [data, setData] = useState<Data | null>(null),
     [routeLocation, setRouteLocation] = useState<WorkspaceRoute>(currentRoute),
@@ -310,6 +219,14 @@ function App() {
     [sso, setSso] = useState<SsoAuthConfig>({ enabled: false }),
     [connection, setConnection] = useState<Resource | null>(null);
   const route = routeLocation.page;
+  const selectedResourceId =
+    routeLocation.databaseId ??
+    parseFileSystemLocation('#' + (routeLocation.fileLink || 'files'))?.resourceId;
+  const resourceName = data?.resources.find(
+    (resource) =>
+      resource.id === selectedResourceId &&
+      (route === 'files' ? resource.kind === 'filesystem' : resource.kind !== 'filesystem'),
+  )?.name;
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function notify(message: string) {
     setToast(message);
@@ -419,6 +336,7 @@ function App() {
         profileName={data.profile.name}
         active={route}
         databaseId={routeLocation.databaseId}
+        resourceName={resourceName}
         databaseView={routeLocation.databaseView}
         fileSystemId={
           parseFileSystemLocation('#' + (routeLocation.fileLink || 'files'))?.resourceId
@@ -430,7 +348,7 @@ function App() {
           {route === 'overview' && <Overview {...shared} />}
           {route === 'databases' && <Databases {...shared} routeLocation={routeLocation} />}
           {route === 'files' && <Files key={routeLocation.fileLink || 'files'} {...shared} />}
-          {route === 'connect' && <Connect {...shared} />}
+          {route === 'connect' && <Connect {...shared} onNewKey={() => setModal('key')} />}
           {route === 'keys' && <Keys {...shared} onNewKey={() => setModal('key')} />}
           {route === 'api' && <ApiExplorer {...shared} />}
           {route === 'monitoring' && <Monitoring {...shared} />}
@@ -470,28 +388,6 @@ type Shared = {
   onCreate: (target?: ResourceCreationTarget) => void;
   onConnect: (r: Resource) => void;
 };
-function PageHeading({
-  eyebrow,
-  title,
-  description,
-  actions,
-}: {
-  eyebrow?: string;
-  title: string;
-  description: string;
-  actions?: React.ReactNode;
-}) {
-  return (
-    <div className="page-heading">
-      <div>
-        {eyebrow && <div className="eyebrow">{eyebrow}</div>}
-        <Heading level={1}>{title}</Heading>
-        <Text component="p">{description}</Text>
-      </div>
-      <div className="heading-actions">{actions}</div>
-    </div>
-  );
-}
 function Overview({ data, onCreate, onConnect, copy }: Shared) {
   const [range, setRange] = useState('24h');
   const dbs = data.resources.filter((r) => r.kind !== 'filesystem'),
@@ -500,252 +396,248 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
     <>
       <PageHeading
         eyebrow="YOUR WORKSPACE"
-        title={data.workspace.name}
-        description="Your data, files, and agents. All in one place."
+        title={data.resources.length ? data.workspace.name : 'Start with your data'}
+        description={
+          data.resources.length
+            ? 'Your data, files, and agents. All in one place.'
+            : 'Create a database for SQL or a File System for files. Connect your agent when you are ready.'
+        }
         actions={
-          <>
-            <Button
-              leftSection={React.createElement(Workflow, { size: 18 })}
-              onClick={() => go('connect')}
-            >
-              Connect an agent
-            </Button>
-            <Button
-              variant="filled"
-              leftSection={React.createElement(Plus, { size: 18 })}
-              onClick={() => onCreate()}
-            >
-              Create resource
-            </Button>
-          </>
+          data.resources.length ? (
+            <>
+              <Button
+                leftSection={React.createElement(Workflow, { size: 18 })}
+                onClick={() => go('connect')}
+              >
+                Connect an agent
+              </Button>
+              <Button
+                variant="filled"
+                leftSection={React.createElement(Plus, { size: 18 })}
+                onClick={() => onCreate()}
+              >
+                Create resource
+              </Button>
+            </>
+          ) : undefined
         }
       />
-      <section className="welcome-panel">
-        <div className="welcome-copy">
-          <Badge color="carbon">
-            <Sparkles size={12} /> BUILT FOR DEVELOPERS & AGENTS
-          </Badge>
-          <Heading level={2}>
-            Give your next idea
-            <br />a place to grow.
-          </Heading>
-          <Text component="p">
-            SQL for memory. Files for context.
-            <br />
-            One workspace for everything you build.
-          </Text>
-          <Button className="text-link" onClick={() => go('connect')} variant="subtle">
-            Connect your first agent <ArrowRight size={15} />
-          </Button>
-        </div>
-        <WorkspaceIllustration />
-      </section>
-      <div className="section-title">
-        <Heading level={2}>
-          Your resources <span>{data.resources.length}</span>
-        </Heading>
-        <Button className="text-link subtle" onClick={() => onCreate()} variant="subtle">
-          <Plus size={14} /> Add resource
-        </Button>
-      </div>
-      <section className="resource-grid">
-        {(['mysql', 'postgresql', 'duckdb', 'filesystem'] as Kind[])
-          .filter(
-            (kind) =>
-              kind !== 'postgresql' ||
-              data.capabilities.postgresql.available ||
-              data.resources.some((r) => r.kind === kind),
-          )
-          .map((kind) => {
-            const items = data.resources.filter((r) => r.kind === kind),
-              r =
-                items.find((r) =>
-                  [
-                    'tidb-cloud-zero',
-                    'drive9-anonymous',
-                    'duckdb-drive9',
-                    'db9-anonymous',
-                  ].includes(r.provider || ''),
-                ) || items[0];
-            return (
-              <Card className="resource-card" key={kind}>
-                <div className="resource-card-top">
-                  <KindIcon kind={kind} />
-                  <Badge color="carbon">
-                    {kind === 'postgresql'
-                      ? 'db9 · Free'
-                      : kind === 'mysql'
-                        ? data.capabilities.mysql.provider === 'tidb-cloud-zero'
-                          ? 'Zero'
-                          : 'Demo'
-                        : 'Preview'}
-                  </Badge>
+      {!data.resources.length && <WorkspaceFirstSteps onCreate={onCreate} />}
+      {!!data.resources.length && (
+        <>
+          <div className="section-title">
+            <Heading level={2}>
+              Your resources <span>{data.resources.length}</span>
+            </Heading>
+          </div>
+          <section className="resource-grid">
+            {(['mysql', 'postgresql', 'duckdb', 'filesystem'] as Kind[])
+              .filter(
+                (kind) =>
+                  kind !== 'postgresql' ||
+                  data.capabilities.postgresql.available ||
+                  data.resources.some((r) => r.kind === kind),
+              )
+              .map((kind) => {
+                const items = data.resources.filter((r) => r.kind === kind),
+                  r =
+                    items.find((r) =>
+                      [
+                        'tidb-cloud-zero',
+                        'drive9-anonymous',
+                        'duckdb-drive9',
+                        'db9-anonymous',
+                      ].includes(r.provider || ''),
+                    ) || items[0];
+                return (
+                  <Card className="resource-card" key={kind}>
+                    <div className="resource-card-top">
+                      <KindIcon kind={kind} />
+                      <Group gap="xs">
+                        {r && r.status !== 'active' && (
+                          <Badge color={r.status === 'failed' ? 'red' : 'yellow'}>{r.status}</Badge>
+                        )}
+                        {r && <Badge color="carbon">{resourceServiceLabel(r)}</Badge>}
+                      </Group>
+                    </div>
+                    <Heading level={3}>
+                      {kindLabel[kind]}
+                      {kind !== 'filesystem' && <span className="resource-type">database</span>}
+                    </Heading>
+                    <Text component="p">{kindDescription[kind]}</Text>
+                    {r ? (
+                      <Anchor className="resource-name" href={resourceWorkspaceHref(r)} fw={600}>
+                        {r.name}
+                        {items.length > 1 && <span className="count">+{items.length - 1}</span>}
+                        <ChevronRight size={16} />
+                      </Anchor>
+                    ) : (
+                      <Text component="p" className="resource-name" c="carbon.7">
+                        No resource yet
+                      </Text>
+                    )}
+                    <div className="resource-card-bottom">
+                      <span>{r ? region(r.region) : 'Ready when you are'}</span>
+                      <Button
+                        aria-label={r ? `Connect to ${r.name}` : `Create ${kindLabel[kind]}`}
+                        onClick={() => (r ? onConnect(r) : onCreate(kind))}
+                        rightSection={<ArrowUpRight size={16} />}
+                      >
+                        {r ? 'Connect' : 'Create'}
+                      </Button>
+                    </div>
+                  </Card>
+                );
+              })}
+          </section>
+        </>
+      )}
+      {!!data.resources.length && (
+        <>
+          <div className="overview-grid">
+            <Paper className="panel activity-panel" withBorder>
+              <div className="panel-header">
+                <div>
+                  <Heading level={2}>Workspace activity</Heading>
+                  <Text component="p">Illustrative activity · demo data</Text>
                 </div>
-                <Heading level={3}>
-                  {kindLabel[kind]}
-                  {kind !== 'filesystem' && <span className="resource-type">database</span>}
-                </Heading>
-                <Text component="p">{kindDescription[kind]}</Text>
-                <UnstyledButton
-                  className="resource-name"
-                  onClick={() => go(kind === 'filesystem' ? 'files' : 'databases')}
-                >
-                  <span className="live-dot" />
-                  {r?.name || 'No resource yet'}
-                  {items.length > 1 && <span className="count">+{items.length - 1}</span>}
-                  <ChevronRight size={14} />
-                </UnstyledButton>
-                <div className="resource-card-bottom">
-                  <span>{r ? region(r.region) : 'Ready when you are'}</span>
-                  <UnstyledButton
-                    aria-label={r ? `Connect to ${r.name}` : `Create ${kindLabel[kind]}`}
-                    onClick={() => (r ? onConnect(r) : onCreate(kind))}
-                  >
-                    {r ? 'Connect' : 'Create'} <ArrowUpRight size={13} />
-                  </UnstyledButton>
-                </div>
-              </Card>
-            );
-          })}
-      </section>
-      <div className="overview-grid">
-        <Paper className="panel activity-panel" withBorder>
-          <div className="panel-header">
-            <div>
-              <Heading level={2}>Workspace activity</Heading>
-              <Text component="p">Illustrative activity · demo data</Text>
-            </div>
-            <SegmentedControl
-              aria-label="Activity time range"
-              value={range}
-              onChange={setRange}
-              data={[
-                { value: '24h', label: '24 hours' },
-                { value: '7d', label: '7 days' },
-              ]}
-            />
-          </div>
-          <div className="metrics-inline">
-            <div>
-              <span>Local queries run</span>
-              <strong>
-                {data.queryCount}
-                <small>queries</small>
-              </strong>
-            </div>
-            <div>
-              <span>Databases</span>
-              <strong>
-                {dbs.length}
-                <small>active</small>
-              </strong>
-            </div>
-            <div>
-              <span>File systems</span>
-              <strong>
-                {fs.length}
-                <small>active</small>
-              </strong>
-            </div>
-          </div>
-          <div className="chart-wrap">
-            <Sparkline large range={range} />
-            <div className="chart-axis">
-              {(range === '24h'
-                ? ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00']
-                : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-              ).map((t) => (
-                <span key={t}>{t}</span>
-              ))}
-            </div>
-          </div>
-        </Paper>
-        <Paper className="panel spend-panel" withBorder>
-          <div className="panel-header">
-            <Heading level={2}>Usage this month</Heading>
-            <Badge>Free plan</Badge>
-          </div>
-          <div className="spend-number">
-            —<small>Billing not connected</small>
-          </div>
-          <div className="spend-rule">
-            <ShieldCheck size={15} />
-            <span>No payment method connected</span>
-          </div>
-          <div className="usage-mini">
-            <div>
-              <span>MySQL request units</span>
-              <strong>
-                {data.resources.some((r) => r.provider === 'tidb-cloud-zero')
-                  ? 'Not measured'
-                  : '0 / 50M (demo)'}
-              </strong>
-            </div>
-            <Progress value={0} aria-label="MySQL request units used" />
-            <div>
-              <span>File System allowance</span>
-              <strong>
-                {data.capabilities.filesystem.provider === 'drive9-anonymous'
-                  ? 'Service trial limits'
-                  : '$5 / month (reference)'}
-              </strong>
-            </div>
-            <small>Live trial quota and usage are not measured here.</small>
-          </div>
-          <Button className="text-link" onClick={() => go('billing')} variant="subtle">
-            View usage & limits <ArrowRight size={14} />
-          </Button>
-        </Paper>
-      </div>
-      <div className="overview-grid bottom-grid">
-        <Paper className="panel quickstart-panel" withBorder>
-          <div className="panel-header">
-            <Heading level={2}>From workspace to workflow</Heading>
-            <Terminal size={17} />
-          </div>
-          <Text className="section-description" component="p">
-            Let your agent discover its resources through one API.
-          </Text>
-          <Code
-            copy={copy}
-            label="WORKSPACE API"
-            value={
-              'curl ' +
-              apiBaseUrl +
-              base +
-              '/resources \\\n  -H "Authorization: Bearer $WORKSPACE_API_KEY"'
-            }
-          />
-          <div className="quickstart-footer">
-            <span>
-              <KeyRound size={13} /> Create a scoped key to get started
-            </span>
-            <Button className="text-link" onClick={() => go('connect')} variant="subtle">
-              Setup guide <ArrowUpRight size={13} />
-            </Button>
-          </div>
-        </Paper>
-        <Paper className="panel events-panel" withBorder>
-          <div className="panel-header">
-            <Heading level={2}>Recent activity</Heading>
-            <Button className="text-link subtle" onClick={() => go('monitoring')} variant="subtle">
-              View all <ArrowUpRight size={13} />
-            </Button>
-          </div>
-          {data.events.slice(0, 3).map((e) => (
-            <div className="activity-row" key={e.id}>
-              <span className="event-icon">
-                <Check size={13} />
-              </span>
-              <div>
-                <strong>{eventLabel(e.action)}</strong>
-                <span>{e.resource}</span>
+                <SegmentedControl
+                  aria-label="Activity time range"
+                  value={range}
+                  onChange={setRange}
+                  data={[
+                    { value: '24h', label: '24 hours' },
+                    { value: '7d', label: '7 days' },
+                  ]}
+                />
               </div>
-              <time>{relative(e.at)}</time>
-            </div>
-          ))}
-        </Paper>
-      </div>
+              <div className="metrics-inline">
+                <div>
+                  <span>Local queries run</span>
+                  <strong>
+                    {data.queryCount}
+                    <small>queries</small>
+                  </strong>
+                </div>
+                <div>
+                  <span>Databases</span>
+                  <strong>
+                    {dbs.length}
+                    <small>active</small>
+                  </strong>
+                </div>
+                <div>
+                  <span>File systems</span>
+                  <strong>
+                    {fs.length}
+                    <small>active</small>
+                  </strong>
+                </div>
+              </div>
+              <div className="chart-wrap">
+                <Sparkline large range={range} />
+                <div className="chart-axis">
+                  {(range === '24h'
+                    ? ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00']
+                    : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                  ).map((t) => (
+                    <span key={t}>{t}</span>
+                  ))}
+                </div>
+              </div>
+            </Paper>
+            <Paper className="panel spend-panel" withBorder>
+              <div className="panel-header">
+                <Heading level={2}>Usage this month</Heading>
+                <Badge>Free plan</Badge>
+              </div>
+              <div className="spend-number">
+                —<small>Billing not connected</small>
+              </div>
+              <div className="spend-rule">
+                <ShieldCheck size={15} />
+                <span>No payment method connected</span>
+              </div>
+              <div className="usage-mini">
+                <div>
+                  <span>MySQL request units</span>
+                  <strong>
+                    {data.resources.some((r) => r.provider === 'tidb-cloud-zero')
+                      ? 'Not measured'
+                      : '0 / 50M (demo)'}
+                  </strong>
+                </div>
+                <Progress value={0} aria-label="MySQL request units used" />
+                <div>
+                  <span>File System allowance</span>
+                  <strong>
+                    {data.capabilities.filesystem.provider === 'drive9-anonymous'
+                      ? 'Service trial limits'
+                      : '$5 / month (reference)'}
+                  </strong>
+                </div>
+                <small>Live trial quota and usage are not measured here.</small>
+              </div>
+              <Button className="text-link" onClick={() => go('billing')} variant="subtle">
+                View usage & limits <ArrowRight size={14} />
+              </Button>
+            </Paper>
+          </div>
+          <div className="overview-grid bottom-grid">
+            <Paper className="panel quickstart-panel" withBorder>
+              <div className="panel-header">
+                <Heading level={2}>From workspace to workflow</Heading>
+                <Terminal size={17} />
+              </div>
+              <Text className="section-description" component="p">
+                Let your agent discover its resources through one API.
+              </Text>
+              <Code
+                copy={copy}
+                label="WORKSPACE API"
+                value={
+                  'curl ' +
+                  apiBaseUrl +
+                  base +
+                  '/resources \\\n  -H "Authorization: Bearer $WORKSPACE_API_KEY"'
+                }
+              />
+              <div className="quickstart-footer">
+                <span>
+                  <KeyRound size={13} /> Create a scoped key to get started
+                </span>
+                <Button className="text-link" onClick={() => go('connect')} variant="subtle">
+                  Setup guide <ArrowUpRight size={13} />
+                </Button>
+              </div>
+            </Paper>
+            <Paper className="panel events-panel" withBorder>
+              <div className="panel-header">
+                <Heading level={2}>Recent activity</Heading>
+                <Button
+                  className="text-link subtle"
+                  onClick={() => go('monitoring')}
+                  variant="subtle"
+                >
+                  View all <ArrowUpRight size={13} />
+                </Button>
+              </div>
+              {data.events.slice(0, 3).map((e) => (
+                <div className="activity-row" key={e.id}>
+                  <span className="event-icon">
+                    <Check size={13} />
+                  </span>
+                  <div>
+                    <strong>{eventLabel(e.action)}</strong>
+                    <span>{e.resource}</span>
+                  </div>
+                  <time>{relative(e.at)}</time>
+                </div>
+              ))}
+            </Paper>
+          </div>
+        </>
+      )}
     </>
   );
 }
@@ -805,147 +697,15 @@ function Databases({ routeLocation, ...shared }: Shared & { routeLocation: Works
     );
   }
   return (
-    <>
-      <PageHeading
-        eyebrow="WORKSPACE RESOURCES"
-        title="Databases"
-        description="Persistent memory, structured data, and vectors for your agents."
-        actions={
-          <Button
-            variant="filled"
-            leftSection={React.createElement(Plus, { size: 18 })}
-            onClick={() => onCreate('database')}
-          >
-            Create database
-          </Button>
-        }
-      />
-      <Alert className="notice" color="peacock" icon={<Database size={17} />}>
-        <span>
-          Use one Workspace Key for your databases and files. Each key has its own resource and
-          action permissions.
-        </span>
-      </Alert>
-      {!databases.length ? (
-        <Paper className="panel" withBorder>
-          <Empty
-            icon={Database}
-            title="Create your first database"
-            description="Create a database, then open its SQL editor to start querying."
-            action={
-              <Button variant="filled" onClick={() => onCreate('database')}>
-                Create database
-              </Button>
-            }
-          />
-        </Paper>
-      ) : (
-        <Paper className="panel table-panel" withBorder>
-          <Table>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Database</Table.Th>
-                <Table.Th>Compatibility</Table.Th>
-                <Table.Th>Region</Table.Th>
-                <Table.Th>Status</Table.Th>
-                <Table.Th>Plan</Table.Th>
-                <Table.Th />
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {databases.map((r) => (
-                <Table.Tr key={r.id}>
-                  <Table.Td>
-                    <div className="table-resource">
-                      <KindIcon small kind={r.kind} />
-                      <div>
-                        <a className="text-link database-name" href={databaseEditorHash(r.id)}>
-                          {r.name}
-                        </a>
-                        <small>{r.id}</small>
-                      </div>
-                    </div>
-                  </Table.Td>
-                  <Table.Td>{kindLabel[r.kind]} </Table.Td>
-                  <Table.Td>{region(r.region)}</Table.Td>
-                  <Table.Td>
-                    <Badge
-                      color={
-                        r.status === 'active'
-                          ? 'green'
-                          : r.status === 'expired'
-                            ? 'yellow'
-                            : 'carbon'
-                      }
-                    >
-                      {r.status}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    {r.provider === 'db9-anonymous' ? (
-                      <Badge color="green">db9 · Anonymous free tier</Badge>
-                    ) : r.provider === 'duckdb-drive9' ? (
-                      <Badge color="peacock">DuckDB · Experimental</Badge>
-                    ) : r.provider === 'tidb-cloud-zero' ? (
-                      <>
-                        <Badge color="green">Zero trial</Badge>
-                        {r.expiresAt && (
-                          <small>Expires {new Date(r.expiresAt).toLocaleDateString()}</small>
-                        )}
-                      </>
-                    ) : (
-                      <Badge>Local demo</Badge>
-                    )}
-                  </Table.Td>
-                  <Table.Td>
-                    <div className="database-actions">
-                      <Button
-                        leftSection={React.createElement(Code2, { size: 18 })}
-                        onClick={() => openDatabaseEditor(r.id)}
-                        aria-label={`Open SQL editor for ${r.name}`}
-                      >
-                        SQL editor
-                      </Button>
-                      <Button onClick={() => onConnect(r)}>
-                        Connect <ArrowUpRight size={13} />
-                      </Button>
-                    </div>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Paper>
-      )}
-      <div className="two-column">
-        <Paper className="panel info-panel" withBorder>
-          <Code2 size={22} />
-          <Heading level={3}>Start with a query</Heading>
-          <Text component="p">
-            Choose a database to browse tables, inspect columns and indexes, and preview data. Live
-            databases identify their provider. Resources marked Local demo show sample data.
-          </Text>
-        </Paper>
-        <Paper className="panel info-panel" withBorder>
-          <Workflow size={22} />
-          <Heading level={3}>Built for your existing tools</Heading>
-          <Text component="p">
-            Use a single Workspace Key through the API. Database connections are handled inside the
-            backend. Internal connection credentials stay private.
-          </Text>
-          <a
-            className="text-link"
-            href="https://docs.pingcap.com/tidbcloud/connect-to-tidb-cluster/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Connection documentation <ArrowUpRight size={14} />
-          </a>
-        </Paper>
-      </div>
-    </>
+    <ResourceCollectionPage
+      kind="database"
+      resources={databases}
+      onCreate={() => onCreate('database')}
+      onConnect={onConnect}
+    />
   );
 }
+
 function DatabaseDetail({
   data,
   database,
@@ -989,7 +749,8 @@ function Files(shared: Shared) {
   const systems = shared.data.resources.filter((resource) => resource.kind === 'filesystem');
   if (!context)
     return (
-      <FileSystemsList
+      <ResourceCollectionPage
+        kind="filesystem"
         resources={systems}
         onCreate={() => shared.onCreate('filesystem')}
         onConnect={shared.onConnect}
@@ -1488,7 +1249,7 @@ function FileWorkspace({
     </>
   );
 }
-function Connect({ data, copy }: Shared) {
+function Connect({ data, copy, onNewKey }: Shared & { onNewKey: () => void }) {
   const [tab, setTab] = useState('Agent');
   const snippet = `# Discover your workspace resources\ncurl ${apiBaseUrl}${base}/resources \\\n  -H "Authorization: Bearer $WORKSPACE_API_KEY"`;
   const python = `import os, json, urllib.request\n\nreq = urllib.request.Request(\n    "${apiBaseUrl}${base}/resources",\n    headers={"Authorization": "Bearer " + os.environ["WORKSPACE_API_KEY"]}\n)\nwith urllib.request.urlopen(req) as response:\n    print(json.load(response))`;
@@ -1498,36 +1259,14 @@ function Connect({ data, copy }: Shared) {
     <>
       <PageHeading
         eyebrow="BUILT FOR AGENTS"
-        title="One workspace. Every workflow."
-        description="Give your coding agent persistent memory and a shared place to work."
+        title="Connect an agent"
+        description="Give your agent scoped access to databases and files with one Workspace Key."
+        actions={
+          <Button variant="filled" onClick={onNewKey} leftSection={<KeyRound size={18} />}>
+            Create API key
+          </Button>
+        }
       />
-      <section className="connect-hero">
-        <div className="connect-hero-icon">
-          <Workflow size={32} />
-        </div>
-        <Heading level={2}>
-          Your agent brings the intelligence.
-          <br />
-          Your workspace keeps the context.
-        </Heading>
-        <Text component="p">
-          Discover databases, work with files, and inspect usage through a scoped API.
-        </Text>
-        <div className="agent-clients">
-          <span>
-            <Terminal size={16} /> Claude Code
-          </span>
-          <span>
-            <Code2 size={16} /> Codex
-          </span>
-          <span>
-            <Command size={16} /> Cursor
-          </span>
-          <span>
-            <Workflow size={16} /> Your own agent
-          </span>
-        </div>
-      </section>
       <div className="setup-layout">
         <Paper className="panel setup-steps" withBorder>
           <Heading level={2}>Connect in three steps</Heading>
@@ -1539,12 +1278,7 @@ function Connect({ data, copy }: Shared) {
                 Grant only the permissions your agent needs. Keys expire automatically and can be
                 revoked anytime.
               </Text>
-              <Button
-                onClick={() => go('keys')}
-                leftSection={React.createElement(KeyRound, { size: 18 })}
-              >
-                Manage API keys <ArrowUpRight size={13} />
-              </Button>
+              <Anchor href="#keys">Manage API keys</Anchor>
             </div>
           </div>
           <div className="setup-step">
@@ -1636,13 +1370,15 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
         title="API keys"
         description="Scoped access for every agent, application, and workflow."
         actions={
-          <Button
-            variant="filled"
-            leftSection={React.createElement(Plus, { size: 18 })}
-            onClick={onNewKey}
-          >
-            Create API key
-          </Button>
+          data.keys.length ? (
+            <Button
+              variant="filled"
+              leftSection={React.createElement(Plus, { size: 18 })}
+              onClick={onNewKey}
+            >
+              Create API key
+            </Button>
+          ) : undefined
         }
       />
       <Alert className="notice" color="peacock" icon={<ShieldCheck size={18} />}>

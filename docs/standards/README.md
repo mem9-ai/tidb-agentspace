@@ -8,6 +8,9 @@ Read the applicable standard before implementation. They apply to Codex, Claude 
 Cursor, Copilot, and other tools through the root [AGENTS.md](../../AGENTS.md); no personal
 plugin, skill, or conversation history is required.
 
+Product flows and cross-page reviews also follow [product experience](product-experience.md):
+consistent interactions and minimum complete paths to useful value.
+
 | Task                                                                                       | Required reference                                                                                                            |
 | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | Any UI, component, typography, theme, layout, icon, or frontend dependency change          | [TiUI design system](tiui-design-system.md) and [frontend instructions](../../src/AGENTS.md)                                  |

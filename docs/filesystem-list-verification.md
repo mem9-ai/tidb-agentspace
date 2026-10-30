@@ -57,7 +57,7 @@ matrix covers populated collections and navigation at 1280×800 and 390×844 in 
 ![Mobile Dark](screenshots/filesystem-list/mobile-dark.png)
 
 The Console uses TiUI 2.9.1 Table/Anchor/Badge/Button/ActionIcon/Paper and the existing shared
-resource header and theme adapters. `FileSystemsList` is a focused feature module; collection
+resource header and theme adapters. `ResourceCollectionPage` is shared with Databases; collection
 versus resource routing stays outside the file-workspace hooks. `npm run check` passed with 134 tests, strict types, lint, formatting, generated-contract checks
 and independent production builds. The latest-head CI is required before merge. Verification here concerns Console navigation;
 it does not claim new cloud provisioning, quota measurement or native mounts.

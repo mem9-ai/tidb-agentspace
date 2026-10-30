@@ -5,6 +5,10 @@ Before editing any frontend component, CSS, theme, icon, or UI dependency, read 
 [TiUI design standard](../docs/standards/tiui-design-system.md).
 Keep detailed design rules in that standard rather than duplicating them here.
 
+Apply [product experience](../docs/standards/product-experience.md) to every flow: reuse
+comparable patterns across resource types and remove unnecessary steps to a useful outcome.
+Preserve necessary context, permission, parsing and discard decisions.
+
 The console uses TiUI 2.9.1, its official icons, and the separate TiUI SQL Editor.
 Reuse `src/ui/` and the single WorkspaceThemeProvider. Read the standard before changing
 component styles: function-based upstream styles require composition, not plain-object

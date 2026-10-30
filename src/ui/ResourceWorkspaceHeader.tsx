@@ -1,6 +1,11 @@
 import type { ReactNode } from 'react';
 import { Badge, Button, NativeSelect, Popover, Stack, VisuallyHidden } from '@tidbcloud/uikit';
-import { IconArrowUpRight, IconDatabase01, IconFolder } from '@tidbcloud/uikit/icons';
+import {
+  IconArrowLeft,
+  IconArrowUpRight,
+  IconDatabase01,
+  IconFolder,
+} from '@tidbcloud/uikit/icons';
 import type { Resource } from '../api/client';
 import { Heading } from './WorkspaceHeading';
 import './resource-workspace.css';
@@ -8,13 +13,41 @@ import './resource-workspace.css';
 export function ResourceConnectButton({
   onClick,
   disabled,
+  ariaLabel,
 }: {
+  onClick: () => void;
+  disabled?: boolean;
+  ariaLabel?: string;
+}) {
+  return (
+    <Button
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      rightSection={<IconArrowUpRight size={16} />}
+    >
+      Connect
+    </Button>
+  );
+}
+
+export function ResourceCollectionButton({
+  label,
+  onClick,
+  disabled,
+}: {
+  label: string;
   onClick: () => void;
   disabled?: boolean;
 }) {
   return (
-    <Button onClick={onClick} disabled={disabled} rightSection={<IconArrowUpRight size={16} />}>
-      Connect
+    <Button
+      variant="subtle"
+      leftSection={<IconArrowLeft size={18} />}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {label}
     </Button>
   );
 }
@@ -101,7 +134,9 @@ export function ResourceWorkspaceBar({
       </div>
       <Badge
         className="resource-workspace-status"
-        color={active ? (live ? 'green' : 'carbon') : 'yellow'}
+        color={
+          resource?.status === 'failed' ? 'red' : active ? (live ? 'green' : 'carbon') : 'yellow'
+        }
       >
         {resource ? (active ? mode : `${mode} · ${resource.status}`) : 'Unavailable'}
       </Badge>
