@@ -115,6 +115,11 @@ Region does not report or call Global. Cleanup may run in the regional service's
 in-process scheduler or an explicitly composed service role; it does not require a separate
 Worker deployment. Execution needs durable ownership/fencing, bounded retries and recovery
 before it can safely run across replicas. Guest expiry does not renew on login.
+Current product code does not implement complete cloud database or File System instance
+deprovisioning. Before allowing a Guest to create each provider resource, verify and implement
+its official deletion, identity/ownership proof, uncertain-outcome reconciliation and
+retry semantics. Disable Guest creation for a provider where deletion is unsupported or
+unverified; deleting only the metadata is not successful cleanup.
 
 Enabling open self-service on the hosted site requires a reviewed runtime configuration,
 durable Global and regional stores, operator recovery procedures, identity-provider access,
