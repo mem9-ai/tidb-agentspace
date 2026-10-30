@@ -25,6 +25,7 @@ import {
 } from './features/files/remote-files';
 import { regionLabel as region } from './features/resources/regions';
 import { CreateResourceDialog } from './features/resources/CreateResourceDialog';
+import { SignInChoices } from './features/auth/SignInChoices';
 import {
   resourceKindLabels as kindLabel,
   type ResourceCreationTarget,
@@ -390,8 +391,15 @@ function App() {
           // SSO is enabled and no session is active yet: prompt sign-in (no anonymous demo).
           <>
             <Heading level={2}>Sign in to your workspace</Heading>
-            <Text component="p">Use your TiDB Account to continue.</Text>
-            {ssoButton}
+            <Text component="p">Choose how you want to continue.</Text>
+            {sso.loginPath && (
+              <SignInChoices
+                label={sso.label || 'Continue with TiDB Account'}
+                onTiDBLogin={() => {
+                  window.location.href = apiBaseUrl + sso.loginPath;
+                }}
+              />
+            )}
           </>
         ) : error ? (
           <>

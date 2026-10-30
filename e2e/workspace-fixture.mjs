@@ -53,6 +53,7 @@ export const test = base.extend({
     const requests = [];
     const unexpected = [];
     let rejectAutomaticName = false;
+    let signInRequired = false;
     page.on('pageerror', (error) => unexpected.push(error.message));
     await context.route('**/*', async (route) => {
       const request = route.request();
@@ -66,10 +67,18 @@ export const test = base.extend({
       const body = request.postDataJSON();
       requests.push({ path: url.pathname, method, body });
       const reply = (json, status = 200) => route.fulfill({ status, json });
-      if (url.pathname === '/api/auth/config') return reply({ enabled: false });
+      if (url.pathname === '/api/auth/config')
+        return reply(
+          signInRequired
+            ? { enabled: true, loginPath: '/api/auth/tidbcloud/login' }
+            : { enabled: false },
+        );
+      if (url.pathname === '/api/auth/tidbcloud/login') return reply({ fixture: 'login' });
       if (url.pathname === '/api/session') return reply({ ok: true });
       if (url.pathname === '/api/v1/workspaces' && method === 'GET')
-        return reply({ data: [state.workspace] });
+        return signInRequired
+          ? reply({ error: { code: 'UNAUTHENTICATED', message: 'Sign in' } }, 401)
+          : reply({ data: [state.workspace] });
       const path = url.pathname.replace(`/api/v1/workspaces/${state.workspace.id}`, '');
       if (path === '/bootstrap') return reply(state);
       if (path === '/resources' && method === 'POST') {
@@ -118,6 +127,9 @@ export const test = base.extend({
     await use({
       state,
       requests,
+      requireSignIn() {
+        signInRequired = true;
+      },
       rejectNextName() {
         rejectAutomaticName = true;
       },

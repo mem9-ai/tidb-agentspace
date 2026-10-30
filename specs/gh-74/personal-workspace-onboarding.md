@@ -24,6 +24,11 @@ existing TiDB Cloud login, not a separate Teleport provider. Account linking rem
 product decision. A lost Guest credential must not be recovered by guessing an ID or matching
 email. Require rate limits, quota and abuse controls for Guest creation.
 
+The hosted Studio sign-in page presents two choices: **Continue with TiDB Account** and
+**Continue as Guest**. Guest creates or resumes the browser's independent 24-hour Workspace.
+Until the complete Guest backend is enabled, the Guest choice must be visibly unavailable;
+it must never fall back to the existing shared local-demo Workspace.
+
 Current hosted code does not provide this: a configured API instance owns one Workspace and
 the SSO allowlist grants access to that shared Workspace. The draft Console discovers a
 Workspace dynamically, but that alone does not establish multi-tenant authorization.

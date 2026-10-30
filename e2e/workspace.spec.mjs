@@ -1,6 +1,25 @@
 import { readFile } from 'node:fs/promises';
 import { test, expect } from './workspace-fixture.mjs';
 
+test('cloud sign-in offers TiDB Account and clearly marks Guest access unavailable', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn();
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Sign in to your workspace' })).toBeVisible();
+  const account = page.getByRole('button', { name: 'Continue with TiDB Account' });
+  const guest = page.getByRole('button', { name: 'Continue as Guest' });
+  await expect(account).toBeEnabled();
+  await expect(guest).toBeDisabled();
+  await expect(page.getByText('24-hour Guest access is coming soon.')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true);
+  await account.click();
+  await expect(page).toHaveURL(/\/api\/auth\/tidbcloud\/login$/);
+});
+
 test('contextual creation fills the matching name, restores focus and keeps readable controls', async ({
   page,
   workspace,
