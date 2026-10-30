@@ -5812,6 +5812,15 @@ export interface operations {
           };
         };
       };
+      /** @description Guest sign-in is disabled */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Guest sign-in unavailable or denied */
       default: {
         headers: {

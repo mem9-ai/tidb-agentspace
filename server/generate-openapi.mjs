@@ -979,6 +979,7 @@ paths['/api/auth/guest'] = {
       'Start or resume a Guest session from a trusted origin. A new session sets a secure, HttpOnly, SameSite=Strict cookie with an absolute expiry.',
     responses: {
       200: response(object({ workspaceId: str })),
+      404: response(ref('Error'), 'Guest sign-in is disabled'),
       default: response(ref('Error'), 'Guest sign-in unavailable or denied'),
     },
   },

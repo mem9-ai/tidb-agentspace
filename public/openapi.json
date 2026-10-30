@@ -4008,6 +4008,12 @@
               }
             }
           },
+          "404": {
+            "description": "Guest sign-in is disabled",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "default": {
             "description": "Guest sign-in unavailable or denied",
             "content": {
