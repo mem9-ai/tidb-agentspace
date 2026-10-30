@@ -1,6 +1,6 @@
 # Native Studio deployment and local sign-in testing
 
-Status: GH-13 implementation; live rollout and real-account login require separate observed evidence. The accepted contract is [NAT-01–06](../specs/gh-13/spec.md), accepted at `b6bf3645547ee2f172fc93b6249a966fb3f19079`.
+Status: GH-13 implementation; live rollout and real-account login require separate observed evidence. The contract is [NAT-01–06](../specs/gh-13/spec.md), originally accepted at `b6bf3645547ee2f172fc93b6249a966fb3f19079`. The owner's 2026-10-30 clarification limits NAT-04 dev CD to image updates; runtime configuration and recovery remain operator-owned.
 
 Rust is the only product API runtime. Node builds the Console and runs tools/regression oracles; it is absent from the deployed API image. The existing hosted Node image/JSON/vault path is retired. The owner permits discarding its data. Fresh native metadata uses the existing S3 bucket with a new unique prefix and new independent Global/Region encryption keys and service tokens. No old data or upstream credentials are imported, and no shared bucket is deleted.
 
@@ -47,20 +47,20 @@ The generated co-located dev profile binds Meta only to loopback with separate a
 
 The Docker image is native Linux amd64, the currently verified Linux static DuckDB platform. No arm64 manifest is advertised. Console publication remains separate. Configure the existing protected `dev` environment and ECR/EKS target; PR builds never receive deployment credentials.
 
-Before first native delivery, mount the prepared private files at `/run/workspace` with owner-only permissions readable by UID 1000. Kubernetes Secret projection can be copied by a non-root init container into a memory-backed volume with `umask 077`/mode 0600; a group-readable Secret projection itself does not satisfy native private-file checks. Run the explicit initializer before starting the steady plan. Preserve a private copy of the old Pod template only for operator recovery; never roll a Node image back against native configuration.
+For native service startup, mount the prepared private files at `/run/workspace` with owner-only permissions readable by UID 1000. Kubernetes Secret projection can be copied by a non-root init container into a memory-backed volume with `umask 077`/mode 0600; a group-readable Secret projection itself does not satisfy native private-file checks. Run the explicit initializer before starting the steady plan. These are operator-owned runtime requirements, not preconditions checked by CD. Preserve a private copy of the old Pod template only for operator recovery; never roll a Node image back against native configuration.
 
-The target must have one replica/Recreate, bounded scratch space, non-root UID/GID 1000, read-only root, no service account token/capabilities, `/api/health` readiness with loopback Host, and Pod-template annotation `workspace.tidb.ai/runtime: rust-v1`. Its container must invoke the image's native entrypoint, without the previous Node command override. Mark the target only after its native configuration and storage are verified.
+The runtime profile uses one replica/Recreate, bounded scratch space, non-root UID/GID 1000, read-only root, no service account token/capabilities and `/api/health` readiness with loopback Host. Its container must invoke the image's native entrypoint, without the previous Node command override. CD does not require the former Pod-template annotation `workspace.tidb.ai/runtime: rust-v1` and leaves existing annotations, probes and configuration untouched.
 
-After bootstrap, main-only CD builds once, pushes an immutable digest, atomically updates the existing container image and verifies readiness; failed rollout restores the previous native digest. The deployment helper refuses an unmarked legacy target before any write. It does not create infrastructure, delete data, change credentials or rerun initialization. A successful rollout must also be followed by an authorized read, an unauthorized denial, public `/studio` routing and real-account login before reporting the hosted product live.
+Main-only CD builds once, pushes an immutable digest and runs `kubectl set image` against the existing Deployment/container. It does not wait for health, automatically roll back, create infrastructure, delete data, change credentials or run initialization. A successful run confirms only the image update. Operators verify readiness, an authorized read, an unauthorized denial, public `/studio` routing and real-account login before reporting the hosted product live.
 
 ### Deployment operator handoff
 
-The owner assigned the first native deployment to a separate operator on 2026-10-30. Source integration and automated checks can finish independently; an operator must complete and record the following before claiming a live cutover:
+The owner handles runtime configuration separately from CD. Source integration and automatic image updates can finish independently; an operator completes and records the following before claiming a live cutover:
 
 1. Confirm the existing S3 bucket, region, HTTPS endpoint and a credential Secret or supported runtime identity. The GitHub `dev` environment already provides the ECR/EKS deployment identity; it does not provide S3 access to the application Pod. Preserve the existing SSO client, explicit owner grants and exact `/studio` callback registration.
 2. Generate the private configuration once with `init-hosted-config.mjs`, using a new prefix and independent keys. Keep all ten generated files in private secret storage. Run the initializer against that new installation and retain its matching steady configuration. The old workspace data need not be migrated.
-3. Bootstrap the complete native Pod template/configuration pair described above, using the reviewed native image digest. Add the runtime annotation only after verifying that pair. The recurring image-only delivery helper deliberately cannot perform this Node-to-Rust cutover.
-4. Run the existing main-only dev workflow after bootstrap, then verify readiness, authorized/denied requests, `/studio` routing and real TiDB Account login. Record the source SHA, image digest and observed results in [#13](https://github.com/mem9-ai/tidb.ai/issues/13). Keep its live-rollout acceptance open until those results exist.
+3. Prepare the native Pod template/configuration described above. CD can update the image without a separate runtime annotation; it does not prepare or validate the private runtime configuration.
+4. Verify readiness, authorized/denied requests, `/studio` routing and real TiDB Account login separately from the main-only CD image update. Record the source SHA, image digest and observed results in [#13](https://github.com/mem9-ai/tidb.ai/issues/13). Keep its live-rollout acceptance open until those results exist.
 
 ## Local and automated testing
 

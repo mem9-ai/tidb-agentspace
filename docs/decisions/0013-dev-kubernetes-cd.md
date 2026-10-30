@@ -1,6 +1,6 @@
 # ADR 0013: Dev Kubernetes CD for the API server
 
-- Status: dev-only continuous deployment. The historical Node runtime contract below is superseded by [ADR 0026](0026-native-hosted-studio.md) and [native deployment](../native-studio-deployment.md). Image update/recovery policy remains applicable after a native target is explicitly bootstrapped.
+- Status: dev-only continuous deployment. The historical Node runtime contract below is superseded by [ADR 0026](0026-native-hosted-studio.md) and [native deployment](../native-studio-deployment.md). The owner's 2026-10-30 clarification limits CD to image updates; runtime configuration, readiness and recovery are operator-owned.
 - Workflow: [.github/workflows/dev-cd.yml](../../.github/workflows/dev-cd.yml).
 - Related: [ADR 0005](0005-independent-console-and-api.md), [independent delivery](../independent-delivery.md).
 
@@ -24,22 +24,18 @@ Pull requests validate without deployment credentials.
 3. After tests pass on a release, build and push the native image **once**.
    Read the immutable digest from Buildx's output metadata, not by resolving a mutable
    tag later. The tag includes the full source SHA for traceability.
-4. Read the existing Deployment and capture the target container's current digest.
-   Require its HTTP readiness probe to check `/api/health`. Update only that container's
-   image and wait up to 300 seconds for rollout/readiness.
-5. If the update or readiness check fails, restore the captured image and verify recovery.
-   The run still fails after a successful recovery; a failed rollback is reported separately.
-   No PVC, Service, Pod configuration or unrelated container is changed by rollback.
-   Both updates use atomic UID/resource-version checks. If another writer has changed
-   the target image, recovery stops without overwriting that change.
+4. Run `kubectl set image` for the configured existing Deployment and container using
+   that digest. Do not require a runtime annotation or readiness probe, wait for rollout,
+   initialize storage or automatically roll back. Existing probes and configuration remain
+   untouched. A failed update command fails the run without retries or recovery mutations.
 
-[`scripts/deploy-dev.mjs`](../../scripts/deploy-dev.mjs) implements the image update and
-recovery. It also restores the previous image when an update commits but its response is
-lost. Redeploying the current digest checks readiness without a mutation. A missing
-Deployment, missing container, mutable previous image or missing HTTP readiness probe
-fails before writing anything. Missing infrastructure is never created automatically.
+[`scripts/deploy-dev.mjs`](../../scripts/deploy-dev.mjs) validates the target names and new
+immutable image reference before invoking `kubectl set image`. The previous image may use
+a tag. A missing Deployment or container is reported by kubectl; missing infrastructure is
+never created automatically. A failed or lost response does not establish whether the
+update reached the cluster, so inspect the target before retrying.
 
-Push and manual releases share a non-cancelling concurrency group, including rollback.
+Push and manual releases share a non-cancelling concurrency group for image publication and updates.
 PR verification uses its own cancellable group. The protected `dev` Environment is the
 credential boundary and **must allow only the `main` branch** in GitHub deployment branch
 rules. The workflow also checks the branch, but a branch-local check cannot protect secrets
@@ -102,5 +98,6 @@ through Secret/ConfigMap/volume, never through source code:
   requirements and migration.
 
 Validate the gateway/SSO flow and unauthorized access separately before public exposure.
-A successful image rollout proves API readiness; it does not prove public `/studio`
-availability, SSO integration, backup recovery or persisted data compatibility.
+A successful CD run confirms only the Deployment image update. It does not establish API
+readiness, public `/studio` availability, SSO integration, backup recovery or persisted data
+compatibility. Operators handle runtime checks and configuration-compatible recovery.

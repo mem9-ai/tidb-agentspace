@@ -127,5 +127,6 @@ follow its task-specific references before implementation. Keep detailed rules c
 - CI must run without cloud credentials. Keep actions pinned to full commit SHAs and tokens
   least-privileged. Do not execute untrusted PR code in a privileged deployment job.
 - Package reviewed code with a source SHA and checksums. Actual deployment must use the
-  configured target, environment protection, health verification, and rollback procedure.
+  configured target and environment protection. Dev CD updates only the Deployment image;
+  runtime configuration, health verification and recovery remain operator-owned (ADR 0013).
   The current release workflow packages an internal demo artifact; it does not deploy it.

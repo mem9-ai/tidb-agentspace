@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { parse } from 'yaml';
 import { deployDev } from './deploy-dev.mjs';
 
-const previousImage = `registry.example/api@sha256:${'a'.repeat(64)}`;
 const config = {
   namespace: 'example-dev',
   deployment: 'example-api',
@@ -13,104 +15,32 @@ const config = {
   image: `registry.example/api@sha256:${'b'.repeat(64)}`,
 };
 
-function fixture({
-  missing = false,
-  failUpdate = false,
-  failures = 0,
-  externalOnFailure = false,
-  externalOnRollback = false,
-} = {}) {
-  const container = {
-    name: config.container,
-    image: previousImage,
-    readinessProbe: { httpGet: { path: '/api/health', port: 'http' } },
-  };
-  const template = {
-    metadata: { annotations: { 'workspace.tidb.ai/runtime': 'rust-v1' } },
-    spec: { containers: [container], volumes: [{ name: 'persistent-data' }] },
-  };
+test('release sets only the selected image without reading or waiting for the target', () => {
   const calls = [];
-  const metadata = { uid: 'owned-deployment', resourceVersion: '1' };
-  const externalImage = `registry.example/api@sha256:${'c'.repeat(64)}`;
-  let waits = 0;
-  let patches = 0;
-  return {
-    calls,
-    container,
-    template,
-    kubectl(args) {
-      calls.push(args);
-      assert.equal(args[args.indexOf('-n') + 1], config.namespace);
-      if (args[0] === 'get') {
-        if (missing) throw new Error('Private cluster endpoint unavailable');
-        return JSON.stringify({ metadata, spec: { template } });
-      }
-      if (args[0] === 'patch') {
-        assert.equal(args[1], `deployment/${config.deployment}`);
-        const patch = JSON.parse(args[args.indexOf('--patch') + 1]);
-        if (externalOnRollback && patches > 0) {
-          container.image = externalImage;
-          metadata.resourceVersion = String(Number(metadata.resourceVersion) + 1);
-        }
-        assert.deepEqual(patch.slice(0, 3), [
-          { op: 'test', path: '/metadata/uid', value: metadata.uid },
-          { op: 'test', path: '/metadata/resourceVersion', value: metadata.resourceVersion },
-          { op: 'test', path: '/spec/template/spec/containers/0/image', value: container.image },
-        ]);
-        assert.equal(patch[3].op, 'replace');
-        assert.equal(patch[3].path, '/spec/template/spec/containers/0/image');
-        container.image = patch[3].value;
-        metadata.resourceVersion = String(Number(metadata.resourceVersion) + 1);
-        patches++;
-        if (failUpdate && container.image === config.image) {
-          if (externalOnFailure) container.image = externalImage;
-          throw new Error('Response lost');
-        }
-        return '';
-      }
-      assert.deepEqual(args, [
-        'rollout',
-        'status',
-        `deployment/${config.deployment}`,
-        '-n',
-        config.namespace,
-        '--timeout=300s',
-      ]);
-      if (waits++ < failures) {
-        if (externalOnFailure) container.image = externalImage;
-        throw new Error('Readiness timed out');
-      }
-      return '';
-    },
-  };
-}
-
-test('release updates only the image and waits for HTTP readiness', () => {
-  const f = fixture();
-  const before = structuredClone(f.template);
-  deployDev(config, f.kubectl);
-  assert.equal(f.container.image, config.image);
-  before.spec.containers[0].image = config.image;
-  assert.deepEqual(f.template, before);
-  assert.deepEqual(
-    f.calls.map((args) => args[0]),
-    ['get', 'patch', 'rollout', 'get'],
-  );
+  deployDev(config, (args) => calls.push(args));
+  assert.deepEqual(calls, [
+    [
+      'set',
+      'image',
+      `deployment/${config.deployment}`,
+      '-n',
+      config.namespace,
+      `api=${config.image}`,
+    ],
+  ]);
 });
 
-test('redeploying the current digest checks readiness without a mutation', () => {
-  const f = fixture();
-  deployDev({ ...config, image: previousImage }, f.kubectl);
-  assert.deepEqual(
-    f.calls.map((args) => args[0]),
-    ['get', 'rollout', 'get'],
-  );
-  const unhealthy = fixture({ failures: 1 });
+test('a failed image update fails the release without retry, readiness checks or rollback', () => {
+  let calls = 0;
   assert.throws(
-    () => deployDev({ ...config, image: previousImage }, unhealthy.kubectl),
-    /Current deployment is not ready/,
+    () =>
+      deployDev(config, () => {
+        calls++;
+        throw new Error('Private cluster endpoint unavailable');
+      }),
+    { message: 'Deployment image update failed; inspect the target before retrying.' },
   );
-  assert.equal(unhealthy.calls.length, 2);
+  assert.equal(calls, 1);
 });
 
 test('invalid input fails before contacting the cluster', () => {
@@ -128,65 +58,6 @@ test('invalid input fails before contacting the cluster', () => {
       /immutable digest/,
     );
   }
-});
-
-test('missing deployment, container, immutable rollback target or readiness probe prevent writes', () => {
-  const missing = fixture({ missing: true });
-  assert.throws(() => deployDev(config, missing.kubectl), /Cannot read the existing Deployment/);
-  assert.equal(missing.calls.length, 1);
-  for (const mutate of [
-    (c) => (c.name = 'different'),
-    (c) => (c.image = 'registry.example/api:latest'),
-    (c) => delete c.readinessProbe,
-    (c) => (c.readinessProbe.httpGet.path = '/'),
-  ]) {
-    const f = fixture();
-    mutate(f.container);
-    assert.throws(() => deployDev(config, f.kubectl), /Existing container must/);
-    assert.equal(f.calls.length, 1);
-  }
-});
-
-test('failed rollout restores the captured digest and verifies recovery while failing the release', () => {
-  const f = fixture({ failures: 1 });
-  assert.throws(() => deployDev(config, f.kubectl), /previous image is restored and ready/);
-  assert.equal(f.container.image, previousImage);
-  assert.deepEqual(
-    f.calls.map((args) => args[0]),
-    ['get', 'patch', 'rollout', 'get', 'patch', 'rollout', 'get'],
-  );
-});
-
-test('update committed but response lost still restores the previous digest', () => {
-  const f = fixture({ failUpdate: true });
-  assert.throws(() => deployDev(config, f.kubectl), /previous image is restored and ready/);
-  assert.equal(f.container.image, previousImage);
-  assert.deepEqual(
-    f.calls.map((args) => args[0]),
-    ['get', 'patch', 'get', 'patch', 'rollout', 'get'],
-  );
-});
-
-test('failed rollback is surfaced without deletion or further retry', () => {
-  const f = fixture({ failures: 2 });
-  assert.throws(() => deployDev(config, f.kubectl), /rollback did not recover readiness/);
-  assert.equal(f.calls.length, 6);
-});
-
-test('external image changes prevent rollback after timeout or lost update response', () => {
-  for (const options of [{ failures: 1 }, { failUpdate: true }]) {
-    const f = fixture({ ...options, externalOnFailure: true });
-    assert.throws(() => deployDev(config, f.kubectl), /changed externally; rollback skipped/);
-    assert.equal(f.container.image, `registry.example/api@sha256:${'c'.repeat(64)}`);
-    assert.equal(f.calls.filter((args) => args[0] === 'patch').length, 1);
-  }
-});
-
-test('atomic rollback preconditions preserve an external update after the rollback read', () => {
-  const f = fixture({ failures: 1, externalOnRollback: true });
-  assert.throws(() => deployDev(config, f.kubectl), /rollback did not recover readiness/);
-  assert.equal(f.container.image, `registry.example/api@sha256:${'c'.repeat(64)}`);
-  assert.equal(f.calls.filter((args) => args[0] === 'rollout').length, 1);
 });
 
 test('workflow keeps PRs credential-free and binds releases to one verified commit', () => {
@@ -256,18 +127,21 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
   assert.equal(prBuild.with.push, false);
   assert.equal(prBuild.with.load, true);
   assert.equal(prBuild.with.platforms, 'linux/amd64');
+  assert.equal(prBuild.with.labels, 'org.opencontainers.image.revision=${{ github.sha }}');
   const releaseBuild = workflow.jobs.deploy.steps.find((step) =>
     step.uses?.startsWith('docker/build-push-action@'),
   );
   assert.equal(releaseBuild.with.platforms, 'linux/amd64');
   assert.equal(releaseBuild.with.push, true);
+  assert.equal(releaseBuild.with.labels, prBuild.with.labels);
   assert.equal(releaseBuild.if, "github.event.inputs.operation != 'inspect'");
   assert.ok(
     workflow.jobs.deploy.steps.some(
       (s) => s.env?.IMAGE_DIGEST === '${{ steps.image.outputs.digest }}',
     ),
   );
-  assert.equal(workflow.jobs.deploy.steps.at(-1).run, 'node scripts/deploy-dev.mjs');
+  assert.equal(workflow.jobs.deploy.steps.at(-2).run, 'node scripts/deploy-dev.mjs');
+  assert.equal(workflow.jobs.deploy.steps.at(-1).name, 'Confirm Deployment image');
 });
 
 test('main pushes and default manual runs publish and deploy; inspection is explicit', () => {
@@ -277,6 +151,7 @@ test('main pushes and default manual runs publish and deploy; inspection is expl
   const deployment = workflow.jobs.deploy;
   const build = deployment.steps.find((step) => step.id === 'image');
   const rollout = deployment.steps.find((step) => step.run === 'node scripts/deploy-dev.mjs');
+  const confirm = deployment.steps.find((step) => step.name === 'Confirm Deployment image');
   for (const [event, ref, requested, expected] of [
     ['push', 'refs/heads/main', undefined, true],
     ['workflow_dispatch', 'refs/heads/main', undefined, true],
@@ -291,7 +166,7 @@ test('main pushes and default manual runs publish and deploy; inspection is expl
         ? (requested ?? workflow.on.workflow_dispatch.inputs.operation.default)
         : undefined;
     const github = { event_name: event, ref, event: { inputs: { operation } } };
-    for (const step of [build, rollout]) {
+    for (const step of [build, rollout, confirm]) {
       const runs =
         runInNewContext(deployment.if, { github }) && runInNewContext(step.if, { github });
       assert.equal(runs, expected, `${event} on ${ref} (${operation ?? 'no operation'})`);
@@ -299,9 +174,84 @@ test('main pushes and default manual runs publish and deploy; inspection is expl
   }
 });
 
-test('image delivery refuses a legacy target before mutation', () => {
-  const f = fixture();
-  delete f.template.metadata.annotations;
-  assert.throws(() => deployDev(config, f.kubectl), /Bootstrap the native target/);
-  assert.equal(f.calls.length, 1);
+test('workflow reads the selected Deployment image and rejects mismatch or unavailable evidence', (t) => {
+  const workflow = parse(
+    readFileSync(new URL('../.github/workflows/dev-cd.yml', import.meta.url), 'utf8'),
+  );
+  const confirm = workflow.jobs.deploy.steps.find(
+    (step) => step.name === 'Confirm Deployment image',
+  );
+  const directory = mkdtempSync(join(tmpdir(), 'deployment-image-test-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const argsFile = join(directory, 'args');
+  writeFileSync(
+    join(directory, 'kubectl'),
+    '#!/bin/sh\nprintf "%s\\n" "$@" > "$TEST_ARGS_FILE"\nprintf "%s" "$TEST_STDOUT"\nprintf "%s" "$TEST_STDERR" >&2\nexit "$TEST_EXIT"\n',
+    { mode: 0o700 },
+  );
+  const target = (containers) => JSON.stringify({ spec: { template: { spec: { containers } } } });
+  for (const [name, stdout, exit, expectedImage, success] of [
+    [
+      'matching selected container',
+      target([
+        { name: 'sidecar', image: 'example/sidecar:old' },
+        { name: 'api', image: config.image },
+      ]),
+      '0',
+      config.image,
+      true,
+    ],
+    [
+      'old image despite another matching container',
+      target([
+        { name: 'api', image: 'example/api:old' },
+        { name: 'sidecar', image: config.image },
+      ]),
+      '0',
+      config.image,
+      false,
+    ],
+    [
+      'missing selected container',
+      target([{ name: 'sidecar', image: config.image }]),
+      '0',
+      config.image,
+      false,
+    ],
+    ['invalid response', 'invalid JSON', '0', config.image, false],
+    ['kubectl failure', '', '1', config.image, false],
+    ['missing expected image', target([]), '0', '', false],
+  ]) {
+    const result = spawnSync('bash', ['-c', confirm.run], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${directory}:${dirname(process.execPath)}:${process.env.PATH}`,
+        DEPLOY_NAMESPACE: config.namespace,
+        K8S_DEPLOYMENT: config.deployment,
+        K8S_CONTAINER: config.container,
+        IMAGE_REF: expectedImage,
+        TEST_ARGS_FILE: argsFile,
+        TEST_STDOUT: stdout,
+        TEST_STDERR: 'Synthetic private detail that must not reach Actions logs',
+        TEST_EXIT: exit,
+      },
+    });
+    assert.equal(result.status, success ? 0 : 1, name);
+    assert.equal(
+      result.stdout,
+      success ? `Deployment image confirmed: sha256:${'b'.repeat(64)}\n` : '',
+      name,
+    );
+    assert.equal(result.stderr, success ? '' : 'Deployment image verification failed.\n', name);
+    assert.deepEqual(readFileSync(argsFile, 'utf8').trim().split('\n'), [
+      '--request-timeout=30s',
+      'get',
+      `deployment/${config.deployment}`,
+      '-n',
+      config.namespace,
+      '-o',
+      'json',
+    ]);
+  }
 });

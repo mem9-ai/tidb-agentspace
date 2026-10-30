@@ -2,9 +2,8 @@ name: Deploy API to dev
 
 # Continuous deployment of the TiDB Workspace API server to the dev
 # Kubernetes environment. Modeled on the tidbcloud/fs dev CD: build a
-# native image, push it to the container registry, then roll the existing
-# in-cluster Deployment to the new image and wait for the rollout, undoing it
-# on failure.
+# native image, push it to the container registry, then update the existing
+# in-cluster Deployment image. Runtime configuration and recovery are operator-owned.
 #
 # Releases only update the existing Deployment image.
 # All environment identifiers remain runtime inputs, never repository values.
@@ -68,7 +67,7 @@ permissions:
 #   verification supersedes the older run.
 # - Push to main and manual dispatch (can deploy): ONE shared constant group
 #   with cancel-in-progress FALSE. Deploy-capable runs therefore queue behind
-#   one another and are never cancelled mid-rollout/rollback — a second main
+#   one another and are never cancelled mid-image-update — a second main
 #   push waits for the first run to finish instead of killing it at the
 #   workflow level. The deploy job's own constant group keeps that invariant
 #   even if this block is later changed.
@@ -170,11 +169,15 @@ jobs:
           push: false
           load: true
           tags: workspace-api:verify
+          labels: org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
           cache-to: type=gha,scope=native-api-linux-amd64-v1,version=2,mode=max,timeout=3m,ignore-error=true
       - name: Run the final native image without network or writable root
+        env:
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' workspace-api:verify)" = "$SOURCE_SHA"
           docker run --rm --network none --read-only --cap-drop ALL \
             --security-opt no-new-privileges --entrypoint /bin/sh workspace-api:verify \
             -ec 'if command -v node; then exit 1; fi; exec workspace-backend runtime-info' \
@@ -199,9 +202,8 @@ jobs:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     # Serialize by the actual deployment target, NOT the source ref: every
     # deploy run (main push or any manual ref) shares this one constant group,
-    # so two runs can never interleave `set image` / `rollout` / `rollout undo`
-    # on the single dev Deployment. cancel-in-progress is false so an in-flight
-    # rollout is never abandoned half-applied.
+    # so two runs cannot update the single dev Deployment at the same time.
+    # cancel-in-progress is false so an in-flight image update is not cancelled.
     concurrency:
       group: dev-cd-deploy-target
       cancel-in-progress: false
@@ -274,6 +276,7 @@ jobs:
           pull: true
           push: true
           tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
           cache-to: type=gha,scope=native-api-linux-amd64-v1,version=2,mode=max,timeout=3m,ignore-error=true
       - name: Record immutable image digest
@@ -300,6 +303,26 @@ jobs:
         if: github.event.inputs.operation == 'inspect'
         run: node scripts/inspect-native-target.mjs
 
-      - name: Deploy image and verify readiness (restore previous image on failure)
+      - name: Update Deployment image
         if: github.event.inputs.operation != 'inspect'
         run: node scripts/deploy-dev.mjs
+
+      - name: Confirm Deployment image
+        if: github.event.inputs.operation != 'inspect'
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          try {
+            const { DEPLOY_NAMESPACE, K8S_DEPLOYMENT, K8S_CONTAINER, IMAGE_REF } = process.env;
+            const target = JSON.parse(execFileSync('kubectl', [
+              '--request-timeout=30s', 'get', `deployment/${K8S_DEPLOYMENT}`,
+              '-n', DEPLOY_NAMESPACE, '-o', 'json',
+            ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 35000 }));
+            const actual = target.spec?.template?.spec?.containers?.find(c => c.name === K8S_CONTAINER)?.image;
+            if (!IMAGE_REF || actual !== IMAGE_REF) throw new Error('Image mismatch');
+            console.log(`Deployment image confirmed: ${actual.split('@')[1]}`);
+          } catch {
+            console.error('Deployment image verification failed.');
+            process.exitCode = 1;
+          }
+          NODE
