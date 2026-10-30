@@ -13,7 +13,8 @@ First-installation and diagnostic automation are not part of the recurring pipel
 Pushes to `main` changing API/runtime, build or delivery inputs release an API image.
 Documentation and Console-only changes retain ordinary CI and their independent publication
 without an API release. Manual dispatch is restricted to `main`; there is no arbitrary
-source-ref input. Build/cache-only verification skips protected deployment entirely.
+source-ref input. Manual runs default to deployment; read-only `inspect` must be selected
+explicitly. CD has no build/cache-only manual mode.
 Pull requests validate without deployment credentials.
 
 1. Both jobs check out the event commit `github.sha`, so verification and deployment
