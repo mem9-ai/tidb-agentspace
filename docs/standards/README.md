@@ -18,6 +18,7 @@ plugin, skill, or conversation history is required.
 | TiDB Cloud APIs, database protocols, SDKs, or CLI dependency choices                       | [TiDB Cloud integration policy](../architecture.md#tidb-cloud-integration-policy)                                             |
 | Regional defaults, provider modes, or free-tier assumptions                                | [File System regions and modes](../decisions/0003-filesystem-regions-and-modes.md)                                            |
 | Public authorization or credentials                                                        | [Workspace Key decision](../decisions/0001-unified-workspace-key.md)                                                          |
+| SlateDB metadata, authority boundaries, transactions, recovery or scale design             | [Metadata architecture version 1](../slatedb-metadata-design.md) and [current Meta runtime](../meta-service.md)               |
 | Independent Console/API builds, runtime configuration, or packaging                        | [Independent delivery](../independent-delivery.md) and [ADR 0005](../decisions/0005-independent-console-and-api.md)           |
 | Build, review, merge, release, or environment behavior                                     | [Contribution guide](../../CONTRIBUTING.md) and [CI/CD policy](../ci-cd.md)                                                   |
 

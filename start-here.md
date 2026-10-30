@@ -37,7 +37,7 @@ is documented in [independent delivery](docs/independent-delivery.md) and
 | Order | Read                                                                                                                                    | Understand                                                                                 |
 | ----- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | 1     | [Shared instructions](AGENTS.md)                                                                                                        | Working together, coding, validation, and delivery rules; skip rereading if already loaded |
-| 2     | [What works](README.md#what-works) and [prototype boundaries](README.md#prototype-boundaries)                                           | Current capabilities, simulations, and limitations                                         |
+| 2     | [Current capabilities](README.md) and [local setup and limits](README.md#local-setup)                                                   | Current capabilities, simulations, and limitations                                         |
 | 3     | [Architecture](docs/architecture.md) and [accepted decisions](docs/decisions/README.md)                                                 | Product goals and resource, credential, and design boundaries                              |
 | 4     | [Development system](docs/standards/intent-driven-development.md) and [GitHub workflow](docs/standards/github-contribution-workflow.md) | Intent, accepted specifications, implementation, evaluation, and delivery                  |
 | 5     | [Contribution guide](CONTRIBUTING.md) and [standards index](docs/standards/README.md)                                                   | Reproducible setup and the references required for your task                               |
@@ -66,25 +66,21 @@ within the task's scope. A proposed architecture does not establish a runtime ca
 
 ## Read for your task
 
-For multi-tenant metadata, storage adapters, ownership, or migration design, read
-[GH-74](specs/gh-74/spec.md) and [proposed ADR 0019](docs/decisions/0019-workspace-kv-control-plane.md).
-They preserve the owner's logical-KV/local-file direction, TiDB File System candidate and
-global/regional control plus regional data-plane separation. Resource placement, dispatch,
-consistency, isolation and migration remain proposed behavior, distinct from the running
-single-Workspace service.
-For hosted persistence, read the [object-metastore design](specs/gh-74/object-metastore.md):
-object storage is the preferred source of truth for all acknowledged commits, including WAL;
-local caches and search projections are rebuildable. The owner has selected SlateDB for
-hosted Global and regional metadata, superseding candidate-only/SQL-first evaluation.
-Release/binding, durability and service conformance still require implementation evidence.
-Global and every Region have independent Meta Service deployments and SlateDB instances;
-shared code/contracts do not mean one database partitioned by authority prefixes.
-Global records private regional S3/storage descriptors; Region retains independent bootstrap
-config and object-backed shard catalogs, with no Global lookup/renewal gate on startup.
-Local development can still use ordinary files. For the implemented independent Rust/SlateDB service and fresh local bootstrap, follow the
-[runtime guide](docs/meta-service.md). [ADR 0024](docs/decisions/0024-fresh-record-metadata.md)
-retires the five-document/chunk/import bridge. The owner explicitly allowed resetting the local
-test deployment while excluding cloud deletion; this does not authorize arbitrary customer resets.
+For metadata architecture, start with [SlateDB Metadata Architecture Version 1](docs/slatedb-metadata-design.md).
+It covers independent Global/Region authorities, clean entity/group/index modeling, native
+transactions, object durability, credentials, recovery and the scale/iteration plan. Historical
+storage shapes do not constrain the target model. Its status table separates implementation
+from future Global policy, sharding and HA work.
+Detailed requirements remain in [GH-74](specs/gh-74/spec.md),
+[proposed ADR 0019](docs/decisions/0019-workspace-kv-control-plane.md) and the
+[object-metastore design](specs/gh-74/object-metastore.md). Object storage is the source of truth
+for acknowledged writes; local caches and search projections are rebuildable. Global and
+every Region have separate Meta installations and SlateDB roots. Global records regional
+storage descriptors; regional bootstrap and serving have no Global lookup/renewal dependency.
+The regional object-backed shard catalog is target work, not a running capability.
+For the current service and fresh local bootstrap, follow the [runtime guide](docs/meta-service.md)
+and [ADR 0024](docs/decisions/0024-fresh-record-metadata.md). Initialization and any disposable
+local reset are explicit operations; documenting the target model does not authorize a reset.
 The regional product API is Rust, using independent record repositories and native concurrent
 SlateDB transactions. [ADR 0020](docs/decisions/0020-modular-rust-backend.md) defines shared Rust
 modules and single-binary/multiple-process composition; [ADR 0022](docs/decisions/0022-native-slatedb-transactions.md)
