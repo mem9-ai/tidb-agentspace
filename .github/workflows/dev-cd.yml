@@ -32,12 +32,30 @@ on:
       - '.github/workflows/dev-cd.yml'
   push:
     branches: [main]
+    # Console and documentation changes retain ordinary CI, without releasing an API image.
+    paths:
+      - 'backend/**'
+      - 'meta-service/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.cargo/**'
+      - 'scripts/duckdb-runtime.json'
+      - 'scripts/prepare-duckdb.mjs'
+      - 'public/openapi.json'
+      - 'scripts/deploy-dev*'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.node-version'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.github/workflows/dev-cd.yml'
   workflow_dispatch:
     inputs:
       operation:
-        description: Native deployment or read-only configuration inspection
+        description: Verify native build/cache, deploy, or inspect configuration read-only
         type: choice
-        options: [inspect, deploy]
+        options: [inspect, verify, deploy]
         default: inspect
 
 permissions:
@@ -45,8 +63,9 @@ permissions:
 
 # Concurrency is split by whether the run can deploy:
 #
-# - Pull requests (verify only): one group per PR ref, cancel-in-progress so a
-#   newer commit on the same PR supersedes the older verify run.
+# - Pull requests and main-only build/cache verification: one group per ref,
+#   cancel-in-progress so a newer verification supersedes the older run.
+#   Cache warmup never occupies the deployment queue or receives cloud credentials.
 # - Push to main and manual dispatch (can deploy): ONE shared constant group
 #   with cancel-in-progress FALSE. Deploy-capable runs therefore queue behind
 #   one another and are never cancelled mid-rollout/rollback — a second main
@@ -54,8 +73,8 @@ permissions:
 #   workflow level. The deploy job's own constant group keeps that invariant
 #   even if this block is later changed.
 concurrency:
-  group: dev-cd-${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'deploy' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: dev-cd-${{ (github.event_name == 'pull_request' || github.event.inputs.operation == 'verify') && format('verify-{0}', github.ref) || 'deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event.inputs.operation == 'verify' }}
 
 jobs:
   # Run the complete quality/native gate before main deployments. PRs already
@@ -127,7 +146,7 @@ jobs:
 
   image:
     name: Native image
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event.inputs.operation == 'verify')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -177,7 +196,7 @@ jobs:
     timeout-minutes: 75
     needs: verify
     # Never deploy from a pull request — PRs run only the image job here.
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.event.inputs.operation != 'verify'
     # Serialize by the actual deployment target, NOT the source ref: every
     # deploy run (main push or any manual ref) shares this one constant group,
     # so two runs can never interleave `set image` / `rollout` / `rollout undo`

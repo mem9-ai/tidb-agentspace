@@ -1,5 +1,9 @@
 # Rust record metadata service
 
+For the complete architecture, clean target domain model and iteration plan, start with
+[SlateDB Metadata Architecture Version 1](slatedb-metadata-design.md). This guide describes
+the running service, its configuration and its current limits.
+
 The implemented profile uses SlateDB **0.17.0**, Rust **1.99.1** and object storage as the source of truth for acknowledged writes. [ADR 0024](decisions/0024-fresh-record-metadata.md) defines the fresh record layout and retires the five-document compatibility bridge. [ADR 0022](decisions/0022-native-slatedb-transactions.md) supplies the native transaction and durable read rationale.
 
 Global and every Region own separate engines, installations, storage roots, encryption keys and service tokens. Global records regional storage descriptors; regional serving does not look up Global, renew a Global token, or fall back to another store. The local topology shares one RustFS host as a functional development environment; it is not production disaster recovery or regional IAM isolation.
@@ -14,7 +18,7 @@ A pinned native sequence is awaited to the object-durable frontier before readin
 
 ## Domain layout
 
-Workspace/profile, each Resource, Key, local file, activity entry, provider Binding and private Credential are separate records. Key digest indexes reference canonical Key records; authentication reads that Key and its real expiry/revocation before authorizing a resource. Scope hashing and key/path encryption prevent a request from crossing its configured authority. Public authorization remains in the business backend; service tokens and provider credentials never reach the Console.
+Workspace/profile, each Resource, Key, local file, activity entry, provider Binding and private Credential are separate records. Key digest indexes reference canonical Key records; authentication reads that Key and its real expiry/revocation before authorizing a resource. The engine checks its configured authority and binds ciphertext to the installation and record path. Scope hashing organizes the namespace; tenant authorization and Workspace selection remain in the business backend. Service tokens and provider credentials never reach the Console.
 
 `system/writer` retains one active API writer per Workspace while provider coordination remains process-local. A lost writer requires explicit recovery with its exact stopped owner; no timeout steals ownership. The same Region can host multiple independent Workspaces. This is not production identity or multi-writer provider execution.
 

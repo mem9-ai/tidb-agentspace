@@ -193,13 +193,23 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
   const workflow = parse(
     readFileSync(new URL('../.github/workflows/dev-cd.yml', import.meta.url), 'utf8'),
   );
-  assert.deepEqual(workflow.on.push, { branches: ['main'] });
-  assert.deepEqual(workflow.on.workflow_dispatch.inputs.operation.options, ['inspect', 'deploy']);
+  assert.deepEqual(workflow.on.push.branches, ['main']);
+  assert.deepEqual(workflow.on.push.paths, workflow.on.pull_request.paths);
+  for (const input of ['backend/**', 'meta-service/**', 'Cargo.lock', 'Dockerfile'])
+    assert.ok(workflow.on.push.paths.includes(input), `API release lost ${input}`);
+  const ci = parse(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'));
+  assert.equal(ci.on.pull_request, null);
+  assert.deepEqual(ci.on.push, { branches: ['main'] });
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.operation.options, [
+    'inspect',
+    'verify',
+    'deploy',
+  ]);
   assert.equal(workflow.on.workflow_dispatch.inputs.operation.default, 'inspect');
   assert.equal(workflow.jobs.resolve, undefined);
   assert.equal(
     workflow.jobs.deploy.if,
-    "github.event_name != 'pull_request' && github.ref == 'refs/heads/main'",
+    "github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.event.inputs.operation != 'verify'",
   );
   assert.equal(workflow.jobs.deploy.needs, 'verify');
   assert.notEqual(workflow.jobs.verify['continue-on-error'], true);
@@ -207,13 +217,21 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
   assert.equal(workflow.jobs.deploy.environment, 'dev');
   assert.equal(workflow.jobs.verify.environment, undefined);
   assert.equal(workflow.jobs.image.environment, undefined);
-  assert.equal(workflow.jobs.image.if, "github.event_name == 'pull_request'");
+  assert.equal(
+    workflow.jobs.image.if,
+    "github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event.inputs.operation == 'verify')",
+  );
   assert.equal(workflow.jobs.image.needs, undefined);
   assert.equal(
     workflow.concurrency['cancel-in-progress'],
-    "${{ github.event_name == 'pull_request' }}",
+    "${{ github.event_name == 'pull_request' || github.event.inputs.operation == 'verify' }}",
+  );
+  assert.equal(
+    workflow.concurrency.group,
+    "dev-cd-${{ (github.event_name == 'pull_request' || github.event.inputs.operation == 'verify') && format('verify-{0}', github.ref) || 'deploy' }}",
   );
   assert.equal(workflow.jobs.deploy.concurrency['cancel-in-progress'], false);
+  assert.equal(workflow.jobs.deploy.concurrency.group, 'dev-cd-deploy-target');
   for (const name of ['verify', 'image', 'deploy']) {
     assert.equal(
       workflow.jobs[name].steps.find((step) => step.uses?.startsWith('actions/checkout@')).with.ref,
@@ -278,20 +296,24 @@ test('PRs use CI for quality/native checks and CD only for the image check', () 
       command,
     );
   }
-  for (const [event, ref, expected] of [
-    ['pull_request', 'refs/pull/18/merge', [false, true, false]],
-    ['pull_request', 'refs/heads/main', [false, true, false]],
-    ['push', 'refs/heads/main', [true, false, true]],
-    ['workflow_dispatch', 'refs/heads/main', [true, false, true]],
-    ['workflow_dispatch', 'refs/heads/feature', [false, false, false]],
-    ['push', 'refs/heads/feature', [false, false, false]],
+  for (const [event, ref, operation, expected] of [
+    ['pull_request', 'refs/pull/19/merge', undefined, [false, true, false]],
+    ['pull_request', 'refs/heads/main', undefined, [false, true, false]],
+    ['push', 'refs/heads/main', undefined, [true, false, true]],
+    ['workflow_dispatch', 'refs/heads/main', 'inspect', [true, false, true]],
+    ['workflow_dispatch', 'refs/heads/main', 'verify', [true, true, false]],
+    ['workflow_dispatch', 'refs/heads/main', 'deploy', [true, false, true]],
+    ['workflow_dispatch', 'refs/heads/feature', 'inspect', [false, false, false]],
+    ['workflow_dispatch', 'refs/heads/feature', 'verify', [false, false, false]],
+    ['workflow_dispatch', 'refs/heads/feature', 'deploy', [false, false, false]],
+    ['push', 'refs/heads/feature', undefined, [false, false, false]],
   ]) {
     // These checked-in conditions use only JS-compatible boolean comparisons.
-    const github = { event_name: event, ref };
+    const github = { event_name: event, ref, event: { inputs: { operation } } };
     const actual = ['verify', 'image', 'deploy'].map((name) =>
       runInNewContext(cd.jobs[name].if, { github }),
     );
-    assert.deepEqual(actual, expected, `${event} on ${ref}`);
+    assert.deepEqual(actual, expected, `${event} on ${ref} (${operation ?? 'no operation'})`);
   }
 });
 
