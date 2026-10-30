@@ -105,7 +105,8 @@ test('S3 discovery bounds metadata requests and preserves known regions when tag
           BucketRegion: 'us-east-1',
         })),
       });
-    if (args[1] === 'get-bucket-tagging') throw { stderr: 'AccessDenied' };
+    if (args[1] === 'get-bucket-tagging')
+      throw Object.assign(new Error('Bucket tagging denied'), { stderr: 'AccessDenied' });
     assert.fail('Known region should avoid a second request');
   });
   assert.equal(requests, 9);

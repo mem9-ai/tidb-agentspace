@@ -53,6 +53,15 @@ The target must have one replica/Recreate, bounded scratch space, non-root UID/G
 
 After bootstrap, main-only CD builds once, pushes an immutable digest, atomically updates the existing container image and verifies readiness; failed rollout restores the previous native digest. The deployment helper refuses an unmarked legacy target before any write. It does not create infrastructure, delete data, change credentials or rerun initialization. A successful rollout must also be followed by an authorized read, an unauthorized denial, public `/studio` routing and real-account login before reporting the hosted product live.
 
+### Deployment operator handoff
+
+The owner assigned the first native deployment to a separate operator on 2026-10-30. Source integration and automated checks can finish independently; an operator must complete and record the following before claiming a live cutover:
+
+1. Confirm the existing S3 bucket, region, HTTPS endpoint and a credential Secret or supported runtime identity. The GitHub `dev` environment already provides the ECR/EKS deployment identity; it does not provide S3 access to the application Pod. Preserve the existing SSO client, explicit owner grants and exact `/studio` callback registration.
+2. Generate the private configuration once with `init-hosted-config.mjs`, using a new prefix and independent keys. Keep all ten generated files in private secret storage. Run the initializer against that new installation and retain its matching steady configuration. The old workspace data need not be migrated.
+3. Bootstrap the complete native Pod template/configuration pair described above, using the reviewed native image digest. Add the runtime annotation only after verifying that pair. The recurring image-only delivery helper deliberately cannot perform this Node-to-Rust cutover.
+4. Run the existing main-only dev workflow after bootstrap, then verify readiness, authorized/denied requests, `/studio` routing and real TiDB Account login. Record the source SHA, image digest and observed results in [#13](https://github.com/mem9-ai/tidb.ai/issues/13). Keep its live-rollout acceptance open until those results exist.
+
 ## Local and automated testing
 
 Normal local development retains `meta:local init/serve`, isolated RustFS storage and explicit `insecureLoopback:true`. With no SSO, only a real loopback socket may create a guest session. For real local login, use a separate development public-client registration and an exact fixed loopback callback if the provider permits it. For example, use `publicPath:"/studio"` and `http://127.0.0.1:4318/studio/api/auth/tidbcloud/callback`, plus the exact Console origin and same-origin post-login URL. Set `postLoginUrl` to the API/gateway origin, so keep the Console behind the same local gateway for the callback landing page. Loopback HTTP omits Secure; HTTPS always sets it. If registration rejects localhost, use a stable development HTTPS gateway/tunnel with its own client/grants and exact registered callback; never reuse the production cookie/client configuration.

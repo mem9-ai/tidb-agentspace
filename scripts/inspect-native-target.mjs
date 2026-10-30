@@ -108,8 +108,8 @@ export function discoverProjectStorage(aws) {
       } catch (error) {
         regionStatus = classify(error);
       }
-    let tags = {},
-      tagStatus = 'unavailable';
+    let tags = {};
+    let tagStatus;
     try {
       const data = JSON.parse(
         aws(['s3api', 'get-bucket-tagging', '--bucket', bucket.Name, '--output', 'json']),
