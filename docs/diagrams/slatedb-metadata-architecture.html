@@ -1,0 +1,1069 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>SlateDB metadata architecture</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --background: #11151b;
+        --surface: #181e27;
+        --foreground: #edf2f8;
+        --secondary: #adb9ca;
+        --line: #3c4859;
+        --request: #70baff;
+        --durable: #82d9ac;
+        --pending: #e7bc78;
+        font-family:
+          Inter,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--background);
+        color: var(--foreground);
+      }
+      main {
+        max-width: 1280px;
+        margin: auto;
+        padding: 28px;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        gap: 24px;
+        flex-wrap: wrap;
+      }
+      h1 {
+        font-size: 28px;
+        line-height: 1.2;
+        font-weight: 500;
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0;
+        line-height: 1.5;
+      }
+      .subtitle,
+      .note {
+        color: var(--secondary);
+        font-size: 14px;
+      }
+      .edition {
+        color: var(--secondary);
+        font-size: 13px;
+        line-height: 1.6;
+        text-align: right;
+      }
+      .toolbar {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin: 26px 0 20px;
+      }
+      button {
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        color: var(--foreground);
+        background: transparent;
+        padding: 10px 15px;
+        font: inherit;
+        font-size: 14px;
+        min-height: 42px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #222c39;
+      }
+      button[aria-pressed='true'] {
+        background: #e1e8f1;
+        color: #17202b;
+        border-color: #e1e8f1;
+      }
+      button:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--request);
+        outline-offset: 4px;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .chapter {
+        min-width: 168px;
+      }
+      .caption {
+        min-height: 94px;
+      }
+      .eyebrow {
+        color: var(--secondary);
+        font-size: 12px;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+      h2 {
+        font-size: 21px;
+        line-height: 1.3;
+        font-weight: 500;
+        margin: 8px 0 5px;
+      }
+      #explanation {
+        font-size: 15px;
+        color: var(--secondary);
+        max-width: 900px;
+      }
+      .diagram {
+        width: 100%;
+        height: auto;
+        display: block;
+        margin: 5px 0 18px;
+        overflow: visible;
+      }
+      .diagram text {
+        fill: var(--foreground);
+        font-family: inherit;
+        font-size: 16px;
+        font-weight: 500;
+      }
+      .diagram .small {
+        fill: var(--secondary);
+        font-size: 13px;
+        font-weight: 400;
+      }
+      .diagram .group-title {
+        font-size: 16px;
+      }
+      .diagram .group-background {
+        fill: #151a22;
+        stroke: #303a48;
+        stroke-width: 1;
+      }
+      .diagram .node-shape {
+        fill: var(--surface);
+        stroke: var(--line);
+        stroke-width: 1.3;
+      }
+      .diagram .storage-lid {
+        fill: none;
+        stroke: var(--line);
+        stroke-width: 1.3;
+      }
+      .diagram .node[data-active='request'] .node-shape {
+        stroke: var(--request);
+        fill: #1b2b3b;
+      }
+      .diagram .node[data-active='pending'] .node-shape {
+        stroke: var(--pending);
+        fill: #30291f;
+      }
+      .diagram .node[data-active='durable'] .node-shape {
+        stroke: var(--durable);
+        fill: #1b302c;
+      }
+      .diagram .node[data-active='offline'] .node-shape {
+        stroke: var(--pending);
+        stroke-dasharray: 5 4;
+      }
+      .diagram .node[data-active='offline'] .small {
+        fill: var(--pending);
+      }
+      .diagram .storage-status {
+        font-size: 13px;
+        fill: var(--secondary);
+      }
+      .diagram .storage-status[data-durable='true'] {
+        fill: var(--durable);
+      }
+      .diagram .edge {
+        fill: none;
+        stroke: var(--line);
+        stroke-width: 1.3;
+      }
+      .diagram .edge.planned {
+        stroke-dasharray: 5 5;
+      }
+      .diagram .edge[data-active='request'] {
+        stroke: var(--request);
+        stroke-width: 2;
+      }
+      .diagram .edge[data-active='durable'] {
+        stroke: var(--durable);
+        stroke-width: 2;
+      }
+      .diagram .edge[data-blocked='true'] {
+        opacity: 0.24;
+      }
+      .diagram .group-status {
+        font-size: 12px;
+        font-weight: 400;
+        fill: var(--secondary);
+      }
+      .diagram .group-status[data-offline='true'] {
+        fill: var(--pending);
+      }
+      .diagram .packet[data-kind='request'] {
+        fill: var(--request);
+      }
+      .diagram .packet[data-kind='durable'] {
+        fill: var(--durable);
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 24px;
+        font-size: 13px;
+        color: var(--secondary);
+        margin: 0 0 22px;
+      }
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .swatch {
+        width: 9px;
+        height: 9px;
+        display: inline-block;
+        background: var(--request);
+        border-radius: 50%;
+      }
+      .swatch.durable {
+        background: var(--durable);
+      }
+      .swatch.pending {
+        background: var(--pending);
+        border-radius: 0;
+      }
+      .sample-line {
+        width: 24px;
+        border-top: 1px dashed var(--secondary);
+      }
+      footer {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        border-top: 1px solid #303a48;
+        padding-top: 18px;
+      }
+      label {
+        font-size: 13px;
+        color: var(--secondary);
+      }
+      input[type='range'] {
+        accent-color: var(--request);
+        min-width: 100px;
+        width: 100%;
+      }
+      .seek {
+        flex: 1;
+        min-width: 150px;
+        display: grid;
+        gap: 6px;
+        padding: 0 6px;
+      }
+      output {
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+        min-width: 85px;
+      }
+      .note {
+        margin-top: 14px;
+        font-size: 12px;
+      }
+      @media (max-width: 759px) {
+        main {
+          padding: 20px 14px;
+          display: flex;
+          flex-direction: column;
+        }
+        h1 {
+          font-size: 24px;
+        }
+        header {
+          gap: 10px;
+          order: 0;
+        }
+        .edition {
+          text-align: left;
+        }
+        .toolbar {
+          gap: 8px;
+          margin-top: 20px;
+          order: 1;
+        }
+        .chapter {
+          min-width: 0;
+          flex: 1 1 130px;
+        }
+        .caption {
+          min-height: 128px;
+          order: 2;
+        }
+        .diagram {
+          margin-top: 0;
+          order: 4;
+        }
+        .legend {
+          order: 5;
+        }
+        .note {
+          order: 6;
+        }
+        footer {
+          padding: 14px 0;
+          order: 3;
+        }
+        .seek {
+          order: 5;
+          flex-basis: 100%;
+          padding: 4px 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main id="architecture">
+      <header>
+        <div>
+          <h1>SlateDB metadata architecture</h1>
+          <p class="subtitle">Independent Global and regional authorities</p>
+        </div>
+        <p class="edition">Architecture v1<br />Illustrative flow · Global control planned</p>
+      </header>
+      <div class="toolbar" role="group" aria-label="Animation chapters">
+        <button type="button" class="chapter" data-chapter="0" aria-pressed="true">
+          01 · Durable commit
+        </button>
+        <button type="button" class="chapter" data-chapter="1" aria-pressed="false">
+          02 · Global control
+        </button>
+        <button type="button" class="chapter" data-chapter="2" aria-pressed="false">
+          03 · Global offline
+        </button>
+      </div>
+      <section class="caption" aria-live="polite" aria-atomic="true">
+        <p class="eyebrow" id="phase">01 / Durable commit</p>
+        <h2 id="headline">Persist before acknowledging.</h2>
+        <p id="explanation">A metadata mutation goes directly to Region A.</p>
+      </section>
+      <svg
+        class="diagram"
+        id="diagram"
+        role="img"
+        aria-labelledby="diagram-title diagram-description"
+      ></svg>
+      <div class="legend" aria-label="Flow legend">
+        <span><i class="swatch" aria-hidden="true"></i>Request</span>
+        <span><i class="swatch durable" aria-hidden="true"></i>Durable response</span>
+        <span><i class="swatch pending" aria-hidden="true"></i>Pending or unavailable</span>
+        <span><i class="sample-line" aria-hidden="true"></i>Planned control call</span>
+      </div>
+      <footer aria-label="Playback controls">
+        <button type="button" id="play" aria-pressed="true">Pause</button>
+        <button type="button" id="step">Next step</button>
+        <button type="button" id="replay">Replay</button>
+        <div class="seek">
+          <label for="timeline">Story time · illustrative seconds</label>
+          <input type="range" id="timeline" min="0" max="36" step="0.05" value="0" />
+        </div>
+        <output id="time" for="timeline">00:00 / 00:36</output>
+      </footer>
+      <p class="note">
+        Known authorized work continues when Global is unavailable, assuming regional infrastructure
+        remains available. No live services are connected.
+      </p>
+      <noscript
+        >This diagram needs JavaScript for playback. The architecture reference contains the static
+        diagram and its full explanation.</noscript
+      >
+    </main>
+    <script type="module">
+      const root = document.getElementById('architecture');
+      const svg = document.getElementById('diagram');
+      const timeline = document.getElementById('timeline');
+      const play = document.getElementById('play');
+      const NS = 'http://www.w3.org/2000/svg';
+      const duration = 36;
+      let currentTime = 0;
+      let playing = false;
+      let raf = 0;
+      let lastFrame = 0;
+      let narrow = window.innerWidth < 760;
+      let nodeElements = {};
+      let edgeElements = {};
+      let groupElements = {};
+      let packets;
+      const chapterNames = ['01 / Durable commit', '02 / Global control', '03 / Global offline'];
+      const events = [
+        [0, 'A metadata mutation goes directly to Region A.'],
+        [0.6, 'The client calls the regional endpoint.'],
+        [1.6, 'Region A authorizes the request locally.'],
+        [2.6, 'Repositories prepare a bounded metadata transaction.'],
+        [3.6, 'SlateDB commits in memory; the response is still pending.'],
+        [5.2, 'The WAL is durable in Region A object storage.'],
+        [6.2, 'Meta returns the durable mutation receipt.'],
+        [7.2, 'Repositories publish the committed version.'],
+        [8.2, 'The durable response returns to the client.'],
+        [9.5, 'ACK follows object durability. Global was not on the request path.'],
+        [12, 'Global control is planned; this chapter illustrates its contract.'],
+        [12.4, 'Global records a command in its own independent Meta.'],
+        [13.8, 'Global intent is durable in Global object storage.'],
+        [14.8, 'Global initiates a command to Region A.'],
+        [16, 'Region A persists the admitted command in its local metadata.'],
+        [17.5, 'Region replies to that command with a durable acceptance receipt.'],
+        [18.8, 'Acceptance is not provider completion.'],
+        [19.4, 'Global initiates an observation read.'],
+        [20.5, 'Region returns the requested operation status.'],
+        [21.7, 'Every cross-plane call starts at Global. There is no callback.'],
+        [24, 'Global control becomes unavailable; regional state remains independent.'],
+        [24.6, 'A known authorized request still enters Region A directly.'],
+        [26.6, 'Region A commits using its own Meta and object storage.'],
+        [28.2, 'A separate client request enters Region B directly.'],
+        [30.2, 'Region A has a durable result; Region B is persisting independently.'],
+        [32, 'Region B also returns its own durable result.'],
+        [34.4, 'Both Regions serve known authorized work while Global stays offline.'],
+        [36, 'Regional serving has no Global renewal or lookup dependency.'],
+      ];
+      const segments = [
+        ['clientA', 0.6, 1.6, 'request'],
+        ['apiRepo', 1.6, 2.6, 'request'],
+        ['repoMeta', 2.6, 3.6, 'request'],
+        ['metaStoreA', 3.6, 5.2, 'request'],
+        ['metaStoreA', 5.2, 6.2, 'durable', true],
+        ['repoMeta', 6.2, 7.2, 'durable', true],
+        ['apiRepo', 7.2, 8.2, 'durable', true],
+        ['clientA', 8.2, 9.5, 'durable', true],
+        ['globalMeta', 12.4, 13.1, 'request'],
+        ['globalStore', 13.1, 13.8, 'request'],
+        ['globalStore', 13.8, 14.3, 'durable', true],
+        ['globalMeta', 14.3, 14.8, 'durable', true],
+        ['globalA', 14.8, 16, 'request'],
+        ['apiRepo', 16, 16.4, 'request'],
+        ['repoMeta', 16.4, 16.8, 'request'],
+        ['metaStoreA', 16.8, 17.1, 'request'],
+        ['metaStoreA', 17.1, 17.25, 'durable', true],
+        ['repoMeta', 17.25, 17.4, 'durable', true],
+        ['apiRepo', 17.4, 17.5, 'durable', true],
+        ['globalA', 17.5, 18.8, 'durable', true],
+        ['globalA', 19.4, 20.5, 'request'],
+        ['globalA', 20.5, 21.7, 'durable', true],
+        ['clientA', 24.6, 25.6, 'request'],
+        ['apiRepo', 25.6, 26.1, 'request'],
+        ['repoMeta', 26.1, 26.6, 'request'],
+        ['metaStoreA', 26.6, 28.6, 'request'],
+        ['metaStoreA', 28.6, 29.3, 'durable', true],
+        ['repoMeta', 29.3, 29.8, 'durable', true],
+        ['apiRepo', 29.8, 30.2, 'durable', true],
+        ['clientA', 30.2, 31.5, 'durable', true],
+        ['clientB', 28.2, 29.2, 'request'],
+        ['apiMetaB', 29.2, 30.2, 'request'],
+        ['metaStoreB', 30.2, 31.5, 'request'],
+        ['metaStoreB', 31.5, 32.2, 'durable', true],
+        ['apiMetaB', 32.2, 33.2, 'durable', true],
+        ['clientB', 33.2, 34.4, 'durable', true],
+      ];
+      const labels = {
+        client: ['Portal / SDK / Agent', 'Direct regional endpoints'],
+        gc: ['Global Control', 'Planned control plane'],
+        gm: ['Global Meta Service', 'Independent SlateDB'],
+        gs: ['Global S3 root', 'WAL / SST / manifest'],
+        aa: ['Regional Rust API', 'Authorization and orchestration'],
+        ar: ['Workspace / Resource', 'Repositories'],
+        am: ['Regional Meta Service', 'SlateDB · Region A'],
+        as: ['Region A S3 root', 'WAL / SST / manifest'],
+        ad: ['Regional data plane', 'Databases / File Systems'],
+        ba: ['Regional API', 'Authorization and orchestration'],
+        bm: ['Regional Meta Service', 'SlateDB · Region B'],
+        bs: ['Region B S3 root', 'WAL / SST / manifest'],
+        bd: ['Regional data plane', 'Databases / File Systems'],
+      };
+      const endpoints = {
+        clientA: ['client', 'aa'],
+        clientB: ['client', 'ba'],
+        globalMeta: ['gc', 'gm'],
+        globalStore: ['gm', 'gs'],
+        globalA: ['gc', 'aa'],
+        globalB: ['gc', 'ba'],
+        apiRepo: ['aa', 'ar'],
+        repoMeta: ['ar', 'am'],
+        metaStoreA: ['am', 'as'],
+        dataA: ['aa', 'ad'],
+        apiMetaB: ['ba', 'bm'],
+        metaStoreB: ['bm', 'bs'],
+        dataB: ['ba', 'bd'],
+      };
+      const desktop = {
+        width: 1160,
+        height: 660,
+        groups: { global: [400, 8, 392, 182], a: [30, 280, 540, 360], b: [600, 280, 530, 360] },
+        nodes: {
+          client: [36, 80, 255, 86],
+          gc: [420, 43, 170, 58],
+          gm: [608, 43, 164, 58],
+          gs: [608, 127, 164, 40],
+          aa: [55, 326, 220, 64],
+          ar: [310, 326, 230, 64],
+          am: [310, 436, 230, 64],
+          as: [310, 548, 230, 58],
+          ad: [55, 436, 220, 100],
+          ba: [635, 326, 220, 64],
+          bm: [890, 326, 210, 64],
+          bs: [890, 548, 210, 58],
+          bd: [635, 436, 220, 100],
+        },
+        edges: {
+          clientA: [
+            [110, 166],
+            [110, 326],
+          ],
+          clientB: [
+            [291, 123],
+            [350, 123],
+            [350, 254],
+            [680, 254],
+            [680, 326],
+          ],
+          globalMeta: [
+            [590, 72],
+            [608, 72],
+          ],
+          globalStore: [
+            [690, 101],
+            [690, 127],
+          ],
+          globalA: [
+            [450, 101],
+            [450, 220],
+            [220, 220],
+            [220, 326],
+          ],
+          globalB: [
+            [550, 101],
+            [550, 236],
+            [745, 236],
+            [745, 326],
+          ],
+          apiRepo: [
+            [275, 358],
+            [310, 358],
+          ],
+          repoMeta: [
+            [425, 390],
+            [425, 436],
+          ],
+          metaStoreA: [
+            [425, 500],
+            [425, 548],
+          ],
+          dataA: [
+            [165, 390],
+            [165, 436],
+          ],
+          apiMetaB: [
+            [855, 358],
+            [890, 358],
+          ],
+          metaStoreB: [
+            [995, 390],
+            [995, 548],
+          ],
+          dataB: [
+            [745, 390],
+            [745, 436],
+          ],
+        },
+      };
+      const mobile = {
+        width: 360,
+        height: 1380,
+        groups: { global: [10, 12, 340, 290], a: [10, 430, 340, 487], b: [10, 955, 340, 402] },
+        nodes: {
+          gc: [30, 48, 300, 56],
+          gm: [30, 135, 300, 56],
+          gs: [30, 216, 300, 50],
+          client: [30, 318, 300, 66],
+          aa: [30, 474, 300, 56],
+          ar: [30, 564, 300, 56],
+          am: [30, 654, 300, 56],
+          as: [30, 744, 300, 50],
+          ad: [30, 828, 300, 56],
+          ba: [30, 999, 300, 56],
+          bm: [30, 1089, 300, 56],
+          bs: [30, 1179, 300, 50],
+          bd: [30, 1263, 300, 56],
+        },
+        edges: {
+          clientA: [
+            [180, 384],
+            [180, 474],
+          ],
+          clientB: [
+            [330, 351],
+            [344, 351],
+            [344, 1027],
+            [330, 1027],
+          ],
+          globalMeta: [
+            [180, 104],
+            [180, 135],
+          ],
+          globalStore: [
+            [180, 191],
+            [180, 216],
+          ],
+          globalA: [
+            [330, 76],
+            [356, 76],
+            [356, 502],
+            [330, 502],
+          ],
+          globalB: [
+            [330, 76],
+            [356, 76],
+            [356, 1027],
+            [330, 1027],
+          ],
+          apiRepo: [
+            [180, 530],
+            [180, 564],
+          ],
+          repoMeta: [
+            [180, 620],
+            [180, 654],
+          ],
+          metaStoreA: [
+            [180, 710],
+            [180, 744],
+          ],
+          dataA: [
+            [30, 502],
+            [18, 502],
+            [18, 856],
+            [30, 856],
+          ],
+          apiMetaB: [
+            [180, 1055],
+            [180, 1089],
+          ],
+          metaStoreB: [
+            [180, 1145],
+            [180, 1179],
+          ],
+          dataB: [
+            [30, 1027],
+            [18, 1027],
+            [18, 1291],
+            [30, 1291],
+          ],
+        },
+      };
+      function element(name, attributes = {}, text = null) {
+        const el = document.createElementNS(NS, name);
+        Object.entries(attributes).forEach(([key, value]) => el.setAttribute(key, String(value)));
+        if (text !== null) el.textContent = text;
+        return el;
+      }
+      function makeNode(id, bounds) {
+        const [x, y, w, h] = bounds;
+        const g = element('g', { class: 'node', 'data-node': id });
+        const storage = ['gs', 'as', 'bs'].includes(id);
+        if (storage) {
+          const lid = Math.min(10, h / 5);
+          const d = [
+            'M',
+            x,
+            y + lid,
+            'C',
+            x,
+            y - lid / 2,
+            x + w,
+            y - lid / 2,
+            x + w,
+            y + lid,
+            'L',
+            x + w,
+            y + h - lid,
+            'C',
+            x + w,
+            y + h + lid / 2,
+            x,
+            y + h + lid / 2,
+            x,
+            y + h - lid,
+            'Z',
+          ].join(' ');
+          g.append(element('path', { class: 'node-shape', d }));
+          g.append(
+            element('path', {
+              class: 'storage-lid',
+              d: [
+                'M',
+                x,
+                y + lid,
+                'C',
+                x,
+                y + lid * 2.3,
+                x + w,
+                y + lid * 2.3,
+                x + w,
+                y + lid,
+              ].join(' '),
+            }),
+          );
+          g.append(
+            element(
+              'text',
+              { x: x + w / 2, y: y + h / 2 + 10, 'text-anchor': 'middle' },
+              labels[id][0],
+            ),
+          );
+          const status = element(
+            'text',
+            {
+              class: 'storage-status',
+              x: x + w / 2,
+              y: y + h + 20,
+              'text-anchor': 'middle',
+              'data-status': id,
+            },
+            'Independent root',
+          );
+          g.append(status);
+        } else {
+          g.append(element('rect', { class: 'node-shape', x, y, width: w, height: h, rx: 8 }));
+          g.append(
+            element(
+              'text',
+              { x: x + w / 2, y: y + h / 2 - 2, 'text-anchor': 'middle' },
+              labels[id][0],
+            ),
+          );
+          g.append(
+            element(
+              'text',
+              {
+                class: 'small',
+                x: x + w / 2,
+                y: y + h / 2 + 19,
+                'text-anchor': 'middle',
+                'data-subtitle': id,
+              },
+              labels[id][1],
+            ),
+          );
+        }
+        return g;
+      }
+      function build() {
+        const layout = narrow ? mobile : desktop;
+        svg.replaceChildren();
+        svg.setAttribute('viewBox', [0, 0, layout.width, layout.height].join(' '));
+        svg.append(
+          element(
+            'title',
+            { id: 'diagram-title' },
+            'Independent Global and regional SlateDB metadata',
+          ),
+        );
+        svg.append(
+          element(
+            'desc',
+            { id: 'diagram-description' },
+            'Clients call Regions directly. Each Region and Global own independent Meta and S3 storage. Global initiates planned commands and observation reads. Durable responses follow S3 persistence. Regions continue known authorized work during a Global outage.',
+          ),
+        );
+        const defs = element('defs');
+        [
+          ['neutral', '#3c4859'],
+          ['request', '#70baff'],
+          ['durable', '#82d9ac'],
+        ].forEach(([id, color]) => {
+          const marker = element('marker', {
+            id: 'arrow-' + id,
+            viewBox: '0 0 10 10',
+            refX: 9,
+            refY: 5,
+            markerWidth: 6,
+            markerHeight: 6,
+            orient: 'auto-start-reverse',
+          });
+          marker.append(
+            element('path', {
+              d: 'M 0 1 L 9 5 L 0 9',
+              fill: 'none',
+              stroke: color,
+              'stroke-width': 1.4,
+            }),
+          );
+          defs.append(marker);
+        });
+        svg.append(defs);
+        groupElements = {};
+        Object.entries(layout.groups).forEach(([id, [x, y, w, h]]) => {
+          const group = element('g', { 'data-group': id });
+          group.append(
+            element('rect', { class: 'group-background', x, y, width: w, height: h, rx: 9 }),
+          );
+          group.append(
+            element(
+              'text',
+              { class: 'group-title', x: x + 20, y: y + 24 },
+              id === 'global' ? 'Global' : 'Region ' + id.toUpperCase(),
+            ),
+          );
+          const status = element(
+            'text',
+            { class: 'group-status', x: x + w - 20, y: y + 24, 'text-anchor': 'end' },
+            'Serving',
+          );
+          group.append(status);
+          groupElements[id] = status;
+          svg.append(group);
+        });
+        edgeElements = {};
+        Object.entries(layout.edges).forEach(([id, points]) => {
+          const d = points.map((p, index) => (index === 0 ? 'M ' : 'L ') + p.join(' ')).join(' ');
+          const path = element('path', {
+            class: 'edge' + (id === 'globalA' || id === 'globalB' ? ' planned' : ''),
+            d,
+            'data-edge': id,
+            'marker-end': 'url(#arrow-neutral)',
+          });
+          edgeElements[id] = path;
+          svg.append(path);
+        });
+        nodeElements = {};
+        Object.entries(layout.nodes).forEach(([id, bounds]) => {
+          const node = makeNode(id, bounds);
+          nodeElements[id] = node;
+          svg.append(node);
+        });
+        packets = element('g', { 'aria-hidden': 'true' });
+        svg.append(packets);
+      }
+      function stateAt(time) {
+        const t = Math.max(0, Math.min(duration, Number(time) || 0));
+        const chapter = t < 12 ? 0 : t < 24 ? 1 : 2;
+        const active = segments.filter((s) => t >= s[1] && t < s[2]);
+        const event = events.filter((e) => e[0] <= t).at(-1);
+        const durableA = t >= 5.2;
+        const durableB = t >= 31.5;
+        return {
+          t,
+          chapter,
+          active,
+          globalOnline: t < 24,
+          durableA,
+          durableB,
+          acknowledgedA: t >= 9.5 && (t < 24 || t >= 31.5),
+          acknowledgedB: t >= 34.4,
+          description: event[1],
+          headline:
+            chapter === 0
+              ? t >= 5.2
+                ? 'ACK follows object durability.'
+                : 'Persist before acknowledging.'
+              : chapter === 1
+                ? 'Global initiates. Region replies.'
+                : 'Global offline. Regions keep serving.',
+        };
+      }
+      function render(time) {
+        const state = stateAt(time);
+        currentTime = state.t;
+        root.dataset.chapter = String(state.chapter);
+        root.dataset.globalOnline = String(state.globalOnline);
+        root.dataset.acknowledgedA = String(state.acknowledgedA);
+        root.dataset.acknowledgedB = String(state.acknowledgedB);
+        Object.entries(nodeElements).forEach(([id, node]) => {
+          node.removeAttribute('data-active');
+          const sub = node.querySelector('[data-subtitle]');
+          if (sub) sub.textContent = labels[id][1];
+        });
+        Object.entries(edgeElements).forEach(([id, path]) => {
+          path.removeAttribute('data-active');
+          path.removeAttribute('marker-start');
+          path.setAttribute('marker-end', 'url(#arrow-neutral)');
+          path.dataset.blocked = String(
+            !state.globalOnline && ['globalA', 'globalB', 'globalMeta'].includes(id),
+          );
+        });
+        groupElements.global.textContent = state.globalOnline
+          ? 'Control planned'
+          : 'Control unavailable';
+        groupElements.global.dataset.offline = String(!state.globalOnline);
+        groupElements.a.textContent = 'Serving · local auth';
+        groupElements.b.textContent = 'Serving · local auth';
+        if (!state.globalOnline) {
+          nodeElements.gc.dataset.active = 'offline';
+          nodeElements.gc.querySelector('[data-subtitle]').textContent =
+            'Unavailable · illustrative';
+        }
+        const storage = {
+          gs:
+            state.t >= 13.8
+              ? state.globalOnline
+                ? 'Intent durable'
+                : 'State retained'
+              : 'Independent root',
+          as: !state.durableA
+            ? state.t >= 3.6
+              ? 'WAL pending'
+              : 'Independent root'
+            : state.t < 17.1
+              ? 'Durable v1'
+              : state.t < 28.6
+                ? 'Durable inbox'
+                : 'Durable regional result',
+          bs: state.durableB
+            ? 'Durable regional result'
+            : state.t >= 30.2
+              ? 'WAL pending'
+              : 'Independent root',
+        };
+        Object.entries(storage).forEach(([id, text]) => {
+          const status = nodeElements[id].querySelector('[data-status]');
+          status.textContent = text;
+          const durable =
+            id === 'as' ? state.durableA : id === 'bs' ? state.durableB : state.t >= 13.8;
+          status.dataset.durable = String(durable);
+        });
+        packets.replaceChildren();
+        state.active.forEach(([id, start, end, kind, reverse]) => {
+          const path = edgeElements[id];
+          path.dataset.active = kind;
+          path.setAttribute(reverse ? 'marker-start' : 'marker-end', 'url(#arrow-' + kind + ')');
+          if (reverse) path.removeAttribute('marker-end');
+          const endpointsForFlow = reverse ? [...endpoints[id]].reverse() : endpoints[id];
+          endpointsForFlow.forEach((nodeId) => {
+            nodeElements[nodeId].dataset.active = kind;
+          });
+          if (['metaStoreA', 'metaStoreB'].includes(id) && kind === 'request') {
+            nodeElements[endpoints[id][0]].dataset.active = 'pending';
+          }
+          const progress = (state.t - start) / (end - start);
+          const eased = progress * progress * (3 - 2 * progress);
+          const point = path.getPointAtLength(
+            path.getTotalLength() * (reverse ? 1 - eased : eased),
+          );
+          packets.append(
+            element('circle', {
+              class: 'packet',
+              'data-kind': kind,
+              cx: point.x,
+              cy: point.y,
+              r: 4.5,
+            }),
+          );
+        });
+        const phase = document.getElementById('phase');
+        if (phase.textContent !== chapterNames[state.chapter])
+          phase.textContent = chapterNames[state.chapter];
+        const headline = document.getElementById('headline');
+        if (headline.textContent !== state.headline) headline.textContent = state.headline;
+        const explanation = document.getElementById('explanation');
+        if (explanation.textContent !== state.description)
+          explanation.textContent = state.description;
+        document
+          .querySelectorAll('[data-chapter]')
+          .forEach((button) =>
+            button.setAttribute(
+              'aria-pressed',
+              String(Number(button.dataset.chapter) === state.chapter),
+            ),
+          );
+        timeline.value = String(state.t);
+        timeline.setAttribute(
+          'aria-valuetext',
+          Math.floor(state.t) + ' seconds: ' + state.description,
+        );
+        document.getElementById('time').textContent =
+          '00:' + String(Math.floor(state.t)).padStart(2, '0') + ' / 00:36';
+        document.getElementById('step').disabled = state.t >= duration;
+        return state;
+      }
+      function tick(now) {
+        if (!playing) return;
+        const delta = lastFrame ? (now - lastFrame) / 1000 : 0;
+        lastFrame = now;
+        render(currentTime + Math.min(delta, 0.1));
+        if (currentTime >= duration) setPlaying(false);
+        else raf = requestAnimationFrame(tick);
+      }
+      function setPlaying(value) {
+        playing = value;
+        cancelAnimationFrame(raf);
+        lastFrame = 0;
+        play.textContent = value ? 'Pause' : 'Play';
+        play.setAttribute('aria-pressed', String(value));
+        if (value) raf = requestAnimationFrame(tick);
+      }
+      play.addEventListener('click', () => {
+        if (currentTime >= duration) render(0);
+        setPlaying(!playing);
+      });
+      timeline.addEventListener('input', () => {
+        setPlaying(false);
+        render(timeline.value);
+      });
+      document.getElementById('step').addEventListener('click', () => {
+        setPlaying(false);
+        render(events.find((event) => event[0] > currentTime + 0.02)?.[0] ?? duration);
+      });
+      document.getElementById('replay').addEventListener('click', () => {
+        render(0);
+        setPlaying(true);
+      });
+      document.querySelectorAll('[data-chapter]').forEach((button) => {
+        button.addEventListener('click', () => {
+          render(Number(button.dataset.chapter) * 12);
+          setPlaying(true);
+        });
+      });
+      document.addEventListener('keydown', (event) => {
+        if (['INPUT', 'BUTTON', 'SELECT', 'TEXTAREA', 'A'].includes(document.activeElement.tagName))
+          return;
+        if (event.code === 'Space') {
+          event.preventDefault();
+          play.click();
+        }
+        if (event.code === 'ArrowRight' || event.code === 'ArrowLeft') {
+          event.preventDefault();
+          setPlaying(false);
+          render(currentTime + (event.code === 'ArrowRight' ? 1 : -1));
+        }
+      });
+      window.addEventListener('resize', () => {
+        const next = window.innerWidth < 760;
+        if (next !== narrow) {
+          narrow = next;
+          build();
+          render(currentTime);
+        }
+      });
+      window.DUR = duration;
+      window.render = render;
+      window.diagramState = stateAt;
+      window.EV = events.map(([time, text]) => ({ time, text }));
+      window.TEXTS = (time) => [
+        stateAt(time).headline,
+        stateAt(time).description,
+        ...Object.values(labels).flat(),
+      ];
+      build();
+      render(0);
+      window.READY = true;
+      setPlaying(!window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    </script>
+  </body>
+</html>

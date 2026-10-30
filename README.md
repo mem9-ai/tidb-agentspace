@@ -41,3 +41,7 @@ These modes enable explicit resource creation in the Console; startup does not p
 `npm run package -- FULL_REVIEWED_SOURCE_SHA` packages a reviewed clean native backend and separate Console assets with source SHA and checksums. Configuration and credentials remain outside artifacts. Console `/config.json` selects the API origin. Follow [independent delivery](docs/independent-delivery.md) and [CI/CD policy](docs/ci-cd.md).
 
 Fresh record installation format 2 supersedes the old five-document bridge. Old roots fail explicitly; they are never silently reset. [ADR 0024](docs/decisions/0024-fresh-record-metadata.md) records the owner's authorized local reset and its exclusion of cloud deletion. This guest profile is not production login, automatic HA or verified million-resource capacity.
+
+Read [SlateDB Metadata Architecture Version 1](docs/slatedb-metadata-design.md) for the complete
+Global/Region metadata design, domain model, durability, security, recovery and iteration plan.
+The document distinguishes the target architecture from current implementation limits.
