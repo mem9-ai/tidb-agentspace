@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { parse } from 'yaml';
 import { enableGuest } from './enable-guest.mjs';
 
 const config = {
@@ -107,5 +109,28 @@ test('uncertain configuration update does not undo an unrelated deployment', asy
   assert.deepEqual(
     calls.map((call) => call[0]),
     ['get', 'set'],
+  );
+});
+
+test('Guest rollout requires protected exact-commit full CI on main', () => {
+  const workflow = parse(
+    readFileSync(new URL('../.github/workflows/guest-enable.yml', import.meta.url), 'utf8'),
+  );
+  assert.ok(workflow.on.workflow_dispatch !== undefined);
+  assert.equal(workflow.on.pull_request, undefined);
+  assert.equal(workflow.jobs.verify.if, "github.ref == 'refs/heads/main'");
+  assert.equal(workflow.jobs.enable.if, "github.ref == 'refs/heads/main'");
+  assert.equal(workflow.jobs.enable.needs, 'verify');
+  assert.equal(workflow.jobs.enable.environment, 'dev');
+  assert.equal(workflow.concurrency.group, 'dev-cd-deploy-target');
+  assert.ok(
+    workflow.jobs.verify.steps.some(
+      (step) =>
+        step.run === 'node scripts/require-ci.mjs full "$SOURCE_SHA"' &&
+        step.env?.SOURCE_SHA === '${{ github.sha }}',
+    ),
+  );
+  assert.ok(
+    workflow.jobs.enable.steps.some((step) => step.run === 'node scripts/enable-guest.mjs'),
   );
 });

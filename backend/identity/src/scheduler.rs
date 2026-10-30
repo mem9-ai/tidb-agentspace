@@ -1,5 +1,5 @@
-//! Bounded Region-local Guest cleanup scheduling. This is not wired into the hosted server;
-//! production requires a processor that fences in-flight work and reconciles every provider.
+//! Bounded Region-local Guest expiry scheduling. The opt-in host retains provider cleanup
+//! as pending; a future deleting processor must fence effects and reconcile every provider.
 
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 use tokio::sync::watch;
