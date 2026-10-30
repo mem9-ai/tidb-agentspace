@@ -2,6 +2,7 @@
 use std::sync::Arc;
 use workspace_identity::{
     Directory, Provisioning, Registration, VerifiedIdentity,
+    cleanup::{Job, Queue},
     regional::{Policies, Policy, Principal},
     sessions::Sessions,
 };
@@ -13,6 +14,50 @@ async fn main() -> anyhow::Result<()> {
     anyhow::ensure!(args.len() == 5, "expected config and test arguments");
     let config: ClientConfig = serde_json::from_slice(&std::fs::read(&args[1])?)?;
     let metadata = Arc::new(RemoteMetadata::connect(config).await?);
+    if args[2] == "--cleanup-enqueue" {
+        let policy: Policy = serde_json::from_slice(&std::fs::read(&args[3])?)?;
+        let queue = Queue::open(metadata, &policy.region_id).await?;
+        queue.enqueue(&policy, &args[4]).await?;
+        println!("{{\"queued\":true}}");
+        return Ok(());
+    }
+    if args[2] == "--cleanup-due" {
+        let input: serde_json::Value = serde_json::from_slice(&std::fs::read(&args[3])?)?;
+        let authority = input["regionId"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing region"))?;
+        let partition = u8::try_from(
+            input["partition"]
+                .as_u64()
+                .ok_or_else(|| anyhow::anyhow!("missing partition"))?,
+        )?;
+        let queue = Queue::open(metadata, authority).await?;
+        let page = queue.due(partition, None, 16).await?;
+        println!(
+            "{}",
+            serde_json::json!({"jobs":page.jobs,"nextCursor":page.next_cursor})
+        );
+        return Ok(());
+    }
+    if args[2] == "--cleanup-claim" || args[2] == "--cleanup-complete" {
+        let input: serde_json::Value = serde_json::from_slice(&std::fs::read(&args[3])?)?;
+        let authority = input["regionId"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing region"))?;
+        let job: Job = serde_json::from_value(input["job"].clone())?;
+        let queue = Queue::open(metadata, authority).await?;
+        if args[2] == "--cleanup-claim" {
+            let claimed = queue.claim(&job, &args[4]).await?;
+            println!("{}", serde_json::to_string(&claimed)?);
+        } else {
+            let attempt = input["attemptId"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("missing attempt"))?;
+            queue.complete_verified(&job, attempt, &args[4]).await?;
+            println!("{{\"complete\":true}}");
+        }
+        return Ok(());
+    }
     if args[2] == "--region-install" {
         let policy: Policy = serde_json::from_slice(&std::fs::read(&args[3])?)?;
         let policies = Policies::open(metadata, &policy.region_id).await?;

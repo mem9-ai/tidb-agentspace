@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
@@ -63,6 +63,9 @@ test(
     const claimsPath = resolve(fixture.directory, 'regional-claims.json');
     const acknowledgementPath = resolve(fixture.directory, 'regional-ack.json');
     const sessionPath = resolve(fixture.directory, 'regional-session.json');
+    const cleanupPolicyPath = resolve(fixture.directory, 'cleanup-policy.json');
+    const cleanupInputPath = resolve(fixture.directory, 'cleanup-input.json');
+    const dueInputPath = resolve(fixture.directory, 'cleanup-due.json');
     const policy = {
       workspaceId: concurrent[0].workspaceId,
       organizationId: concurrent[0].organizationId,
@@ -97,6 +100,31 @@ test(
     await useSession(credentials.access);
     await accessRegion();
     await assert.rejects(accessRegion(bob.workspaceId));
+    const expiresAt = Math.floor(Date.now() / 1000) - 1;
+    const expiredGuestPolicy = {
+      workspaceId: randomUUID(),
+      organizationId: randomUUID(),
+      principalId: randomUUID(),
+      regionId: 'region:other',
+      generation: 1,
+      denied: false,
+      identity: {
+        kind: 'guest',
+        guestId: randomUUID(),
+        verifier: '09'.repeat(32),
+        createdAt: expiresAt - 86_400,
+        expiresAt,
+      },
+    };
+    await writeFile(cleanupPolicyPath, JSON.stringify(expiredGuestPolicy), { mode: 0o600 });
+    await exec(probe, [config, '--region-install', cleanupPolicyPath, randomUUID()]);
+    await exec(probe, [config, '--cleanup-enqueue', cleanupPolicyPath, randomUUID()]);
+    const partition = createHash('sha256').update(expiredGuestPolicy.workspaceId).digest()[0] % 64;
+    await writeFile(dueInputPath, JSON.stringify({ regionId: 'region:other', partition }), {
+      mode: 0o600,
+    });
+    const due = async () =>
+      JSON.parse((await exec(probe, [config, '--cleanup-due', dueInputPath, '-'])).stdout).jobs;
     await use(global);
     const status = async () =>
       JSON.parse(
@@ -119,12 +147,39 @@ test(
     global.client.close();
     await use(region);
     await authorizeRegion();
+    const cleanupJob = (await due()).find(
+      (job) => job.workspaceId === expiredGuestPolicy.workspaceId,
+    );
+    assert.equal(cleanupJob.status.state, 'scheduled');
+    await writeFile(
+      cleanupInputPath,
+      JSON.stringify({ regionId: 'region:other', job: cleanupJob }),
+      { mode: 0o600 },
+    );
+    const cleanupAttempt = randomUUID();
+    const claimedJob = JSON.parse(
+      (await exec(probe, [config, '--cleanup-claim', cleanupInputPath, cleanupAttempt])).stdout,
+    );
     const regionOwner = (await region.client.health()).ownerId;
     await region.stop('SIGKILL');
     region.client.close();
     region = await fixture.service('other', { previous: region, recoverOwner: regionOwner });
     await use(region);
     await authorizeRegion();
+    await assert.rejects(
+      exec(probe, [config, '--cleanup-claim', cleanupInputPath, cleanupAttempt]),
+    );
+    // This fixture created no provider resources. This verifies the durable job only.
+    await writeFile(
+      cleanupInputPath,
+      JSON.stringify({ regionId: 'region:other', job: claimedJob, attemptId: cleanupAttempt }),
+      { mode: 0o600 },
+    );
+    await exec(probe, [config, '--cleanup-complete', cleanupInputPath, randomUUID()]);
+    assert.equal(
+      (await due()).find((job) => job.workspaceId === expiredGuestPolicy.workspaceId).status.state,
+      'complete',
+    );
     await accessRegion();
     await useSession(credentials.renewal);
     const renewed = JSON.parse(

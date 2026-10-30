@@ -1,6 +1,7 @@
 //! Global identity directory. This module does not verify identity-provider tokens or grant
 //! regional access; callers must supply an already verified issuer and subject.
 
+pub mod cleanup;
 pub mod regional;
 pub mod sessions;
 
@@ -548,6 +549,9 @@ pub(crate) mod tests {
         pub(crate) lose_reply: AtomicBool,
         pub(crate) authority: Option<String>,
     }
+    pub(crate) fn group_key(scope: &Scope) -> String {
+        serde_json::to_string(scope).unwrap()
+    }
     impl Metadata for MemoryMeta {
         fn health(&self) -> Call<'_> {
             Box::pin(async {
@@ -561,7 +565,7 @@ pub(crate) mod tests {
                 match request {
                     MetaRequest::Get { scope, keys, .. } => {
                         let groups = self.groups.lock().unwrap();
-                        let group = groups.get(&scope.owner_id);
+                        let group = groups.get(&group_key(&scope));
                         let records: serde_json::Map<String, Value> = keys
                             .into_iter()
                             .map(|key| {
@@ -576,7 +580,7 @@ pub(crate) mod tests {
                     }
                     MetaRequest::Commit { scope, changes, .. } => {
                         let mut groups = self.groups.lock().unwrap();
-                        let group = groups.entry(scope.owner_id).or_default();
+                        let group = groups.entry(group_key(&scope)).or_default();
                         for change in &changes {
                             let key = change["key"].as_str().unwrap();
                             if group
@@ -599,6 +603,33 @@ pub(crate) mod tests {
                             return Err(error(503, "META_COMMIT_UNKNOWN"));
                         }
                         Ok(json!({"version":version}))
+                    }
+                    MetaRequest::List {
+                        scope,
+                        prefix,
+                        after,
+                        limit,
+                        ..
+                    } => {
+                        let groups = self.groups.lock().unwrap();
+                        let selected: Vec<_> = groups
+                            .get(&group_key(&scope))
+                            .into_iter()
+                            .flat_map(|group| group.iter())
+                            .filter(|(key, _)| {
+                                key.starts_with(&prefix)
+                                    && after.as_ref().is_none_or(|cursor| *key > cursor)
+                            })
+                            .take(limit + 1)
+                            .collect();
+                        let more = selected.len() > limit;
+                        let records: Vec<_> = selected.into_iter().take(limit).map(|(key,value)|json!({"key":key,"version":value["version"],"value":value["value"]})).collect();
+                        let next = if more {
+                            records.last().and_then(|value| value["key"].as_str())
+                        } else {
+                            None
+                        };
+                        Ok(json!({"records":records,"nextCursor":next}))
                     }
                     _ => Err(error(400, "META_INVALID_REQUEST")),
                 }
@@ -708,9 +739,7 @@ pub(crate) mod tests {
                 .unwrap()
                 == registration
         );
-        let group_id = scope(&identity("https://issuer.example", "alice"))
-            .unwrap()
-            .owner_id;
+        let group_id = group_key(&scope(&identity("https://issuer.example", "alice")).unwrap());
         assert_eq!(
             metadata.groups.lock().unwrap()[&group_id]["personal-workspace"]["value"]["state"],
             "ready"
@@ -840,7 +869,7 @@ pub(crate) mod tests {
         let metadata = Arc::new(MemoryMeta::default());
         let directory = Directory::open(metadata.clone()).await.unwrap();
         let id = identity("https://issuer.example", "alice");
-        let group_id = scope(&id).unwrap().owner_id;
+        let group_id = group_key(&scope(&id).unwrap());
         metadata.groups.lock().unwrap().insert(group_id, BTreeMap::from([("identity".into(), json!({"version":"one","value":{"type":"oidc","issuer":"https://issuer.example","subject":"alice"}}))]));
         assert_eq!(
             directory.reserve(id, "region:a").await.err().unwrap().code,
