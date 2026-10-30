@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import http from 'node:http';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
@@ -24,6 +24,8 @@ test(
       'personal_login_probe',
       '--example',
       'guest_signup_probe',
+      '--example',
+      'guest_cookie_probe',
     ]);
     await exec('cargo', [
       'build',
@@ -148,15 +150,42 @@ test(
       'ready',
     );
     const guestProbe = resolve('meta-service/target/debug/examples/guest_signup_probe');
-    const createGuest = async () =>
-      JSON.parse((await exec(guestProbe, [globalConfig, regionConfig])).stdout);
-    const firstGuest = await createGuest();
-    const secondGuest = await createGuest();
+    const createGuest = async (path) => {
+      await writeFile(path, '', { mode: 0o600 });
+      return JSON.parse((await exec(guestProbe, [globalConfig, regionConfig, path])).stdout);
+    };
+    const firstCookie = resolve(fixture.directory, 'guest-one-cookie');
+    const secondCookie = resolve(fixture.directory, 'guest-two-cookie');
+    const firstGuest = await createGuest(firstCookie);
+    const secondGuest = await createGuest(secondCookie);
     for (const field of ['userId', 'organizationId', 'workspaceId']) {
       assert.notEqual(firstGuest.registration[field], secondGuest.registration[field]);
       assert.notEqual(firstGuest.registration[field], alice[field]);
     }
     assert.ok(firstGuest.accessExpiresAt <= firstGuest.expiresAt);
+    const owner = (await region.client.health()).ownerId;
+    await global.stop('SIGKILL');
+    global.client.close();
+    await region.stop('SIGKILL');
+    region.client.close();
+    region = await fixture.service('other', { previous: region, recoverOwner: owner });
+    await writeFile(regionConfig, JSON.stringify(region.clientConfig), { mode: 0o600 });
+    const cookieProbe = resolve('meta-service/target/debug/examples/guest_cookie_probe');
+    const access = async (path) =>
+      JSON.parse((await exec(cookieProbe, [regionConfig, path, 'access'])).stdout);
+    assert.equal((await access(firstCookie)).workspaceId, firstGuest.registration.workspaceId);
+    assert.equal((await access(secondCookie)).workspaceId, secondGuest.registration.workspaceId);
+    const changedCookie = resolve(fixture.directory, 'guest-wrong-workspace-cookie');
+    const firstValue = await readFile(firstCookie, 'utf8');
+    await writeFile(
+      changedCookie,
+      firstValue.replace(firstGuest.registration.workspaceId, secondGuest.registration.workspaceId),
+      { mode: 0o600 },
+    );
+    await assert.rejects(access(changedCookie));
+    await exec(cookieProbe, [regionConfig, firstCookie, 'logout']);
+    await assert.rejects(access(firstCookie));
+    assert.equal((await access(secondCookie)).workspaceId, secondGuest.registration.workspaceId);
   },
 );
 test(

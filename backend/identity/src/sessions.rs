@@ -28,12 +28,35 @@ pub struct Access {
     pub expires_at: i64,
 }
 
+/// Verified Region-local Guest authorization. Contains no bearer credential.
+pub struct GuestAccess {
+    pub user_id: String,
+    pub generation: u64,
+    pub expires_at: i64,
+}
+
+/// Returned only after durable storage; `token` is a bearer credential.
+pub struct GuestCredential {
+    pub token: String,
+    pub expires_at: i64,
+}
+
+#[derive(Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+enum GrantKind {
+    #[default]
+    Continuity,
+    GuestBrowser,
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Grant {
     user_id: String,
     generation: u64,
     revoked: bool,
+    #[serde(default)]
+    kind: GrantKind,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -203,6 +226,7 @@ impl Sessions {
             user_id: policy.user_id.clone(),
             generation: policy.generation,
             revoked: false,
+            kind: GrantKind::Continuity,
         };
         let session = Session {
             user_id: policy.user_id.clone(),
@@ -238,6 +262,91 @@ impl Sessions {
         Ok((grant, version, grant_digest))
     }
 
+    /// Issue a region-only fixed-lifetime Guest credential distinct from access and refresh
+    /// tokens. It is valid only for this Workspace and cannot outlive Guest expiry.
+    pub async fn issue_guest_browser(
+        &self,
+        workspace: &str,
+        guest_id: &str,
+        secret: &str,
+    ) -> Result<GuestCredential> {
+        self.issue_guest_at(workspace, guest_id, secret, now()?)
+            .await
+    }
+
+    async fn issue_guest_at(
+        &self,
+        workspace: &str,
+        guest_id: &str,
+        secret: &str,
+        current: i64,
+    ) -> Result<GuestCredential> {
+        self.policies
+            .authorize_at(workspace, Principal::Guest { guest_id, secret }, current)
+            .await?;
+        let policy = self.policy(workspace).await?;
+        let expires_at = match &policy.identity {
+            OwnerIdentity::Guest { expires_at, .. } if *expires_at > current => *expires_at,
+            _ => return Err(error(401, "SESSION_UNAUTHORIZED")),
+        };
+        let (token, token_digest) = token()?;
+        let grant = Grant {
+            user_id: policy.user_id.clone(),
+            generation: policy.generation,
+            revoked: false,
+            kind: GrantKind::GuestBrowser,
+        };
+        let scope = self.scope(workspace)?;
+        self.commit(
+            &scope,
+            &Uuid::new_v4().to_string(),
+            vec![
+                json!({"key":format!("grant/{token_digest}"),"expectedVersion":null,"value":grant}),
+            ],
+        )
+        .await?;
+        let latest = self.policy(workspace).await?;
+        Self::matches(&latest, &policy.user_id, policy.generation, current)?;
+        Ok(GuestCredential { token, expires_at })
+    }
+
+    /// Authenticate a Guest's fixed-lifetime regional browser credential without Global.
+    /// It is not an access-token refresh: every request rechecks the durable grant and local
+    /// policy, and the Guest's absolute expiry cannot be extended. Callers must additionally
+    /// check resource/action permissions and reauthorize at external effect boundaries.
+    pub async fn authenticate_guest_credential(
+        &self,
+        workspace: &str,
+        credential: &str,
+    ) -> Result<GuestAccess> {
+        self.guest_credential_at(workspace, credential, now()?)
+            .await
+    }
+
+    async fn guest_credential_at(
+        &self,
+        workspace: &str,
+        credential: &str,
+        current: i64,
+    ) -> Result<GuestAccess> {
+        let scope = self.scope(workspace)?;
+        let (grant, _, _) = self.grant(&scope, credential).await?;
+        if grant.kind != GrantKind::GuestBrowser {
+            return Err(error(401, "SESSION_UNAUTHORIZED"));
+        }
+        let policy = self.policy(workspace).await?;
+        Self::matches(&policy, &grant.user_id, grant.generation, current)?;
+        let expires_at = match policy.identity {
+            OwnerIdentity::Guest { expires_at, .. } => expires_at,
+            _ => return Err(error(401, "SESSION_UNAUTHORIZED")),
+        };
+        Ok(GuestAccess {
+            user_id: grant.user_id,
+            generation: grant.generation,
+            expires_at,
+        })
+    }
+
     /// Region renews access from its own durable grant and installed policy; no Global call.
     pub async fn renew(&self, workspace: &str, renewal: &str) -> Result<Access> {
         self.renew_at(workspace, renewal, now()?).await
@@ -246,6 +355,9 @@ impl Sessions {
     async fn renew_at(&self, workspace: &str, renewal: &str, current: i64) -> Result<Access> {
         let scope = self.scope(workspace)?;
         let (grant, _, grant_digest) = self.grant(&scope, renewal).await?;
+        if grant.kind != GrantKind::Continuity {
+            return Err(error(401, "SESSION_UNAUTHORIZED"));
+        }
         let policy = self.policy(workspace).await?;
         Self::matches(&policy, &grant.user_id, grant.generation, current)?;
         let expires_at = session_expiry(&policy, current)?;
@@ -295,6 +407,7 @@ impl Sessions {
         let grant: Grant =
             serde_json::from_value(value).map_err(|_| error(503, "SESSION_RECORD_CORRUPT"))?;
         if grant.revoked
+            || grant.kind != GrantKind::Continuity
             || grant.user_id != session.user_id
             || grant.generation != session.generation
         {
@@ -370,6 +483,12 @@ mod tests {
             .issue_at(&policy.workspace_id, alice(), 100)
             .await
             .unwrap();
+        assert!(
+            sessions
+                .guest_credential_at(&policy.workspace_id, &credentials.renewal, 101)
+                .await
+                .is_err()
+        );
         assert_eq!(credentials.access_expires_at, 28_900);
         sessions
             .authorize_at(&policy.workspace_id, &credentials.access, 28_899)
@@ -522,6 +641,42 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(credentials.access_expires_at, 86_500);
+        let browser = sessions
+            .issue_guest_at(&policy.workspace_id, &guest_id, &secret, 86_000)
+            .await
+            .unwrap();
+        assert_eq!(browser.expires_at, 86_500);
+        assert!(
+            sessions
+                .guest_credential_at(&policy.workspace_id, &credentials.renewal, 86_499)
+                .await
+                .is_err()
+        );
+        assert!(
+            sessions
+                .renew_at(&policy.workspace_id, &browser.token, 86_499)
+                .await
+                .is_err()
+        );
+        let access = sessions
+            .guest_credential_at(&policy.workspace_id, &browser.token, 86_499)
+            .await
+            .unwrap();
+        assert_eq!(access.user_id, policy.user_id);
+        assert_eq!(access.generation, policy.generation);
+        assert_eq!(access.expires_at, 86_500);
+        assert!(
+            sessions
+                .guest_credential_at(&Uuid::new_v4().to_string(), &browser.token, 86_499)
+                .await
+                .is_err()
+        );
+        assert!(
+            sessions
+                .guest_credential_at(&policy.workspace_id, &browser.token, 86_500)
+                .await
+                .is_err()
+        );
         sessions
             .authorize_at(&policy.workspace_id, &credentials.access, 86_499)
             .await
@@ -535,6 +690,16 @@ mod tests {
         assert!(
             sessions
                 .renew_at(&policy.workspace_id, &credentials.renewal, 86_500)
+                .await
+                .is_err()
+        );
+        sessions
+            .revoke(&policy.workspace_id, &browser.token)
+            .await
+            .unwrap();
+        assert!(
+            sessions
+                .guest_credential_at(&policy.workspace_id, &browser.token, 86_499)
                 .await
                 .is_err()
         );

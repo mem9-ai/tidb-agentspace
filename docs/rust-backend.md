@@ -54,6 +54,11 @@ and isolated S3 integration test covers this composition. A two-stage Guest sign
 provides a private credential before idempotent regional initialization; a caller must retain
 it securely for retry and enforce rate and quota controls. No hosted route calls these services,
 and they do not issue Region sessions or implement multi-tenant routing.
+An unmounted Region Guest helper can exchange the verified Guest secret for a separate,
+fixed-lifetime regional credential stored as a host-only `Secure`, `HttpOnly` Cookie. It
+checks the regional credential and installed policy on every request and never extends Guest
+expiry. This helper does not provide an HTTP endpoint, cross-origin enrollment, CSRF policy,
+request routing or in-flight revocation; those remain prerequisites for hosted Guest access.
 The unused managed Workspace constructor checks its regional owner policy on entry, including
 owner identity and policy generation, and Guest expiry before either owner-session or Workspace
 Key authentication. This is one layer, not a complete authorization path: the eventual

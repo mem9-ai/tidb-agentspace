@@ -1,6 +1,6 @@
 //! Isolated integration fixture. This is not a public Guest endpoint or deployment role.
 use std::sync::Arc;
-use workspace_api::global_login::GlobalGuest;
+use workspace_api::{global_login::GlobalGuest, regional_guest::RegionalGuest};
 use workspace_identity::{
     Directory, embedded_region::EmbeddedRegion, regional::Principal, sessions::Sessions,
 };
@@ -9,7 +9,10 @@ use workspace_meta_client::{ClientConfig, RemoteMetadata};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args: Vec<_> = std::env::args().collect();
-    anyhow::ensure!(args.len() == 3, "expected isolated metadata configurations");
+    anyhow::ensure!(
+        args.len() == 4,
+        "expected isolated metadata configurations and private cookie file"
+    );
     let global: ClientConfig = serde_json::from_slice(&std::fs::read(&args[1])?)?;
     let region: ClientConfig = serde_json::from_slice(&std::fs::read(&args[2])?)?;
     let authority = region.authority_id.clone();
@@ -32,6 +35,56 @@ async fn main() -> anyhow::Result<()> {
         signup.finish(&guest).await? == registration,
         "Guest retry was not idempotent"
     );
+    let guest_region = RegionalGuest::open(region_meta.clone(), &authority, "/studio").await?;
+    let established = guest_region
+        .establish(&registration.workspace_id, &guest.guest_id, &guest.secret)
+        .await?;
+    let set_cookie = established.set_cookie.to_str()?;
+    anyhow::ensure!(
+        set_cookie.contains("HttpOnly; Secure; SameSite=Strict; Path=/studio/; Max-Age="),
+        "invalid cookie attributes"
+    );
+    let age: i64 = set_cookie
+        .rsplit_once("Max-Age=")
+        .ok_or_else(|| anyhow::anyhow!("missing cookie age"))?
+        .1
+        .parse()?;
+    anyhow::ensure!(
+        age > 0 && age <= 86_400 && age <= guest.expires_at - before,
+        "cookie exceeds Guest expiry"
+    );
+    anyhow::ensure!(
+        !set_cookie.contains(&guest.secret) && !set_cookie.contains("Domain="),
+        "unsafe cookie scope or reused Global secret"
+    );
+    let cookie = set_cookie
+        .split(';')
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("invalid cookie"))?;
+    // The test creates this owner-only file first; real callers send Set-Cookie to the browser.
+    std::fs::write(&args[3], cookie)?;
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(
+        axum::http::header::COOKIE,
+        axum::http::HeaderValue::from_str(cookie)?,
+    );
+    let reopened = RegionalGuest::open(region_meta.clone(), &authority, "/studio").await?;
+    let authorized = reopened.authenticate(&headers).await?;
+    anyhow::ensure!(
+        authorized.workspace_id == registration.workspace_id,
+        "wrong cookie Workspace"
+    );
+    let repository = workspace_domain::Repository::open(
+        region_meta.clone(),
+        &authority,
+        &authorized.workspace_id,
+        false,
+        None,
+    )
+    .await?;
+    let workspace = workspace_domain::Workspace::new_managed(repository);
+    workspace.authenticate(&authorized.credential).await?;
+    workspace.close().await?;
     let sessions = Sessions::open(region_meta, &authority).await?;
     let credentials = sessions
         .issue_owner(
