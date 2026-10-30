@@ -52,22 +52,21 @@ optional mix of three distinct resource types. [Supabase Platform](https://supab
 
 ## Global and regional deployment (proposed)
 
-The [multi-tenant control-plane design](../specs/gh-74/spec.md) and
-[proposed ADR 0019](decisions/0019-workspace-kv-control-plane.md) define a logical KV metadata
-layer, scope-atomic records/indexes, ordinary local-file persistence, hosted object storage
-as the preferred source of truth, a service-owned TiDB File System candidate, Organization/Workspace
-authorization and identity-preserving resource/credential
-migration. The [initial Rust Meta Service](meta-service.md) implements independent SlateDB/S3
-services and a bounded legacy import/storage bridge. The fixed Workspace and local owner
-session remain; full multi-tenancy and the new domain/public API split are still proposed.
+Start with [SlateDB Metadata Architecture Version 1](slatedb-metadata-design.md) for the
+complete metadata reference: authority boundaries, clean domain records, native transactions,
+durability, control flow, security, recovery and scale. It designs directly around SlateDB;
+historical storage shapes are not constraints. The [multi-tenant control-plane design](../specs/gh-74/spec.md)
+and [proposed ADR 0019](decisions/0019-workspace-kv-control-plane.md) preserve detailed product requirements.
+The [Rust Meta Service](meta-service.md) implements independent SlateDB/S3 installations and
+encrypted versioned records. The fixed Workspace and local owner session remain; hosted
+multi-tenancy and the Global/regional public API split require further implementation.
 
 The [object-metastore design](../specs/gh-74/object-metastore.md) requires object recovery of
 every acknowledged metadata commit, including the accepted WAL tail; local caches and query
 projections are disposable. The owner has selected SlateDB for hosted Global and regional
-metadata, accepting durable control-plane write latency. The initial profile tests durable
-waits, conditional batches, committed reads, manual ownership fencing and legacy recovery;
-production/scale proof obligations remain in the runtime guide. SQL authority
-plus asynchronous object backup is a separate durability profile.
+metadata, accepting durable control-plane write latency. The current profile tests native
+transactions, object-durable coherent reads, receipts, ownership fencing and crash recovery;
+production/scale proof obligations remain in the runtime guide and versioned architecture reference.
 
 Hosted Global and each Region own independently deployed Meta Services and distinct SlateDB
 instances, object roots, WAL/manifests, compaction and ownership state. They may share service
@@ -93,9 +92,9 @@ for canonical records, routing, dispatch, failure and migration semantics.
 
 Workspace is a global logical boundary and can hold resources in several regions. Each
 resource has an assigned `regionId`; `homeRegion` is a default for future creation. Preserve
-upstream/legacy region values separately, and verify actual provider location before making
-residency claims. Global and regional metadata use separate authorities over the same KV
-interface, including separate service-owned TiDB File System roots where selected. Global
+upstream region values separately, and verify actual provider location before making
+residency claims. Global and regional metadata share the Rust Meta contract while using
+separate authorities and SlateDB storage roots. Global
 status projections do not replace regional execution records or durable installed local policy.
 
 Local functional tests may package the modules in one API. Hosted independence requires separate
