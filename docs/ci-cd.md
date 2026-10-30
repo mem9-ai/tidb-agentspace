@@ -10,12 +10,16 @@
 - `.github/workflows/release.yml`: a manual, main-branch-only internal artifact build. It
   runs the same quality gate and packages the runtime, frontend,
   API contract, source SHA, and checksums. It does not deploy to a cloud provider.
-- `.github/workflows/dev-cd.yml`: credential-free PR verification, then digest-pinned API
+- `.github/workflows/dev-cd.yml`: credential-free PR image verification, then digest-pinned API
   deployment to a configured EKS dev environment on every `main` push or manual request.
   Releases only update the existing Deployment image and restore the previous digest on
   failure. [ADR 0013](decisions/0013-dev-kubernetes-cd.md) defines the existing runtime
   contract, readiness and rollback. Each repository must configure its own
   environment; checking in this workflow does not provision credentials or a cluster.
+  On PRs, `ci.yml` owns the complete quality/native tests; Dev CD only builds and checks
+  the final native image. Main pushes and manual main requests retain Dev CD's own quality
+  gate before protected deployment, so deployment never depends on a separate workflow's
+  result. Read-only inspection retains the npm quality gate and omits native compilation.
 - Exact npm dependency versions, a committed lockfile, fixed Node/npm versions, editor
   settings, Prettier, ESLint, strict TypeScript, and a generated-contract drift check.
 - `scripts/check-repo.mjs` checks instruction entry points, required standards and their

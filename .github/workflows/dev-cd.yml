@@ -10,9 +10,8 @@ name: Deploy API to dev
 # All environment identifiers remain runtime inputs, never repository values.
 
 on:
-  # Pull requests run only the quality gate (including the no-push
-  # native amd64 image build); they never reach the deploy job. This is where
-  # the pre-merge Docker validation actually executes.
+  # PR quality/native tests run in ci.yml. This workflow adds only the no-push
+  # native amd64 image check; PRs never reach the deployment jobs.
   pull_request:
     paths:
       - 'backend/**'
@@ -59,14 +58,14 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Run the complete quality/native gate before releases. PR image verification
-  # runs independently below, so release compilation does not wait for these tests.
+  # Run the complete quality/native gate before main deployments. PRs already
+  # run these checks in ci.yml and only need the independent image job below.
   # The repository enforces that every workflow runs `npm run check`.
   verify:
     name: Quality gate
     runs-on: ubuntu-24.04
     timeout-minutes: 75
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     env:
       CARGO_BUILD_JOBS: 2
       CARGO_PROFILE_DEV_DEBUG: 0
@@ -177,7 +176,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     needs: verify
-    # Never deploy from a pull request — PRs run the quality gate only.
+    # Never deploy from a pull request — PRs run only the image job here.
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     # Serialize by the actual deployment target, NOT the source ref: every
     # deploy run (main push or any manual ref) shares this one constant group,

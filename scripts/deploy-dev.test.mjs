@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 import { parse } from 'yaml';
 import { deployDev } from './deploy-dev.mjs';
 
@@ -200,11 +201,9 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
     workflow.jobs.deploy.if,
     "github.event_name != 'pull_request' && github.ref == 'refs/heads/main'",
   );
-  assert.equal(
-    workflow.jobs.verify.if,
-    "github.event_name == 'pull_request' || github.ref == 'refs/heads/main'",
-  );
   assert.equal(workflow.jobs.deploy.needs, 'verify');
+  assert.notEqual(workflow.jobs.verify['continue-on-error'], true);
+  assert.ok(workflow.jobs.verify.steps.every((step) => !step['continue-on-error']));
   assert.equal(workflow.jobs.deploy.environment, 'dev');
   assert.equal(workflow.jobs.verify.environment, undefined);
   assert.equal(workflow.jobs.image.environment, undefined);
@@ -256,6 +255,44 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
     ),
   );
   assert.equal(workflow.jobs.deploy.steps.at(-1).run, 'node scripts/deploy-dev.mjs');
+});
+
+test('PRs use CI for quality/native checks and CD only for the image check', () => {
+  const ci = parse(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'));
+  const cd = parse(
+    readFileSync(new URL('../.github/workflows/dev-cd.yml', import.meta.url), 'utf8'),
+  );
+  assert.equal(ci.on.pull_request, null); // No path or branch filter can drop PR quality checks.
+  assert.equal(ci.jobs.quality.if, undefined);
+  assert.equal(ci.jobs.metadata.if, undefined);
+  assert.ok(ci.jobs.quality.steps.some((step) => step.run === 'npm run check' && !step.if));
+  for (const command of [
+    'npm run backend:fmt',
+    'npm run backend:build -- --timings',
+    'npm run backend:clippy',
+    'npm run backend:test',
+    'npm run backend:test:integration',
+  ]) {
+    assert.ok(
+      ci.jobs.metadata.steps.some((step) => step.run === command && !step.if),
+      command,
+    );
+  }
+  for (const [event, ref, expected] of [
+    ['pull_request', 'refs/pull/18/merge', [false, true, false]],
+    ['pull_request', 'refs/heads/main', [false, true, false]],
+    ['push', 'refs/heads/main', [true, false, true]],
+    ['workflow_dispatch', 'refs/heads/main', [true, false, true]],
+    ['workflow_dispatch', 'refs/heads/feature', [false, false, false]],
+    ['push', 'refs/heads/feature', [false, false, false]],
+  ]) {
+    // These checked-in conditions use only JS-compatible boolean comparisons.
+    const github = { event_name: event, ref };
+    const actual = ['verify', 'image', 'deploy'].map((name) =>
+      runInNewContext(cd.jobs[name].if, { github }),
+    );
+    assert.deepEqual(actual, expected, `${event} on ${ref}`);
+  }
 });
 
 test('image delivery refuses a legacy target before mutation', () => {
