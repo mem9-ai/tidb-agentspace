@@ -1,5 +1,7 @@
 # GH-88: Rust backend migration and deployment composition
 
+> Node-source/test references below are historical. The owner retired that implementation and its dedicated regression tests in GH-34; current native coverage and tooling boundaries are recorded in [native retirement verification](../../docs/native-backend-retirement.md).
+
 > The owner superseded the local document-preservation and Node handoff profile with [ADR 0024](../../docs/decisions/0024-fresh-record-metadata.md). This specification remains historical parity evidence; fresh storage rejects format 1. Cloud deletion is excluded from the authorized local reset.
 
 - Parent: [GH-88](https://github.com/siddontang/tidb.ai/issues/88); related metadata intent: GH-74.

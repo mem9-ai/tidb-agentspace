@@ -1,4 +1,4 @@
-import { exportLimits } from './result-exports.mjs';
+const exportLimits = { rows: 1000, columns: 100 };
 
 const str = { type: 'string' };
 const object = (properties) => ({

@@ -6,7 +6,7 @@
 - Rust **1.99.1**, a root Cargo workspace and committed `Cargo.lock`.
 - Hosted integration: [ADR 0026](decisions/0026-native-hosted-studio.md) and [deployment/login guide](native-studio-deployment.md). Rust owns SSO, trusted public HTTP policy and `/studio`; old Node serving is retired. The owner permits fresh S3 roots/keys without migrating old data.
 - The Rust full profile serves Workspace/Keys, lifecycle, SQL/browser, files, analysis,
-  result/file exports and confirmed imports. Node remains a test-only regression oracle; Rust never forwards business operations to it.
+  result/file exports and confirmed imports. The Node business implementation and its dedicated regression tests are removed. Node runs build/operator tools and native test fixtures only; Rust never forwards business operations to it.
 - Explicit local guest mode and hosted shared-Workspace SSO are supported. Typed multi-tenant
   repositories, Global policy distribution and million-resource sharding remain GH-74 work.
 
@@ -49,7 +49,7 @@ npm run package:api:rust -- FULL_REVIEWED_SOURCE_SHA
 ```
 
 `backend:check` checks formatting first, then builds the workspace and runs Clippy with warnings denied, Rust tests, and isolated
-real RustFS/S3 metadata, ownership, Node/Rust parity and provider-recovery integration tests.
+real RustFS/S3 metadata, ownership, native API contracts and provider-recovery integration tests.
 Heavy native test files run serially to bound concurrent RustFS/role startup and packaging resources; concurrency behavior is exercised explicitly inside those tests. Ordinary `npm test` skips explicitly gated S3 cases; those skips are not integration evidence.
 CI uses two Cargo jobs and omits Rust debug symbols to bound cold-build time and memory. Functional checks and warnings-as-errors remain enabled. Reuse installed RustFS locally.
 

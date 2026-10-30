@@ -1,7 +1,6 @@
 // Explicit live verification only; never runs in CI or provisions a cloud instance.
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { tableQuery } from '../server/database-browser.mjs';
 
 const [origin, resourceId] = process.argv.slice(2);
 if (!origin || !resourceId || !/^http:\/\/127\.0\.0\.1:\d+$/.test(origin))
@@ -74,7 +73,7 @@ try {
   const detail = await request(path + '/table' + suffix, { token });
   assert.equal(detail.name, table);
   assert.equal(detail.mode, 'live');
-  assert.equal(detail.query, tableQuery(table));
+  assert.equal(detail.query, `SELECT * FROM ${quoted} LIMIT 100;`);
   assert.equal(detail.columns.find((column) => column.name === 'label').nullable, true);
   assert.equal(detail.columns.find((column) => column.name === 'label').default, '');
   assert.deepEqual(

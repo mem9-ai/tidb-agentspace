@@ -1,5 +1,7 @@
 # Read-only File System analysis verification
 
+> Node-source/test references below are historical. The owner retired that implementation and its dedicated regression tests in GH-34; current native coverage and tooling boundaries are recorded in [native retirement verification](native-backend-retirement.md).
+
 Current Console controls follow [GH-52's shared interaction audit](resource-workspace-verification.md#shared-interaction-audit):
 SQL uses Run query and Bash uses Run command in the same top-right toolbar as database SQL,
 with Samples, Limits, expansion and shared result panels. Earlier screenshots below describe
