@@ -11,8 +11,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Main commits have independent evidence; only superseded PR/queue candidates cancel.
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
 
 jobs:
   quality:
@@ -99,3 +100,95 @@ jobs:
           path: meta-service/target/cargo-timings/
           if-no-files-found: ignore
           retention-days: 7
+
+  browser:
+    name: Browser smoke
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Select the pinned npm version
+        run: npm install --global npm@11.6.2 --ignore-scripts
+      - run: npm ci
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: console-dist-${{ github.sha }}
+          path: dist/
+      - name: Install Chromium only
+        run: npx playwright install chromium --with-deps
+      - name: Assert Console user journeys against isolated fixtures
+        run: npm run test:browser
+      - name: Save browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-diagnostics-${{ github.sha }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  image:
+    name: Native image
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Select native image validation
+        id: changes
+        run: node scripts/ci-image-inputs.mjs
+      - name: Set up Docker Buildx
+        if: steps.changes.outputs.changed == 'true'
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Build native image (no push)
+        if: steps.changes.outputs.changed == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          provenance: false
+          pull: true
+          push: false
+          load: true
+          tags: workspace-api:verify
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
+          cache-to: type=gha,scope=native-api-linux-amd64-v1,version=2,mode=max,timeout=3m,ignore-error=true
+      - name: Run the final native image without network or writable root
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' workspace-api:verify)" = "$SOURCE_SHA"
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --entrypoint /bin/sh workspace-api:verify \
+            -ec 'if command -v node; then exit 1; fi; exec workspace-backend runtime-info' \
+            > "$RUNNER_TEMP/native-runtime-info.json"
+          node --input-type=module -e '
+            import assert from "node:assert/strict";
+            import { readFileSync } from "node:fs";
+            const pins = JSON.parse(readFileSync("scripts/duckdb-runtime.json", "utf8"));
+            const info = JSON.parse(readFileSync(process.argv[1], "utf8")).duckdb;
+            const target = "x86_64-unknown-linux-gnu";
+            assert.deepEqual(info, { version: pins.version, linkage: "static", target,
+              archiveSha256: pins.artifacts[target].sha256 });
+            console.log(JSON.stringify(info));
+          ' "$RUNNER_TEMP/native-runtime-info.json"
