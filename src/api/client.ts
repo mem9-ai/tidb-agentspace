@@ -33,6 +33,7 @@ export type DatabaseImportResult = components['schemas']['DatabaseImportResult']
 export type WriteFileInput = JsonBody<operations['writeFile']>;
 export type SsoAuthConfig = {
   enabled: boolean;
+  guestEnabled?: boolean;
   provider?: string;
   label?: string;
   loginPath?: string;
@@ -130,6 +131,7 @@ export const workspaceApi = {
   analyzeFile: (body: FileAnalysisInput, signal?: AbortSignal) =>
     responseData(client.POST('/workspaces/{workspaceId}/file-analyses', { params, body, signal })),
   startSession: () => responseData(sessionClient.POST('/api/session', { body: {} })),
+  startGuestSession: () => responseData(sessionClient.POST('/api/auth/guest')),
   discoverWorkspace: async () => {
     clearWorkspace();
     const id = firstWorkspaceId(await responseData(client.GET('/workspaces')));

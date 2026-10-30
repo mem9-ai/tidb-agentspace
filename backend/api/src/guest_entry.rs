@@ -1,4 +1,4 @@
-//! Guest entry logic for a co-located Global/Region origin. Not mounted by the existing host.
+//! Guest entry logic for a co-located Global/Region origin. Mounted only in isolated tests.
 //! Separate origins require a separately authenticated Global-to-Region handoff.
 
 use crate::{global_login::GlobalGuest, regional_guest::RegionalGuest};

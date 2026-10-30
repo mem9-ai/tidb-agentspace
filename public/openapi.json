@@ -3976,6 +3976,7 @@
                   "required": ["enabled"],
                   "properties": {
                     "enabled": { "type": "boolean" },
+                    "guestEnabled": { "type": "boolean" },
                     "provider": { "const": "tidbcloud" },
                     "label": { "type": "string" },
                     "loginPath": { "type": "string" },
@@ -3983,6 +3984,34 @@
                   }
                 }
               }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/guest": {
+      "servers": [{ "url": "/" }],
+      "post": {
+        "operationId": "startGuestSession",
+        "security": [],
+        "description": "Start or resume a Guest session from a trusted origin. A new session sets a secure, HttpOnly, SameSite=Strict cookie with an absolute expiry.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["workspaceId"],
+                  "properties": { "workspaceId": { "type": "string" } }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Guest sign-in unavailable or denied",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           }
         }

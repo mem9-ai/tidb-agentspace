@@ -305,6 +305,8 @@ function App() {
   const [data, setData] = useState<Data | null>(null),
     [routeLocation, setRouteLocation] = useState<WorkspaceRoute>(currentRoute),
     [error, setError] = useState(''),
+    [guestLoading, setGuestLoading] = useState(false),
+    [guestError, setGuestError] = useState(''),
     [toast, setToast] = useState(''),
     [modal, setModal] = useState<'resource' | 'key' | 'search' | null>(null),
     [creationTarget, setCreationTarget] = useState<ResourceCreationTarget>('resource'),
@@ -335,6 +337,20 @@ function App() {
       setError((e as Error).message);
     }
   }, [refresh]);
+  async function startGuest() {
+    setGuestLoading(true);
+    setGuestError('');
+    try {
+      await workspaceApi.startGuestSession();
+      await workspaceApi.discoverWorkspace();
+      await refresh();
+      setError('');
+    } catch {
+      setGuestError('Unable to start Guest access. Please try again.');
+    } finally {
+      setGuestLoading(false);
+    }
+  }
   useEffect(() => {
     void start();
     const update = () => {
@@ -395,6 +411,10 @@ function App() {
             {sso.loginPath && (
               <SignInChoices
                 label={sso.label || 'Continue with TiDB Account'}
+                guestEnabled={sso.guestEnabled === true}
+                guestLoading={guestLoading}
+                guestError={guestError}
+                onGuestLogin={() => void startGuest()}
                 onTiDBLogin={() => {
                   window.location.href = apiBaseUrl + sso.loginPath;
                 }}

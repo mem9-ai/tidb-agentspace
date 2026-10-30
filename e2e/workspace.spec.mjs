@@ -20,6 +20,27 @@ test('cloud sign-in offers TiDB Account and clearly marks Guest access unavailab
   await expect(page).toHaveURL(/\/api\/auth\/tidbcloud\/login$/);
 });
 
+test('Guest sign-in opens the Workspace when the server enables it', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  await page.goto('/');
+  const guest = page.getByRole('button', { name: 'Continue as Guest' });
+  await expect(guest).toBeEnabled();
+  await expect(page.getByText('Guest workspaces expire after 24 hours.')).toBeVisible();
+  if (process.env.GUEST_SIGNIN_SCREENSHOT)
+    await page.screenshot({ path: process.env.GUEST_SIGNIN_SCREENSHOT });
+  await guest.click();
+  await expect(page.getByRole('combobox', { name: 'Color theme', exact: true })).toBeVisible();
+  expect(workspace.requests).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: '/api/auth/guest', method: 'POST' }),
+      expect.objectContaining({ path: '/api/v1/workspaces', method: 'GET' }),
+    ]),
+  );
+});
+
 test('contextual creation fills the matching name, restores focus and keeps readable controls', async ({
   page,
   workspace,

@@ -30,6 +30,7 @@ pub struct Access {
 
 /// Verified Region-local Guest authorization. Contains no bearer credential.
 pub struct GuestAccess {
+    pub session_id: String,
     pub user_id: String,
     pub generation: u64,
     pub expires_at: i64,
@@ -57,6 +58,8 @@ struct Grant {
     revoked: bool,
     #[serde(default)]
     kind: GrantKind,
+    #[serde(default)]
+    session_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -227,6 +230,7 @@ impl Sessions {
             generation: policy.generation,
             revoked: false,
             kind: GrantKind::Continuity,
+            session_id: None,
         };
         let session = Session {
             user_id: policy.user_id.clone(),
@@ -295,6 +299,7 @@ impl Sessions {
             generation: policy.generation,
             revoked: false,
             kind: GrantKind::GuestBrowser,
+            session_id: Some(Uuid::new_v4().to_string()),
         };
         let scope = self.scope(workspace)?;
         self.commit(
@@ -341,6 +346,9 @@ impl Sessions {
             _ => return Err(error(401, "SESSION_UNAUTHORIZED")),
         };
         Ok(GuestAccess {
+            session_id: grant
+                .session_id
+                .ok_or_else(|| error(401, "SESSION_UNAUTHORIZED"))?,
             user_id: grant.user_id,
             generation: grant.generation,
             expires_at,

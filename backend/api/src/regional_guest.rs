@@ -1,4 +1,4 @@
-//! Region-local Guest browser credentials. This module is not mounted as an HTTP route.
+//! Region-local Guest browser credentials. The default hosted server does not mount them.
 //! The host must enforce trusted origins, rate limits, request/effect authorization and a
 //! secure Global-initiated handoff before exposing it. No Region-to-Global call is made.
 
@@ -21,9 +21,11 @@ pub struct EstablishedGuest {
     pub set_cookie: HeaderValue,
 }
 
+#[derive(Clone)]
 pub struct AuthorizedGuest {
     pub workspace_id: String,
     pub credential: Credential,
+    pub actor_id: String,
 }
 
 fn unauthorized() -> ServiceError {
@@ -69,6 +71,18 @@ fn cookie(headers: &HeaderMap) -> Result<&str> {
 }
 
 impl RegionalGuest {
+    pub fn has_cookie(headers: &HeaderMap) -> bool {
+        headers
+            .get_all(COOKIE)
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .any(|value| {
+                value.split(';').map(str::trim).any(|part| {
+                    part.split_once('=')
+                        .is_some_and(|(name, _)| name == COOKIE_NAME)
+                })
+            })
+    }
     pub async fn open(
         metadata: Arc<dyn Metadata>,
         authority: &str,
@@ -139,6 +153,7 @@ impl RegionalGuest {
             .await?;
         Ok(AuthorizedGuest {
             workspace_id: workspace.into(),
+            actor_id: format!("guest-session:{}", access.session_id),
             credential: Credential::SessionOwner {
                 id: access.user_id,
                 actor: "Guest".into(),

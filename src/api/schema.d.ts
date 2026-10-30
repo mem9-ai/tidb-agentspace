@@ -648,6 +648,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/auth/guest': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Start or resume a Guest session from a trusted origin. A new session sets a secure, HttpOnly, SameSite=Strict cookie with an absolute expiry. */
+    post: operations['startGuestSession'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/auth/tidbcloud/login': {
     parameters: {
       query?: never;
@@ -5764,12 +5781,44 @@ export interface operations {
         content: {
           'application/json': {
             enabled: boolean;
+            guestEnabled?: boolean;
             /** @constant */
             provider?: 'tidbcloud';
             label?: string;
             loginPath?: string;
             logoutPath?: string;
           };
+        };
+      };
+    };
+  };
+  startGuestSession: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            workspaceId: string;
+          };
+        };
+      };
+      /** @description Guest sign-in unavailable or denied */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
         };
       };
     };

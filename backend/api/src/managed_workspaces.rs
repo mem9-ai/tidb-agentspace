@@ -1,4 +1,4 @@
-//! Bounded Region-local managed Workspace registry. Not mounted by the current API host.
+//! Bounded Region-local managed Workspace registry. Mounted only in isolated tests.
 //! The caller authenticates a Region credential before selecting a Workspace, keeps its
 //! lease through response/stream completion, and fences in-flight work before cleanup.
 
@@ -9,10 +9,16 @@ use workspace_domain::{Credential, Operation, Repository, Response, Workspace};
 
 pub struct ManagedWorkspace {
     workspace: Arc<Workspace>,
-    product: Option<workspace_product::Product>,
+    product: Option<Arc<workspace_product::Product>>,
 }
 
 impl ManagedWorkspace {
+    pub(crate) fn workspace(&self) -> Arc<Workspace> {
+        self.workspace.clone()
+    }
+    pub(crate) fn product(&self) -> Option<Arc<workspace_product::Product>> {
+        self.product.clone()
+    }
     pub async fn call(&self, credential: Credential, operation: Operation) -> Result<Response> {
         self.workspace.call(credential, operation).await
     }
@@ -125,7 +131,7 @@ impl ManagedWorkspaces {
         }
         let product = if let Some(config) = self.product.clone() {
             match workspace_product::Product::new(workspace.clone(), config).await {
-                Ok(value) => Some(value),
+                Ok(value) => Some(Arc::new(value)),
                 Err(e) => {
                     if workspace.close().await.is_err() {
                         state.release_uncertain = true;

@@ -30,6 +30,8 @@ test(
       'guest_pool_probe',
       '--example',
       'guest_entry_probe',
+      '--example',
+      'guest_http_probe',
     ]);
     await exec('cargo', [
       'build',
@@ -170,6 +172,11 @@ test(
     const poolProbe = resolve('meta-service/target/debug/examples/guest_pool_probe');
     assert.equal(
       JSON.parse((await exec(poolProbe, [globalConfig, regionConfig])).stdout).isolated,
+      true,
+    );
+    const httpProbe = resolve('meta-service/target/debug/examples/guest_http_probe');
+    assert.equal(
+      JSON.parse((await exec(httpProbe, [globalConfig, regionConfig])).stdout).isolated,
       true,
     );
     const entryProbe = resolve('meta-service/target/debug/examples/guest_entry_probe');

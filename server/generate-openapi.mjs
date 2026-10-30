@@ -958,6 +958,7 @@ paths['/api/auth/config'] = {
         object(
           {
             enabled: { type: 'boolean' },
+            guestEnabled: { type: 'boolean' },
             provider: { const: 'tidbcloud' },
             label: str,
             loginPath: str,
@@ -966,6 +967,19 @@ paths['/api/auth/config'] = {
           ['enabled'],
         ),
       ),
+    },
+  },
+};
+paths['/api/auth/guest'] = {
+  servers: [{ url: '/' }],
+  post: {
+    operationId: 'startGuestSession',
+    security: [],
+    description:
+      'Start or resume a Guest session from a trusted origin. A new session sets a secure, HttpOnly, SameSite=Strict cookie with an absolute expiry.',
+    responses: {
+      200: response(object({ workspaceId: str })),
+      default: response(ref('Error'), 'Guest sign-in unavailable or denied'),
     },
   },
 };

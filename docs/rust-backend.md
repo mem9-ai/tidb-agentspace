@@ -36,9 +36,9 @@ A co-located Region initialization implementation creates only explicitly owned 
 Workspaces; a separately deployed Global must use a Region control service and never open a
 remote Region Meta store directly.
 A reservation is pending regional initialization and does not authorize regional access. These
-primitives are not wired into hosted SSO, API routing, a production cleanup processor or the hosted
-service. A claimed cleanup job requires reconciliation after an uncertain result; it is not
-automatically retried. They do not establish a multi-tenant deployment.
+primitives are not wired into hosted SSO, a production cleanup processor or the hosted
+service. An explicitly constructed loopback-only test host exercises Guest API routing. A claimed
+cleanup job requires reconciliation after an uncertain result; it is not automatically retried. They do not establish a multi-tenant deployment.
 The Region-local scheduler scans bounded pages and claims scheduled Guest jobs without
 requiring Global. It is not started by the hosted service and has no production resource
 cleanup processor. The queue can record a deferred cleanup reason for unsupported deletion or an uncertain
@@ -52,26 +52,28 @@ applying the existing shared-owner allowlist. An inactive Global login applicati
 pass a verified login to the identity directory and regional onboarding; a signed fake-provider
 and isolated S3 integration test covers this composition. A two-stage Guest signup service
 provides a private credential before idempotent regional initialization; a caller must retain
-it securely for retry and enforce rate and quota controls. No hosted route calls these services,
-and they do not issue Region sessions or implement multi-tenant routing.
-An unmounted Region Guest helper can exchange the verified Guest secret for a separate,
+it securely for retry and enforce rate and quota controls. No hosted route calls these services;
+the experimental loopback host exercises regional Guest sessions and routing only.
+A Region Guest helper can exchange the verified Guest secret for a separate,
 fixed-lifetime regional credential stored as a host-only `Secure`, `HttpOnly` Cookie. It
 checks the regional credential and installed policy on every request and never extends Guest
-expiry. This helper does not provide an HTTP endpoint, cross-origin enrollment, CSRF policy,
-request routing or in-flight revocation; those remain prerequisites for hosted Guest access.
-An unmounted co-located entry service resumes valid Guest cookies without Global, requires a
+expiry. The explicit loopback test host mounts an entry endpoint with trusted Origin checks and
+routes requests to the cookie-bound Workspace. Cross-origin enrollment and in-flight revocation remain
+prerequisites for hosted Guest access.
+The co-located entry service resumes valid Guest cookies without Global, requires a
 configured HTTPS Origin, and rate-limits new signup by socket peer. The serving host still
 needs trusted Host/Origin policy, cross-origin control handoff and aggregate abuse controls.
-The unused managed Workspace constructor checks its regional owner policy on entry, including
+The managed Workspace constructor checks its regional owner policy on entry, including
 owner identity and policy generation, and Guest expiry before either owner-session or Workspace
 Key authentication. This is one layer, not a complete authorization path: the eventual
 regional API must authenticate and revalidate durable sessions and revocation, and fence
 in-flight provider effects.
 The existing hosted server still uses the legacy shared-Workspace constructor.
-An unmounted bounded managed-Workspace pool verifies an already authenticated owner before
+A bounded managed-Workspace pool verifies an already authenticated owner before
 returning a lease, evicts only idle entries and fails closed if writer release is uncertain.
-It does not yet provide public request routing, Workspace Key discovery, crash takeover or
-stream-lifetime fencing; those remain requirements before a multi-tenant host can use it.
+The loopback test host retains leases through response stream completion. Public request routing,
+Workspace Key discovery, crash takeover and expiry-time effect fencing remain requirements before
+a multi-tenant host can use it. The default host does not enable the test integration.
 
 An inactive DB9 cleanup adapter can issue one deletion request for a durably claimed Guest
 resource after checking the scoped Workspace, provider binding, existing account and Region
