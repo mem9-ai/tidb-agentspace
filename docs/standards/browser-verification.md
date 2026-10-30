@@ -26,8 +26,10 @@ Console build on a dedicated loopback port and use a fresh browser context and s
 API state per test. Unexpected routes, page errors and external requests fail the fixture.
 No persisted user session, personal data or provider credentials are loaded.
 
-The initial four journeys run in Light/Dark at 1280×800 and 390×844 (16 cases):
+The seven journeys run in Light/Dark at 1280×800 and 390×844 (28 cases):
 
+- Actual sidebar entry from Databases and a selected File System, with zero/one/multiple
+  resources, collection reload/history and unavailable resource links; never auto-select.
 - Four contextual creation forms, type-prefixed names, readable fields and focus return.
 - Automatic/manual name transitions, empty-name submission, explicit conflict retry and
   exact returned-resource navigation.
@@ -74,6 +76,15 @@ Read applicable rules once. During development run focused checks; run the final
 gate once the diff is stable, repeating only after a relevant change or unresolved failure.
 Reuse a stable local preview and tab, with one current source/API manifest. Do not restart
 an unchanged backend or replace a user's session for frontend-only work.
+
+When a reported page disagrees with reviewed source, first compare the browser's actual URL
+and loaded build, the preview manifest and the serving process's checkout/artifact. A merged
+fix does not update an already loaded page or another working copy's dev server. Verify
+collection navigation by clicking the sidebar from detail, not only by opening its URL.
+Refresh or open the intended stable preview after preserving unsaved work, then leave that
+verified page available at handoff. Preserve other contributors' services and uncommitted
+changes. Console and API can have different compatible revisions: record both and compare
+the serving Console's actual asset hashes before claiming it matches the reviewed build.
 
 Batch deterministic browser actions and collect the smallest useful state before the next
 decision. Do not repeatedly dump a full page or capture every step. Follow the selected

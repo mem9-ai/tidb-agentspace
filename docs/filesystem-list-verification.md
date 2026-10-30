@@ -23,6 +23,22 @@ system preselects that type and its default region; no resources were provisione
 
 ## Verification
 
+The 2026-10-30 follow-up found the collection implementation intact on main and the current
+preview, while a separate older working copy still auto-selected its first/live File System.
+The preview/build mismatch did not justify changing correct collection routing. The portable
+smoke suite now clicks the actual sidebar from Databases and resource detail, covering
+zero/one/multiple File Systems, reload/back/forward and unavailable old file links in both
+themes/viewports. The [browser standard](standards/browser-verification.md#efficient-agent-workflow)
+records how to distinguish a stale/other-checkout preview from a source regression.
+
+The actual local preview was checked by clicking Databases → File System, at 926×902 in
+Dark mode. It showed the global collection's empty state; no resource was created or changed.
+All 12 served static assets matched the current reviewed Console build (runtime configuration
+is checked separately). The screenshot below records that running page, while the portable
+matrix covers populated collections and navigation at 1280×800 and 390×844 in both themes.
+
+![Current collection preview, Dark 926×902](screenshots/filesystem-list/current-preview-dark-20261030.jpg)
+
 - `src/features/files/file-location.test.mjs` covers collection versus explicit selection,
   exact/reserved-character IDs, legacy file links and malformed paths without fallback.
   Existing database route tests remain unchanged.

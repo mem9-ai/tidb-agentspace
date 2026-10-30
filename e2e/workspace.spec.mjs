@@ -41,6 +41,70 @@ test('Guest sign-in opens the Workspace when the server enables it', async ({
   );
 });
 
+async function openFileSystemsFromSidebar(page) {
+  const mobileNavigation = page.getByRole('button', { name: 'Open navigation', exact: true });
+  if (await mobileNavigation.isVisible()) await mobileNavigation.click();
+  await page
+    .getByRole('navigation', { name: 'Main navigation', exact: true })
+    .getByRole('link', { name: 'File System', exact: true })
+    .click();
+}
+
+for (const count of [0, 1, 2]) {
+  test(`File System sidebar opens the collection with ${count} File Systems`, async ({
+    page,
+    workspace,
+  }) => {
+    workspace.addResources();
+    const database = workspace.state.resources.find((resource) => resource.kind === 'mysql');
+    const first = workspace.state.resources.find((resource) => resource.kind === 'filesystem');
+    const systems = [first, { ...first, id: 'fs_second', name: 'second-filesystem' }];
+    workspace.state.resources = [database, ...systems.slice(0, count)];
+    await workspace.open('#databases');
+    await openFileSystemsFromSidebar(page);
+    await expect(page).toHaveURL(/#files$/);
+    await expect(page.getByRole('heading', { name: 'File Systems', exact: true })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'File browser' })).toHaveCount(0);
+    if (count === 0) {
+      await expect(
+        page.getByRole('heading', { name: 'Create your first File System' }),
+      ).toBeVisible();
+      await page.reload();
+      await expect(page.getByRole('heading', { name: 'File Systems', exact: true })).toBeVisible();
+      await expect(page).toHaveURL(/#files$/);
+      return;
+    }
+    const collection = page.getByRole('table', { name: 'File systems' });
+    await expect(collection.getByRole('row')).toHaveCount(count + 1);
+    await page.reload();
+    await expect(collection).toBeVisible();
+    await expect(page).toHaveURL(/#files$/);
+    await collection.getByRole('link', { name: first.name, exact: true }).click();
+    await expect(page).toHaveURL(/#files\?resourceId=fs_fixture$/);
+    await expect(page.getByRole('complementary', { name: 'File browser' })).toBeVisible();
+    await openFileSystemsFromSidebar(page);
+    await expect(page).toHaveURL(/#files$/);
+    await expect(collection).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'File browser' })).toHaveCount(0);
+    await page.goBack();
+    await expect(page).toHaveURL(/#files\?resourceId=fs_fixture$/);
+    await expect(page.getByRole('complementary', { name: 'File browser' })).toBeVisible();
+    await page.goForward();
+    await expect(page).toHaveURL(/#files$/);
+    await expect(collection).toBeVisible();
+    await workspace.open('#files?resourceId=removed-system&path=%2Fservice.log&view=analyze');
+    await expect(
+      page.getByRole('heading', { name: 'File System unavailable', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'File browser' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'All file systems', exact: true }).click();
+    await expect(page).toHaveURL(/#files$/);
+    await expect(page.getByRole('table', { name: 'File systems' }).getByRole('row')).toHaveCount(
+      count + 1,
+    );
+  });
+}
+
 test('contextual creation fills the matching name, restores focus and keeps readable controls', async ({
   page,
   workspace,
@@ -160,6 +224,12 @@ test('File System opens its collection; Markdown preview, draft protection and o
   await expect(page).toHaveURL(/resourceId=fs_fixture&path=%2FREADME.md&view=preview/);
   await page.getByRole('button', { name: 'Edit source', exact: true }).click();
   await page.getByRole('textbox', { name: 'File content', exact: true }).fill('Unsaved draft');
+  await openFileSystemsFromSidebar(page);
+  await expect(page.getByRole('alert', { name: 'Keep your changes?', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'File content', exact: true })).toHaveValue(
+    'Unsaved draft',
+  );
   await page.getByRole('button', { name: 'Close file preview', exact: true }).click();
   await expect(page.getByRole('alert', { name: 'Keep your changes?', exact: true })).toContainText(
     'This file has unsaved changes',
