@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { createApp } from './index.mjs';
+import { createApp } from './regression-api.mjs';
 
 const base = '/api/v1/workspaces/ws_agentlab';
 const internalToken = 'test-only-internal-credential';

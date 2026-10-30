@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createApp } from '../index.mjs';
+import { createApp } from '../regression-api.mjs';
 import { seed } from '../store.mjs';
 import { openDuckdb } from '../providers/duckdb-engine.mjs';
 

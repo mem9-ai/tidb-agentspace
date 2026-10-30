@@ -8,7 +8,20 @@ use workspace_contracts::{Result, ServiceError};
 #[derive(Clone)]
 pub enum Credential {
     LocalDemoOwner,
+    SessionOwner {
+        id: String,
+        actor: String,
+        expires_at: i64,
+        revoked: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    },
     Bearer(String),
+}
+impl Credential {
+    pub fn revoke(&self) {
+        if let Self::SessionOwner { revoked, .. } = self {
+            revoked.store(true, std::sync::atomic::Ordering::Release);
+        }
+    }
 }
 pub enum Operation {
     ListWorkspaces,
@@ -128,10 +141,26 @@ pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
             resource_ids: strings(&key["resourceIds"]).unwrap_or_default(),
         });
     }
+    let (id, actor) = match credential {
+        Credential::SessionOwner {
+            id,
+            actor,
+            expires_at,
+            revoked,
+        } => {
+            if *expires_at <= Utc::now().timestamp()
+                || revoked.load(std::sync::atomic::Ordering::Acquire)
+            {
+                return Err(reject(401, "UNAUTHENTICATED"));
+            }
+            (id.clone(), actor.clone())
+        }
+        _ => ("local-owner".into(), "You".into()),
+    };
     Ok(Principal {
         owner: true,
-        actor: "You".into(),
-        id: "local-owner".into(),
+        actor,
+        id,
         scopes: vec!["*".into()],
         resource_ids: vec!["*".into()],
     })
@@ -139,7 +168,9 @@ pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
 impl Workspace {
     pub async fn authenticate(&self, credential: &Credential) -> Result<Principal> {
         match credential {
-            Credential::LocalDemoOwner => principal(&json!({}), credential),
+            Credential::LocalDemoOwner | Credential::SessionOwner { .. } => {
+                principal(&json!({}), credential)
+            }
             Credential::Bearer(token) => self.repository.authenticate_key(token).await,
         }
     }
@@ -168,9 +199,10 @@ fn execute_operation(
     credential: Credential,
     operation: Operation,
 ) -> Result<(Response, bool)> {
-    let owner = matches!(credential, Credential::LocalDemoOwner);
+    let owner_principal = principal(state, &credential)?;
+    let owner = owner_principal.owner;
     let mut dirty = false;
-    let mut actor = "You".to_owned();
+    let mut actor = owner_principal.actor;
     let mut scopes = vec!["*".to_owned()];
     let mut resources = vec!["*".to_owned()];
     if let Credential::Bearer(token) = credential {
@@ -390,5 +422,39 @@ mod tests {
         assert_eq!(length("😀"), 2);
         assert_eq!(trim("\u{feff}Owner\u{feff}"), "Owner");
         assert_eq!(trim("\u{85}Owner\u{85}"), "\u{85}Owner\u{85}");
+    }
+}
+
+#[cfg(test)]
+mod session_tests {
+    use super::*;
+    #[test]
+    fn expired_authenticated_owner_cannot_authorize_or_write() {
+        let credential = Credential::SessionOwner {
+            id: "sso:issuer:alice".into(),
+            actor: "tidb:alice".into(),
+            expires_at: Utc::now().timestamp() - 1,
+            revoked: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        };
+        assert!(principal(&json!({}), &credential).is_err());
+        assert!(execute_operation(&mut json!({}), credential, Operation::ListWorkspaces).is_err());
+    }
+}
+
+#[cfg(test)]
+mod revocation_tests {
+    use super::*;
+    #[test]
+    fn logout_revokes_already_cloned_operation_credentials() {
+        let credential = Credential::SessionOwner {
+            id: "sso:issuer:alice".into(),
+            actor: "tidb:alice".into(),
+            expires_at: Utc::now().timestamp() + 28800,
+            revoked: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        };
+        let operation_credential = credential.clone();
+        assert!(principal(&json!({}), &operation_credential).is_ok());
+        credential.revoke();
+        assert!(principal(&json!({}), &operation_credential).is_err());
     }
 }

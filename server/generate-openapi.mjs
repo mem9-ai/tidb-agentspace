@@ -949,7 +949,64 @@ paths['/api/session'] = {
     }),
     security: [],
     description:
-      'Local demonstration only. Sets an HttpOnly SameSite=Strict cookie. Allowed browser origins require credentialed CORS; production identity is not implemented.',
+      'Explicit loopback guest mode only; disabled when TiDB Account SSO is configured. Requires a real loopback peer. Sets an HttpOnly SameSite=Strict cookie scoped to the configured public path.',
+  },
+};
+paths['/api/auth/config'] = {
+  servers: [{ url: '/' }],
+  get: {
+    operationId: 'getAuthConfig',
+    security: [],
+    responses: {
+      200: response(
+        object(
+          {
+            enabled: { type: 'boolean' },
+            provider: { const: 'tidbcloud' },
+            label: str,
+            loginPath: str,
+            logoutPath: str,
+          },
+          ['enabled'],
+        ),
+      ),
+    },
+  },
+};
+for (const route of ['login', 'callback']) {
+  paths['/api/auth/tidbcloud/' + route] = {
+    servers: [{ url: '/' }],
+    get: {
+      operationId: route === 'login' ? 'startTidbLogin' : 'completeTidbLogin',
+      security: [],
+      description:
+        route === 'login'
+          ? 'Browser redirect to the configured provider using code + S256 PKCE. Server retains a single-use ten-minute flow.'
+          : 'Registered server callback; verifies signature, issuer, audience, nonce and explicit owner grants before minting an eight-hour session. State is single-use and bound to the flow cookie.',
+      responses: {
+        302: {
+          description:
+            'Redirect to provider or configured same-origin Console; sets HttpOnly flow/session cookies.',
+        },
+        default: response(ref('Error'), 'Sign-in unavailable, invalid or unauthorized'),
+      },
+    },
+  };
+}
+paths['/api/auth/tidbcloud/logout'] = {
+  servers: [{ url: '/' }],
+  post: {
+    operationId: 'logoutTidbSession',
+    security: [],
+    responses: { 200: response(object({ loggedOut: { type: 'boolean' } })) },
+  },
+  get: {
+    operationId: 'logoutTidbSessionAndRedirect',
+    security: [],
+    responses: {
+      302: { description: 'Session revoked and browser redirected to the configured Console.' },
+      200: response(object({ loggedOut: { type: 'boolean' } })),
+    },
   },
 };
 for (const [path, item] of Object.entries(paths))
@@ -1001,7 +1058,8 @@ const spec = {
         type: 'apiKey',
         in: 'cookie',
         name: 'aw_session',
-        description: 'Created by POST /api/session with a JSON body. Local development only.',
+        description:
+          'Created by verified TiDB Account callback, or POST /api/session in explicit loopback guest mode only. HttpOnly; Secure for HTTPS; eight-hour expiration and server-side logout revocation.',
       },
     },
     schemas,

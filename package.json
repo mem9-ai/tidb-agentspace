@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "node server/dev.mjs",
-    "build": "npm run build:console && npm run build:api",
+    "build": "npm run build:console",
     "preview": "npm run start:console",
     "test": "node --test",
-    "start": "node server/index.mjs",
+    "start": "node scripts/start-rust-api.mjs",
     "typecheck": "tsc -b",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -23,9 +23,9 @@
     "dev:console": "vite",
     "dev:api": "node scripts/start-rust-api.mjs",
     "build:console": "npm run typecheck && vite build",
-    "build:api": "node scripts/build-api.mjs",
+    "build:api": "npm run backend:build",
     "start:console": "node scripts/serve-console.mjs",
-    "start:api": "node server/index.mjs",
+    "start:api": "node scripts/start-rust-api.mjs",
     "package": "node scripts/package-runtime.mjs",
     "meta:build": "cargo build --locked --manifest-path meta-service/Cargo.toml",
     "meta:check": "npm run meta:build && cargo fmt --manifest-path meta-service/Cargo.toml --check && cargo clippy --manifest-path meta-service/Cargo.toml --locked --all-targets -- -D warnings && cargo test --manifest-path meta-service/Cargo.toml --locked && WORKSPACE_META_TEST=1 node --test server/meta-service.test.mjs",
@@ -34,12 +34,11 @@
     "backend:fmt": "cargo fmt --all --check",
     "backend:clippy": "cargo clippy --workspace --all-targets --locked -- -D warnings",
     "backend:test": "cargo test --workspace --locked",
-    "backend:test:integration": "WORKSPACE_META_TEST=1 WORKSPACE_BACKEND_TEST=1 node --test --test-concurrency=1 server/meta-service.test.mjs server/rust-backend.test.mjs server/rust-product.test.mjs scripts/package-runtime.test.mjs server/local-runtime.test.mjs",
+    "backend:test:integration": "WORKSPACE_META_TEST=1 WORKSPACE_BACKEND_TEST=1 node --test --test-concurrency=1 server/meta-service.test.mjs server/rust-backend.test.mjs server/rust-product.test.mjs scripts/package-runtime.test.mjs server/local-runtime.test.mjs server/rust-sso.test.mjs",
     "backend:check": "npm run backend:fmt && npm run backend:build && npm run backend:clippy && npm run backend:test && npm run backend:test:integration",
     "build:api:rust": "npm run backend:build",
     "package:api:rust": "node scripts/package-rust-api.mjs",
     "backend:prepare": "node scripts/prepare-duckdb.mjs",
-    "dev:api:node": "node --watch server/index.mjs",
     "start:api:rust": "node scripts/start-rust-api.mjs"
   },
   "dependencies": {
@@ -55,12 +54,7 @@
     "react-dom": "18.3.1",
     "react-hook-form": "7.91.0",
     "react-markdown": "10.1.0",
-    "remark-gfm": "4.0.1",
-    "@duckdb/node-api": "2.0.0-r.1",
-    "jose": "6.2.13",
-    "just-bash": "3.6.0",
-    "mysql2": "3.24.6",
-    "pg": "8.23.1"
+    "remark-gfm": "4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -76,7 +70,12 @@
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.1",
     "vite": "8.3.5",
-    "yaml": "2.9.1"
+    "yaml": "2.9.1",
+    "@duckdb/node-api": "2.0.0-r.1",
+    "jose": "6.2.13",
+    "just-bash": "3.6.0",
+    "mysql2": "3.24.6",
+    "pg": "8.23.1"
   },
   "engines": {
     "node": ">=24.22.1 <25",

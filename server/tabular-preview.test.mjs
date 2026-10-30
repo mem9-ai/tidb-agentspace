@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
-import { createApp } from './index.mjs';
+import { createApp } from './regression-api.mjs';
 import { seed } from './store.mjs';
 import { createFileAnalysis } from './file-analysis.mjs';
 import { analysisLimits } from './file-analysis-contract.mjs';

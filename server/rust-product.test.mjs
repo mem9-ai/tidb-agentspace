@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { createWriteStream } from 'node:fs';
 import { resolve } from 'node:path';
-import { createApp } from './index.mjs';
+import { createApp } from './regression-api.mjs';
 import { seed } from './store.mjs';
 import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
 import { seedRecords, readState, readBinding } from './test-support/record-fixture.mjs';

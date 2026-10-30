@@ -876,8 +876,9 @@ form > .modal-actions {
   align-items: center;
   gap: 16px;
 }
-.account-row > div {
-  flex: 1;
+.account-row .account-session-summary {
+  flex: 1 1 240px;
+  min-width: 0;
 }
 .account-row p {
   margin-top: 8px;

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createDb9, validatePgBinding } from './providers/db9.mjs';
-import { createApp } from './index.mjs';
+import { createApp } from './regression-api.mjs';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { seed } from './store.mjs';
 

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createApp } from './index.mjs';
+import { createApp } from './regression-api.mjs';
 import { seed } from './store.mjs';
 import { browseDatabase, tableName, tableQuery } from './database-browser.mjs';
 import { sqlError } from './providers/sql-common.mjs';

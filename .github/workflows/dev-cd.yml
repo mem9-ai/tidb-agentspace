@@ -2,7 +2,7 @@ name: Deploy API to dev
 
 # Continuous deployment of the TiDB Workspace API server to the dev
 # Kubernetes environment. Modeled on the tidbcloud/fs dev CD: build a
-# multi-arch image, push it to the container registry, then roll the existing
+# native image, push it to the container registry, then roll the existing
 # in-cluster Deployment to the new image and wait for the rollout, undoing it
 # on failure.
 #
@@ -11,14 +11,19 @@ name: Deploy API to dev
 
 on:
   # Pull requests run only the quality gate (including the no-push
-  # amd64/arm64 image build); they never reach the deploy job. This is where
+  # native amd64 image build); they never reach the deploy job. This is where
   # the pre-merge Docker validation actually executes.
   pull_request:
     paths:
-      - 'server/**'
+      - 'backend/**'
+      - 'meta-service/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.cargo/**'
+      - 'scripts/duckdb-runtime.json'
+      - 'scripts/prepare-duckdb.mjs'
       - 'public/openapi.json'
-      - 'scripts/build-api.mjs'
-      - 'scripts/sql-runtime-dependencies.mjs'
       - 'scripts/deploy-dev*'
       - 'package.json'
       - 'package-lock.json'
@@ -29,6 +34,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Native deployment or read-only configuration inspection
+        type: choice
+        options: [inspect, deploy]
+        default: inspect
 
 permissions:
   contents: read
@@ -54,8 +65,12 @@ jobs:
   verify:
     name: Quality gate
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 75
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    env:
+      CARGO_BUILD_JOBS: 2
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -69,26 +84,55 @@ jobs:
         run: npm install --global npm@11.6.2 --ignore-scripts
       - run: npm ci
       - run: npm run check
-      - name: Set up QEMU for cross-platform builds
-        if: github.event_name == 'pull_request'
-        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+      - name: Check Rust formatting before compiling
+        run: npm run backend:fmt
+      - name: Restore Rust dependency cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          # Keep fallback restores inside the same native-library and build configuration.
+          prefix-key: rust-v1-${{ hashFiles('Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml', 'scripts/duckdb-runtime.json') }}
+          shared-key: backend
+          workspaces: . -> meta-service/target
+          cache-bin: false
+          cache-workspace-crates: false
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
+      - name: Build native backend with Cargo timings
+        run: npm run backend:build -- --timings
+      - name: Check Rust with Clippy
+        run: npm run backend:clippy
+      - name: Run Rust unit tests
+        run: npm run backend:test
+      - name: Install verified RustFS 1.0.4 binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_dir="$RUNNER_TEMP/workspace-rustfs"
+          mkdir -p "$runtime_dir"
+          curl --fail --location --retry 3 https://github.com/rustfs/rustfs/releases/download/1.0.4/rustfs-linux-x86_64-gnu-v1.0.4.zip --output "$runtime_dir/rustfs.zip"
+          printf '%s  %s\n' '4a25e48f5b5ae610a679b5324206962c6fb0eb20a9fa7ab6cb20e178cf6c534b' "$runtime_dir/rustfs.zip" | sha256sum --check
+          unzip -q "$runtime_dir/rustfs.zip" -d "$runtime_dir"
+          chmod +x "$runtime_dir/rustfs"
+          printf '%s\n' "$runtime_dir" >> "$GITHUB_PATH"
+      - name: Run native API and real S3 integration tests
+        run: npm run backend:test:integration
       - name: Set up Docker Buildx
         if: github.event_name == 'pull_request'
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
-      - name: Build image for both architectures (no push)
+      - name: Build native image (no push)
         if: github.event_name == 'pull_request'
         run: |
           set -euo pipefail
           docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --build-arg NODE_VERSION=24.22.1 \
+            --platform linux/amd64 \
             --provenance=false \
             .
 
   deploy:
     name: Build and deploy to dev
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 75
     needs: verify
     # Never deploy from a pull request — PRs run the quality gate only.
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -133,9 +177,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
-      - name: Set up QEMU for cross-platform builds
-        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
-
       - name: Set up kubectl
         env:
           # Match the dev EKS control-plane minor within the +/-1 client skew.
@@ -158,16 +199,17 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to ECR
+        if: github.event.inputs.operation != 'inspect'
         uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
 
       - name: Build and push image
+        if: github.event.inputs.operation != 'inspect'
         env:
           IMAGE_BASE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
         run: |
           set -euo pipefail
           docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --build-arg NODE_VERSION=24.22.1 \
+            --platform linux/amd64 \
             --provenance=false \
             --tag "$IMAGE_BASE:$IMAGE_TAG" \
             --metadata-file "$RUNNER_TEMP/image.json" \
@@ -188,5 +230,10 @@ jobs:
             --name "$EKS_CLUSTER" \
             --region "$AWS_REGION"
 
+      - name: Inspect only the target's referenced configuration (names, never values)
+        if: github.event.inputs.operation == 'inspect'
+        run: node scripts/inspect-native-target.mjs
+
       - name: Deploy image and verify readiness (restore previous image on failure)
+        if: github.event.inputs.operation != 'inspect'
         run: node scripts/deploy-dev.mjs

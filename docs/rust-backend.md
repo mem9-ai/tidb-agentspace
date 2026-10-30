@@ -4,10 +4,10 @@
   [GH-88 contract](../specs/gh-88/spec.md), accepted at `b90b68a0d3b437413c11845cdb1ba73af357b99f`.
 - Full regional API implementation: [GH-92](https://github.com/siddontang/tidb.ai/issues/92).
 - Rust **1.99.1**, a root Cargo workspace and committed `Cargo.lock`.
-- Hosted integration: [ADR 0025](decisions/0025-consolidated-runtime-profiles.md) retains the installed Node SSO API and its JSON/vault state. Native public identity and hosted migration are not implemented by this source merge.
+- Hosted integration: [ADR 0026](decisions/0026-native-hosted-studio.md) and [deployment/login guide](native-studio-deployment.md). Rust owns SSO, trusted public HTTP policy and `/studio`; old Node serving is retired. The owner permits fresh S3 roots/keys without migrating old data.
 - The Rust full profile serves Workspace/Keys, lifecycle, SQL/browser, files, analysis,
-  result/file exports and confirmed imports. Node remains the native regression oracle and the separate hosted SSO runtime; Rust never forwards business operations to it.
-- This is the existing loopback guest product profile. Production identity, typed multi-tenant
+  result/file exports and confirmed imports. Node remains a test-only regression oracle; Rust never forwards business operations to it.
+- Explicit local guest mode and hosted shared-Workspace SSO are supported. Typed multi-tenant
   repositories, Global policy distribution and million-resource sharding remain GH-74 work.
 
 The fresh record profile supersedes the document migration baseline; see [ADR 0024](decisions/0024-fresh-record-metadata.md). Old format-1 installations are rejected, and no import or Node rollback backend is retained.
@@ -81,14 +81,14 @@ includes only the binary, Cargo lockfile, contract and instructions. It excludes
 configuration, state, credentials, Console assets and Node runtime dependencies. A verified
 native tidbfs extension is a separately supplied artifact, with its checksum preserved.
 
-`start:api:rust`, `dev:api` and the API portion of `npm run dev` explicitly start Rust. `npm start` and `start:api` retain the hosted Node runtime.
+`start:api:rust`, `dev:api` and the API portion of `npm run dev` explicitly start Rust. `npm start` and `start:api` also select Rust.
 Set `WORKSPACE_BACKEND_CONFIG` to the absolute private deployment file; optionally set
 `WORKSPACE_BACKEND_BINARY` to the absolute reviewed artifact. The default binary is the local
 Cargo debug build. Missing configuration fails explicitly, with no alternate data file or
-fallback backend. The installed Node serving contract remains separate under ADR 0025; it is never a fallback for missing native configuration.
+fallback backend. No alternate backend is started when native configuration is missing.
 The optional npm launcher is tooling; the distributed native artifact runs directly without it.
 
-`build:api:rust` builds Rust and `package` creates the native API and separate static Console artifacts. The API contains no Node backend, provider state or frontend assets. The separate Node `build:api` closure is used by hosted CD and is not included in the native archive.
+`build:api:rust` builds Rust and `package` creates the native API and separate static Console artifacts. The API contains no Node backend, provider state or frontend assets. `build:api` is the native build; the hosted image contains no Node runtime.
 
 ## One executable, independent roles
 
@@ -182,7 +182,7 @@ Host/Origin/CORS policy, eight admitted requests, bounded bodies/timeouts and se
 creation. Files/content uploads require octet-stream; downloads stream with backpressure and
 expected-length validation. Export bodies allow 8 MiB; other request bodies allow 1 MiB.
 Native credentials, Key digests and private DuckDB storage do not enter public resource lists,
-usage rows or worker snapshots. Owner sessions are not production login.
+usage rows or worker snapshots. Hosted sessions require verified TiDB Account sign-in; local guest sessions remain explicit loopback only.
 
 Provider creation persists intent before a non-idempotent request. Unknown Zero/Drive9
 creation outcomes are not retried. db9 can recover the one deterministic database name under
@@ -214,4 +214,4 @@ Resources, Keys, files, bindings and credentials are independent encrypted recor
 
 The API has one active writer per Workspace until provider lifecycle claims support concurrent API writers. `recoverWriterOwner` names the exact stopped owner after a crash; there is no lease timeout or global dependency. Storage version 2 intentionally rejects the old five-document installation. JSON import/export, legacy vault codecs and Node/Rust handoff are retired under [ADR 0024](decisions/0024-fresh-record-metadata.md).
 
-Package reviewed clean source with a full SHA and binary/archive checksums. Keep configuration and state outside the artifact. Deploy all version-coupled API/Meta roles, verify readiness, authorized/denied reads and the Portal. A source upgrade cannot silently reset an incompatible root. The owner authorized one disposable local reset; cloud instances are outside that operation. Production identity, distributed policy, sharding and automatic HA remain future work.
+Package reviewed clean source with a full SHA and binary/archive checksums. Keep configuration and state outside the artifact. Deploy all version-coupled API/Meta roles, verify readiness, authorized/denied reads and the Portal. A source upgrade cannot silently reset an incompatible root. The owner now authorizes a fresh hosted deployment under ADR 0026, using a new S3 prefix and keys. Distributed policy, customer isolation, sharding and automatic HA remain future work.

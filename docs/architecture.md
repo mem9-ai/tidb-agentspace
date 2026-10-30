@@ -254,17 +254,16 @@ and [the source contract](duckdb-databases.md#workspace-file-sources).
 
 Implemented delivery: the Console and API have independent builds, processes, and artifacts in
 one repository. The API serves only HTTP API/schema endpoints; the static Console uses runtime
-API-origin configuration and an OpenAPI-generated typed client. The installed hosted API retains Node SSO and JSON/vault persistence under [ADR 0025](decisions/0025-consolidated-runtime-profiles.md). The complete native loopback regional API uses Rust; its [modular backend](rust-backend.md)
+API-origin configuration and an OpenAPI-generated typed client. The native regional API owns SSO and public Host/Origin policy under [ADR 0026](decisions/0026-native-hosted-studio.md); its [modular backend](rust-backend.md)
 and composable host run against embedded or remote metadata. See [ADR 0005](decisions/0005-independent-console-and-api.md) and the
-[operating guide](independent-delivery.md). Customer-level identity isolation and public native hosting remain proposed.
+[operating guide](independent-delivery.md). Customer-level identity isolation remains proposed; hosted SSO admits explicitly allowed owners to the same Workspace.
 
 The accepted backend target is Rust, following [ADR 0020](decisions/0020-modular-rust-backend.md)
 and [GH-88](../specs/gh-88/spec.md). Domain modules, ports and transport adapters share one
 implementation; a common executable can embed roles or start them as independent services.
 Global/regional authority and separate Meta instances remain mandatory in either form.
 Co-located roles share process failure; production regional independence requires separate
-processes/hosts. Customer computation remains isolated. Node ESM is transitional until
-compatibility checks pass; the full Rust regional profile now implements the existing API. The diagram
+processes/hosts. Customer computation remains isolated. Node ESM remains a test-only behavioral oracle; the full Rust regional profile now implements the existing API. The diagram
 below is a functional view, not one shared metadata database or a centralized data path.
 
 ```mermaid

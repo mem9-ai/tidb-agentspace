@@ -1,6 +1,6 @@
 # ADR 0013: Dev Kubernetes CD for the API server
 
-- Status: accepted in PR; dev-only continuous deployment, updated 2026-10-29.
+- Status: dev-only continuous deployment. The historical Node runtime contract below is superseded by [ADR 0026](0026-native-hosted-studio.md) and [native deployment](../native-studio-deployment.md). Image update/recovery policy remains applicable after a native target is explicitly bootstrapped.
 - Workflow: [.github/workflows/dev-cd.yml](../../.github/workflows/dev-cd.yml).
 - Related: [ADR 0005](0005-independent-console-and-api.md), [independent delivery](../independent-delivery.md).
 

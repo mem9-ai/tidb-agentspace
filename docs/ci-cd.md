@@ -2,7 +2,7 @@
 
 ## What is implemented
 
-[ADR 0025](decisions/0025-consolidated-runtime-profiles.md) preserves hosted Node CD while integrating the full native Rust quality gate. `Quality` builds/tests Node and Console; `Rust backend and S3 integration` independently checks every native phase. The existing `dev-cd` image remains Node and keeps the installed persistent volume.
+[ADR 0026](decisions/0026-native-hosted-studio.md) makes Rust the only serving runtime. `Quality` builds the Console and checks tooling/oracles/contracts; `Rust backend and S3 integration` builds/tests all native phases. Dev CD packages a native-only Linux amd64 image, the currently verified Linux static DuckDB target. Node is not present in that image. [Native deployment](native-studio-deployment.md) defines fresh S3 roots/keys and the one-time target bootstrap.
 
 - `.github/workflows/ci.yml`: clean installation and `npm run check` on PRs, pushes to
   `main`, merge-queue candidates, and manual requests. A successful quality job uploads
@@ -144,12 +144,7 @@ write path, preserve attribution, and recheck the new head; do not bypass reposi
 
 ## Internal artifact delivery
 
-The manual main-only `Internal artifact` workflow runs the shared quality gate, builds
-`build:api:rust`, and packages the reviewed native API plus static Console with source SHA
-and checksums. Those artifacts require private native deployment plans and do not replace
-the installed Node image. Node dev CD independently builds its verified `dist/api` runtime
-closure through the existing Dockerfile. No workflow resets or migrates persistent state.
-See [ADR 0025](decisions/0025-consolidated-runtime-profiles.md).
+The manual main-only `Internal artifact` workflow runs the quality gate and packages the reviewed native API plus static Console with source SHA and checksums. The Docker/CD path independently builds the native executable. Private native plans, keys, and state stay outside artifacts. Image delivery refuses a target without the native runtime marker and only updates already bootstrapped native targets. It never resets or migrates data. Follow [native deployment](native-studio-deployment.md).
 
 ## Actual deployment policy for the next phase
 

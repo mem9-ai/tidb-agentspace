@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, writeFile, readdir, stat, rm } from 'node:fs/
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DuckDBInstance } from '@duckdb/node-api';
-import { createApp } from './index.mjs';
+import { createApp } from './regression-api.mjs';
 import { seed } from './store.mjs';
 import { openDuckdb } from './providers/duckdb-engine.mjs';
 import { runDuckdbWorker } from './providers/duckdb.mjs';

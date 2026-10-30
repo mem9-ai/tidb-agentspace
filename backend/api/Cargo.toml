@@ -20,3 +20,11 @@ workspace-product.workspace = true
 futures.workspace = true
 percent-encoding.workspace = true
 tokio-util.workspace = true
+
+base64.workspace = true
+sha2.workspace = true
+regex.workspace = true
+jsonwebtoken.workspace = true
+chrono.workspace = true
+
+rustls.workspace = true

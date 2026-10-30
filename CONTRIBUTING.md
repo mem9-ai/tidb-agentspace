@@ -127,9 +127,9 @@ concrete reason; use existing platform capabilities where sufficient.
 | `npm run lint`                                | Check code, with zero warnings allowed                                         |
 | `npm run typecheck`                           | Check strict frontend TypeScript                                               |
 | `npm run build:console`                       | Build only the static Console in `dist/console/`                               |
-| `npm run build:api`                           | Build the hosted-compatible Node API runtime closure                           |
+| `npm run build:api`                           | Build the native Rust API                                                      |
 | `npm run dev:console` / `npm run dev:api`     | Run either development process independently                                   |
-| `npm run start:console` / `npm run start:api` | Run built Console / hosted-compatible Node API separately                      |
+| `npm run start:console` / `npm run start:api` | Run built Console / native Rust API separately                                 |
 | `npm run api:generate`                        | Regenerate OpenAPI and Console client types from the contract source           |
 | `npm run api:check`                           | Fail if OpenAPI or generated client types have drifted; does not rewrite files |
 | `npm test`                                    | Run API and repository-tool behavior tests with isolated temporary data        |
@@ -146,7 +146,7 @@ screenshots. If a check cannot run, report the specific gap instead of claiming 
 Use the root Cargo workspace, pinned `rust-toolchain.toml` and root `Cargo.lock`.
 `npm run backend:build` verifies/prepares the pinned official static DuckDB library and builds the Rust modules. For direct Cargo commands, run `npm run backend:prepare` first; see the Rust runtime guide for supported native targets. Explicit native development launchers require
 `WORKSPACE_BACKEND_CONFIG` pointing to the private regional deployment; they never fall back
-to another backend or seed another data file. `npm run backend:check` runs workspace format/Clippy/tests and real isolated S3/native API tests in addition to `npm run check`. The already installed hosted Node API and its JSON/vault persistence remain supported under [ADR 0025](docs/decisions/0025-consolidated-runtime-profiles.md); it is not a fallback for native startup or a rollback for native storage. Fresh installations follow [ADR 0024](docs/decisions/0024-fresh-record-metadata.md), replacing the retired document/import bridge. See [the Rust guide](docs/rust-backend.md) for module composition, private plans and explicit empty-Workspace bootstrap.
+to another backend or seed another data file. `npm run backend:check` runs workspace format/Clippy/tests and real isolated S3/native API tests in addition to `npm run check`. Hosted and local APIs both use Rust; [ADR 0026](docs/decisions/0026-native-hosted-studio.md) retires Node serving and permits deliberate fresh hosted storage. Node sources are regression oracles/tooling only. Fresh installations follow [ADR 0024](docs/decisions/0024-fresh-record-metadata.md), replacing the retired document/import bridge. See [the Rust guide](docs/rust-backend.md) for module composition, private plans and explicit empty-Workspace bootstrap.
 
 `backend:check` checks formatting before compiling. Its individual phases are available as
 `backend:fmt`, `backend:build`, `backend:clippy`, `backend:test` and `backend:test:integration`;

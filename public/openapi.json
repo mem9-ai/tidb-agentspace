@@ -3738,7 +3738,7 @@
         "operationId": "createLocalSession",
         "summary": "Create a loopback-only demo owner session",
         "tags": ["Workspace"],
-        "description": "Local demonstration only. Sets an HttpOnly SameSite=Strict cookie. Allowed browser origins require credentialed CORS; production identity is not implemented.",
+        "description": "Explicit loopback guest mode only; disabled when TiDB Account SSO is configured. Requires a real loopback peer. Sets an HttpOnly SameSite=Strict cookie scoped to the configured public path.",
         "x-required-scope": null,
         "security": [],
         "requestBody": {
@@ -3843,6 +3843,113 @@
           }
         }
       }
+    },
+    "/api/auth/config": {
+      "servers": [{ "url": "/" }],
+      "get": {
+        "operationId": "getAuthConfig",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["enabled"],
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "provider": { "const": "tidbcloud" },
+                    "label": { "type": "string" },
+                    "loginPath": { "type": "string" },
+                    "logoutPath": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/tidbcloud/login": {
+      "servers": [{ "url": "/" }],
+      "get": {
+        "operationId": "startTidbLogin",
+        "security": [],
+        "description": "Browser redirect to the configured provider using code + S256 PKCE. Server retains a single-use ten-minute flow.",
+        "responses": {
+          "302": {
+            "description": "Redirect to provider or configured same-origin Console; sets HttpOnly flow/session cookies."
+          },
+          "default": {
+            "description": "Sign-in unavailable, invalid or unauthorized",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/tidbcloud/callback": {
+      "servers": [{ "url": "/" }],
+      "get": {
+        "operationId": "completeTidbLogin",
+        "security": [],
+        "description": "Registered server callback; verifies signature, issuer, audience, nonce and explicit owner grants before minting an eight-hour session. State is single-use and bound to the flow cookie.",
+        "responses": {
+          "302": {
+            "description": "Redirect to provider or configured same-origin Console; sets HttpOnly flow/session cookies."
+          },
+          "default": {
+            "description": "Sign-in unavailable, invalid or unauthorized",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/tidbcloud/logout": {
+      "servers": [{ "url": "/" }],
+      "post": {
+        "operationId": "logoutTidbSession",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["loggedOut"],
+                  "properties": { "loggedOut": { "type": "boolean" } }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "logoutTidbSessionAndRedirect",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["loggedOut"],
+                  "properties": { "loggedOut": { "type": "boolean" } }
+                }
+              }
+            }
+          },
+          "302": {
+            "description": "Session revoked and browser redirected to the configured Console."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3856,7 +3963,7 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "aw_session",
-        "description": "Created by POST /api/session with a JSON body. Local development only."
+        "description": "Created by verified TiDB Account callback, or POST /api/session in explicit loopback guest mode only. HttpOnly; Secure for HTTPS; eight-hour expiration and server-side logout revocation."
       }
     },
     "schemas": {

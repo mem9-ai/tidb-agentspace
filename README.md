@@ -1,12 +1,12 @@
 # TiDB Agent Workspace
 
-An independent Workspace for developers and agents to use databases and files through one scoped Workspace Key. The Console is React/TiUI; the installed hosted API uses Node with SSO, while the native regional API/Meta profile uses Rust. MySQL, opt-in db9 PostgreSQL, native DuckDB and independent File Systems have separate provider capabilities and credential boundaries.
+An independent Workspace for developers and agents to use databases and files through one scoped Workspace Key. The Console is React/TiUI; the hosted/local API and regional Meta services use Rust. MySQL, opt-in db9 PostgreSQL, native DuckDB and independent File Systems have separate provider capabilities and credential boundaries.
 
 Start with [start-here.md](start-here.md), [contribution rules](CONTRIBUTING.md) and [architecture](docs/architecture.md). Proposed hosted multi-tenancy and production identity remain distinct from the current trusted loopback development profile.
 
 ## Hosted Studio and runtime selection
 
-The hosted Node API retains TiDB Account SSO and `/studio` routing. [`.env.example`](.env.example) documents issuer, public client, callback and owner grants. Verified-email rules grant shared workspace ownership; they do not create separate customer tenants. Existing main-only API CD preserves its JSON/vault volume; native Rust/SlateDB cutover is a separate migration. See [the integration boundary](docs/decisions/0025-consolidated-runtime-profiles.md).
+Rust implements TiDB Account code + S256 PKCE, exact issuer/JWKS verification, explicit owner grants and `/studio` routing. All admitted accounts own the same Workspace. Automatic native image delivery and independent Console publication remain separate. The owner authorizes a fresh S3 prefix and new metadata encryption keys; old Node data is not migrated. See [native deployment and local login](docs/native-studio-deployment.md) and [ADR 0026](docs/decisions/0026-native-hosted-studio.md). Real provider sign-in/live rollout must be verified separately from local tests.
 
 ## Local setup
 
@@ -35,18 +35,16 @@ These modes enable explicit resource creation in the Console; startup does not p
 
 ## Build and verification
 
-| Component       | Build                    | Run                                                                  |
-| --------------- | ------------------------ | -------------------------------------------------------------------- |
-| Console         | `npm run build:console`  | `npm run start:console` or static hosting                            |
-| Rust API / Meta | `npm run build:api:rust` | `workspace-backend serve --config /absolute/private/deployment.json` |
+| Component       | Build                   | Run                                                                  |
+| --------------- | ----------------------- | -------------------------------------------------------------------- |
+| Console         | `npm run build:console` | `npm run start:console` or static hosting                            |
+| Rust API / Meta | `npm run build:api`     | `workspace-backend serve --config /absolute/private/deployment.json` |
 
-`npm run check` runs the shared Node/Console quality gate. `npm run backend:check` runs the Rust and real isolated S3/API/native artifact suites. The hosted-compatible Node API also builds with `npm run build:api` and starts with `npm run start:api`; its runtime closure stays independent of the Console. See [ADR 0025](docs/decisions/0025-consolidated-runtime-profiles.md) for the explicit storage/rollout boundary.
+`npm run check` verifies Console, generated contracts and regression/tooling tests. `npm run backend:check` checks native format, build, Clippy, unit tests, isolated real S3/API/SSO and native packaging. `npm run build:api` and all API start commands select Rust. The Node oracle has no serving CLI or deployable artifact.
 
 `npm run package -- FULL_REVIEWED_SOURCE_SHA` packages a reviewed clean native backend and separate Console assets with source SHA and checksums. Configuration and credentials remain outside artifacts. Console `/config.json` selects the API origin. Follow [independent delivery](docs/independent-delivery.md) and [CI/CD policy](docs/ci-cd.md).
 
-```sh
-WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run dev:api:node
-```
+Set `product.providers.filesProvider` to `drive9-anonymous` in the private native API configuration.
 
 Create a File System in the Console. The backend provisions the trial and retains its internal
 credential; customers still use a scoped Workspace Key. Existing local files remain local.
@@ -57,15 +55,12 @@ private storage, recovery, and live verification instructions.
 
 Enable anonymous database creation alongside the Singapore File System:
 
-```sh
-WORKSPACE_MYSQL_PROVIDER=tidb-cloud-zero WORKSPACE_FILES_PROVIDER=drive9-anonymous npm run dev:api:node
-```
+Set `product.providers.mysqlProvider` to `tidb-cloud-zero` in the same native configuration.
 
 Create a MySQL database in the Console, then open its SQL editor. The backend creates the
 Zero instance and a database-scoped application user; no provider account or customer-supplied
 credential is needed. Customers use Workspace Keys with `queries:execute` and resource grants.
-That action permits both reads and writes. Native passwords stay in a separate 0600 private
-file. Existing demo resources retain their labeled local behavior.
+That action permits both reads and writes. Native passwords remain encrypted private metadata records. Existing demo resources retain their labeled local behavior.
 
 Zero databases expire after up to 30 days; the Console shows the provider's exact expiry.
 Export important data before expiry. Region assignment is automatic. This integration does not
@@ -76,7 +71,7 @@ See [the SQL boundary and recovery](docs/decisions/0006-zero-sql-gateway.md) and
 
 ## PostgreSQL with db9
 
-Enable `WORKSPACE_POSTGRES_PROVIDER=db9-anonymous` alongside the existing provider flags,
+Set `product.providers.postgresProvider` to `db9-anonymous` in private native configuration,
 then create **PostgreSQL · db9** in the Console. Official REST calls create an anonymous account
 and database; SQL uses a restricted native PostgreSQL role over verified TLS. Customers use
 Workspace Keys for queries, table browsing and files; upstream credentials stay in the service.
@@ -119,7 +114,8 @@ The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, 
 ## Code map
 
 - `src/App.tsx`, `src/main.tsx`, `src/styles.css`: interactive frontend prototype.
-- `server/index.mjs`: standalone API and resource/file/key/query handlers; no Console serving.
+- `backend/api/` and `backend/host/`: native HTTP/SSO policy and executable composition.
+- `server/regression-api.mjs`: explicit test-only Node behavioral oracle.
 - `server/providers/zero.mjs`, `server/providers/sql-drivers.mjs`: anonymous MySQL provisioning and bounded native SQL.
 - `server/providers/drive9.mjs`, `server/file-transfer.mjs`: internal provider adapter and bounded transfers.
 - `server/access-policy.mjs`: shared action/resource authorization support.
