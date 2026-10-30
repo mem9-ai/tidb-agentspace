@@ -17,6 +17,7 @@ async fn stopped(mut receiver: watch::Receiver<bool>) {
 async fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.as_slice() == ["runtime-info"] {
+        // Image/package verification must work without loading a private deployment plan.
         println!("{}", workspace_compute::runtime_info());
         return Ok(());
     }

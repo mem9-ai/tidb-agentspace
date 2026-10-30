@@ -12,7 +12,28 @@ const enabled = process.env.WORKSPACE_BACKEND_TEST === '1';
 const base = '/api/v1/workspaces/ws_agentlab';
 async function fixture(t, overrides = {}) {
   const metadata = await metaFixture();
-  t.after(() => metadata.close());
+  let provider;
+  let child;
+  let closing;
+  // after hooks run in registration order. Stop the client before its dependencies;
+  // otherwise their keep-alive connections can delay teardown by minutes.
+  const close = () =>
+    (closing ||= (async () => {
+      try {
+        if (child) await metadata.stop(child);
+      } finally {
+        try {
+          if (provider?.listening)
+            await new Promise((done, reject) => {
+              provider.close((error) => (error ? reject(error) : done()));
+              provider.closeAllConnections();
+            });
+        } finally {
+          await metadata.close();
+        }
+      }
+    })());
+  t.after(close);
   const region = await metadata.service('native-sso');
   const pair = await generateKeyPair('RS256');
   const wrong = await generateKeyPair('RS256');
@@ -30,7 +51,12 @@ async function fixture(t, overrides = {}) {
     goodKey: true,
   };
   let issuer;
-  const provider = http.createServer(async (req, res) => {
+  provider = http.createServer(async (req, res) => {
+    if (req.url === '/fixture-held-connection') {
+      res.writeHead(200);
+      res.flushHeaders();
+      return;
+    }
     const json = (status, value) => {
       res.writeHead(status, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(value));
@@ -79,7 +105,6 @@ async function fixture(t, overrides = {}) {
   });
   await new Promise((r) => provider.listen(0, '127.0.0.1', r));
   issuer = `http://127.0.0.1:${provider.address().port}`;
-  t.after(() => new Promise((r) => provider.close(r)));
   const listen = await port();
   const config = {
     bind: `127.0.0.1:${listen}`,
@@ -111,7 +136,7 @@ async function fixture(t, overrides = {}) {
     JSON.stringify({ format: 1, services: [{ kind: 'workspace', configFile: file }] }),
     { mode: 0o600 },
   );
-  const child = spawn(
+  child = spawn(
     resolve('meta-service/target/debug/workspace-backend'),
     ['serve', '--config', plan],
     { stdio: ['ignore', 'pipe', 'pipe'] },
@@ -122,13 +147,6 @@ async function fixture(t, overrides = {}) {
   });
   child.stderr.on('data', (b) => {
     log += b;
-  });
-  t.after(async () => {
-    if (child.exitCode !== null || child.signalCode) return;
-    await new Promise((r) => {
-      child.once('exit', r);
-      child.kill('SIGTERM');
-    });
   });
   const origin = `http://127.0.0.1:${listen}`;
   const request = (path, { method = 'GET', cookie, body, raw, headers = {} } = {}) =>
@@ -184,8 +202,40 @@ async function fixture(t, overrides = {}) {
       { cookie: f.cookie, ...options },
     );
   }
-  return { request, flow, callback, control, issuer, config, child, log: () => log };
+  return { request, flow, callback, control, issuer, config, child, close, log: () => log };
 }
+
+test(
+  'native SSO fixture closes active provider connections without waiting for client timeouts',
+  { skip: !enabled, timeout: 20000 },
+  async (t) => {
+    const f = await fixture(t);
+    let request;
+    let connectionClosed;
+    await new Promise((done, reject) => {
+      request = http.get(f.issuer + '/fixture-held-connection', (response) => {
+        response.on('error', () => {});
+        connectionClosed = new Promise((closed) => response.once('close', closed));
+        done();
+      });
+      request.on('error', reject);
+    });
+    let neededWatchdog = false;
+    const watchdog = setTimeout(() => {
+      neededWatchdog = true;
+      request.destroy();
+    }, 5000);
+    try {
+      await f.close();
+      assert.equal(neededWatchdog, false, 'Fixture teardown waited for its client to time out');
+      await connectionClosed;
+      assert.ok(f.child.exitCode !== null || f.child.signalCode);
+    } finally {
+      clearTimeout(watchdog);
+      request.destroy();
+    }
+  },
+);
 
 test(
   'native hosted /studio SSO, stable identity, owner grants, logout and replay protection',
@@ -422,7 +472,13 @@ test(
       reply({ columns: ['connected'], rows: [{ connected: 1 }], rowCount: 1, affectedRows: 0 });
     });
     await new Promise((r) => sql.listen(0, '127.0.0.1', r));
-    t.after(() => new Promise((r) => sql.close(r)));
+    t.after(
+      () =>
+        new Promise((done) => {
+          sql.close(done);
+          sql.closeAllConnections();
+        }),
+    );
     const origin = `http://127.0.0.1:${sql.address().port}`;
     const f = await fixture(t, {
       product: {

@@ -33,12 +33,30 @@ on:
       - '.github/workflows/dev-cd.yml'
   push:
     branches: [main]
+    # Console and documentation changes retain ordinary CI, without releasing an API image.
+    paths:
+      - 'backend/**'
+      - 'meta-service/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.cargo/**'
+      - 'scripts/duckdb-runtime.json'
+      - 'scripts/prepare-duckdb.mjs'
+      - 'public/openapi.json'
+      - 'scripts/deploy-dev*'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.node-version'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.github/workflows/dev-cd.yml'
   workflow_dispatch:
     inputs:
       operation:
-        description: Native deployment or read-only configuration inspection
+        description: Verify native build/cache, deploy, or inspect configuration read-only
         type: choice
-        options: [inspect, deploy]
+        options: [inspect, verify, deploy]
         default: inspect
 
 permissions:
@@ -46,8 +64,9 @@ permissions:
 
 # Concurrency is split by whether the run can deploy:
 #
-# - Pull requests (verify only): one group per PR ref, cancel-in-progress so a
-#   newer commit on the same PR supersedes the older verify run.
+# - Pull requests and main-only build/cache verification: one group per ref,
+#   cancel-in-progress so a newer verification supersedes the older run.
+#   Cache warmup never occupies the deployment queue or receives cloud credentials.
 # - Push to main and manual dispatch (can deploy): ONE shared constant group
 #   with cancel-in-progress FALSE. Deploy-capable runs therefore queue behind
 #   one another and are never cancelled mid-rollout/rollback — a second main
@@ -55,12 +74,12 @@ permissions:
 #   workflow level. The deploy job's own constant group keeps that invariant
 #   even if this block is later changed.
 concurrency:
-  group: dev-cd-${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'deploy' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: dev-cd-${{ (github.event_name == 'pull_request' || github.event.inputs.operation == 'verify') && format('verify-{0}', github.ref) || 'deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event.inputs.operation == 'verify' }}
 
 jobs:
-  # Run the same quality gate as CI, and prove the image builds for both
-  # architectures on PRs (no push). Releases build once after the tests pass.
+  # Run the complete quality/native gate before releases. PR image verification
+  # runs independently below, so release compilation does not wait for these tests.
   # The repository enforces that every workflow runs `npm run check`.
   verify:
     name: Quality gate
@@ -85,10 +104,13 @@ jobs:
       - run: npm ci
       - run: npm run check
       - name: Install the pinned Rust toolchain
+        if: github.event.inputs.operation != 'inspect'
         run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
       - name: Check Rust formatting before compiling
+        if: github.event.inputs.operation != 'inspect'
         run: npm run backend:fmt
       - name: Restore Rust dependency cache
+        if: github.event.inputs.operation != 'inspect'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           # Keep fallback restores inside the same native-library and build configuration.
@@ -99,12 +121,16 @@ jobs:
           cache-workspace-crates: false
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
       - name: Build native backend with Cargo timings
+        if: github.event.inputs.operation != 'inspect'
         run: npm run backend:build -- --timings
       - name: Check Rust with Clippy
+        if: github.event.inputs.operation != 'inspect'
         run: npm run backend:clippy
       - name: Run Rust unit tests
+        if: github.event.inputs.operation != 'inspect'
         run: npm run backend:test
       - name: Install verified RustFS 1.0.4 binary
+        if: github.event.inputs.operation != 'inspect'
         shell: bash
         run: |
           set -euo pipefail
@@ -116,18 +142,54 @@ jobs:
           chmod +x "$runtime_dir/rustfs"
           printf '%s\n' "$runtime_dir" >> "$GITHUB_PATH"
       - name: Run native API and real S3 integration tests
+        if: github.event.inputs.operation != 'inspect'
         run: npm run backend:test:integration
+
+  image:
+    name: Native image
+    if: github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event.inputs.operation == 'verify')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
       - name: Set up Docker Buildx
-        if: github.event_name == 'pull_request'
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Build native image (no push)
-        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          provenance: false
+          pull: true
+          push: false
+          load: true
+          tags: workspace-api:verify
+          cache-from: type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
+          cache-to: type=gha,scope=native-api-linux-amd64-v1,version=2,mode=max,timeout=3m,ignore-error=true
+      - name: Run the final native image without network or writable root
         run: |
           set -euo pipefail
-          docker buildx build \
-            --platform linux/amd64 \
-            --provenance=false \
-            .
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --entrypoint /bin/sh workspace-api:verify \
+            -ec 'if command -v node; then exit 1; fi; exec workspace-backend runtime-info' \
+            > "$RUNNER_TEMP/native-runtime-info.json"
+          node --input-type=module -e '
+            import assert from "node:assert/strict";
+            import { readFileSync } from "node:fs";
+            const pins = JSON.parse(readFileSync("scripts/duckdb-runtime.json", "utf8"));
+            const info = JSON.parse(readFileSync(process.argv[1], "utf8")).duckdb;
+            const target = "x86_64-unknown-linux-gnu";
+            assert.deepEqual(info, { version: pins.version, linkage: "static", target,
+              archiveSha256: pins.artifacts[target].sha256 });
+            console.log(JSON.stringify(info));
+          ' "$RUNNER_TEMP/native-runtime-info.json"
 
   deploy:
     name: Build and deploy to dev
@@ -135,7 +197,7 @@ jobs:
     timeout-minutes: 75
     needs: verify
     # Never deploy from a pull request — PRs run the quality gate only.
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.event.inputs.operation != 'verify'
     # Serialize by the actual deployment target, NOT the source ref: every
     # deploy run (main push or any manual ref) shares this one constant group,
     # so two runs can never interleave `set image` / `rollout` / `rollout undo`
@@ -203,25 +265,30 @@ jobs:
         uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
 
       - name: Build and push image
+        id: image
+        if: github.event.inputs.operation != 'inspect'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          provenance: false
+          pull: true
+          push: true
+          tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
+          cache-to: type=gha,scope=native-api-linux-amd64-v1,version=2,mode=max,timeout=3m,ignore-error=true
+      - name: Record immutable image digest
         if: github.event.inputs.operation != 'inspect'
         env:
           IMAGE_BASE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
         run: |
           set -euo pipefail
-          docker buildx build \
-            --platform linux/amd64 \
-            --provenance=false \
-            --tag "$IMAGE_BASE:$IMAGE_TAG" \
-            --metadata-file "$RUNNER_TEMP/image.json" \
-            --push \
-            .
-          DIGEST=$(node --input-type=module -e '
-            import { readFileSync } from "node:fs";
-            const digest = JSON.parse(readFileSync(process.argv[1], "utf8"))["containerimage.digest"];
+          node --input-type=module -e '
+            const digest = process.env.IMAGE_DIGEST;
             if (!/^sha256:[a-f0-9]{64}$/.test(digest)) throw new Error("Missing image digest");
-            process.stdout.write(digest);
-          ' "$RUNNER_TEMP/image.json")
-          echo "IMAGE_REF=$IMAGE_BASE@$DIGEST" >> "$GITHUB_ENV"
+            process.stdout.write(`IMAGE_REF=${process.env.IMAGE_BASE}@${digest}\n`);
+          ' >> "$GITHUB_ENV"
 
       - name: Update kubeconfig
         run: |

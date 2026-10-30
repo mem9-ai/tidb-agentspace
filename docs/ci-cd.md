@@ -11,7 +11,9 @@
   runs the same quality gate and packages the runtime, frontend,
   API contract, source SHA, and checksums. It does not deploy to a cloud provider.
 - `.github/workflows/dev-cd.yml`: credential-free PR verification, then digest-pinned API
-  deployment to a configured EKS dev environment on every `main` push or manual request.
+  deployment to a configured EKS dev environment on `main` pushes changing API/runtime,
+  build or delivery inputs, or a manual main request. Documentation/Console-only commits
+  retain ordinary CI and independent Console publication without releasing an API image.
   Releases only update the existing Deployment image and restore the previous digest on
   failure. [ADR 0013](decisions/0013-dev-kubernetes-cd.md) defines the existing runtime
   contract, readiness and rollback. Each repository must configure its own
@@ -212,3 +214,38 @@ cache size, restore/save overhead, build/Clippy/test steps and total job duratio
 rerun proves same-PR reuse; verify the subsequent `main` seed separately before claiming
 cross-PR reuse. Compare actual Linux CI results rather than extrapolating from a warm local
 machine. Revisit the cache policy if storage/transfer cost outweighs saved compilation time.
+
+## Native image latency and dependency caching
+
+Measured on 2026-10-30 for [GH-17](https://github.com/mem9-ai/tidb.ai/issues/17), source baseline `c7df521`:
+
+| Run                                                                                              | Observed time                   | Main cost                                                                                                             |
+| ------------------------------------------------------------------------------------------------ | ------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| [Ordinary main CI](https://github.com/mem9-ai/tidb.ai/actions/runs/40983415209)                  | 2m 41s total; native job 2m 38s | Warm Cargo build 19s, integration tests 50s, frontend quality 1m 48s in parallel                                      |
+| [Earlier dependency-update CI](https://github.com/mem9-ai/tidb.ai/actions/runs/40980092035)      | 9m 51s total                    | Native build 3m 19s, Clippy 1m 20s and integration tests 3m 53s before the latest main dependency cache was available |
+| [PR native delivery verification](https://github.com/mem9-ai/tidb.ai/actions/runs/40980091991)   | 19m 41s total                   | Image build 9m 37s, after serial quality/native checks; release Cargo compiled for 8m 56s inside Docker               |
+| [Previous PR delivery verification](https://github.com/mem9-ai/tidb.ai/actions/runs/40976656268) | 27m 36s total                   | Image build 13m 22s, again after the full checks                                                                      |
+| [Read-only inspection](https://github.com/mem9-ai/tidb.ai/actions/runs/40979807553)              | 17m 23s total                   | 14m 01s of verification before a 28s protected inspection job, with additional job scheduling delay                   |
+| [Console publication](https://github.com/mem9-ai/tidb.ai/actions/runs/40979799331)               | 9m 16s total                    | Website PR creation 2m 58s and waiting for its independent checks 1m 56s; separate from API image compilation         |
+
+The native PR image job now runs alongside the complete quality/native gate. It has no cloud identity, does not push an image, and smoke-tests the final runtime without network access or a writable root. Main releases still require the entire quality/native gate before entering the protected deployment job. Manual `inspect` retains `npm run check` but omits native compilation/tests because it neither packages nor deploys an API. Deploy operations retain all native/S3 checks, immutable digest verification, serialization and rollback.
+
+Automatic API release paths match the existing PR image-input paths, including all backend/metadata sources, root Cargo/toolchain/configuration inputs, verified DuckDB preparation, the generated API contract, Docker inputs and the release workflow/helper. Ordinary CI remains unfiltered on PRs and main pushes. Pure documentation and Console changes therefore retain checks without queuing a new native API release. Manual main verification, inspection and deployment remain available regardless of changed paths.
+
+The SSO fixture also showed long tail latency: its main case took 180.55s in the earlier dependency-update run and 0.86s in the first optimized quality-gate run. Cleanup hooks previously closed dependencies before their API client. Cleanup now stops that API with the existing bounded process helper, closes the fake provider's active connections, then closes metadata. A live regression holds a provider response open and verifies teardown does not wait for its client watchdog; removing connection reaping makes this case fail. All authentication assertions remain intact. This changes test fixtures only, not product session timeouts or production shutdown policy.
+
+The Dockerfile uses pinned `cargo-chef` 0.1.77 to separate the release dependency graph from application source. The same pinned Rust version, working directory, Cargo configuration, locked dependencies and verified DuckDB inputs apply to cooking and the final build. Pass the explicit `/source/meta-service/target` directory to both commands: the initial Linux probe compiled into the configured directory but cargo-chef tried to clean its default `/source/target/release` and failed. Source-only edits rebuild application crates; manifest/lockfile/toolchain/native input changes invalidate affected layers. The final image smoke check validates the real executable's exact version, static linkage, Linux target and pinned DuckDB checksum, rejecting an empty dependency skeleton.
+
+The pinned Docker build action imports/exports GitHub cache v2 with `mode=max` under `native-api-linux-amd64-v1`, including intermediate dependency layers. Ordinary cache mounts are not sufficient to persist those layers across fresh hosted runners. Cache transfer has a three-minute bound; failed export is non-fatal and a miss still builds fully. Base images are resolved with `pull:true`. No deployment files, credentials or product state enter the Docker context or cache.
+
+GitHub cache access restrictions still separate PR merge-ref caches from default-branch caches. A repeated PR run can reuse its own cache. Use the main-only manual `verify` operation to seed the default-branch cache without AWS/ECR/EKS access: it runs all quality/native checks plus the same no-push native image/runtime validation, and skips the entire protected deployment job. Build/cache verification uses its own cancellable concurrency group, so warming a cache cannot block or cancel an actual deployment; deploy-capable runs retain their constant non-cancellable target group. A successful main image release can also seed it. Do not claim cross-PR reuse before that main seed is observed. Existing Cargo dev/test caches are independent of these release image layers. Cold/warm Linux measurements and any remaining limitations belong in the linked task/PR; the table above is the pre-optimization baseline.
+
+References: [Docker GHA cache](https://docs.docker.com/build/cache/backends/gha/), [cache mounts and cache API v2](https://docs.docker.com/build/ci/github-actions/cache/), [cargo-chef 0.1.77](https://github.com/LukeMathWalker/cargo-chef/tree/v0.1.77).
+
+### Linux validation
+
+The first successful optimized [cold image run](https://github.com/mem9-ai/tidb.ai/actions/runs/40986247771) at `5c08ebb` took 18m 41s for the image job: installing cargo-chef 1m 43s, cooking release dependencies 12m 04s, building real application crates 1m 23s and preparing/uploading the cache 2m 28s. The final image passed its network-disabled/read-only runtime check with exact pinned Linux DuckDB metadata. This is the initial cache-creation cost. Its complete quality/native gate finished in parallel in 4m 35s.
+
+The [ordinary CI run](https://github.com/mem9-ai/tidb.ai/actions/runs/40986247801) passed on the same candidate: native job 2m 40s, all 22 native/S3 cases passed without skips, integration phase 50.38s and the main SSO case 1.01s. The held-provider-connection regression passed in 0.82s. A subsequent candidate adds only an explanatory comment to native `runtime-info` so that a fresh runner must rebuild application source while reusing the unchanged dependency recipe. [PR #18](https://github.com/mem9-ai/tidb.ai/pull/18) records that warm-source measurement and the separate main cache seed; those results must be observed before claiming them.
+
+The [warm-source run](https://github.com/mem9-ai/tidb.ai/actions/runs/40988488887) at `5056642` confirmed dependency reuse on a fresh runner after that Rust source edit: cargo-chef installation and dependency cooking were `CACHED`, application compilation took 48.13s, cache prepare/upload 15.4s, the image build step 2m 33s and the complete image job 2m 58s. Runtime metadata validation passed. The complete quality/native gate ran alongside it in 4m 26s, replacing the earlier 19–28 minute serial verification path. Its separate [ordinary CI](https://github.com/mem9-ai/tidb.ai/actions/runs/40988488872) also passed (native job 2m 34s, Quality 2m 30s). Main cache seeding is recorded separately in the task/PR; a PR-local hit alone does not prove default-branch availability.
