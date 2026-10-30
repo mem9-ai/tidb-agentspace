@@ -136,6 +136,10 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Build native image (no push)
@@ -155,7 +159,18 @@ jobs:
           set -euo pipefail
           docker run --rm --network none --read-only --cap-drop ALL \
             --security-opt no-new-privileges --entrypoint /bin/sh workspace-api:verify \
-            -ec 'if command -v node; then exit 1; fi; exec workspace-backend runtime-info'
+            -ec 'if command -v node; then exit 1; fi; exec workspace-backend runtime-info' \
+            > "$RUNNER_TEMP/native-runtime-info.json"
+          node --input-type=module -e '
+            import assert from "node:assert/strict";
+            import { readFileSync } from "node:fs";
+            const pins = JSON.parse(readFileSync("scripts/duckdb-runtime.json", "utf8"));
+            const info = JSON.parse(readFileSync(process.argv[1], "utf8")).duckdb;
+            const target = "x86_64-unknown-linux-gnu";
+            assert.deepEqual(info, { version: pins.version, linkage: "static", target,
+              archiveSha256: pins.artifacts[target].sha256 });
+            console.log(JSON.stringify(info));
+          ' "$RUNNER_TEMP/native-runtime-info.json"
 
   deploy:
     name: Build and deploy to dev

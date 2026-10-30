@@ -24,12 +24,13 @@ COPY scripts/duckdb-runtime.json ./scripts/duckdb-runtime.json
 COPY --from=duckdb /source/.data/duckdb-native/2.0.0 ./.data/duckdb-native/2.0.0
 COPY --from=planner /source/recipe.json ./recipe.json
 # Export this ordinary layer too: cache mounts alone are not persisted by the GHA backend.
-RUN cargo chef cook --release --locked -p workspace-backend --recipe-path recipe.json
+RUN cargo chef cook --release --locked --target-dir /source/meta-service/target \
+    -p workspace-backend --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock ./
 COPY backend ./backend
 COPY meta-service ./meta-service
 COPY public/openapi.json ./public/openapi.json
-RUN cargo build --release --locked -p workspace-backend \
+RUN cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend \
     && /source/meta-service/target/release/workspace-backend runtime-info
 
 FROM debian:bookworm-slim AS runtime
