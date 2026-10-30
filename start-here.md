@@ -49,7 +49,7 @@ note. An intent contribution can start with a user problem and a concrete exampl
 
 ## Understand the current state
 
-[ADR 0026](docs/decisions/0026-native-hosted-studio.md) makes Rust the only hosted/local serving runtime, including SSO and `/studio`. All API build/start commands select Rust; Node remains Console/tooling and an explicit test oracle. The owner permits fresh native S3 roots and keys without migrating old data. Follow [native deployment](docs/native-studio-deployment.md) for bootstrap, local login and live verification.
+[ADR 0026](docs/decisions/0026-native-hosted-studio.md) makes Rust the only hosted/local serving runtime, including SSO and `/studio`. All API build/start commands select Rust; Node remains Console/build/operator tooling and native integration fixtures; the old Node business implementation and dedicated tests are removed. The owner permits fresh native S3 roots and keys without migrating old data. Follow [native deployment](docs/native-studio-deployment.md) for bootstrap, local login and live verification.
 
 | Area                | Current interpretation                                                                                                                                                                                                                                                                                                                        |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -85,8 +85,7 @@ The regional product API is Rust, using independent record repositories and nati
 SlateDB transactions. [ADR 0020](docs/decisions/0020-modular-rust-backend.md) defines shared Rust
 modules and single-binary/multiple-process composition; [ADR 0022](docs/decisions/0022-native-slatedb-transactions.md)
 defines coherent durable reads. [GH-88](specs/gh-88/spec.md) is the historical language-parity baseline;
-its document compatibility direction is superseded by ADR 0024. Node sources remain test oracles
-and tooling, not a production or rollback API. Native builds now verify and link pinned official
+its document compatibility direction is superseded by ADR 0024. Node sources remain build/operator tooling and native test fixtures, not a business or rollback API. Native builds now verify and link pinned official
 DuckDB static libraries instead of compiling its C++ sources; see the [Rust guide](docs/rust-backend.md).
 
 For millions of Workspaces or a million-resource Workspace, also read the
@@ -185,21 +184,21 @@ boundaries, creation recovery and provider compatibility limits.
 
 ## Find the implementation
 
-| Location                                                                                                                                        | Responsibility                                                                                 |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| [src/](src/)                                                                                                                                    | React Console; feature modules in `src/features/`, shared TiUI adapters in `src/ui/`           |
-| [src/api/](src/api/) and [Console configuration](console/public/config.json)                                                                    | Generated-type HTTP client, API transport, and runtime API-origin selection                    |
-| [backend/api/src/lib.rs](backend/api/src/lib.rs)                                                                                                | Current API entry point and request handling                                                   |
-| [Authorization](server/access-policy.mjs) and [store](server/store.mjs)                                                                         | Shared resource-grant rules and local persistence                                              |
-| [File analysis](server/file-analysis.mjs) and [Console panel](src/features/files/FileAnalysisPanel.tsx)                                         | Selected-file snapshot workers, permissions, DuckDB/Just Bash analysis and result presentation |
-| [Providers](server/providers/) and [file transfer](server/file-transfer.mjs)                                                                    | Upstream resource adapters, SQL drivers, and bounded file transfers                            |
-| [Contract generator](server/generate-openapi.mjs) and [generated contract](public/openapi.json)                                                 | Editable description and generated public API artifact                                         |
-| [Client type generator](tools/api-contract/generate-client.mjs) and [client declarations](src/api/schema.d.ts)                                  | Isolated build-time generation of Console API types                                            |
-| [API tests](server/api.test.mjs), [provider tests](server/drive9.test.mjs), and colocated feature tests                                         | Behavior, isolation, persistence, and regression evidence                                      |
-| [Contract tests](server/contract.test.mjs) and [deployment tests](server/rust-sso.test.mjs)                                                     | Actual HTTP schema checks, cross-origin behavior, and retained authorization                   |
-| [scripts/](scripts/) and [.github/workflows/](.github/workflows/)                                                                               | Runtime/repository checks, packaging, and CI                                                   |
-| [Standards](docs/standards/) and [decisions](docs/decisions/)                                                                                   | Reusable engineering rules and architectural decisions                                         |
-| [Issue forms](.github/ISSUE_TEMPLATE/), [PR template](.github/PULL_REQUEST_TEMPLATE.md), and [feature template](docs/templates/feature-spec.md) | Intake, task handoffs, evidence, and specification authoring                                   |
+| Location                                                                                                                                        | Responsibility                                                                                      |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [src/](src/)                                                                                                                                    | React Console; feature modules in `src/features/`, shared TiUI adapters in `src/ui/`                |
+| [src/api/](src/api/) and [Console configuration](console/public/config.json)                                                                    | Generated-type HTTP client, API transport, and runtime API-origin selection                         |
+| [backend/api/src/lib.rs](backend/api/src/lib.rs)                                                                                                | Current API entry point and request handling                                                        |
+| [Authorization and records](backend/workspace/src/)                                                                                             | Native resource/action authorization and encrypted record repositories                              |
+| [File analysis](backend/product/src/files.rs) and [Console panel](src/features/files/FileAnalysisPanel.tsx)                                     | Selected-file snapshot workers, permissions, native DuckDB/Bashkit analysis and result presentation |
+| [Providers](backend/providers/src/) and [file transfer](backend/product/src/files.rs)                                                           | Upstream resource adapters, SQL drivers, and bounded file transfers                                 |
+| [Contract generator](server/generate-openapi.mjs) and [generated contract](public/openapi.json)                                                 | Editable description and generated public API artifact                                              |
+| [Client type generator](tools/api-contract/generate-client.mjs) and [client declarations](src/api/schema.d.ts)                                  | Isolated build-time generation of Console API types                                                 |
+| [Native API/provider tests](server/rust-product.test.mjs) and colocated Rust/Console tests                                                      | Behavior, isolation, persistence, and regression evidence                                           |
+| [Contract tests](server/contract.test.mjs) and [deployment tests](server/rust-sso.test.mjs)                                                     | Actual HTTP schema checks, cross-origin behavior, and retained authorization                        |
+| [scripts/](scripts/) and [.github/workflows/](.github/workflows/)                                                                               | Runtime/repository checks, packaging, and CI                                                        |
+| [Standards](docs/standards/) and [decisions](docs/decisions/)                                                                                   | Reusable engineering rules and architectural decisions                                              |
+| [Issue forms](.github/ISSUE_TEMPLATE/), [PR template](.github/PULL_REQUEST_TEMPLATE.md), and [feature template](docs/templates/feature-spec.md) | Intake, task handoffs, evidence, and specification authoring                                        |
 
 Accepted feature specifications use `specs/gh-<parent-issue-number>/spec.md` when created through
 the GitHub workflow. Verify that a specification directory, interface, or integration actually

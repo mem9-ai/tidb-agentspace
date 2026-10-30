@@ -1,5 +1,7 @@
 # db9 PostgreSQL verification
 
+> Node-source/test references below are historical. The owner retired that implementation and its dedicated regression tests in GH-34; current native coverage and tooling boundaries are recorded in [native retirement verification](native-backend-retirement.md).
+
 Implementation of [GH-40](../specs/gh-40/spec.md), accepted at
 `309637b13308bb61a14efbac3b2a979e9359847e`. The implementation PR pins the evaluated candidate
 and current CI results. [ADR 0011](decisions/0011-db9-postgres.md) and

@@ -1,5 +1,7 @@
 # ADR 0025: Consolidate hosted and native runtime profiles
 
+> Node-source/test references below are historical. The owner retired that implementation and its dedicated regression tests in GH-34; current native coverage and tooling boundaries are recorded in [native retirement verification](../native-backend-retirement.md).
+
 - Status: Historical repository-merge decision; hosted Node/storage compatibility is superseded by [ADR 0026](0026-native-hosted-studio.md), after the owner authorized native SSO and a fresh hosted deployment.
 - Date: 2026-10-30.
 - Inputs: hosted Studio `713d63547d24883cc2376542600cc9e8de21448b` and refreshed siddontang main `141652e501c942128ccae617d088a2cdccf9f780`.

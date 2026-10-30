@@ -6,15 +6,13 @@ import { createWriteStream } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import http from 'node:http';
-import { createApp } from './regression-api.mjs';
-import { seed } from './store.mjs';
+import { workspaceFixture } from './test-support/workspace-fixture.mjs';
 import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
 import { metadataCertificates } from './test-support/meta-tls.mjs';
 import { createMetaClient } from './meta/client.mjs';
 import { seedRecords, readState, readBinding } from './test-support/record-fixture.mjs';
 
 const base = '/api/v1/workspaces/ws_agentlab';
-const suffixes = ['', '.providers.json', '.databases.json', '.duckdb.json', '.db9.json'];
 const originalToken = 'original-key-before-rust-migration';
 const unsupportedScopeToken = 'original-file-only-key';
 const expiredToken = 'original-expired-key';
@@ -90,11 +88,9 @@ async function connect(origin) {
     return { status: response.status, body: value, headers: response.headers };
   };
 }
-async function parityCases(request) {
-  const traces = [];
+async function authorizationCases(request) {
   const record = async (path, options) => {
     const r = await request(path, options);
-    traces.push({ status: r.status, ...(r.body?.error ? { error: r.body.error.code } : {}) });
     return r;
   };
   assert.equal((await record(base, { token: originalToken })).status, 200);
@@ -208,7 +204,6 @@ async function parityCases(request) {
   assert.equal(JSON.stringify(keys.body).includes('digest'), false);
   assert.equal(JSON.stringify(keys.body).includes(created.body.secret), false);
   assert.equal(JSON.stringify(keys.body).includes(privateNativeToken), false);
-  return traces;
 }
 
 for (const mode of ['inProcess', 'remote']) {
@@ -224,7 +219,7 @@ for (const mode of ['inProcess', 'remote']) {
       });
       const global = await fixture.service('global');
       const region = await fixture.service('rust-region');
-      const state = seed();
+      const state = workspaceFixture();
       state.opaque = { keep: ['unknown', { value: 42 }] };
       state.resources.push({
         id: 'retired-pg',
@@ -257,17 +252,6 @@ for (const mode of ['inProcess', 'remote']) {
         JSON.stringify({ bindings: {}, account: { refreshToken: 'original-private-account' } }),
       ];
 
-      const baseline = resolve(fixture.directory, 'baseline.json');
-      for (let i = 0; i < raw.length; i++)
-        await writeFile(baseline + suffixes[i], raw[i], { mode: 0o600 });
-      const oracle = await createApp({ dataFile: baseline });
-      await new Promise((r) => oracle.listen(0, '127.0.0.1', r));
-      let expected;
-      try {
-        expected = await parityCases(await connect(`http://127.0.0.1:${oracle.address().port}`));
-      } finally {
-        await new Promise((r) => oracle.close(r));
-      }
       await seedRecords(region.client, region.server.authorityId, state, {
         drive9: JSON.parse(raw[1]),
         zero: JSON.parse(raw[2]),
@@ -328,7 +312,7 @@ for (const mode of ['inProcess', 'remote']) {
       let api = await launch(fixture.directory, activeRoles);
       children.push(api);
       let request = await until(() => connect(origin));
-      assert.deepEqual(await parityCases(request), expected);
+      await authorizationCases(request);
       await api.stop();
       api = await launch(fixture.directory, activeRoles);
       children.push(api);

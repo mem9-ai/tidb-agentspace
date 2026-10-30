@@ -1,5 +1,7 @@
 # Result snapshot export: implementation and verification
 
+> Node-source/test references below are historical. The owner retired that implementation and its dedicated regression tests in GH-34; current native coverage and tooling boundaries are recorded in [native retirement verification](native-backend-retirement.md).
+
 Implemented against [GH-58](../specs/gh-58/spec.md) as accepted in PR 59 at
 `f2e90079fc80757d2cf020e7647b9185da2e8e07`. [ADR 0013](decisions/0013-result-snapshot-exports.md)
 defines the authorization and create-only boundary. No production deployment is implied.

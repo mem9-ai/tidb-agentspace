@@ -1,17 +1,13 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { format, resolveConfig } from 'prettier';
-import { capabilities } from './store.mjs';
-import { zeroRegion } from './providers/zero.mjs';
-import { analysisLimits } from './file-analysis-contract.mjs';
-import { fileExportSchemas } from './file-export-contract.mjs';
-import { databaseImportSchemas } from './database-import-contract.mjs';
-import { resultExportSchemas } from './result-export-contract.mjs';
+import { analysisLimits } from '../tools/api-contract/analysis-limits.mjs';
+import { fileExportSchemas } from '../tools/api-contract/file-export-schemas.mjs';
+import { databaseImportSchemas } from '../tools/api-contract/database-import-schemas.mjs';
+import { resultExportSchemas } from '../tools/api-contract/result-export-schemas.mjs';
 const regionSchema = {
   type: 'string',
-  enum: [
-    ...new Set([...Object.values(capabilities).flatMap((value) => value.regions), zeroRegion]),
-  ],
+  enum: ['aws-us-east-1', 'aws-us-west-2', 'automatic', 'aws-ap-southeast-1'],
 };
 const schemas = {
   Resource: {

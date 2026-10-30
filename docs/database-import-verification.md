@@ -1,5 +1,7 @@
 # Database Import: implementation and verification
 
+> Node-source/test references below are historical. The owner retired that implementation and its dedicated regression tests in GH-34; current native coverage and tooling boundaries are recorded in [native retirement verification](native-backend-retirement.md).
+
 GH-103 adds Import beside Connect in each supported live MySQL, db9 PostgreSQL and DuckDB
 workspace. The accepted contract is [PR #104's frozen specification](https://github.com/siddontang/tidb.ai/blob/69b3adfc770e346047205638475d6966a5442961/specs/gh-103/spec.md);
 [ADR 0023](decisions/0023-database-import-workspace.md) owns the boundary.

@@ -7,7 +7,7 @@ The static React Console builds independently of the Rust API. The native API ar
 | Console    | `npm run build:console` → `dist/console/` | Static hosting or `npm run start:console`                            |
 | API / Meta | `npm run build:api`                       | `workspace-backend serve --config /absolute/private/deployment.json` |
 
-`npm run check` verifies policy, formatting, lint, generated API/client consistency, isolated oracle/tool tests, types and Console build. `npm run backend:check` builds and verifies native modules, SSO/public policy, real S3, transport, API and native packaging. Both gates are required. No check needs cloud credentials or developer data.
+`npm run check` verifies policy, formatting, lint, generated API/client consistency, isolated Console/tool tests, types and Console build. `npm run backend:check` builds and verifies native modules, SSO/public policy, real S3, transport, API and native packaging. Both gates are required. No check needs cloud credentials or developer data.
 
 ## Configuration and startup
 

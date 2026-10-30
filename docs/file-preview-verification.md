@@ -1,5 +1,7 @@
 # File preview verification
 
+> Node-source/test references below are historical. The owner retired that implementation and its dedicated regression tests in GH-34; current native coverage and tooling boundaries are recorded in [native retirement verification](native-backend-retirement.md).
+
 Verified on 2026-10-27 with TiUI 2.9.1 and React 18.3.1.
 
 ## Implemented behavior

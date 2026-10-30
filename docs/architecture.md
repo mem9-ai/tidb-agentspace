@@ -262,7 +262,7 @@ and [GH-88](../specs/gh-88/spec.md). Domain modules, ports and transport adapter
 implementation; a common executable can embed roles or start them as independent services.
 Global/regional authority and separate Meta instances remain mandatory in either form.
 Co-located roles share process failure; production regional independence requires separate
-processes/hosts. Customer computation remains isolated. Node ESM remains a test-only behavioral oracle; the full Rust regional profile now implements the existing API. The diagram
+processes/hosts. Customer computation remains isolated. The old Node backend and its dedicated tests are removed. Node is limited to build/operator tooling and native test fixtures; the full Rust regional profile implements the existing API. The diagram
 below is a functional view, not one shared metadata database or a centralized data path.
 
 ```mermaid

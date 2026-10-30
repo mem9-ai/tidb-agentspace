@@ -45,7 +45,7 @@ function verify({ pr, commit, main }) {
 test('later backend-only changes do not invalidate a Console build; frontend changes and removals do', () => {
   const original = source();
   const laterBackend = source([
-    { path: 'server/sso.mjs', sha: head, mode: '100644', type: 'blob' },
+    { path: 'backend/api/src/sso.rs', sha: head, mode: '100644', type: 'blob' },
   ]);
   assert.equal(consoleFingerprint(original), consoleFingerprint(laterBackend));
   laterBackend.tree.find((entry) => entry.path === 'src/App.tsx').sha = head;
@@ -99,7 +99,7 @@ test('workflow triggers all current Console inputs, including config and workspa
       path,
     );
   }
-  for (const path of ['server/sso.mjs', 'docs/architecture.md', 'deploy/dev.yaml']) {
+  for (const path of ['backend/api/src/sso.rs', 'docs/architecture.md', 'deploy/dev.yaml']) {
     assert.equal(consoleInput(path), false, path);
     assert.equal(
       workflow.on.push.paths.some((pattern) => matchesGlob(path, pattern)),
