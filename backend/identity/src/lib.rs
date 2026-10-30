@@ -60,6 +60,7 @@ pub struct GuestRegistration {
 }
 
 /// Backed by the Global Meta authority; no Region-to-Global call is made by this module.
+#[derive(Clone)]
 pub struct Directory {
     metadata: Arc<dyn Metadata>,
 }

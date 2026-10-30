@@ -22,6 +22,8 @@ test(
       'workspace-api',
       '--example',
       'personal_login_probe',
+      '--example',
+      'guest_signup_probe',
     ]);
     await exec('cargo', [
       'build',
@@ -145,6 +147,16 @@ test(
         .state,
       'ready',
     );
+    const guestProbe = resolve('meta-service/target/debug/examples/guest_signup_probe');
+    const createGuest = async () =>
+      JSON.parse((await exec(guestProbe, [globalConfig, regionConfig])).stdout);
+    const firstGuest = await createGuest();
+    const secondGuest = await createGuest();
+    for (const field of ['userId', 'organizationId', 'workspaceId']) {
+      assert.notEqual(firstGuest.registration[field], secondGuest.registration[field]);
+      assert.notEqual(firstGuest.registration[field], alice[field]);
+    }
+    assert.ok(firstGuest.accessExpiresAt <= firstGuest.expiresAt);
   },
 );
 test(

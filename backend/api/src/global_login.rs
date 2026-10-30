@@ -8,7 +8,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 use workspace_contracts::Result;
 use workspace_identity::{
-    Directory, Registration, VerifiedIdentity,
+    Directory, GuestRegistration, Registration, VerifiedIdentity,
     onboarding::{Onboarding, RegionControl},
 };
 
@@ -19,6 +19,41 @@ pub struct GlobalLogin {
     sso: Runtime,
     onboarding: Onboarding,
     region: String,
+}
+
+/// Guest registration is deliberately two-stage: the caller first retains the private
+/// credential in a secure browser-bound channel, then initializes the Region. If a Region
+/// reply is lost, the same Guest credential and operation can be retried without adopting
+/// another Workspace. HTTP, rate limits and abuse controls are the host's responsibility.
+pub struct GlobalGuest {
+    directory: Directory,
+    onboarding: Onboarding,
+    region: String,
+}
+
+impl GlobalGuest {
+    pub fn new(
+        directory: Directory,
+        region_control: Arc<dyn RegionControl>,
+        region: String,
+    ) -> Self {
+        Self {
+            onboarding: Onboarding::new(directory.clone(), region_control),
+            directory,
+            region,
+        }
+    }
+
+    /// The returned secret is a credential: never log it or persist it in plaintext.
+    pub async fn begin(&self) -> Result<GuestRegistration> {
+        self.directory.create_guest(&self.region).await
+    }
+
+    /// A successful result means regional policy and expiry intent were durably installed.
+    /// A usable regional session and provider cleanup executor require separate integration.
+    pub async fn finish(&self, guest: &GuestRegistration) -> Result<Registration> {
+        self.onboarding.guest(guest).await
+    }
 }
 
 impl GlobalLogin {

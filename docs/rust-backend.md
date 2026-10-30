@@ -50,8 +50,10 @@ The existing shared-Workspace session now carries its Workspace ID and is reject
 authorization in a different Workspace. SSO produces a verified issuer and subject before
 applying the existing shared-owner allowlist. An inactive Global login application service can
 pass a verified login to the identity directory and regional onboarding; a signed fake-provider
-and isolated S3 integration test covers this composition. No hosted route calls that service,
-and it does not issue Region sessions or implement multi-tenant routing.
+and isolated S3 integration test covers this composition. A two-stage Guest signup service
+provides a private credential before idempotent regional initialization; a caller must retain
+it securely for retry and enforce rate and quota controls. No hosted route calls these services,
+and they do not issue Region sessions or implement multi-tenant routing.
 The unused managed Workspace constructor checks its regional owner policy on entry, including
 owner identity and policy generation, and Guest expiry before either owner-session or Workspace
 Key authentication. This is one layer, not a complete authorization path: the eventual
