@@ -54,19 +54,18 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Verify native build/cache, deploy, or inspect configuration read-only
+        description: Deploy the native API or explicitly inspect configuration read-only
         type: choice
-        options: [inspect, verify, deploy]
-        default: inspect
+        options: [deploy, inspect]
+        default: deploy
 
 permissions:
   contents: read
 
 # Concurrency is split by whether the run can deploy:
 #
-# - Pull requests and main-only build/cache verification: one group per ref,
-#   cancel-in-progress so a newer verification supersedes the older run.
-#   Cache warmup never occupies the deployment queue or receives cloud credentials.
+# - Pull requests: one group per ref, cancel-in-progress so a newer
+#   verification supersedes the older run.
 # - Push to main and manual dispatch (can deploy): ONE shared constant group
 #   with cancel-in-progress FALSE. Deploy-capable runs therefore queue behind
 #   one another and are never cancelled mid-rollout/rollback — a second main
@@ -74,8 +73,8 @@ permissions:
 #   workflow level. The deploy job's own constant group keeps that invariant
 #   even if this block is later changed.
 concurrency:
-  group: dev-cd-${{ (github.event_name == 'pull_request' || github.event.inputs.operation == 'verify') && format('verify-{0}', github.ref) || 'deploy' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event.inputs.operation == 'verify' }}
+  group: dev-cd-${{ github.event_name == 'pull_request' && format('verify-{0}', github.ref) || 'deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Run the complete quality/native gate before releases. PR image verification
@@ -147,7 +146,7 @@ jobs:
 
   image:
     name: Native image
-    if: github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event.inputs.operation == 'verify')
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -197,7 +196,7 @@ jobs:
     timeout-minutes: 75
     needs: verify
     # Never deploy from a pull request — PRs run the quality gate only.
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.event.inputs.operation != 'verify'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     # Serialize by the actual deployment target, NOT the source ref: every
     # deploy run (main push or any manual ref) shares this one constant group,
     # so two runs can never interleave `set image` / `rollout` / `rollout undo`

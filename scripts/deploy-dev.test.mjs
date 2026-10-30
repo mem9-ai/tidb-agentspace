@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 import { parse } from 'yaml';
 import { deployDev } from './deploy-dev.mjs';
 
@@ -199,16 +200,12 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
   const ci = parse(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'));
   assert.equal(ci.on.pull_request, null);
   assert.deepEqual(ci.on.push, { branches: ['main'] });
-  assert.deepEqual(workflow.on.workflow_dispatch.inputs.operation.options, [
-    'inspect',
-    'verify',
-    'deploy',
-  ]);
-  assert.equal(workflow.on.workflow_dispatch.inputs.operation.default, 'inspect');
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.operation.options, ['deploy', 'inspect']);
+  assert.equal(workflow.on.workflow_dispatch.inputs.operation.default, 'deploy');
   assert.equal(workflow.jobs.resolve, undefined);
   assert.equal(
     workflow.jobs.deploy.if,
-    "github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.event.inputs.operation != 'verify'",
+    "github.event_name != 'pull_request' && github.ref == 'refs/heads/main'",
   );
   assert.equal(
     workflow.jobs.verify.if,
@@ -218,18 +215,15 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
   assert.equal(workflow.jobs.deploy.environment, 'dev');
   assert.equal(workflow.jobs.verify.environment, undefined);
   assert.equal(workflow.jobs.image.environment, undefined);
-  assert.equal(
-    workflow.jobs.image.if,
-    "github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event.inputs.operation == 'verify')",
-  );
+  assert.equal(workflow.jobs.image.if, "github.event_name == 'pull_request'");
   assert.equal(workflow.jobs.image.needs, undefined);
   assert.equal(
     workflow.concurrency['cancel-in-progress'],
-    "${{ github.event_name == 'pull_request' || github.event.inputs.operation == 'verify' }}",
+    "${{ github.event_name == 'pull_request' }}",
   );
   assert.equal(
     workflow.concurrency.group,
-    "dev-cd-${{ (github.event_name == 'pull_request' || github.event.inputs.operation == 'verify') && format('verify-{0}', github.ref) || 'deploy' }}",
+    "dev-cd-${{ github.event_name == 'pull_request' && format('verify-{0}', github.ref) || 'deploy' }}",
   );
   assert.equal(workflow.jobs.deploy.concurrency['cancel-in-progress'], false);
   assert.equal(workflow.jobs.deploy.concurrency.group, 'dev-cd-deploy-target');
@@ -274,6 +268,35 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
     ),
   );
   assert.equal(workflow.jobs.deploy.steps.at(-1).run, 'node scripts/deploy-dev.mjs');
+});
+
+test('main pushes and default manual runs publish and deploy; inspection is explicit', () => {
+  const workflow = parse(
+    readFileSync(new URL('../.github/workflows/dev-cd.yml', import.meta.url), 'utf8'),
+  );
+  const deployment = workflow.jobs.deploy;
+  const build = deployment.steps.find((step) => step.id === 'image');
+  const rollout = deployment.steps.find((step) => step.run === 'node scripts/deploy-dev.mjs');
+  for (const [event, ref, requested, expected] of [
+    ['push', 'refs/heads/main', undefined, true],
+    ['workflow_dispatch', 'refs/heads/main', undefined, true],
+    ['workflow_dispatch', 'refs/heads/main', 'deploy', true],
+    ['workflow_dispatch', 'refs/heads/main', 'inspect', false],
+    ['workflow_dispatch', 'refs/heads/feature', undefined, false],
+    ['pull_request', 'refs/pull/1/merge', undefined, false],
+    ['pull_request', 'refs/heads/main', undefined, false],
+  ]) {
+    const operation =
+      event === 'workflow_dispatch'
+        ? (requested ?? workflow.on.workflow_dispatch.inputs.operation.default)
+        : undefined;
+    const github = { event_name: event, ref, event: { inputs: { operation } } };
+    for (const step of [build, rollout]) {
+      const runs =
+        runInNewContext(deployment.if, { github }) && runInNewContext(step.if, { github });
+      assert.equal(runs, expected, `${event} on ${ref} (${operation ?? 'no operation'})`);
+    }
+  }
 });
 
 test('image delivery refuses a legacy target before mutation', () => {
