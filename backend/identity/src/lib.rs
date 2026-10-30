@@ -2,6 +2,7 @@
 //! regional access; callers must supply an already verified issuer and subject.
 
 pub mod regional;
+pub mod sessions;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -530,7 +531,7 @@ impl Directory {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::{
         collections::BTreeMap,
@@ -542,10 +543,10 @@ mod tests {
     use workspace_contracts::Call;
 
     #[derive(Default)]
-    struct MemoryMeta {
-        groups: Mutex<BTreeMap<String, BTreeMap<String, Value>>>,
-        lose_reply: AtomicBool,
-        authority: Option<String>,
+    pub(crate) struct MemoryMeta {
+        pub(crate) groups: Mutex<BTreeMap<String, BTreeMap<String, Value>>>,
+        pub(crate) lose_reply: AtomicBool,
+        pub(crate) authority: Option<String>,
     }
     impl Metadata for MemoryMeta {
         fn health(&self) -> Call<'_> {

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use workspace_identity::{
     Directory, Provisioning, Registration, VerifiedIdentity,
     regional::{Policies, Policy, Principal},
+    sessions::Sessions,
 };
 use workspace_meta_client::{ClientConfig, RemoteMetadata};
 
@@ -35,6 +36,45 @@ async fn main() -> anyhow::Result<()> {
             .authorize_owner(&args[4], Principal::Oidc { issuer, subject })
             .await?;
         println!("{{\"authorized\":true}}");
+        return Ok(());
+    }
+    if args[2] == "--region-issue" {
+        let input: serde_json::Value = serde_json::from_slice(&std::fs::read(&args[3])?)?;
+        let authority = input["regionId"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing region"))?;
+        let issuer = input["issuer"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing issuer"))?;
+        let subject = input["subject"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing subject"))?;
+        let sessions = Sessions::open(metadata, authority).await?;
+        let credentials = sessions
+            .issue_owner(&args[4], Principal::Oidc { issuer, subject })
+            .await?;
+        println!(
+            "{}",
+            serde_json::json!({"access":credentials.access,"renewal":credentials.renewal})
+        );
+        return Ok(());
+    }
+    if args[2] == "--region-access" || args[2] == "--region-renew" {
+        let input: serde_json::Value = serde_json::from_slice(&std::fs::read(&args[3])?)?;
+        let authority = input["regionId"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing region"))?;
+        let token = input["token"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing token"))?;
+        let sessions = Sessions::open(metadata, authority).await?;
+        if args[2] == "--region-access" {
+            sessions.authorize(&args[4], token).await?;
+            println!("{{\"authorized\":true}}");
+        } else {
+            let access = sessions.renew(&args[4], token).await?;
+            println!("{}", serde_json::json!({"access":access.token}));
+        }
         return Ok(());
     }
     let directory = Directory::open(metadata).await?;

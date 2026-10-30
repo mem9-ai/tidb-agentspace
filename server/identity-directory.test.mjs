@@ -62,6 +62,7 @@ test(
     const policyPath = resolve(fixture.directory, 'regional-policy.json');
     const claimsPath = resolve(fixture.directory, 'regional-claims.json');
     const acknowledgementPath = resolve(fixture.directory, 'regional-ack.json');
+    const sessionPath = resolve(fixture.directory, 'regional-session.json');
     const policy = {
       workspaceId: concurrent[0].workspaceId,
       organizationId: concurrent[0].organizationId,
@@ -86,6 +87,16 @@ test(
     const authorizeRegion = () =>
       exec(probe, [config, '--region-auth', claimsPath, policy.workspaceId]);
     await authorizeRegion();
+    const credentials = JSON.parse(
+      (await exec(probe, [config, '--region-issue', claimsPath, policy.workspaceId])).stdout,
+    );
+    const useSession = async (token) =>
+      writeFile(sessionPath, JSON.stringify({ regionId: 'region:other', token }), { mode: 0o600 });
+    const accessRegion = (workspace = policy.workspaceId) =>
+      exec(probe, [config, '--region-access', sessionPath, workspace]);
+    await useSession(credentials.access);
+    await accessRegion();
+    await assert.rejects(accessRegion(bob.workspaceId));
     await use(global);
     const status = async () =>
       JSON.parse(
@@ -114,6 +125,13 @@ test(
     region = await fixture.service('other', { previous: region, recoverOwner: regionOwner });
     await use(region);
     await authorizeRegion();
+    await accessRegion();
+    await useSession(credentials.renewal);
+    const renewed = JSON.parse(
+      (await exec(probe, [config, '--region-renew', sessionPath, policy.workspaceId])).stdout,
+    );
+    await useSession(renewed.access);
+    await accessRegion();
     await writeFile(
       claimsPath,
       JSON.stringify({

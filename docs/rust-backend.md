@@ -28,11 +28,12 @@ The fresh record profile supersedes the document migration baseline; see [ADR 00
 | `backend/host`        | Configuration, dependency wiring, real role composition and ordered shutdown           |
 
 The identity module reserves a complete Global personal identity group atomically and stores
-only a verifier for a temporary Guest secret. It also provides Region-local owner policy
-installation and checks; installing a policy requires a trusted Global-initiated channel, which
-is not implemented here. A reservation is pending regional initialization and does not authorize
-regional access. These primitives are not wired into SSO, API routing, Guest cleanup or the hosted
-service. They do not establish a multi-tenant deployment.
+only a verifier for a temporary Guest secret. It also provides Region-local owner policy and
+durable session/renewal primitives. Installing a policy requires a trusted Global-initiated
+channel, which is not implemented here; session issuance requires an already verified principal.
+A reservation is pending regional initialization and does not authorize regional access. These
+primitives are not wired into SSO, API routing, Guest cleanup or the hosted service. They do not
+establish a multi-tenant deployment.
 
 Domain operations are shared by Console and agent requests. Providers and computation are
 separate crates behind regional application operations. Metadata supports in-process and remote

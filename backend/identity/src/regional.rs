@@ -45,6 +45,7 @@ pub struct Policy {
 }
 
 /// OIDC fields must come from a cryptographically verified identity, not request parameters.
+#[derive(Clone, Copy)]
 pub enum Principal<'a> {
     Oidc { issuer: &'a str, subject: &'a str },
     Guest { guest_id: &'a str, secret: &'a str },
@@ -105,7 +106,7 @@ impl Policies {
         })
     }
 
-    fn scope(&self, workspace: &str) -> Result<Scope> {
+    pub(crate) fn scope(&self, workspace: &str) -> Result<Scope> {
         if !uuid(workspace) {
             return Err(error(404, "WORKSPACE_NOT_FOUND"));
         }
@@ -118,7 +119,7 @@ impl Policies {
         })
     }
 
-    async fn read(&self, scope: &Scope) -> Result<Option<(Policy, String)>> {
+    pub(crate) async fn read(&self, scope: &Scope) -> Result<Option<(Policy, String)>> {
         let response = self
             .metadata
             .execute(MetaRequest::Get {
@@ -231,7 +232,7 @@ impl Policies {
         self.authorize_at(workspace, principal, now()?).await
     }
 
-    async fn authorize_at(
+    pub(crate) async fn authorize_at(
         &self,
         workspace: &str,
         principal: Principal<'_>,
