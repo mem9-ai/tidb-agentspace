@@ -33,6 +33,24 @@ on:
       - '.github/workflows/dev-cd.yml'
   push:
     branches: [main]
+    # Console and documentation changes retain ordinary CI, without releasing an API image.
+    paths:
+      - 'backend/**'
+      - 'meta-service/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.cargo/**'
+      - 'scripts/duckdb-runtime.json'
+      - 'scripts/prepare-duckdb.mjs'
+      - 'public/openapi.json'
+      - 'scripts/deploy-dev*'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.node-version'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.github/workflows/dev-cd.yml'
   workflow_dispatch:
     inputs:
       operation:

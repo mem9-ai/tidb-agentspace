@@ -10,13 +10,17 @@ First-installation and diagnostic automation are not part of the recurring pipel
 
 ## Release path
 
-Every push to `main` deploys. Manual dispatch is also restricted to the `main` branch;
-there is no arbitrary source-ref input. Pull requests validate without deployment credentials.
+Pushes to `main` changing API/runtime, build or delivery inputs release an API image.
+Documentation and Console-only changes retain ordinary CI and their independent publication
+without an API release. Manual dispatch is restricted to `main`; there is no arbitrary
+source-ref input. Build/cache-only verification skips protected deployment entirely.
+Pull requests validate without deployment credentials.
 
 1. Both jobs check out the event commit `github.sha`, so verification and deployment
    use the same immutable source even if `main` advances between jobs.
-2. Run `npm run check`. PRs also build the amd64/arm64 image without pushing it.
-3. After tests pass on a release, build and push the multi-architecture image **once**.
+2. Run `npm run check` and the required native checks. PRs also build the verified Linux
+   amd64 image without pushing it; no unverified architecture is advertised.
+3. After tests pass on a release, build and push the native image **once**.
    Read the immutable digest from Buildx's output metadata, not by resolving a mutable
    tag later. The tag includes the full source SHA for traceability.
 4. Read the existing Deployment and capture the target container's current digest.

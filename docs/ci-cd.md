@@ -11,7 +11,9 @@
   runs the same quality gate and packages the runtime, frontend,
   API contract, source SHA, and checksums. It does not deploy to a cloud provider.
 - `.github/workflows/dev-cd.yml`: credential-free PR verification, then digest-pinned API
-  deployment to a configured EKS dev environment on every `main` push or manual request.
+  deployment to a configured EKS dev environment on `main` pushes changing API/runtime,
+  build or delivery inputs, or a manual main request. Documentation/Console-only commits
+  retain ordinary CI and independent Console publication without releasing an API image.
   Releases only update the existing Deployment image and restore the previous digest on
   failure. [ADR 0013](decisions/0013-dev-kubernetes-cd.md) defines the existing runtime
   contract, readiness and rollback. Each repository must configure its own
@@ -227,6 +229,8 @@ Measured on 2026-10-30 for [GH-17](https://github.com/mem9-ai/tidb.ai/issues/17)
 | [Console publication](https://github.com/mem9-ai/tidb.ai/actions/runs/40979799331)               | 9m 16s total                    | Website PR creation 2m 58s and waiting for its independent checks 1m 56s; separate from API image compilation         |
 
 The native PR image job now runs alongside the complete quality/native gate. It has no cloud identity, does not push an image, and smoke-tests the final runtime without network access or a writable root. Main releases still require the entire quality/native gate before entering the protected deployment job. Manual `inspect` retains `npm run check` but omits native compilation/tests because it neither packages nor deploys an API. Deploy operations retain all native/S3 checks, immutable digest verification, serialization and rollback.
+
+Automatic API release paths match the existing PR image-input paths, including all backend/metadata sources, root Cargo/toolchain/configuration inputs, verified DuckDB preparation, the generated API contract, Docker inputs and the release workflow/helper. Ordinary CI remains unfiltered on PRs and main pushes. Pure documentation and Console changes therefore retain checks without queuing a new native API release. Manual main verification, inspection and deployment remain available regardless of changed paths.
 
 The SSO fixture also showed long tail latency: its main case took 180.55s in the earlier dependency-update run and 0.86s in the first optimized quality-gate run. Cleanup hooks previously closed dependencies before their API client. Cleanup now stops that API with the existing bounded process helper, closes the fake provider's active connections, then closes metadata. A live regression holds a provider response open and verifies teardown does not wait for its client watchdog; removing connection reaping makes this case fail. All authentication assertions remain intact. This changes test fixtures only, not product session timeouts or production shutdown policy.
 

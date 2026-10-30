@@ -192,7 +192,13 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
   const workflow = parse(
     readFileSync(new URL('../.github/workflows/dev-cd.yml', import.meta.url), 'utf8'),
   );
-  assert.deepEqual(workflow.on.push, { branches: ['main'] });
+  assert.deepEqual(workflow.on.push.branches, ['main']);
+  assert.deepEqual(workflow.on.push.paths, workflow.on.pull_request.paths);
+  for (const input of ['backend/**', 'meta-service/**', 'Cargo.lock', 'Dockerfile'])
+    assert.ok(workflow.on.push.paths.includes(input), `API release lost ${input}`);
+  const ci = parse(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'));
+  assert.equal(ci.on.pull_request, null);
+  assert.deepEqual(ci.on.push, { branches: ['main'] });
   assert.deepEqual(workflow.on.workflow_dispatch.inputs.operation.options, [
     'inspect',
     'verify',
