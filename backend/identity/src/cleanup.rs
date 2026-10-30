@@ -14,7 +14,7 @@ use crate::{
     regional::{OwnerIdentity, Policies, Policy},
 };
 
-const SHARDS: u8 = 64;
+pub(crate) const SHARDS: u8 = 64;
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(
@@ -115,7 +115,7 @@ fn uuid(value: &str) -> bool {
     Uuid::parse_str(value).is_ok_and(|id| id.to_string() == value)
 }
 
-fn shard(workspace: &str) -> Result<u8> {
+pub(crate) fn shard(workspace: &str) -> Result<u8> {
     if !uuid(workspace) {
         return Err(error(400, "INVALID_CLEANUP_JOB"));
     }

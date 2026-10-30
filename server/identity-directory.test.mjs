@@ -402,26 +402,20 @@ test(
       JSON.stringify({ regionId: 'region:other', partition: unsupportedPartition }),
       { mode: 0o600 },
     );
-    const unsupportedJob = (await due()).find((job) => job.workspaceId === unsupported.workspaceId);
-    await writeFile(
-      cleanupInputPath,
-      JSON.stringify({ regionId: 'region:other', job: unsupportedJob }),
-      { mode: 0o600 },
+    await exec(probe, [config, '--cleanup-scan', '-', '-'], { timeout: 30000 });
+    const unsupportedClaim = (await due()).find(
+      (job) => job.workspaceId === unsupported.workspaceId,
     );
-    const unsupportedAttempt = randomUUID();
-    const unsupportedClaim = JSON.parse(
-      (await exec(probe, [config, '--cleanup-claim', cleanupInputPath, unsupportedAttempt])).stdout,
-    );
+    assert.equal(unsupportedClaim.status.state, 'deferred');
     await writeFile(
       cleanupInputPath,
       JSON.stringify({
         regionId: 'region:other',
         job: unsupportedClaim,
-        attemptId: unsupportedAttempt,
+        attemptId: unsupportedClaim.status.attemptId,
       }),
       { mode: 0o600 },
     );
-    await exec(probe, [config, '--cleanup-defer', cleanupInputPath, randomUUID()]);
     await assert.rejects(
       exec(probe, [config, '--cleanup-complete', cleanupInputPath, randomUUID()]),
     );

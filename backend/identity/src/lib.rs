@@ -5,6 +5,7 @@ pub mod cleanup;
 pub mod embedded_region;
 pub mod onboarding;
 pub mod regional;
+pub mod scheduler;
 pub mod sessions;
 
 use serde::{Deserialize, Serialize};

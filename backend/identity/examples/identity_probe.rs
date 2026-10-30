@@ -6,9 +6,27 @@ use workspace_identity::{
     embedded_region::EmbeddedRegion,
     onboarding::{Command, Onboarding, RegionControl},
     regional::{OwnerIdentity, Policies, Policy, Principal},
+    scheduler::{Outcome, Processor, Scheduler},
     sessions::Sessions,
 };
 use workspace_meta_client::{ClientConfig, RemoteMetadata};
+
+struct UnsupportedFixture;
+impl Processor for UnsupportedFixture {
+    fn process<'a>(
+        &'a self,
+        _: &'a Job,
+        _: &'a str,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = workspace_contracts::Result<Outcome>> + Send + 'a>,
+    > {
+        Box::pin(async {
+            Ok(Outcome::Deferred(
+                DeferredReason::ProviderDeletionUnsupported,
+            ))
+        })
+    }
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -290,6 +308,15 @@ async fn main() -> anyhow::Result<()> {
             "{}",
             serde_json::json!({"jobs":page.jobs,"nextCursor":page.next_cursor})
         );
+        return Ok(());
+    }
+    if args[2] == "--cleanup-scan" {
+        let queue = Arc::new(Queue::open(metadata, &authority).await?);
+        let mut scheduler = Scheduler::new(queue, Arc::new(UnsupportedFixture), 32)?;
+        for _ in 0..64 {
+            scheduler.tick().await?;
+        }
+        println!("{{\"scanned\":true}}");
         return Ok(());
     }
     if ["--cleanup-claim", "--cleanup-complete", "--cleanup-defer"].contains(&args[2].as_str()) {
