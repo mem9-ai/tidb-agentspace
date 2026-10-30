@@ -66,6 +66,11 @@ and Browser smoke) before its independent `/studio/` build; unrelated Rust work 
 be running. Source freshness, website checks, protected branches and exact-tree merge checks
 remain in place. The manual internal-artifact workflow retains isolated verification.
 
+Console publication fetches the website without `site/releases/` blobs while preserving the
+complete Git index and release subtree. All website validation and protected merge gates
+remain required; the [publication guide](console-publishing.md#website-checkout-and-release-files)
+owns the sparse-checkout guard, regression and timing comparison procedure.
+
 Evidence is bound to this repository's `ci.yml`, trusted main push/manual event, exact SHA,
 and newest run/attempt. Required jobs must succeed; missing, cancelled, skipped, ambiguous,
 wrong-source or untrusted results fail closed. Caches are never evidence. Missing results
