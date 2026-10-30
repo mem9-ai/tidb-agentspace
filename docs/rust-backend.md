@@ -32,6 +32,9 @@ inactive Global-initiated onboarding interface, and stores
 only a verifier for a temporary Guest secret. It also provides Region-local owner policy and
 durable session/renewal and sharded Guest cleanup-queue primitives. Installing a policy requires a trusted Global-initiated
 channel, which is not implemented here; session issuance requires an already verified principal.
+A co-located Region initialization implementation creates only explicitly owned empty
+Workspaces; a separately deployed Global must use a Region control service and never open a
+remote Region Meta store directly.
 A reservation is pending regional initialization and does not authorize regional access. These
 primitives are not wired into SSO, API routing, a cleanup scheduler/provider deletion or the hosted
 service. A claimed cleanup job requires reconciliation after an uncertain result; it is not

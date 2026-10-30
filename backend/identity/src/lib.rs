@@ -2,6 +2,7 @@
 //! regional access; callers must supply an already verified issuer and subject.
 
 pub mod cleanup;
+pub mod embedded_region;
 pub mod onboarding;
 pub mod regional;
 pub mod sessions;

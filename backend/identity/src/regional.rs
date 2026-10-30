@@ -60,7 +60,7 @@ fn uuid(value: &str) -> bool {
     Uuid::parse_str(value).is_ok_and(|id| id.to_string() == value)
 }
 
-fn validate(policy: &Policy, authority: &str) -> Result<()> {
+pub(crate) fn validate(policy: &Policy, authority: &str) -> Result<()> {
     if !uuid(&policy.workspace_id)
         || !uuid(&policy.organization_id)
         || !uuid(&policy.principal_id)

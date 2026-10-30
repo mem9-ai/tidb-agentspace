@@ -30,6 +30,7 @@ test(
       region.client.close();
     });
     const config = resolve(fixture.directory, 'identity-client.json');
+    const regionConfig = resolve(fixture.directory, 'regional-client.json');
     const probe = resolve('meta-service/target/debug/examples/identity_probe');
     const use = async (service) =>
       writeFile(config, JSON.stringify(service.clientConfig), { mode: 0o600 });
@@ -48,7 +49,7 @@ test(
     assert.notEqual(bob.workspaceId, concurrent[0].workspaceId);
     assert.notEqual(otherIssuer.workspaceId, concurrent[0].workspaceId);
     const createGuest = async () => {
-      const result = await exec(probe, [config, '--guest-create', 'region:a', '-']);
+      const result = await exec(probe, [config, '--guest-create', 'region:other', '-']);
       return JSON.parse(result.stdout);
     };
     const authGuest = async (guest, secret = guest.secret) => {
@@ -59,6 +60,24 @@ test(
     const guestB = await createGuest();
     assert.notEqual(guestA.registration.workspaceId, guestB.registration.workspaceId);
     await assert.rejects(authGuest(guestA, guestB.secret));
+    await writeFile(regionConfig, JSON.stringify(region.clientConfig), { mode: 0o600 });
+    const onboarding = await Promise.all(
+      Array.from({ length: 4 }, async () =>
+        JSON.parse(
+          (await exec(probe, [config, '--onboard-personal', regionConfig, 'charlie'])).stdout,
+        ),
+      ),
+    );
+    assert.ok(onboarding.every((value) => value.workspaceId === onboarding[0].workspaceId));
+    const guestInput = resolve(fixture.directory, 'guest-onboarding.json');
+    await writeFile(guestInput, JSON.stringify(guestA), { mode: 0o600 });
+    const guestWorkspace = JSON.parse(
+      (await exec(probe, [config, '--onboard-guest', regionConfig, guestInput])).stdout,
+    );
+    assert.equal(guestWorkspace.workspaceId, guestA.registration.workspaceId);
+    assert.notEqual(guestWorkspace.workspaceId, onboarding[0].workspaceId);
+    await exec(probe, [regionConfig, '--workspace-check', onboarding[0].workspaceId, '-']);
+    await exec(probe, [regionConfig, '--workspace-check', guestWorkspace.workspaceId, '-']);
     const policyPath = resolve(fixture.directory, 'regional-policy.json');
     const claimsPath = resolve(fixture.directory, 'regional-claims.json');
     const acknowledgementPath = resolve(fixture.directory, 'regional-ack.json');
