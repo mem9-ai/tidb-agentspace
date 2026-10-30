@@ -1,5 +1,6 @@
 import { createWorkspaceClient, resolveApiBaseUrl, responseData } from './transport';
 import { createUploadFetch, type UploadProgress } from './upload-transport';
+import { firstWorkspaceId } from './workspace-selection';
 import type { components, operations } from './schema';
 
 export type Resource = components['schemas']['Resource'];
@@ -40,18 +41,25 @@ export type SsoAuthConfig = {
 export type ResultExportInput = JsonBody<operations['exportResult']>;
 export type ResultExportOutput =
   operations['exportResult']['responses'][200]['content']['application/json'];
-export const workspaceId = 'ws_agentlab';
-export const base = `/api/v1/workspaces/${workspaceId}`;
-const params = { path: { workspaceId } } as const;
+export let workspaceId = '';
+export let base = '';
+let params = { path: { workspaceId } };
 export let apiBaseUrl = window.location.origin;
 export { apiBaseUrl as apiOrigin };
 let client = createWorkspaceClient(apiBaseUrl);
 let sessionClient = createWorkspaceClient(apiBaseUrl, fetch, '');
 
+function clearWorkspace() {
+  workspaceId = '';
+  base = '';
+  params = { path: { workspaceId } };
+}
+
 export function configureApi(config: unknown) {
   apiBaseUrl = resolveApiBaseUrl(config, window.location.origin);
   client = createWorkspaceClient(apiBaseUrl);
   sessionClient = createWorkspaceClient(apiBaseUrl, fetch, '');
+  clearWorkspace();
 }
 
 export const workspaceApi = {
@@ -122,6 +130,13 @@ export const workspaceApi = {
   analyzeFile: (body: FileAnalysisInput, signal?: AbortSignal) =>
     responseData(client.POST('/workspaces/{workspaceId}/file-analyses', { params, body, signal })),
   startSession: () => responseData(sessionClient.POST('/api/session', { body: {} })),
+  discoverWorkspace: async () => {
+    clearWorkspace();
+    const id = firstWorkspaceId(await responseData(client.GET('/workspaces')));
+    workspaceId = id;
+    base = `/api/v1/workspaces/${encodeURIComponent(id)}`;
+    params = { path: { workspaceId: id } };
+  },
   authConfig: async (): Promise<SsoAuthConfig> => {
     const response = await fetch(apiBaseUrl + '/api/auth/config', { credentials: 'include' });
     if (!response.ok) return { enabled: false };

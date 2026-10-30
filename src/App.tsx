@@ -328,6 +328,7 @@ function App() {
       const auth = await workspaceApi.authConfig();
       setSso(auth);
       if (!auth.enabled) await workspaceApi.startSession();
+      await workspaceApi.discoverWorkspace();
       await refresh();
     } catch (e) {
       setError((e as Error).message);

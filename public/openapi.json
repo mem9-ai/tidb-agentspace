@@ -223,8 +223,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -328,8 +333,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -575,8 +585,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -744,8 +759,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -935,8 +955,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -1125,8 +1150,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -1477,8 +1507,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -1676,8 +1711,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -1687,8 +1727,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         },
         { "name": "resourceId", "in": "path", "required": true, "schema": { "type": "string" } }
       ],
@@ -1798,8 +1843,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         },
         { "name": "resourceId", "in": "path", "required": true, "schema": { "type": "string" } }
       ],
@@ -1904,8 +1954,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         },
         { "name": "resourceId", "in": "path", "required": true, "schema": { "type": "string" } }
       ],
@@ -2019,8 +2074,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         },
         { "name": "resourceId", "in": "path", "required": true, "schema": { "type": "string" } }
       ],
@@ -2237,8 +2297,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -2378,8 +2443,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -2491,8 +2561,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -2606,8 +2681,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -2717,8 +2797,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -2836,8 +2921,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -2982,8 +3072,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -3097,8 +3192,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -3210,8 +3310,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -3465,8 +3570,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -3476,8 +3586,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         },
         { "name": "keyId", "in": "path", "required": true, "schema": { "type": "string" } }
       ],
@@ -3696,8 +3811,13 @@
           "name": "workspaceId",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "const": "ws_agentlab" },
-          "description": "This local prototype has one workspace."
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
         }
       ]
     },
@@ -3755,10 +3875,7 @@
                 "schema": {
                   "type": "object",
                   "required": ["workspaceId", "mode"],
-                  "properties": {
-                    "workspaceId": { "const": "ws_agentlab" },
-                    "mode": { "const": "demo" }
-                  }
+                  "properties": { "workspaceId": { "type": "string" }, "mode": { "const": "demo" } }
                 }
               }
             }

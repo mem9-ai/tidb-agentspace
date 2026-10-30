@@ -276,8 +276,8 @@ const workspaceId = {
   name: 'workspaceId',
   in: 'path',
   required: true,
-  schema: { type: 'string', const: 'ws_agentlab' },
-  description: 'This local prototype has one workspace.',
+  schema: { type: 'string', minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_.:-]+$' },
+  description: 'A Workspace ID returned by the authenticated Workspace discovery API.',
 };
 const paths = {
   '/workspaces': {
@@ -941,7 +941,7 @@ paths['/api/session'] = {
   post: {
     ...operation('createLocalSession', 'Create a loopback-only demo owner session', null, {
       input: object({}, []),
-      output: object({ workspaceId: { const: 'ws_agentlab' }, mode: { const: 'demo' } }),
+      output: object({ workspaceId: str, mode: { const: 'demo' } }),
     }),
     security: [],
     description:
