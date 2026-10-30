@@ -40,6 +40,14 @@ primitives are not wired into SSO, API routing, a cleanup scheduler/provider del
 service. A claimed cleanup job requires reconciliation after an uncertain result; it is not
 automatically retried. They do not establish a multi-tenant deployment.
 
+An inactive DB9 cleanup adapter can issue one deletion request for a durably claimed Guest
+resource after checking the scoped Workspace, provider binding, existing account and Region
+policy. A successful [DB9 deletion response](https://db9.ai/docs/api/) is acceptance only, not
+proof that the resource has been deleted. A production executor must fence and drain in-flight
+operations, reconcile provider state, and verify every owned resource before removing metadata
+or credentials. Missing credentials or an uncertain outcome must remain visible for recovery.
+There is no running cleanup executor or verified live-provider deletion in this implementation.
+
 Domain operations are shared by Console and agent requests. Providers and computation are
 separate crates behind regional application operations. Metadata supports in-process and remote
 ports; those are implemented deployment modes. Provider/compute crates do not claim independent

@@ -26,6 +26,7 @@ workspace-contracts = { path = "backend/contracts" }
 workspace-meta-client = { path = "backend/meta-client" }
 workspace-meta-service = { path = "meta-service" }
 workspace-domain = { path = "backend/workspace" }
+workspace-identity = { path = "backend/identity" }
 workspace-api = { path = "backend/api" }
 
 workspace-providers = { path = "backend/providers" }

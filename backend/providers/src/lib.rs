@@ -10,6 +10,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::{Mutex, Semaphore};
 use workspace_contracts::{Result, ServiceError};
 use workspace_domain::{Repository, secret};
+use workspace_identity::cleanup::{Queue, ResourcePermit, target_digest};
 pub const DRIVE9: &str = "drive9-anonymous";
 pub const ZERO: &str = "tidb-cloud-zero";
 pub const DB9: &str = "db9-anonymous";
@@ -108,6 +109,10 @@ pub struct Providers {
     mysql_slots: Semaphore,
     postgres_slots: Semaphore,
 }
+
+/// The provider accepted the request; this is not evidence that deletion has completed.
+pub struct DeletionAccepted;
+
 impl Providers {
     pub fn new(config: Config, repository: Arc<Repository>) -> Result<Self> {
         config.validate()?;
@@ -132,6 +137,69 @@ impl Providers {
     }
     pub async fn save_binding(&self, doc: &str, id: &str, binding: Value) -> Result<()> {
         self.repository.save_binding(doc, id, binding).await
+    }
+
+    /// Issue exactly one DB9 deletion attempt after the Region cleanup queue has durably
+    /// claimed this expired Guest resource. The caller must drain/fence in-flight work first.
+    /// Success only confirms provider acceptance; a separate provider-specific observation
+    /// must establish completion before any Workspace or credential records are removed.
+    /// This method is not exposed by the current API or scheduler.
+    pub async fn delete_expired_guest_db9(
+        &self,
+        queue: &Queue,
+        permit: ResourcePermit,
+    ) -> Result<DeletionAccepted> {
+        if permit.authority() != self.repository.authority_id()
+            || permit.workspace_id() != self.repository.workspace_id()
+            || permit.provider() != DB9
+        {
+            return Err(err(403, "CLEANUP_SCOPE_MISMATCH"));
+        }
+        let _guard = self.setup.lock().await;
+        let resource = self.repository.resource(permit.resource_id()).await?;
+        if resource["kind"] != "postgresql" || resource["provider"] != DB9 {
+            return Err(err(403, "CLEANUP_SCOPE_MISMATCH"));
+        }
+        let binding = self.binding("db9", permit.resource_id()).await?;
+        let target =
+            strv(&binding, "instanceId").map_err(|_| err(503, "CLEANUP_BINDING_MISSING"))?;
+        // A provider ID is one path segment, never a URL or a relative path.
+        if target.is_empty()
+            || !target
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        {
+            return Err(err(503, "CLEANUP_BINDING_MISSING"));
+        }
+        if target_digest(DB9, target).map_err(|_| err(503, "CLEANUP_BINDING_MISSING"))?
+            != permit.target_digest()
+        {
+            return Err(err(403, "CLEANUP_TARGET_MISMATCH"));
+        }
+        let saved = self.repository.account("db9").await?;
+        if saved["state"] != "ready" {
+            // Never register a replacement provider account during cleanup.
+            return Err(err(503, "CLEANUP_ACCOUNT_MISSING"));
+        }
+        let account = self
+            .account_with_creation(false)
+            .await
+            .map_err(|_| err(503, "CLEANUP_ACCOUNT_UNAVAILABLE"))?;
+        let token = strv(&account, "token").map_err(|_| err(503, "CLEANUP_ACCOUNT_MISSING"))?;
+        queue.validate_permit(&permit).await?;
+        let response = self
+            .db9_request(
+                &format!("/databases/{target}"),
+                Method::DELETE,
+                None,
+                Some(token),
+            )
+            .await
+            .map_err(|_| err(503, "CLEANUP_DELETE_UNCONFIRMED"))?;
+        if !response["message"].is_string() {
+            return Err(err(503, "CLEANUP_DELETE_UNCONFIRMED"));
+        }
+        Ok(DeletionAccepted)
     }
     pub async fn sql(&self, binding: &Value, statement: &str, setup: bool) -> Result<Value> {
         if statement.trim().is_empty() || statement.len() > 65536 {
@@ -490,8 +558,14 @@ impl Providers {
             .map_err(|_| err(503, "DB9_CREATION_UNCONFIRMED"))
     }
     async fn account(&self) -> Result<Value> {
+        self.account_with_creation(true).await
+    }
+    async fn account_with_creation(&self, allow_create: bool) -> Result<Value> {
         let mut saved = self.repository.account("db9").await?;
         if saved.is_null() {
+            if !allow_create {
+                return Err(err(503, "CLEANUP_ACCOUNT_MISSING"));
+            }
             self.save_account(json!({"state":"requested"})).await?;
             let data = self
                 .db9_request("/anonymous-register", Method::POST, None, None)

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
+import http from 'node:http';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
@@ -224,5 +225,60 @@ test(
     assert.deepEqual(await authGuest(guestB), guestB.registration);
     await use(region);
     await assert.rejects(reserve('https://issuer.example', 'mallory'));
+  },
+);
+
+test(
+  'Guest DB9 deletion attempts are scope-bound, journaled, and not blindly retried',
+  { skip: !enabled, timeout: 120_000 },
+  async (t) => {
+    await exec('cargo', [
+      'build',
+      '--locked',
+      '-p',
+      'workspace-providers',
+      '--example',
+      'guest_cleanup_probe',
+    ]);
+    const fixture = await metaFixture();
+    t.after(() => fixture.close());
+    const region = await fixture.service('cleanup');
+    t.after(() => region.client.close());
+    const calls = [];
+    const provider = http.createServer((req, res) => {
+      calls.push({
+        method: req.method,
+        path: req.url,
+        authorized: req.headers.authorization === 'Bearer test-only-token',
+      });
+      if (req.method !== 'DELETE' || req.headers.authorization !== 'Bearer test-only-token') {
+        res.writeHead(403).end();
+        return;
+      }
+      if (req.url === '/customer/databases/db_lost') {
+        req.socket.destroy();
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Database disabled' }));
+    });
+    await new Promise((resolve) => provider.listen(0, '127.0.0.1', resolve));
+    t.after(
+      () =>
+        new Promise((resolve) => {
+          provider.close(resolve);
+          provider.closeAllConnections();
+        }),
+    );
+    const config = resolve(fixture.directory, 'cleanup-client.json');
+    await writeFile(config, JSON.stringify(region.clientConfig), { mode: 0o600 });
+    const endpoint = `http://127.0.0.1:${provider.address().port}`;
+    const probe = resolve('meta-service/target/debug/examples/guest_cleanup_probe');
+    const result = await exec(probe, [config, endpoint], { timeout: 30_000 });
+    assert.equal(JSON.parse(result.stdout).verified, true);
+    assert.deepEqual(calls, [
+      { method: 'DELETE', path: '/customer/databases/db_guest', authorized: true },
+      { method: 'DELETE', path: '/customer/databases/db_lost', authorized: true },
+    ]);
   },
 );

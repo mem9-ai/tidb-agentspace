@@ -49,6 +49,55 @@ pub struct Queue {
     authority: String,
 }
 
+/// A one-use, internally issued permit for a single provider attempt. It is produced only
+/// after the expired Guest job and the resource intent have been durably claimed.
+pub struct ResourcePermit {
+    authority: String,
+    workspace_id: String,
+    resource_id: String,
+    provider: String,
+    target_digest: String,
+    expires_at: i64,
+    attempt_id: String,
+}
+impl ResourcePermit {
+    pub fn authority(&self) -> &str {
+        &self.authority
+    }
+    pub fn workspace_id(&self) -> &str {
+        &self.workspace_id
+    }
+    pub fn resource_id(&self) -> &str {
+        &self.resource_id
+    }
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
+    pub fn target_digest(&self) -> &str {
+        &self.target_digest
+    }
+}
+
+/// Fingerprints a private provider target; the raw provider identifier need not be indexed.
+pub fn target_digest(provider: &str, target: &str) -> Result<String> {
+    if !["db9-anonymous", "drive9-anonymous"].contains(&provider)
+        || target.is_empty()
+        || target.len() > 256
+        || !target
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
+    {
+        return Err(error(400, "INVALID_CLEANUP_TARGET"));
+    }
+    let mut hash = Sha256::new();
+    hash.update(b"workspace-cleanup\0target\0v1\0");
+    hash.update((provider.len() as u64).to_be_bytes());
+    hash.update(provider.as_bytes());
+    hash.update((target.len() as u64).to_be_bytes());
+    hash.update(target.as_bytes());
+    Ok(hex::encode(hash.finalize()))
+}
+
 fn uuid(value: &str) -> bool {
     Uuid::parse_str(value).is_ok_and(|id| id.to_string() == value)
 }
@@ -363,6 +412,154 @@ impl Queue {
         self.commit(&scope, mutation_id, &key, Value::String(version), &stored)
             .await
     }
+
+    /// Journal one resource effect before provider I/O. Existing or uncertain effects are
+    /// never reissued automatically; a separate provider-specific reconciliation is required.
+    /// The provider adapter must independently match the permit to the scoped Workspace
+    /// resource, its private binding, and the exact target fingerprint before deleting.
+    pub async fn begin_resource(
+        &self,
+        job: &Job,
+        attempt_id: &str,
+        resource_id: &str,
+        provider: &str,
+        target: &str,
+        mutation_id: &str,
+    ) -> Result<ResourcePermit> {
+        if !uuid(attempt_id)
+            || !uuid(mutation_id)
+            || resource_id.is_empty()
+            || resource_id.len() > 128
+            || !resource_id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
+        {
+            return Err(error(400, "INVALID_CLEANUP_TARGET"));
+        }
+        let scope = self.scope(shard(&job.workspace_id)?)?;
+        let job_key = key(job)?;
+        let (stored, _) = self
+            .record(&scope, &job_key)
+            .await?
+            .ok_or_else(|| error(404, "CLEANUP_NOT_FOUND"))?;
+        self.stored_policy(&stored).await?;
+        if now()? < stored.expires_at {
+            return Err(error(409, "GUEST_NOT_EXPIRED"));
+        }
+        if stored.status
+            != (Status::Claimed {
+                attempt_id: attempt_id.into(),
+            })
+        {
+            return Err(error(409, "CLEANUP_ATTEMPT_MISMATCH"));
+        }
+        let target_digest = target_digest(provider, target)?;
+        let effect_key = format!(
+            "effect/{:020}/{}/{resource_id}",
+            stored.expires_at, stored.workspace_id
+        );
+        let existing = self
+            .metadata
+            .execute(MetaRequest::Get {
+                scope: scope.clone(),
+                guard: None,
+                keys: vec![effect_key.clone()],
+            })
+            .await?;
+        if !existing["records"]
+            .get(&effect_key)
+            .ok_or_else(|| error(503, "CLEANUP_RECORD_CORRUPT"))?
+            .is_null()
+        {
+            return Err(error(409, "CLEANUP_EFFECT_REQUIRES_RECONCILIATION"));
+        }
+        let effect = json!({"workspaceId":stored.workspace_id,"resourceId":resource_id,"provider":provider,
+            "targetDigest":target_digest,"jobAttemptId":attempt_id,"state":"requested"});
+        let result = self
+            .metadata
+            .execute(MetaRequest::Commit {
+                scope: scope.clone(),
+                guard: None,
+                mutation_id: mutation_id.into(),
+                changes: vec![json!({"key":effect_key,"expectedVersion":null,"value":effect})],
+            })
+            .await;
+        match result {
+            Ok(_) => {}
+            Err(e) if e.code == "META_CONFLICT" || e.code == "META_MUTATION_MISMATCH" => {
+                return Err(error(409, "CLEANUP_EFFECT_REQUIRES_RECONCILIATION"));
+            }
+            Err(e) if e.code == "META_COMMIT_UNKNOWN" => {
+                let receipt = self
+                    .metadata
+                    .execute(MetaRequest::Resolve {
+                        scope,
+                        guard: None,
+                        mutation_id: mutation_id.into(),
+                    })
+                    .await;
+                if !receipt
+                    .as_ref()
+                    .is_ok_and(|value| value["outcome"] == "committed")
+                {
+                    return Err(e);
+                }
+            }
+            Err(e) => return Err(e),
+        }
+        Ok(ResourcePermit {
+            authority: self.authority.clone(),
+            workspace_id: stored.workspace_id,
+            resource_id: resource_id.into(),
+            provider: provider.into(),
+            target_digest,
+            expires_at: stored.expires_at,
+            attempt_id: attempt_id.into(),
+        })
+    }
+
+    /// Recheck the persisted claim, owner policy and effect immediately before provider I/O.
+    /// The executor must additionally serialize completion and drain in-flight work.
+    pub async fn validate_permit(&self, permit: &ResourcePermit) -> Result<()> {
+        if permit.authority != self.authority {
+            return Err(error(403, "CLEANUP_SCOPE_MISMATCH"));
+        }
+        let scope = self.scope(shard(&permit.workspace_id)?)?;
+        let job_key = format!("job/{:020}/{}", permit.expires_at, permit.workspace_id);
+        let (stored, _) = self
+            .record(&scope, &job_key)
+            .await?
+            .ok_or_else(|| error(404, "CLEANUP_NOT_FOUND"))?;
+        self.stored_policy(&stored).await?;
+        if now()? < stored.expires_at
+            || stored.status
+                != (Status::Claimed {
+                    attempt_id: permit.attempt_id.clone(),
+                })
+        {
+            return Err(error(409, "CLEANUP_ATTEMPT_MISMATCH"));
+        }
+        let effect_key = format!(
+            "effect/{:020}/{}/{}",
+            permit.expires_at, permit.workspace_id, permit.resource_id
+        );
+        let result = self
+            .metadata
+            .execute(MetaRequest::Get {
+                scope,
+                guard: None,
+                keys: vec![effect_key.clone()],
+            })
+            .await?;
+        let effect = &result["records"][&effect_key]["value"];
+        if effect
+            != &json!({"workspaceId":permit.workspace_id,"resourceId":permit.resource_id,"provider":permit.provider,
+            "targetDigest":permit.target_digest,"jobAttemptId":permit.attempt_id,"state":"requested"})
+        {
+            return Err(error(409, "CLEANUP_EFFECT_MISMATCH"));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -511,6 +708,97 @@ mod tests {
                 .unwrap()
                 .code,
             "CLEANUP_REQUIRES_RECONCILIATION"
+        );
+    }
+
+    #[tokio::test]
+    async fn resource_attempt_is_bound_to_expired_owner_and_cannot_be_reissued() {
+        let metadata = metadata();
+        let queue = Queue::open(metadata, "region:a").await.unwrap();
+        let expiry = now().unwrap() - 1;
+        let policy = guest_policy(Uuid::new_v4().to_string(), expiry);
+        queue
+            .policies
+            .install(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        queue
+            .enqueue(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        let job = queue
+            .due_at(shard(&policy.workspace_id).unwrap(), None, 10, expiry)
+            .await
+            .unwrap()
+            .jobs
+            .remove(0);
+        let attempt = Uuid::new_v4().to_string();
+        let claimed = queue.claim_at(&job, &attempt, expiry).await.unwrap();
+        assert_eq!(
+            queue
+                .begin_resource(
+                    &claimed,
+                    &Uuid::new_v4().to_string(),
+                    "resource_one",
+                    "db9-anonymous",
+                    "db_123",
+                    &Uuid::new_v4().to_string()
+                )
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "CLEANUP_ATTEMPT_MISMATCH"
+        );
+        assert_eq!(
+            queue
+                .begin_resource(
+                    &claimed,
+                    &attempt,
+                    "../other",
+                    "db9-anonymous",
+                    "db_123",
+                    &Uuid::new_v4().to_string()
+                )
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "INVALID_CLEANUP_TARGET"
+        );
+        let permit = queue
+            .begin_resource(
+                &claimed,
+                &attempt,
+                "resource_one",
+                "db9-anonymous",
+                "db_123",
+                &Uuid::new_v4().to_string(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(permit.authority(), "region:a");
+        assert_eq!(permit.workspace_id(), policy.workspace_id);
+        assert_eq!(permit.resource_id(), "resource_one");
+        assert_eq!(
+            permit.target_digest(),
+            target_digest("db9-anonymous", "db_123").unwrap()
+        );
+        assert_eq!(
+            queue
+                .begin_resource(
+                    &claimed,
+                    &attempt,
+                    "resource_one",
+                    "db9-anonymous",
+                    "db_123",
+                    &Uuid::new_v4().to_string()
+                )
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "CLEANUP_EFFECT_REQUIRES_RECONCILIATION"
         );
     }
 

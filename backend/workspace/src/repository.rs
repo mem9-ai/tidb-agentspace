@@ -26,6 +26,15 @@ pub struct Repository {
     closed: AtomicBool,
 }
 impl Repository {
+    /// The scope is established by the host, not by a customer request.
+    pub fn authority_id(&self) -> &str {
+        &self.scope.authority_id
+    }
+
+    pub fn workspace_id(&self) -> &str {
+        &self.scope.owner_id
+    }
+
     pub async fn open(
         metadata: Arc<dyn Metadata>,
         authority: &str,
