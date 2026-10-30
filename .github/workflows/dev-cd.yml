@@ -169,11 +169,15 @@ jobs:
           push: false
           load: true
           tags: workspace-api:verify
+          labels: org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
           cache-to: type=gha,scope=native-api-linux-amd64-v1,version=2,mode=max,timeout=3m,ignore-error=true
       - name: Run the final native image without network or writable root
+        env:
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' workspace-api:verify)" = "$SOURCE_SHA"
           docker run --rm --network none --read-only --cap-drop ALL \
             --security-opt no-new-privileges --entrypoint /bin/sh workspace-api:verify \
             -ec 'if command -v node; then exit 1; fi; exec workspace-backend runtime-info' \
@@ -272,6 +276,7 @@ jobs:
           pull: true
           push: true
           tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
           cache-to: type=gha,scope=native-api-linux-amd64-v1,version=2,mode=max,timeout=3m,ignore-error=true
       - name: Record immutable image digest
@@ -301,3 +306,23 @@ jobs:
       - name: Update Deployment image
         if: github.event.inputs.operation != 'inspect'
         run: node scripts/deploy-dev.mjs
+
+      - name: Confirm Deployment image
+        if: github.event.inputs.operation != 'inspect'
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          try {
+            const { DEPLOY_NAMESPACE, K8S_DEPLOYMENT, K8S_CONTAINER, IMAGE_REF } = process.env;
+            const target = JSON.parse(execFileSync('kubectl', [
+              '--request-timeout=30s', 'get', `deployment/${K8S_DEPLOYMENT}`,
+              '-n', DEPLOY_NAMESPACE, '-o', 'json',
+            ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 35000 }));
+            const actual = target.spec?.template?.spec?.containers?.find(c => c.name === K8S_CONTAINER)?.image;
+            if (!IMAGE_REF || actual !== IMAGE_REF) throw new Error('Image mismatch');
+            console.log(`Deployment image confirmed: ${actual.split('@')[1]}`);
+          } catch {
+            console.error('Deployment image verification failed.');
+            process.exitCode = 1;
+          }
+          NODE
