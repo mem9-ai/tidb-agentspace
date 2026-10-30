@@ -53,8 +53,9 @@ This makes pending-run ordering harmless for version selection.
 
 ## Checks and credential boundary
 
-Builds run with the pinned Node/npm and `npm ci`, pass the complete `npm run check`, and
-rebuild with `/studio/` as the base path in a clean environment. No publication key is exposed
+Builds first verify the same resolved source SHA has passed Quality and Browser smoke in
+the trusted main CI run. They do not repeat `npm run check`. The pinned Node/npm and
+`npm ci` then build the distinct `/studio/` base-path variant in a clean environment. No publication key is exposed
 to npm or Vite. Only Console output transfers between the build and publishing jobs.
 
 The website's existing importer enforces an allowlist of public static files, rejects symlinks
@@ -93,3 +94,8 @@ failure and retry that deploy. To stop future automatic publication, disable **P
 Console** or revoke its App installation. To restore a known-good website urgently, restore
 that Netlify deploy and pause publication while fixing the source; do not rerun an obsolete
 source workflow to overwrite newer artifacts.
+
+Gate ownership and manual recovery follow [ADR 0027](decisions/0027-single-ci-evidence.md).
+Missing, failed or untrusted evidence blocks publication; run CI on that main revision
+before retrying. The publisher continues to resolve current main and checks its source
+fingerprint before merging; CI success for another commit is insufficient.

@@ -60,56 +60,42 @@ test('invalid input fails before contacting the cluster', () => {
   }
 });
 
-test('workflow keeps PRs credential-free and binds releases to one verified commit', () => {
+test('automatic checks execute once and releases require exact-commit native evidence', () => {
   const workflow = parse(
     readFileSync(new URL('../.github/workflows/dev-cd.yml', import.meta.url), 'utf8'),
   );
+  const ci = parse(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'));
   assert.deepEqual(workflow.on.push.branches, ['main']);
-  assert.deepEqual(workflow.on.push.paths, workflow.on.pull_request.paths);
+  assert.equal(workflow.on.pull_request, undefined);
   for (const input of ['backend/**', 'meta-service/**', 'Cargo.lock', 'Dockerfile'])
     assert.ok(workflow.on.push.paths.includes(input), `API release lost ${input}`);
-  const ci = parse(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'));
-  assert.equal(ci.on.pull_request, null);
-  assert.deepEqual(ci.on.push, { branches: ['main'] });
   assert.deepEqual(workflow.on.workflow_dispatch.inputs.operation.options, ['deploy', 'inspect']);
   assert.equal(workflow.on.workflow_dispatch.inputs.operation.default, 'deploy');
-  assert.equal(workflow.jobs.resolve, undefined);
-  assert.equal(
-    workflow.jobs.deploy.if,
-    "github.event_name != 'pull_request' && github.ref == 'refs/heads/main'",
-  );
-  assert.equal(
-    workflow.jobs.verify.if,
-    "github.event_name == 'pull_request' || github.ref == 'refs/heads/main'",
-  );
   assert.equal(workflow.jobs.deploy.needs, 'verify');
   assert.equal(workflow.jobs.deploy.environment, 'dev');
   assert.equal(workflow.jobs.verify.environment, undefined);
-  assert.equal(workflow.jobs.image.environment, undefined);
-  assert.equal(workflow.jobs.image.if, "github.event_name == 'pull_request'");
-  assert.equal(workflow.jobs.image.needs, undefined);
-  assert.equal(
-    workflow.concurrency['cancel-in-progress'],
-    "${{ github.event_name == 'pull_request' }}",
+  assert.equal(workflow.jobs.verify.permissions['actions'], 'read');
+  assert.equal(workflow.jobs.image, undefined);
+  const evidence = workflow.jobs.verify.steps.find((step) =>
+    step.run?.startsWith('node scripts/require-ci.mjs '),
   );
+  assert.ok(evidence);
+  assert.equal(evidence.env.SOURCE_SHA, '${{ github.sha }}');
   assert.equal(
-    workflow.concurrency.group,
-    "dev-cd-${{ github.event_name == 'pull_request' && format('verify-{0}', github.ref) || 'deploy' }}",
+    evidence.env.GATE,
+    "${{ github.event.inputs.operation == 'inspect' && 'console' || 'full' }}",
   );
+  assert.equal(workflow.concurrency['cancel-in-progress'], false);
   assert.equal(workflow.jobs.deploy.concurrency['cancel-in-progress'], false);
   assert.equal(workflow.jobs.deploy.concurrency.group, 'dev-cd-deploy-target');
-  for (const name of ['verify', 'image', 'deploy']) {
+  for (const name of ['verify', 'deploy'])
     assert.equal(
       workflow.jobs[name].steps.find((step) => step.uses?.startsWith('actions/checkout@')).with.ref,
       '${{ github.sha }}',
     );
-  }
-  for (const name of ['verify', 'image']) {
-    const job = workflow.jobs[name];
-    assert.ok(!JSON.stringify(job).includes('secrets.'));
-    assert.notEqual(job.permissions?.['id-token'], 'write');
-  }
-  assert.ok(workflow.jobs.verify.steps.some((s) => s.run === 'npm run check' && !s.if));
+  assert.ok(!JSON.stringify(workflow.jobs.verify).includes('secrets.'));
+  assert.equal(ci.jobs.quality.steps.filter((step) => step.run === 'npm run check').length, 1);
+  assert.equal(ci.jobs.browser.needs, 'quality');
   for (const command of [
     'npm run backend:fmt',
     'npm run backend:build -- --timings',
@@ -117,27 +103,36 @@ test('workflow keeps PRs credential-free and binds releases to one verified comm
     'npm run backend:test',
     'npm run backend:test:integration',
   ]) {
-    const step = workflow.jobs.verify.steps.find((s) => s.run === command);
-    assert.ok(step, `Release verification lost ${command}`);
-    assert.equal(step.if, "github.event.inputs.operation != 'inspect'");
+    assert.equal(ci.jobs.metadata.steps.filter((step) => step.run === command).length, 1, command);
+    assert.ok(!JSON.stringify(workflow).includes(command), `CD duplicates ${command}`);
   }
-  const prBuild = workflow.jobs.image.steps.find((step) =>
+  assert.ok(!JSON.stringify(workflow).includes('npm run check'));
+  const prBuild = ci.jobs.image.steps.find((step) =>
     step.uses?.startsWith('docker/build-push-action@'),
   );
+  assert.equal(ci.jobs.image.if, "github.event_name == 'pull_request'");
+  assert.equal(ci.jobs.image.needs, undefined);
+  assert.equal(ci.jobs.image.environment, undefined);
+  assert.ok(!JSON.stringify(ci.jobs.image).includes('secrets.'));
   assert.equal(prBuild.with.push, false);
   assert.equal(prBuild.with.load, true);
   assert.equal(prBuild.with.platforms, 'linux/amd64');
-  assert.equal(prBuild.with.labels, 'org.opencontainers.image.revision=${{ github.sha }}');
+  assert.equal(prBuild.if, "steps.changes.outputs.changed == 'true'");
+  assert.ok(ci.jobs.image.steps.some((step) => step.run === 'node scripts/ci-image-inputs.mjs'));
+  const smoke = ci.jobs.image.steps.find(
+    (step) => step.name === 'Run the final native image without network or writable root',
+  );
+  assert.equal(smoke.if, prBuild.if);
+  assert.match(smoke.run, /--network none --read-only --cap-drop ALL/);
   const releaseBuild = workflow.jobs.deploy.steps.find((step) =>
     step.uses?.startsWith('docker/build-push-action@'),
   );
-  assert.equal(releaseBuild.with.platforms, 'linux/amd64');
   assert.equal(releaseBuild.with.push, true);
   assert.equal(releaseBuild.with.labels, prBuild.with.labels);
   assert.equal(releaseBuild.if, "github.event.inputs.operation != 'inspect'");
   assert.ok(
     workflow.jobs.deploy.steps.some(
-      (s) => s.env?.IMAGE_DIGEST === '${{ steps.image.outputs.digest }}',
+      (step) => step.env?.IMAGE_DIGEST === '${{ steps.image.outputs.digest }}',
     ),
   );
   assert.equal(workflow.jobs.deploy.steps.at(-2).run, 'node scripts/deploy-dev.mjs');

@@ -96,9 +96,15 @@ for (const name of names.filter((file) => /\.ya?ml$/.test(file))) {
   );
   assert.ok(workflow.concurrency, `${name}: declare concurrency.`);
   const jobs = Object.values(workflow.jobs);
+  const ownsGate = jobs.some((job) => job.steps.some((step) => step.run === 'npm run check'));
+  const consumesGate =
+    ['dev-cd.yml', 'console-publish.yml'].includes(name) &&
+    jobs.some((job) =>
+      job.steps.some((step) => step.run?.startsWith('node scripts/require-ci.mjs ')),
+    );
   assert.ok(
-    jobs.some((job) => job.steps.some((step) => step.run === 'npm run check')),
-    `${name}: use the shared quality gate.`,
+    ownsGate || consumesGate,
+    `${name}: execute or verify the exact-commit shared quality gate.`,
   );
   for (const job of jobs) {
     assert.ok(job['timeout-minutes'] > 0, `${name}: set a timeout.`);

@@ -184,6 +184,11 @@ For db9 PostgreSQL, read [setup/recovery](docs/db9-postgres.md) and
 [ADR 0011](docs/decisions/0011-db9-postgres.md) for anonymous account ownership, native role/TLS
 boundaries, creation recovery and provider compatibility limits.
 
+For UI verification, read [browser verification](docs/standards/browser-verification.md).
+The portable Playwright smoke suite asserts behavior; screenshots support visual review.
+[ADR 0027](docs/decisions/0027-single-ci-evidence.md) records single-gate CI ownership and
+exact-commit evidence consumption by delivery workflows.
+
 ## Find the implementation
 
 | Location                                                                                                                                        | Responsibility                                                                                      |

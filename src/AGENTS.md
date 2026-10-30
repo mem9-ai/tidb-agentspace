@@ -14,3 +14,7 @@ Capture reusable user corrections and integration findings using
 [knowledge maintenance](../docs/standards/knowledge-maintenance.md). Update migration status
 with evidence when completing a component migration. Preserve the larger-text/spacing
 requirements and check both themes and narrow layouts as specified in the design standard.
+
+Use the shared [browser verification standard](../docs/standards/browser-verification.md)
+for functional assertions, theme/viewport coverage and trace-based diagnosis. Visual changes
+still need focused visual review; avoid repeating unrelated flows through screenshots.
