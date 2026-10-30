@@ -2,15 +2,15 @@
 
 ## What is implemented
 
-[ADR 0026](decisions/0026-native-hosted-studio.md) makes Rust the only serving runtime. `Quality` builds the Console and checks Console/tooling/contracts; `Rust backend and S3 integration` builds/tests all native phases. Dev CD packages a native-only Linux amd64 image, the currently verified Linux static DuckDB target. Node is not present in that image. [Native deployment](native-studio-deployment.md) defines fresh S3 roots/keys and the one-time target bootstrap.
+[ADR 0026](decisions/0026-native-hosted-studio.md) makes Rust the only serving runtime. `Quality` builds the Console and checks Console/tooling/contracts; `Rust backend and S3 integration` builds/tests all native phases, and `Browser smoke` asserts Console journeys from the Quality artifact. Dev CD packages a native-only Linux amd64 image, the currently verified Linux static DuckDB target. Node is not present in that image. [Native deployment](native-studio-deployment.md) defines fresh S3 roots/keys and the one-time target bootstrap.
 
 - `.github/workflows/ci.yml`: clean installation and `npm run check` on PRs, pushes to
-  `main`, merge-queue candidates, and manual requests. A successful quality job uploads
-  both build directories for review.
+  `main`, merge-queue candidates, and manual requests. Quality uploads the Console artifact;
+  Browser smoke reuses it. Native image verification runs in parallel for PR image-input changes.
 - `.github/workflows/release.yml`: a manual, main-branch-only internal artifact build. It
   runs the same quality gate and packages the runtime, frontend,
   API contract, source SHA, and checksums. It does not deploy to a cloud provider.
-- `.github/workflows/dev-cd.yml`: credential-free PR verification, then digest-pinned API
+- `.github/workflows/dev-cd.yml`: verifies exact-commit main CI evidence, then digest-pinned API
   deployment to a configured EKS dev environment on `main` pushes changing API/runtime,
   build or delivery inputs, or a manual main request. Documentation/Console-only commits
   retain ordinary CI and independent Console publication without releasing an API image.
@@ -51,6 +51,31 @@ submit a self-approval, weaken a check, or merge a failing dependency update to 
 This authorization covers merging the requested work; it does not authorize unrelated
 features, real cloud operations, or deployment. After merging, verify the PR state and
 sync the local checkout with `main`.
+
+## Single automatic gate and delivery consumers
+
+[ADR 0027](decisions/0027-single-ci-evidence.md) assigns automatic checks to CI once per
+candidate. Quality, Rust/S3 and Browser smoke remain required; no broad Rust path-skipping
+policy is introduced. Main CI runs use independent SHA groups so later pushes do not cancel
+evidence awaited by delivery. Only superseded PR/merge-queue candidates cancel.
+
+Dev CD no longer triggers on PRs or repeats quality/native commands. Its read-only verify
+job runs `scripts/require-ci.mjs full "$SOURCE_SHA"`, then the existing protected dev job
+builds/pushes and updates the image. Console publishing consumes `console` evidence (Quality
+and Browser smoke) before its independent `/studio/` build; unrelated Rust work can still
+be running. Source freshness, website checks, protected branches and exact-tree merge checks
+remain in place. The manual internal-artifact workflow retains isolated verification.
+
+Evidence is bound to this repository's `ci.yml`, trusted main push/manual event, exact SHA,
+and newest run/attempt. Required jobs must succeed; missing, cancelled, skipped, ambiguous,
+wrong-source or untrusted results fail closed. Caches are never evidence. Missing results
+require running CI for the selected main SHA before retrying delivery. All automatic
+consumers read Actions metadata with a read-only token, without deployment credentials.
+
+[Browser verification](standards/browser-verification.md) owns DOM/URL/payload/download
+assertions, isolated fixtures, focused visual review and failure traces. CI installs only
+Chromium, downloads the Quality build without rebuilding it and uploads failed diagnostics
+for seven days. One diagnostic retry is permitted, but flaky tests still fail the gate.
 
 ## Repository settings before shared production deployment
 
@@ -232,7 +257,7 @@ Measured on 2026-10-30 for [GH-17](https://github.com/mem9-ai/tidb.ai/issues/17)
 | [Read-only inspection](https://github.com/mem9-ai/tidb.ai/actions/runs/40979807553)              | 17m 23s total                   | 14m 01s of verification before a 28s protected inspection job, with additional job scheduling delay                   |
 | [Console publication](https://github.com/mem9-ai/tidb.ai/actions/runs/40979799331)               | 9m 16s total                    | Website PR creation 2m 58s and waiting for its independent checks 1m 56s; separate from API image compilation         |
 
-The native PR image job now runs alongside the complete quality/native gate. It has no cloud identity, does not push an image, and smoke-tests the final runtime without network access or a writable root. Main releases still require the entire quality/native gate before entering the protected deployment job. Manual `inspect` retains `npm run check` but omits native compilation/tests because it neither packages nor deploys an API. Deploy operations retain all native/S3 checks, immutable digest verification and serialized image updates. Runtime health and recovery are operator-owned.
+The native PR image job now runs alongside the complete quality/native gate. It has no cloud identity, does not push an image, and smoke-tests the final runtime without network access or a writable root. Main releases still require the entire quality/native gate before entering the protected deployment job. Manual `inspect` consumes same-commit Console CI evidence and omits native compilation/tests because it neither packages nor deploys an API. Deploy operations retain all native/S3 checks, immutable digest verification and serialized image updates. Runtime health and recovery are operator-owned.
 
 Automatic API release paths match the existing PR image-input paths, including all backend/metadata sources, root Cargo/toolchain/configuration inputs, verified DuckDB preparation, the generated API contract, Docker inputs and the release workflow/helper. Ordinary CI remains unfiltered on PRs and main pushes. Pure documentation and Console changes therefore retain checks without queuing a new native API release. Manual main runs default to `deploy`, which builds, pushes and updates the Deployment image after all quality/native checks pass. Read-only `inspect` must be selected explicitly. There is no build/cache-only manual operation in CD; manual deployment and inspection remain available regardless of changed paths. Runtime configuration and initialization remain [operator-owned](native-studio-deployment.md#one-time-kubernetes-cutover-and-recurring-cd), separate from CD image updates.
 
@@ -242,7 +267,7 @@ The Dockerfile uses pinned `cargo-chef` 0.1.77 to separate the release dependenc
 
 The pinned Docker build action imports/exports GitHub cache v2 with `mode=max` under `native-api-linux-amd64-v1`, including intermediate dependency layers. Ordinary cache mounts are not sufficient to persist those layers across fresh hosted runners. Cache transfer has a three-minute bound; failed export is non-fatal and a miss still builds fully. Base images are resolved with `pull:true`. No deployment files, credentials or product state enter the Docker context or cache.
 
-GitHub cache access restrictions still separate PR merge-ref caches from default-branch caches. A repeated PR run can reuse its own cache; a successful main image release seeds the default-branch cache for later PRs. PR verification uses its own cancellable concurrency group; deploy-capable runs retain their constant non-cancellable target group. Do not claim cross-PR reuse before that main seed is observed. Existing Cargo dev/test caches are independent of these release image layers. Cold/warm Linux measurements and any remaining limitations belong in the linked task/PR; the table above is the pre-optimization baseline.
+GitHub cache access restrictions still separate PR merge-ref caches from default-branch caches. A repeated PR run can reuse its own cache; a successful main image release seeds the default-branch cache for later PRs. PR CI uses its own cancellable concurrency group; deploy-capable runs retain their constant non-cancellable target group. Do not claim cross-PR reuse before that main seed is observed. Existing Cargo dev/test caches are independent of these release image layers. Cold/warm Linux measurements and any remaining limitations belong in the linked task/PR; the table above is the pre-optimization baseline.
 
 References: [Docker GHA cache](https://docs.docker.com/build/cache/backends/gha/), [cache mounts and cache API v2](https://docs.docker.com/build/ci/github-actions/cache/), [cargo-chef 0.1.77](https://github.com/LukeMathWalker/cargo-chef/tree/v0.1.77).
 

@@ -24,6 +24,10 @@ plugin, skill, or conversation history is required.
 
 For live file integrations, also read [the Drive9 provider boundary](../decisions/0004-drive9-anonymous-provider.md): authenticate before provider I/O, persist credentials privately, bound preview reads, and never retry uncertain tenant creation.
 
+For browser journeys and UI acceptance, follow [browser verification](browser-verification.md):
+assert rendered behavior and request/results, use traces for diagnosis, and reserve screenshots
+for visual review. Automatic gate ownership follows [ADR 0027](../decisions/0027-single-ci-evidence.md).
+
 ## How to interpret a standard
 
 - **Verified upstream fact:** includes an official source and version/date. Recheck when

@@ -9,27 +9,6 @@ name: Deploy API to dev
 # All environment identifiers remain runtime inputs, never repository values.
 
 on:
-  # Pull requests run only the quality gate (including the no-push
-  # native amd64 image build); they never reach the deploy job. This is where
-  # the pre-merge Docker validation actually executes.
-  pull_request:
-    paths:
-      - 'backend/**'
-      - 'meta-service/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'rust-toolchain.toml'
-      - '.cargo/**'
-      - 'scripts/duckdb-runtime.json'
-      - 'scripts/prepare-duckdb.mjs'
-      - 'public/openapi.json'
-      - 'scripts/deploy-dev*'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.node-version'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - '.github/workflows/dev-cd.yml'
   push:
     branches: [main]
     # Console and documentation changes retain ordinary CI, without releasing an API image.
@@ -61,93 +40,20 @@ on:
 permissions:
   contents: read
 
-# Concurrency is split by whether the run can deploy:
-#
-# - Pull requests: one group per ref, cancel-in-progress so a newer
-#   verification supersedes the older run.
-# - Push to main and manual dispatch (can deploy): ONE shared constant group
-#   with cancel-in-progress FALSE. Deploy-capable runs therefore queue behind
-#   one another and are never cancelled mid-image-update — a second main
-#   push waits for the first run to finish instead of killing it at the
-#   workflow level. The deploy job's own constant group keeps that invariant
-#   even if this block is later changed.
+# Serialize releases to the existing target, including manual operations.
 concurrency:
-  group: dev-cd-${{ github.event_name == 'pull_request' && format('verify-{0}', github.ref) || 'deploy' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: dev-cd-deploy
+  cancel-in-progress: false
 
 jobs:
-  # Run the complete quality/native gate before releases. PR image verification
-  # runs independently below, so release compilation does not wait for these tests.
-  # The repository enforces that every workflow runs `npm run check`.
   verify:
-    name: Quality gate
+    name: Verify same-commit CI
     runs-on: ubuntu-24.04
-    timeout-minutes: 75
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-    env:
-      CARGO_BUILD_JOBS: 2
-      CARGO_PROFILE_DEV_DEBUG: 0
-      CARGO_PROFILE_TEST_DEBUG: 0
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - name: Select the pinned npm version
-        run: npm install --global npm@11.6.2 --ignore-scripts
-      - run: npm ci
-      - run: npm run check
-      - name: Install the pinned Rust toolchain
-        if: github.event.inputs.operation != 'inspect'
-        run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
-      - name: Check Rust formatting before compiling
-        if: github.event.inputs.operation != 'inspect'
-        run: npm run backend:fmt
-      - name: Restore Rust dependency cache
-        if: github.event.inputs.operation != 'inspect'
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          # Keep fallback restores inside the same native-library and build configuration.
-          prefix-key: rust-v1-${{ hashFiles('Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml', 'scripts/duckdb-runtime.json') }}
-          shared-key: backend
-          workspaces: . -> meta-service/target
-          cache-bin: false
-          cache-workspace-crates: false
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
-      - name: Build native backend with Cargo timings
-        if: github.event.inputs.operation != 'inspect'
-        run: npm run backend:build -- --timings
-      - name: Check Rust with Clippy
-        if: github.event.inputs.operation != 'inspect'
-        run: npm run backend:clippy
-      - name: Run Rust unit tests
-        if: github.event.inputs.operation != 'inspect'
-        run: npm run backend:test
-      - name: Install verified RustFS 1.0.4 binary
-        if: github.event.inputs.operation != 'inspect'
-        shell: bash
-        run: |
-          set -euo pipefail
-          runtime_dir="$RUNNER_TEMP/workspace-rustfs"
-          mkdir -p "$runtime_dir"
-          curl --fail --location --retry 3 https://github.com/rustfs/rustfs/releases/download/1.0.4/rustfs-linux-x86_64-gnu-v1.0.4.zip --output "$runtime_dir/rustfs.zip"
-          printf '%s  %s\n' '4a25e48f5b5ae610a679b5324206962c6fb0eb20a9fa7ab6cb20e178cf6c534b' "$runtime_dir/rustfs.zip" | sha256sum --check
-          unzip -q "$runtime_dir/rustfs.zip" -d "$runtime_dir"
-          chmod +x "$runtime_dir/rustfs"
-          printf '%s\n' "$runtime_dir" >> "$GITHUB_PATH"
-      - name: Run native API and real S3 integration tests
-        if: github.event.inputs.operation != 'inspect'
-        run: npm run backend:test:integration
-
-  image:
-    name: Native image
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 35
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -157,48 +63,19 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
-      - name: Build native image (no push)
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          platforms: linux/amd64
-          provenance: false
-          pull: true
-          push: false
-          load: true
-          tags: workspace-api:verify
-          labels: org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
-          cache-to: type=gha,scope=native-api-linux-amd64-v1,version=2,mode=max,timeout=3m,ignore-error=true
-      - name: Run the final native image without network or writable root
+      - name: Require checks from the trusted main CI run
         env:
+          GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' workspace-api:verify)" = "$SOURCE_SHA"
-          docker run --rm --network none --read-only --cap-drop ALL \
-            --security-opt no-new-privileges --entrypoint /bin/sh workspace-api:verify \
-            -ec 'if command -v node; then exit 1; fi; exec workspace-backend runtime-info' \
-            > "$RUNNER_TEMP/native-runtime-info.json"
-          node --input-type=module -e '
-            import assert from "node:assert/strict";
-            import { readFileSync } from "node:fs";
-            const pins = JSON.parse(readFileSync("scripts/duckdb-runtime.json", "utf8"));
-            const info = JSON.parse(readFileSync(process.argv[1], "utf8")).duckdb;
-            const target = "x86_64-unknown-linux-gnu";
-            assert.deepEqual(info, { version: pins.version, linkage: "static", target,
-              archiveSha256: pins.artifacts[target].sha256 });
-            console.log(JSON.stringify(info));
-          ' "$RUNNER_TEMP/native-runtime-info.json"
+          GATE: ${{ github.event.inputs.operation == 'inspect' && 'console' || 'full' }}
+        run: node scripts/require-ci.mjs "$GATE" "$SOURCE_SHA"
 
   deploy:
     name: Build and deploy to dev
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     needs: verify
-    # Never deploy from a pull request — PRs run the quality gate only.
+    # PR validation belongs to CI; this workflow never runs a PR deployment.
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     # Serialize by the actual deployment target, NOT the source ref: every
     # deploy run (main push or any manual ref) shares this one constant group,

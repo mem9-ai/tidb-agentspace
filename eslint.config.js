@@ -18,6 +18,8 @@ export default [
       'coverage/**',
       'release/**',
       'meta-service/target/**',
+      'playwright-report/**',
+      'test-results/**',
     ],
   },
   js.configs.recommended,
@@ -28,6 +30,10 @@ export default [
       'no-unused-vars': ['error', unusedOptions],
       'no-constant-binary-expression': 'error',
     },
+  },
+  {
+    files: ['e2e/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
   ...tseslint.configs.recommended.map((config) => ({ ...config, files: ['src/**/*.{ts,tsx}'] })),
   {

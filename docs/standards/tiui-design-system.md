@@ -499,9 +499,11 @@ viewports, exact workflows, and limitations. Backend/cloud integration remains u
 
 For each UI PR: cite the TiUI version/component reference; identify shared overrides and
 remaining gaps; run `npm run check`; inspect light/dark desktop and narrow layouts (including
-at least 1280px and 390px widths); inspect keyboard and relevant async/error states; attach
-screenshots. Claim TiUI adoption only for components actually migrated. CI currently checks
-document routing and application health, not visual fidelity.
+at least 1280px and 390px widths); inspect keyboard and relevant async/error states using
+[browser assertions](browser-verification.md). Attach representative screenshots for visual
+changes, rather than repeating every functional flow through images. Claim TiUI adoption only
+for components actually migrated. Browser smoke asserts behavior, readability metrics and
+routes; it does not establish visual fidelity.
 
 DuckDB is a customer database type with internal storage. Its create form, database pages and Key targets show DuckDB only; do not add its backing File System to Console navigation or permissions. Native worker/runtime configuration belongs in operator docs, not customer workflows. See [ADR 0008](../decisions/0008-duckdb-private-storage.md).
 

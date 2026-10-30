@@ -106,8 +106,10 @@ follow its task-specific references before implementation. Keep detailed rules c
   format/Clippy/tests and isolated real S3/compatibility cases); follow [the Rust runtime guide](docs/rust-backend.md).
 - Run targeted checks during development. Add meaningful behavior/regression tests for API,
   authorization, persistence, and billing changes; do not add tests that merely restate code.
-- For visible UI changes, inspect the browser and provide a screenshot plus the checked
-  viewport(s). If browser verification is unavailable, state the limitation.
+- For UI behavior changes, run the assertion-driven browser suite following
+  [browser verification](docs/standards/browser-verification.md). For visual changes, also
+  inspect affected themes/viewports and provide representative screenshots. If browser
+  verification is unavailable, state the limitation. Screenshots alone do not prove behavior.
 - Modify `server/generate-openapi.mjs` and run `npm run api:generate` when the public contract
   changes. Keep the implementation, contract, generated client types, and tests aligned. Do not edit the
   generated `public/openapi.json` by hand.

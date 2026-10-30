@@ -39,7 +39,10 @@
     "build:api:rust": "npm run backend:build",
     "package:api:rust": "node scripts/package-rust-api.mjs",
     "backend:prepare": "node scripts/prepare-duckdb.mjs",
-    "start:api:rust": "node scripts/start-rust-api.mjs"
+    "start:api:rust": "node scripts/start-rust-api.mjs",
+    "test:browser": "playwright test",
+    "test:browser:ui": "playwright test --ui",
+    "test:browser:trace": "playwright show-trace"
   },
   "dependencies": {
     "@codemirror/lang-sql": "6.10.0",
@@ -58,6 +61,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.1",
     "@types/node": "24.19.2",
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",
@@ -66,12 +70,12 @@
     "eslint": "10.13.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.13.0",
+    "jose": "6.2.13",
     "prettier": "3.9.10",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.1",
     "vite": "8.3.5",
-    "yaml": "2.9.1",
-    "jose": "6.2.13"
+    "yaml": "2.9.1"
   },
   "engines": {
     "node": ">=24.22.1 <25",

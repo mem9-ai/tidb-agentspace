@@ -31,7 +31,10 @@ jobs:
   build:
     if: github.repository == 'mem9-ai/tidb.ai' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      actions: read
     outputs:
       current: ${{ steps.source.outputs.current }}
       sha: ${{ steps.commit.outputs.sha }}
@@ -53,13 +56,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ steps.commit.outputs.sha }}
         run: node scripts/console-publish.mjs current "$SOURCE_SHA"
+      - name: Require the same-commit Console checks
+        if: steps.source.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.commit.outputs.sha }}
+        run: node scripts/require-ci.mjs console "$SOURCE_SHA"
       - name: Select the pinned npm version
         if: steps.source.outputs.current == 'true'
         run: npm install --global npm@11.6.2 --ignore-scripts
       - if: steps.source.outputs.current == 'true'
         run: npm ci
-      - if: steps.source.outputs.current == 'true'
-        run: npm run check
       - name: Build public Console without deployment credentials
         if: steps.source.outputs.current == 'true'
         run: env -i PATH="$PATH" HOME="$HOME" CI=true npm run build:console -- --base=/studio/

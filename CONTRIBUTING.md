@@ -182,3 +182,17 @@ Keep frontend and backend independently buildable and runnable in one repository
 See [CI/CD policy](docs/ci-cd.md). The repository is hosted at `mem9-ai/tidb.ai` and GitHub
 CI is running. Branch protections, required reviewers, deployment environments, and a real
 hosting target are not configured by the workflow files themselves.
+
+## Browser and delivery verification
+
+After `npm run build:console`, run `npm run test:browser` for Console behavior changes.
+Install the pinned Chromium with `npx playwright install chromium` once per Playwright version.
+Use `npm run test:browser:ui` to inspect a test and `npm run test:browser:trace -- /path/to/trace.zip`
+for a failure. Follow [browser verification](docs/standards/browser-verification.md) for the
+shared theme/viewport matrix and focused visual evidence. CI reuses the successful Quality
+artifact and keeps native API/authorization verification independent.
+
+Automatic CD/publication consume exact-commit CI evidence rather than rerunning gates.
+A missing or failed gate requires CI on that main revision before retrying the consumer;
+never substitute a successful cache restore, an older commit, or a PR run. See
+[CI/CD](docs/ci-cd.md) and [ADR 0027](docs/decisions/0027-single-ci-evidence.md).
