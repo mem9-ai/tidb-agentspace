@@ -210,6 +210,20 @@ verified, and record that as a remaining gap.
   Check zero/one/multiple resources, reload/history, direct links, creation defaults, draft
   guards and both themes/viewports. See [list verification](../filesystem-list-verification.md).
   Revisit when adding collection filters or pagination.
+- **Contextual resource creation (owner correction, GH-29, 2026-10-30):** creation actions
+  carry an explicit target from their entry point, rather than inferring a type later from
+  the current route or falling back to MySQL. File System entry points and individual resource
+  cards open a kind-specific form with a matching title and region; omit a redundant type picker.
+  The database collection chooser contains only supported database kinds. Only the global
+  resource action offers both databases and File System. Keep action labels and accessible
+  names specific, reset name/region/errors when reopening, and lock the form while creating.
+  On acknowledgement, open the exact returned resource; a missing response identity falls
+  back to its collection. Preserve provider limits and offer an explicit link to an existing
+  File System when its regional slot is occupied. Empty unavailable-resource links offer a
+  direct, correctly scoped Create action alongside the collection link; never silently select
+  another resource. Check cards, collections, empty/stale links, cancel/reopen, successful
+  navigation and both themes/viewports. See [creation verification](../resource-workspace-verification.md#contextual-resource-creation).
+  Revisit for multiple same-kind regions or a changed creation response contract.
 - **Resource workspace hierarchy (owner correction 2026-10-28):** unify Database and File
   System at the page level, not only their sidebars. Use `ResourceWorkspaceHeader` and its
   `ResourceWorkspaceBar` for one compact selector/status/actions toolbar above the entire
