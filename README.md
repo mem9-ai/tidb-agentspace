@@ -2,7 +2,7 @@
 
 An independent Workspace for developers and agents to use databases and files through one scoped Workspace Key. The Console is React/TiUI; the hosted/local API and regional Meta services use Rust. MySQL, opt-in db9 PostgreSQL, native DuckDB and independent File Systems have separate provider capabilities and credential boundaries.
 
-Start with [start-here.md](start-here.md), [contribution rules](CONTRIBUTING.md) and [architecture](docs/architecture.md). Proposed hosted multi-tenancy and production identity remain distinct from the current trusted loopback development profile.
+Start with [start-here.md](start-here.md), [contribution rules](CONTRIBUTING.md) and [architecture](docs/architecture.md). The Rust API supports local guest and hosted shared-Workspace SSO; production multi-tenant identity remains planned.
 
 ## Hosted Studio and runtime selection
 
@@ -146,6 +146,10 @@ support intent, tasks, and acceptance cases; automatic dispatch is not yet imple
 
 Every coding tool uses the shared [agent instructions](AGENTS.md), [contribution guide](CONTRIBUTING.md), and [standards index](docs/standards/README.md). The [knowledge-maintenance workflow](docs/standards/knowledge-maintenance.md) captures reusable user feedback and integration findings in repository docs, so future contributors can use them without this chat's history.
 
-`npm run check` is the common local/CI gate. It checks required standards and instruction links as well as application quality; it does not certify visual fidelity. The [CI/CD policy](docs/ci-cd.md) describes PR review, immutable artifacts, and future protected deployments. GitHub CI runs in `siddontang/tidb.ai`; repository protections and a real deployment target are not configured.
+`npm run check` is the common local/CI gate. It checks required standards and instruction links as well as application quality; it does not certify visual fidelity. The [CI/CD policy](docs/ci-cd.md) describes PR review, immutable artifacts, and future protected deployments. GitHub CI runs in `mem9-ai/tidb.ai`; deployment depends on the target environment and its configured protections.
 
 The product uses one customer-facing Workspace Key; upstream provider credentials are owned by internal services. See [ADR 0001](docs/decisions/0001-unified-workspace-key.md). Existing prototype keys without an explicit resource grant must be reissued.
+
+Read [SlateDB Metadata Architecture Version 1](docs/slatedb-metadata-design.md) for the complete
+Global/Region metadata design, domain model, durability, security, recovery and iteration plan.
+The document distinguishes the target architecture from current implementation limits.
