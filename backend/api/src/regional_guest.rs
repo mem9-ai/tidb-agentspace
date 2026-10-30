@@ -110,15 +110,19 @@ impl RegionalGuest {
             .sessions
             .authenticate_guest_credential(workspace, &credentials.token)
             .await?;
-        let remaining = access
+        let _remaining = access
             .expires_at
             .checked_sub(chrono::Utc::now().timestamp())
             .filter(|v| *v > 0 && *v <= 86_400)
             .ok_or_else(unauthorized)?;
-        let set_cookie = HeaderValue::from_str(&format!(
-            "{COOKIE_NAME}=g1.{workspace}.{}; HttpOnly; Secure; SameSite=Strict; Path={}; Max-Age={remaining}",
+        let expires = chrono::DateTime::from_timestamp(access.expires_at, 0)
+            .ok_or_else(unauthorized)?
+            .format("%a, %d %b %Y %H:%M:%S GMT");
+        let mut set_cookie = HeaderValue::from_str(&format!(
+            "{COOKIE_NAME}=g1.{workspace}.{}; HttpOnly; Secure; SameSite=Strict; Path={}; Expires={expires}",
             credentials.token, self.cookie_path,
         )).map_err(|_| unauthorized())?;
+        set_cookie.set_sensitive(true);
         Ok(EstablishedGuest {
             workspace_id: workspace.into(),
             set_cookie,

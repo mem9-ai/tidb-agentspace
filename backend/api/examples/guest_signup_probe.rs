@@ -39,18 +39,22 @@ async fn main() -> anyhow::Result<()> {
     let established = guest_region
         .establish(&registration.workspace_id, &guest.guest_id, &guest.secret)
         .await?;
+    anyhow::ensure!(
+        established.set_cookie.is_sensitive(),
+        "cookie header was not marked sensitive"
+    );
     let set_cookie = established.set_cookie.to_str()?;
     anyhow::ensure!(
-        set_cookie.contains("HttpOnly; Secure; SameSite=Strict; Path=/studio/; Max-Age="),
+        set_cookie.contains("HttpOnly; Secure; SameSite=Strict; Path=/studio/; Expires="),
         "invalid cookie attributes"
     );
-    let age: i64 = set_cookie
-        .rsplit_once("Max-Age=")
-        .ok_or_else(|| anyhow::anyhow!("missing cookie age"))?
-        .1
-        .parse()?;
+    let expires = set_cookie
+        .rsplit_once("Expires=")
+        .ok_or_else(|| anyhow::anyhow!("missing cookie expiry"))?
+        .1;
+    let cookie_expiry = chrono::DateTime::parse_from_rfc2822(expires)?.timestamp();
     anyhow::ensure!(
-        age > 0 && age <= 86_400 && age <= guest.expires_at - before,
+        cookie_expiry == guest.expires_at && cookie_expiry > before,
         "cookie exceeds Guest expiry"
     );
     anyhow::ensure!(
