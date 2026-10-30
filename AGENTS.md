@@ -127,5 +127,5 @@ follow its task-specific references before implementation. Keep detailed rules c
 - CI must run without cloud credentials. Keep actions pinned to full commit SHAs and tokens
   least-privileged. Do not execute untrusted PR code in a privileged deployment job.
 - Package reviewed code with a source SHA and checksums. Actual deployment must use the
-  configured target, environment protection, health verification, and rollback procedure.
+  configured target, environment protection, health verification, and documented failure handling.
   The current release workflow packages an internal demo artifact; it does not deploy it.

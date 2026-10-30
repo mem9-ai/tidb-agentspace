@@ -18,7 +18,6 @@ function fixture({
   failUpdate = false,
   failures = 0,
   externalOnFailure = false,
-  externalOnRollback = false,
 } = {}) {
   const container = {
     name: config.container,
@@ -33,7 +32,6 @@ function fixture({
   const metadata = { uid: 'owned-deployment', resourceVersion: '1' };
   const externalImage = `registry.example/api@sha256:${'c'.repeat(64)}`;
   let waits = 0;
-  let patches = 0;
   return {
     calls,
     container,
@@ -48,10 +46,6 @@ function fixture({
       if (args[0] === 'patch') {
         assert.equal(args[1], `deployment/${config.deployment}`);
         const patch = JSON.parse(args[args.indexOf('--patch') + 1]);
-        if (externalOnRollback && patches > 0) {
-          container.image = externalImage;
-          metadata.resourceVersion = String(Number(metadata.resourceVersion) + 1);
-        }
         assert.deepEqual(patch.slice(0, 3), [
           { op: 'test', path: '/metadata/uid', value: metadata.uid },
           { op: 'test', path: '/metadata/resourceVersion', value: metadata.resourceVersion },
@@ -61,7 +55,6 @@ function fixture({
         assert.equal(patch[3].path, '/spec/template/spec/containers/0/image');
         container.image = patch[3].value;
         metadata.resourceVersion = String(Number(metadata.resourceVersion) + 1);
-        patches++;
         if (failUpdate && container.image === config.image) {
           if (externalOnFailure) container.image = externalImage;
           throw new Error('Response lost');
@@ -108,7 +101,7 @@ test('redeploying the current digest checks readiness without a mutation', () =>
   const unhealthy = fixture({ failures: 1 });
   assert.throws(
     () => deployDev({ ...config, image: previousImage }, unhealthy.kubectl),
-    /Current deployment is not ready/,
+    /Deployment readiness could not be verified/,
   );
   assert.equal(unhealthy.calls.length, 2);
 });
@@ -130,63 +123,73 @@ test('invalid input fails before contacting the cluster', () => {
   }
 });
 
-test('missing deployment, container, immutable rollback target or readiness probe prevent writes', () => {
+test('missing deployment, container or readiness probe prevent writes', () => {
   const missing = fixture({ missing: true });
   assert.throws(() => deployDev(config, missing.kubectl), /Cannot read the existing Deployment/);
   assert.equal(missing.calls.length, 1);
   for (const mutate of [
     (c) => (c.name = 'different'),
-    (c) => (c.image = 'registry.example/api:latest'),
     (c) => delete c.readinessProbe,
     (c) => (c.readinessProbe.httpGet.path = '/'),
   ]) {
     const f = fixture();
     mutate(f.container);
-    assert.throws(() => deployDev(config, f.kubectl), /Existing container must/);
+    assert.throws(() => deployDev(config, f.kubectl), /Existing container/);
     assert.equal(f.calls.length, 1);
   }
 });
 
-test('failed rollout restores the captured digest and verifies recovery while failing the release', () => {
+test('a manually configured image tag can be replaced by an immutable release', () => {
+  const f = fixture();
+  f.container.image = 'registry.example/api:bootstrap';
+  deployDev(config, f.kubectl);
+  assert.equal(f.container.image, config.image);
+});
+
+test('failed rollout fails the release without reverting the image', () => {
   const f = fixture({ failures: 1 });
-  assert.throws(() => deployDev(config, f.kubectl), /previous image is restored and ready/);
-  assert.equal(f.container.image, previousImage);
+  assert.throws(() => deployDev(config, f.kubectl), /Deployment readiness could not be verified/);
+  assert.equal(f.container.image, config.image);
   assert.deepEqual(
     f.calls.map((args) => args[0]),
-    ['get', 'patch', 'rollout', 'get', 'patch', 'rollout', 'get'],
+    ['get', 'patch', 'rollout'],
   );
 });
 
-test('update committed but response lost still restores the previous digest', () => {
+test('update committed but response lost fails without another write', () => {
   const f = fixture({ failUpdate: true });
-  assert.throws(() => deployDev(config, f.kubectl), /previous image is restored and ready/);
-  assert.equal(f.container.image, previousImage);
+  assert.throws(() => deployDev(config, f.kubectl), /Image update failed/);
+  assert.equal(f.container.image, config.image);
   assert.deepEqual(
     f.calls.map((args) => args[0]),
-    ['get', 'patch', 'get', 'patch', 'rollout', 'get'],
+    ['get', 'patch'],
   );
 });
 
-test('failed rollback is surfaced without deletion or further retry', () => {
-  const f = fixture({ failures: 2 });
-  assert.throws(() => deployDev(config, f.kubectl), /rollback did not recover readiness/);
-  assert.equal(f.calls.length, 6);
-});
-
-test('external image changes prevent rollback after timeout or lost update response', () => {
+test('external image changes are preserved after timeout or lost update response', () => {
   for (const options of [{ failures: 1 }, { failUpdate: true }]) {
     const f = fixture({ ...options, externalOnFailure: true });
-    assert.throws(() => deployDev(config, f.kubectl), /changed externally; rollback skipped/);
+    assert.throws(
+      () => deployDev(config, f.kubectl),
+      /readiness could not be verified|Image update failed/,
+    );
     assert.equal(f.container.image, `registry.example/api@sha256:${'c'.repeat(64)}`);
     assert.equal(f.calls.filter((args) => args[0] === 'patch').length, 1);
   }
 });
 
-test('atomic rollback preconditions preserve an external update after the rollback read', () => {
-  const f = fixture({ failures: 1, externalOnRollback: true });
-  assert.throws(() => deployDev(config, f.kubectl), /rollback did not recover readiness/);
-  assert.equal(f.container.image, `registry.example/api@sha256:${'c'.repeat(64)}`);
-  assert.equal(f.calls.filter((args) => args[0] === 'rollout').length, 1);
+test('failure diagnostics omit raw kubectl output', () => {
+  for (const operation of ['patch', 'rollout']) {
+    const f = fixture();
+    assert.throws(
+      () =>
+        deployDev(config, (args) => {
+          if (args[0] === operation) throw new Error('Private cluster endpoint unavailable');
+          return f.kubectl(args);
+        }),
+      (error) => !error.message.includes('Private cluster'),
+    );
+  }
 });
 
 test('workflow keeps PRs credential-free and binds releases to one verified commit', () => {

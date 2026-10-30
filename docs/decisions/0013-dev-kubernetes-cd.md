@@ -1,6 +1,6 @@
 # ADR 0013: Dev Kubernetes CD for the API server
 
-- Status: dev-only continuous deployment. The historical Node runtime contract below is superseded by [ADR 0026](0026-native-hosted-studio.md) and [native deployment](../native-studio-deployment.md). Image update/recovery policy remains applicable after a native target is explicitly bootstrapped.
+- Status: dev-only continuous deployment. The historical Node runtime contract below is superseded by [ADR 0026](0026-native-hosted-studio.md) and [native deployment](../native-studio-deployment.md). The image update policy below applies after a native target is explicitly bootstrapped. The owner removed automatic dev rollback on 2026-10-30.
 - Workflow: [.github/workflows/dev-cd.yml](../../.github/workflows/dev-cd.yml).
 - Related: [ADR 0005](0005-independent-console-and-api.md), [independent delivery](../independent-delivery.md).
 
@@ -24,22 +24,23 @@ Pull requests validate without deployment credentials.
 3. After tests pass on a release, build and push the native image **once**.
    Read the immutable digest from Buildx's output metadata, not by resolving a mutable
    tag later. The tag includes the full source SHA for traceability.
-4. Read the existing Deployment and capture the target container's current digest.
+4. Read the existing Deployment and target container image.
    Require its HTTP readiness probe to check `/api/health`. Update only that container's
-   image and wait up to 300 seconds for rollout/readiness.
-5. If the update or readiness check fails, restore the captured image and verify recovery.
-   The run still fails after a successful recovery; a failed rollback is reported separately.
-   No PVC, Service, Pod configuration or unrelated container is changed by rollback.
-   Both updates use atomic UID/resource-version checks. If another writer has changed
-   the target image, recovery stops without overwriting that change.
+   image with atomic UID/resource-version/image preconditions, then wait up to 300 seconds
+   for rollout/readiness. Verify the Deployment identity and new image after readiness.
+5. If the update or readiness check fails, fail the Action for operator handling.
+   Do not restore an earlier image, retry the write or change any other resources.
+   This also applies when an update commits but its response is lost; inspect the live
+   Deployment before retrying manually.
 
 [`scripts/deploy-dev.mjs`](../../scripts/deploy-dev.mjs) implements the image update and
-recovery. It also restores the previous image when an update commits but its response is
-lost. Redeploying the current digest checks readiness without a mutation. A missing
-Deployment, missing container, mutable previous image or missing HTTP readiness probe
-fails before writing anything. Missing infrastructure is never created automatically.
+readiness check. Redeploying the current digest checks readiness without a mutation.
+A manually bootstrapped image tag can be replaced, but every new release must use an
+immutable digest. A missing Deployment/container, missing HTTP readiness probe or missing
+native bootstrap marker fails before writing anything. Missing infrastructure is never
+created automatically.
 
-Push and manual releases share a non-cancelling concurrency group, including rollback.
+Push and manual releases share a non-cancelling concurrency group.
 PR verification uses its own cancellable group. The protected `dev` Environment is the
 credential boundary and **must allow only the `main` branch** in GitHub deployment branch
 rules. The workflow also checks the branch, but a branch-local check cannot protect secrets

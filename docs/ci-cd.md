@@ -14,9 +14,10 @@
   deployment to a configured EKS dev environment on `main` pushes changing API/runtime,
   build or delivery inputs, or a manual main request. Documentation/Console-only commits
   retain ordinary CI and independent Console publication without releasing an API image.
-  Releases only update the existing Deployment image and restore the previous digest on
-  failure. [ADR 0013](decisions/0013-dev-kubernetes-cd.md) defines the existing runtime
-  contract, readiness and rollback. Each repository must configure its own
+  Releases only update the existing Deployment image.
+  [ADR 0013](decisions/0013-dev-kubernetes-cd.md) defines the runtime contract and readiness.
+  Dev release failures require operator handling, with no automatic rollback.
+  Each repository must configure its own
   environment; checking in this workflow does not provision credentials or a cluster.
 - Exact npm dependency versions, a committed lockfile, fixed Node/npm versions, editor
   settings, Prettier, ESLint, strict TypeScript, and a generated-contract drift check.
@@ -228,7 +229,7 @@ Measured on 2026-10-30 for [GH-17](https://github.com/mem9-ai/tidb.ai/issues/17)
 | [Read-only inspection](https://github.com/mem9-ai/tidb.ai/actions/runs/40979807553)              | 17m 23s total                   | 14m 01s of verification before a 28s protected inspection job, with additional job scheduling delay                   |
 | [Console publication](https://github.com/mem9-ai/tidb.ai/actions/runs/40979799331)               | 9m 16s total                    | Website PR creation 2m 58s and waiting for its independent checks 1m 56s; separate from API image compilation         |
 
-The native PR image job now runs alongside the complete quality/native gate. It has no cloud identity, does not push an image, and smoke-tests the final runtime without network access or a writable root. Main releases still require the entire quality/native gate before entering the protected deployment job. Manual `inspect` retains `npm run check` but omits native compilation/tests because it neither packages nor deploys an API. Deploy operations retain all native/S3 checks, immutable digest verification, serialization and rollback.
+The native PR image job now runs alongside the complete quality/native gate. It has no cloud identity, does not push an image, and smoke-tests the final runtime without network access or a writable root. Main releases still require the entire quality/native gate before entering the protected deployment job. Manual `inspect` retains `npm run check` but omits native compilation/tests because it neither packages nor deploys an API. Deploy operations retain all native/S3 checks, immutable digest verification, serialization and readiness checks. On update or readiness failure, dev CD fails the Action without reverting the image; an operator inspects the current state and handles recovery.
 
 Automatic API release paths match the existing PR image-input paths, including all backend/metadata sources, root Cargo/toolchain/configuration inputs, verified DuckDB preparation, the generated API contract, Docker inputs and the release workflow/helper. Ordinary CI remains unfiltered on PRs and main pushes. Pure documentation and Console changes therefore retain checks without queuing a new native API release. Manual main runs default to `deploy`, which builds, pushes and rolls out the native image after all quality/native checks pass. Read-only `inspect` must be selected explicitly. There is no build/cache-only manual operation in CD; manual deployment and inspection remain available regardless of changed paths. First native delivery still requires the [one-time target bootstrap](native-studio-deployment.md#one-time-kubernetes-cutover-and-recurring-cd).
 

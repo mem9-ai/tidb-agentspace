@@ -3,8 +3,8 @@ name: Deploy API to dev
 # Continuous deployment of the TiDB Workspace API server to the dev
 # Kubernetes environment. Modeled on the tidbcloud/fs dev CD: build a
 # native image, push it to the container registry, then roll the existing
-# in-cluster Deployment to the new image and wait for the rollout, undoing it
-# on failure.
+# in-cluster Deployment to the new image and wait for the rollout. Failures
+# are reported for operator handling without automatic rollback.
 #
 # Releases only update the existing Deployment image.
 # All environment identifiers remain runtime inputs, never repository values.
@@ -68,7 +68,7 @@ permissions:
 #   verification supersedes the older run.
 # - Push to main and manual dispatch (can deploy): ONE shared constant group
 #   with cancel-in-progress FALSE. Deploy-capable runs therefore queue behind
-#   one another and are never cancelled mid-rollout/rollback — a second main
+#   one another and are never cancelled mid-rollout — a second main
 #   push waits for the first run to finish instead of killing it at the
 #   workflow level. The deploy job's own constant group keeps that invariant
 #   even if this block is later changed.
@@ -199,7 +199,7 @@ jobs:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     # Serialize by the actual deployment target, NOT the source ref: every
     # deploy run (main push or any manual ref) shares this one constant group,
-    # so two runs can never interleave `set image` / `rollout` / `rollout undo`
+    # so two runs can never interleave `set image` / `rollout`
     # on the single dev Deployment. cancel-in-progress is false so an in-flight
     # rollout is never abandoned half-applied.
     concurrency:
@@ -300,6 +300,6 @@ jobs:
         if: github.event.inputs.operation == 'inspect'
         run: node scripts/inspect-native-target.mjs
 
-      - name: Deploy image and verify readiness (restore previous image on failure)
+      - name: Deploy image and verify readiness
         if: github.event.inputs.operation != 'inspect'
         run: node scripts/deploy-dev.mjs

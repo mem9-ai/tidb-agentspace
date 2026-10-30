@@ -51,7 +51,7 @@ Before first native delivery, mount the prepared private files at `/run/workspac
 
 The target must have one replica/Recreate, bounded scratch space, non-root UID/GID 1000, read-only root, no service account token/capabilities, `/api/health` readiness with loopback Host, and Pod-template annotation `workspace.tidb.ai/runtime: rust-v1`. Its container must invoke the image's native entrypoint, without the previous Node command override. Mark the target only after its native configuration and storage are verified.
 
-After bootstrap, main-only CD builds once, pushes an immutable digest, atomically updates the existing container image and verifies readiness; failed rollout restores the previous native digest. The deployment helper refuses an unmarked legacy target before any write. It does not create infrastructure, delete data, change credentials or rerun initialization. A successful rollout must also be followed by an authorized read, an unauthorized denial, public `/studio` routing and real-account login before reporting the hosted product live.
+After bootstrap, main-only CD builds once, pushes an immutable digest, atomically updates the existing container image and verifies readiness; a failed update or readiness check fails the Action for operator handling without automatically restoring an earlier image. The deployment helper refuses an unmarked legacy target before any write. It does not create infrastructure, delete data, change credentials or rerun initialization. A successful rollout must also be followed by an authorized read, an unauthorized denial, public `/studio` routing and real-account login before reporting the hosted product live.
 
 ### Deployment operator handoff
 
