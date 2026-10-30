@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { appendFile } from 'node:fs/promises';
+import { appendFile, lstat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -8,9 +8,49 @@ export const sourceRepository = 'mem9-ai/tidb.ai';
 export const websiteRepository = 'mem9-ai/drive9-fe';
 export const publicationBranch = 'automation/studio-console';
 
+export async function verifyWebsiteCheckout(directory) {
+  const git = (...args) =>
+    execFileSync('git', ['-C', resolve(directory), ...args], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 10_000,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+  assert.equal(git('config', 'core.sparseCheckout').trim(), 'true', 'Require sparse checkout.');
+  assert.equal(
+    git('config', 'remote.origin.partialclonefilter').trim(),
+    'blob:none',
+    'Require blobless website fetches.',
+  );
+  await assert.rejects(lstat(resolve(directory, 'site/releases')), { code: 'ENOENT' });
+  const entries = git('ls-tree', '-r', '-z', 'HEAD').split('\0').filter(Boolean);
+  const selected = new Set();
+  const excluded = new Set();
+  const releaseIndex = [];
+  for (const entry of entries) {
+    const [metadata, path] = entry.split('\t');
+    const [mode, type, sha] = metadata.split(' ');
+    if (type === 'blob') (path.startsWith('site/releases/') ? excluded : selected).add(sha);
+    if (path.startsWith('site/releases/')) releaseIndex.push(`${mode} ${sha} 0\t${path}`);
+  }
+  assert.deepEqual(
+    git('ls-files', '--stage', '-z', '--', 'site/releases/').split('\0').filter(Boolean).sort(),
+    releaseIndex.sort(),
+    'The full index must preserve excluded releases.',
+  );
+  // Enumerate only local objects; resolving missing blob IDs would lazily fetch them.
+  const local = new Set(
+    git('cat-file', '--batch-all-objects', '--batch-check=%(objectname)').trim().split('\n'),
+  );
+  for (const sha of excluded) {
+    if (!selected.has(sha)) assert.ok(!local.has(sha), 'An excluded release blob was downloaded.');
+  }
+  return { excludedReleaseBlobs: excluded.size, localObjects: local.size };
+}
+
 const shaPattern = /^[a-f0-9]{40}$/;
 export function consoleInput(path) {
-  return /^(src\/|console\/|tools\/api-contract\/|index\.html$|package(?:-lock)?\.json$|\.node-version$|\.npmrc$|\.env(?:\.|$)|tsconfig[^/]*\.json$|vite\.config\.[^/]+$|scripts\/console-publish(?:\.test)?\.mjs$|\.github\/workflows\/console-publish\.yml$)/.test(
+  return /^(src\/|console\/|tools\/api-contract\/|index\.html$|package(?:-lock)?\.json$|\.node-version$|\.npmrc$|\.env(?:\.|$)|tsconfig[^/]*\.json$|vite\.config\.[^/]+$|scripts\/console-publish[^/]*\.mjs$|\.github\/workflows\/console-publish\.yml$)/.test(
     path,
   );
 }
@@ -114,7 +154,11 @@ async function output(key, value) {
 }
 
 async function run(command, args) {
-  if (command === 'current') {
+  if (command === 'checkout') {
+    const [directory] = args;
+    assert.ok(directory, 'Website checkout directory is required.');
+    console.log(JSON.stringify(await verifyWebsiteCheckout(directory)));
+  } else if (command === 'current') {
     const [source] = args;
     assert.match(source || '', shaPattern, 'Use a full source commit.');
     const baseline = api(`repos/${sourceRepository}/git/trees/${source}?recursive=1`);
@@ -178,7 +222,7 @@ async function run(command, args) {
     );
     console.log('Publication PR matches the tested tree and current website base.');
   } else {
-    throw new Error('Usage: console-publish.mjs current|prepare|wait|verify <arguments>');
+    throw new Error('Usage: console-publish.mjs checkout|current|prepare|wait|verify <arguments>');
   }
 }
 

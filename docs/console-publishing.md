@@ -70,6 +70,39 @@ match the tested tree, its parent must still be website main, and its head must 
 recorded PR head. A changed base, edited candidate, failed test or repository protection
 blocks the merge. There is no `--admin`, protection bypass, or direct main push.
 
+### Website checkout and release files
+
+Publication uses a shallow, non-cone sparse checkout of the website, including everything
+except `site/releases/`. Keep all other website files, scripts, tests and artifact inputs
+available to the existing validation. The excluded directory contains downloadable product
+binaries, not Console publication inputs. Netlify's separate website build still receives
+and publishes those downloads normally.
+
+The pinned checkout action selects `blob:none` when sparse patterns are supplied, then
+applies the patterns before checkout ([verified implementation](https://github.com/actions/checkout/blob/3d3c42e5aac5ba805825da76410c181273ba90b1/src/git-source-provider.ts#L178)).
+Keep the complete Git index and tree metadata; do not delete excluded paths, disable sparse
+checkout or replace it with a full fetch during PR preparation. Artifact commits must retain
+the exact release subtree while changing only the existing artifact allowlist. Revisit this
+boundary if website validation begins reading release binaries or either pinned Git action
+changes its fetch/branch behavior.
+
+`console-publish.mjs checkout` verifies the partial-clone filter, absent release worktree,
+retained release index entries and absent exclusive release blobs in the local object database.
+It enumerates local objects instead of looking up missing blobs, which would lazily fetch
+them. The guard runs before import and after changed-artifact PR preparation. The isolated
+Git regression exercises changed/unchanged trees, artifact additions/deletions, branch fetch
+and reset, and rejects missing index entries or hidden-but-downloaded blobs. Existing
+source/checksum/origin tests and protected independent website checks remain required.
+
+For timing comparisons, record the exact run/attempt and source SHA, website checkout step,
+publish job, build/evidence-wait stages, queue time and total elapsed time. Compare equivalent
+changed or unchanged artifact outcomes and distinguish waiting from validation work. The
+[pre-optimization run](https://github.com/mem9-ai/tidb.ai/actions/runs/41057309793) took 241s
+overall, including a 110s CI-evidence wait, 62s website checkout and 85s publish job. These
+overlapping/stage times must not be added or treated as a controlled benchmark. Record
+post-change observed timings in the task/PR; GitHub publication does not establish Netlify
+live status when that separate verification is deferred.
+
 The publication is the fixed `automation/studio-console` branch and PR. Do not manually edit
 that generated branch. The workflow can replace its contents on subsequent publications.
 Before waiting or merging, the publisher checks that main is protected and the independent

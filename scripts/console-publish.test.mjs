@@ -91,6 +91,7 @@ test('workflow triggers all current Console inputs, including config and workspa
     '.npmrc',
     '.env.production',
     'scripts/console-publish.mjs',
+    'scripts/console-publish-sparse.test.mjs',
     '.github/workflows/console-publish.yml',
   ]) {
     assert.equal(consoleInput(path), true, path);
@@ -125,6 +126,25 @@ test('workflow triggers all current Console inputs, including config and workspa
     workflow.jobs.build.steps.indexOf(gate) <
       workflow.jobs.build.steps.findIndex((step) => step.run === 'npm ci'),
   );
+  const steps = workflow.jobs.publish.steps;
+  const checkout = steps.find((step) => step.with?.repository === websiteRepository);
+  assert.equal(checkout.with['sparse-checkout-cone-mode'], false);
+  assert.equal(checkout.with['sparse-checkout'], '/*\n!/site/releases/\n');
+  assert.equal(checkout.with.filter, undefined);
+  assert.equal(checkout.with['persist-credentials'], false);
+  assert.equal(checkout.with['fetch-depth'] ?? 1, 1);
+  const guards = steps.filter(
+    (step) => step.run === 'node scripts/console-publish.mjs checkout website',
+  );
+  const tests = steps.findIndex(
+    (step) => step.run === 'node --test scripts/*.test.mjs tests/*.test.mjs',
+  );
+  const mint = steps.findIndex((step) => step.id === 'app');
+  assert.equal(guards.length, 2);
+  assert.ok(steps.indexOf(checkout) < steps.indexOf(guards[0]));
+  assert.ok(steps.indexOf(guards[0]) < tests && tests < mint);
+  assert.ok(steps.findIndex((step) => step.id === 'pr') < steps.indexOf(guards[1]));
+  assert.ok(steps.indexOf(guards[1]) < steps.findIndex((step) => step.id === 'latest'));
 });
 
 test('merge accepts only the exact tested tree on the current website base', () => {
