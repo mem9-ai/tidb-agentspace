@@ -40,7 +40,7 @@ a Key or discard work to save a click. Backend authorization remains authoritati
   meaningful differences: Upload stores file bytes; database Import confirms parsing/schema.
   Preview export operates on the original; execution export operates on its result/output.
 - Identity, region, status and service information follow the same resource list pattern.
-  Keep provider/demo, expiry and abnormal states truthful and readable. Put optional detail
+  Keep provider/demo, expiry and abnormal states truthful and readable; critical status text must not collapse into meaningless ellipses. Put optional detail
   in Details/Editor tools; keep execution intent and errors visible.
 - Collection → resource → tool is the common hierarchy. Keep a labeled return to the
   collection and consistent breadcrumbs; disable the controlled return during active work

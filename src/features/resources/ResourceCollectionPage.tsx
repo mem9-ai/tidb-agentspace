@@ -86,6 +86,7 @@ export function ResourceCollectionPage({
                   <Table.Td>{regionLabel(resource.region)}</Table.Td>
                   <Table.Td>
                     <Badge
+                      miw="max-content"
                       color={
                         resource.status === 'active'
                           ? 'green'
@@ -104,6 +105,7 @@ export function ResourceCollectionPage({
                   </Table.Td>
                   <Table.Td>
                     <Badge
+                      miw="max-content"
                       color={
                         !resource.provider || resource.provider === 'local' ? 'carbon' : 'peacock'
                       }

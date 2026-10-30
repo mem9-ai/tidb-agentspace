@@ -113,6 +113,12 @@ test('populated collections share metadata, exact-resource entry, connection and
     ]);
     await expect(table.getByRole('row')).toHaveCount(2);
     await expect(table.getByText('Local demo', { exact: true })).toBeVisible();
+    for (const text of ['active', 'Local demo']) {
+      const label = table.getByText(text, { exact: true });
+      await expect
+        .poll(() => label.evaluate((element) => element.scrollWidth <= element.clientWidth))
+        .toBe(true);
+    }
     await table.getByRole('link', { name: `Open ${resource.name}`, exact: true }).click();
     await expect(page).toHaveURL(
       collection.id === 'db_fixture'
