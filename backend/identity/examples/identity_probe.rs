@@ -17,6 +17,44 @@ async fn main() -> anyhow::Result<()> {
     let config: ClientConfig = serde_json::from_slice(&std::fs::read(&args[1])?)?;
     let authority = config.authority_id.clone();
     let metadata = Arc::new(RemoteMetadata::connect(config).await?);
+    if args[2] == "--workspace-isolation" {
+        use workspace_domain::{Credential, Operation, Repository, Workspace};
+        let alice = Workspace::new(
+            Repository::open(metadata.clone(), &authority, &args[3], false, None).await?,
+        );
+        let bob =
+            Workspace::new(Repository::open(metadata, &authority, &args[4], false, None).await?);
+        let credential = Credential::SessionOwner {
+            id: "test-principal".into(),
+            actor: "test-user".into(),
+            workspace_id: args[3].clone(),
+            expires_at: chrono::Utc::now().timestamp() + 60,
+            revoked: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        };
+        anyhow::ensure!(
+            alice.authenticate(&credential).await.is_ok(),
+            "owner denied"
+        );
+        anyhow::ensure!(
+            bob.authenticate(&credential).await.is_err(),
+            "wrong workspace accepted"
+        );
+        anyhow::ensure!(
+            alice
+                .call(credential.clone(), Operation::GetWorkspace)
+                .await
+                .is_ok(),
+            "owner read denied"
+        );
+        anyhow::ensure!(
+            bob.call(credential, Operation::GetWorkspace).await.is_err(),
+            "cross-workspace read accepted"
+        );
+        alice.close().await?;
+        bob.close().await?;
+        println!("{{\"isolated\":true}}");
+        return Ok(());
+    }
     if args[2] == "--workspace-check" {
         let repository =
             workspace_domain::Repository::open(metadata, &authority, &args[3], false, None).await?;

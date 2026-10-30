@@ -40,6 +40,11 @@ primitives are not wired into SSO, API routing, a cleanup scheduler/provider del
 service. A claimed cleanup job requires reconciliation after an uncertain result; it is not
 automatically retried. They do not establish a multi-tenant deployment.
 
+The existing shared-Workspace session now carries its Workspace ID and is rejected by domain
+authorization in a different Workspace. SSO produces a verified issuer and subject before
+applying the existing shared-owner allowlist. This hardening does not connect verified logins
+to the new identity directory or implement multi-tenant routing.
+
 An inactive DB9 cleanup adapter can issue one deletion request for a durably claimed Guest
 resource after checking the scoped Workspace, provider binding, existing account and Region
 policy. A successful [DB9 deletion response](https://db9.ai/docs/api/) is acceptance only, not

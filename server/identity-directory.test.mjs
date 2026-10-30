@@ -79,6 +79,12 @@ test(
     assert.notEqual(guestWorkspace.workspaceId, onboarding[0].workspaceId);
     await exec(probe, [regionConfig, '--workspace-check', onboarding[0].workspaceId, '-']);
     await exec(probe, [regionConfig, '--workspace-check', guestWorkspace.workspaceId, '-']);
+    await exec(probe, [
+      regionConfig,
+      '--workspace-isolation',
+      onboarding[0].workspaceId,
+      guestWorkspace.workspaceId,
+    ]);
     const policyPath = resolve(fixture.directory, 'regional-policy.json');
     const claimsPath = resolve(fixture.directory, 'regional-claims.json');
     const acknowledgementPath = resolve(fixture.directory, 'regional-ack.json');

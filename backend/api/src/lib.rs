@@ -486,6 +486,7 @@ async fn dispatch(
                 credential: Credential::SessionOwner {
                     id: "local-owner".into(),
                     actor: "You".into(),
+                    workspace_id: app.config.workspace_id.clone(),
                     expires_at: chrono::Utc::now().timestamp() + 28800,
                     revoked: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 },
@@ -745,7 +746,9 @@ async fn auth_route(
         let result = sso
             .callback(cookie(headers, "aw_sso_flow").unwrap_or_default(), query)
             .await
-            .and_then(|login| sso::shared_workspace_owner(&sso.config, &login));
+            .and_then(|login| {
+                sso::shared_workspace_owner(&sso.config, &login, &app.config.workspace_id)
+            });
         let mut response = match result {
             Err(e) => error(e),
             Ok(credential) => {

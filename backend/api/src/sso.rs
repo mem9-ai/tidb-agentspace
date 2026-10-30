@@ -181,17 +181,23 @@ fn valid_rule(rule: &str) -> bool {
 /// Constructed only after signature, issuer, audience, expiry, nonce and PKCE validation.
 /// The issuer and subject are the identity used by onboarding; email is not an identity key.
 pub(crate) struct VerifiedLogin {
-    pub(crate) issuer: String,
-    pub(crate) subject: String,
+    issuer: String,
+    subject: String,
     claims: Value,
+}
+impl VerifiedLogin {
+    pub(crate) fn identity(&self) -> (&str, &str) {
+        (&self.issuer, &self.subject)
+    }
 }
 
 pub(crate) fn shared_workspace_owner(
     config: &Config,
     login: &VerifiedLogin,
+    workspace_id: &str,
 ) -> Result<Credential, ServiceError> {
     let claims = &login.claims;
-    let sub = &login.subject;
+    let (issuer, sub) = login.identity();
     let org = &claims[&config.org_claim];
     let org_allowed = config.allowed_orgs.is_empty()
         || config.allowed_orgs.iter().any(|expected| {
@@ -213,8 +219,9 @@ pub(crate) fn shared_workspace_owner(
         return Err(failure(403, "SSO_NOT_AUTHORIZED"));
     }
     Ok(Credential::SessionOwner {
-        id: format!("sso:{}:{sub}", login.issuer),
+        id: format!("sso:{issuer}:{sub}"),
         actor: format!("tidb:{sub}"),
+        workspace_id: workspace_id.into(),
         expires_at: chrono::Utc::now().timestamp() + 28800,
         revoked: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
@@ -499,6 +506,7 @@ mod tests {
                 subject: subject.into(),
                 claims: claims.clone(),
             },
+            "ws_test",
         )
     }
     #[test]

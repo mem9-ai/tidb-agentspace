@@ -11,6 +11,7 @@ pub enum Credential {
     SessionOwner {
         id: String,
         actor: String,
+        workspace_id: String,
         expires_at: i64,
         revoked: std::sync::Arc<std::sync::atomic::AtomicBool>,
     },
@@ -145,11 +146,13 @@ pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
         Credential::SessionOwner {
             id,
             actor,
+            workspace_id,
             expires_at,
             revoked,
         } => {
             if *expires_at <= Utc::now().timestamp()
                 || revoked.load(std::sync::atomic::Ordering::Acquire)
+                || state["workspace"]["id"].as_str() != Some(workspace_id.as_str())
             {
                 return Err(reject(401, "UNAUTHENTICATED"));
             }
@@ -168,9 +171,10 @@ pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
 impl Workspace {
     pub async fn authenticate(&self, credential: &Credential) -> Result<Principal> {
         match credential {
-            Credential::LocalDemoOwner | Credential::SessionOwner { .. } => {
-                principal(&json!({}), credential)
-            }
+            Credential::LocalDemoOwner | Credential::SessionOwner { .. } => principal(
+                &json!({"workspace":{"id":self.repository.workspace_id()}}),
+                credential,
+            ),
             Credential::Bearer(token) => self.repository.authenticate_key(token).await,
         }
     }
@@ -433,11 +437,36 @@ mod session_tests {
         let credential = Credential::SessionOwner {
             id: "sso:issuer:alice".into(),
             actor: "tidb:alice".into(),
+            workspace_id: "alice-workspace".into(),
             expires_at: Utc::now().timestamp() - 1,
             revoked: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         };
+        let mut state = json!({"workspace":{"id":"alice-workspace"}});
+        assert!(principal(&state, &credential).is_err());
+        assert!(execute_operation(&mut state, credential, Operation::ListWorkspaces).is_err());
+    }
+    #[test]
+    fn session_owner_is_bound_to_one_workspace() {
+        let credential = Credential::SessionOwner {
+            id: "sso:issuer:alice".into(),
+            actor: "tidb:alice".into(),
+            workspace_id: "alice-workspace".into(),
+            expires_at: Utc::now().timestamp() + 28800,
+            revoked: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        };
+        let mut alice = json!({"workspace":{"id":"alice-workspace"}});
+        let mut bob = json!({"workspace":{"id":"bob-workspace"}});
+        assert!(
+            execute_operation(&mut alice, credential.clone(), Operation::ListWorkspaces).is_ok()
+        );
+        assert_eq!(
+            execute_operation(&mut bob, credential.clone(), Operation::ListWorkspaces)
+                .err()
+                .unwrap()
+                .code,
+            "UNAUTHENTICATED"
+        );
         assert!(principal(&json!({}), &credential).is_err());
-        assert!(execute_operation(&mut json!({}), credential, Operation::ListWorkspaces).is_err());
     }
 }
 
@@ -449,12 +478,14 @@ mod revocation_tests {
         let credential = Credential::SessionOwner {
             id: "sso:issuer:alice".into(),
             actor: "tidb:alice".into(),
+            workspace_id: "alice-workspace".into(),
             expires_at: Utc::now().timestamp() + 28800,
             revoked: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         };
         let operation_credential = credential.clone();
-        assert!(principal(&json!({}), &operation_credential).is_ok());
+        let state = json!({"workspace":{"id":"alice-workspace"}});
+        assert!(principal(&state, &operation_credential).is_ok());
         credential.revoke();
-        assert!(principal(&json!({}), &operation_credential).is_err());
+        assert!(principal(&state, &operation_credential).is_err());
     }
 }
