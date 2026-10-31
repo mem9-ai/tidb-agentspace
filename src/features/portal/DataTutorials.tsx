@@ -16,6 +16,7 @@ import {
   tutorialSample,
 } from './tutorial-data';
 import './tutorials.css';
+import { loadDatabaseSample } from './tutorial-import';
 import { getTutorialStore, type TutorialProgress, type TutorialStore } from './tutorial-progress';
 
 type Props = {
@@ -220,8 +221,8 @@ function TutorialSteps({
     try {
       if (action === 'prepare') {
         if (sample.attempted || demo) return;
-        updateSample({ ...sample, attempted: true });
         if (files) {
+          updateSample({ ...sample, attempted: true });
           if (resource.provider === 'drive9-anonymous') {
             await workspaceApi.uploadFile(
               { resourceId: resource.id, path },
@@ -236,7 +237,10 @@ function TutorialSteps({
               content: ordersCsv,
             });
           }
-        } else await workspaceApi.query({ resourceId: resource.id, sql: database.seedSql });
+        } else
+          await loadDatabaseSample(workspaceApi, resource.id, sample.id, () =>
+            updateSample({ ...sample, attempted: true }),
+          );
         updateSample({ ...sample, attempted: true, ready: true });
         await refresh().catch(() =>
           setNotice('Sample saved. The workspace summary could not refresh; continue with step 3.'),
@@ -337,12 +341,13 @@ function TutorialSteps({
         )}
         {!demo && (
           <details className="tutorial-code">
-            <summary>Preview sample {files ? 'CSV' : 'SQL'}</summary>
-            <CodeExample
-              value={files ? ordersCsv : database.seedSql}
-              label={files ? 'CSV' : 'SQL'}
-              copy={copy}
-            />
+            <summary>Preview sample CSV</summary>
+            <CodeExample value={ordersCsv} label="CSV" copy={copy} />
+            {!files && (
+              <Text size="sm">
+                Imports six rows into a new table: id BIGINT, region TEXT, amount BIGINT.
+              </Text>
+            )}
           </details>
         )}
         <Group mt="sm">
