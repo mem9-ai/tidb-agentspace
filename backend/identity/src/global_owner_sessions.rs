@@ -1,6 +1,8 @@
 //! Global-only owner-session storage. This is not an HTTP authentication boundary: callers
 //! must verify the OIDC flow and protect browser cookies, CSRF and transport independently.
 //! Workspace membership is rechecked against the Global directory on every authentication.
+//! Expired records are not yet garbage-collected. Clock rollback protection and production
+//! time monitoring must be provided before this primitive can be used by a public service.
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -113,6 +115,11 @@ fn parse(secret: &str) -> Result<&str> {
 }
 
 impl OwnerSessions {
+    /// Require the exact shared Global metadata client used by the login directory.
+    pub fn bound_to(&self, directory: &Directory) -> bool {
+        self.directory.same_store(directory)
+    }
+
     pub async fn open(metadata: Arc<dyn Metadata>) -> Result<Self> {
         let directory = Directory::open(metadata.clone()).await?;
         Ok(Self {
@@ -353,8 +360,13 @@ mod tests {
 
     #[tokio::test]
     async fn sessions_are_owner_workspace_scoped_expiring_and_revocable_across_restart() {
-        let (metadata, _, workspace) = ready().await;
+        let (metadata, directory, workspace) = ready().await;
         let sessions = OwnerSessions::open(metadata.clone()).await.unwrap();
+        assert!(sessions.bound_to(&directory));
+        let other = Directory::open(Arc::new(MemoryMeta::default()))
+            .await
+            .unwrap();
+        assert!(!sessions.bound_to(&other));
         let identity = || VerifiedIdentity {
             issuer: "https://issuer.example",
             subject: "alice",

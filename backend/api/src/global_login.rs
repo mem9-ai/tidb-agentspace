@@ -141,6 +141,12 @@ impl GlobalLogin {
         query: &BTreeMap<String, String>,
         workspace_id: &str,
     ) -> Result<IssuedOwnerSession> {
+        if !sessions.bound_to(&self.directory) {
+            return Err(workspace_contracts::ServiceError::new(
+                503,
+                "GLOBAL_IDENTITY_STORE_MISMATCH",
+            ));
+        }
         let login = self.sso.callback(flow, query).await?;
         let (issuer, subject) = login.identity();
         let mut hash = Sha256::new();

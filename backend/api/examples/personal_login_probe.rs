@@ -17,6 +17,7 @@ async fn main() -> anyhow::Result<()> {
     let global: ClientConfig = serde_json::from_slice(&std::fs::read(&args[2])?)?;
     let region: ClientConfig = serde_json::from_slice(&std::fs::read(&args[3])?)?;
     let authority = region.authority_id.clone();
+    let other_connection = Arc::new(RemoteMetadata::connect(global.clone()).await?);
     let global_meta = Arc::new(RemoteMetadata::connect(global).await?);
     let region_meta = Arc::new(RemoteMetadata::connect(region).await?);
     let login = GlobalLogin::new(
@@ -55,6 +56,18 @@ async fn main() -> anyhow::Result<()> {
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("Missing fixture code"))?;
     let session_query = BTreeMap::from([("state".into(), state), ("code".into(), code.into())]);
+    let unbound = OwnerSessions::open(other_connection).await?;
+    anyhow::ensure!(
+        login
+            .finish_owner_session(
+                &unbound,
+                &session_flow,
+                &session_query,
+                &registration.workspace_id
+            )
+            .await
+            .is_err()
+    );
     let session = login
         .finish_owner_session(
             &sessions,

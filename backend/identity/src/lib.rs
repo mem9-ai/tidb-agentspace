@@ -239,6 +239,11 @@ fn decode_guest(
 }
 
 impl Directory {
+    // A control flow must not authorize against one Global store and issue a session in another.
+    fn same_store(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.metadata, &other.metadata)
+    }
+
     pub async fn open(metadata: Arc<dyn Metadata>) -> Result<Self> {
         let health = metadata.health().await?;
         if health["authorityId"] != "global"
