@@ -16,6 +16,32 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
 
 jobs:
+  scope:
+    name: Change scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      ui_only: ${{ steps.scope.outputs.ui_only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Classify the PR merge candidate using the base policy
+        id: scope
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          policy="$RUNNER_TEMP/ci-ui-scope.mjs"
+          if git show HEAD^1:scripts/ci-ui-scope.mjs > "$policy"; then
+            node "$policy"
+          else
+            echo 'Base scope policy unavailable; run the full native job.'
+            echo 'ui_only=false' >> "$GITHUB_OUTPUT"
+          fi
+
   quality:
     name: Quality
     runs-on: ubuntu-24.04
@@ -42,6 +68,8 @@ jobs:
 
   metadata:
     name: Rust backend and S3 integration
+    needs: scope
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.ui_only != 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
@@ -103,7 +131,6 @@ jobs:
 
   browser:
     name: Browser smoke
-    needs: quality
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -117,10 +144,8 @@ jobs:
       - name: Select the pinned npm version
         run: npm install --global npm@11.6.2 --ignore-scripts
       - run: npm ci
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
-        with:
-          name: console-dist-${{ github.sha }}
-          path: dist/
+      - name: Build the same candidate Console
+        run: npm run build:console
       - name: Install Chromium only
         run: npx playwright install chromium --with-deps
       - name: Assert Console user journeys against isolated fixtures
