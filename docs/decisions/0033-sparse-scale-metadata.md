@@ -49,15 +49,15 @@ Workspace-wide usage query counts are reported for owner/wildcard access; for a 
 the response labels its count as page-scoped.
 
 Creation uses colocated name, free-tier quota, idempotency and resource records in an atomic
-metadata commit. Existing Workspaces build versioned indexes in batches of up to 1,536 with durable
-checkpoints and release the Workspace gate between batches. Interruptions resume; index-changing
-updates are fenced while backfill runs. The initial request may still take a long time for a
-large existing Workspace, and an automatic background reconciler is not implemented. ID-ordered
-resource pages avoid the resource-wide view limit. File indexing and resource indexing still
-require a one-time scan of legacy records, and the request that triggers either backfill waits
-for completion. Resource creation, index backfill and legacy snapshots still acquire the
-exclusive Workspace gate. Provider setup and some lifecycle coordination also retain shared
-locks. This is not a finished million-resource design.
+metadata commit. Existing Workspaces build versioned resource indexes in an in-process background
+task, in batches of up to 1,536 with durable checkpoints, releasing the Workspace gate between
+batches. A creation request waits briefly for small backfills. Otherwise it returns 503
+`RESOURCE_INDEX_MIGRATING` without creating a resource, and a client may retry the same request.
+The task is started on demand; after shutdown or a failure a later creation resumes it. Index-changing
+updates are fenced while backfill runs. The first file-index migration remains request-driven.
+Resource creation, index backfill and legacy snapshots still acquire the exclusive Workspace
+gate; provider setup and some lifecycle coordination also retain shared locks. This is not a
+finished million-resource design.
 
 ## Placement proposal
 

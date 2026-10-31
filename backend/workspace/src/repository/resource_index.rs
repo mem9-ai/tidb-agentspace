@@ -59,6 +59,38 @@ fn counter(record: &Value, group: &str) -> Result<u64> {
 }
 
 impl Repository {
+    fn start_resource_backfill(self: &Arc<Self>) {
+        if self.resource_backfill_running.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let repository = self.clone();
+        tokio::spawn(async move {
+            struct Reset(Arc<Repository>);
+            impl Drop for Reset {
+                fn drop(&mut self) {
+                    self.0
+                        .resource_backfill_running
+                        .store(false, Ordering::Release);
+                }
+            }
+            let _reset = Reset(repository.clone());
+            loop {
+                let lock = repository.queue.write().await;
+                let result = repository.advance_resource_indexes().await;
+                drop(lock);
+                match result {
+                    Ok(marker) if marker["value"]["phase"] == "ready" => return,
+                    Ok(_) => tokio::task::yield_now().await,
+                    Err(error) => {
+                        if let Ok(mut failure) = repository.resource_backfill_error.lock() {
+                            *failure = Some(error);
+                        }
+                        return;
+                    }
+                }
+            }
+        });
+    }
     pub(super) async fn get_many(&self, keys: Vec<String>) -> Result<Records> {
         let mut output = Records::new();
         for batch in keys.chunks(512) {
@@ -276,7 +308,7 @@ impl Repository {
     }
 
     pub async fn create_indexed_resource(
-        &self,
+        self: &Arc<Self>,
         credential: &Credential,
         slot: Option<&str>,
         fingerprint: &str,
@@ -319,12 +351,31 @@ impl Repository {
                     });
                 }
             }
-            let marker = self.advance_resource_indexes().await?;
-            if marker["value"]["phase"] == "ready" {
-                break (marker, lock, state);
+            let marker = self.get(SCHEMA).await?;
+            if let Some(failure) = self
+                .resource_backfill_error
+                .lock()
+                .map_err(|_| error("RESOURCE_INDEX_RECOVERY_FAILED"))?
+                .take()
+            {
+                return Err(failure);
             }
-            drop(lock);
-            tokio::task::yield_now().await;
+            if marker["value"]["phase"] != "ready" {
+                drop(lock);
+                self.start_resource_backfill();
+                if tokio::time::timeout(std::time::Duration::from_millis(250), async {
+                    while self.resource_backfill_running.load(Ordering::Acquire) {
+                        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .is_err()
+                {
+                    return Err(ServiceError::new(503, "RESOURCE_INDEX_MIGRATING"));
+                }
+                continue;
+            }
+            break (marker, lock, state);
         };
         let id = resource["id"]
             .as_str()

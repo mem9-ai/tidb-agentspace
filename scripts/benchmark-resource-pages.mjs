@@ -63,7 +63,15 @@ try {
         body: { kind: 'postgresql', name, region: 'automatic' },
       });
     const before = performance.now();
-    const result = await create('scale-index-backfill', 'scale-backfill');
+    let result = await create('scale-index-backfill', 'scale-backfill');
+    const firstResponseSeconds = (performance.now() - before) / 1000;
+    let retries = 0;
+    const deadline = Date.now() + 180_000;
+    while (result.body.error?.code === 'RESOURCE_INDEX_MIGRATING' && Date.now() < deadline) {
+      retries++;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      result = await create('scale-index-backfill', 'scale-backfill');
+    }
     const seconds = (performance.now() - before) / 1000;
     assert.equal(result.status, 201, JSON.stringify(result.body));
     const replay = await create('scale-index-backfill', 'scale-backfill');
@@ -74,6 +82,8 @@ try {
     assert.equal(duplicate.body.error.code, 'NAME_EXISTS');
     backfill = {
       seconds: Number(seconds.toFixed(2)),
+      firstResponseSeconds: Number(firstResponseSeconds.toFixed(2)),
+      retries,
       replay: 'same resource',
       duplicate: 'NAME_EXISTS',
     };

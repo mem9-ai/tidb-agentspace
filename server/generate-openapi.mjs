@@ -1154,6 +1154,8 @@ paths[ws + '/queries'].post.description =
 paths[ws + '/resources'].post.responses[201].headers = {
   Location: { schema: str, description: 'URI of the created resource.' },
 };
+paths[ws + '/resources'].post.responses[503].description =
+  'A provider needs recovery, or RESOURCE_INDEX_MIGRATING means existing Workspace resources are being indexed in the background. That response creates no resource; retry the same request later.';
 const versionConditions = [
   {
     name: 'If-Match',

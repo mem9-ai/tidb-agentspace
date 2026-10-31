@@ -33,8 +33,9 @@ under the shared side of the Workspace gate; creation, backfill and legacy snaps
 its exclusive side.
 The Portal keeps a bounded 200-resource window. Creation maintains
 name, quota and idempotency indexes atomically. The first creation in an existing Workspace
-backfills those indexes in resumable batches, so its total latency is proportional to existing
-resources. File operations use a per-File-System index after resumable legacy backfill, but still
+starts resumable background backfill; while it is running, creation can return
+`RESOURCE_INDEX_MIGRATING` without creating a resource. File operations use a per-File-System
+index after resumable legacy backfill, but still
 materialize the selected File System's files. Provider setup and managed-Workspace cache misses
 still hold shared locks across I/O.
 

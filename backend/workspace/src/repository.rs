@@ -43,6 +43,8 @@ pub struct Repository {
     guard: WriterGuard,
     queue: RwLock<()>,
     closed: AtomicBool,
+    resource_backfill_running: AtomicBool,
+    resource_backfill_error: std::sync::Mutex<Option<ServiceError>>,
 }
 impl Repository {
     /// The scope is established by the host, not by a customer request.
@@ -97,6 +99,8 @@ impl Repository {
             guard: WriterGuard { owner_id: owner },
             queue: RwLock::new(()),
             closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
         };
         let initialized=async {
             let core=result.get("state/workspace").await?;
@@ -1373,6 +1377,8 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
         });
         let stalled = tokio::spawn({
             let repository = repository.clone();
@@ -1396,6 +1402,20 @@ mod concurrency_tests {
         .await
         .expect("independent update was serialized")
         .unwrap();
+        let setup = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            repository.begin_setup_attempt("b", "owner", "once", json!({"id":"attempt-a"})),
+        )
+        .await
+        .expect("independent setup was serialized")
+        .unwrap();
+        assert!(setup.1);
+        let replay = repository
+            .begin_setup_attempt("b", "owner", "once", json!({"id":"attempt-b"}))
+            .await
+            .unwrap();
+        assert!(!replay.1);
+        assert_eq!(replay.0["id"], "attempt-a");
         metadata.resume.notify_one();
         stalled.await.unwrap().unwrap();
         let values = metadata.values.lock().unwrap();
@@ -1448,6 +1468,8 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
         });
         let stalled = tokio::spawn({
             let repository = repository.clone();
@@ -1523,6 +1545,8 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
         });
         let stalled = tokio::spawn({
             let repository = repository.clone();
@@ -1594,6 +1618,8 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
         });
         let stalled = tokio::spawn({
             let repository = repository.clone();
@@ -1657,6 +1683,8 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
         };
         repository
             .append_event(json!({"id":"event-new"}))
@@ -1723,7 +1751,10 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
         };
+        let repository = Arc::new(repository);
         let resource = json!({"id":"db_new","name":"new-duck","kind":"duckdb","status":"active","region":"automatic","provider":"local"});
         let event = json!({"id":"event-new","action":"resource.created"});
         let result = repository
@@ -1745,11 +1776,33 @@ mod concurrency_tests {
                 &crate::Credential::LocalDemoOwner,
                 Some("owner:retry"),
                 "fingerprint",
-                resource,
-                event,
+                resource.clone(),
+                event.clone(),
             )
-            .await
-            .unwrap();
+            .await;
+        let created = match created {
+            Ok(created) => created,
+            Err(error) if error.code == "RESOURCE_INDEX_MIGRATING" => {
+                tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                    while repository.resource_backfill_running.load(Ordering::Acquire) {
+                        tokio::task::yield_now().await;
+                    }
+                })
+                .await
+                .unwrap();
+                repository
+                    .create_indexed_resource(
+                        &crate::Credential::LocalDemoOwner,
+                        Some("owner:retry"),
+                        "fingerprint",
+                        resource,
+                        event,
+                    )
+                    .await
+                    .unwrap()
+            }
+            Err(error) => panic!("unexpected error: {error}"),
+        };
         assert_eq!(created["id"], "db_new");
         let values = metadata.values.lock().unwrap();
         let counts = values
@@ -1801,7 +1854,10 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
         };
+        let repository = Arc::new(repository);
         let resource = json!({"id":"db_new","name":"new-duck","kind":"duckdb","status":"active","region":"automatic","provider":"local"});
         let event = json!({"id":"event-new","action":"resource.created"});
         let create = || {
@@ -1813,10 +1869,18 @@ mod concurrency_tests {
                 event.clone(),
             )
         };
-        assert_eq!(
-            create().await.unwrap_err().code,
-            "RESOURCE_INDEX_DUPLICATE_NAME"
-        );
+        let mut failure = create().await.unwrap_err();
+        if failure.code == "RESOURCE_INDEX_MIGRATING" {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                while repository.resource_backfill_running.load(Ordering::Acquire) {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            failure = create().await.unwrap_err();
+        }
+        assert_eq!(failure.code, "RESOURCE_INDEX_DUPLICATE_NAME");
         {
             let mut records = metadata.values.lock().unwrap();
             assert_eq!(
@@ -1826,7 +1890,21 @@ mod concurrency_tests {
             records.get_mut("state/resources/db_001540").unwrap()["value"]["record"]["name"] =
                 json!("existing-1540");
         }
-        assert_eq!(create().await.unwrap()["id"], "db_new");
+        let mut created = create().await;
+        if created
+            .as_ref()
+            .is_err_and(|error| error.code == "RESOURCE_INDEX_MIGRATING")
+        {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                while repository.resource_backfill_running.load(Ordering::Acquire) {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            created = create().await;
+        }
+        assert_eq!(created.unwrap()["id"], "db_new");
         let records = metadata.values.lock().unwrap();
         assert!(records.values().any(|entry| entry["value"]["group"]
             == "[\"database\",\"mysql\"]"
@@ -1861,6 +1939,8 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
         };
         assert_eq!(
             repository.advance_file_index().await.unwrap_err().code,
@@ -1932,6 +2012,8 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
         };
         assert_eq!(
             repository

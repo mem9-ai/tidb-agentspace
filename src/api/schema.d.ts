@@ -2147,7 +2147,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Provider binding needs operator recovery */
+      /** @description A provider needs recovery, or RESOURCE_INDEX_MIGRATING means existing Workspace resources are being indexed in the background. That response creates no resource; retry the same request later. */
       503: {
         headers: {
           [name: string]: unknown;

@@ -304,11 +304,21 @@ test(
       cursor = page.body.nextCursor;
     } while (cursor);
     assert.equal(count, 4100);
-    const indexedCreate = await fixture.request('/resources', {
-      method: 'POST',
-      headers: { 'Idempotency-Key': 'large-backfill' },
-      body: { kind: 'postgresql', name: 'large-backfill', region: 'automatic' },
-    });
+    const createIndexed = () =>
+      fixture.request('/resources', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'large-backfill' },
+        body: { kind: 'postgresql', name: 'large-backfill', region: 'automatic' },
+      });
+    let indexedCreate = await createIndexed();
+    assert.equal(indexedCreate.status, 503, JSON.stringify(indexedCreate.body));
+    assert.equal(indexedCreate.body.error.code, 'RESOURCE_INDEX_MIGRATING');
+    assert.equal((await fixture.request('/resources?limit=1')).status, 200);
+    const deadline = Date.now() + 120_000;
+    while (indexedCreate.body.error?.code === 'RESOURCE_INDEX_MIGRATING' && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      indexedCreate = await createIndexed();
+    }
     assert.equal(indexedCreate.status, 201, JSON.stringify(indexedCreate.body));
     const duplicate = await fixture.request('/resources', {
       method: 'POST',

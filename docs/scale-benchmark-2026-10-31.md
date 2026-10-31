@@ -105,3 +105,14 @@ still runs synchronously before the first indexed creation. A large existing Wor
 minutes; asynchronous progress and operational controls remain follow-up work. This run did not
 measure many Tenants, cloud-provider provisioning or production S3 latency. Its isolated temporary
 object data was removed after the run.
+
+## Background backfill sample: 10,000 resources
+
+The next local debug-build sample used 10,000 synthetic resource records in one Workspace,
+local RustFS and a fake provider. With four concurrent clients and 100 page requests,
+p50 was 40.75 ms, p95 was 66.74 ms and p99 was 86.20 ms. The first creation response returned
+the explicit indexing status in 0.26 seconds. Background backfill completed and the retried
+creation succeeded after 5.41 seconds in total; idempotent replay and duplicate-name rejection
+were checked. Other checks ran concurrently, and the intermediate test binary was not a release
+artifact. This is not a production latency, Tenant-scale or cloud provisioning result. The
+fixture's isolated object data was removed after the sample.
