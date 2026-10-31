@@ -24,6 +24,29 @@ export async function recover({ namespace, deployment, container, image }, kubec
     throw new Error('Deployment has changed since the failed release; no rollback attempted.');
   if ((selected.env || []).some((item) => item.name === 'WORKSPACE_RETIRE_LEGACY'))
     throw new Error('Legacy retirement state requires manual reconciliation before rollback.');
+  try {
+    const logs = kubectl([
+      'logs',
+      target,
+      '-n',
+      namespace,
+      `--container=${container}`,
+      '--tail=200',
+    ]);
+    const indicators = [
+      ['Metadata startup unavailable', 'metadata-unavailable'],
+      ['Regional dependency unavailable', 'regional-dependency-unavailable'],
+      ['Guest service setup unavailable', 'identity-setup-unavailable'],
+      ['Workspace startup unavailable', 'workspace-startup-unavailable'],
+      ['No configured service could start', 'no-service-started'],
+      ['Rust full regional API listening', 'api-listening'],
+    ]
+      .filter(([needle]) => logs.includes(needle))
+      .map(([, label]) => label);
+    console.log(`Sanitized startup indicators: ${indicators.join(', ') || 'none'}.`);
+  } catch {
+    console.log('Sanitized startup indicators unavailable.');
+  }
   kubectl(['rollout', 'undo', target, '-n', namespace]);
   kubectl(['rollout', 'status', target, '-n', namespace, '--timeout=300s']);
   const after = JSON.parse(kubectl(['get', target, '-n', namespace, '-o', 'json']));
