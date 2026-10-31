@@ -46,7 +46,7 @@ async function openFileSystemsFromSidebar(page) {
   if (await mobileNavigation.isVisible()) await mobileNavigation.click();
   await page
     .getByRole('navigation', { name: 'Main navigation', exact: true })
-    .getByRole('link', { name: 'File System', exact: true })
+    .getByRole('link', { name: 'File Systems', exact: true })
     .click();
 }
 
@@ -109,6 +109,8 @@ test('contextual creation fills the matching name, restores focus and keeps read
   page,
   workspace,
 }) => {
+  workspace.addResources();
+  workspace.state.resources = workspace.state.resources.filter((r) => r.kind === 'filesystem');
   await workspace.open();
   expect(workspace.requests).toEqual(
     expect.arrayContaining([
@@ -123,14 +125,11 @@ test('contextual creation fills the matching name, restores focus and keeps read
     ['MySQL', 'mysql'],
     ['PostgreSQL', 'postgresql'],
     ['DuckDB', 'duckdb'],
-    ['File System', 'filesystem'],
   ]) {
     const trigger = page.getByRole('button', { name: `Create ${label}`, exact: true });
     await trigger.click();
     const dialog = page.getByRole('dialog');
-    await expect(dialog).toHaveAccessibleName(
-      kind === 'filesystem' ? 'Create a File System' : `Create a ${label} database`,
-    );
+    await expect(dialog).toHaveAccessibleName(`Create a ${label} database`);
     await expect(dialog.getByRole('combobox', { name: 'Resource type' })).toHaveCount(0);
     const name = dialog.getByRole('textbox', { name: 'Resource name', exact: true });
     await expect(name).toHaveValue(new RegExp(`^${kind}-[a-f0-9]{16}$`));
@@ -148,6 +147,9 @@ test('automatic type changes preserve manual names; a conflict requires an expli
   page,
   workspace,
 }) => {
+  workspace.addResources();
+  workspace.state.resources = workspace.state.resources.filter((r) => r.kind !== 'filesystem');
+  workspace.state.files = [];
   await workspace.open();
   await page.getByRole('button', { name: 'Create resource', exact: true }).click();
   const dialog = page.getByRole('dialog');
@@ -171,7 +173,7 @@ test('automatic type changes preserve manual names; a conflict requires an expli
   await expect(name).toHaveValue(/^filesystem-/);
   expect(await name.inputValue()).not.toBe(creates()[0].body.name);
   await dialog.getByRole('button', { name: 'Create file system', exact: true }).click();
-  await expect(page).toHaveURL(/#files\?resourceId=fixture_filesystem_0$/);
+  await expect(page).toHaveURL(/#files\?resourceId=fixture_filesystem_1$/);
   expect(creates()).toHaveLength(2);
   expect(creates()[1].body).toMatchObject({ kind: 'filesystem', region: 'aws-ap-southeast-1' });
 });
@@ -182,10 +184,7 @@ test('Key creation sends explicit resource/action grants and reveals its synthet
 }) => {
   workspace.addResources();
   await workspace.open('#keys');
-  await page
-    .locator('.page-heading')
-    .getByRole('button', { name: 'Create API key', exact: true })
-    .click();
+  await page.getByRole('button', { name: 'Create API key', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
   await dialog.getByRole('textbox', { name: 'Key name' }).fill('file-reader');
   await dialog.getByRole('checkbox', { name: 'mysql-fixture', exact: true }).uncheck();

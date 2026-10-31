@@ -8,6 +8,8 @@ prerequisites. Read an entry point once rather than following its links in a loo
 This guide explains the project and routes to authoritative documents. Detailed rules remain
 in [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), and the linked standards.
 Explicit user instructions and higher-priority tool requirements still apply.
+For product and UI work, apply [product experience](docs/standards/product-experience.md):
+consistent shared interactions and minimum complete paths to useful value.
 
 ## What we are building
 

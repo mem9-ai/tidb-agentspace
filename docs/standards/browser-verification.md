@@ -26,7 +26,7 @@ Console build on a dedicated loopback port and use a fresh browser context and s
 API state per test. Unexpected routes, page errors and external requests fail the fixture.
 No persisted user session, personal data or provider credentials are loaded.
 
-The seven journeys run in Light/Dark at 1280×800 and 390×844 (28 cases):
+The twelve journeys run in Light/Dark at 1280×800 and 390×844 (48 cases):
 
 - Actual sidebar entry from Databases and a selected File System, with zero/one/multiple
   resources, collection reload/history and unavailable resource links; never auto-select.
@@ -36,6 +36,8 @@ The seven journeys run in Light/Dark at 1280×800 and 390×844 (28 cases):
 - Explicit Key resource/action grants, creation payload and one-time synthetic secret display.
 - File System collection entry, inline Markdown, unsaved-draft protection and original-file
   download identity/bytes.
+- Matching collection empty states and creation actions, populated metadata/Open/Connect/return,
+  direct named-resource Overview entry and direct scoped Key creation from Connect.
 
 Use semantic roles and labels, scoped to a dialog/region when names repeat. Use web-first
 assertions (`toBeVisible`, `toHaveValue`, `toHaveURL`, `toBeDisabled`) and request/download
