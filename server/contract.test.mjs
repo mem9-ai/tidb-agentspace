@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { nativeProductFixture } from './test-support/native-product-fixture.mjs';
+import { assertSessionContract } from './test-support/assert-session-contract.mjs';
 
 const contract = JSON.parse(
   await readFile(new URL('../public/openapi.json', import.meta.url), 'utf8'),
@@ -54,6 +55,7 @@ test(
     await request('/api/auth/tidbcloud/logout');
     const session = await request('/api/session', 'post', {});
     cookie = session.response.headers.get('set-cookie').split(';')[0];
+    assertSessionContract(cookie);
     const workspace = '/workspaces/{workspaceId}';
     await request('/workspaces');
     await request(workspace);

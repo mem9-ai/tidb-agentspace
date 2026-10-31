@@ -234,6 +234,7 @@ const response = (schema, description = 'Success') => ({
   description,
   content: { 'application/json': { schema } },
 });
+const ownerSessions = [{ localOwner: [] }, { accountOwner: [] }, { guestOwner: [] }];
 function operation(
   id,
   summary,
@@ -243,12 +244,12 @@ function operation(
   return {
     operationId: id,
     summary,
-    tags: [owner ? 'Local owner' : 'Workspace'],
+    tags: [owner ? 'Owner' : 'Workspace'],
     description: owner
-      ? 'Requires the local browser owner session. Workspace API keys cannot perform this operation.'
-      : `Required workspace key scope: ${scope}. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. The local owner session may also call this endpoint.`,
+      ? 'Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Workspace API keys cannot perform this operation.'
+      : `Required workspace key scope: ${scope}. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.`,
     'x-required-scope': scope,
-    security: owner ? [{ localOwner: [] }] : [{ workspaceKey: [] }, { localOwner: [] }],
+    security: owner ? ownerSessions : [{ workspaceKey: [] }, ...ownerSessions],
     ...(parameters.length ? { parameters } : {}),
     ...(input
       ? { requestBody: { required: true, content: { 'application/json': { schema: input } } } }
@@ -990,7 +991,7 @@ paths['/api/auth/guest/logout'] = {
   servers: [{ url: '/' }],
   post: {
     operationId: 'logoutGuestSession',
-    security: [],
+    security: [{ guestOwner: [] }],
     description:
       'End an authenticated Guest Workspace session and durably schedule resource cleanup. Provider deletion can be asynchronous, unsupported or require reconciliation; acceptance is not proof of deletion.',
     responses: {
@@ -1008,7 +1009,7 @@ for (const route of ['login', 'callback']) {
       description:
         route === 'login'
           ? 'Browser redirect to the configured provider using code + S256 PKCE. Server retains a single-use ten-minute flow.'
-          : 'Registered server callback; verifies signature, issuer, audience, nonce and explicit owner grants before minting an eight-hour session. State is single-use and bound to the flow cookie.',
+          : 'Registered server callback; verifies signature, issuer, audience and nonce with single-use, cookie-bound state. Managed hosts establish a Workspace-bound aw_account continuity grant with no absolute server expiry; explicit local/legacy profiles require their configured owner grants and issue an eight-hour aw_session.',
       responses: {
         302: {
           description:
@@ -1074,7 +1075,7 @@ const spec = {
   servers: [
     { url: '/api/v1', description: 'Standalone Workspace API; resolve against the API origin' },
   ],
-  tags: [{ name: 'Workspace' }, { name: 'Local owner' }],
+  tags: [{ name: 'Workspace' }, { name: 'Owner' }],
   paths,
   components: {
     securitySchemes: {
@@ -1089,7 +1090,21 @@ const spec = {
         in: 'cookie',
         name: 'aw_session',
         description:
-          'Created by verified TiDB Account callback, or POST /api/session in explicit loopback guest mode only. HttpOnly; Secure for HTTPS; eight-hour expiration and server-side logout revocation.',
+          "Eight-hour, process-local Owner session for explicit local/legacy profiles, created by that profile's verified SSO callback or POST /api/session (loopback only). HttpOnly; Secure for HTTPS; logout revokes it. Managed account and regional Guest hosts use their separate credentials below.",
+      },
+      accountOwner: {
+        type: 'apiKey',
+        in: 'cookie',
+        name: 'aw_account',
+        description:
+          'Opaque, Workspace-bound regional Owner continuity grant issued after verified TiDB Account sign-in. Host-only, HttpOnly, SameSite=Strict and Secure on HTTPS. Browser-session cookie with no absolute server expiry; logout or regional policy denial revokes access. Existing grants survive Region restart and Global outage. Not a Workspace Key and never inferred from a Workspace URL.',
+      },
+      guestOwner: {
+        type: 'apiKey',
+        in: 'cookie',
+        name: 'aw_guest',
+        description:
+          'Opaque regional Guest Owner session issued by POST /api/auth/guest when enabled. Host-only, HttpOnly, Secure, SameSite=Strict, Workspace-bound and subject to its absolute Guest expiry. Guest logout revokes access and schedules scoped cleanup. Never grants access to an account or another Guest Workspace.',
       },
     },
     schemas,

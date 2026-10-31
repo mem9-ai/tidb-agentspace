@@ -95,10 +95,15 @@ independent work.
 
 ### Design public APIs as the product foundation
 
-Every reusable product capability should have a documented API and authorization model.
+Every supported customer business capability must have a documented OpenAPI path and authorization model.
 Design request/response semantics, resource identity, errors, and compatibility before building
-the Console flow. Deliberate exceptions, such as a browser sign-in interaction, must explain
-their boundary. Internal provider administration is not automatically a public capability.
+the Console flow. Its minimum useful workflow must complete without Portal automation;
+include required preparation, confirmation, results/status and supported recovery. Only pure
+presentation/browser interactions may remain UI-only. Interactive sign-in/consent retains its
+identity boundary; internal provider administration is not automatically a public capability.
+Follow [OpenAPI capability completeness](openapi-verification.md#product-capability-completeness)
+for the capability/operation/permission/evidence map. Shared capability does not grant every
+Workspace Key Owner privileges. Unimplemented proposed features remain proposed.
 
 Use OpenAPI for the public HTTP contract. The [OpenAPI 3.1 specification](https://spec.openapis.org/oas/v3.1.0.html)
 defines a machine-readable description that tools and people can consume. It describes an

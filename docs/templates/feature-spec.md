@@ -58,8 +58,19 @@ For HTTP changes, design the OpenAPI change and update `server/generate-openapi.
 implementation. Keep the generated contract, domain operation, adapters, and affected clients
 aligned. Identify an ADR requirement for public contracts or other sensitive boundaries.
 
+For every customer business capability, map the complete useful workflow to documented
+OpenAPI operations. Include required preparation/review/confirmation, execution, results/status
+and supported recovery; a Portal-only business step leaves the feature incomplete. Use this
+mapping for each affected capability:
+
+| User outcome / workflow step | Operation ID and method/path                                      | Authentication and permissions                                      | Native acceptance case                                           |
+| ---------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Required business step       | Existing or proposed operation; distinguish implementation status | Actor, credential mode, action scopes and resource/Workspace grants | Success, denial and relevant effects/failure/recovery assertions |
+
 For UI changes, define relevant user states and accessibility behavior under the TiUI standard.
-An API/agent path should be usable without driving the Console where the capability allows it.
+Only pure presentation/browser interactions may be UI-only; state that boundary explicitly.
+Business validation and safeguards remain enforced in the API. Follow
+[capability completeness](../standards/openapi-verification.md#product-capability-completeness).
 
 ## Invariants
 

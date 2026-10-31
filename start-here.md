@@ -32,6 +32,9 @@ Read the [architecture](docs/architecture.md) and
 [Backend OpenAPI verification](docs/standards/openapi-verification.md) defines independent
 backend acceptance: verify native responses, authorization, effects and persistence directly.
 Internal backend changes preserving the public contract do not require frontend retesting.
+It also defines product completeness: supported customer business workflows must finish
+through documented OpenAPI without Portal automation. Pure presentation/browser interactions
+are the UI-only exception; authentication and permission boundaries still apply.
 
 The Console and API build, run, and package independently in this repository. The Console
 consumes generated API types and selects its API origin at runtime. This implemented boundary
