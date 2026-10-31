@@ -147,6 +147,8 @@ test(
     };
     const first = await create();
     const second = await create();
+    const authConfig = await request('/api/auth/config', { cookie: first.cookie });
+    assert.equal((await authConfig.json()).sessionKind, 'guest');
     assert.notEqual(first.workspaceId, second.workspaceId);
     assert.equal(
       (await request(`/api/v1/workspaces/${second.workspaceId}`, { cookie: first.cookie })).status,
@@ -217,5 +219,17 @@ test(
     assert.equal(listed.status, 200);
     assert.equal((await listed.json()).data[0].id, first.workspaceId);
     assert.equal((await request('/api/auth/guest', { method: 'POST' })).status, 503);
+    const logout = await request('/api/auth/tidbcloud/logout', {
+      cookie: first.cookie,
+      method: 'POST',
+    });
+    assert.equal(logout.status, 200);
+    assert.ok(
+      logout.headers
+        .getSetCookie()
+        .some((header) => header.startsWith('aw_guest=;') && header.includes('Max-Age=0')),
+    );
+    assert.equal((await request('/api/v1/workspaces', { cookie: first.cookie })).status, 401);
+    assert.equal((await request('/api/v1/workspaces', { cookie: second.cookie })).status, 200);
   },
 );

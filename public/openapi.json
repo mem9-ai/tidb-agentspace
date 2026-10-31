@@ -3977,6 +3977,7 @@
                   "properties": {
                     "enabled": { "type": "boolean" },
                     "guestEnabled": { "type": "boolean" },
+                    "sessionKind": { "type": "string", "enum": ["account", "guest"] },
                     "provider": { "const": "tidbcloud" },
                     "label": { "type": "string" },
                     "loginPath": { "type": "string" },
@@ -4066,6 +4067,7 @@
       "post": {
         "operationId": "logoutTidbSession",
         "security": [],
+        "description": "Revoke attached TiDB Account and Guest browser sessions and clear their cookies.",
         "responses": {
           "200": {
             "description": "Success",
@@ -4084,6 +4086,7 @@
       "get": {
         "operationId": "logoutTidbSessionAndRedirect",
         "security": [],
+        "description": "Revoke attached TiDB Account and Guest browser sessions, clear cookies, and redirect.",
         "responses": {
           "200": {
             "description": "Success",

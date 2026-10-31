@@ -706,8 +706,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
+    /** @description Revoke attached TiDB Account and Guest browser sessions, clear cookies, and redirect. */
     get: operations['logoutTidbSessionAndRedirect'];
     put?: never;
+    /** @description Revoke attached TiDB Account and Guest browser sessions and clear their cookies. */
     post: operations['logoutTidbSession'];
     delete?: never;
     options?: never;
@@ -5782,6 +5784,8 @@ export interface operations {
           'application/json': {
             enabled: boolean;
             guestEnabled?: boolean;
+            /** @enum {string} */
+            sessionKind?: 'account' | 'guest';
             /** @constant */
             provider?: 'tidbcloud';
             label?: string;

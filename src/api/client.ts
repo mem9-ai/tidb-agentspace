@@ -34,6 +34,7 @@ export type WriteFileInput = JsonBody<operations['writeFile']>;
 export type SsoAuthConfig = {
   enabled: boolean;
   guestEnabled?: boolean;
+  sessionKind?: 'account' | 'guest';
   provider?: string;
   label?: string;
   loginPath?: string;

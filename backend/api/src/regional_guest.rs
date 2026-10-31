@@ -165,6 +165,14 @@ impl RegionalGuest {
         })
     }
 
+    pub fn clear_cookie(&self) -> Result<HeaderValue> {
+        HeaderValue::from_str(&format!(
+            "{COOKIE_NAME}=; HttpOnly; Secure; SameSite=Strict; Path={}; Max-Age=0",
+            self.cookie_path
+        ))
+        .map_err(|_| unauthorized())
+    }
+
     /// Revokes this credential locally; the host must also cancel/fence in-flight work.
     pub async fn revoke(&self, headers: &HeaderMap) -> Result<HeaderValue> {
         let (workspace, secret) = parse(cookie(headers)?)?;
@@ -172,11 +180,7 @@ impl RegionalGuest {
             .authenticate_guest_credential(workspace, secret)
             .await?;
         self.sessions.revoke(workspace, secret).await?;
-        HeaderValue::from_str(&format!(
-            "{COOKIE_NAME}=; HttpOnly; Secure; SameSite=Strict; Path={}; Max-Age=0",
-            self.cookie_path
-        ))
-        .map_err(|_| unauthorized())
+        self.clear_cookie()
     }
 }
 

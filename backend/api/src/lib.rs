@@ -840,7 +840,38 @@ async fn auth_route(
     peer: Option<SocketAddr>,
 ) -> Response {
     if path == "/api/auth/config" && *method == Method::GET {
-        return Json(if app.sso.is_some(){json!({"enabled":true,"provider":"tidbcloud","label":"Continue with TiDB Account","loginPath":"/api/auth/tidbcloud/login","logoutPath":"/api/auth/tidbcloud/logout","guestEnabled":app.guest_runtime.is_some()})}else{json!({"enabled":false,"guestEnabled":false})}).into_response();
+        let account = if let Some(token) = cookie(headers, "aw_session") {
+            app.sessions
+                .lock()
+                .await
+                .get(token)
+                .is_some_and(|session| session.expires > Instant::now())
+        } else {
+            false
+        };
+        let guest = if !account
+            && let Some(runtime) = &app.guest_runtime
+            && regional_guest::RegionalGuest::has_cookie(headers)
+        {
+            match runtime.region.authenticate(headers).await {
+                Ok(_) => true,
+                Err(e) if e.status == 401 || e.code == "POLICY_DENIED" => false,
+                Err(e) => return error(e),
+            }
+        } else {
+            false
+        };
+        let mut config = if app.sso.is_some() {
+            json!({"enabled":true,"provider":"tidbcloud","label":"Continue with TiDB Account","loginPath":"/api/auth/tidbcloud/login","logoutPath":"/api/auth/tidbcloud/logout","guestEnabled":app.guest_runtime.is_some()})
+        } else {
+            json!({"enabled":false,"guestEnabled":false})
+        };
+        if account {
+            config["sessionKind"] = json!("account");
+        } else if guest {
+            config["sessionKind"] = json!("guest");
+        }
+        return Json(config).into_response();
     }
     if path == "/api/auth/guest" && *method == Method::POST {
         let Some(runtime) = &app.guest_runtime else {
@@ -872,6 +903,22 @@ async fn auth_route(
         )
     };
     if path == "/api/auth/tidbcloud/logout" && [Method::GET, Method::POST].contains(method) {
+        // Revoke any attached Guest session as well as the account session; otherwise
+        // signing out silently resumes the Guest on the next page load.
+        let guest_cookie = if let Some(runtime) = &app.guest_runtime
+            && regional_guest::RegionalGuest::has_cookie(headers)
+        {
+            match runtime.region.revoke(headers).await {
+                Ok(value) => Some(value),
+                Err(e) if e.status == 401 => match runtime.region.clear_cookie() {
+                    Ok(value) => Some(value),
+                    Err(e) => return error(e),
+                },
+                Err(e) => return error(e),
+            }
+        } else {
+            None
+        };
         if let Some(token) = cookie(headers, "aw_session")
             && let Some(session) = app.sessions.lock().await.remove(token)
         {
@@ -889,6 +936,9 @@ async fn auth_route(
             Json(json!({"loggedOut":true})).into_response()
         };
         set_cookie(&mut response, session_cookie("", 0));
+        if let Some(value) = guest_cookie {
+            response.headers_mut().append("Set-Cookie", value);
+        }
         return response;
     }
     let Some(sso) = &app.sso else {

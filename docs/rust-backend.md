@@ -35,8 +35,9 @@ authenticated Region control service and never open a remote Region Meta store d
 The native host has an explicitly configured co-located Guest mode. It routes an authenticated
 regional browser cookie to a bounded Workspace pool, rechecking the durable grant and policy on each
 request and retaining a Workspace lease through response streams. The host-only `Secure`,
-`HttpOnly`, `SameSite=Strict` cookie expires at the Guest's original deadline. With Global down,
-existing regional sessions continue while new signup is unavailable. A failed Global startup
+`HttpOnly`, `SameSite=Strict` cookie expires at the Guest's original deadline. The auth configuration
+identifies the active browser session, and sign-out revokes and clears attached Guest and account
+sessions. With Global down, existing regional sessions continue while new signup is unavailable. A failed Global startup
 requires a host restart before new signups can resume.
 
 The opt-in host runs a bounded regional scheduler that claims expired Guest jobs and marks them

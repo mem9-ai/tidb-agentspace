@@ -259,6 +259,7 @@ function App() {
     setGuestError('');
     try {
       await workspaceApi.startGuestSession();
+      setSso(await workspaceApi.authConfig());
       await workspaceApi.discoverWorkspace();
       await refresh();
       setError('');
@@ -2107,11 +2108,19 @@ function WorkspaceSettings({ data, refresh, notify, copy, sso }: Shared & { sso:
             <div className="account-row">
               <span className="profile-avatar">{name.slice(0, 1).toUpperCase()}</span>
               <div className="account-session-summary">
-                <strong>{sso.enabled ? 'TiDB Account session' : 'Guest session'}</strong>
+                <strong>
+                  {sso.sessionKind === 'guest'
+                    ? 'Guest session'
+                    : sso.enabled
+                      ? 'TiDB Account session'
+                      : 'Local session'}
+                </strong>
                 <Text component="p">
-                  {sso.enabled
-                    ? 'Signed in to this shared workspace. Admitted accounts have owner access.'
-                    : 'Local development session. Your workspace uses the configured local storage.'}
+                  {sso.sessionKind === 'guest'
+                    ? 'Your Guest workspace expires 24 hours after it was created.'
+                    : sso.enabled
+                      ? 'Signed in to this shared workspace. Admitted accounts have owner access.'
+                      : 'Local development session. Your workspace uses the configured local storage.'}
                 </Text>
               </div>
               <Badge color="green">Active</Badge>

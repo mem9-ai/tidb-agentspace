@@ -959,6 +959,7 @@ paths['/api/auth/config'] = {
           {
             enabled: { type: 'boolean' },
             guestEnabled: { type: 'boolean' },
+            sessionKind: { type: 'string', enum: ['account', 'guest'] },
             provider: { const: 'tidbcloud' },
             label: str,
             loginPath: str,
@@ -1009,11 +1010,14 @@ paths['/api/auth/tidbcloud/logout'] = {
   post: {
     operationId: 'logoutTidbSession',
     security: [],
+    description: 'Revoke attached TiDB Account and Guest browser sessions and clear their cookies.',
     responses: { 200: response(object({ loggedOut: { type: 'boolean' } })) },
   },
   get: {
     operationId: 'logoutTidbSessionAndRedirect',
     security: [],
+    description:
+      'Revoke attached TiDB Account and Guest browser sessions, clear cookies, and redirect.',
     responses: {
       302: { description: 'Session revoked and browser redirected to the configured Console.' },
       200: response(object({ loggedOut: { type: 'boolean' } })),

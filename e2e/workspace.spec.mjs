@@ -33,6 +33,16 @@ test('Guest sign-in opens the Workspace when the server enables it', async ({
     await page.screenshot({ path: process.env.GUEST_SIGNIN_SCREENSHOT });
   await guest.click();
   await expect(page.getByRole('combobox', { name: 'Color theme', exact: true })).toBeVisible();
+  await page.goto('/#settings');
+  await expect(page.getByText('Guest session', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Your Guest workspace expires 24 hours after it was created.'),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  if (process.env.GUEST_SETTINGS_SCREENSHOT) {
+    await page.getByText('Guest session', { exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: process.env.GUEST_SETTINGS_SCREENSHOT });
+  }
   expect(workspace.requests).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ path: '/api/auth/guest', method: 'POST' }),

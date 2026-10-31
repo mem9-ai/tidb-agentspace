@@ -55,6 +55,7 @@ export const test = base.extend({
     let rejectAutomaticName = false;
     let signInRequired = false;
     let guestEnabled = false;
+    let signedInAsGuest = false;
     page.on('pageerror', (error) => unexpected.push(error.message));
     await context.route('**/*', async (route) => {
       const request = route.request();
@@ -70,12 +71,19 @@ export const test = base.extend({
       const reply = (json, status = 200) => route.fulfill({ status, json });
       if (url.pathname === '/api/auth/config')
         return reply(
-          signInRequired
-            ? { enabled: true, loginPath: '/api/auth/tidbcloud/login', guestEnabled }
+          signInRequired || signedInAsGuest
+            ? {
+                enabled: true,
+                loginPath: '/api/auth/tidbcloud/login',
+                logoutPath: '/api/auth/tidbcloud/logout',
+                guestEnabled,
+                ...(signedInAsGuest ? { sessionKind: 'guest' } : {}),
+              }
             : { enabled: false },
         );
       if (url.pathname === '/api/auth/guest' && method === 'POST' && guestEnabled) {
         signInRequired = false;
+        signedInAsGuest = true;
         return reply({ workspaceId: state.workspace.id });
       }
       if (url.pathname === '/api/auth/tidbcloud/login') return reply({ fixture: 'login' });
