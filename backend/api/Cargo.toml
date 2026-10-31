@@ -15,6 +15,7 @@ tokio.workspace = true
 uuid.workspace = true
 workspace-contracts.workspace = true
 workspace-domain.workspace = true
+workspace-identity.workspace = true
 workspace-meta-client.workspace = true
 workspace-product.workspace = true
 futures.workspace = true

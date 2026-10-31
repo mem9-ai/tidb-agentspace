@@ -1,6 +1,56 @@
 import { readFile } from 'node:fs/promises';
 import { test, expect } from './workspace-fixture.mjs';
 
+test('cloud sign-in offers TiDB Account and clearly marks Guest access unavailable', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn();
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Sign in to your workspace' })).toBeVisible();
+  const account = page.getByRole('button', { name: 'Continue with TiDB Account' });
+  const guest = page.getByRole('button', { name: 'Continue as Guest' });
+  await expect(account).toBeEnabled();
+  await expect(guest).toBeDisabled();
+  await expect(page.getByText('24-hour Guest access is coming soon.')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true);
+  await account.click();
+  await expect(page).toHaveURL(/\/api\/auth\/tidbcloud\/login$/);
+});
+
+test('Guest sign-in opens the Workspace when the server enables it', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  await page.goto('/');
+  const guest = page.getByRole('button', { name: 'Continue as Guest' });
+  await expect(guest).toBeEnabled();
+  await expect(page.getByText('Guest workspaces expire after 24 hours.')).toBeVisible();
+  if (process.env.GUEST_SIGNIN_SCREENSHOT)
+    await page.screenshot({ path: process.env.GUEST_SIGNIN_SCREENSHOT });
+  await guest.click();
+  await expect(page.getByRole('combobox', { name: 'Color theme', exact: true })).toBeVisible();
+  await page.goto('/#settings');
+  await expect(page.getByText('Guest session', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Your Guest workspace expires 24 hours after it was created.'),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  if (process.env.GUEST_SETTINGS_SCREENSHOT) {
+    await page.getByText('Guest session', { exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: process.env.GUEST_SETTINGS_SCREENSHOT });
+  }
+  expect(workspace.requests).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: '/api/auth/guest', method: 'POST' }),
+      expect.objectContaining({ path: '/api/v1/workspaces', method: 'GET' }),
+    ]),
+  );
+});
+
 async function openFileSystemsFromSidebar(page) {
   const mobileNavigation = page.getByRole('button', { name: 'Open navigation', exact: true });
   if (await mobileNavigation.isVisible()) await mobileNavigation.click();
@@ -72,6 +122,15 @@ test('contextual creation fills the matching name, restores focus and keeps read
   workspace.addResources();
   workspace.state.resources = workspace.state.resources.filter((r) => r.kind === 'filesystem');
   await workspace.open();
+  expect(workspace.requests).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: '/api/v1/workspaces', method: 'GET' }),
+      expect.objectContaining({
+        path: `/api/v1/workspaces/${workspace.state.workspace.id}/bootstrap`,
+        method: 'GET',
+      }),
+    ]),
+  );
   for (const [label, kind] of [
     ['MySQL', 'mysql'],
     ['PostgreSQL', 'postgresql'],

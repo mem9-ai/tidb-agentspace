@@ -17,6 +17,7 @@ The fresh record profile supersedes the document migration baseline; see [ADR 00
 | Crate                 | Responsibility                                                                         |
 | --------------------- | -------------------------------------------------------------------------------------- |
 | `backend/contracts`   | Metadata port, scoped context and structured errors                                    |
+| `backend/identity`    | Inactive Global identity reservations and Region-local owner policy primitives         |
 | `meta-service`        | Encrypted SlateDB/S3 authority, durable commits, fencing and mTLS server               |
 | `backend/meta-client` | Authority-bound remote Meta adapter; TLS 1.3/mTLS, bounded requests, no retries        |
 | `backend/workspace`   | Workspace/Key domain, authorization and versioned record repositories                  |
@@ -25,6 +26,38 @@ The fresh record profile supersedes the document migration baseline; see [ADR 00
 | `backend/product`     | Regional resources, database browser, files, snapshots, analysis, exports/imports      |
 | `backend/api`         | Public HTTP contract, sessions, Host/Origin/CORS, request/cancellation/stream limits   |
 | `backend/host`        | Configuration, dependency wiring, real role composition and ordered shutdown           |
+
+The identity module reserves a complete Global personal identity group atomically and stores only
+verifiers for Guest secrets. The co-located Global-initiated Region initialization installs owner
+policies, an empty Workspace and an expiry job. A separately deployed Global must use an
+authenticated Region control service and never open a remote Region Meta store directly.
+
+The native host has an explicitly configured co-located Guest mode. It routes an authenticated
+regional browser cookie to a bounded Workspace pool, rechecking the durable grant and policy on each
+request and retaining a Workspace lease through response streams. The host-only `Secure`,
+`HttpOnly`, `SameSite=Strict` cookie expires at the Guest's original deadline. The auth configuration
+identifies the active browser session, and sign-out revokes and clears attached Guest and account
+sessions. With Global down, existing regional sessions continue while new signup is unavailable. A failed Global startup
+requires a host restart before new signups can resume.
+
+The opt-in host runs a bounded regional scheduler that claims expired Guest jobs and marks them
+`providerCleanupDeferred`. It does not contact providers or delete resource or credential records;
+it does not assert that in-flight work has drained or resources were deleted. The queue preserves
+claims and uncertain outcomes for later reconciliation. See [ADR 0028](decisions/0028-guest-expiry-retention.md).
+
+This is not yet complete hosted multi-tenancy. The default configuration leaves Guest disabled;
+account SSO still grants the legacy shared Workspace. Guest Keys can address an explicit Workspace without a browser cookie; Key-based Workspace
+discovery and crash recovery for active Workspace writers remain outstanding. Regional identity checks deny
+expired Guest access, but a future destructive executor must fence in-flight operations before
+provider effects or removal of records. Production rollout has not been verified.
+
+An inactive DB9 cleanup adapter can issue one deletion request for a durably claimed Guest
+resource after checking the scoped Workspace, provider binding, existing account and Region
+policy. A successful [DB9 deletion response](https://db9.ai/docs/api/) is acceptance only, not
+proof that the resource has been deleted. A production executor must fence and drain in-flight
+operations, reconcile provider state, and verify every owned resource before removing metadata
+or credentials. Missing credentials or an uncertain outcome must remain visible for recovery.
+There is no running cleanup executor or verified live-provider deletion in this implementation.
 
 Domain operations are shared by Console and agent requests. Providers and computation are
 separate crates behind regional application operations. Metadata supports in-process and remote

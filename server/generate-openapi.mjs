@@ -276,8 +276,8 @@ const workspaceId = {
   name: 'workspaceId',
   in: 'path',
   required: true,
-  schema: { type: 'string', const: 'ws_agentlab' },
-  description: 'This local prototype has one workspace.',
+  schema: { type: 'string', minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_.:-]+$' },
+  description: 'A Workspace ID returned by the authenticated Workspace discovery API.',
 };
 const paths = {
   '/workspaces': {
@@ -941,7 +941,7 @@ paths['/api/session'] = {
   post: {
     ...operation('createLocalSession', 'Create a loopback-only demo owner session', null, {
       input: object({}, []),
-      output: object({ workspaceId: { const: 'ws_agentlab' }, mode: { const: 'demo' } }),
+      output: object({ workspaceId: str, mode: { const: 'demo' } }),
     }),
     security: [],
     description:
@@ -958,6 +958,8 @@ paths['/api/auth/config'] = {
         object(
           {
             enabled: { type: 'boolean' },
+            guestEnabled: { type: 'boolean' },
+            sessionKind: { type: 'string', enum: ['account', 'guest'] },
             provider: { const: 'tidbcloud' },
             label: str,
             loginPath: str,
@@ -966,6 +968,20 @@ paths['/api/auth/config'] = {
           ['enabled'],
         ),
       ),
+    },
+  },
+};
+paths['/api/auth/guest'] = {
+  servers: [{ url: '/' }],
+  post: {
+    operationId: 'startGuestSession',
+    security: [],
+    description:
+      'Start or resume a Guest session from a trusted origin. A new session sets a secure, HttpOnly, SameSite=Strict cookie with an absolute expiry.',
+    responses: {
+      200: response(object({ workspaceId: str })),
+      404: response(ref('Error'), 'Guest sign-in is disabled'),
+      default: response(ref('Error'), 'Guest sign-in unavailable or denied'),
     },
   },
 };
@@ -994,11 +1010,14 @@ paths['/api/auth/tidbcloud/logout'] = {
   post: {
     operationId: 'logoutTidbSession',
     security: [],
+    description: 'Revoke attached TiDB Account and Guest browser sessions and clear their cookies.',
     responses: { 200: response(object({ loggedOut: { type: 'boolean' } })) },
   },
   get: {
     operationId: 'logoutTidbSessionAndRedirect',
     security: [],
+    description:
+      'Revoke attached TiDB Account and Guest browser sessions, clear cookies, and redirect.',
     responses: {
       302: { description: 'Session revoked and browser redirected to the configured Console.' },
       200: response(object({ loggedOut: { type: 'boolean' } })),

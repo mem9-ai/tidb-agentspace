@@ -15,31 +15,71 @@ creating upstream databases or file systems. This is a personal default, not a r
 against shared Organizations or additional Workspaces in a later release.
 
 A Guest gets the same logical tenant/Workspace isolation as an authenticated account, with
-an independently generated Guest principal and a private high-entropy browser credential.
+an independently generated Guest user ID and a private high-entropy browser credential.
 Guest identity is not a shared hard-coded account or the existing loopback demo owner.
-Guest Workspaces expire 24 hours after creation. Expiry initiates automatic deletion of that
-Guest's Workspace and its cloud databases and file systems. The named account login is the
+Guest Workspaces expire 24 hours after creation. Expiry initiates automatic cleanup of that
+Guest's Workspace and its cloud databases and file systems. Providers that do not support
+verified deletion may leave resources pending until the provider removes them. The named account login is the
 existing TiDB Cloud login, not a separate Teleport provider. Account linking remains a separate
 product decision. A lost Guest credential must not be recovered by guessing an ID or matching
 email. Require rate limits, quota and abuse controls for Guest creation.
 
-Current code does not provide this: a configured API instance owns one Workspace, the
-SSO allowlist grants access to that shared Workspace, and the Console and generated contract
-assume `ws_agentlab`. Existing Meta Scope primitives alone do not establish authorization.
+The hosted Studio sign-in page presents two choices: **Continue with TiDB Account** and
+**Continue as Guest**. Guest creates or resumes the browser's independent 24-hour Workspace.
+Until the complete Guest backend is enabled, the Guest choice must be visibly unavailable;
+it must never fall back to the existing shared local-demo Workspace.
+
+Current hosted code does not provide this: a configured API instance owns one Workspace and
+the SSO allowlist grants access to that shared Workspace. The draft Console discovers a
+Workspace dynamically, but that alone does not establish multi-tenant authorization.
 
 ## Identity and control-plane records
+
+### User, tenant and Workspace
+
+A **User** is a TiDB Account user or an individual Guest. A TiDB Account maps from its
+verified `(iss, sub)` to an opaque internal User ID; each Guest has a separate random User ID
+and secret. User IDs are not bearer credentials. Authorization may still use a generic
+principal abstraction for users and future non-human identities.
+Email is profile data and cannot establish identity or ownership.
+
+For the initial personal product, the Organization is the tenant boundary: onboarding
+creates one personal Organization, its owner membership, and one Workspace for each account
+or Guest. Their IDs are independently generated; ownership and membership are records, not
+properties inferred from equal IDs. Existing shared Workspaces are not adopted. This initial
+one-to-one mapping does not prevent adding Organizations or Workspaces later.
+
+Shared Organizations are future functionality, not an implemented account-linking or access
+feature. A later design needs independently authorized membership invitations and acceptance,
+per-Workspace roles and grants, member removal and regional revocation propagation, plus
+organization-level billing and resource limits. A User may then belong to multiple
+Organizations, and an Organization may contain multiple Workspaces. Guest conversion or
+resource transfer needs a separate explicit protocol; signing in in the same browser is not
+proof of ownership. These additions must preserve local Region authorization during a Global
+outage and must not broaden the initial personal-owner grant automatically.
 
 - Identify the person by the exact validated OIDC issuer and immutable scalar subject
   (`iss`, `sub`), after the existing signature, audience, nonce, expiry and PKCE checks.
   Email, display name, organization claim, and browser input are not account identities.
   Issuer and subject are case-sensitive. An identity-provider change requires an explicit,
   authenticated linking procedure; matching emails must not merge accounts.
-- Provision a Guest through a separate cryptographically random principal and secret, not by
+- Provision a Guest through a separate cryptographically random user ID and secret, not by
   fabricating a verified OIDC subject. Persist only an appropriate credential verifier and
   protect the browser secret with the existing secure cookie and origin protections. A Guest
   can only access its own Workspace. Cross-device recovery and upgrading a Guest to an account
   require a separately authorized ownership-linking protocol; never transfer ownership solely
   because an account signs in in the same browser.
+- Keep an established Guest session across browser and tab closures in the same browser profile
+  until the original 24-hour deadline. Use a persistent first-party `Secure`, `HttpOnly`
+  cookie with an expiry no later than the Guest's absolute `expiresAt`; reopening the site,
+  refreshing or renewing a regional access session must not extend that deadline. The Region's
+  durable policy and server clock enforce expiry independently of cookie retention, even when
+  Global is down. Browsers may discard cookies earlier, and another profile, private session
+  or device does not inherit them. A missing or cleared credential cannot recover the Guest.
+  Global and Region origins use their own host-only cookies; install a locally renewable Region
+  session through the authenticated control flow without sharing a Global cookie or making
+  Region call Global. The Console's discovery information may identify a Region but must not
+  itself grant access or contain a credential.
 - Global owns a durable identity directory and the canonical personal Organization,
   Workspace, owner membership, placement and initialization intent. Keys use a
   collision-safe encoding or length-delimited cryptographic digest of the issuer and subject;
@@ -76,10 +116,10 @@ provided by the existing Meta engine; these examples are not literal S3 object p
 
 | Record                  | Purpose                                                                       |
 | ----------------------- | ----------------------------------------------------------------------------- |
-| `identity`              | Verified issuer and subject, or Guest principal and verifier; identity type   |
-| `personal-organization` | Opaque organization ID and owner principal                                    |
+| `identity`              | Verified issuer and subject, or Guest identity and verifier; identity type    |
+| `personal-organization` | Opaque organization ID and owner User ID                                      |
 | `personal-workspace`    | Opaque Workspace ID, organization ID, region and lifecycle state              |
-| `owner-membership`      | Principal, Workspace ID, owner grant and policy generation                    |
+| `owner-membership`      | User ID, Workspace ID, owner grant and policy generation                      |
 | `initialization`        | Stable operation ID, expected region/owner/generation and completion evidence |
 
 The initial conditional commit creates the records together. A repeated login checks the
@@ -139,10 +179,14 @@ in-process scheduler or an explicitly composed service role; it does not require
 Worker deployment. Execution needs durable ownership/fencing, bounded retries and recovery
 before it can safely run across replicas. Guest expiry does not renew on login.
 Current product code does not implement complete cloud database or File System instance
-deprovisioning. Before allowing a Guest to create each provider resource, verify and implement
-its official deletion, identity/ownership proof, uncertain-outcome reconciliation and
-retry semantics. Disable Guest creation for a provider where deletion is unsupported or
-unverified; deleting only the metadata is not successful cleanup.
+deprovisioning. The owner permits Guests to create resources even when their provider cannot
+yet delete them. At expiry, immediately deny Guest access and automatically attempt supported
+deletions. Retain ownership, provider binding and credentials for resources with unsupported,
+pending or uncertain deletion; reconcile them when a supported deletion or verified provider
+expiry becomes available. Expose a truthful pending/unsupported cleanup state and never report
+that cloud resources were deleted merely because Guest access or local metadata was removed.
+Determine and implement official deletion, ownership proof, uncertain-outcome reconciliation
+and retry semantics for each provider before declaring cleanup complete.
 
 Enabling open self-service on the hosted site requires a reviewed runtime configuration,
 durable Global and regional stores, operator recovery procedures, identity-provider access,
@@ -170,8 +214,13 @@ test or image deployment alone does not prove the hosted website was switched.
    tenants and local fixtures; verify bounded overload, cleanup and writer recovery. CI uses
    isolated object storage and a signed fake provider, without cloud credentials. Real hosted
    login, rollout, production isolation and scale require separate observed evidence.
-8. Independent Guest browsers get distinct principals and Workspaces; a Guest cannot select
+8. Independent Guest browsers get distinct User IDs and Workspaces; a Guest cannot select
    another Guest or signed-in account's resources or Keys. At 24 hours expiry blocks access
-   independently of cleanup, which deletes only the Guest's own cloud resources and survives
-   restart without claiming existing data. Test uncertain deletion and retry reconciliation.
-   Reuse, session loss and upgrading follow explicit product decisions.
+   independently of cleanup, which deletes only the Guest's own cloud resources where supported
+   and survives restart without claiming existing data. Unsupported or uncertain deletion stays
+   visibly pending; test retry reconciliation and eventual provider expiry where applicable.
+   Closing and reopening the same browser profile before expiry recovers the same Guest
+   Workspace; refresh and regional renewal never extend expiry. Clearing the cookie, using a
+   different profile or allowing the absolute deadline to pass does not recover access. Repeat
+   this test after a Region restart and during a Global outage. Guest upgrade remains a separate
+   product decision.

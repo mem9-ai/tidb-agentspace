@@ -24,8 +24,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -47,8 +47,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -70,8 +70,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -97,8 +97,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -120,8 +120,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -143,8 +143,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -166,8 +166,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -197,8 +197,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -224,8 +224,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
         resourceId: string;
       };
       cookie?: never;
@@ -248,8 +248,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
         resourceId: string;
       };
       cookie?: never;
@@ -272,8 +272,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
         resourceId: string;
       };
       cookie?: never;
@@ -296,8 +296,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
         resourceId: string;
       };
       cookie?: never;
@@ -320,8 +320,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -343,8 +343,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -366,8 +366,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -389,8 +389,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -412,8 +412,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -435,8 +435,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -458,8 +458,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -481,8 +481,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -504,8 +504,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -527,8 +527,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -554,8 +554,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
         keyId: string;
       };
       cookie?: never;
@@ -578,8 +578,8 @@ export interface paths {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -648,6 +648,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/auth/guest': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Start or resume a Guest session from a trusted origin. A new session sets a secure, HttpOnly, SameSite=Strict cookie with an absolute expiry. */
+    post: operations['startGuestSession'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/auth/tidbcloud/login': {
     parameters: {
       query?: never;
@@ -689,8 +706,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
+    /** @description Revoke attached TiDB Account and Guest browser sessions, clear cookies, and redirect. */
     get: operations['logoutTidbSessionAndRedirect'];
     put?: never;
+    /** @description Revoke attached TiDB Account and Guest browser sessions and clear their cookies. */
     post: operations['logoutTidbSession'];
     delete?: never;
     options?: never;
@@ -1259,8 +1278,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -1401,8 +1420,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -1541,8 +1560,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -1687,8 +1706,8 @@ export interface operations {
         'Idempotency-Key'?: string;
       };
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -1847,8 +1866,8 @@ export interface operations {
       };
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -2014,8 +2033,8 @@ export interface operations {
       };
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -2205,8 +2224,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -2393,8 +2412,8 @@ export interface operations {
       };
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -2535,8 +2554,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -2689,8 +2708,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -2843,8 +2862,8 @@ export interface operations {
       };
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -2931,8 +2950,8 @@ export interface operations {
         'If-None-Match'?: '*';
       };
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -3078,8 +3097,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
         resourceId: string;
       };
       cookie?: never;
@@ -3221,8 +3240,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
         resourceId: string;
       };
       cookie?: never;
@@ -3365,8 +3384,8 @@ export interface operations {
       };
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
         resourceId: string;
       };
       cookie?: never;
@@ -3508,8 +3527,8 @@ export interface operations {
       };
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
         resourceId: string;
       };
       cookie?: never;
@@ -3649,8 +3668,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -3802,8 +3821,8 @@ export interface operations {
       };
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -3946,8 +3965,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -4090,8 +4109,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -4234,8 +4253,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -4378,8 +4397,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -4531,8 +4550,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -4687,8 +4706,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -4832,8 +4851,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -4974,8 +4993,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -5116,8 +5135,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -5279,8 +5298,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
         keyId: string;
       };
       cookie?: never;
@@ -5422,8 +5441,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description This local prototype has one workspace. */
-        workspaceId: 'ws_agentlab';
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -5622,8 +5641,7 @@ export interface operations {
         };
         content: {
           'application/json': {
-            /** @constant */
-            workspaceId: 'ws_agentlab';
+            workspaceId: string;
             /** @constant */
             mode: 'demo';
           };
@@ -5765,12 +5783,55 @@ export interface operations {
         content: {
           'application/json': {
             enabled: boolean;
+            guestEnabled?: boolean;
+            /** @enum {string} */
+            sessionKind?: 'account' | 'guest';
             /** @constant */
             provider?: 'tidbcloud';
             label?: string;
             loginPath?: string;
             logoutPath?: string;
           };
+        };
+      };
+    };
+  };
+  startGuestSession: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            workspaceId: string;
+          };
+        };
+      };
+      /** @description Guest sign-in is disabled */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Guest sign-in unavailable or denied */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
         };
       };
     };

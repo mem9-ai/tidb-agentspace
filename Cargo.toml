@@ -1,5 +1,5 @@
 [workspace]
-members = ["meta-service", "backend/contracts", "backend/meta-client", "backend/workspace", "backend/api", "backend/host", "backend/providers", "backend/compute", "backend/product"]
+members = ["meta-service", "backend/contracts", "backend/meta-client", "backend/workspace", "backend/identity", "backend/api", "backend/host", "backend/providers", "backend/compute", "backend/product"]
 resolver = "3"
 
 [workspace.package]
@@ -26,6 +26,7 @@ workspace-contracts = { path = "backend/contracts" }
 workspace-meta-client = { path = "backend/meta-client" }
 workspace-meta-service = { path = "meta-service" }
 workspace-domain = { path = "backend/workspace" }
+workspace-identity = { path = "backend/identity" }
 workspace-api = { path = "backend/api" }
 
 workspace-providers = { path = "backend/providers" }

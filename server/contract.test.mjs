@@ -48,6 +48,8 @@ test(
     }
     await request('/api/health');
     await request('/api/auth/config');
+    // The default host disables Guest; the isolated Guest HTTP probe exercises success.
+    await request('/api/auth/guest', 'post', undefined, { status: 404 });
     await request('/api/auth/tidbcloud/logout', 'post');
     await request('/api/auth/tidbcloud/logout');
     const session = await request('/api/session', 'post', {});
@@ -246,6 +248,7 @@ test(
             'uploadFile',
             'downloadFile',
             'prepareDatabaseImportUpload',
+            'startGuestSession', // Success is covered by guest_http_probe.
             'startTidbLogin',
             'completeTidbLogin',
           ].includes(id),

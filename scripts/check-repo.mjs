@@ -101,7 +101,7 @@ for (const name of names.filter((file) => /\.ya?ml$/.test(file))) {
   const jobs = Object.values(workflow.jobs);
   const ownsGate = jobs.some((job) => job.steps.some((step) => step.run === 'npm run check'));
   const consumesGate =
-    ['dev-cd.yml', 'console-publish.yml'].includes(name) &&
+    ['dev-cd.yml', 'console-publish.yml', 'guest-enable.yml'].includes(name) &&
     jobs.some((job) =>
       job.steps.some((step) => step.run?.startsWith('node scripts/require-ci.mjs ')),
     );

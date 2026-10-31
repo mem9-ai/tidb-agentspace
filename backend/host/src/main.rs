@@ -1,9 +1,19 @@
 mod plan;
 use anyhow::{Result, bail};
+use std::time::Duration;
 use std::{collections::BTreeMap, path::Path, sync::Arc};
 use tokio::sync::watch;
-use workspace_api::{MetaBinding, WorkspaceServer};
+use workspace_api::{
+    GuestRuntime, MetaBinding, WorkspaceServer, global_login::GlobalGuest, guest_entry::GuestEntry,
+    managed_workspaces::ManagedWorkspaces, regional_guest::RegionalGuest,
+};
 use workspace_contracts::Metadata;
+use workspace_identity::{
+    Directory,
+    cleanup::Queue,
+    embedded_region::EmbeddedRegion,
+    scheduler::{DeferProviderCleanup, Scheduler},
+};
 use workspace_meta_client::RemoteMetadata;
 use workspace_meta_service::server::{MetaService, shutdown_signal};
 
@@ -40,6 +50,7 @@ async fn main() -> Result<()> {
     let mut metadata: BTreeMap<String, Arc<MetaService>> = BTreeMap::new();
     let mut meta_tasks = Vec::new();
     let mut api_tasks = Vec::new();
+    let mut cleanup_tasks = Vec::new();
     let mut workspaces = Vec::new();
     for role in plan.metadata {
         let authority = role.config.authority_id.clone();
@@ -80,13 +91,83 @@ async fn main() -> Result<()> {
             } else {
                 "workspace-keys-only profile"
             };
-            match WorkspaceServer::open(config, port).await {
+            let guest_setup: Result<_> = async {
+                if let Some(settings) = &config.guest {
+                    let region = Arc::new(
+                        RegionalGuest::open(port.clone(), &authority, &config.public_path).await?,
+                    );
+                    let signup = if let Some(global) = metadata.get(&settings.global_authority_id) {
+                        match Directory::open(global.clone()).await {
+                            Ok(directory) => Some(Arc::new(GlobalGuest::new(
+                                directory,
+                                Arc::new(EmbeddedRegion::open(port.clone(), &authority).await?),
+                                authority.clone(),
+                            ))),
+                            Err(_) => None,
+                        }
+                    } else {
+                        None
+                    };
+                    let queue = Arc::new(Queue::open(port.clone(), &authority).await?);
+                    let pool = Arc::new(ManagedWorkspaces::new(
+                        port.clone(),
+                        &authority,
+                        config.product.clone(),
+                        settings.workspace_limit,
+                    )?);
+                    let entry = Arc::new(GuestEntry::new(
+                        signup,
+                        region.clone(),
+                        config.public_origins.clone(),
+                    )?);
+                    let scheduler = Scheduler::new(queue, Arc::new(DeferProviderCleanup), 128)?;
+                    Ok((
+                        Some(Arc::new(GuestRuntime {
+                            entry,
+                            region,
+                            workspaces: pool,
+                        })),
+                        Some(scheduler),
+                    ))
+                } else {
+                    Ok((None, None))
+                }
+            }
+            .await;
+            let (guest_runtime, scheduler) = match guest_setup {
+                Ok(setup) => setup,
+                Err(_) => {
+                    eprintln!(
+                        "Guest service setup unavailable for {authority}; other roles continue."
+                    );
+                    continue;
+                }
+            };
+            let guest_pool = guest_runtime
+                .as_ref()
+                .map(|runtime| runtime.workspaces.clone());
+            match WorkspaceServer::open_with_guest(config, port, guest_runtime).await {
                 Ok(server) => {
+                    if let Some(scheduler) = scheduler {
+                        let receiver = api_receiver.clone();
+                        cleanup_tasks.push(tokio::spawn(async move {
+                            if scheduler
+                                .run(receiver, Duration::from_secs(1))
+                                .await
+                                .is_err()
+                            {
+                                eprintln!(
+                                    "Guest expiry scheduler stopped; pending records are retained."
+                                );
+                            }
+                        }));
+                    }
                     let workspace = server.workspace.clone();
                     workspaces.push(workspace.clone());
                     let receiver = api_receiver.clone();
                     api_tasks.push(tokio::spawn(async move {
                         if server.serve(stopped(receiver)).await.is_err() {eprintln!("Workspace listener unavailable for {authority}; other roles continue.");}
+                        if let Some(pool) = guest_pool && pool.close().await.is_err() { eprintln!("Guest Workspace ownership release is uncertain; reconcile regionally before restart."); }
                         if workspace.close().await.is_err() {eprintln!("Workspace ownership release is uncertain; reconcile regionally before restart.");}
                     }));
                     println!("Rust {profile} listening on {bind}.");
@@ -105,6 +186,9 @@ async fn main() -> Result<()> {
     shutdown_signal().await;
     let _ = api_stop.send(true);
     for task in api_tasks {
+        let _ = task.await;
+    }
+    for task in cleanup_tasks {
         let _ = task.await;
     }
     for workspace in workspaces {

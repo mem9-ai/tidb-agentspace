@@ -325,6 +325,9 @@ small {
   gap: 24px;
   padding: 24px;
 }
+.sign-in-choices {
+  width: min(100%, 320px);
+}
 .workspace-toast {
   position: fixed;
   right: 24px;

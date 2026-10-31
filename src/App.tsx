@@ -32,6 +32,7 @@ import {
 } from './features/files/remote-files';
 import { regionLabel as region } from './features/resources/regions';
 import { CreateResourceDialog } from './features/resources/CreateResourceDialog';
+import { SignInChoices } from './features/auth/SignInChoices';
 import {
   resourceKindLabels as kindLabel,
   type ResourceCreationTarget,
@@ -213,6 +214,8 @@ function App() {
   const [data, setData] = useState<Data | null>(null),
     [routeLocation, setRouteLocation] = useState<WorkspaceRoute>(currentRoute),
     [error, setError] = useState(''),
+    [guestLoading, setGuestLoading] = useState(false),
+    [guestError, setGuestError] = useState(''),
     [toast, setToast] = useState(''),
     [modal, setModal] = useState<'resource' | 'key' | 'search' | null>(null),
     [creationTarget, setCreationTarget] = useState<ResourceCreationTarget>('resource'),
@@ -245,11 +248,27 @@ function App() {
       const auth = await workspaceApi.authConfig();
       setSso(auth);
       if (!auth.enabled) await workspaceApi.startSession();
+      await workspaceApi.discoverWorkspace();
       await refresh();
     } catch (e) {
       setError((e as Error).message);
     }
   }, [refresh]);
+  async function startGuest() {
+    setGuestLoading(true);
+    setGuestError('');
+    try {
+      await workspaceApi.startGuestSession();
+      setSso(await workspaceApi.authConfig());
+      await workspaceApi.discoverWorkspace();
+      await refresh();
+      setError('');
+    } catch {
+      setGuestError('Unable to start Guest access. Please try again.');
+    } finally {
+      setGuestLoading(false);
+    }
+  }
   useEffect(() => {
     void start();
     const update = () => {
@@ -306,8 +325,19 @@ function App() {
           // SSO is enabled and no session is active yet: prompt sign-in (no anonymous demo).
           <>
             <Heading level={2}>Sign in to your workspace</Heading>
-            <Text component="p">Use your TiDB Account to continue.</Text>
-            {ssoButton}
+            <Text component="p">Choose how you want to continue.</Text>
+            {sso.loginPath && (
+              <SignInChoices
+                label={sso.label || 'Continue with TiDB Account'}
+                guestEnabled={sso.guestEnabled === true}
+                guestLoading={guestLoading}
+                guestError={guestError}
+                onGuestLogin={() => void startGuest()}
+                onTiDBLogin={() => {
+                  window.location.href = apiBaseUrl + sso.loginPath;
+                }}
+              />
+            )}
           </>
         ) : error ? (
           <>
@@ -2078,11 +2108,19 @@ function WorkspaceSettings({ data, refresh, notify, copy, sso }: Shared & { sso:
             <div className="account-row">
               <span className="profile-avatar">{name.slice(0, 1).toUpperCase()}</span>
               <div className="account-session-summary">
-                <strong>{sso.enabled ? 'TiDB Account session' : 'Guest session'}</strong>
+                <strong>
+                  {sso.sessionKind === 'guest'
+                    ? 'Guest session'
+                    : sso.enabled
+                      ? 'TiDB Account session'
+                      : 'Local session'}
+                </strong>
                 <Text component="p">
-                  {sso.enabled
-                    ? 'Signed in to this shared workspace. Admitted accounts have owner access.'
-                    : 'Local development session. Your workspace uses the configured local storage.'}
+                  {sso.sessionKind === 'guest'
+                    ? 'Your Guest workspace expires 24 hours after it was created.'
+                    : sso.enabled
+                      ? 'Signed in to this shared workspace. Admitted accounts have owner access.'
+                      : 'Local development session. Your workspace uses the configured local storage.'}
                 </Text>
               </div>
               <Badge color="green">Active</Badge>

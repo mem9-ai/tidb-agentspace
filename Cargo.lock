@@ -4868,6 +4868,7 @@ dependencies = [
  "uuid",
  "workspace-contracts",
  "workspace-domain",
+ "workspace-identity",
  "workspace-meta-client",
  "workspace-product",
 ]
@@ -4887,6 +4888,7 @@ dependencies = [
  "workspace-compute",
  "workspace-contracts",
  "workspace-domain",
+ "workspace-identity",
  "workspace-meta-client",
  "workspace-meta-service",
 ]
@@ -4930,6 +4932,25 @@ dependencies = [
  "tokio",
  "uuid",
  "workspace-contracts",
+]
+
+[[package]]
+name = "workspace-identity"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "getrandom 0.3.4",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "subtle",
+ "tokio",
+ "uuid",
+ "workspace-contracts",
+ "workspace-domain",
+ "workspace-meta-client",
 ]
 
 [[package]]
@@ -4992,6 +5013,7 @@ dependencies = [
 name = "workspace-providers"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "base64 0.22.1",
  "chrono",
  "futures",
@@ -5006,6 +5028,8 @@ dependencies = [
  "uuid",
  "workspace-contracts",
  "workspace-domain",
+ "workspace-identity",
+ "workspace-meta-client",
 ]
 
 [[package]]

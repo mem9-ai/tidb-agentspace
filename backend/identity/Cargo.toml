@@ -1,0 +1,23 @@
+[package]
+name = "workspace-identity"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono.workspace = true
+hex.workspace = true
+getrandom.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+subtle = "=2.6.1"
+tokio.workspace = true
+uuid.workspace = true
+workspace-contracts.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+workspace-meta-client.workspace = true
+workspace-domain.workspace = true

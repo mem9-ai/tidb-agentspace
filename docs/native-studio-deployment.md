@@ -43,6 +43,30 @@ Run `node scripts/init-hosted-config.mjs /private/input.json /private/new-output
 
 The generated co-located dev profile binds Meta only to loopback with separate authority credentials and HTTPS S3; its environment is explicitly `test`. Production remote Meta requires the existing mTLS profile and protected operations. The API itself requires public SSO. One API writer per Workspace remains enforced; crashed writers require exact-owner reconciliation.
 
+## Guest deployment configuration
+
+Guest is disabled by default. The co-located host can opt in by adding
+`"guest":{"globalAuthorityId":"global","workspaceLimit":128}` to its regional API
+configuration, or setting the explicit environment variable `WORKSPACE_GUEST_ENABLED=true` on the
+regional host. The environment flag uses a 128-Workspace open-pool limit; `false` disables Guest.
+The same deployment plan must explicitly host independent `global` and Region metadata authorities; the regional binding must be `inProcess`. The API configuration must contain
+SSO and an exact trusted HTTPS public origin. Guest signup and the Region API currently share a
+co-located trust boundary; this is not a remote Global-to-Region transport.
+
+The regional scheduler retains expired Guest jobs with reason `providerCleanupDeferred`. It makes
+no provider deletion request and preserves resource and credential records. Regional authentication
+rejects expired Guests independently of the scheduler. If Global fails, existing regional Guests
+remain usable until their original expiry; new signup is unavailable. If Global was unavailable
+when the host started, restarting the host is currently required for new signup to recover. See
+[ADR 0028](decisions/0028-guest-expiry-retention.md) for remaining rollout limits.
+
+The protected, main-only `Enable Guest on dev` workflow changes only that environment flag. It
+requires full same-commit CI, serializes with API deployment, waits for rollout, then verifies a
+new Guest Cookie and its Workspace through the public origin. Verification failure triggers a
+rollout rollback and checks its completion; an ambiguous configuration update fails without
+blindly undoing a possibly unrelated rollout. This creates an empty, temporary Guest Workspace as
+an operational smoke test. Verify the Console separately after its independent publication.
+
 ## One-time Kubernetes cutover and recurring CD
 
 The Docker image is native Linux amd64, the currently verified Linux static DuckDB platform. No arm64 manifest is advertised. Console publication remains separate. Configure the existing protected `dev` environment and ECR/EKS target; PR builds never receive deployment credentials.

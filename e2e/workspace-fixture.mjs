@@ -15,7 +15,7 @@ const content = '# Fixture file\n\nRendered Markdown for **agents**.\n';
 function bootstrap() {
   return {
     workspace: {
-      id: 'ws_agentlab',
+      id: 'ws_personal_fixture',
       name: 'Browser fixture',
       description: '',
       plan: 'Free',
@@ -53,6 +53,9 @@ export const test = base.extend({
     const requests = [];
     const unexpected = [];
     let rejectAutomaticName = false;
+    let signInRequired = false;
+    let guestEnabled = false;
+    let signedInAsGuest = false;
     page.on('pageerror', (error) => unexpected.push(error.message));
     await context.route('**/*', async (route) => {
       const request = route.request();
@@ -66,9 +69,30 @@ export const test = base.extend({
       const body = request.postDataJSON();
       requests.push({ path: url.pathname, method, body });
       const reply = (json, status = 200) => route.fulfill({ status, json });
-      if (url.pathname === '/api/auth/config') return reply({ enabled: false });
+      if (url.pathname === '/api/auth/config')
+        return reply(
+          signInRequired || signedInAsGuest
+            ? {
+                enabled: true,
+                loginPath: '/api/auth/tidbcloud/login',
+                logoutPath: '/api/auth/tidbcloud/logout',
+                guestEnabled,
+                ...(signedInAsGuest ? { sessionKind: 'guest' } : {}),
+              }
+            : { enabled: false },
+        );
+      if (url.pathname === '/api/auth/guest' && method === 'POST' && guestEnabled) {
+        signInRequired = false;
+        signedInAsGuest = true;
+        return reply({ workspaceId: state.workspace.id });
+      }
+      if (url.pathname === '/api/auth/tidbcloud/login') return reply({ fixture: 'login' });
       if (url.pathname === '/api/session') return reply({ ok: true });
-      const path = url.pathname.replace('/api/v1/workspaces/ws_agentlab', '');
+      if (url.pathname === '/api/v1/workspaces' && method === 'GET')
+        return signInRequired
+          ? reply({ error: { code: 'UNAUTHENTICATED', message: 'Sign in' } }, 401)
+          : reply({ data: [state.workspace] });
+      const path = url.pathname.replace(`/api/v1/workspaces/${state.workspace.id}`, '');
       if (path === '/bootstrap') return reply(state);
       if (path === '/resources' && method === 'POST') {
         if (rejectAutomaticName) {
@@ -116,6 +140,10 @@ export const test = base.extend({
     await use({
       state,
       requests,
+      requireSignIn(options = {}) {
+        signInRequired = true;
+        guestEnabled = options.guestEnabled === true;
+      },
       rejectNextName() {
         rejectAutomaticName = true;
       },

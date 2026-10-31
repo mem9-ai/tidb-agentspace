@@ -121,6 +121,11 @@ impl Plan {
             }
         }
         for config in &result.workspaces {
+            if let Some(guest) = &config.guest
+                && !authorities.contains(&guest.global_authority_id)
+            {
+                bail!("A co-located Guest service requires an explicitly hosted Global authority");
+            }
             if let workspace_api::MetaBinding::InProcess { authority_id } = &config.metadata
                 && !authorities.contains(authority_id)
             {
