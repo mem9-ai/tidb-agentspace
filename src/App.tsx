@@ -513,7 +513,7 @@ function Overview({ data, onCreate, onConnect, copy, isGuest }: Shared) {
                       </Anchor>
                     ) : (
                       <Text component="p" className="resource-name" c="carbon.7">
-                        No resource yet
+                        No resources yet
                       </Text>
                     )}
                     <div className="resource-card-bottom">

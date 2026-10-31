@@ -26,6 +26,10 @@ Create a dedicated GitHub App owned by the organization:
    into GitHub, never in chat, source code, or Netlify.
 4. Keep the existing drive9-fe Netlify main deployment active and its Builds variable
    `STUDIO_API_ORIGIN=https://studio.drive9.ai` configured. No new Netlify credential is needed.
+   Separately grant the **Netlify GitHub App** access to `drive9-fe` in its installation's
+   repository selection. The publisher App's access does not grant Netlify access to push
+   events. If manual deployment works but commits produce no automatic deploy records,
+   verify this selection using [Netlify's repository access guidance](https://docs.netlify.com/build/git-workflows/repo-permissions-linking/).
 5. After this workflow is merged, run **Publish Studio Console → Run workflow → main** once
    to verify setup. An identical build still validates App permissions but skips creating a PR.
    For the first changed build, inspect its artifact PR and corresponding successful Netlify deploy.
