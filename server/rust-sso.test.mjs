@@ -232,11 +232,16 @@ async function fixture(t, overrides = {}, managed = false) {
           const chunks = [];
           res.on('data', (b) => chunks.push(b));
           res.on('end', () => {
-            const raw = Buffer.concat(chunks).toString();
+            const bytes = Buffer.concat(chunks);
+            const raw = bytes.toString();
             done({
               status: res.statusCode,
               headers: res.headers,
-              body: raw ? JSON.parse(raw) : null,
+              body: res.headers['content-type']?.includes('application/octet-stream')
+                ? bytes
+                : raw
+                  ? JSON.parse(raw)
+                  : null,
             });
           });
         },
@@ -700,7 +705,20 @@ test(
   'verified TiDB accounts have independent regional Workspaces and survive Global outage',
   { skip: !enabled, timeout: 120000 },
   async (t) => {
-    const providers = await providerFixture({ isolatedTenants: true });
+    let outageValue;
+    const providers = await providerFixture({
+      isolatedTenants: true,
+      onSql: ({ sql }) => {
+        if (sql === 'INSERT INTO outage_test VALUES (42)') {
+          outageValue = 42;
+          return { body: { columns: [], rows: [], rowCount: 0, affectedRows: 1 } };
+        }
+        if (sql === 'SELECT id FROM outage_test') {
+          const rows = outageValue === undefined ? [] : [{ id: outageValue }];
+          return { body: { columns: ['id'], rows, rowCount: rows.length, affectedRows: 0 } };
+        }
+      },
+    });
     t.after(() => providers.close());
     const f = await fixture(
       t,
@@ -799,6 +817,8 @@ test(
     assert.ok(!JSON.stringify(aliceResources.body).includes('private-filesystem'));
     assert.ok(JSON.stringify(bobResources.body).includes('private-filesystem'));
     assert.ok(!JSON.stringify(bobResources.body).includes('private-postgresql'));
+    const databaseId = aliceResources.body.data.find((r) => r.name === 'private-postgresql').id;
+    const fileSystemId = bobResources.body.data.find((r) => r.name === 'private-filesystem').id;
     const aliceSettings = `/api/v1/workspaces/${alice.workspace}/settings`;
     assert.equal(
       (
@@ -823,12 +843,23 @@ test(
       cookie: alice.cookie,
       body: {
         name: 'Alice key',
-        scopes: ['resources:read'],
+        scopes: ['resources:read', 'queries:execute'],
         resourceIds: ['*'],
         expiresInDays: 7,
       },
     });
     assert.equal(key.status, 201);
+    const fileKey = await request(`/api/v1/workspaces/${bob.workspace}/keys`, {
+      method: 'POST',
+      cookie: bob.cookie,
+      body: {
+        name: 'Bob file key',
+        scopes: ['files:read', 'files:write'],
+        resourceIds: [fileSystemId],
+        expiresInDays: 7,
+      },
+    });
+    assert.equal(fileKey.status, 201);
     assert.equal(
       (
         await request(`/api/v1/workspaces/${alice.workspace}/resources`, {
@@ -857,6 +888,40 @@ test(
       404,
     );
     await f.restartWithoutGlobal();
+    const sqlPath = `/api/v1/workspaces/${alice.workspace}/queries`;
+    for (const sql of ['INSERT INTO outage_test VALUES (42)', 'SELECT id FROM outage_test']) {
+      const result = await request(sqlPath, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key.body.secret}` },
+        body: { resourceId: databaseId, sql },
+      });
+      assert.equal(result.status, 200, JSON.stringify(result.body));
+      if (sql.startsWith('SELECT')) assert.deepEqual(result.body.rows, [{ id: 42 }]);
+    }
+    assert.ok(providers.statements.includes('INSERT INTO outage_test VALUES (42)'));
+    assert.ok(providers.statements.includes('SELECT id FROM outage_test'));
+    const filePath =
+      `/api/v1/workspaces/${bob.workspace}/files/content?` +
+      new URLSearchParams({ resourceId: fileSystemId, path: '/global-outage.bin' });
+    const bytes = Buffer.from([0, 255, 17, 42]);
+    const fileAuth = { Authorization: `Bearer ${fileKey.body.secret}` };
+    assert.equal(
+      (
+        await request(filePath, {
+          method: 'PUT',
+          headers: { ...fileAuth, 'Content-Type': 'application/octet-stream' },
+          raw: bytes,
+        })
+      ).status,
+      200,
+    );
+    const download = await request(filePath, { headers: fileAuth });
+    assert.equal(download.status, 200);
+    assert.deepEqual(download.body, bytes);
+    assert.equal(
+      (await request(filePath, { headers: { Authorization: `Bearer ${key.body.secret}` } })).status,
+      401,
+    );
     assert.equal(
       (await request(`/api/v1/workspaces/${alice.workspace}`, { cookie: alice.cookie })).status,
       200,
