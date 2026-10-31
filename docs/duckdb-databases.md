@@ -44,7 +44,7 @@ of the native tidbfs artifact from [drive9-ai/duckdb](https://github.com/drive9-
 Its release build statically links its runtime dependencies. No Community Extensions
 publication, Ti CLI, DuckDB CLI or runtime extension download is required by this product.
 
-Configure the private regional API's `product.compute`:
+Configure the private regional API's `product.execute`:
 
 ```json
 {

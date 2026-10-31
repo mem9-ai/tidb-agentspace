@@ -19,4 +19,7 @@ workspace-domain.workspace = true
 workspace-identity.workspace = true
 workspace-meta-client.workspace = true
 workspace-meta-service.workspace = true
-workspace-compute.workspace = true
+workspace-execute.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

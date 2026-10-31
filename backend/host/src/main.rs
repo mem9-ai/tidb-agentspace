@@ -28,11 +28,11 @@ async fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.as_slice() == ["runtime-info"] {
         // Image/package verification must work without loading a private deployment plan.
-        println!("{}", workspace_compute::runtime_info());
+        println!("{}", workspace_execute::runtime_info());
         return Ok(());
     }
-    if args.as_slice() == ["worker"] {
-        workspace_compute::worker_entry().await?;
+    if args.as_slice() == ["execute"] || args.as_slice() == ["worker"] {
+        workspace_execute::execute_entry().await?;
         return Ok(());
     }
     if args.len() != 3

@@ -91,6 +91,9 @@ modules and single-binary/multiple-process composition; [ADR 0022](docs/decision
 defines coherent durable reads. [GH-88](specs/gh-88/spec.md) is the historical language-parity baseline;
 its document compatibility direction is superseded by ADR 0024. Node sources remain build/operator tooling and native test fixtures, not a business or rollback API. Native builds now verify and link pinned official
 DuckDB static libraries instead of compiling its C++ sources; see the [Rust guide](docs/rust-backend.md).
+Regional computation is an internal [Execute module](docs/rust-backend.md#regional-execute)
+in `backend/execute`: Product calls it directly and its default strategy execs the same
+binary for one bounded task. It has no independent service, listener or task queue.
 
 For millions of Workspaces or a million-resource Workspace, also read the
 [metadata scale profile](specs/gh-74/metadata-scale.md): Workspace ownership is distinct from
@@ -177,7 +180,7 @@ For CSV/Parquet SQL and text/log analysis, read [ADR 0010](docs/decisions/0010-r
 and [Bash input paths](docs/decisions/0015-bash-workspace-paths.md), plus
 [the selected-file variable](docs/decisions/0016-bash-selected-file-variable.md) and
 [verification](docs/file-analysis-verification.md). The Console/API implement selected-file
-snapshot workers; provider-hosted Exec, large remote scans and public compute isolation remain future work.
+Region-internal Execute tasks; provider-hosted Exec, large remote scans and public compute isolation remain future work.
 
 For TiDB Account sign-in, read [ADR 0015](docs/decisions/0015-public-client-sso.md) for the
 public-client registration, code + PKCE exchange, configuration migration and retained owner boundary.
@@ -193,21 +196,21 @@ exact-commit evidence consumption by delivery workflows.
 
 ## Find the implementation
 
-| Location                                                                                                                                        | Responsibility                                                                                      |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| [src/](src/)                                                                                                                                    | React Console; feature modules in `src/features/`, shared TiUI adapters in `src/ui/`                |
-| [src/api/](src/api/) and [Console configuration](console/public/config.json)                                                                    | Generated-type HTTP client, API transport, and runtime API-origin selection                         |
-| [backend/api/src/lib.rs](backend/api/src/lib.rs)                                                                                                | Current API entry point and request handling                                                        |
-| [Authorization and records](backend/workspace/src/)                                                                                             | Native resource/action authorization and encrypted record repositories                              |
-| [File analysis](backend/product/src/files.rs) and [Console panel](src/features/files/FileAnalysisPanel.tsx)                                     | Selected-file snapshot workers, permissions, native DuckDB/Bashkit analysis and result presentation |
-| [Providers](backend/providers/src/) and [file transfer](backend/product/src/files.rs)                                                           | Upstream resource adapters, SQL drivers, and bounded file transfers                                 |
-| [Contract generator](server/generate-openapi.mjs) and [generated contract](public/openapi.json)                                                 | Editable description and generated public API artifact                                              |
-| [Client type generator](tools/api-contract/generate-client.mjs) and [client declarations](src/api/schema.d.ts)                                  | Isolated build-time generation of Console API types                                                 |
-| [Native API/provider tests](server/rust-product.test.mjs) and colocated Rust/Console tests                                                      | Behavior, isolation, persistence, and regression evidence                                           |
-| [Contract tests](server/contract.test.mjs) and [deployment tests](server/rust-sso.test.mjs)                                                     | Actual HTTP schema checks, cross-origin behavior, and retained authorization                        |
-| [scripts/](scripts/) and [.github/workflows/](.github/workflows/)                                                                               | Runtime/repository checks, packaging, and CI                                                        |
-| [Standards](docs/standards/) and [decisions](docs/decisions/)                                                                                   | Reusable engineering rules and architectural decisions                                              |
-| [Issue forms](.github/ISSUE_TEMPLATE/), [PR template](.github/PULL_REQUEST_TEMPLATE.md), and [feature template](docs/templates/feature-spec.md) | Intake, task handoffs, evidence, and specification authoring                                        |
+| Location                                                                                                                                        | Responsibility                                                                                         |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [src/](src/)                                                                                                                                    | React Console; feature modules in `src/features/`, shared TiUI adapters in `src/ui/`                   |
+| [src/api/](src/api/) and [Console configuration](console/public/config.json)                                                                    | Generated-type HTTP client, API transport, and runtime API-origin selection                            |
+| [backend/api/src/lib.rs](backend/api/src/lib.rs)                                                                                                | Current API entry point and request handling                                                           |
+| [Authorization and records](backend/workspace/src/)                                                                                             | Native resource/action authorization and encrypted record repositories                                 |
+| [File analysis](backend/product/src/files.rs) and [Console panel](src/features/files/FileAnalysisPanel.tsx)                                     | Region-internal Execute snapshots, permissions, native DuckDB/Bashkit analysis and result presentation |
+| [Providers](backend/providers/src/) and [file transfer](backend/product/src/files.rs)                                                           | Upstream resource adapters, SQL drivers, and bounded file transfers                                    |
+| [Contract generator](server/generate-openapi.mjs) and [generated contract](public/openapi.json)                                                 | Editable description and generated public API artifact                                                 |
+| [Client type generator](tools/api-contract/generate-client.mjs) and [client declarations](src/api/schema.d.ts)                                  | Isolated build-time generation of Console API types                                                    |
+| [Native API/provider tests](server/rust-product.test.mjs) and colocated Rust/Console tests                                                      | Behavior, isolation, persistence, and regression evidence                                              |
+| [Contract tests](server/contract.test.mjs) and [deployment tests](server/rust-sso.test.mjs)                                                     | Actual HTTP schema checks, cross-origin behavior, and retained authorization                           |
+| [scripts/](scripts/) and [.github/workflows/](.github/workflows/)                                                                               | Runtime/repository checks, packaging, and CI                                                           |
+| [Standards](docs/standards/) and [decisions](docs/decisions/)                                                                                   | Reusable engineering rules and architectural decisions                                                 |
+| [Issue forms](.github/ISSUE_TEMPLATE/), [PR template](.github/PULL_REQUEST_TEMPLATE.md), and [feature template](docs/templates/feature-spec.md) | Intake, task handoffs, evidence, and specification authoring                                           |
 
 Accepted feature specifications use `specs/gh-<parent-issue-number>/spec.md` when created through
 the GitHub workflow. Verify that a specification directory, interface, or integration actually

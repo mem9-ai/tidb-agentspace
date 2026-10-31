@@ -9,18 +9,19 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::Mutex;
-use workspace_compute::Compute;
 use workspace_contracts::{Result, ServiceError};
 use workspace_domain::{Credential, Principal, Workspace, principal, secret};
+use workspace_execute::Executor;
 use workspace_providers::{DB9, DRIVE9, DUCKDB, Providers, ZERO, err, timestamp};
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
     #[serde(default)]
     pub providers: workspace_providers::Config,
-    #[serde(default)]
-    pub compute: workspace_compute::Config,
+    #[serde(default, alias = "compute")]
+    pub execute: workspace_execute::Config,
 }
+
 impl Config {
     pub fn validate(&self) -> Result<()> {
         self.providers.validate()
@@ -29,7 +30,7 @@ impl Config {
 pub struct Product {
     pub workspace: Arc<Workspace>,
     pub providers: Providers,
-    pub compute: Compute,
+    pub execute: Executor,
     preparations: Mutex<BTreeMap<String, exports::Preparation>>,
 }
 pub struct Request<'a> {
@@ -54,11 +55,11 @@ impl Product {
     pub async fn new(workspace: Arc<Workspace>, config: Config) -> Result<Self> {
         config.validate()?;
         let providers = Providers::new(config.providers, workspace.repository())?;
-        let compute = Compute::new(config.compute).await;
+        let execute = Executor::new(config.execute).await;
         Ok(Self {
             workspace,
             providers,
-            compute,
+            execute,
             preparations: Mutex::new(BTreeMap::new()),
         })
     }
@@ -80,7 +81,7 @@ impl Product {
     }
     pub fn capabilities(&self) -> Value {
         let c = &self.providers.config;
-        json!({"mysql":{"label":"TiDB Starter · MySQL","regions":if c.mysql_provider==ZERO{vec!["automatic"]}else{vec!["aws-us-east-1","aws-us-west-2"]},"storageGiB":if c.mysql_provider==ZERO{Value::Null}else{json!(5)},"monthlyRU":if c.mysql_provider==ZERO{Value::Null}else{json!(50_000_000)},"preview":false,"provider":c.mysql_provider},"postgresql":{"label":"PostgreSQL · db9","regions":["automatic"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":c.postgres_provider==DB9,"provider":DB9},"duckdb":{"label":"DuckDB","regions":["aws-ap-southeast-1"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":self.compute.available,"provider":DUCKDB},"filesystem":{"label":"TiDB Cloud File System","regions":if c.files_provider==DRIVE9{vec!["aws-ap-southeast-1"]}else{vec!["aws-ap-southeast-1","aws-us-west-2"]},"storageGiB":if c.files_provider==DRIVE9{Value::Null}else{json!(2)},"maxFiles":if c.files_provider==DRIVE9{Value::Null}else{json!(2000)},"preview":true,"provider":c.files_provider}})
+        json!({"mysql":{"label":"TiDB Starter · MySQL","regions":if c.mysql_provider==ZERO{vec!["automatic"]}else{vec!["aws-us-east-1","aws-us-west-2"]},"storageGiB":if c.mysql_provider==ZERO{Value::Null}else{json!(5)},"monthlyRU":if c.mysql_provider==ZERO{Value::Null}else{json!(50_000_000)},"preview":false,"provider":c.mysql_provider},"postgresql":{"label":"PostgreSQL · db9","regions":["automatic"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":c.postgres_provider==DB9,"provider":DB9},"duckdb":{"label":"DuckDB","regions":["aws-ap-southeast-1"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":self.execute.available,"provider":DUCKDB},"filesystem":{"label":"TiDB Cloud File System","regions":if c.files_provider==DRIVE9{vec!["aws-ap-southeast-1"]}else{vec!["aws-ap-southeast-1","aws-us-west-2"]},"storageGiB":if c.files_provider==DRIVE9{Value::Null}else{json!(2)},"maxFiles":if c.files_provider==DRIVE9{Value::Null}else{json!(2000)},"preview":true,"provider":c.files_provider}})
     }
     pub async fn mode(&self) -> Result<&'static str> {
         let state = self.workspace.repository().read().await?;
@@ -142,7 +143,7 @@ impl Product {
             .await
     }
     async fn setup_duckdb(&self, r: &Value) -> Result<Value> {
-        self.compute.verify()?;
+        self.execute.verify()?;
         let id = text(r, "id")?;
         let mut b = self.providers.binding("duckdb", id).await?;
         if b.is_null() {
@@ -165,7 +166,7 @@ impl Product {
             .providers
             .file_connection(text(&b, "storageId")?)
             .await?;
-        self.compute
+        self.execute
             .database(id, connection, "SELECT 1 AS connected", json!([]), false)
             .await?;
         b["state"] = json!("ready");
@@ -289,7 +290,7 @@ impl Product {
                     return Err(err(400, "UNSUPPORTED_REGION"));
                 }
                 if kind == "duckdb" {
-                    self.compute.verify()?;
+                    self.execute.verify()?;
                 }
                 if idem.is_some_and(|v| v.encode_utf16().count() > 128) {
                     return Err(err(400, "INVALID_IDEMPOTENCY_KEY"));
@@ -588,4 +589,28 @@ fn fingerprint(bytes: &[u8]) -> Result<String> {
     use sha2::{Digest, Sha256};
     let v: Ordered = serde_json::from_slice(bytes).map_err(|_| err(400, "INVALID_JSON"))?;
     Ok(hex::encode(Sha256::digest(v.0.as_bytes())))
+}
+
+#[cfg(test)]
+mod execute_config_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_compute_and_execute_configuration_preserve_extension_bindings() {
+        let extension = json!({"extensionPath":"/private/tidbfs.duckdb_extension","extensionSha256":"retained-checksum"});
+        let legacy: Config = serde_json::from_value(json!({"compute":extension})).unwrap();
+        let current: Config = serde_json::from_value(json!({"execute":extension})).unwrap();
+        assert_eq!(
+            serde_json::to_value(&legacy).unwrap(),
+            serde_json::to_value(&current).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&current).unwrap()["execute"],
+            extension
+        );
+        assert!(
+            serde_json::from_value::<Config>(json!({"compute":extension,"execute":extension}))
+                .is_err()
+        );
+    }
 }

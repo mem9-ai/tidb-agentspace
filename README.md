@@ -31,7 +31,7 @@ Provider configuration lives in private `.data/meta-runtime/rust-api.json`, unde
 }
 ```
 
-These modes enable explicit resource creation in the Console; startup does not provision instances. Defaults use local demo files/MySQL with PostgreSQL disabled. Native DuckDB also requires a separately verified tidbfs extension under `product.compute`. The service manages native credentials internally; callers use scoped Workspace Keys. See [Rust configuration](docs/rust-backend.md), [db9](docs/db9-postgres.md), [MySQL](docs/starter-sql-verification.md) and [DuckDB](docs/duckdb-databases.md) for boundaries and limits.
+These modes enable explicit resource creation in the Console; startup does not provision instances. Defaults use local demo files/MySQL with PostgreSQL disabled. Native DuckDB also requires a separately verified tidbfs extension under `product.execute`. The service manages native credentials internally; callers use scoped Workspace Keys. See [Rust configuration](docs/rust-backend.md), [db9](docs/db9-postgres.md), [MySQL](docs/starter-sql-verification.md) and [DuckDB](docs/duckdb-databases.md) for boundaries and limits.
 
 ## Build and verification
 

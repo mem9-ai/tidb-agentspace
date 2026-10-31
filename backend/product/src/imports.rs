@@ -116,7 +116,7 @@ impl Product {
                 parsing(&input["parsing"])?,
             )
         };
-        // Check the destination before reading a source or starting a worker.
+        // Check the destination before reading a source or starting an Execute task.
         self.export_authorize(
             credential,
             &resource_id,
@@ -142,7 +142,7 @@ impl Product {
             )
         };
         let _slot = self
-            .compute
+            .execute
             .analysis_slots
             .try_acquire()
             .map_err(|_| err(429, "ANALYSIS_BUSY"))?;

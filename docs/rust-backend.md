@@ -22,7 +22,7 @@ The fresh record profile supersedes the document migration baseline; see [ADR 00
 | `backend/meta-client` | Authority-bound remote Meta adapter; TLS 1.3/mTLS, bounded requests, no retries        |
 | `backend/workspace`   | Workspace/Key domain, authorization and versioned record repositories                  |
 | `backend/providers`   | Private Drive9, Zero and db9 lifecycle/vault adapters; native MySQL/PostgreSQL drivers |
-| `backend/compute`     | Prebuilt static DuckDB 2.0 and Bashkit; disposable workers from the same executable    |
+| `backend/execute`     | Region-internal Executor; prebuilt static DuckDB 2.0/Bashkit tasks via the same binary |
 | `backend/product`     | Regional resources, database browser, files, snapshots, analysis, exports/imports      |
 | `backend/api`         | Public HTTP contract, sessions, Host/Origin/CORS, request/cancellation/stream limits   |
 | `backend/host`        | Configuration, dependency wiring, real role composition and ordered shutdown           |
@@ -61,8 +61,36 @@ There is no running cleanup executor or verified live-provider deletion in this 
 
 Domain operations are shared by Console and agent requests. Providers and computation are
 separate crates behind regional application operations. Metadata supports in-process and remote
-ports; those are implemented deployment modes. Provider/compute crates do not claim independent
-public RPC services. Workers are separate processes even in an all-in-one deployment. Each worker returns one bounded JSON reply and flushes the same stdout handle before process/runtime exit. Awaiting Tokio `write_all` alone is not a completion barrier for its background writer. Buffered-output and flush-failure regression cases enforce this IPC boundary; diagnostics report only exit status or response byte count, never request contents or credentials.
+ports; those are implemented deployment modes. Provider/Execute crates do not claim independent
+public RPC services. Execute is an internal Region module, not another service role.
+
+## Regional Execute
+
+Product operations call `Executor.execute(task)` in process. The default implementation
+starts `workspace-backend execute` using the currently running executable, passes one bounded
+JSON request through stdin and receives one bounded JSON reply through stdout. The child
+exits after that task. There is no Execute listener, service discovery, broker, durable task
+queue, independently deployed binary or separately configured service. The old `worker`
+subcommand remains an alias for operator compatibility; normal calls use `execute`.
+
+`product.execute` configures the verified native extension. Existing `product.compute`
+configuration remains accepted as an alias, including the original path/checksum; specifying
+both is rejected. Provider connections, metadata and public HTTP request/response contracts
+are unchanged. This refactor does not add an in-process thread strategy.
+
+Execute owns child lifecycle, an empty environment, bounded pipes, discarded stderr and
+kill-on-drop cancellation. The normal deadline is 15 seconds; only server-generated native
+import writes retain the existing 30-second commit budget. Analysis admission remains two
+tasks; native DuckDB admission remains four tasks with one active query per database.
+Snapshot tasks receive selected data only. Persistent DuckDB tasks receive only their own
+private storage connection. Native MySQL/PostgreSQL requests use provider drivers directly.
+
+Each child flushes the same stdout handle before process/runtime exit. Awaiting Tokio
+`write_all` alone is not a completion barrier for its background writer. Buffered-output,
+flush-failure, child cancellation/deadline and native CLI compatibility tests enforce this
+boundary. Diagnostics report only exit status or response byte count, never input or secrets.
+See [ADR 0021](decisions/0021-native-rust-computation.md) and the implemented
+[architecture diagram](architecture.md#backend-boundaries).
 
 ## Build, check and package
 
@@ -91,7 +119,7 @@ SHA-256 pins in `scripts/duckdb-runtime.json`. `npm run backend:build` first run
 `backend:prepare`, which verifies or downloads the matching native artifact into ignored build
 cache. There is no bundled DuckDB C++ compilation, system-library probing or automatic fallback.
 For direct Cargo commands, first run `npm run backend:prepare`; checked-in Cargo configuration
-selects the fixed static path, and the compute build script verifies every linked library. A
+selects the fixed static path, and the Execute build script verifies every linked library. A
 native-only build environment can supply those exact pinned files at that path and run Cargo
 without Node; the preparation script itself uses only Node built-ins, without Console packages.
 Native macOS ARM64 and Linux x86-64 GNU are currently pinned; cross builds and other targets
@@ -166,7 +194,7 @@ A full regional API configuration is:
       "mysqlProvider": "tidb-cloud-zero",
       "postgresProvider": "db9-anonymous"
     },
-    "compute": {
+    "execute": {
       "extensionPath": "/srv/artifacts/tidbfs.duckdb_extension",
       "extensionSha256": "verified-64-character-sha256"
     }

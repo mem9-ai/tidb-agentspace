@@ -4883,33 +4883,15 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tempfile",
  "tokio",
  "workspace-api",
- "workspace-compute",
  "workspace-contracts",
  "workspace-domain",
+ "workspace-execute",
  "workspace-identity",
  "workspace-meta-client",
  "workspace-meta-service",
-]
-
-[[package]]
-name = "workspace-compute"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "bashkit",
- "chrono",
- "duckdb",
- "hex",
- "regex",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tempfile",
- "tokio",
- "workspace-contracts",
 ]
 
 [[package]]
@@ -4931,6 +4913,25 @@ dependencies = [
  "sha2 0.10.9",
  "tokio",
  "uuid",
+ "workspace-contracts",
+]
+
+[[package]]
+name = "workspace-execute"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "bashkit",
+ "chrono",
+ "duckdb",
+ "hex",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
  "workspace-contracts",
 ]
 
@@ -5003,9 +5004,9 @@ dependencies = [
  "tempfile",
  "tokio",
  "uuid",
- "workspace-compute",
  "workspace-contracts",
  "workspace-domain",
+ "workspace-execute",
  "workspace-providers",
 ]
 

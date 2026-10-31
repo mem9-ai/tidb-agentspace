@@ -5,7 +5,7 @@ import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { privateJson } from '../server/meta/client.mjs';
 
-// Optional npm/development launcher. Serving and workers execute only the native artifact.
+// Optional npm/development launcher. Serving and internal Execute tasks use only the native artifact.
 export async function startRustApi({ configFile, binary } = {}) {
   if (!configFile || !isAbsolute(configFile))
     throw new Error(

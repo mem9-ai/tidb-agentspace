@@ -657,7 +657,7 @@ impl Product {
                 _ => return Err(invalid()),
             }
             let _slot = self
-                .compute
+                .execute
                 .analysis_slots
                 .try_acquire()
                 .map_err(|_| err(429, "ANALYSIS_BUSY"))?;
@@ -725,7 +725,7 @@ impl Product {
         let source_id = text(&source, "resourceId")?;
         let format = text(&parsing, "format")?;
         let parsed = self
-            .run_file_worker(FileJob {
+            .execute_file(FileJob {
                 resource_id: source_id,
                 path,
                 bytes,

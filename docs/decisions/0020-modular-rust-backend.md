@@ -25,16 +25,16 @@ still enforce authority and permissions; remote calls do not retry uncertain wri
 
 The target module boundaries are:
 
-| Module            | Responsibility and authority                                                                               |
-| ----------------- | ---------------------------------------------------------------------------------------------------------- |
-| Contracts         | Versioned request/context/result/error types; no storage or business implementation                        |
-| Global control    | Identity/policy, placement, account/product limits, regional directory and Global-initiated dispatch/read  |
-| Regional control  | Installed policy, resource lifecycle/claims, regional Workspace/Key operations and durable execution state |
-| Regional data     | Authorized database/file operations and provider adapters; direct regional entry points                    |
-| Metadata          | Independent Global or regional SlateDB/S3 authority; scoped commits, encryption, durability and fencing    |
-| Execution workers | Bounded customer computation with selected-file snapshots; no provider credentials                         |
-| API/transport     | HTTP/agent adapters, local-demo sessions and transport policy; calls shared application services           |
-| Runtime host      | Configuration, dependency wiring, listeners, service lifecycle and role selection                          |
+| Module           | Responsibility and authority                                                                               |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| Contracts        | Versioned request/context/result/error types; no storage or business implementation                        |
+| Global control   | Identity/policy, placement, account/product limits, regional directory and Global-initiated dispatch/read  |
+| Regional control | Installed policy, resource lifecycle/claims, regional Workspace/Key operations and durable execution state |
+| Regional data    | Authorized database/file operations and provider adapters; direct regional entry points                    |
+| Metadata         | Independent Global or regional SlateDB/S3 authority; scoped commits, encryption, durability and fencing    |
+| Regional Execute | Internal task execution; same-binary child lifecycle and selected-file credential boundaries               |
+| API/transport    | HTTP/agent adapters, local-demo sessions and transport policy; calls shared application services           |
+| Runtime host     | Configuration, dependency wiring, listeners, service lifecycle and role selection                          |
 
 Modules are logical capabilities, not a requirement for one process per table or provider.
 Start with regional Workspace/Key domain extraction and the existing metadata engine. Then
@@ -47,9 +47,11 @@ independent service; a multi-role configuration composes real modules in one pro
 CLI/configuration fields are versioned with the corresponding implementation slice. Separate
 thin binaries may be retained as compatibility launchers over the same libraries.
 
-Single executable distribution does not require executing customer code inside the API
-process. A worker can be another process/container started from the same executable. Native
-engine crashes, memory/CPU/time limits and filesystem isolation require a worker boundary.
+The Region calls its internal Execute module directly; this module has no independently
+deployed service, listener or task queue. Its default strategy execs the same binary for one
+bounded task. Native engine crashes, memory/CPU/time limits and filesystem isolation retain
+the child-process boundary even in an all-in-one deployment. See
+[ADR 0021](0021-native-rust-computation.md) for the implementation and compatibility aliases.
 Do not replace the restricted Bash interpreter with unrestricted host shell execution.
 
 ## Isolation and failure behavior
