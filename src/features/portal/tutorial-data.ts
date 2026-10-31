@@ -9,6 +9,15 @@ export const ordersCsv = `id,region,amount
 6,AMER,40
 `;
 
+export const orderRows = [
+  { id: 1, region: 'APAC', amount: 120 },
+  { id: 2, region: 'EMEA', amount: 80 },
+  { id: 3, region: 'AMER', amount: 50 },
+  { id: 4, region: 'APAC', amount: 120 },
+  { id: 5, region: 'EMEA', amount: 100 },
+  { id: 6, region: 'AMER', amount: 40 },
+];
+
 export const expectedTotals = [
   { region: 'AMER', total: 90 },
   { region: 'APAC', total: 240 },
@@ -39,14 +48,6 @@ export function databaseTutorial(resource: Pick<Resource, 'kind' | 'provider'>, 
   return {
     table: sample.table,
     query: liveDatabase(resource) ? totalsQuery(table) : 'SELECT * FROM agent_events LIMIT 10;',
-    // One create-only statement prevents a partial CREATE/INSERT sequence or duplicate rows.
-    seedSql: `CREATE TABLE ${table} AS
-SELECT 1 AS id, 'APAC' AS region, 120 AS amount
-UNION ALL SELECT 2, 'EMEA', 80
-UNION ALL SELECT 3, 'AMER', 50
-UNION ALL SELECT 4, 'APAC', 120
-UNION ALL SELECT 5, 'EMEA', 100
-UNION ALL SELECT 6, 'AMER', 40;`,
   };
 }
 
