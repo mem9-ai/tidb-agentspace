@@ -1719,7 +1719,12 @@ export interface operations {
   };
   listResources: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Opt into bounded pagination; the limit is evaluated before authorization and visibility filtering, so a page may be empty. */
+        limit?: number;
+        /** @description Opaque cursor from the previous page. Each page is independently authorized; concurrent changes can affect results. Pages contain stored state without refreshing providers. */
+        cursor?: string;
+      };
       header?: never;
       path: {
         /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
@@ -1738,6 +1743,7 @@ export interface operations {
           'application/json': {
             data: components['schemas']['Resource'][];
             capabilities: components['schemas']['Capabilities'];
+            nextCursor?: string | null;
           };
         };
       };
@@ -6249,7 +6255,10 @@ export interface operations {
           'application/json': {
             /** @constant */
             status: 'ok';
-            /** @enum {unknown} */
+            /**
+             * @description Configured provider mode, not a count or a health check of provisioned resources.
+             * @enum {unknown}
+             */
             mode: 'demo' | 'hybrid';
             filesProvider: string;
           };

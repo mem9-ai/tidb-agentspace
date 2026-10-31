@@ -27,7 +27,7 @@ impl GuestCleanup {
         let mut uncertain = false;
         let mut unsupported = false;
         loop {
-            let (resources, next) = repository.cleanup_resources_page(after, 100).await?;
+            let (resources, next) = repository.resources_page(after, 100).await?;
             for resource in resources {
                 let Some(id) = resource["id"].as_str() else {
                     uncertain = true;

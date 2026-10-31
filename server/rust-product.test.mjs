@@ -12,6 +12,7 @@ import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
 import { seedRecords, readState, readBinding } from './test-support/record-fixture.mjs';
 import { agentRestCases } from './test-support/agent-rest-cases.mjs';
 import { productApiCases } from './test-support/product-api-cases.mjs';
+import { productApiFixture } from './test-support/product-api-fixture.mjs';
 const contract = JSON.parse(
   await readFile(new URL('../public/openapi.json', import.meta.url), 'utf8'),
 );
@@ -39,6 +40,34 @@ function validateResponse(path, method, status, body) {
 const base = '/api/v1/workspaces/ws_agentlab';
 const secret = 'retained-public-workspace-key';
 const privateWrite = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
+test(
+  'bounded resource pages work beyond the legacy Workspace view limit',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    await fixture.request('/resources?limit=1'); // establish the owner session before seeding
+    await fixture.seedResources(4100);
+    assert.equal((await fixture.request('/api/health')).status, 200);
+    assert.equal((await fixture.request('/api/v1/workspaces')).status, 200);
+    const details = await Promise.all(
+      ['db_live', 'db_pg'].map((id) => fixture.request(`/resources/${id}`)),
+    );
+    assert.ok(details.every((response) => response.status === 200));
+    let cursor;
+    let count = 0;
+    do {
+      const query = new URLSearchParams({ limit: '512' });
+      if (cursor) query.set('cursor', cursor);
+      const page = await fixture.request(`/resources?${query}`);
+      assert.equal(page.status, 200, JSON.stringify(page.body));
+      assert.ok(page.body.data.length <= 512);
+      count += page.body.data.filter((resource) => resource.id.startsWith('db_scale_')).length;
+      cursor = page.body.nextCursor;
+    } while (cursor);
+    assert.equal(count, 4100);
+    assert.equal((await fixture.request('/resources')).body.error.code, 'WORKSPACE_VIEW_LIMIT');
+  },
+);
 for (const transport of ['remote', 'inProcess']) {
   test(
     `Agent REST P0 through ${transport} metadata`,
@@ -98,6 +127,17 @@ async function scenarios(request, provider) {
   assert.equal(JSON.stringify(boot.body).includes(nativeSecret), false);
   const resources = await run(base + '/resources', { token: secret });
   assert.equal(resources.body.data.length, 6);
+  const paged = [];
+  let cursor;
+  do {
+    const query = new URLSearchParams({ limit: '2' });
+    if (cursor) query.set('cursor', cursor);
+    const page = (await run(`${base}/resources?${query}`)).body;
+    assert.ok(page.data.length <= 2);
+    paged.push(...page.data.map((resource) => resource.id));
+    cursor = page.nextCursor;
+  } while (cursor);
+  assert.deepEqual(paged, resources.body.data.map((resource) => resource.id).sort());
   await run(base + '/queries', {
     method: 'POST',
     token: secret,

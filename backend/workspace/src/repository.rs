@@ -7,7 +7,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 use workspace_contracts::{MetaRequest, Metadata, Result, Scope, ServiceError, WriterGuard};
 
@@ -22,7 +22,7 @@ pub struct Repository {
     metadata: Arc<dyn Metadata>,
     scope: Scope,
     guard: WriterGuard,
-    queue: Mutex<()>,
+    queue: RwLock<()>,
     closed: AtomicBool,
 }
 impl Repository {
@@ -76,7 +76,7 @@ impl Repository {
             metadata,
             scope,
             guard: WriterGuard { owner_id: owner },
-            queue: Mutex::new(()),
+            queue: RwLock::new(()),
             closed: AtomicBool::new(false),
         };
         let initialized=async {
@@ -252,14 +252,14 @@ impl Repository {
         Ok(result)
     }
     pub async fn read(&self) -> Result<Value> {
-        let _lock = self.queue.lock().await;
+        let _lock = self.queue.write().await;
         inflate(&self.records("state/").await?)
     }
     pub async fn transaction<T>(
         &self,
         apply: impl FnOnce(&mut Value) -> Result<(T, bool)> + Send,
     ) -> Result<T> {
-        let _lock = self.queue.lock().await;
+        let _lock = self.queue.write().await;
         let previous = self.records("state/").await?;
         let mut state = inflate(&previous)?;
         let (result, dirty) = apply(&mut state)?;
@@ -324,15 +324,77 @@ impl Repository {
         Ok(self.get(&format!("state/resources/{id}")).await?["value"]["record"].clone())
     }
 
-    /// Region-internal cleanup inventory, paginated independently of the Workspace view limit.
-    /// Call only after fencing and draining Guest operations.
-    pub async fn cleanup_resources_page(
+    pub async fn resources_by_id(&self, ids: &[&str]) -> Result<Vec<Value>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let keys = ids
+            .iter()
+            .map(|id| format!("state/resources/{id}"))
+            .collect::<Vec<_>>();
+        let result = self
+            .call(MetaRequest::Get {
+                scope: self.scope.clone(),
+                guard: Some(self.guard.clone()),
+                keys: keys.clone(),
+            })
+            .await?;
+        let mut resources = Vec::with_capacity(ids.len());
+        for (id, key) in ids.iter().zip(keys) {
+            let stored = &result["records"][&key];
+            if stored.is_null() {
+                continue;
+            }
+            let resource = &stored["value"]["record"];
+            if resource["id"] != *id {
+                return Err(error("META_RECORD_CORRUPT"));
+            }
+            resources.push(resource.clone());
+        }
+        Ok(resources)
+    }
+
+    /// Coordinate with legacy snapshots while allowing independent point updates to
+    /// proceed concurrently. Retry only a confirmed CAS conflict, never an unknown commit.
+    pub async fn update_resource<T>(
+        &self,
+        id: &str,
+        apply: impl Fn(&mut Value) -> Result<T> + Send,
+    ) -> Result<T> {
+        let _lock = self.queue.read().await;
+        let key = format!("state/resources/{id}");
+        for attempt in 0..4 {
+            let stored = self.get(&key).await?;
+            let mut value = stored["value"].clone();
+            if value["record"]["id"] != id {
+                return Err(ServiceError::new(404, "NOT_FOUND"));
+            }
+            let result = apply(&mut value["record"])?;
+            if value == stored["value"] {
+                return Ok(result);
+            }
+            match self
+                .commit(vec![
+                    json!({"key":key,"expectedVersion":version(&stored),"value":value}),
+                ])
+                .await
+            {
+                Ok(()) => return Ok(result),
+                Err(error) if error.code == "META_CONFLICT" && attempt < 3 => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        unreachable!()
+    }
+
+    /// Bounded ID-ordered inventory. Guest cleanup must first fence and drain its operations.
+    pub async fn resources_page(
         &self,
         after: Option<String>,
         limit: usize,
     ) -> Result<(Vec<Value>, Option<String>)> {
         if limit == 0 || limit > 512 {
-            return Err(ServiceError::new(400, "INVALID_CLEANUP_LIMIT"));
+            return Err(ServiceError::new(400, "INVALID_PAGE_LIMIT"));
         }
         let page = self
             .call(MetaRequest::List {
@@ -360,7 +422,7 @@ impl Repository {
         Ok((resources, page["nextCursor"].as_str().map(str::to_owned)))
     }
     pub async fn authenticate_key(&self, token: &str) -> Result<crate::Principal> {
-        let _lock = self.queue.lock().await;
+        let _lock = self.queue.write().await;
         let state = self
             .key_state(&hex::encode(Sha256::digest(token.as_bytes())))
             .await?;
@@ -420,7 +482,7 @@ impl Repository {
         Ok(value)
     }
     pub async fn save_binding(&self, provider: &str, id: &str, value: Value) -> Result<()> {
-        let _lock = self.queue.lock().await;
+        let _lock = self.queue.write().await;
         let mut public = serde_json::Map::new();
         let mut secret = serde_json::Map::new();
         let keys = [
@@ -477,7 +539,7 @@ impl Repository {
             .clone())
     }
     pub async fn save_account(&self, provider: &str, value: Value) -> Result<()> {
-        let _lock = self.queue.lock().await;
+        let _lock = self.queue.write().await;
         let path = format!("credentials/accounts/{provider}");
         let prior = self.get(&path).await?;
         self.commit(vec![
@@ -502,7 +564,7 @@ impl Repository {
         {
             return Err(ServiceError::new(403, "LEGACY_PURGE_DENIED"));
         }
-        let _lock = self.queue.lock().await;
+        let _lock = self.queue.write().await;
         let mut after = None;
         loop {
             let page = self
@@ -552,7 +614,7 @@ impl Repository {
         Ok(())
     }
     pub async fn close(&self) -> Result<()> {
-        let _lock = self.queue.lock().await;
+        let _lock = self.queue.write().await;
         if self.closed.swap(true, Ordering::AcqRel) {
             return Ok(());
         }
@@ -683,4 +745,123 @@ fn flatten(state: &Value, previous: &Records) -> Result<BTreeMap<String, Value>>
         }
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod concurrency_tests {
+    use super::*;
+    use tokio::sync::Notify;
+    use workspace_contracts::Call;
+
+    struct MetadataGate {
+        values: std::sync::Mutex<Records>,
+        paused: Notify,
+        resume: Notify,
+        first: AtomicBool,
+    }
+
+    impl Metadata for MetadataGate {
+        fn health(&self) -> Call<'_> {
+            Box::pin(async { Ok(json!({})) })
+        }
+
+        fn execute(&self, request: MetaRequest) -> Call<'_> {
+            Box::pin(async move {
+                match request {
+                    MetaRequest::Get { keys, .. } => {
+                        if keys == ["state/resources/a"] && self.first.swap(false, Ordering::AcqRel)
+                        {
+                            self.paused.notify_one();
+                            self.resume.notified().await;
+                        }
+                        let values = self.values.lock().unwrap();
+                        let records = keys
+                            .into_iter()
+                            .map(|key| {
+                                let value = values.get(&key).cloned().unwrap_or(Value::Null);
+                                (key, value)
+                            })
+                            .collect::<serde_json::Map<_, _>>();
+                        Ok(json!({"records":records}))
+                    }
+                    MetaRequest::Commit { changes, .. } => {
+                        let mut values = self.values.lock().unwrap();
+                        for change in changes {
+                            let key = change["key"].as_str().unwrap();
+                            if version(values.get(key).unwrap_or(&Value::Null))
+                                != change["expectedVersion"]
+                            {
+                                return Err(ServiceError::new(409, "META_CONFLICT"));
+                            }
+                            values.insert(key.into(), json!({"version":Uuid::new_v4().to_string(),"value":change["value"]}));
+                        }
+                        Ok(json!({}))
+                    }
+                    _ => panic!("unexpected request"),
+                }
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn independent_point_updates_do_not_wait_for_a_stalled_resource() {
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(
+                ["a", "b"]
+                    .into_iter()
+                    .map(|id| {
+                        (
+                            format!("state/resources/{id}"),
+                            json!({"version":"v1","value":{"position":0,"record":{"id":id,"n":0}}}),
+                        )
+                    })
+                    .collect(),
+            ),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(true),
+        });
+        let repository = Arc::new(Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+        });
+        let stalled = tokio::spawn({
+            let repository = repository.clone();
+            async move {
+                repository
+                    .update_resource("a", |resource| {
+                        resource["n"] = json!(1);
+                        Ok(())
+                    })
+                    .await
+            }
+        });
+        metadata.paused.notified().await;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            repository.update_resource("b", |resource| {
+                resource["n"] = json!(2);
+                Ok(())
+            }),
+        )
+        .await
+        .expect("independent update was serialized")
+        .unwrap();
+        metadata.resume.notify_one();
+        stalled.await.unwrap().unwrap();
+        let values = metadata.values.lock().unwrap();
+        assert_eq!(values["state/resources/a"]["value"]["record"]["n"], 1);
+        assert_eq!(values["state/resources/b"]["value"]["record"]["n"], 2);
+    }
 }

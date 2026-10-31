@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { metaFixture, port, until } from './meta-fixture.mjs';
 import { seedRecords, workspaceScope } from './record-fixture.mjs';
 import { providerFixture, nativeSecret } from './provider-fixture.mjs';
@@ -220,6 +220,35 @@ export async function productApiFixture(t, transport, onSql) {
   return {
     provider,
     request,
+    async seedResources(count, onProgress = () => {}) {
+      const scope = workspaceScope(region.server.authorityId, states[0].workspace.id);
+      const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
+      const guard = { ownerId: writer.records['system/writer'].value.ownerId };
+      for (let offset = 0; offset < count; offset += 1000) {
+        const changes = Array.from({ length: Math.min(1000, count - offset) }, (_, index) => {
+          const n = offset + index;
+          const id = `db_scale_${String(n).padStart(8, '0')}`;
+          return {
+            key: `state/resources/${id}`,
+            expectedVersion: null,
+            value: {
+              position: n + 100,
+              record: {
+                id,
+                name: `scale-${n}`,
+                kind: 'mysql',
+                region: 'automatic',
+                provider: 'local',
+                status: 'active',
+                createdAt: states[0].workspace.createdAt,
+              },
+            },
+          };
+        });
+        await region.client.call({ op: 'commit', scope, guard, mutationId: randomUUID(), changes });
+        onProgress(Math.min(offset + changes.length, count));
+      }
+    },
     async records(keys, workspace = 0) {
       const scope = workspaceScope(region.server.authorityId, states[workspace].workspace.id);
       const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });

@@ -1,6 +1,6 @@
 # Tenant and Workspace scale assessment
 
-Status: code inspection, 2026-10-31. This is not a capacity benchmark or service-level commitment. The current co-located single-writer dev deployment cannot be claimed to support millions of Tenants or one Workspace with a million resources. The latter is already blocked by a concrete implementation limit.
+Status: code inspection, updated 2026-10-31. This is not a capacity benchmark or service-level commitment. The current co-located single-writer dev deployment cannot be claimed to support millions of Tenants or one Workspace with a million resources. The latter is already blocked by a concrete implementation limit. An opt-in bounded resource list and single-record update have been implemented, but most product paths still require the legacy Workspace view; see [ADR 0033](decisions/0033-sparse-scale-metadata.md) for status and the proposed shard design.
 
 ## What exists
 
@@ -12,7 +12,7 @@ Status: code inspection, 2026-10-31. This is not a capacity benchmark or service
 
 ## One Workspace with one million resources
 
-The ordinary repository `read` and `transaction` paths take a Workspace-wide lock and scan/materialize the `state/` records, with a hard limit of 4,096 records or 24 MiB. Resources share that budget with other state; 4,096 is **not** a promise of 4,096 usable resources. Once the aggregate limit is reached the code returns `WORKSPACE_VIEW_LIMIT` (413). Individual resource point lookups and Guest cleanup have more targeted paths, but they do not remove the ordinary state-view limit. Most writes inflate, modify and compare the full state; some Key comparisons are nested. Consequently ordinary reads/writes become more expensive as state grows even before the hard cap.
+The ordinary repository `read` and `transaction` paths take a Workspace-wide lock and scan/materialize the `state/` records, with a hard limit of 4,096 records or 24 MiB. Resources share that budget with other state; 4,096 is **not** a promise of 4,096 usable resources. Once the aggregate limit is reached the code returns `WORKSPACE_VIEW_LIMIT` (413). Individual resource point lookups, explicit resource pages and Guest cleanup have more targeted paths, but they do not remove the ordinary state-view limit. Most writes inflate, modify and compare the full state; some Key comparisons are nested. Consequently ordinary reads/writes become more expensive as state grows even before the hard cap.
 
 At one million resources, a 100-record page size implies at least 10,000 sequential page fetches for a full scan, before accounting for associated state, latency and memory. At an illustrative 2 KiB of logical metadata each, the records alone are about 1.9 GiB; this is an arithmetic example, not measured record size or physical storage cost. Raising the limit would amplify latency, memory use and contention rather than solve the design problem.
 

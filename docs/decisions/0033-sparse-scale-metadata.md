@@ -1,0 +1,83 @@
+# ADR 0033: Sparse-activity metadata scale
+
+- Status: proposed architecture and partial implementation, 2026-10-31.
+- Scope: Global and regional metadata for a large population of mostly idle Tenants and
+  Workspaces, including a Workspace containing a million resources. These cardinalities are
+  storage targets, not requests-per-second objectives or a demonstrated capacity.
+
+## Current slice
+
+An explicit `limit` or `cursor` on the resource list selects an independently authorized,
+bounded ID-ordered page of stored resource records. A restricted Key reads only its explicit
+grants. Existing records need no backfill for this ID index. Updates of one resource no longer
+inflate the entire Workspace. Independent point updates can run concurrently, while a shared
+read/write gate still excludes them during legacy snapshot transactions; the remaining legacy
+paths therefore continue to cause Workspace-wide contention.
+The ordinary unpaged list, bootstrap, create, delete, usage, files, Key management and other
+paths have not been converted; neither Portal nor the default API can support a million-resource
+Workspace yet. The new cursor is a position, not a snapshot: concurrent insertions before it
+may be missed and deletions may disappear. A page can be empty and still have a next cursor.
+The paged endpoint does not refresh upstream provider status.
+
+## Placement proposal
+
+Global and each Region have independent shard catalogs and separate SlateDB roots and
+writers. A cell holds many cold Tenants; it is not a dedicated database per Tenant. Keep a
+small fixed number of virtual buckets per authority, initially assigned to a measured number
+of physical shards. Stable, keyed hashing over identity selects a Global directory bucket;
+regional routing uses `(tenantId, workspaceId)` to select its home bucket. A regional
+catalog maps a versioned bucket to a physical shard and ownership epoch. Placement is
+durable, caches have bounded size and are hints, and Region continues routing with its own
+durable catalog when Global is unavailable. Global can initiate an authenticated management
+request to Region; Region does not call or report back to Global.
+
+A large Workspace needs multiple resource partitions, not merely a hash of Workspace ID.
+Assign each immutable resource ID to a virtual resource bucket, route the canonical resource,
+provider binding, credentials, and resource-local operations together, and keep tenant,
+Workspace and authorization in every key and check. Index lookup must be bounded: an
+independent Workspace directory stores partition locations and the cursor carries the route
+generation and per-partition progress for a bounded fan-out merge. A physical shard may own
+many virtual buckets; do not make a per-Workspace list of millions of physical partitions.
+Exact bucket count, fan-out, index access patterns and split triggers need measurement.
+
+## Indexes and mutation boundaries
+
+- The canonical ID record supports point access and ordered ID listing. Name uniqueness,
+  kind/status filters, quota counters and idempotency require explicit indexed records;
+  each entry identifies its Workspace and resource and never authorizes an operation.
+- Within one shard, commit the canonical record and its colocated indexes atomically using
+  version preconditions. Name reservation and quota are Workspace-wide invariants; once a
+  Workspace spans shards, place them in a durable home-shard reservation/operation record.
+  Coordinate create/delete as a recoverable state machine, with idempotent steps and a
+  reconciler; no cross-shard atomic transaction or exactly-once provider call is assumed.
+- A cross-shard list/filter index is a projection with a durable change position and explicit
+  lag/watermark. Verify authorization and current canonical state before returning protected
+  data or performing an effect. State pagination and concurrent-change semantics explicitly;
+  provide snapshot semantics only if a real retained snapshot is implemented.
+- Migrate existing data using resumable, versioned backfill checkpoints and dual-write or a
+  bounded write fence. Ensure every resource, binding, credential, reservation and delete
+  journal is accounted for before switching reads. An interrupted backfill must be restartable;
+  never silently interpret a missing index as a missing resource or reset existing state.
+
+## Shard movement and failure
+
+Use a durable placement epoch and a fenced writer per SlateDB root. Provision a destination,
+copy a consistent snapshot, replay changes to a known position, fence source writes, drain
+and verify final state, then atomically advance the catalog epoch. Old routers must fail closed
+and refresh their route; they cannot continue writing to the old owner. Resume or roll back
+from recorded checkpoints after a crash. Preserve credentials and deletion/idempotency journals.
+Do not open two independent writers to the same SlateDB root or let Global availability
+become a dependency of normal Region traffic. HA election, credential rotation, recovery SLOs,
+operator tooling and safe cutover remain implementation work.
+
+## Acceptance before a capacity claim
+
+Use isolated object storage and actual SlateDB with a stated machine, version and settings.
+Seed at least one million identity/Tenant records and a separate million-resource Workspace;
+record logical and physical sizes. Use a declared skewed workload with few active tenants and
+resources, controlled concurrency and realistic page sizes; measure point reads/writes,
+pagination, creation/deletion, auth isolation, contention, p50/p95/p99, errors, memory and
+object-store requests. Exercise cold/warm cache, restart, writer fencing, credential survival,
+shard movement, policy revocation and backlog recovery. No arbitrary million-QPS target follows
+from the record count. Compare results with explicitly chosen availability and latency targets;
+the current prototype has not passed these acceptance cases.

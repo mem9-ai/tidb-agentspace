@@ -4,6 +4,7 @@ mod files;
 mod imports;
 mod read_only;
 mod resources;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -100,12 +101,11 @@ impl Product {
         json!({"mysql":{"label":"TiDB Starter · MySQL","regions":if c.mysql_provider==ZERO{vec!["automatic"]}else{vec!["aws-us-east-1","aws-us-west-2"]},"storageGiB":if c.mysql_provider==ZERO{Value::Null}else{json!(5)},"monthlyRU":if c.mysql_provider==ZERO{Value::Null}else{json!(50_000_000)},"preview":false,"provider":c.mysql_provider},"postgresql":{"label":"PostgreSQL · db9","regions":["automatic"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":c.postgres_provider==DB9,"provider":DB9},"duckdb":{"label":"DuckDB","regions":["aws-ap-southeast-1"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":self.execute.available,"provider":DUCKDB},"filesystem":{"label":"TiDB Cloud File System","regions":if c.files_provider==DRIVE9{vec!["aws-ap-southeast-1"]}else{vec!["aws-ap-southeast-1","aws-us-west-2"]},"storageGiB":if c.files_provider==DRIVE9{Value::Null}else{json!(2)},"maxFiles":if c.files_provider==DRIVE9{Value::Null}else{json!(2000)},"preview":true,"provider":c.files_provider}})
     }
     pub async fn mode(&self) -> Result<&'static str> {
-        let state = self.workspace.repository().read().await?;
+        let config = &self.providers.config;
         Ok(
-            if self.providers.config.files_provider == DRIVE9
-                || state["resources"]
-                    .as_array()
-                    .is_some_and(|v| v.iter().any(live))
+            if config.files_provider == DRIVE9
+                || config.mysql_provider == ZERO
+                || config.postgres_provider == DB9
             {
                 "hybrid"
             } else {
@@ -139,11 +139,7 @@ impl Product {
         };
         self.workspace
             .repository()
-            .transaction(|state| {
-                let current = state["resources"]
-                    .as_array_mut()
-                    .and_then(|v| v.iter_mut().find(|r| r["id"] == id))
-                    .ok_or_else(|| err(404, "NOT_FOUND"))?;
+            .update_resource(&id, |current| {
                 current
                     .as_object_mut()
                     .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
@@ -154,7 +150,7 @@ impl Product {
                 {
                     current[k] = v.clone();
                 }
-                Ok((current.clone(), true))
+                Ok(current.clone())
             })
             .await
     }
@@ -281,6 +277,76 @@ impl Product {
                 Reply::Json(state)
             }
             ("GET", "/resources") => {
+                if query.contains_key("limit") || query.contains_key("cursor") {
+                    p.scope("resources:read")?;
+                    let limit = query.get("limit").map_or(Ok(100), |value| {
+                        value
+                            .parse::<usize>()
+                            .map_err(|_| err(400, "INVALID_PAGE_LIMIT"))
+                    })?;
+                    if !(1..=512).contains(&limit) {
+                        return Err(err(400, "INVALID_PAGE_LIMIT"));
+                    }
+                    let after = query
+                        .get("cursor")
+                        .map(|cursor| {
+                            if cursor.len() > 1024 {
+                                return Err(err(400, "INVALID_PAGE_CURSOR"));
+                            }
+                            String::from_utf8(
+                                URL_SAFE_NO_PAD
+                                    .decode(cursor)
+                                    .map_err(|_| err(400, "INVALID_PAGE_CURSOR"))?,
+                            )
+                            .map_err(|_| err(400, "INVALID_PAGE_CURSOR"))
+                        })
+                        .transpose()?;
+                    if after
+                        .as_ref()
+                        .is_some_and(|id| id.is_empty() || id.contains('/') || !p.has(id))
+                    {
+                        return Err(err(400, "INVALID_PAGE_CURSOR"));
+                    }
+                    let (items, next) = if p.owner || p.resource_ids.iter().any(|id| id == "*") {
+                        let (items, next) = self
+                            .workspace
+                            .repository()
+                            .resources_page(after.map(|id| format!("state/resources/{id}")), limit)
+                            .await?;
+                        let next = next
+                            .map(|key| {
+                                key.strip_prefix("state/resources/")
+                                    .map(str::to_owned)
+                                    .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))
+                            })
+                            .transpose()?;
+                        (items, next)
+                    } else {
+                        let ids = p.resource_ids.iter().collect::<BTreeSet<_>>();
+                        let mut remaining = ids
+                            .into_iter()
+                            .filter(|id| after.as_ref().is_none_or(|a| id.as_str() > a.as_str()));
+                        let selected = remaining.by_ref().take(limit).collect::<Vec<_>>();
+                        let next = if remaining.next().is_some() {
+                            selected.last().map(|id| (*id).clone())
+                        } else {
+                            None
+                        };
+                        let ids = selected.iter().map(|id| id.as_str()).collect::<Vec<_>>();
+                        let items = self.workspace.repository().resources_by_id(&ids).await?;
+                        (items, next)
+                    };
+                    let data = items
+                        .into_iter()
+                        .filter(|r| visible_resource(r) && r["status"] != "deleted")
+                        .collect::<Vec<_>>();
+                    return Ok((
+                        200,
+                        Reply::Json(
+                            json!({"data":data,"capabilities":self.capabilities(),"nextCursor":next.map(|v|URL_SAFE_NO_PAD.encode(v))}),
+                        ),
+                    ));
+                }
                 let (_, state) = self.context(&credential, "resources:read", None).await?;
                 let mut data = vec![];
                 for r in visible(state)["resources"]

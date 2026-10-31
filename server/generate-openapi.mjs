@@ -327,10 +327,30 @@ const paths = {
   },
   [ws + '/resources']: {
     get: operation('listResources', 'Discover databases and file systems', 'resources:read', {
-      output: object({
-        data: { type: 'array', items: ref('Resource') },
-        capabilities: ref('Capabilities'),
-      }),
+      parameters: [
+        {
+          name: 'limit',
+          in: 'query',
+          schema: { type: 'integer', minimum: 1, maximum: 512, default: 100 },
+          description:
+            'Opt into bounded pagination; the limit is evaluated before authorization and visibility filtering, so a page may be empty.',
+        },
+        {
+          name: 'cursor',
+          in: 'query',
+          schema: { type: 'string', maxLength: 1024 },
+          description:
+            'Opaque cursor from the previous page. Each page is independently authorized; concurrent changes can affect results. Pages contain stored state without refreshing providers.',
+        },
+      ],
+      output: object(
+        {
+          data: { type: 'array', items: ref('Resource') },
+          capabilities: ref('Capabilities'),
+          nextCursor: { type: ['string', 'null'] },
+        },
+        ['data', 'capabilities'],
+      ),
     }),
     post: operation(
       'createResource',
@@ -967,7 +987,15 @@ paths['/api/health'] = {
         'Configured metadata authority is unavailable; no fallback state is seeded',
       ),
       200: response(
-        object({ status: { const: 'ok' }, mode: { enum: ['demo', 'hybrid'] }, filesProvider: str }),
+        object({
+          status: { const: 'ok' },
+          mode: {
+            enum: ['demo', 'hybrid'],
+            description:
+              'Configured provider mode, not a count or a health check of provisioned resources.',
+          },
+          filesProvider: str,
+        }),
       ),
     },
   },

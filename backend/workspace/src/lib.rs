@@ -232,6 +232,25 @@ impl Workspace {
         self.repository.close().await
     }
     pub async fn call(&self, credential: Credential, operation: Operation) -> Result<Response> {
+        if matches!(
+            operation,
+            Operation::ListWorkspaces | Operation::GetWorkspace
+        ) {
+            let principal = self.authenticate(&credential).await?;
+            principal.scope("resources:read")?;
+            let workspace = self.repository.get("state/workspace").await?["value"].clone();
+            if !workspace.is_object() {
+                return Err(reject(503, "META_WORKSPACE_MISSING"));
+            }
+            return Ok(Response {
+                status: 200,
+                body: match operation {
+                    Operation::ListWorkspaces => json!({"data":[workspace]}),
+                    Operation::GetWorkspace => json!({"data":workspace}),
+                    _ => unreachable!(),
+                },
+            });
+        }
         self.authorize_managed(&credential).await?;
         self.repository
             .transaction(move |state| execute_operation(state, credential, operation))

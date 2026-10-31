@@ -402,6 +402,20 @@
           { "accountOwner": [] },
           { "guestOwner": [] }
         ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 512, "default": 100 },
+            "description": "Opt into bounded pagination; the limit is evaluated before authorization and visibility filtering, so a page may be empty."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": { "type": "string", "maxLength": 1024 },
+            "description": "Opaque cursor from the previous page. Each page is independently authorized; concurrent changes can affect results. Pages contain stored state without refreshing providers."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success",
@@ -415,7 +429,8 @@
                       "type": "array",
                       "items": { "$ref": "#/components/schemas/Resource" }
                     },
-                    "capabilities": { "$ref": "#/components/schemas/Capabilities" }
+                    "capabilities": { "$ref": "#/components/schemas/Capabilities" },
+                    "nextCursor": { "type": ["string", "null"] }
                   }
                 }
               }
@@ -4342,7 +4357,10 @@
                   "required": ["status", "mode", "filesProvider"],
                   "properties": {
                     "status": { "const": "ok" },
-                    "mode": { "enum": ["demo", "hybrid"] },
+                    "mode": {
+                      "enum": ["demo", "hybrid"],
+                      "description": "Configured provider mode, not a count or a health check of provisioned resources."
+                    },
                     "filesProvider": { "type": "string" }
                   }
                 }
