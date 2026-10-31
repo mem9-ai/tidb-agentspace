@@ -168,6 +168,9 @@ as an active Region grant. Use bounded errors and request IDs without echoing se
 methods, malformed payloads, duplicate headers and incorrect media types have deterministic
 documented 4xx responses; use `WWW-Authenticate` for applicable bearer authentication failures
 and bounded `Retry-After` for throttling. Do not redirect authenticated cross-origin requests.
+An unknown Key ID or incorrect secret receives the same generic failure. Return a more specific
+expired/revoked reason only after verifying possession of the credential, without revealing
+whether a guessed Key, Workspace or family exists.
 
 Default access-token TTL of 15 minutes is a proposed operational setting, not a shipped value.
 `token.exp <= min(Key.expiresAt, explicit grant end, issuer policy maximum)`; refresh and every

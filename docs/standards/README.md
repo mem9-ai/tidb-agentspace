@@ -11,20 +11,19 @@ plugin, skill, or conversation history is required.
 Product flows and cross-page reviews also follow [product experience](product-experience.md):
 consistent interactions and minimum complete paths to useful value.
 
-| Task                                                                                       | Required reference                                                                                                                 |
-| ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Any UI, component, typography, theme, layout, icon, or frontend dependency change          | [TiUI design system](tiui-design-system.md) and [frontend instructions](../../src/AGENTS.md)                                       |
-| Capturing user feedback, reusable conventions, integration findings, or recurring mistakes | [Knowledge maintenance](knowledge-maintenance.md)                                                                                  |
-| Intent/specification contributions, API/agent experience, or delivery harness design       | [Intent driven contribution](intent-driven-development.md) and [feature specification template](../templates/feature-spec.md)      |
-| GitHub intent intake, design PRs, agent handoffs, task state, or Issue closure             | [GitHub contribution workflow](github-contribution-workflow.md)                                                                    |
-| Product boundaries, resources, or provider integration                                     | [Architecture](../architecture.md) and relevant [ADRs](../decisions/README.md)                                                     |
-| TiDB Cloud APIs, database protocols, SDKs, or CLI dependency choices                       | [TiDB Cloud integration policy](../architecture.md#tidb-cloud-integration-policy)                                                  |
-| Regional defaults, provider modes, or free-tier assumptions                                | [File System regions and modes](../decisions/0003-filesystem-regions-and-modes.md)                                                 |
-| Public authorization or credentials                                                        | [Workspace Key decision](../decisions/0001-unified-workspace-key.md)                                                               |
-| Global/Region Key, tokens, refresh, revocation or security migration                       | [OpenAPI security design](../../specs/gh-84/openapi-security.md) and [ADR 0034](../decisions/0034-openapi-security-authorities.md) |
-| SlateDB metadata, authority boundaries, transactions, recovery or scale design             | [Metadata architecture version 1](../slatedb-metadata-design.md) and [current Meta runtime](../meta-service.md)                    |
-| Independent Console/API builds, runtime configuration, or packaging                        | [Independent delivery](../independent-delivery.md) and [ADR 0005](../decisions/0005-independent-console-and-api.md)                |
-| Build, review, merge, release, or environment behavior                                     | [Contribution guide](../../CONTRIBUTING.md) and [CI/CD policy](../ci-cd.md)                                                        |
+| Task                                                                                       | Required reference                                                                                                            |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Any UI, component, typography, theme, layout, icon, or frontend dependency change          | [TiUI design system](tiui-design-system.md) and [frontend instructions](../../src/AGENTS.md)                                  |
+| Capturing user feedback, reusable conventions, integration findings, or recurring mistakes | [Knowledge maintenance](knowledge-maintenance.md)                                                                             |
+| Intent/specification contributions, API/agent experience, or delivery harness design       | [Intent driven contribution](intent-driven-development.md) and [feature specification template](../templates/feature-spec.md) |
+| GitHub intent intake, design PRs, agent handoffs, task state, or Issue closure             | [GitHub contribution workflow](github-contribution-workflow.md)                                                               |
+| Product boundaries, resources, or provider integration                                     | [Architecture](../architecture.md) and relevant [ADRs](../decisions/README.md)                                                |
+| TiDB Cloud APIs, database protocols, SDKs, or CLI dependency choices                       | [TiDB Cloud integration policy](../architecture.md#tidb-cloud-integration-policy)                                             |
+| Regional defaults, provider modes, or free-tier assumptions                                | [File System regions and modes](../decisions/0003-filesystem-regions-and-modes.md)                                            |
+| Public authorization or credentials                                                        | [Workspace Key decision](../decisions/0001-unified-workspace-key.md)                                                          |
+| SlateDB metadata, authority boundaries, transactions, recovery or scale design             | [Metadata architecture version 1](../slatedb-metadata-design.md) and [current Meta runtime](../meta-service.md)               |
+| Independent Console/API builds, runtime configuration, or packaging                        | [Independent delivery](../independent-delivery.md) and [ADR 0005](../decisions/0005-independent-console-and-api.md)           |
+| Build, review, merge, release, or environment behavior                                     | [Contribution guide](../../CONTRIBUTING.md) and [CI/CD policy](../ci-cd.md)                                                   |
 
 For live file integrations, also read [the Drive9 provider boundary](../decisions/0004-drive9-anonymous-provider.md): authenticate before provider I/O, persist credentials privately, bound preview reads, and never retry uncertain tenant creation.
 
@@ -40,6 +39,9 @@ only pure presentation/browser interactions may be UI-only. Feature specificatio
 workflow to operation IDs, permissions and native acceptance evidence.
 
 Public API resource modeling and HTTP methods follow [REST API design](rest-api-design.md).
+For Global/Region credentials, refresh, revocation and migration, also follow the
+[OpenAPI security design](../../specs/gh-84/openapi-security.md) and
+[ADR 0034](../decisions/0034-openapi-security-authorities.md).
 Current endpoints and target migrations are distinguished explicitly; native behavior remains
 the acceptance boundary.
 
