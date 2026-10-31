@@ -251,7 +251,22 @@ impl Workspace {
                 },
             });
         }
-        self.authorize_managed(&credential).await?;
+        // Reject unauthorized callers before loading requested resource records. The
+        // transaction revalidates the credential while holding the legacy write gate.
+        let caller = self.authenticate(&credential).await?;
+        let owner_only = matches!(
+            operation,
+            Operation::ListKeys
+                | Operation::CreateKey(_)
+                | Operation::RevokeKey(_)
+                | Operation::UpdateSettings(_)
+        );
+        if owner_only && !caller.owner {
+            return Err(reject(403, "OWNER_REQUIRED"));
+        }
+        if !owner_only {
+            caller.scope("resources:read")?;
+        }
         let selected = match &operation {
             Operation::CreateKey(input) => input["resourceIds"]
                 .as_array()
