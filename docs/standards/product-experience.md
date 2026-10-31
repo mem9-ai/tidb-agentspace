@@ -25,9 +25,9 @@ availability or hiding provider constraints.
 For new and Guest Workspaces, offer independent database and File System Quick Starts while
 each category has no resources. Explain the first useful result and the Guest expiry where
 applicable; remove each guide once its resource exists. Creation and execution remain explicit.
-On Guest sign-in, show the 24-hour access limit with the Guest action without requiring hover,
-and distinguish expiration from provider resource deletion; do not promise cleanup that the
-service has not implemented.
+On Guest sign-in, show the 24-hour access limit with the Guest action without requiring hover.
+Explain the actual consequence of signing out before ending a Guest session; do not promise
+cleanup that the service has not implemented.
 
 Minimize required decisions and navigation, not safeguards. Permission selection, write intent,
 format/field/type confirmation, overwrite/discard decisions, provider limits and live/demo

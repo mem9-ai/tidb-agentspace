@@ -665,6 +665,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/auth/guest/logout': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description End an authenticated Guest Workspace session and durably schedule resource cleanup. Provider deletion can be asynchronous, unsupported or require reconciliation; acceptance is not proof of deletion. */
+    post: operations['logoutGuestSession'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/auth/tidbcloud/login': {
     parameters: {
       query?: never;
@@ -706,10 +723,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** @description Revoke attached TiDB Account and Guest browser sessions, clear cookies, and redirect. */
+    /** @description Revoke the TiDB Account session and attached Guest cookie, then redirect. Guest-only sessions must use POST /api/auth/guest/logout. */
     get: operations['logoutTidbSessionAndRedirect'];
     put?: never;
-    /** @description Revoke attached TiDB Account and Guest browser sessions and clear their cookies. */
+    /** @description Revoke the TiDB Account session and attached Guest cookie. Guest-only sessions must use POST /api/auth/guest/logout to schedule cleanup. */
     post: operations['logoutTidbSession'];
     delete?: never;
     options?: never;
@@ -5784,6 +5801,7 @@ export interface operations {
           'application/json': {
             enabled: boolean;
             guestEnabled?: boolean;
+            guestCleanupEnabled?: boolean;
             /** @enum {string} */
             sessionKind?: 'account' | 'guest';
             /** @constant */
@@ -5826,6 +5844,39 @@ export interface operations {
         };
       };
       /** @description Guest sign-in unavailable or denied */
+      default: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  logoutGuestSession: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            loggedOut: boolean;
+            /** @constant */
+            cleanup: 'scheduled';
+          };
+        };
+      };
+      /** @description Guest logout or cleanup scheduling unavailable */
       default: {
         headers: {
           [name: string]: unknown;

@@ -55,7 +55,8 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 - [0027: Single CI evidence](0027-single-ci-evidence.md) — one automatic normal/native/browser gate, exact-commit delivery consumers and retained credential boundaries.
 
-- [0028: Guest expiry retention](0028-guest-expiry-retention.md) — reject expired Guest sessions and retain resources pending provider cleanup; hosted rollout remains incomplete.
+- [0028: Guest expiry retention](0028-guest-expiry-retention.md) — regional Guest expiry and retention boundaries; partially superseded by ADR 0029.
+- [0029: Guest logout and provider cleanup](0029-guest-logout-cleanup.md) — authenticated Guest termination, scoped provider attempts, and pending reconciliation.
 
 ## Proposed decisions
 

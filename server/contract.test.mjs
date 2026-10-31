@@ -249,6 +249,7 @@ test(
             'downloadFile',
             'prepareDatabaseImportUpload',
             'startGuestSession', // Success is covered by guest_http_probe.
+            'logoutGuestSession', // Success is covered by guest-host.test.mjs.
             'startTidbLogin',
             'completeTidbLogin',
           ].includes(id),

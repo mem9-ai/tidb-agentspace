@@ -29,30 +29,88 @@ test('Guest sign-in opens the Workspace when the server enables it', async ({
   const guest = page.getByRole('button', { name: 'Continue as Guest' });
   await expect(guest).toBeEnabled();
   await expect(guest.getByText('Workspace access expires after 24 hours')).toBeVisible();
-  await expect(page.getByText('Cloud resources may remain after access ends.')).toBeVisible();
-  await expect(guest).toHaveAccessibleDescription(
-    'Workspace access expires after 24 hours Cloud resources may remain after access ends.',
-  );
+  await expect(guest).toHaveAccessibleDescription('Workspace access expires after 24 hours');
   if (process.env.GUEST_SIGNIN_SCREENSHOT)
     await page.screenshot({ path: process.env.GUEST_SIGNIN_SCREENSHOT });
   await guest.getByText('Workspace access expires after 24 hours').click();
   await expect(page.getByRole('combobox', { name: 'Color theme', exact: true })).toBeVisible();
   await page.goto('/#settings');
-  await expect(page.getByText('Guest session', { exact: true })).toBeVisible();
+  const settings = page.getByRole('main');
+  await expect(settings.getByText('Guest session', { exact: true })).toBeVisible();
   await expect(
     page.getByText('Your Guest workspace expires 24 hours after it was created.'),
   ).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  await expect(settings.getByRole('button', { name: 'Sign out' })).toBeVisible();
   if (process.env.GUEST_SETTINGS_SCREENSHOT) {
-    await page.getByText('Guest session', { exact: true }).scrollIntoViewIfNeeded();
+    await settings.getByText('Guest session', { exact: true }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: process.env.GUEST_SETTINGS_SCREENSHOT });
   }
+  await settings.getByRole('button', { name: 'Sign out' }).click();
+  await page
+    .getByRole('dialog', { name: 'Sign out of Guest?' })
+    .getByRole('button', {
+      name: 'Cancel',
+    })
+    .click();
   expect(workspace.requests).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ path: '/api/auth/guest', method: 'POST' }),
       expect.objectContaining({ path: '/api/v1/workspaces', method: 'GET' }),
     ]),
   );
+});
+
+test('Guest can cancel or confirm sign-out from the workspace navigation', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  await expect(page.getByRole('heading', { name: 'Start with your data' })).toBeVisible();
+
+  async function openSignOut() {
+    const openNavigation = page.getByRole('button', { name: 'Open navigation' });
+    if (await openNavigation.isVisible()) await openNavigation.click();
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+    return page.getByRole('dialog', { name: 'Sign out of Guest?' });
+  }
+  let dialog = await openSignOut();
+  await expect(
+    dialog.getByText(/won’t be able to reopen this session in this browser/),
+  ).toBeVisible();
+  if (process.env.GUEST_LOGOUT_SCREENSHOT)
+    await page.screenshot({ path: process.env.GUEST_LOGOUT_SCREENSHOT });
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(
+    workspace.requests.filter((request) => request.path === '/api/auth/guest/logout'),
+  ).toHaveLength(0);
+
+  dialog = await openSignOut();
+  workspace.rejectNextGuestLogout();
+  await dialog.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Unable to finish Guest sign-out');
+  await expect(dialog.getByRole('button', { name: 'Sign out', exact: true })).toBeEnabled();
+  await dialog.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Sign in to your workspace' })).toBeVisible();
+  expect(
+    workspace.requests.filter(
+      (request) => request.path === '/api/auth/guest/logout' && request.method === 'POST',
+    ),
+  ).toHaveLength(2);
+});
+
+test('Guest sign-out is not offered until the backend supports cleanup', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true, guestCleanupEnabled: false });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  await page.goto('/#settings');
+  await expect(page.getByRole('main').getByText('Guest session', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toHaveCount(0);
 });
 
 async function openFileSystemsFromSidebar(page) {

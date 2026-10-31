@@ -36,10 +36,19 @@ async fn main() -> anyhow::Result<()> {
         Some(Default::default()),
         4,
     )?);
+    let queue = Arc::new(
+        workspace_identity::cleanup::Queue::open(regional_meta.clone(), &authority).await?,
+    );
     let runtime = Arc::new(GuestRuntime {
         entry,
         region: regional,
         workspaces: pool.clone(),
+        cleanup_processor: Arc::new(workspace_api::guest_cleanup::GuestCleanup::new(
+            queue.clone(),
+            pool.clone(),
+        )),
+        cleanup_slots: Arc::new(tokio::sync::Semaphore::new(8)),
+        cleanup: queue,
     });
     let socket = std::net::TcpListener::bind("127.0.0.1:0")?;
     let address = socket.local_addr()?;

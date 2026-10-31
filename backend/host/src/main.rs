@@ -4,15 +4,13 @@ use std::time::Duration;
 use std::{collections::BTreeMap, path::Path, sync::Arc};
 use tokio::sync::watch;
 use workspace_api::{
-    GuestRuntime, MetaBinding, WorkspaceServer, global_login::GlobalGuest, guest_entry::GuestEntry,
-    managed_workspaces::ManagedWorkspaces, regional_guest::RegionalGuest,
+    GuestRuntime, MetaBinding, WorkspaceServer, global_login::GlobalGuest,
+    guest_cleanup::GuestCleanup, guest_entry::GuestEntry, managed_workspaces::ManagedWorkspaces,
+    regional_guest::RegionalGuest,
 };
 use workspace_contracts::Metadata;
 use workspace_identity::{
-    Directory,
-    cleanup::Queue,
-    embedded_region::EmbeddedRegion,
-    scheduler::{DeferProviderCleanup, Scheduler},
+    Directory, cleanup::Queue, embedded_region::EmbeddedRegion, scheduler::Scheduler,
 };
 use workspace_meta_client::RemoteMetadata;
 use workspace_meta_service::server::{MetaService, shutdown_signal};
@@ -120,12 +118,16 @@ async fn main() -> Result<()> {
                         region.clone(),
                         config.public_origins.clone(),
                     )?);
-                    let scheduler = Scheduler::new(queue, Arc::new(DeferProviderCleanup), 128)?;
+                    let processor = Arc::new(GuestCleanup::new(queue.clone(), pool.clone()));
+                    let scheduler = Scheduler::new(queue.clone(), processor.clone(), 128)?;
                     Ok((
                         Some(Arc::new(GuestRuntime {
                             entry,
                             region,
                             workspaces: pool,
+                            cleanup: queue,
+                            cleanup_processor: processor,
+                            cleanup_slots: Arc::new(tokio::sync::Semaphore::new(8)),
                         })),
                         Some(scheduler),
                     ))

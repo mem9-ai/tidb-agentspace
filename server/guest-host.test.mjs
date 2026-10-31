@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createMetaClient } from './meta/client.mjs';
@@ -6,6 +7,7 @@ import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
 import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
+import { providerFixture } from './test-support/provider-fixture.mjs';
 
 test(
   'hosted Guest survives restart and Global outage with isolated regional Workspaces',
@@ -21,6 +23,7 @@ test(
       'identity_probe',
     ]);
     const fixture = await metaFixture();
+    const provider = await providerFixture({ isolatedTenants: true });
     let child;
     const stop = async () => {
       if (!child || child.exitCode !== null || child.signalCode) return;
@@ -31,6 +34,7 @@ test(
     };
     t.after(async () => {
       await stop();
+      await provider.close();
       await fixture.close();
     });
     const global = await fixture.service('global');
@@ -68,7 +72,18 @@ test(
         clientId: 'fixture',
         redirectUri: 'https://studio.example.test/studio/api/auth/tidbcloud/callback',
       },
-      product: {},
+      product: {
+        providers: {
+          filesProvider: 'drive9-anonymous',
+          mysqlProvider: 'tidb-cloud-zero',
+          postgresProvider: 'db9-anonymous',
+          testMode: true,
+          drive9Endpoint: provider.origin,
+          zeroEndpoint: provider.origin + '/zero',
+          db9Endpoint: provider.origin + '/customer',
+          sqlFixture: provider.origin + '/sql',
+        },
+      },
     };
     const write = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
     await write(globalFile, globalConfig);
@@ -133,8 +148,7 @@ test(
         limit: 128,
       });
       const job = page.records.find((record) => record.value.workspaceId === expired.workspaceId);
-      assert.equal(job?.value.status.state, 'deferred');
-      assert.equal(job?.value.status.reason, 'providerCleanupDeferred');
+      assert.equal(job?.value.status.state, 'complete');
     });
     regionalClient.close();
     const create = async () => {
@@ -147,6 +161,25 @@ test(
     };
     const first = await create();
     const second = await create();
+    const provision = async (guest, kind) => {
+      const response = await request(`/api/v1/workspaces/${guest.workspaceId}/resources`, {
+        cookie: guest.cookie,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `guest-${kind}` },
+        body: JSON.stringify({
+          kind,
+          name: `guest-${kind}`,
+          region: kind === 'filesystem' ? 'aws-ap-southeast-1' : 'automatic',
+        }),
+      });
+      assert.equal(response.status, 201);
+      assert.equal((await response.json()).data.status, 'active');
+    };
+    await provision(first, 'postgresql');
+    await provision(first, 'filesystem');
+    await provision(first, 'mysql');
+    await provision(second, 'postgresql');
+    await provision(second, 'filesystem');
     const authConfig = await request('/api/auth/config', { cookie: first.cookie });
     assert.equal((await authConfig.json()).sessionKind, 'guest');
     assert.notEqual(first.workspaceId, second.workspaceId);
@@ -219,17 +252,103 @@ test(
     assert.equal(listed.status, 200);
     assert.equal((await listed.json()).data[0].id, first.workspaceId);
     assert.equal((await request('/api/auth/guest', { method: 'POST' })).status, 503);
-    const logout = await request('/api/auth/tidbcloud/logout', {
+    const remainingKey = await request(`/api/v1/workspaces/${first.workspaceId}/keys`, {
+      cookie: first.cookie,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Logout key',
+        scopes: ['resources:read'],
+        resourceIds: ['*'],
+        expiresInDays: 7,
+      }),
+    });
+    assert.equal(remainingKey.status, 201);
+    const remainingSecret = (await remainingKey.json()).secret;
+    assert.equal((await request('/api/auth/guest/logout', { method: 'POST' })).status, 401);
+    assert.equal(
+      (
+        await request('/api/auth/guest/logout', {
+          cookie: first.cookie.replace(first.workspaceId, second.workspaceId),
+          method: 'POST',
+        })
+      ).status,
+      401,
+    );
+    assert.equal(
+      (
+        await request('/api/auth/guest/logout', {
+          cookie: first.cookie,
+          method: 'POST',
+          headers: { Origin: 'https://evil.example' },
+        })
+      ).status,
+      403,
+    );
+    assert.deepEqual(provider.deleted, []);
+    assert.equal(
+      (await request('/api/auth/tidbcloud/logout', { cookie: first.cookie, method: 'GET' })).status,
+      405,
+    );
+    const logout = await request('/api/auth/guest/logout', {
       cookie: first.cookie,
       method: 'POST',
     });
     assert.equal(logout.status, 200);
+    assert.equal((await logout.json()).cleanup, 'scheduled');
     assert.ok(
       logout.headers
         .getSetCookie()
         .some((header) => header.startsWith('aw_guest=;') && header.includes('Max-Age=0')),
     );
-    assert.equal((await request('/api/v1/workspaces', { cookie: first.cookie })).status, 401);
+    assert.ok(
+      [401, 403].includes((await request('/api/v1/workspaces', { cookie: first.cookie })).status),
+    );
+    assert.ok(
+      [401, 403].includes(
+        (
+          await request(`/api/v1/workspaces/${first.workspaceId}/resources`, {
+            headers: { Authorization: `Bearer ${remainingSecret}` },
+          })
+        ).status,
+      ),
+    );
     assert.equal((await request('/api/v1/workspaces', { cookie: second.cookie })).status, 200);
+    await until(() => {
+      assert.deepEqual(provider.deleted.map((entry) => `${entry.kind}:${entry.id}`).sort(), [
+        'db9:pg0',
+        'drive9:created-tenant-1',
+      ]);
+    });
+    const cleanupClient = await createMetaClient({
+      ...region.clientConfig,
+      origin: `http://${regionConfig.bind}`,
+    });
+    t.after(() => cleanupClient.close());
+    const shard = createHash('sha256').update(first.workspaceId).digest()[0] % 64;
+    const scope = {
+      authorityId: regionConfig.authorityId,
+      ownerKind: 'system',
+      ownerId: 'guest-cleanup',
+      family: 'guest-cleanup',
+      partitionId: `shard-${String(shard).padStart(2, '0')}`,
+    };
+    await until(async () => {
+      const page = await cleanupClient.call({ op: 'list', scope, prefix: 'job/', limit: 128 });
+      const job = page.records.find((record) => record.value.workspaceId === first.workspaceId);
+      assert.equal(job?.value.status.state, 'deferred');
+      assert.equal(job?.value.status.reason, 'providerOutcomeUncertain');
+      const marker = await cleanupClient.call({
+        op: 'get',
+        scope,
+        keys: [`logout/${first.workspaceId}`],
+      });
+      assert.equal(marker.records[`logout/${first.workspaceId}`], null);
+    });
+    const remaining = await request(`/api/v1/workspaces/${second.workspaceId}/resources`, {
+      cookie: second.cookie,
+    });
+    assert.equal(remaining.status, 200);
+    assert.equal((await remaining.json()).data.length, 2);
   },
 );

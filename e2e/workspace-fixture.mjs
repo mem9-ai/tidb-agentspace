@@ -55,7 +55,9 @@ export const test = base.extend({
     let rejectAutomaticName = false;
     let signInRequired = false;
     let guestEnabled = false;
+    let guestCleanupEnabled = false;
     let signedInAsGuest = false;
+    let rejectGuestLogout = false;
     page.on('pageerror', (error) => unexpected.push(error.message));
     await context.route('**/*', async (route) => {
       const request = route.request();
@@ -77,6 +79,7 @@ export const test = base.extend({
                 loginPath: '/api/auth/tidbcloud/login',
                 logoutPath: '/api/auth/tidbcloud/logout',
                 guestEnabled,
+                guestCleanupEnabled,
                 ...(signedInAsGuest ? { sessionKind: 'guest' } : {}),
               }
             : { enabled: false },
@@ -85,6 +88,15 @@ export const test = base.extend({
         signInRequired = false;
         signedInAsGuest = true;
         return reply({ workspaceId: state.workspace.id });
+      }
+      if (url.pathname === '/api/auth/guest/logout' && method === 'POST' && signedInAsGuest) {
+        if (rejectGuestLogout) {
+          rejectGuestLogout = false;
+          return reply({ error: { code: 'UNAVAILABLE', message: 'Cleanup unavailable' } }, 503);
+        }
+        signedInAsGuest = false;
+        signInRequired = true;
+        return reply({ loggedOut: true, cleanup: 'scheduled' });
       }
       if (url.pathname === '/api/auth/tidbcloud/login') return reply({ fixture: 'login' });
       if (url.pathname === '/api/session') return reply({ ok: true });
@@ -151,6 +163,10 @@ export const test = base.extend({
       requireSignIn(options = {}) {
         signInRequired = true;
         guestEnabled = options.guestEnabled === true;
+        guestCleanupEnabled = options.guestCleanupEnabled ?? guestEnabled;
+      },
+      rejectNextGuestLogout() {
+        rejectGuestLogout = true;
       },
       rejectNextName() {
         rejectAutomaticName = true;

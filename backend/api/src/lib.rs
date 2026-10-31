@@ -1,4 +1,5 @@
 pub mod global_login;
+pub mod guest_cleanup;
 pub mod guest_entry;
 mod http_policy;
 pub mod managed_workspaces;
@@ -170,6 +171,9 @@ pub struct GuestRuntime {
     pub entry: Arc<guest_entry::GuestEntry>,
     pub region: Arc<regional_guest::RegionalGuest>,
     pub workspaces: Arc<managed_workspaces::ManagedWorkspaces>,
+    pub cleanup: Arc<workspace_identity::cleanup::Queue>,
+    pub cleanup_processor: Arc<guest_cleanup::GuestCleanup>,
+    pub cleanup_slots: Arc<Semaphore>,
 }
 pub struct WorkspaceServer {
     pub workspace: Arc<Workspace>,
@@ -862,7 +866,7 @@ async fn auth_route(
             false
         };
         let mut config = if app.sso.is_some() {
-            json!({"enabled":true,"provider":"tidbcloud","label":"Continue with TiDB Account","loginPath":"/api/auth/tidbcloud/login","logoutPath":"/api/auth/tidbcloud/logout","guestEnabled":app.guest_runtime.is_some()})
+            json!({"enabled":true,"provider":"tidbcloud","label":"Continue with TiDB Account","loginPath":"/api/auth/tidbcloud/login","logoutPath":"/api/auth/tidbcloud/logout","guestEnabled":app.guest_runtime.is_some(),"guestCleanupEnabled":app.guest_runtime.is_some()})
         } else {
             json!({"enabled":false,"guestEnabled":false})
         };
@@ -891,6 +895,49 @@ async fn auth_route(
             Err(e) => error(e),
         };
     }
+    if path == "/api/auth/guest/logout" && *method == Method::POST {
+        if let Some(token) = cookie(headers, "aw_session")
+            && app
+                .sessions
+                .lock()
+                .await
+                .get(token)
+                .is_some_and(|session| session.expires > Instant::now())
+        {
+            return error(reject(403, "GUEST_REQUIRED"));
+        }
+        let Some(runtime) = &app.guest_runtime else {
+            return error(reject(404, "NOT_FOUND"));
+        };
+        return match runtime
+            .region
+            .request_logout_cleanup(headers, &runtime.cleanup)
+            .await
+        {
+            Ok((guest_cookie, workspace)) => {
+                if let Ok(permit) = runtime.cleanup_slots.clone().try_acquire_owned() {
+                    let queue = runtime.cleanup.clone();
+                    let processor = runtime.cleanup_processor.clone();
+                    tokio::spawn(async move {
+                        let _permit = permit;
+                        if let Ok(Some(job)) = queue.requested_workspace(&workspace).await {
+                            let _ = workspace_identity::scheduler::process_one(
+                                &queue,
+                                processor.as_ref(),
+                                &job,
+                            )
+                            .await;
+                        }
+                    });
+                }
+                let mut response =
+                    Json(json!({"loggedOut":true,"cleanup":"scheduled"})).into_response();
+                response.headers_mut().append("Set-Cookie", guest_cookie);
+                response
+            }
+            Err(failure) => error(failure),
+        };
+    }
     let secure = if app.config.sso.as_ref().is_some_and(|c| c.secure()) {
         " Secure;"
     } else {
@@ -903,6 +950,21 @@ async fn auth_route(
         )
     };
     if path == "/api/auth/tidbcloud/logout" && [Method::GET, Method::POST].contains(method) {
+        let account = if let Some(token) = cookie(headers, "aw_session") {
+            app.sessions
+                .lock()
+                .await
+                .get(token)
+                .is_some_and(|session| session.expires > Instant::now())
+        } else {
+            false
+        };
+        if !account
+            && app.guest_runtime.is_some()
+            && regional_guest::RegionalGuest::has_cookie(headers)
+        {
+            return error(reject(405, "GUEST_LOGOUT_POST_REQUIRED"));
+        }
         // Revoke any attached Guest session as well as the account session; otherwise
         // signing out silently resumes the Guest on the next page load.
         let guest_cookie = if let Some(runtime) = &app.guest_runtime

@@ -12,7 +12,7 @@ use workspace_meta_client::{ClientConfig, RemoteMetadata};
 async fn make_guest(
     signup: &GlobalGuest,
     region: &RegionalGuest,
-) -> anyhow::Result<AuthorizedGuest> {
+) -> anyhow::Result<(AuthorizedGuest, axum::http::HeaderMap)> {
     let guest = signup.begin().await?;
     let registration = signup.finish(&guest).await?;
     let established = region
@@ -29,7 +29,7 @@ async fn make_guest(
         axum::http::header::COOKIE,
         axum::http::HeaderValue::from_str(cookie)?,
     );
-    Ok(region.authenticate(&headers).await?)
+    Ok((region.authenticate(&headers).await?, headers))
 }
 
 #[tokio::main]
@@ -47,13 +47,15 @@ async fn main() -> anyhow::Result<()> {
         authority.clone(),
     );
     let sessions = RegionalGuest::open(region_meta.clone(), &authority, "/studio").await?;
-    let alice = make_guest(&signup, &sessions).await?;
-    let bob = make_guest(&signup, &sessions).await?;
+    let (alice, alice_headers) = make_guest(&signup, &sessions).await?;
+    let (bob, _) = make_guest(&signup, &sessions).await?;
     anyhow::ensure!(
         alice.workspace_id != bob.workspace_id,
         "guests share a Workspace"
     );
-    let pool = ManagedWorkspaces::new(region_meta, &authority, None, 1)?;
+    let queue =
+        Arc::new(workspace_identity::cleanup::Queue::open(region_meta.clone(), &authority).await?);
+    let pool = Arc::new(ManagedWorkspaces::new(region_meta, &authority, None, 1)?);
     let first = pool.acquire(&alice.workspace_id, &alice.credential).await?;
     let reply = first
         .call(alice.credential.clone(), Operation::GetWorkspace)
@@ -76,7 +78,38 @@ async fn main() -> anyhow::Result<()> {
             .is_some_and(|e| e.code == "WORKSPACE_POOL_BUSY"),
         "in-use Workspace evicted"
     );
+    sessions
+        .request_logout_cleanup(&alice_headers, &queue)
+        .await?;
+    let job = queue
+        .requested_workspace(&alice.workspace_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("missing cleanup"))?;
+    let processor = workspace_api::guest_cleanup::GuestCleanup::new(queue.clone(), pool.clone());
+    workspace_identity::scheduler::process_one(&queue, &processor, &job).await?;
+    anyhow::ensure!(
+        queue
+            .requested_workspace(&alice.workspace_id)
+            .await?
+            .is_some(),
+        "active lease did not defer cleanup"
+    );
+    anyhow::ensure!(
+        first
+            .call(alice.credential.clone(), Operation::GetWorkspace)
+            .await
+            .is_err(),
+        "logged-out Guest still authorized"
+    );
     drop(first);
+    workspace_identity::scheduler::process_one(&queue, &processor, &job).await?;
+    anyhow::ensure!(
+        queue
+            .requested_workspace(&alice.workspace_id)
+            .await?
+            .is_none(),
+        "drained cleanup not processed"
+    );
     let second = pool.acquire(&bob.workspace_id, &bob.credential).await?;
     let reply = second
         .call(bob.credential.clone(), Operation::GetWorkspace)
