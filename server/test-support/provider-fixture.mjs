@@ -258,7 +258,8 @@ export async function providerFixture({
           if (writeRace) {
             const race = writeRace;
             writeRace = undefined;
-            await race(path, files);
+            const response = await race(path, files);
+            if (response) return respond(response.status, response.body || {});
           }
           const current = fileVersion(path);
           const expected = req.headers['x-dat9-expected-revision'];

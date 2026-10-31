@@ -641,8 +641,8 @@ impl Providers {
         self.file_request(Some(id), &fs_path(path), Method::PUT, Some(bytes), &h)
             .await
             .map_err(|e| {
-                if (expected_revision.is_some() || create_only)
-                    && [404, 409, 412].contains(&e.status)
+                if (expected_revision.is_some() && [404, 409, 412].contains(&e.status))
+                    || (create_only && [409, 412].contains(&e.status))
                 {
                     err(412, "PRECONDITION_FAILED")
                 } else {

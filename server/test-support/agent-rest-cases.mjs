@@ -258,6 +258,13 @@ export async function agentRestCases(t, transport) {
       ),
     );
     assert.deepEqual(race.map((r) => r.status).sort(), [200, 412]);
+    f.provider.writeRace = async () => ({ status: 404 });
+    await request(
+      '/files',
+      write('fs_live', '/missing-parent/child.txt', 'must not create', { 'If-None-Match': '*' }),
+      404,
+      'NOT_FOUND',
+    );
     retainedVersion = (await request(metadata('fs_live', path), { token })).body.data.version;
     f.provider.versionsAvailable = false;
     const unsupported = await request(metadata('fs_live', path), { token });
