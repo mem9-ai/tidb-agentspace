@@ -875,19 +875,21 @@ mod concurrency_tests {
             Box::pin(async move {
                 match request {
                     MetaRequest::Get { keys, .. } => {
-                        if keys == ["state/resources/a"] && self.first.swap(false, Ordering::AcqRel)
-                        {
+                        let should_pause = keys == ["state/resources/a"]
+                            && self.first.swap(false, Ordering::AcqRel);
+                        let records = {
+                            let values = self.values.lock().unwrap();
+                            keys.into_iter()
+                                .map(|key| {
+                                    let value = values.get(&key).cloned().unwrap_or(Value::Null);
+                                    (key, value)
+                                })
+                                .collect::<serde_json::Map<_, _>>()
+                        };
+                        if should_pause {
                             self.paused.notify_one();
                             self.resume.notified().await;
                         }
-                        let values = self.values.lock().unwrap();
-                        let records = keys
-                            .into_iter()
-                            .map(|key| {
-                                let value = values.get(&key).cloned().unwrap_or(Value::Null);
-                                (key, value)
-                            })
-                            .collect::<serde_json::Map<_, _>>();
                         Ok(json!({"records":records}))
                     }
                     MetaRequest::Commit { changes, .. } => {
@@ -1002,6 +1004,61 @@ mod concurrency_tests {
         let values = metadata.values.lock().unwrap();
         assert_eq!(values["state/resources/a"]["value"]["record"]["n"], 1);
         assert_eq!(values["state/resources/b"]["value"]["record"]["n"], 2);
+    }
+
+    #[tokio::test]
+    async fn conflicting_point_updates_retry_against_the_latest_value() {
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(
+                [(
+                    "state/resources/a".into(),
+                    json!({"version":"v1","value":{"position":0,"record":{"id":"a","n":0}}}),
+                )]
+                .into_iter()
+                .collect(),
+            ),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(true),
+        });
+        let repository = Arc::new(Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+        });
+        let stalled = tokio::spawn({
+            let repository = repository.clone();
+            async move {
+                repository
+                    .update_resource("a", |resource| {
+                        resource["n"] = json!(resource["n"].as_u64().unwrap() + 1);
+                        Ok(())
+                    })
+                    .await
+            }
+        });
+        metadata.paused.notified().await;
+        repository
+            .update_resource("a", |resource| {
+                resource["n"] = json!(resource["n"].as_u64().unwrap() + 1);
+                Ok(())
+            })
+            .await
+            .unwrap();
+        metadata.resume.notify_one();
+        stalled.await.unwrap().unwrap();
+        let values = metadata.values.lock().unwrap();
+        assert_eq!(values["state/resources/a"]["value"]["record"]["n"], 2);
     }
 
     #[tokio::test]
