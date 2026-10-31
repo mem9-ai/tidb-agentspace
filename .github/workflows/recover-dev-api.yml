@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: Enter diagnose or rollback-failed-7654e103
+        description: Enter diagnose, repair-config or rollback-failed-7654e103
         required: true
         type: string
 
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   verify:
-    if: github.ref == 'refs/heads/main' && (inputs.confirmation == 'diagnose' || inputs.confirmation == 'rollback-failed-7654e103')
+    if: github.ref == 'refs/heads/main' && (inputs.confirmation == 'diagnose' || inputs.confirmation == 'repair-config' || inputs.confirmation == 'rollback-failed-7654e103')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -39,7 +39,7 @@ jobs:
 
   recover:
     needs: verify
-    if: github.ref == 'refs/heads/main' && (inputs.confirmation == 'diagnose' || inputs.confirmation == 'rollback-failed-7654e103')
+    if: github.ref == 'refs/heads/main' && (inputs.confirmation == 'diagnose' || inputs.confirmation == 'repair-config' || inputs.confirmation == 'rollback-failed-7654e103')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: dev
@@ -86,6 +86,9 @@ jobs:
       - name: Inspect sanitized status and startup indicators
         if: inputs.confirmation == 'diagnose'
         run: node scripts/diagnose-dev-api.mjs
+      - name: Migrate hosted execution configuration and verify public health
+        if: inputs.confirmation == 'repair-config'
+        run: node scripts/migrate-hosted-execute-config.mjs
       - name: Restore previous deployment and verify public health
         if: inputs.confirmation == 'rollback-failed-7654e103'
         run: node scripts/recover-dev-api.mjs
