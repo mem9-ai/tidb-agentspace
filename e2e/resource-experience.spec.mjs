@@ -71,6 +71,19 @@ test('resource pages distinguish unloaded collections and resolve deep links', a
     .toBe(true);
 });
 
+test('a directly linked database outside the first page keeps query results after refresh', async ({
+  page,
+  workspace,
+}) => {
+  workspace.state.resources = [structuredClone(sampleResources[1])];
+  workspace.state.resourceNextCursor = 'page-two';
+  workspace.setResourcePage('page-two', [structuredClone(sampleResources[0])]);
+  await workspace.open('#databases/db_fixture/sql');
+  await page.getByRole('button', { name: 'Run query', exact: true }).click();
+  await expect(page.getByText('agent_started', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/#databases\/db_fixture\/sql$/);
+});
+
 test('empty collections share one in-context create action and readable TiUI presentation', async ({
   page,
   workspace,

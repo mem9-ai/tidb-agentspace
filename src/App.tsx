@@ -242,7 +242,12 @@ function App() {
   const selectedResourceId =
     routeLocation.databaseId ??
     parseFileSystemLocation('#' + (routeLocation.fileLink || 'files'))?.resourceId;
+  const selectedResourceIdRef = useRef(selectedResourceId);
+  selectedResourceIdRef.current = selectedResourceId;
   const lookupKey = data && selectedResourceId ? `${data.workspace.id}:${selectedResourceId}` : '';
+  const selectedLoaded = Boolean(
+    data?.resources.some((resource) => resource.id === selectedResourceId),
+  );
   const resourceName = data?.resources.find(
     (resource) =>
       resource.id === selectedResourceId &&
@@ -255,7 +260,20 @@ function App() {
     toastTimer.current = setTimeout(() => setToast(''), 3500);
   }
   const refresh = useCallback(async () => {
-    setData(await workspaceApi.bootstrap());
+    const refreshed = await workspaceApi.bootstrap();
+    setData((current) => {
+      const selected = current?.resources.find(
+        (resource) => resource.id === selectedResourceIdRef.current,
+      );
+      if (
+        current?.workspace.id === refreshed.workspace.id &&
+        selected &&
+        !refreshed.resources.some((resource) => resource.id === selected.id)
+      ) {
+        return { ...refreshed, resources: [...refreshed.resources, selected] };
+      }
+      return refreshed;
+    });
     setResourcePageError('');
     setResourceLookupFailure('');
     setResolvedResourceKey('');
@@ -489,6 +507,7 @@ function App() {
           {route === 'overview' && <Overview {...shared} />}
           {(route === 'databases' || route === 'files') &&
           lookupKey &&
+          !selectedLoaded &&
           resolvedResourceKey !== lookupKey &&
           resourceLookupFailure !== lookupKey ? (
             <Text role="status">Loading resource…</Text>
