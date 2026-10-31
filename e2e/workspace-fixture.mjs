@@ -87,6 +87,11 @@ export const test = base.extend({
         return reply({ workspaceId: state.workspace.id });
       }
       if (url.pathname === '/api/auth/tidbcloud/login') return reply({ fixture: 'login' });
+      if (url.pathname === '/api/auth/tidbcloud/logout') {
+        signedInAsGuest = false;
+        signInRequired = true;
+        return route.fulfill({ status: 302, headers: { location: '/' } });
+      }
       if (url.pathname === '/api/session') return reply({ ok: true });
       if (url.pathname === '/api/v1/workspaces' && method === 'GET')
         return signInRequired
