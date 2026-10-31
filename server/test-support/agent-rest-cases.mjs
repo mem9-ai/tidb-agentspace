@@ -441,6 +441,13 @@ export async function agentRestCases(t, transport) {
       await pending;
       const deleting = request('/resources/fs_live', { method: 'DELETE', token: full.secret }, 202);
       try {
+        const unrelated = await Promise.race([
+          request('/resources/db_memory', { method: 'DELETE' }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('unrelated resource deletion was blocked')), 5000),
+          ),
+        ]);
+        assert.equal(unrelated.status, 200);
         assert.equal(
           await Promise.race([
             deleting.then(() => false),
