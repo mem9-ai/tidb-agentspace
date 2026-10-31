@@ -34,7 +34,7 @@ export function SignInChoices({
       </Button>
       <Text size="sm" ta="center">
         {guestEnabled
-          ? 'Guest workspaces expire after 24 hours.'
+          ? 'Guest access ends 24 hours after creation. Your workspace becomes inaccessible, but cloud resources may remain.'
           : '24-hour Guest access is coming soon.'}
       </Text>
       {guestError && (

@@ -28,7 +28,11 @@ test('Guest sign-in opens the Workspace when the server enables it', async ({
   await page.goto('/');
   const guest = page.getByRole('button', { name: 'Continue as Guest' });
   await expect(guest).toBeEnabled();
-  await expect(page.getByText('Guest workspaces expire after 24 hours.')).toBeVisible();
+  await expect(
+    page.getByText(
+      'Guest access ends 24 hours after creation. Your workspace becomes inaccessible, but cloud resources may remain.',
+    ),
+  ).toBeVisible();
   if (process.env.GUEST_SIGNIN_SCREENSHOT)
     await page.screenshot({ path: process.env.GUEST_SIGNIN_SCREENSHOT });
   await guest.click();
