@@ -76,17 +76,41 @@ test('Guest can cancel or confirm sign-out from the workspace navigation', async
     return page.getByRole('dialog', { name: 'Sign out of Guest?' });
   }
   let dialog = await openSignOut();
-  await expect(dialog.getByText(/won’t be able to reopen it in this browser/)).toBeVisible();
+  await expect(
+    dialog.getByText(/won’t be able to reopen this session in this browser/),
+  ).toBeVisible();
   if (process.env.GUEST_LOGOUT_SCREENSHOT)
     await page.screenshot({ path: process.env.GUEST_LOGOUT_SCREENSHOT });
   await dialog.getByRole('button', { name: 'Cancel' }).click();
   await expect(dialog).toHaveCount(0);
-  expect(workspace.requests.some((request) => request.path.endsWith('/logout'))).toBe(false);
+  expect(
+    workspace.requests.filter((request) => request.path === '/api/auth/guest/logout'),
+  ).toHaveLength(0);
 
   dialog = await openSignOut();
+  workspace.rejectNextGuestLogout();
+  await dialog.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Unable to finish Guest sign-out');
+  await expect(dialog.getByRole('button', { name: 'Sign out', exact: true })).toBeEnabled();
   await dialog.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Sign in to your workspace' })).toBeVisible();
-  expect(workspace.requests.filter((request) => request.path.endsWith('/logout'))).toHaveLength(1);
+  expect(
+    workspace.requests.filter(
+      (request) => request.path === '/api/auth/guest/logout' && request.method === 'POST',
+    ),
+  ).toHaveLength(2);
+});
+
+test('Guest sign-out is not offered until the backend supports cleanup', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true, guestCleanupEnabled: false });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  await page.goto('/#settings');
+  await expect(page.getByRole('main').getByText('Guest session', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toHaveCount(0);
 });
 
 async function openFileSystemsFromSidebar(page) {

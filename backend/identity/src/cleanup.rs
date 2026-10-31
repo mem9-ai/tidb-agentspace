@@ -1,6 +1,6 @@
-//! Inactive Region-local Guest cleanup queue. This module does not run a scheduler, delete
-//! provider resources, or establish that all of a Workspace's resources have been deleted.
-//! Only the authenticated regional control workflow may enqueue jobs or acknowledge cleanup.
+//! Durable Region-local Guest cleanup queue and effect journal. The queue itself does not
+//! delete provider resources or establish that all Workspace resources have been deleted.
+//! Only authenticated regional control may enqueue jobs or acknowledge cleanup.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -304,6 +304,225 @@ impl Queue {
         }
     }
 
+    /// Register a logout cleanup request before the Region denies the Guest policy.
+    /// The request itself never authorizes deletion; a matching denied policy is also required.
+    pub async fn request_logout(&self, policy: &Policy, mutation_id: &str) -> Result<()> {
+        if !uuid(mutation_id) || policy.denied {
+            return Err(error(400, "INVALID_CLEANUP_JOB"));
+        }
+        let (guest_id, expires_at) = match &policy.identity {
+            OwnerIdentity::Guest {
+                guest_id,
+                expires_at,
+                ..
+            } => (guest_id, *expires_at),
+            _ => return Err(error(400, "INVALID_CLEANUP_JOB")),
+        };
+        let job = Job {
+            workspace_id: policy.workspace_id.clone(),
+            guest_id: guest_id.clone(),
+            expires_at,
+            status: Status::Scheduled,
+        };
+        if &self.stored_policy(&job).await? != policy {
+            return Err(error(409, "CLEANUP_POLICY_MISMATCH"));
+        }
+        let scope = self.scope(shard(&job.workspace_id)?)?;
+        let existing = self.record(&scope, &key(&job)?).await?;
+        if !existing.is_some_and(|(stored, _)| stored == job) {
+            return Err(error(409, "CLEANUP_REQUIRES_RECONCILIATION"));
+        }
+        let marker = format!("logout/{}", job.workspace_id);
+        let value = json!({"workspaceId":job.workspace_id,"guestId":job.guest_id,"expiresAt":job.expires_at});
+        let found = self
+            .metadata
+            .execute(MetaRequest::Get {
+                scope: scope.clone(),
+                guard: None,
+                keys: vec![marker.clone()],
+            })
+            .await?;
+        let record = &found["records"][&marker];
+        if !record.is_null() {
+            return if record["value"] == value {
+                Ok(())
+            } else {
+                Err(error(409, "CLEANUP_OWNER_MISMATCH"))
+            };
+        }
+        self.metadata
+            .execute(MetaRequest::Commit {
+                scope,
+                guard: None,
+                mutation_id: mutation_id.into(),
+                changes: vec![json!({"key":marker,"expectedVersion":null,"value":value})],
+            })
+            .await?;
+        Ok(())
+    }
+
+    async fn logout_requested(&self, job: &Job) -> Result<bool> {
+        let scope = self.scope(shard(&job.workspace_id)?)?;
+        let marker = format!("logout/{}", job.workspace_id);
+        let result = self
+            .metadata
+            .execute(MetaRequest::Get {
+                scope,
+                guard: None,
+                keys: vec![marker.clone()],
+            })
+            .await?;
+        Ok(result["records"][&marker]["value"]
+            == json!({
+                "workspaceId":job.workspace_id,"guestId":job.guest_id,"expiresAt":job.expires_at
+            }))
+    }
+
+    async fn eligible(&self, job: &Job, current: i64) -> Result<bool> {
+        let policy = self.stored_policy(job).await?;
+        Ok(current >= job.expires_at || policy.denied && self.logout_requested(job).await?)
+    }
+
+    /// Resolve an already persisted logout request; intended only for the Region scheduler.
+    pub async fn requested_workspace(&self, workspace: &str) -> Result<Option<Job>> {
+        let scope = self.scope(shard(workspace)?)?;
+        let marker = format!("logout/{workspace}");
+        let response = self
+            .metadata
+            .execute(MetaRequest::Get {
+                scope: scope.clone(),
+                guard: None,
+                keys: vec![marker.clone()],
+            })
+            .await?;
+        let value = &response["records"][&marker]["value"];
+        if value.is_null() {
+            return Ok(None);
+        }
+        let guest = value["guestId"]
+            .as_str()
+            .ok_or_else(|| error(503, "CLEANUP_RECORD_CORRUPT"))?;
+        let expiry = value["expiresAt"]
+            .as_i64()
+            .ok_or_else(|| error(503, "CLEANUP_RECORD_CORRUPT"))?;
+        if value["workspaceId"] != workspace {
+            return Err(error(503, "CLEANUP_RECORD_CORRUPT"));
+        }
+        let expected = Job {
+            workspace_id: workspace.into(),
+            guest_id: guest.into(),
+            expires_at: expiry,
+            status: Status::Scheduled,
+        };
+        let Some((job, _)) = self.record(&scope, &key(&expected)?).await? else {
+            return Ok(None);
+        };
+        if job.status == Status::Scheduled && self.eligible(&job, now()?).await? {
+            Ok(Some(job))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Remove the active logout index after a terminal job is durably recorded. The job
+    /// and per-resource effects remain for reconciliation.
+    pub async fn clear_requested(&self, job: &Job) -> Result<()> {
+        let scope = self.scope(shard(&job.workspace_id)?)?;
+        let Some((stored, _)) = self.record(&scope, &key(job)?).await? else {
+            return Err(error(404, "CLEANUP_NOT_FOUND"));
+        };
+        if !matches!(stored.status, Status::Deferred { .. } | Status::Complete) {
+            return Err(error(409, "CLEANUP_ATTEMPT_MISMATCH"));
+        }
+        let marker = format!("logout/{}", job.workspace_id);
+        let result = self
+            .metadata
+            .execute(MetaRequest::Get {
+                scope: scope.clone(),
+                guard: None,
+                keys: vec![marker.clone()],
+            })
+            .await?;
+        let record = &result["records"][&marker];
+        if record.is_null() {
+            return Ok(());
+        }
+        if record["value"]
+            != json!({"workspaceId":job.workspace_id,"guestId":job.guest_id,"expiresAt":job.expires_at})
+        {
+            return Err(error(409, "CLEANUP_OWNER_MISMATCH"));
+        }
+        self.metadata
+            .execute(MetaRequest::Commit {
+                scope,
+                guard: None,
+                mutation_id: Uuid::new_v4().to_string(),
+                changes: vec![
+                    json!({"key":marker,"expectedVersion":record["version"],"delete":true}),
+                ],
+            })
+            .await?;
+        Ok(())
+    }
+
+    /// Scan bounded logout requests independently of the original expiry-ordered queue.
+    /// Requests without a denied matching policy are never returned for execution.
+    pub async fn requested(
+        &self,
+        partition: u8,
+        after: Option<String>,
+        limit: usize,
+    ) -> Result<Page> {
+        if limit == 0 || limit > 512 {
+            return Err(error(400, "INVALID_CLEANUP_LIMIT"));
+        }
+        let scope = self.scope(partition)?;
+        let response = self
+            .metadata
+            .execute(MetaRequest::List {
+                scope: scope.clone(),
+                guard: None,
+                prefix: "logout/".into(),
+                after,
+                limit,
+            })
+            .await?;
+        let records = response["records"]
+            .as_array()
+            .ok_or_else(|| error(503, "CLEANUP_RECORD_CORRUPT"))?;
+        let mut jobs = Vec::new();
+        for record in records {
+            let marker = &record["value"];
+            let workspace = marker["workspaceId"]
+                .as_str()
+                .ok_or_else(|| error(503, "CLEANUP_RECORD_CORRUPT"))?;
+            let guest = marker["guestId"]
+                .as_str()
+                .ok_or_else(|| error(503, "CLEANUP_RECORD_CORRUPT"))?;
+            let expiry = marker["expiresAt"]
+                .as_i64()
+                .ok_or_else(|| error(503, "CLEANUP_RECORD_CORRUPT"))?;
+            let expected = Job {
+                workspace_id: workspace.into(),
+                guest_id: guest.into(),
+                expires_at: expiry,
+                status: Status::Scheduled,
+            };
+            if record["key"] != format!("logout/{workspace}") || shard(workspace)? != partition {
+                return Err(error(503, "CLEANUP_RECORD_CORRUPT"));
+            }
+            if let Some((job, _)) = self.record(&scope, &key(&expected)?).await? {
+                if job.status == Status::Scheduled && self.eligible(&job, now()?).await? {
+                    jobs.push(job);
+                } else if matches!(job.status, Status::Deferred { .. } | Status::Complete) {
+                    self.clear_requested(&job).await?;
+                }
+            }
+        }
+        let next_cursor = response["nextCursor"].as_str().map(str::to_owned);
+        Ok(Page { jobs, next_cursor })
+    }
+
     /// Bounded, ordered regional index. An executor must periodically scan all 64 shards,
     /// follow the cursor and wrap, including after restart; this method starts no executor.
     pub async fn due(&self, partition: u8, after: Option<String>, limit: usize) -> Result<Page> {
@@ -380,8 +599,7 @@ impl Queue {
             .record(&scope, &key)
             .await?
             .ok_or_else(|| error(404, "CLEANUP_NOT_FOUND"))?;
-        self.stored_policy(&stored).await?;
-        if current < stored.expires_at {
+        if !self.eligible(&stored, current).await? {
             return Err(error(409, "GUEST_NOT_EXPIRED"));
         }
         if stored.status != Status::Scheduled {
@@ -426,6 +644,57 @@ impl Queue {
         stored.status = Status::Complete;
         self.commit(&scope, mutation_id, &key, Value::String(version), &stored)
             .await
+    }
+
+    /// Retry a claim only when no provider effect has been journaled for this Workspace.
+    pub async fn retry_without_effects(
+        &self,
+        job: &Job,
+        attempt_id: &str,
+        mutation_id: &str,
+    ) -> Result<()> {
+        if !uuid(attempt_id) || !uuid(mutation_id) {
+            return Err(error(400, "INVALID_COMMAND"));
+        }
+        let scope = self.scope(shard(&job.workspace_id)?)?;
+        let job_key = key(job)?;
+        let (mut stored, version) = self
+            .record(&scope, &job_key)
+            .await?
+            .ok_or_else(|| error(404, "CLEANUP_NOT_FOUND"))?;
+        if stored.status
+            != (Status::Claimed {
+                attempt_id: attempt_id.into(),
+            })
+        {
+            return Err(error(409, "CLEANUP_ATTEMPT_MISMATCH"));
+        }
+        let effects = self
+            .metadata
+            .execute(MetaRequest::List {
+                scope: scope.clone(),
+                guard: None,
+                prefix: format!("effect/{:020}/{}/", stored.expires_at, stored.workspace_id),
+                after: None,
+                limit: 1,
+            })
+            .await?;
+        if !effects["records"]
+            .as_array()
+            .ok_or_else(|| error(503, "CLEANUP_RECORD_CORRUPT"))?
+            .is_empty()
+        {
+            return Err(error(409, "CLEANUP_REQUIRES_RECONCILIATION"));
+        }
+        stored.status = Status::Scheduled;
+        self.commit(
+            &scope,
+            mutation_id,
+            &job_key,
+            Value::String(version),
+            &stored,
+        )
+        .await
     }
 
     /// Retain a claimed job when a provider cannot delete or its outcome is uncertain. This
@@ -497,8 +766,7 @@ impl Queue {
             .record(&scope, &job_key)
             .await?
             .ok_or_else(|| error(404, "CLEANUP_NOT_FOUND"))?;
-        self.stored_policy(&stored).await?;
-        if now()? < stored.expires_at {
+        if !self.eligible(&stored, now()?).await? {
             return Err(error(409, "GUEST_NOT_EXPIRED"));
         }
         if stored.status
@@ -585,8 +853,7 @@ impl Queue {
             .record(&scope, &job_key)
             .await?
             .ok_or_else(|| error(404, "CLEANUP_NOT_FOUND"))?;
-        self.stored_policy(&stored).await?;
-        if now()? < stored.expires_at
+        if !self.eligible(&stored, now()?).await?
             || stored.status
                 != (Status::Claimed {
                     attempt_id: permit.attempt_id.clone(),
@@ -644,6 +911,128 @@ mod tests {
             authority: Some("region:a".into()),
             ..Default::default()
         })
+    }
+
+    #[tokio::test]
+    async fn logout_cleanup_requires_a_matching_request_and_denied_guest_policy() {
+        let meta = metadata();
+        let current = now().unwrap();
+        let mut policy = guest_policy(Uuid::new_v4().to_string(), current + 3600);
+        let policies = Policies::open(meta.clone(), "region:a").await.unwrap();
+        policies
+            .install(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        let queue = Queue::open(meta, "region:a").await.unwrap();
+        queue
+            .enqueue(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        let guest_id = match &policy.identity {
+            OwnerIdentity::Guest { guest_id, .. } => guest_id.clone(),
+            _ => unreachable!(),
+        };
+        let job = Job {
+            workspace_id: policy.workspace_id.clone(),
+            guest_id,
+            expires_at: current + 3600,
+            status: Status::Scheduled,
+        };
+        let attempt = Uuid::new_v4().to_string();
+        assert_eq!(
+            queue
+                .claim_at(&job, &attempt, current)
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "GUEST_NOT_EXPIRED"
+        );
+        queue
+            .request_logout(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        assert!(
+            queue
+                .requested(shard(&policy.workspace_id).unwrap(), None, 10)
+                .await
+                .unwrap()
+                .jobs
+                .is_empty()
+        );
+        queue
+            .request_logout(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        assert_eq!(
+            queue
+                .claim_at(&job, &attempt, current)
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "GUEST_NOT_EXPIRED"
+        );
+        policy.denied = true;
+        policy.generation += 1;
+        policies
+            .install(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        assert_eq!(
+            queue
+                .requested(shard(&policy.workspace_id).unwrap(), None, 10)
+                .await
+                .unwrap()
+                .jobs
+                .len(),
+            1
+        );
+        let claimed = queue.claim_at(&job, &attempt, current).await.unwrap();
+        queue
+            .retry_without_effects(&claimed, &attempt, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        let attempt = Uuid::new_v4().to_string();
+        let claimed = queue.claim_at(&job, &attempt, current).await.unwrap();
+        let permit = queue
+            .begin_resource(
+                &claimed,
+                &attempt,
+                "resource",
+                "db9-anonymous",
+                "db_valid",
+                &Uuid::new_v4().to_string(),
+            )
+            .await
+            .unwrap();
+        queue.validate_permit(&permit).await.unwrap();
+        assert_eq!(
+            queue
+                .retry_without_effects(&claimed, &attempt, &Uuid::new_v4().to_string())
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "CLEANUP_REQUIRES_RECONCILIATION"
+        );
+        queue
+            .defer(
+                &claimed,
+                &attempt,
+                DeferredReason::ProviderOutcomeUncertain,
+                &Uuid::new_v4().to_string(),
+            )
+            .await
+            .unwrap();
+        queue.clear_requested(&claimed).await.unwrap();
+        assert!(
+            queue
+                .requested_workspace(&policy.workspace_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]

@@ -53,12 +53,13 @@ The same deployment plan must explicitly host independent `global` and Region me
 SSO and an exact trusted HTTPS public origin. Guest signup and the Region API currently share a
 co-located trust boundary; this is not a remote Global-to-Region transport.
 
-The regional scheduler retains expired Guest jobs with reason `providerCleanupDeferred`. It makes
-no provider deletion request and preserves resource and credential records. Regional authentication
-rejects expired Guests independently of the scheduler. If Global fails, existing regional Guests
+The regional scheduler attempts supported provider deletion after Guest logout or expiry and
+retains unsupported or unconfirmed outcomes with their bindings for reconciliation. It does not
+claim a provider request is proof of deletion. Regional authentication rejects expired Guests
+independently of the scheduler. If Global fails, existing regional Guests
 remain usable until their original expiry; new signup is unavailable. If Global was unavailable
 when the host started, restarting the host is currently required for new signup to recover. See
-[ADR 0028](decisions/0028-guest-expiry-retention.md) for remaining rollout limits.
+[ADR 0029](decisions/0029-guest-logout-cleanup.md) for provider and reconciliation limits.
 
 The protected, main-only `Enable Guest on dev` workflow changes only that environment flag. It
 requires full same-commit CI, serializes with API deployment, waits for rollout, then verifies a

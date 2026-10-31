@@ -663,10 +663,15 @@ pub(crate) mod tests {
                         }
                         let version = Uuid::new_v4().to_string();
                         for change in changes {
-                            group.insert(
-                                change["key"].as_str().unwrap().to_owned(),
-                                json!({"version":version,"value":change["value"]}),
-                            );
+                            let key = change["key"].as_str().unwrap().to_owned();
+                            if change["delete"] == true {
+                                group.remove(&key);
+                            } else {
+                                group.insert(
+                                    key,
+                                    json!({"version":version,"value":change["value"]}),
+                                );
+                            }
                         }
                         if self.lose_reply.swap(false, Ordering::SeqCst) {
                             return Err(error(503, "META_COMMIT_UNKNOWN"));

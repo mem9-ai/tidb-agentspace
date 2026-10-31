@@ -140,10 +140,9 @@ impl Providers {
     }
 
     /// Issue exactly one DB9 deletion attempt after the Region cleanup queue has durably
-    /// claimed this expired Guest resource. The caller must drain/fence in-flight work first.
+    /// claimed this expired or terminated Guest resource. The caller must drain/fence in-flight work first.
     /// Success only confirms provider acceptance; a separate provider-specific observation
     /// must establish completion before any Workspace or credential records are removed.
-    /// This method is not exposed by the current API or scheduler.
     pub async fn delete_expired_guest_db9(
         &self,
         queue: &Queue,
@@ -197,6 +196,49 @@ impl Providers {
             .await
             .map_err(|_| err(503, "CLEANUP_DELETE_UNCONFIRMED"))?;
         if !response["message"].is_string() {
+            return Err(err(503, "CLEANUP_DELETE_UNCONFIRMED"));
+        }
+        Ok(DeletionAccepted)
+    }
+
+    /// Issue one Drive9 tenant deletion attempt for a claimed Guest resource. The permit is
+    /// scoped to the public resource and checked against its private tenant binding.
+    pub async fn delete_guest_drive9(
+        &self,
+        queue: &Queue,
+        permit: ResourcePermit,
+    ) -> Result<DeletionAccepted> {
+        if permit.authority() != self.repository.authority_id()
+            || permit.workspace_id() != self.repository.workspace_id()
+            || permit.provider() != DRIVE9
+        {
+            return Err(err(403, "CLEANUP_SCOPE_MISMATCH"));
+        }
+        let _guard = self.setup.lock().await;
+        let resource = self.repository.resource(permit.resource_id()).await?;
+        let storage_id = if resource["kind"] == "filesystem" && resource["provider"] == DRIVE9 {
+            permit.resource_id().to_owned()
+        } else if resource["kind"] == "duckdb" && resource["provider"] == DUCKDB {
+            let binding = self.binding("duckdb", permit.resource_id()).await?;
+            strv(&binding, "storageId")
+                .map_err(|_| err(503, "CLEANUP_BINDING_MISSING"))?
+                .to_owned()
+        } else {
+            return Err(err(403, "CLEANUP_SCOPE_MISMATCH"));
+        };
+        let binding = self.binding("drive9", &storage_id).await?;
+        let tenant = strv(&binding, "tenantId").map_err(|_| err(503, "CLEANUP_BINDING_MISSING"))?;
+        if target_digest(DRIVE9, tenant).map_err(|_| err(503, "CLEANUP_BINDING_MISSING"))?
+            != permit.target_digest()
+        {
+            return Err(err(403, "CLEANUP_TARGET_MISMATCH"));
+        }
+        queue.validate_permit(&permit).await?;
+        let response = self
+            .file_json(Some(&storage_id), "/v1/tenant", Method::DELETE)
+            .await
+            .map_err(|_| err(503, "CLEANUP_DELETE_UNCONFIRMED"))?;
+        if !["deleting", "deleted"].contains(&response["status"].as_str().unwrap_or("")) {
             return Err(err(503, "CLEANUP_DELETE_UNCONFIRMED"));
         }
         Ok(DeletionAccepted)

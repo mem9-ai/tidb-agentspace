@@ -85,6 +85,7 @@ async fn main() -> anyhow::Result<()> {
     let config = Config {
         test_mode: true,
         db9_endpoint: Some(format!("{}/customer", args[2])),
+        drive9_endpoint: Some(args[2].clone()),
         ..Default::default()
     };
     let provider = Providers::new(config.clone(), repo.clone())?;
@@ -224,6 +225,62 @@ async fn main() -> anyhow::Result<()> {
             .is_some_and(|e| e.code == "CLEANUP_EFFECT_REQUIRES_RECONCILIATION"),
         "uncertain deletion was retried"
     );
+    repo.transaction(|state| {
+        let resources = state["resources"]
+            .as_array_mut()
+            .ok_or_else(|| workspace_providers::err(503, "TEST_STATE"))?;
+        resources
+            .push(json!({"id":"file_guest","kind":"filesystem","provider":"drive9-anonymous"}));
+        resources
+            .push(json!({"id":"file_wrong","kind":"filesystem","provider":"drive9-anonymous"}));
+        resources.push(json!({"id":"duck_guest","kind":"duckdb","provider":"duckdb-drive9"}));
+        Ok(((), true))
+    })
+    .await?;
+    for id in ["file_guest", "file_wrong", "duck_storage"] {
+        repo.save_binding(
+            "drive9",
+            id,
+            json!({"apiKey":"test-file-token","tenantId":format!("tenant_{id}")}),
+        )
+        .await?;
+    }
+    repo.save_binding("duckdb", "duck_guest", json!({"storageId":"duck_storage"}))
+        .await?;
+    let wrong = queue
+        .begin_resource(
+            &claimed,
+            &attempt,
+            "file_wrong",
+            "drive9-anonymous",
+            "tenant_wrong",
+            &Uuid::new_v4().to_string(),
+        )
+        .await?;
+    anyhow::ensure!(
+        provider
+            .delete_guest_drive9(&queue, wrong)
+            .await
+            .err()
+            .is_some_and(|e| e.code == "CLEANUP_TARGET_MISMATCH"),
+        "Drive9 target mismatch was not rejected"
+    );
+    for (id, target) in [
+        ("file_guest", "tenant_file_guest"),
+        ("duck_guest", "tenant_duck_storage"),
+    ] {
+        let permit = queue
+            .begin_resource(
+                &claimed,
+                &attempt,
+                id,
+                "drive9-anonymous",
+                target,
+                &Uuid::new_v4().to_string(),
+            )
+            .await?;
+        provider.delete_guest_drive9(&queue, permit).await?;
+    }
     repo.close().await?;
     other.close().await?;
     println!("{{\"verified\":true}}");

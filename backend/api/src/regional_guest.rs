@@ -1,4 +1,4 @@
-//! Region-local Guest browser credentials. The default hosted server does not mount them.
+//! Region-local Guest browser credentials, mounted only when the hosted profile enables Guest.
 //! The host must enforce trusted origins, rate limits, request/effect authorization and a
 //! secure Global-initiated handoff before exposing it. No Region-to-Global call is made.
 
@@ -171,6 +171,19 @@ impl RegionalGuest {
             self.cookie_path
         ))
         .map_err(|_| unauthorized())
+    }
+
+    /// End the authenticated Guest's Workspace access only after cleanup intent is durable.
+    pub async fn request_logout_cleanup(
+        &self,
+        headers: &HeaderMap,
+        queue: &workspace_identity::cleanup::Queue,
+    ) -> Result<(HeaderValue, String)> {
+        let (workspace, secret) = parse(cookie(headers)?)?;
+        self.sessions
+            .request_guest_logout(workspace, secret, queue)
+            .await?;
+        Ok((self.clear_cookie()?, workspace.to_owned()))
     }
 
     /// Revokes this credential locally; the host must also cancel/fence in-flight work.

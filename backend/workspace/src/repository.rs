@@ -149,9 +149,12 @@ impl Repository {
             || policy["regionId"] != self.scope.authority_id
             || policy["organizationId"] != organization
             || policy["userId"] != user
-            || policy["denied"] != false
+            || !policy["denied"].is_boolean()
         {
             return Err(error("MANAGED_POLICY_MISSING"));
+        }
+        if policy["denied"] == true {
+            return Err(ServiceError::new(403, "POLICY_DENIED"));
         }
         match policy["identity"]["kind"].as_str() {
             Some("oidc")
@@ -319,6 +322,42 @@ impl Repository {
     }
     pub async fn resource(&self, id: &str) -> Result<Value> {
         Ok(self.get(&format!("state/resources/{id}")).await?["value"]["record"].clone())
+    }
+
+    /// Region-internal cleanup inventory, paginated independently of the Workspace view limit.
+    /// Call only after fencing and draining Guest operations.
+    pub async fn cleanup_resources_page(
+        &self,
+        after: Option<String>,
+        limit: usize,
+    ) -> Result<(Vec<Value>, Option<String>)> {
+        if limit == 0 || limit > 512 {
+            return Err(ServiceError::new(400, "INVALID_CLEANUP_LIMIT"));
+        }
+        let page = self
+            .call(MetaRequest::List {
+                scope: self.scope.clone(),
+                guard: Some(self.guard.clone()),
+                prefix: "state/resources/".into(),
+                after,
+                limit,
+            })
+            .await?;
+        let records = page["records"]
+            .as_array()
+            .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+        let mut resources = Vec::with_capacity(records.len());
+        for entry in records {
+            let value = entry["value"]["record"].clone();
+            let id = value["id"]
+                .as_str()
+                .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+            if entry["key"] != format!("state/resources/{id}") {
+                return Err(error("META_RECORD_CORRUPT"));
+            }
+            resources.push(value);
+        }
+        Ok((resources, page["nextCursor"].as_str().map(str::to_owned)))
     }
     pub async fn authenticate_key(&self, token: &str) -> Result<crate::Principal> {
         let _lock = self.queue.lock().await;

@@ -217,6 +217,8 @@ function App() {
     [guestLoading, setGuestLoading] = useState(false),
     [guestError, setGuestError] = useState(''),
     [confirmGuestSignOut, setConfirmGuestSignOut] = useState(false),
+    [guestSignOutBusy, setGuestSignOutBusy] = useState(false),
+    [guestSignOutError, setGuestSignOutError] = useState(''),
     [toast, setToast] = useState(''),
     [modal, setModal] = useState<'resource' | 'key' | 'search' | null>(null),
     [creationTarget, setCreationTarget] = useState<ResourceCreationTarget>('resource'),
@@ -300,8 +302,21 @@ function App() {
     if (sso.logoutPath) window.location.href = apiBaseUrl + sso.logoutPath;
   }
   function requestSignOut() {
-    if (sso.sessionKind === 'guest') setConfirmGuestSignOut(true);
-    else finishSignOut();
+    if (sso.sessionKind === 'guest') {
+      setGuestSignOutError('');
+      setConfirmGuestSignOut(true);
+    } else finishSignOut();
+  }
+  async function finishGuestSignOut() {
+    setGuestSignOutBusy(true);
+    setGuestSignOutError('');
+    try {
+      await workspaceApi.endGuestSession();
+      window.location.reload();
+    } catch {
+      setGuestSignOutError('Unable to finish Guest sign-out. Try again or refresh this page.');
+      setGuestSignOutBusy(false);
+    }
   }
   const shared = {
     data: data!,
@@ -382,7 +397,11 @@ function App() {
         }
         navigation={Object.entries(routes).map(([id, item]) => ({ id, ...item }))}
         onSearch={() => setModal('search')}
-        onSignOut={sso.enabled && sso.logoutPath ? requestSignOut : undefined}
+        onSignOut={
+          sso.enabled && sso.logoutPath && (sso.sessionKind !== 'guest' || sso.guestCleanupEnabled)
+            ? requestSignOut
+            : undefined
+        }
         isGuest={sso.sessionKind === 'guest'}
       >
         <div key={route}>
@@ -400,14 +419,30 @@ function App() {
         </div>
       </WorkspaceLayout>
       {confirmGuestSignOut && (
-        <Modal title="Sign out of Guest?" size={480} onClose={() => setConfirmGuestSignOut(false)}>
+        <Modal
+          title="Sign out of Guest?"
+          size={480}
+          busy={guestSignOutBusy}
+          onClose={() => setConfirmGuestSignOut(false)}
+        >
           <Text>
-            Signing out ends this Guest session. You won’t be able to reopen it in this browser.
-            Save anything you need before signing out.
+            Signing out ends this Guest session and requests deletion of its resources. You won’t be
+            able to reopen this session in this browser. Save anything you need first.
           </Text>
+          {guestSignOutError && (
+            <Alert color="red" role="alert" mt="md">
+              {guestSignOutError}
+            </Alert>
+          )}
           <div className="modal-actions">
-            <Button onClick={() => setConfirmGuestSignOut(false)}>Cancel</Button>
-            <Button variant="filled" onClick={finishSignOut}>
+            <Button disabled={guestSignOutBusy} onClick={() => setConfirmGuestSignOut(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="filled"
+              loading={guestSignOutBusy}
+              onClick={() => void finishGuestSignOut()}
+            >
               Sign out
             </Button>
           </div>
@@ -2169,11 +2204,13 @@ function WorkspaceSettings({
                 </Text>
               </div>
               <Badge color="green">Active</Badge>
-              {sso.enabled && sso.logoutPath && (
-                <Button variant="default" onClick={onSignOut}>
-                  Sign out
-                </Button>
-              )}
+              {sso.enabled &&
+                sso.logoutPath &&
+                (sso.sessionKind !== 'guest' || sso.guestCleanupEnabled) && (
+                  <Button variant="default" onClick={onSignOut}>
+                    Sign out
+                  </Button>
+                )}
             </div>
           </div>
         </Paper>
