@@ -160,6 +160,12 @@ All Workspace-scoped paths are relative to `/api/v1/workspaces/{workspaceId}`.
 | Region `DELETE /refresh-families/{familyId}`  | Owner of that family or an authorized regional administrator                         | 204 after local durable revocation; does not imply all other families or the Global Key were revoked                                                                                         |
 | Region `DELETE /access-tokens/{tokenId}`      | Authorized token owner or regional administrator; locally deny an identified token   | 204 after durable scoped denial or for an already denied token; knowing an ID alone is not authorization; denial expires only after the token's original expiry                              |
 
+In both Global and Region contracts, `GET /token-issuances/{issuanceId}` lets the authorized
+issuance owner or administrator inspect bounded non-secret status until retention expires;
+it never returns a bearer or refresh credential. Region also exposes
+`GET /refresh-families/{familyId}` for an authorized family owner or regional administrator;
+unknown or foreign families return 404 and verifier material is never exposed.
+
 Token and refresh credentials are never placed in Locations, query strings or event bodies.
 Where an issuance returns 201, its Location identifies bounded, authorization-protected issuance
 metadata, not a bearer secret or a URL from which the secret can be retrieved. Credential-bearing
