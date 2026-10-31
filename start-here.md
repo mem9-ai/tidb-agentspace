@@ -83,8 +83,9 @@ It covers independent Global/Region authorities, clean entity/group/index modeli
 transactions, object durability, credentials, recovery and the scale/iteration plan. Historical
 storage shapes do not constrain the target model. Its status table separates implementation
 from future Global policy, sharding and HA work.
-For the owner-requested personal Workspace per TiDB Account and Guest, see the proposed
-[onboarding contract](specs/gh-74/personal-workspace-onboarding.md); it is not implemented yet.
+For the personal Workspace per TiDB Account and Guest, see the implemented boundary and
+limitations in [ADR 0030](docs/decisions/0030-personal-account-isolation.md) and the
+[onboarding contract](specs/gh-74/personal-workspace-onboarding.md).
 Detailed requirements remain in [GH-74](specs/gh-74/spec.md),
 [proposed ADR 0019](docs/decisions/0019-workspace-kv-control-plane.md) and the
 [object-metastore design](specs/gh-74/object-metastore.md). Object storage is the source of truth

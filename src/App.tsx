@@ -382,6 +382,7 @@ function App() {
   return (
     <>
       <WorkspaceLayout
+        isHostedSession={sso.sessionKind === 'account' || sso.sessionKind === 'guest'}
         liveFiles={data.resources.some((r) => r.provider === 'drive9-anonymous')}
         liveDatabases={data.resources.some((r) =>
           ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(r.provider || ''),
@@ -2199,7 +2200,7 @@ function WorkspaceSettings({
                   {sso.sessionKind === 'guest'
                     ? 'Your Guest workspace expires 24 hours after it was created.'
                     : sso.enabled
-                      ? 'Signed in to this shared workspace. Admitted accounts have owner access.'
+                      ? 'Signed in with your TiDB Account. This is your personal workspace.'
                       : 'Local development session. Your workspace uses the configured local storage.'}
                 </Text>
               </div>

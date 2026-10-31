@@ -6,9 +6,9 @@ Rust is the only product API runtime. Node builds the Console and runs operator 
 
 ## Authentication and gateway
 
-The native API implements public-client authorization code + S256 PKCE, bounded ten-minute browser-bound flows, a twenty-attempt/minute per-socket-peer limit, and eight-hour opaque server-side sessions. Discovery must return the exact configured issuer; endpoints use HTTPS, redirects are not followed, provider responses are bounded. JWKS verification allows asymmetric algorithms only and validates signature, key ID/use/algorithm, issuer, audience, expiry, nonce and authorized party. Callback replay fails. Logout revokes the server session and its already-cloned operation credentials; multi-step imports reauthorize before INSERT. Restart invalidates sessions and preparations.
+The native API implements public-client authorization code + S256 PKCE, bounded ten-minute browser-bound flows, a twenty-attempt/minute per-socket-peer limit, and opaque server-side sessions. Discovery must return the exact configured issuer; endpoints use HTTPS, redirects are not followed, provider responses are bounded. JWKS verification allows asymmetric algorithms only and validates signature, key ID/use/algorithm, issuer, audience, expiry, nonce and authorized party. Callback replay fails. Logout revokes the server session and its already-cloned operation credentials; multi-step imports reauthorize before INSERT. The isolated legacy loopback profile has eight-hour sessions that restart invalidates; managed hosted account grants persist across Region restarts as described in ADR 0030. Preparations do not survive restart.
 
-Identity is always issuer + immutable scalar `sub`; events carry `tidb:<sub>`. Exact `ownerSubjects` or `ownerEmailRules` with boolean `email_verified=true` grants full ownership of the same Workspace. Optional `allowedOrgs` is an additional filter. Empty grants deny everyone. These are Console sign-in grants, not delegated provider API authorization or customer tenant isolation. Workspace Keys remain separately scoped and resource-restricted.
+Identity uses issuer + immutable scalar `sub`. Managed hosted login creates a personal tenant and Workspace for each verified identity; Region-local grants continue across restart and do not require Global on each request. The older shared-owner `ownerSubjects`, `ownerEmailRules`, and `allowedOrgs` admission rules apply only to the isolated legacy loopback profile; the co-located managed callback does not use them to admit accounts. The separate GlobalLogin composition rejects these filters. Workspace Keys remain separately scoped and resource-restricted. See [ADR 0030](decisions/0030-personal-account-isolation.md) for the revocation and availability tradeoffs.
 
 A public API configuration requires `insecureLoopback:false`, explicit `publicOrigins` and SSO with a trusted HTTPS callback origin. It can bind `0.0.0.0:4318` behind the existing private Service/gateway. Unknown Hosts, hostile Origins, public browser mutations without Origin and public anonymous owner sessions are denied. Host and forwarding headers cannot prove an actual local peer or bypass throttling. Forwarded IPs are intentionally ignored; size a shared-proxy rate limit before expanding public traffic.
 
@@ -117,6 +117,13 @@ blindly roll back to a binary expecting deleted data. Offline operators can inst
 and run `workspace-backend purge-legacy --config <private-deployment.json> --workspace ws_agentlab`.
 The operation logically deletes live metadata and credentials; it does not physically erase
 historical SlateDB/object-store versions or delete provider instances.
+
+On 2026-10-31, [the dev rollout](https://github.com/mem9-ai/tidb.ai/actions/runs/41192855387)
+was followed by a real TiDB Account login and Guest-to-account cross-access denials.
+[The protected retirement](https://github.com/mem9-ai/tidb.ai/actions/runs/41194217771)
+reported completion and healthy rollouts; the personal account Workspace remained accessible.
+A second real TiDB Account has not been verified; two-account isolation is covered by the
+signed-provider integration fixture.
 
 ## Hosted Execute configuration repair
 
