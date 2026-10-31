@@ -50,12 +50,23 @@ test('resource pages distinguish unloaded collections and resolve deep links', a
       }),
     ]),
   );
+  const beforeSelection = workspace.requests.length;
   await workspace.open('#files?resourceId=fs_fixture');
+  await expect
+    .poll(() =>
+      workspace.requests
+        .slice(beforeSelection)
+        .some((request) => request.path.endsWith('/resources/fs_fixture')),
+    )
+    .toBe(true);
+  const beforeReload = workspace.requests.length;
   await page.reload();
   await expect(page.getByText('File System unavailable')).toHaveCount(0);
   await expect
     .poll(() =>
-      workspace.requests.some((request) => request.path.endsWith('/resources/fs_fixture')),
+      workspace.requests
+        .slice(beforeReload)
+        .some((request) => request.path.endsWith('/resources/fs_fixture')),
     )
     .toBe(true);
 });

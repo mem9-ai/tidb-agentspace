@@ -236,15 +236,13 @@ function App() {
   const [resourcePageBusy, setResourcePageBusy] = useState(false);
   const [resourcePageError, setResourcePageError] = useState('');
   const [resourceLookupFailure, setResourceLookupFailure] = useState('');
+  const [resolvedResourceKey, setResolvedResourceKey] = useState('');
   const [tutorialCreation, setTutorialCreation] = useState(false);
   const route = routeLocation.page;
   const selectedResourceId =
     routeLocation.databaseId ??
     parseFileSystemLocation('#' + (routeLocation.fileLink || 'files'))?.resourceId;
   const lookupKey = data && selectedResourceId ? `${data.workspace.id}:${selectedResourceId}` : '';
-  const selectedLoaded = Boolean(
-    data?.resources.some((resource) => resource.id === selectedResourceId),
-  );
   const resourceName = data?.resources.find(
     (resource) =>
       resource.id === selectedResourceId &&
@@ -260,6 +258,7 @@ function App() {
     setData(await workspaceApi.bootstrap());
     setResourcePageError('');
     setResourceLookupFailure('');
+    setResolvedResourceKey('');
   }, []);
   const loadMoreResources = useCallback(async () => {
     const cursor = data?.resourceNextCursor;
@@ -293,7 +292,12 @@ function App() {
     }
   }, [data?.resourceNextCursor, resourcePageBusy]);
   useEffect(() => {
-    if (!lookupKey || !selectedResourceId || selectedLoaded || resourceLookupFailure === lookupKey)
+    if (
+      !lookupKey ||
+      !selectedResourceId ||
+      resolvedResourceKey === lookupKey ||
+      resourceLookupFailure === lookupKey
+    )
       return;
     const controller = new AbortController();
     workspaceApi
@@ -303,15 +307,17 @@ function App() {
         setData((current) => {
           if (!current || `${current.workspace.id}:${selectedResourceId}` !== lookupKey)
             return current;
-          if (current.resources.some((resource) => resource.id === result.data.id)) return current;
-          return { ...current, resources: [...current.resources, result.data] };
+          const resources = new Map(current.resources.map((resource) => [resource.id, resource]));
+          resources.set(result.data.id, result.data);
+          return { ...current, resources: [...resources.values()] };
         });
+        setResolvedResourceKey(lookupKey);
       })
       .catch(() => {
         if (!controller.signal.aborted) setResourceLookupFailure(lookupKey);
       });
     return () => controller.abort();
-  }, [lookupKey, selectedResourceId, selectedLoaded, resourceLookupFailure]);
+  }, [lookupKey, selectedResourceId, resolvedResourceKey, resourceLookupFailure]);
   // Boot the workspace. When SSO is enabled the anonymous demo session is disabled, so we never
   // auto-start one: we only try to use an existing (SSO) session and, failing that, show the
   // sign-in screen. When SSO is unconfigured, the local demo session starts as before.
@@ -483,7 +489,7 @@ function App() {
           {route === 'overview' && <Overview {...shared} />}
           {(route === 'databases' || route === 'files') &&
           lookupKey &&
-          !selectedLoaded &&
+          resolvedResourceKey !== lookupKey &&
           resourceLookupFailure !== lookupKey ? (
             <Text role="status">Loading resource…</Text>
           ) : (

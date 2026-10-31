@@ -861,6 +861,13 @@ for (const transport of ['remote', 'inProcess']) {
         throw error;
       }
       assert.equal(provider.creates, 0);
+      // Bootstrap and list use stored records; an explicit detail read refreshes provider data.
+      const fileSystemDetail = await request(base + '/resources/fs_live');
+      assert.equal(fileSystemDetail.status, 200);
+      assert.equal(fileSystemDetail.body.data.uploadLimitBytes, 1048576);
+      const databaseDetail = await request(base + '/resources/db_live');
+      assert.equal(databaseDetail.status, 200);
+      assert.equal(databaseDetail.body.data.expiresAt, raw[2].bindings.db_live.expiresAt);
       const schema = await fetch(`http://127.0.0.1:${bind}/openapi.json`);
       assert.equal(schema.status, 200);
       assert.deepEqual(await schema.json(), JSON.parse(await readFile('public/openapi.json')));
