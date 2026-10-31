@@ -4,6 +4,7 @@
 pub mod cleanup;
 pub mod embedded_region;
 pub mod global_keys;
+pub mod legacy_key_index;
 pub mod onboarding;
 pub mod regional;
 pub mod regional_key_policy;
