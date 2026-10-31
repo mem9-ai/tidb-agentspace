@@ -422,6 +422,16 @@ control-plane writes do not by themselves prove capacity.
    recoverable versioned key material, stage replacement indexes with dual-read and single-writer
    fencing, and verify every version before retiring its predecessor. A missing index key fails
    closed with an operator-recoverable Global error, without weakening regional availability.
+   Current regional `indexes/key-digest/{digest}` metadata keys contain the existing SHA-256
+   verifier; object-key encoding is reversible and does not conceal it. While the legacy
+   direct-Key API remains enabled, migrate that index separately to a versioned keyed lookup
+   using a Region-only secret, independent of Global's index key. Preserve a locally recoverable
+   key ring and use fenced, verified dual-read/single-writer migration; no Region request fetches
+   the key from Global. Stop writing old digest-bearing index names only after exact per-Key
+   parity and crash-recovery checks, and remove live legacy indexes only after successful
+   cutover. Previous immutable object versions and backups can retain old names; their retention
+   and any eventual deletion need separate operator policy and verified provider lifecycle.
+   Until then, do not claim that historical verifier-bearing names have been erased.
 3. Global initiates a bounded, authenticated Region export of **only the minimum verifier and
    grant metadata needed** under a dedicated migration identity; native provider passwords and
    tokens stay in Region. Encrypt transport and target metadata, prohibit logs, require Region
@@ -468,6 +478,10 @@ alone proves SEC-05 or real cloud compatibility. CI must use isolated temporary 
 storage and credentials; any live provider verification is separate and explicitly authorized.
 SEC-07 additionally verifies versioned keyed-index lookup of an unchanged legacy Key, including
 index-key rotation/loss, constant-time verifier checks, no workspace-wide scan and no leaked digest.
+It also verifies uninterrupted regional direct-Key authentication across keyed-index migration,
+including concurrent writes and crash points, Global outage, restart, and no new digest-bearing
+regional index names after cutover. Historical object versions are evaluated under the declared
+retention policy rather than assumed deleted.
 Complete implementation and measured capacity evidence precede production/security claims.
 
 ## 11. Release sequencing and unresolved implementation decisions
