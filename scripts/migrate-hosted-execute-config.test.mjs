@@ -11,6 +11,9 @@ function fake({
   rejectReplace = false,
   immutable = false,
   rejectDeployment = false,
+  orphan = false,
+  mismatch = false,
+  multiple = false,
 } = {}) {
   const calls = [];
   const config = {
@@ -33,6 +36,15 @@ function fake({
     },
   };
   const initial = structuredClone(secret);
+  const copy = structuredClone(secret);
+  copy.metadata.name = 'config-execute-012345abcdef';
+  for (const key of ['api.json', 'api-bootstrap.json']) {
+    const cfg = JSON.parse(Buffer.from(copy.data[key], 'base64'));
+    cfg.product.execute = cfg.product.compute;
+    delete cfg.product.compute;
+    copy.data[key] = encode(cfg);
+  }
+  if (mismatch) copy.data['private-key'] = 'different';
   let volumes = [
     { name: 'config-volume', secret: { secretName: 'config' } },
     ...(duplicate ? [{ name: 'other-volume', secret: { secretName: 'other' } }] : []),
@@ -53,21 +65,29 @@ function fake({
           },
         },
       });
+    if (args[0] === 'get' && args[1] === 'secrets')
+      return orphan ? `${copy.metadata.name}${multiple ? ' config-execute-123456abcdef' : ''}` : '';
     if (args[0] === 'get' && args[1] === 'secret')
       return JSON.stringify(
-        args[2] === 'other'
-          ? { ...secret, metadata: { ...secret.metadata, name: 'other' } }
-          : secret,
+        args[2] === copy.metadata.name
+          ? copy
+          : args[2] === 'other'
+            ? { ...secret, metadata: { ...secret.metadata, name: 'other' } }
+            : secret,
       );
-    if (args[0] === 'patch' && args[1] === 'secret') {
+    if (args[0] === 'replace') {
       if (rejectReplace) throw new Error('unknown result');
-      const patch = JSON.parse(input);
-      assert.equal(patch.metadata.resourceVersion, secret.metadata.resourceVersion);
-      secret = { ...secret, data: { ...secret.data, ...patch.data } };
+      const replacement = JSON.parse(input);
+      assert.equal(replacement.metadata.resourceVersion, secret.metadata.resourceVersion);
+      secret = replacement;
     }
     if (args[0] === 'patch' && args[1] === 'deployment/workspace') {
       if (rejectDeployment) throw new Error('unknown deployment update');
-      volumes = JSON.parse(input).spec.template.spec.volumes;
+      const changed = JSON.parse(args[args.indexOf('--patch') + 1]).spec.template.spec.volumes;
+      volumes = volumes.map((volume) => {
+        const update = changed.find((item) => item.name === volume.name);
+        return update ? { ...volume, secret: { ...volume.secret, ...update.secret } } : volume;
+      });
     }
     return '';
   };
@@ -87,12 +107,9 @@ test('migrates only the two config fields, retaining secrets and resourceVersion
     assert.equal(Object.hasOwn(updated.product, 'compute'), false);
     assert.deepEqual(updated.product.providers, old.product.providers);
   }
-  const patch = f.calls.find((call) => call.args[0] === 'patch');
+  const patch = f.calls.find((call) => call.args[0] === 'replace');
   assert.ok(patch.input);
-  assert.deepEqual(Object.keys(JSON.parse(patch.input).data).sort(), [
-    'api-bootstrap.json',
-    'api.json',
-  ]);
+  assert.equal(JSON.parse(patch.input).data['private-key'], f.initial.data['private-key']);
   assert.ok(!JSON.stringify(patch.args).includes('c2VjcmV0'));
   assert.ok(f.calls.some((call) => call.args[0] === 'rollout' && call.args[1] === 'restart'));
 });
@@ -114,7 +131,7 @@ test('immutable configuration creates a private copy and switches only its volum
   const patch = f.calls.find(
     (call) => call.args[0] === 'patch' && call.args[1] === 'deployment/workspace',
   );
-  const value = JSON.parse(patch.input);
+  const value = JSON.parse(patch.args[patch.args.indexOf('--patch') + 1]);
   assert.equal(value.metadata.resourceVersion, '34');
   assert.equal(value.spec.template.spec.volumes[0].secret.secretName, replacement.metadata.name);
   assert.ok(!f.calls.some((call) => call.args[0] === 'rollout' && call.args[1] === 'restart'));
@@ -125,14 +142,16 @@ test('ambiguous or duplicate configuration fails before mutation', async () => {
   for (const setting of [{ ambiguous: true }, { duplicate: true }]) {
     const f = fake(setting);
     await assert.rejects(migrate(options, f.kubectl, async () => ({ ok: true })));
-    assert.ok(!f.calls.some((call) => ['patch', 'rollout'].includes(call.args[0])));
+    assert.ok(
+      !f.calls.some((call) => ['patch', 'replace', 'create', 'rollout'].includes(call.args[0])),
+    );
   }
 });
 
 test('an uncertain Secret update does not blindly restart or retry', async () => {
   const f = fake({ rejectReplace: true });
   await assert.rejects(migrate(options, f.kubectl, async () => ({ ok: true })));
-  assert.equal(f.calls.filter((call) => call.args[0] === 'patch').length, 1);
+  assert.equal(f.calls.filter((call) => call.args[0] === 'replace').length, 1);
   assert.ok(!f.calls.some((call) => call.args[0] === 'rollout'));
 });
 
@@ -146,4 +165,27 @@ test('an uncertain immutable-volume update does not retry or remove the original
     1,
   );
   assert.ok(!f.calls.some((call) => ['delete', 'rollout'].includes(call.args[0])));
+});
+
+test('adopts only a matching prior immutable copy without creating another', async () => {
+  const f = fake({ immutable: true, orphan: true });
+  await migrate(options, f.kubectl, async () => ({ ok: true }));
+  assert.ok(!f.calls.some((call) => call.args[0] === 'create'));
+  const patch = f.calls.find((call) => call.args[0] === 'patch');
+  const value = JSON.parse(patch.args[patch.args.indexOf('--patch') + 1]);
+  assert.equal(
+    value.spec.template.spec.volumes[0].secret.secretName,
+    'config-execute-012345abcdef',
+  );
+  assert.ok(!JSON.stringify(patch.args).includes('c2VjcmV0'));
+});
+
+test('rejects mismatching or multiple prior copies before mutation', async () => {
+  for (const extra of [{ mismatch: true }, { multiple: true }]) {
+    const f = fake({ immutable: true, orphan: true, ...extra });
+    await assert.rejects(migrate(options, f.kubectl, async () => ({ ok: true })));
+    assert.ok(
+      !f.calls.some((call) => ['patch', 'replace', 'create', 'rollout'].includes(call.args[0])),
+    );
+  }
 });

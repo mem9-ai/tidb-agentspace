@@ -80,7 +80,22 @@ export async function migrate(
   if (changes && secret.immutable === true) {
     if (!source.metadata?.resourceVersion)
       throw new Error('Deployment resourceVersion is required.');
-    const newName = `${secret.metadata.name}-execute-${randomBytes(6).toString('hex')}`;
+    const prefix = `${secret.metadata.name}-execute-`;
+    const listed = kubectl([
+      'get',
+      'secrets',
+      '-n',
+      namespace,
+      '-o=jsonpath={.items[*].metadata.name}',
+    ])
+      .trim()
+      .split(/\s+/)
+      .filter(
+        (name) => name.startsWith(prefix) && /^[a-f0-9]{12}$/.test(name.slice(prefix.length)),
+      );
+    if (listed.length > 1)
+      throw new Error('Multiple replacement Secrets require operator inspection.');
+    const newName = listed[0] || `${prefix}${randomBytes(6).toString('hex')}`;
     if (!secretName(newName)) throw new Error('Cannot construct a safe replacement Secret name.');
     // Immutable Secrets cannot be patched. Create a fresh copy and switch only the
     // matching Deployment volume, keeping the original intact for operator recovery.
@@ -92,55 +107,45 @@ export async function migrate(
       immutable: true,
       data: secret.data,
     };
-    kubectl(['create', '-f', '-', '-n', namespace, '-o', 'name'], JSON.stringify(replacement));
-    const volumes = pod.volumes.map((volume) =>
-      volume.secret?.secretName === secret.metadata.name
-        ? { ...volume, secret: { ...volume.secret, secretName: newName } }
-        : volume,
-    );
+    if (listed.length) {
+      const existing = JSON.parse(
+        kubectl(['get', 'secret', newName, '-n', namespace, '-o', 'json']),
+      );
+      const sorted = (data) =>
+        JSON.stringify(Object.entries(data || {}).sort(([a], [b]) => a.localeCompare(b)));
+      if (
+        existing.immutable !== true ||
+        (existing.type || 'Opaque') !== replacement.type ||
+        sorted(existing.data) !== sorted(replacement.data)
+      )
+        throw new Error('Replacement Secret does not match; operator inspection is required.');
+    } else {
+      kubectl(['create', '-f', '-', '-n', namespace, '-o', 'name'], JSON.stringify(replacement));
+    }
+    const volumes = pod.volumes
+      .filter((volume) => volume.secret?.secretName === secret.metadata.name)
+      .map((volume) => ({ name: volume.name, secret: { secretName: newName } }));
     const patch = {
       metadata: { resourceVersion: source.metadata.resourceVersion },
       spec: { template: { spec: { volumes } } },
     };
-    kubectl(
-      [
-        'patch',
-        target,
-        '-n',
-        namespace,
-        '--type=strategic',
-        '--patch-file=/dev/stdin',
-        '-o',
-        'name',
-      ],
+    kubectl([
+      'patch',
+      target,
+      '-n',
+      namespace,
+      '--type=strategic',
+      '--patch',
       JSON.stringify(patch),
-    );
+      '-o',
+      'name',
+    ]);
     updatedVolume = true;
     replacementName = newName;
   } else if (changes) {
-    // A merge patch with resourceVersion provides an optimistic-concurrency precondition.
+    // A replace with resourceVersion provides an optimistic-concurrency precondition.
     // Secret bytes travel only via stdin; never place them in arguments, logs or a file.
-    const patch = {
-      metadata: { resourceVersion: secret.metadata.resourceVersion },
-      data: {
-        'api.json': secret.data['api.json'],
-        'api-bootstrap.json': secret.data['api-bootstrap.json'],
-      },
-    };
-    kubectl(
-      [
-        'patch',
-        'secret',
-        secret.metadata.name,
-        '-n',
-        namespace,
-        '--type=merge',
-        '--patch-file=/dev/stdin',
-        '-o',
-        'name',
-      ],
-      JSON.stringify(patch),
-    );
+    kubectl(['replace', '-f', '-', '-n', namespace, '-o', 'name'], JSON.stringify(secret));
   }
   if (changes && !updatedVolume) kubectl(['rollout', 'restart', target, '-n', namespace]);
   kubectl(['rollout', 'status', target, '-n', namespace, '--timeout=300s']);
