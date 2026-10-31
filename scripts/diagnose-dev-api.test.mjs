@@ -56,3 +56,24 @@ test('diagnostics distinguish forbidden logs without exposing private errors', (
   assert.equal(result.pods[0].logAccessDenied, true);
   assert.ok(!JSON.stringify(result).includes('private value'));
 });
+
+test('permission checks expose only booleans and never change cluster state', () => {
+  const calls = [];
+  const result = diagnose({ namespace: 'dev', deployment: 'api', container: 'api' }, (args) => {
+    calls.push(args);
+    if (args[1] === 'deployment/api')
+      return JSON.stringify({
+        spec: { replicas: 1, selector: { matchLabels: { app: 'api' } } },
+        status: {},
+      });
+    if (args[1] === 'pods') return JSON.stringify({ items: [] });
+    if (args[0] === 'auth') return args[2] === 'create' ? 'no\n' : 'yes\n';
+    throw new Error('unexpected');
+  });
+  assert.deepEqual(result.permissions, {
+    createSecrets: false,
+    patchSecrets: true,
+    patchDeployments: true,
+  });
+  assert.ok(!calls.some((args) => ['create', 'patch', 'delete', 'rollout'].includes(args[0])));
+});
