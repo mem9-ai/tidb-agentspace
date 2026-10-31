@@ -8,17 +8,20 @@ import { ResourceConnectButton } from '../../ui/ResourceWorkspaceHeader';
 import { resourceWorkspaceHref, resourceServiceLabel } from './resource-presentation';
 import { resourceKindLabels } from './resource-creation';
 import { regionLabel } from './regions';
+import { GuestExpiryNotice, ResourceQuickStart } from './ResourceQuickStart';
 
 export function ResourceCollectionPage({
   kind,
   resources,
   onCreate,
   onConnect,
+  isGuest,
 }: {
   kind: 'database' | 'filesystem';
   resources: Resource[];
   onCreate: () => void;
   onConnect: (resource: Resource) => void;
+  isGuest: boolean;
 }) {
   const files = kind === 'filesystem';
   const title = files ? 'File Systems' : 'Databases';
@@ -51,6 +54,12 @@ export function ResourceCollectionPage({
               files
                 ? 'Upload a file to preview or analyze its contents.'
                 : 'Add your data and run your first SQL query.'
+            }
+            details={
+              <>
+                {isGuest && <GuestExpiryNotice />}
+                <ResourceQuickStart kind={kind} />
+              </>
             }
             action={create}
           />

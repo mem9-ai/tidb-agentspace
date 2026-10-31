@@ -22,6 +22,10 @@ such as supported regions and generated resource names. Console exploration does
 connecting an agent first. Keep alternative resource kinds discoverable without inventing
 availability or hiding provider constraints.
 
+For new and Guest Workspaces, offer independent database and File System Quick Starts while
+each category has no resources. Explain the first useful result and the Guest expiry where
+applicable; remove each guide once its resource exists. Creation and execution remain explicit.
+
 Minimize required decisions and navigation, not safeguards. Permission selection, write intent,
 format/field/type confirmation, overwrite/discard decisions, provider limits and live/demo
 information remain explicit. Never auto-run customer SQL, auto-provision a resource, broaden

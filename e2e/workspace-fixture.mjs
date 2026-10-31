@@ -110,6 +110,14 @@ export const test = base.extend({
         return reply({ data: resource, mode: 'demo' }, 201);
       }
       if (path === '/resources') return reply({ data: state.resources, mode: 'demo' });
+      if (path === '/queries' && method === 'POST')
+        return reply({
+          columns: ['event'],
+          rows: [{ event: 'agent_started' }],
+          rowCount: 1,
+          mode: 'demo',
+          durationMs: 1,
+        });
       if (/\/tables$/.test(path)) return reply({ data: [], mode: 'demo', truncated: false });
       if (path === '/keys' && method === 'POST') {
         const key = {

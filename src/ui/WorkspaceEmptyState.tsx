@@ -8,6 +8,7 @@ export function WorkspaceEmptyState({
   title,
   description,
   action,
+  details,
   label,
   headingLevel = 3,
 }: {
@@ -15,6 +16,7 @@ export function WorkspaceEmptyState({
   title: string;
   description: ReactNode;
   action?: ReactNode;
+  details?: ReactNode;
   label?: string;
   headingLevel?: 2 | 3;
 }) {
@@ -23,6 +25,7 @@ export function WorkspaceEmptyState({
       <Icon size={28} aria-hidden />
       <Heading level={headingLevel}>{title}</Heading>
       <Text component="p">{description}</Text>
+      {details}
       {action}
     </section>
   );

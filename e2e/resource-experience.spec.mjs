@@ -1,4 +1,4 @@
-import { test, expect } from './workspace-fixture.mjs';
+import { test, expect, sampleResources } from './workspace-fixture.mjs';
 
 const collections = [
   {
@@ -24,7 +24,7 @@ const collections = [
 test('empty collections share one in-context create action and readable TiUI presentation', async ({
   page,
   workspace,
-}) => {
+}, testInfo) => {
   const presentations = [];
   for (const collection of collections) {
     await workspace.open(collection.hash);
@@ -33,6 +33,11 @@ test('empty collections share one in-context create action and readable TiUI pre
     ).toBeVisible();
     const empty = page.getByRole('region', { name: collection.empty, exact: true });
     const create = empty.getByRole('button', { name: collection.create, exact: true });
+    if (process.env.QUICKSTART_SCREENSHOTS)
+      await page.screenshot({
+        path: `${process.env.QUICKSTART_SCREENSHOTS}/${collection.hash.slice(1)}-${testInfo.project.name}.png`,
+        fullPage: true,
+      });
     await page.getByRole('heading', { level: 1, name: collection.title, exact: true }).hover();
     if (presentations.length)
       await expect(create).toHaveCSS('background-color', presentations[0].background);
@@ -67,6 +72,11 @@ test('empty collections share one in-context create action and readable TiUI pre
     page.getByRole('heading', { level: 1, name: 'Start with your data', exact: true }),
   ).toBeVisible();
   const startingChoices = page.getByRole('region', { name: 'Get started', exact: true });
+  if (process.env.QUICKSTART_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.QUICKSTART_SCREENSHOTS}/overview-${testInfo.project.name}.png`,
+      fullPage: true,
+    });
   await expect(startingChoices.getByRole('button')).toHaveCount(2);
   for (const collection of collections) {
     const create = startingChoices.getByRole('button', { name: collection.create, exact: true });
@@ -91,6 +101,79 @@ test('empty collections share one in-context create action and readable TiUI pre
   );
   await expect(page.locator('.resource-card .live-dot')).toHaveCount(0);
   await expect(page.locator('.resource-card a.resource-name')).toHaveCount(0);
+});
+
+test('each Quick Start appears only while its resource type is missing', async ({
+  page,
+  workspace,
+}) => {
+  for (const [existingKind, remaining, absent] of [
+    ['mysql', 'Create file system', 'Create database'],
+    ['filesystem', 'Create database', 'Create file system'],
+  ]) {
+    workspace.state.resources = structuredClone(
+      sampleResources.filter((resource) => resource.kind === existingKind),
+    );
+    await workspace.open('#overview');
+    await page.reload();
+    const guide = page.getByRole('region', { name: 'Get started' });
+    await expect(guide.getByRole('button', { name: remaining, exact: true })).toBeVisible();
+    await expect(guide.getByRole('button', { name: absent, exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: remaining, exact: true })).toHaveCount(1);
+  }
+});
+
+test('Quick Start creates a database and reaches a first query result', async ({
+  page,
+  workspace,
+}) => {
+  await workspace.open('#overview');
+  const guide = page.getByRole('region', { name: 'Get started' });
+  await expect(guide.getByText('Run your first query')).toBeVisible();
+  await guide.getByRole('button', { name: 'Create database', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create a database' });
+  await dialog.getByRole('button', { name: 'Create database', exact: true }).click();
+  await expect(page).toHaveURL(/#databases\/fixture_mysql_0\/sql$/);
+  const run = page.getByRole('button', { name: 'Run query', exact: true });
+  await expect(run).toBeEnabled();
+  expect(workspace.requests.filter((request) => request.path.endsWith('/queries'))).toHaveLength(0);
+  await run.click();
+  await expect(page.getByText('agent_started', { exact: true })).toBeVisible();
+  expect(workspace.requests).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: `/api/v1/workspaces/${workspace.state.workspace.id}/queries`,
+        method: 'POST',
+        body: expect.objectContaining({ resourceId: 'fixture_mysql_0' }),
+      }),
+    ]),
+  );
+});
+
+test('Guest sees expiry and File System Quick Start before creating a resource', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  const guide = page.getByRole('region', { name: 'Get started' });
+  await expect(guide.getByText(/Your Guest Workspace expires 24 hours/)).toBeVisible();
+  await expect(guide.getByText('Add a file', { exact: true })).toBeVisible();
+  await page.goto('/#files');
+  const empty = page.getByRole('region', { name: 'File Systems empty state' });
+  await expect(empty.getByText(/Your Guest Workspace expires 24 hours/)).toBeVisible();
+  await expect(empty.getByText('Preview and explore', { exact: true })).toBeVisible();
+  await empty.getByRole('button', { name: 'Create file system' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create a File System' });
+  await dialog.getByRole('button', { name: 'Create file system', exact: true }).click();
+  await expect(page).toHaveURL(/#files\?resourceId=fixture_filesystem_0$/);
+  await expect(page.getByRole('button', { name: 'Upload', exact: true })).toBeVisible();
+  expect(
+    workspace.requests.some(
+      (request) => request.path.endsWith('/resources') && request.body?.kind === 'filesystem',
+    ),
+  ).toBe(true);
 });
 
 test('populated collections share metadata, exact-resource entry, connection and return actions', async ({
