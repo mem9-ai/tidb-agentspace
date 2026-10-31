@@ -5069,6 +5069,12 @@
             "description": "Resource lifecycle operation unsupported by provider",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            },
+            "headers": {
+              "Allow": {
+                "schema": { "const": "GET" },
+                "description": "Methods available on this provider-backed resource."
+              }
             }
           },
           "409": {

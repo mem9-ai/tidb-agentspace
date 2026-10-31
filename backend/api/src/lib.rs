@@ -305,6 +305,24 @@ fn error(error: ServiceError) -> Response {
         "EXPORT_RECORD_FAILED" => {
             "The data write may have completed, but its activity record was not confirmed. Inspect the destination before repeating it."
         }
+        "PRECONDITION_FAILED" => {
+            "The file changed or is missing. Read its metadata again and review the new version before updating."
+        }
+        "INVALID_PRECONDITION" => {
+            "Send one strong If-Match version or If-None-Match: *, never both."
+        }
+        "FILE_VERSION_UNAVAILABLE" => {
+            "This provider did not return an atomic revision. Conditional updates are unavailable; no write was sent."
+        }
+        "READ_ONLY_SQL_REQUIRED" => {
+            "Use the supported read-only SELECT/CTE/VALUES subset. Writes, locks, unknown functions and session commands require a different operation or explicit write permission."
+        }
+        "RESOURCE_DELETING" => {
+            "Resource removal has started. Inspect its resource detail and deletion phase; do not retry data operations."
+        }
+        "RESOURCE_DELETE_UNSUPPORTED" => {
+            "This provider does not support resource deletion through this API. The resource and credentials are unchanged."
+        }
         "FILE_CHANGED" => "The source file changed after review. Parse and review again.",
         "ANALYSIS_FAILED" => {
             "This file could not be parsed or analyzed. Check its format and parsing options, or choose another file."
@@ -320,6 +338,7 @@ fn error(error: ServiceError) -> Response {
         }
         _ => "The operation could not be completed.",
     };
+    let unsupported_deletion = error.code == "RESOURCE_DELETE_UNSUPPORTED";
     let id = uuid::Uuid::new_v4().to_string();
     let mut response = (
         StatusCode::from_u16(error.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
@@ -330,6 +349,11 @@ fn error(error: ServiceError) -> Response {
         "X-Request-Id",
         HeaderValue::from_str(&id).expect("UUID header"),
     );
+    if unsupported_deletion {
+        response
+            .headers_mut()
+            .insert("Allow", HeaderValue::from_static("GET"));
+    }
     response
 }
 fn reject(status: u16, code: &str) -> ServiceError {

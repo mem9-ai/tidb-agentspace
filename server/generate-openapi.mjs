@@ -1114,6 +1114,12 @@ paths[ws + '/resources/{resourceId}'] = {
     { output: object({ data: ref('Resource') }) },
   ),
 };
+paths[ws + '/resources/{resourceId}'].delete.responses[405].headers = {
+  Allow: {
+    schema: { const: 'GET' },
+    description: 'Methods available on this provider-backed resource.',
+  },
+};
 paths[ws + '/resources/{resourceId}'].delete.responses[202] = response(
   object({ data: ref('Resource') }),
   'Deletion accepted or outcome unknown. Inspect GET at Location; repeated DELETE never retries the upstream effect. Credentials remain private and retained.',

@@ -119,6 +119,12 @@ export async function agentRestCases(t, transport) {
         );
       }
       await request(
+        '/queries',
+        q('db_live', 'SELECT 1', full.secret, { readOnly: null }),
+        400,
+        'INVALID_BODY',
+      );
+      await request(
         '/database-imports/prepare-upload?resourceId=db_live&filename=x.csv&format=csv&header=true&delimiter=%2C',
         {
           method: 'POST',
@@ -266,6 +272,24 @@ export async function agentRestCases(t, transport) {
     f.provider.versionsAvailable = true;
   });
 
+  await t.test('file validators remain usable after durable crash recovery', async () => {
+    const path = '/p0-local.txt';
+    const local = (await request(metadata('fs_shared', path), { token })).body.data.version;
+    await f.restart({ crash: true });
+    assert.equal((await request(metadata('fs_shared', path), { token })).body.data.version, local);
+    assert.equal(
+      (await request(metadata('fs_live', '/live.csv'), { token })).body.data.version,
+      retainedVersion,
+    );
+    await request('/files', write('fs_shared', path, 'after restart', { 'If-Match': local }));
+    await request(
+      '/files',
+      write('fs_live', '/live.csv', 'after restart', { 'If-Match': retainedVersion }),
+    );
+    retainedVersion = (await request(metadata('fs_live', '/live.csv'), { token })).body.data
+      .version;
+  });
+
   await t.test(
     'detail and deletion enforce actions, grants and Workspace isolation before I/O',
     async () => {
@@ -297,12 +321,14 @@ export async function agentRestCases(t, transport) {
       assert.equal(cross.status, 401);
       assert.equal(f.provider.calls, before);
       await request('/resources/missing', { token: full.secret }, 403, 'RESOURCE_ACCESS_DENIED');
-      await request(
+      const unsupported = await request(
         '/resources/db_live',
         { method: 'DELETE', token: full.secret },
         405,
         'RESOURCE_DELETE_UNSUPPORTED',
       );
+      assert.equal(unsupported.headers.get('allow'), 'GET');
+      assert.match(unsupported.body.error.message, /unchanged/);
       assert.equal((await request('/resources/db_live', { token })).body.data.status, 'active');
     },
   );
@@ -345,7 +371,37 @@ export async function agentRestCases(t, transport) {
   await t.test(
     'accepted deletion is retained and never repeats across normal or crash restart',
     async () => {
-      const r = await request('/resources/fs_live', { method: 'DELETE', token: full.secret }, 202);
+      let entered, release;
+      const pending = new Promise((r) => {
+        entered = r;
+      });
+      const blocked = new Promise((r) => {
+        release = r;
+      });
+      f.provider.writeRace = async () => {
+        entered();
+        await blocked;
+      };
+      const writing = request(
+        '/files',
+        write('fs_live', '/live.csv', 'drained before removal', { 'If-Match': retainedVersion }),
+      );
+      await pending;
+      const deleting = request('/resources/fs_live', { method: 'DELETE', token: full.secret }, 202);
+      try {
+        assert.equal(
+          await Promise.race([
+            deleting.then(() => false),
+            new Promise((r) => setTimeout(() => r(true), 100)),
+          ]),
+          true,
+        );
+        assert.equal(f.provider.deleted.length, 0);
+      } finally {
+        release();
+      }
+      await writing;
+      const r = await deleting;
       assert.equal(r.body.data.deletion.phase, 'provider-accepted');
       assert.equal(r.headers.get('location'), '/api/v1/workspaces/ws_agentlab/resources/fs_live');
       assert.equal(f.provider.deleted.length, 1);

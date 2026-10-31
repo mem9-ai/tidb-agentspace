@@ -176,7 +176,11 @@ pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
         id,
         scopes: vec!["*".into()],
         resource_ids: vec!["*".into()],
-        expires_at: None,
+        expires_at: match credential {
+            Credential::SessionOwner { expires_at, .. } => DateTime::from_timestamp(*expires_at, 0)
+                .map(|t| t.to_rfc3339_opts(SecondsFormat::Millis, true)),
+            _ => None,
+        },
     })
 }
 impl Workspace {

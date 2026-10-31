@@ -81,7 +81,7 @@ impl Product {
         p: &Principal,
         input: &Value,
     ) -> Result<Value> {
-        if !input["readOnly"].is_null() && !input["readOnly"].is_boolean() {
+        if input.get("readOnly").is_some_and(|v| !v.is_boolean()) {
             return Err(err(400, "INVALID_BODY"));
         }
         let read_only = input["readOnly"] == true || p.scope("queries:execute").is_err();

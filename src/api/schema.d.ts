@@ -7066,6 +7066,8 @@ export interface operations {
       /** @description Resource lifecycle operation unsupported by provider */
       405: {
         headers: {
+          /** @description Methods available on this provider-backed resource. */
+          Allow?: 'GET';
           [name: string]: unknown;
         };
         content: {
