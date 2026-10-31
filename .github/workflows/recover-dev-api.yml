@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: Enter rollback-failed-7654e103 to confirm the bounded recovery
+        description: Enter diagnose or rollback-failed-7654e103
         required: true
         type: string
 
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   verify:
-    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'rollback-failed-7654e103'
+    if: github.ref == 'refs/heads/main' && (inputs.confirmation == 'diagnose' || inputs.confirmation == 'rollback-failed-7654e103')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -39,7 +39,7 @@ jobs:
 
   recover:
     needs: verify
-    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'rollback-failed-7654e103'
+    if: github.ref == 'refs/heads/main' && (inputs.confirmation == 'diagnose' || inputs.confirmation == 'rollback-failed-7654e103')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: dev
@@ -83,5 +83,9 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
+      - name: Inspect sanitized status and startup indicators
+        if: inputs.confirmation == 'diagnose'
+        run: node scripts/diagnose-dev-api.mjs
       - name: Restore previous deployment and verify public health
+        if: inputs.confirmation == 'rollback-failed-7654e103'
         run: node scripts/recover-dev-api.mjs
