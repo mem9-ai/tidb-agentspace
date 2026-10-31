@@ -173,6 +173,10 @@ Default access-token TTL of 15 minutes is a proposed operational setting, not a 
 `token.exp <= min(Key.expiresAt, explicit grant end, issuer policy maximum)`; refresh and every
 descendant are bounded by the original active Key expiry, not by synchronization age. Clock
 skew is bounded and tested; excessive skew fails closed with an actionable regional error.
+Region depends on its own trusted time source, not a Global time lookup. Detect backward clock
+movement across restart using a durable regional time floor and trusted regional clock monitoring;
+if time validity cannot be established, reject affected credentials rather than revive an
+expired token. This is a regional dependency failure, not a policy-synchronization timeout.
 Global availability, policy age or an enrollment ticket's delivery deadline never becomes an
 implicit expiry of an already enrolled, otherwise valid regional family. The Key's actual expiry,
 local deny, family revocation and an explicitly configured idle/absolute credential limit still
@@ -229,6 +233,16 @@ activates the new grant/deny floor before acknowledging `applied`. Duplicate upd
 same result; stale, gapped, altered or wrong-Region updates do not activate. Global pulls status
 and records each Region's actual applied generation. Payloads, authentication material and
 provider secrets do not appear in control-channel audit logs.
+
+Regional restart/restore must recover the latest acknowledged policy and denial floor from
+object-durable records, with writer fencing and verifiable generation/epoch history. A backup
+or restore procedure must not silently roll the active floor back to an earlier valid signature:
+use a separately protected regional anti-rollback checkpoint and retained verifiable history,
+and verify their consistency before serving affected grants. If the latest floor cannot be
+proven after local storage loss or rollback, fail closed for the affected scope and require
+regional recovery; do not ask Global on the request path or silently reinstate an older grant.
+The exact checkpoint mechanism and recovery guarantees are implementation gates, not shipped
+capabilities. A Global outage alone does not constitute missing regional recovery evidence.
 
 | Event                    | Global behavior                                                                    | Region that applied the event                                                     | Disconnected Region                                                                                                         |
 | ------------------------ | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
