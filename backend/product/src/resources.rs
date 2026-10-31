@@ -91,7 +91,7 @@ impl Product {
         }
         self.workspace
             .repository()
-            .transaction(|state| {
+            .workspace_transaction(vec![id.to_owned()], false, false, |state| {
                 let p = principal(state, credential)?;
                 p.scope("resources:write")?;
                 p.resource(state, id, None)?;
@@ -130,7 +130,7 @@ impl Product {
     ) -> Result<Value> {
         self.workspace
             .repository()
-            .transaction(|state| {
+            .workspace_transaction(vec![id.to_owned()], false, status == "deleted", |state| {
                 let p = principal(state, credential)?;
                 let r = state["resources"]
                     .as_array_mut()

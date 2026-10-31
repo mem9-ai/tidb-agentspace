@@ -21,7 +21,8 @@ status updates address one record; independent updates can progress concurrently
 management, settings and event listing now load the Key and event collections plus the
 specific resources they reference, and event append loads only events. These paths still
 coordinate with legacy transactions through a Workspace-wide gate; Key collections retain
-the per-prefix view limit, and the Portal/bootstrap and resource lifecycle are still limited.
+the per-prefix view limit, and the Portal/bootstrap and resource creation are still limited.
+Deletion reads only the target resource but local cleanup still loads Workspace file records.
 
 ## Millions of Tenants
 

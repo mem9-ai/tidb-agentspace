@@ -270,11 +270,15 @@ impl Repository {
         &self,
         selected_resources: Vec<String>,
         include_event_resources: bool,
+        include_files: bool,
         apply: impl FnOnce(&mut Value) -> Result<(T, bool)> + Send,
     ) -> Result<T> {
         let _lock = self.queue.write().await;
         let mut previous = self.records("state/keys/").await?;
         previous.extend(self.records("state/events/").await?);
+        if include_files {
+            previous.extend(self.records("state/files/").await?);
+        }
         for key in ["state/workspace", "state/profile"] {
             let value = self.get(key).await?;
             if !value.is_null() {

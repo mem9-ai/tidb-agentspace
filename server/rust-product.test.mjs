@@ -109,6 +109,13 @@ test(
       cursor = page.body.nextCursor;
     } while (cursor);
     assert.equal(count, 4100);
+    const deleted = await fixture.request('/resources/db_scale_00000000', { method: 'DELETE' });
+    assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
+    assert.equal(deleted.body.data.status, 'deleted');
+    assert.equal(
+      (await fixture.request('/resources/db_scale_00000000')).body.data.status,
+      'deleted',
+    );
     assert.equal((await fixture.request('/resources')).body.error.code, 'WORKSPACE_VIEW_LIMIT');
   },
 );

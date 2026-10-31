@@ -265,7 +265,7 @@ impl Workspace {
         };
         let event_resources = matches!(operation, Operation::ListEvents);
         self.repository
-            .workspace_transaction(selected, event_resources, move |state| {
+            .workspace_transaction(selected, event_resources, false, move |state| {
                 execute_operation(state, credential, operation)
             })
             .await

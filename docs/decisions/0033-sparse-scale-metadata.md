@@ -17,7 +17,9 @@ Workspace Key management, settings and event lists load the Key/event collection
 resource IDs needed to validate grants or filter events. Event append scans at most the retained
 event collection and commits the new event with retention cleanup. These collections are not
 themselves unbounded/paginated, and still use the legacy write gate.
-The ordinary unpaged resource list, bootstrap, create, delete, usage, local files and other
+Deletion journals and updates one resource without scanning unrelated resources; local deletion
+still loads the Workspace file collection, which is subject to the legacy view limit.
+The ordinary unpaged resource list, bootstrap, create, usage, local files and other
 paths have not been converted; neither Portal nor the default API can support a million-resource
 Workspace yet. The new cursor is a position, not a snapshot: concurrent insertions before it
 may be missed and deletions may disappear. A page can be empty and still have a next cursor.
