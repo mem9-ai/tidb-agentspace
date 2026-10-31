@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
         println!("{}", workspace_execute::runtime_info());
         return Ok(());
     }
-    if args.as_slice() == ["execute"] || args.as_slice() == ["worker"] {
+    if args.as_slice() == ["execute"] {
         workspace_execute::execute_entry().await?;
         return Ok(());
     }

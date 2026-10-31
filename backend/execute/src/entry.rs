@@ -9,12 +9,12 @@ pub async fn execute_entry() -> Result<()> {
         .take(1024 * 1024 + 1)
         .read_to_end(&mut bytes)
         .await
-        .map_err(|_| err(400, "INVALID_WORKER_INPUT"))?;
+        .map_err(|_| err(400, "INVALID_EXECUTE_INPUT"))?;
     if bytes.len() > 1024 * 1024 {
-        return Err(err(413, "INVALID_WORKER_INPUT"));
+        return Err(err(413, "INVALID_EXECUTE_INPUT"));
     }
     let input: Value =
-        serde_json::from_slice(&bytes).map_err(|_| err(400, "INVALID_WORKER_INPUT"))?;
+        serde_json::from_slice(&bytes).map_err(|_| err(400, "INVALID_EXECUTE_INPUT"))?;
     let result = if input["engine"] == "bash" {
         native::bash(&input).await
     } else {

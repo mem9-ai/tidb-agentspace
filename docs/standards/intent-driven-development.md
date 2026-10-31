@@ -192,6 +192,14 @@ Specify how existing clients, data, grants, and sessions behave after a change. 
 contracts and staged migrations. Every external side effect needs a recovery or reconciliation
 path appropriate to its failure modes.
 
+For the current pre-production phase, the owner permits clean interface redesigns
+(2026-10-31). Replace discarded development names rather than adding compatibility aliases,
+dual implementations or migration paths unless the task explicitly requires them. Update
+first-party callers, examples and tests together. Internal backend changes still preserve
+the accepted public OpenAPI behavior; intentional public changes need an explicit revised
+contract. This interface policy does not authorize metadata resets, resource recreation or
+credential rotation. Revisit it before the first supported customer release.
+
 Code rollback does not necessarily undo a schema migration, a deleted file, or a billed cloud
 resource. Define restoration or compensation separately and identify irreversible steps before
 execution. Tests use isolated temporary state; live validation uses explicitly authorized,
