@@ -66,8 +66,7 @@ try {
         seedSeconds: Number(seedSeconds.toFixed(2)),
         workloadSeconds: Number(((performance.now() - workloadStart) / 1000).toFixed(2)),
         latencyMs: { p50: percentile(0.5), p95: percentile(0.95), p99: percentile(0.99) },
-        benchmarkProcessPeakRssBytes:
-          process.resourceUsage().maxRSS * (os.platform() === 'darwin' ? 1 : 1024),
+        benchmarkProcessPeakRssBytes: process.resourceUsage().maxRSS * 1024,
         node: process.version,
         platform: `${os.platform()}-${os.arch()}`,
         cpus: os.cpus().length,
