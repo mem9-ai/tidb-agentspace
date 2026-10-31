@@ -31,7 +31,9 @@ fn known(v: &Value, keys: &[&str]) -> bool {
 }
 fn cell_text(v: &Value) -> String {
     v.as_str().map(str::to_owned).unwrap_or_else(|| {
-        if v.is_number() {
+        if v.is_i64() || v.is_u64() {
+            v.to_string()
+        } else if v.is_number() {
             v.as_f64().unwrap_or(0.0).to_string()
         } else {
             v.to_string()
@@ -940,4 +942,25 @@ fn mapped_fields(parsed: &Value, fields: &Value) -> Result<(Value, Value, Vec<St
         json!({"columns":columns,"rows":rows}),
         types,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn csv_keeps_full_integer_precision_and_distinguishes_strings_from_numbers() {
+        let result = json!({"columns":["large","signed","unsigned","numeric","formula","null"],"rows":[{
+            "large":9007199254740993_u64,"signed":i64::MIN,"unsigned":u64::MAX,
+            "numeric":-42,"formula":"-42","null":null
+        }]});
+        let artifact = serialized(&result, "csv").unwrap();
+        assert_eq!(
+            artifact["content"],
+            json!(concat!(
+                "\"large\",\"signed\",\"unsigned\",\"numeric\",\"formula\",\"null\"\r\n",
+                "\"9007199254740993\",\"-9223372036854775808\",\"18446744073709551615\",\"-42\",\"'-42\",\r\n"
+            ))
+        );
+    }
 }
