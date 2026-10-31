@@ -164,6 +164,14 @@ impl Policies {
                 {
                     return Err(error(409, "POLICY_OWNER_MISMATCH"));
                 }
+                // A terminated Guest may have provider cleanup in flight; never re-enable
+                // that Workspace while an old delete attempt can still complete.
+                if old.denied
+                    && !policy.denied
+                    && matches!(old.identity, OwnerIdentity::Guest { .. })
+                {
+                    return Err(error(409, "GUEST_TERMINATED"));
+                }
                 if old.generation > policy.generation {
                     return Err(error(409, "POLICY_STALE"));
                 }

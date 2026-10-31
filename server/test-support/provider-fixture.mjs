@@ -4,13 +4,15 @@ import { createHash } from 'node:crypto';
 
 export const nativeSecret = 'private-native-token-not-for-public-output';
 
-export async function providerFixture() {
+export async function providerFixture({ isolatedTenants = false } = {}) {
   const files = new Map();
   let statements = [];
   let creates = 0;
   let calls = 0;
   let lost = false;
   const databases = [];
+  const fileTenants = new Map();
+  const deleted = [];
   let nativeCreates = { zero: 0, db9: 0, account: 0 };
   const reset = () => {
     files.clear();
@@ -163,6 +165,11 @@ export async function providerFixture() {
         return respond(200, databases.at(-1));
       }
       if (url.pathname === '/customer/databases') return respond(200, databases);
+      if (url.pathname.startsWith('/customer/databases/') && req.method === 'DELETE') {
+        if (req.headers.authorization !== 'Bearer account-token') return respond(403, {});
+        deleted.push({ kind: 'db9', id: url.pathname.split('/').at(-1) });
+        return respond(200, { message: 'Database disabled' });
+      }
       if (url.pathname.startsWith('/customer/databases/'))
         return respond(
           200,
@@ -183,7 +190,17 @@ export async function providerFixture() {
       if (url.pathname === '/v1/provision') {
         creates++;
         if (lost) return req.socket.destroy();
-        return respond(200, { api_key: nativeSecret, tenant_id: 'created-tenant' });
+        const key = isolatedTenants ? `file-token-${creates}` : nativeSecret;
+        const tenant = isolatedTenants ? `created-tenant-${creates}` : 'created-tenant';
+        fileTenants.set(key, tenant);
+        return respond(200, { api_key: key, tenant_id: tenant });
+      }
+      if (url.pathname === '/v1/tenant' && req.method === 'DELETE') {
+        const token = (req.headers.authorization || '').replace(/^Bearer /, '');
+        const tenant = fileTenants.get(token);
+        if (!tenant) return respond(403, {});
+        deleted.push({ kind: 'drive9', id: tenant });
+        return respond(202, { status: 'deleting' });
       }
       if (url.pathname.startsWith('/v1/fs')) {
         const path = decodeURIComponent(url.pathname.slice(6)) || '/';
@@ -241,6 +258,9 @@ export async function providerFixture() {
     get nativeCreates() {
       return nativeCreates;
     },
+    get deleted() {
+      return [...deleted];
+    },
     get statements() {
       return statements;
     },
@@ -250,6 +270,10 @@ export async function providerFixture() {
     get calls() {
       return calls;
     },
-    close: () => new Promise((r) => server.close(r)),
+    close: () =>
+      new Promise((r) => {
+        server.close(r);
+        server.closeAllConnections();
+      }),
   };
 }

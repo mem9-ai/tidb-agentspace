@@ -328,6 +328,35 @@ impl Sessions {
             .await
     }
 
+    /// The caller must authenticate the browser credential and use the resulting Workspace
+    /// only. Queue cleanup before denying the owner so a crash cannot lose the request.
+    pub async fn request_guest_logout(
+        &self,
+        workspace: &str,
+        credential: &str,
+        queue: &crate::cleanup::Queue,
+    ) -> Result<()> {
+        let access = self
+            .authenticate_guest_credential(workspace, credential)
+            .await?;
+        let mut policy = self.policy(workspace).await?;
+        Self::matches(&policy, &access.user_id, access.generation, now()?)?;
+        if !matches!(policy.identity, OwnerIdentity::Guest { .. }) {
+            return Err(error(401, "SESSION_UNAUTHORIZED"));
+        }
+        queue
+            .request_logout(&policy, &Uuid::new_v4().to_string())
+            .await?;
+        policy.generation = policy
+            .generation
+            .checked_add(1)
+            .ok_or_else(|| error(503, "POLICY_GENERATION_EXHAUSTED"))?;
+        policy.denied = true;
+        self.policies
+            .install(&policy, &Uuid::new_v4().to_string())
+            .await
+    }
+
     async fn guest_credential_at(
         &self,
         workspace: &str,
@@ -475,6 +504,91 @@ mod tests {
             issuer: "https://issuer.example",
             subject: "alice",
         }
+    }
+
+    #[tokio::test]
+    async fn guest_logout_queues_cleanup_and_denies_only_its_owner_policy() {
+        let metadata = region();
+        let sessions = Sessions::open(metadata.clone(), "region:a").await.unwrap();
+        let queue = crate::cleanup::Queue::open(metadata, "region:a")
+            .await
+            .unwrap();
+        let current = now().unwrap();
+        let mut policy = oidc_policy();
+        let guest_id = Uuid::new_v4().to_string();
+        let secret_bytes = [23u8; 32];
+        let secret = hex::encode(secret_bytes);
+        policy.identity = OwnerIdentity::Guest {
+            guest_id: guest_id.clone(),
+            verifier: hex::encode(Sha256::digest(secret_bytes)),
+            created_at: current,
+            expires_at: current + 86_400,
+        };
+        sessions
+            .policies
+            .install(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        queue
+            .enqueue(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        let browser = sessions
+            .issue_guest_browser(&policy.workspace_id, &guest_id, &secret)
+            .await
+            .unwrap();
+        assert!(
+            sessions
+                .request_guest_logout(&Uuid::new_v4().to_string(), &browser.token, &queue)
+                .await
+                .is_err()
+        );
+        assert!(
+            sessions
+                .authenticate_guest_credential(&policy.workspace_id, &browser.token)
+                .await
+                .is_ok()
+        );
+        sessions
+            .request_guest_logout(&policy.workspace_id, &browser.token, &queue)
+            .await
+            .unwrap();
+        assert!(
+            sessions
+                .authenticate_guest_credential(&policy.workspace_id, &browser.token)
+                .await
+                .is_err()
+        );
+        let scope = sessions.policies.scope(&policy.workspace_id).unwrap();
+        let denied = sessions.policies.read(&scope).await.unwrap().unwrap().0;
+        assert!(denied.denied);
+        assert_eq!(denied.generation, policy.generation + 1);
+        let mut reenabled = denied.clone();
+        reenabled.generation += 1;
+        reenabled.denied = false;
+        assert_eq!(
+            sessions
+                .policies
+                .install(&reenabled, &Uuid::new_v4().to_string())
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "GUEST_TERMINATED"
+        );
+        assert_eq!(
+            queue
+                .requested(
+                    crate::cleanup::shard(&policy.workspace_id).unwrap(),
+                    None,
+                    10
+                )
+                .await
+                .unwrap()
+                .jobs
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]

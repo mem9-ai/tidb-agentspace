@@ -17,6 +17,7 @@ import {
   IconBookOpen01,
   IconChevronRight,
   IconHelpCircle,
+  IconLogOut01,
   IconMenu01,
   IconSearchLg,
 } from '@tidbcloud/uikit/icons';
@@ -36,6 +37,8 @@ type Props = {
   databaseView?: 'tables' | 'sql';
   navigation: NavigationItem[];
   onSearch: () => void;
+  onSignOut?: () => void;
+  isGuest?: boolean;
   children: ReactNode;
 };
 
@@ -51,6 +54,8 @@ export function WorkspaceLayout({
   databaseView,
   navigation,
   onSearch,
+  onSignOut,
+  isGuest = false,
   children,
 }: Props) {
   const [opened, setOpened] = useState(false);
@@ -106,9 +111,20 @@ export function WorkspaceLayout({
           component="a"
           href="#settings"
           label={profileName}
-          description="Personal account"
+          description={isGuest ? 'Guest session' : 'Personal account'}
           onClick={() => setOpened(false)}
         />
+        {onSignOut && (
+          <NavLink
+            component="button"
+            label="Sign out"
+            leftSection={<IconLogOut01 size={20} />}
+            onClick={() => {
+              setOpened(false);
+              onSignOut();
+            }}
+          />
+        )}
       </div>
     </div>
   );

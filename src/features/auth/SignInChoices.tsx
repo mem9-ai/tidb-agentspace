@@ -29,7 +29,7 @@ export function SignInChoices({
         h="auto"
         py="sm"
         aria-label="Continue as Guest"
-        aria-describedby="guest-expiry guest-access-note"
+        aria-describedby={guestEnabled ? 'guest-expiry' : 'guest-expiry guest-access-note'}
         disabled={!guestEnabled || guestLoading}
         loading={guestLoading}
         onClick={onGuestLogin}
@@ -41,11 +41,11 @@ export function SignInChoices({
           </Text>
         </Stack>
       </Button>
-      <Text id="guest-access-note" size="sm" ta="center">
-        {guestEnabled
-          ? 'Cloud resources may remain after access ends.'
-          : '24-hour Guest access is coming soon.'}
-      </Text>
+      {!guestEnabled && (
+        <Text id="guest-access-note" size="sm" ta="center">
+          24-hour Guest access is coming soon.
+        </Text>
+      )}
       {guestError && (
         <Text role="alert" c="red" size="sm">
           {guestError}

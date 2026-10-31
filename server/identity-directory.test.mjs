@@ -524,7 +524,7 @@ test(
 );
 
 test(
-  'Guest DB9 deletion attempts are scope-bound, journaled, and not blindly retried',
+  'Guest DB9 and Drive9 deletion attempts are scope-bound, journaled, and not blindly retried',
   { skip: !enabled, timeout: 120_000 },
   async (t) => {
     await exec('cargo', [
@@ -544,8 +544,19 @@ test(
       calls.push({
         method: req.method,
         path: req.url,
-        authorized: req.headers.authorization === 'Bearer test-only-token',
+        authorized: ['Bearer test-only-token', 'Bearer test-file-token'].includes(
+          req.headers.authorization,
+        ),
       });
+      if (
+        req.method === 'DELETE' &&
+        req.url === '/v1/tenant' &&
+        req.headers.authorization === 'Bearer test-file-token'
+      ) {
+        res.writeHead(202, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'deleting' }));
+        return;
+      }
       if (req.method !== 'DELETE' || req.headers.authorization !== 'Bearer test-only-token') {
         res.writeHead(403).end();
         return;
@@ -574,6 +585,8 @@ test(
     assert.deepEqual(calls, [
       { method: 'DELETE', path: '/customer/databases/db_guest', authorized: true },
       { method: 'DELETE', path: '/customer/databases/db_lost', authorized: true },
+      { method: 'DELETE', path: '/v1/tenant', authorized: true },
+      { method: 'DELETE', path: '/v1/tenant', authorized: true },
     ]);
   },
 );

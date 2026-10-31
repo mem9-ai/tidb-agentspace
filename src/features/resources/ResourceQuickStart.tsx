@@ -56,8 +56,7 @@ export function ResourceQuickStart({ kind }: { kind: QuickStartKind }) {
 export function GuestExpiryNotice() {
   return (
     <Text className="guest-expiry-notice" size="sm">
-      Your Guest Workspace expires 24 hours after it was created. Cloud resources may remain after
-      access ends.
+      Your Guest Workspace expires 24 hours after it was created.
     </Text>
   );
 }
