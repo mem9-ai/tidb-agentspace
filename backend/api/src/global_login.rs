@@ -8,7 +8,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 use workspace_contracts::Result;
 use workspace_identity::{
-    Directory, GuestRegistration, Registration, VerifiedIdentity,
+    Directory, GuestRegistration, RegionAssignment, Registration, VerifiedIdentity,
     onboarding::{Onboarding, RegionControl},
 };
 
@@ -18,6 +18,7 @@ use crate::sso::Runtime;
 pub struct GlobalLogin {
     sso: Runtime,
     onboarding: Onboarding,
+    directory: Directory,
     region: String,
 }
 
@@ -86,7 +87,8 @@ impl GlobalLogin {
         );
         Ok(Self {
             sso: Runtime::new(config)?,
-            onboarding: Onboarding::new(directory, region_control),
+            onboarding: Onboarding::new(directory.clone(), region_control),
+            directory,
             region,
         })
     }
@@ -108,6 +110,21 @@ impl GlobalLogin {
         let (issuer, subject) = login.identity();
         self.onboarding
             .personal(VerifiedIdentity { issuer, subject }, &self.region)
+            .await
+    }
+
+    /// Resolve an existing ready Workspace only after consuming a verified OIDC flow.
+    /// Unlike onboarding, discovery never creates an identity or invokes Region control.
+    pub async fn finish_discovery(
+        &self,
+        flow: &str,
+        query: &BTreeMap<String, String>,
+        workspace_id: &str,
+    ) -> Result<RegionAssignment> {
+        let login = self.sso.callback(flow, query).await?;
+        let (issuer, subject) = login.identity();
+        self.directory
+            .region_assignment(VerifiedIdentity { issuer, subject }, workspace_id)
             .await
     }
 }

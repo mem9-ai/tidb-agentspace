@@ -38,6 +38,34 @@ async fn main() -> anyhow::Result<()> {
         login.finish(&flow, &query).await.is_err(),
         "Flow replay accepted"
     );
+    for workspace in [&registration.workspace_id, "foreign-workspace"] {
+        let (authorization_url, flow) = login.begin("127.0.0.1").await?;
+        let url = reqwest::Url::parse(&authorization_url)?;
+        let state = url
+            .query_pairs()
+            .find_map(|(key, value)| (key == "state").then_some(value.into_owned()))
+            .ok_or_else(|| anyhow::anyhow!("Missing state"))?;
+        let response: serde_json::Value =
+            reqwest::get(url).await?.error_for_status()?.json().await?;
+        let code = response["code"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("Fixture did not return a code"))?;
+        let query = BTreeMap::from([("state".into(), state), ("code".into(), code.into())]);
+        let found = login.finish_discovery(&flow, &query, workspace).await;
+        if workspace == registration.workspace_id {
+            let found = found?;
+            anyhow::ensure!(found.workspace_id == registration.workspace_id);
+            anyhow::ensure!(found.region_id == registration.region_id);
+        } else {
+            anyhow::ensure!(found.is_err_and(|e| e.status == 404));
+        }
+        anyhow::ensure!(
+            login
+                .finish_discovery(&flow, &query, workspace)
+                .await
+                .is_err()
+        );
+    }
     println!("{}", serde_json::to_string(&registration)?);
     Ok(())
 }
