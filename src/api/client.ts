@@ -34,6 +34,7 @@ export type WriteFileInput = JsonBody<operations['writeFile']>;
 export type SsoAuthConfig = {
   enabled: boolean;
   guestEnabled?: boolean;
+  guestCleanupEnabled?: boolean;
   sessionKind?: 'account' | 'guest';
   provider?: string;
   label?: string;
@@ -133,6 +134,7 @@ export const workspaceApi = {
     responseData(client.POST('/workspaces/{workspaceId}/file-analyses', { params, body, signal })),
   startSession: () => responseData(sessionClient.POST('/api/session', { body: {} })),
   startGuestSession: () => responseData(sessionClient.POST('/api/auth/guest')),
+  endGuestSession: () => responseData(sessionClient.POST('/api/auth/guest/logout')),
   discoverWorkspace: async () => {
     clearWorkspace();
     const id = firstWorkspaceId(await responseData(client.GET('/workspaces')));

@@ -2,7 +2,10 @@
 //! The caller authenticates a Region credential before selecting a Workspace, keeps its
 //! lease through response/stream completion, and fences in-flight work before cleanup.
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 use tokio::sync::Mutex;
 use workspace_contracts::{Metadata, Result, ServiceError};
 use workspace_domain::{Credential, Operation, Repository, Response, Workspace};
@@ -46,6 +49,7 @@ struct State {
     sequence: u64,
     shutdown: bool,
     release_uncertain: bool,
+    cleanup: BTreeSet<String>,
 }
 
 pub struct ManagedWorkspaces {
@@ -91,6 +95,9 @@ impl ManagedWorkspaces {
         let mut state = self.state.lock().await;
         if state.shutdown || state.release_uncertain {
             return Err(ServiceError::new(503, "WORKSPACE_POOL_UNAVAILABLE"));
+        }
+        if state.cleanup.contains(workspace_id) {
+            return Err(ServiceError::new(401, "UNAUTHENTICATED"));
         }
         state.sequence = state.sequence.saturating_add(1);
         let sequence = state.sequence;
@@ -151,6 +158,78 @@ impl ManagedWorkspaces {
             },
         );
         Ok(entry)
+    }
+
+    /// Region-internal cleanup only. The caller must already hold a durable cleanup claim
+    /// and have denied or expired the Guest policy before accessing a Workspace this way.
+    pub(crate) async fn acquire_cleanup(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Arc<ManagedWorkspace>> {
+        if !uuid::Uuid::parse_str(workspace_id).is_ok_and(|id| id.to_string() == workspace_id) {
+            return Err(ServiceError::new(404, "WORKSPACE_NOT_FOUND"));
+        }
+        let mut state = self.state.lock().await;
+        if state.shutdown || state.release_uncertain || state.cleanup.contains(workspace_id) {
+            return Err(ServiceError::new(503, "WORKSPACE_POOL_UNAVAILABLE"));
+        }
+        if let Some(cached) = state.entries.get(workspace_id)
+            && Arc::strong_count(&cached.entry) != 1
+        {
+            return Err(ServiceError::new(409, "WORKSPACE_POOL_BUSY"));
+        }
+        state.cleanup.insert(workspace_id.to_owned());
+        if let Some(cached) = state.entries.remove(workspace_id) {
+            return Ok(cached.entry);
+        }
+        let repository = match Repository::open(
+            self.metadata.clone(),
+            &self.authority,
+            workspace_id,
+            false,
+            None,
+        )
+        .await
+        {
+            Ok(value) => value,
+            Err(error) => {
+                state.cleanup.remove(workspace_id);
+                return Err(error);
+            }
+        };
+        let workspace = Arc::new(Workspace::new_managed(repository));
+        let product = if let Some(config) = self.product.clone() {
+            match workspace_product::Product::new(workspace.clone(), config).await {
+                Ok(value) => Some(Arc::new(value)),
+                Err(error) => {
+                    if workspace.close().await.is_err() {
+                        state.release_uncertain = true;
+                    }
+                    state.cleanup.remove(workspace_id);
+                    return Err(error);
+                }
+            }
+        } else {
+            None
+        };
+        Ok(Arc::new(ManagedWorkspace { workspace, product }))
+    }
+
+    pub(crate) async fn release_cleanup(
+        &self,
+        workspace_id: &str,
+        entry: Arc<ManagedWorkspace>,
+    ) -> Result<()> {
+        let mut state = self.state.lock().await;
+        if !state.cleanup.contains(workspace_id) || Arc::strong_count(&entry) != 1 {
+            return Err(ServiceError::new(409, "WORKSPACE_POOL_BUSY"));
+        }
+        let result = entry.workspace.close().await;
+        state.cleanup.remove(workspace_id);
+        if result.is_err() {
+            state.release_uncertain = true;
+        }
+        result
     }
 
     /// Called after request and stream leases have drained. An uncertain writer release

@@ -216,6 +216,9 @@ function App() {
     [error, setError] = useState(''),
     [guestLoading, setGuestLoading] = useState(false),
     [guestError, setGuestError] = useState(''),
+    [confirmGuestSignOut, setConfirmGuestSignOut] = useState(false),
+    [guestSignOutBusy, setGuestSignOutBusy] = useState(false),
+    [guestSignOutError, setGuestSignOutError] = useState(''),
     [toast, setToast] = useState(''),
     [modal, setModal] = useState<'resource' | 'key' | 'search' | null>(null),
     [creationTarget, setCreationTarget] = useState<ResourceCreationTarget>('resource'),
@@ -293,6 +296,26 @@ function App() {
       notify('Copied to clipboard');
     } catch {
       notify('Clipboard unavailable. Select and copy the text.');
+    }
+  }
+  function finishSignOut() {
+    if (sso.logoutPath) window.location.href = apiBaseUrl + sso.logoutPath;
+  }
+  function requestSignOut() {
+    if (sso.sessionKind === 'guest') {
+      setGuestSignOutError('');
+      setConfirmGuestSignOut(true);
+    } else finishSignOut();
+  }
+  async function finishGuestSignOut() {
+    setGuestSignOutBusy(true);
+    setGuestSignOutError('');
+    try {
+      await workspaceApi.endGuestSession();
+      window.location.reload();
+    } catch {
+      setGuestSignOutError('Unable to finish Guest sign-out. Try again or refresh this page.');
+      setGuestSignOutBusy(false);
     }
   }
   const shared = {
@@ -374,6 +397,12 @@ function App() {
         }
         navigation={Object.entries(routes).map(([id, item]) => ({ id, ...item }))}
         onSearch={() => setModal('search')}
+        onSignOut={
+          sso.enabled && sso.logoutPath && (sso.sessionKind !== 'guest' || sso.guestCleanupEnabled)
+            ? requestSignOut
+            : undefined
+        }
+        isGuest={sso.sessionKind === 'guest'}
       >
         <div key={route}>
           {route === 'overview' && <Overview {...shared} />}
@@ -384,9 +413,41 @@ function App() {
           {route === 'api' && <ApiExplorer {...shared} />}
           {route === 'monitoring' && <Monitoring {...shared} />}
           {route === 'billing' && <Billing {...shared} />}
-          {route === 'settings' && <WorkspaceSettings {...shared} sso={sso} />}
+          {route === 'settings' && (
+            <WorkspaceSettings {...shared} sso={sso} onSignOut={requestSignOut} />
+          )}
         </div>
       </WorkspaceLayout>
+      {confirmGuestSignOut && (
+        <Modal
+          title="Sign out of Guest?"
+          size={480}
+          busy={guestSignOutBusy}
+          onClose={() => setConfirmGuestSignOut(false)}
+        >
+          <Text>
+            Signing out ends this Guest session and requests deletion of its resources. You won’t be
+            able to reopen this session in this browser. Save anything you need first.
+          </Text>
+          {guestSignOutError && (
+            <Alert color="red" role="alert" mt="md">
+              {guestSignOutError}
+            </Alert>
+          )}
+          <div className="modal-actions">
+            <Button disabled={guestSignOutBusy} onClick={() => setConfirmGuestSignOut(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="filled"
+              loading={guestSignOutBusy}
+              onClick={() => void finishGuestSignOut()}
+            >
+              Sign out
+            </Button>
+          </div>
+        </Modal>
+      )}
       {toast && (
         <Notification
           className="workspace-toast"
@@ -2043,7 +2104,14 @@ function Billing({ data }: Shared) {
     </>
   );
 }
-function WorkspaceSettings({ data, refresh, notify, copy, sso }: Shared & { sso: SsoAuthConfig }) {
+function WorkspaceSettings({
+  data,
+  refresh,
+  notify,
+  copy,
+  sso,
+  onSignOut,
+}: Shared & { sso: SsoAuthConfig; onSignOut: () => void }) {
   const [name, setName] = useState(data.profile.name),
     [workspaceName, setWorkspaceName] = useState(data.workspace.name),
     [description, setDescription] = useState(data.workspace.description),
@@ -2136,16 +2204,13 @@ function WorkspaceSettings({ data, refresh, notify, copy, sso }: Shared & { sso:
                 </Text>
               </div>
               <Badge color="green">Active</Badge>
-              {sso.enabled && sso.logoutPath && (
-                <Button
-                  variant="default"
-                  onClick={() => {
-                    window.location.href = apiBaseUrl + sso.logoutPath;
-                  }}
-                >
-                  Sign out
-                </Button>
-              )}
+              {sso.enabled &&
+                sso.logoutPath &&
+                (sso.sessionKind !== 'guest' || sso.guestCleanupEnabled) && (
+                  <Button variant="default" onClick={onSignOut}>
+                    Sign out
+                  </Button>
+                )}
             </div>
           </div>
         </Paper>

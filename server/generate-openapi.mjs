@@ -959,6 +959,7 @@ paths['/api/auth/config'] = {
           {
             enabled: { type: 'boolean' },
             guestEnabled: { type: 'boolean' },
+            guestCleanupEnabled: { type: 'boolean' },
             sessionKind: { type: 'string', enum: ['account', 'guest'] },
             provider: { const: 'tidbcloud' },
             label: str,
@@ -982,6 +983,19 @@ paths['/api/auth/guest'] = {
       200: response(object({ workspaceId: str })),
       404: response(ref('Error'), 'Guest sign-in is disabled'),
       default: response(ref('Error'), 'Guest sign-in unavailable or denied'),
+    },
+  },
+};
+paths['/api/auth/guest/logout'] = {
+  servers: [{ url: '/' }],
+  post: {
+    operationId: 'logoutGuestSession',
+    security: [],
+    description:
+      'End an authenticated Guest Workspace session and durably schedule resource cleanup. Provider deletion can be asynchronous, unsupported or require reconciliation; acceptance is not proof of deletion.',
+    responses: {
+      200: response(object({ loggedOut: { type: 'boolean' }, cleanup: { const: 'scheduled' } })),
+      default: response(ref('Error'), 'Guest logout or cleanup scheduling unavailable'),
     },
   },
 };
@@ -1010,14 +1024,15 @@ paths['/api/auth/tidbcloud/logout'] = {
   post: {
     operationId: 'logoutTidbSession',
     security: [],
-    description: 'Revoke attached TiDB Account and Guest browser sessions and clear their cookies.',
+    description:
+      'Revoke the TiDB Account session and attached Guest cookie. Guest-only sessions must use POST /api/auth/guest/logout to schedule cleanup.',
     responses: { 200: response(object({ loggedOut: { type: 'boolean' } })) },
   },
   get: {
     operationId: 'logoutTidbSessionAndRedirect',
     security: [],
     description:
-      'Revoke attached TiDB Account and Guest browser sessions, clear cookies, and redirect.',
+      'Revoke the TiDB Account session and attached Guest cookie, then redirect. Guest-only sessions must use POST /api/auth/guest/logout.',
     responses: {
       302: { description: 'Session revoked and browser redirected to the configured Console.' },
       200: response(object({ loggedOut: { type: 'boolean' } })),
