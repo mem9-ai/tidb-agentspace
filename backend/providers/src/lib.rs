@@ -243,6 +243,68 @@ impl Providers {
         }
         Ok(DeletionAccepted)
     }
+    pub async fn validate_deletion(&self, r: &Value) -> Result<()> {
+        let id = strv(r, "id")?;
+        match r["provider"].as_str() {
+            Some(DB9) => {
+                let b = self.binding("db9", id).await?;
+                let target = strv(&b, "instanceId")?;
+                if target.is_empty()
+                    || !target
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+                {
+                    return Err(err(503, "PROVIDER_BINDING_MISSING"));
+                }
+                let a = self.repository.account("db9").await?;
+                if a["state"] != "ready" {
+                    return Err(err(503, "PROVIDER_BINDING_MISSING"));
+                }
+            }
+            Some(DRIVE9 | DUCKDB) => {
+                let storage = if r["provider"] == DUCKDB {
+                    let b = self.binding("duckdb", id).await?;
+                    strv(&b, "storageId")?.to_owned()
+                } else {
+                    id.to_owned()
+                };
+                self.file_connection(&storage).await?;
+            }
+            _ => return Err(err(405, "RESOURCE_DELETE_UNSUPPORTED")),
+        }
+        Ok(())
+    }
+    /// The product journals the attempt durably and drains admitted domain work first.
+    /// Exactly one provider call; an interrupted caller must inspect its retained intent.
+    pub async fn delete_resource(&self, r: &Value) -> Result<()> {
+        self.validate_deletion(r).await?;
+        let id = strv(r, "id")?;
+        if r["provider"] == DB9 {
+            let binding = self.binding("db9", id).await?;
+            let account = self.account_with_creation(false).await?;
+            self.db9_request(
+                &format!("/databases/{}", strv(&binding, "instanceId")?),
+                Method::DELETE,
+                None,
+                Some(strv(&account, "token")?),
+            )
+            .await?;
+        } else {
+            let storage = if r["provider"] == DUCKDB {
+                let b = self.binding("duckdb", id).await?;
+                strv(&b, "storageId")?.to_owned()
+            } else {
+                id.to_owned()
+            };
+            let result = self
+                .file_json(Some(&storage), "/v1/tenant", Method::DELETE)
+                .await?;
+            if !["deleting", "deleted"].contains(&result["status"].as_str().unwrap_or("")) {
+                return Err(err(502, "PROVIDER_UNAVAILABLE"));
+            }
+        }
+        Ok(())
+    }
     pub async fn sql(&self, binding: &Value, statement: &str, setup: bool) -> Result<Value> {
         if statement.trim().is_empty() || statement.len() > 65536 {
             return Err(err(400, "INVALID_SQL"));
@@ -270,7 +332,12 @@ impl Providers {
         }
         execute_native(binding, statement, setup).await
     }
-    pub async fn execute(&self, resource: &Value, statement: &str) -> Result<Value> {
+    pub async fn execute(
+        &self,
+        resource: &Value,
+        statement: &str,
+        read_only: bool,
+    ) -> Result<Value> {
         let slots = if resource["kind"] == "postgresql" {
             &self.postgres_slots
         } else {
@@ -291,7 +358,11 @@ impl Providers {
         }
         validate_binding(&binding["connection"], resource, false)?;
         let start = std::time::Instant::now();
-        let mut result = self.sql(&binding["connection"], statement, false).await?;
+        let mut result = if self.config.sql_fixture.is_some() {
+            self.sql(&binding["connection"], statement, false).await?
+        } else {
+            sql::execute_native_read_only(&binding["connection"], statement, read_only).await?
+        };
         result["mode"] = json!("live");
         result["durationMs"] = json!(start.elapsed().as_millis() as u64);
         Ok(result)
@@ -544,6 +615,7 @@ impl Providers {
         path: &str,
         bytes: Vec<u8>,
         create_only: bool,
+        expected_revision: Option<&str>,
         before_write: F,
     ) -> Result<()>
     where
@@ -562,9 +634,21 @@ impl Providers {
         if create_only {
             h.push(("X-Dat9-Expected-Revision", "0".into()));
         }
+        if let Some(revision) = expected_revision {
+            h.push(("X-Dat9-Expected-Revision", revision.into()));
+        }
         before_write().await?;
         self.file_request(Some(id), &fs_path(path), Method::PUT, Some(bytes), &h)
-            .await?;
+            .await
+            .map_err(|e| {
+                if (expected_revision.is_some() && [404, 409, 412].contains(&e.status))
+                    || (create_only && [409, 412].contains(&e.status))
+                {
+                    err(412, "PRECONDITION_FAILED")
+                } else {
+                    e
+                }
+            })?;
         Ok(())
     }
     async fn db9_request(

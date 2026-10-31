@@ -21,6 +21,7 @@ export async function productApiFixture(t, transport, onSql) {
     await meta.close();
   });
   provider = await providerFixture({ onSql, requireFileAuth: true });
+  provider.bindFileTenant(nativeSecret, 'coverage-tenant');
   region = await meta.service('api-coverage');
   const states = ['ws_agentlab', 'ws_other'].map((id) => {
     const state = workspaceFixture();
@@ -75,6 +76,7 @@ export async function productApiFixture(t, transport, onSql) {
       drive9: {
         bindings: {
           fs_live: { state: 'bound', apiKey: nativeSecret, tenantId: state.workspace.id },
+          'hidden-storage': { state: 'bound', apiKey: nativeSecret, tenantId: 'hidden-tenant' },
         },
       },
       zero: {
@@ -89,6 +91,13 @@ export async function productApiFixture(t, transport, onSql) {
       },
       duckdb: { bindings: { db_duck: { state: 'ready', storageId: 'hidden-storage' } } },
       db9: {
+        account: {
+          state: 'ready',
+          anonymousId: 'retained-account',
+          anonymousSecret: nativeSecret,
+          token: 'account-token',
+          expiresAt: 4070908800000,
+        },
         bindings: {
           db_pg: {
             state: 'ready',
@@ -211,6 +220,17 @@ export async function productApiFixture(t, transport, onSql) {
   return {
     provider,
     request,
+    async records(keys, workspace = 0) {
+      const scope = workspaceScope(region.server.authorityId, states[workspace].workspace.id);
+      const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
+      const response = await region.client.call({
+        op: 'get',
+        scope,
+        guard: { ownerId: writer.records['system/writer'].value.ownerId },
+        keys,
+      });
+      return response.records;
+    },
     async restart({ crash = false } = {}) {
       writerRecovery = [];
       metadataRecovery = undefined;

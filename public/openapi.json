@@ -65,6 +65,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -73,6 +79,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -172,6 +184,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -180,6 +198,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -282,6 +306,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -290,6 +320,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -409,6 +445,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -417,6 +459,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -518,6 +566,12 @@
                   }
                 }
               }
+            },
+            "headers": {
+              "Location": {
+                "schema": { "type": "string" },
+                "description": "URI of the created resource."
+              }
             }
           },
           "400": {
@@ -544,6 +598,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -552,6 +612,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -723,6 +789,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -731,6 +803,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -924,6 +1002,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -932,6 +1016,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1124,6 +1214,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -1132,6 +1228,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1256,6 +1358,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -1264,6 +1372,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1383,6 +1497,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -1391,6 +1511,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1437,7 +1563,21 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "schema": { "type": "string", "maxLength": 256 },
+            "description": "One strong opaque ETag returned by file metadata. No weak tags, wildcard or lists. Atomically reject a changed/missing file with 412. Mutually exclusive with If-None-Match."
+          },
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "schema": { "const": "*" },
+            "description": "Create only; an existing path returns 412. Mutually exclusive with If-Match."
+          }
+        ]
       },
       "delete": {
         "operationId": "deleteFile",
@@ -1496,6 +1636,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -1504,6 +1650,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1662,10 +1814,16 @@
           { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
           { "name": "path", "in": "query", "required": true, "schema": { "type": "string" } },
           {
+            "name": "If-Match",
+            "in": "header",
+            "schema": { "type": "string", "maxLength": 256 },
+            "description": "One strong opaque ETag returned by file metadata. No weak tags, wildcard or lists. Atomically reject a changed/missing file with 412. Mutually exclusive with If-None-Match."
+          },
+          {
             "name": "If-None-Match",
             "in": "header",
             "schema": { "const": "*" },
-            "description": "Only create a new file; fail if the path exists."
+            "description": "Create only; an existing path returns 412. Mutually exclusive with If-Match."
           }
         ],
         "responses": {
@@ -1704,6 +1862,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -1712,6 +1876,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1845,6 +2015,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -1853,6 +2029,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1922,8 +2104,8 @@
         "operationId": "listDatabaseTables",
         "summary": "List up to 500 tables and views in the selected database, ordered by name; truncated means more exist",
         "tags": ["Workspace"],
-        "description": "Required workspace key scope: queries:execute. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
-        "x-required-scope": "queries:execute",
+        "description": "Required workspace key scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "x-required-scope": "queries:read",
         "security": [
           { "workspaceKey": [] },
           { "localOwner": [] },
@@ -1961,6 +2143,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -1969,6 +2157,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -2038,8 +2232,8 @@
         "operationId": "getDatabaseTable",
         "summary": "Read columns and ordered index parts for an exact table name; includes a SELECT for the editor",
         "tags": ["Workspace"],
-        "description": "Required workspace key scope: queries:execute. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
-        "x-required-scope": "queries:execute",
+        "description": "Required workspace key scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "x-required-scope": "queries:read",
         "security": [
           { "workspaceKey": [] },
           { "localOwner": [] },
@@ -2086,6 +2280,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -2094,6 +2294,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -2163,8 +2369,8 @@
         "operationId": "previewDatabaseTable",
         "summary": "Read up to 100 unordered rows, bounded by 1 MiB and 15 seconds per statement; not pagination or a full export",
         "tags": ["Workspace"],
-        "description": "Required workspace key scope: queries:execute. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
-        "x-required-scope": "queries:execute",
+        "description": "Required workspace key scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "x-required-scope": "queries:read",
         "security": [
           { "workspaceKey": [] },
           { "localOwner": [] },
@@ -2210,6 +2416,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -2218,6 +2430,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -2321,6 +2539,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -2329,6 +2553,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -2466,6 +2696,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -2474,6 +2710,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -2595,6 +2837,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -2603,6 +2851,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -2720,6 +2974,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -2728,6 +2988,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -2841,6 +3107,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -2849,6 +3121,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -2917,8 +3195,8 @@
         "operationId": "exportResult",
         "summary": "Export a supplied result snapshot without rerunning its source query",
         "tags": ["Workspace"],
-        "description": "Required workspace key scope: Source database: queries:execute; source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.",
-        "x-required-scope": "Source database: queries:execute; source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant",
+        "description": "Required workspace key scope: Source database: queries:read (also implied by queries:execute); source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.",
+        "x-required-scope": "Source database: queries:read (also implied by queries:execute); source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant",
         "security": [
           { "workspaceKey": [] },
           { "localOwner": [] },
@@ -2964,6 +3242,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -2972,6 +3256,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -3046,8 +3336,8 @@
         "operationId": "executeQuery",
         "summary": "Execute one statement on a selected database; live SQL can read and write",
         "tags": ["Workspace"],
-        "description": "Required workspace key scope: queries:execute. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
-        "x-required-scope": "queries:execute",
+        "description": "Requires queries:read (implied by queries:execute) and the database grant. Writes additionally require queries:execute. Read-only mode is enforced for read-only Keys even when readOnly=false. The constrained read-only subset permits at most 1024 lexer tokens and 32 nested delimiters; unsupported syntax/functions fail closed.",
+        "x-required-scope": "queries:read",
         "security": [
           { "workspaceKey": [] },
           { "localOwner": [] },
@@ -3063,6 +3353,11 @@
                 "required": ["resourceId", "sql"],
                 "properties": {
                   "resourceId": { "type": "string" },
+                  "readOnly": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enforced read-only mode. Automatically enabled for queries:read-only Keys."
+                  },
                   "sources": {
                     "type": "array",
                     "maxItems": 4,
@@ -3088,7 +3383,7 @@
                   },
                   "sql": {
                     "type": "string",
-                    "description": "Live Zero/DuckDB: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n]."
+                    "description": "queries:read grants a constrained parsed read-only SELECT/CTE/VALUES subset; unknown functions, locks, writes and multiple statements are rejected before provider I/O. queries:execute also permits reads and writes. readOnly:true constrains a full-access caller. Live Zero/DuckDB: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n]."
                   }
                 }
               }
@@ -3126,6 +3421,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -3134,6 +3435,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -3180,7 +3487,8 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           }
-        }
+        },
+        "x-write-scope": "queries:execute"
       },
       "parameters": [
         {
@@ -3251,6 +3559,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -3259,6 +3573,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -3374,6 +3694,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -3382,6 +3708,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -3492,6 +3824,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -3500,6 +3838,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -3574,6 +3918,7 @@
                         "files:read",
                         "files:write",
                         "files:analyze",
+                        "queries:read",
                         "queries:execute",
                         "usage:read"
                       ]
@@ -3634,6 +3979,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -3642,6 +3993,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -3761,6 +4118,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -3769,6 +4132,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -3875,6 +4244,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -3883,6 +4258,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -4029,6 +4410,12 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
           "409": {
             "description": "Conflict or free-tier limit",
             "content": {
@@ -4037,6 +4424,12 @@
           },
           "410": {
             "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -4111,6 +4504,637 @@
                   }
                 }
               }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/files/metadata": {
+      "get": {
+        "operationId": "getFileMetadata",
+        "summary": "Read file identity and an opaque conditional-write version",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "x-required-scope": "files:read",
+        "security": [
+          { "workspaceKey": [] },
+          { "localOwner": [] },
+          { "accountOwner": [] },
+          { "guestOwner": [] }
+        ],
+        "parameters": [
+          { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "path", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "resourceId",
+                        "path",
+                        "type",
+                        "size",
+                        "version",
+                        "conditionalWrites"
+                      ],
+                      "properties": {
+                        "resourceId": { "type": "string" },
+                        "path": { "type": "string" },
+                        "type": { "enum": ["file", "directory"] },
+                        "size": { "type": "integer" },
+                        "version": { "type": ["string", "null"] },
+                        "conditionalWrites": { "type": "boolean" }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": { "type": "string" },
+                "description": "Strong version validator when available. Never cache authenticated metadata."
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
+        }
+      ]
+    },
+    "/workspaces/{workspaceId}/context": {
+      "get": {
+        "operationId": "getAgentContext",
+        "summary": "Discover the current caller and effective Workspace permissions",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: authenticated caller; no additional action scope. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Bootstrap with the regional Workspace API URL (including workspaceId) and one Key. No Global lookup or bearer-only scan across Workspaces. No other Key or upstream credentials are returned; effective grants do not override resource/provider availability. queries:execute implies queries:read. Owner session expiry remains governed by its authentication profile.",
+        "x-required-scope": null,
+        "security": [
+          { "workspaceKey": [] },
+          { "localOwner": [] },
+          { "accountOwner": [] },
+          { "guestOwner": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "workspaceId",
+                    "principal",
+                    "links",
+                    "capabilities",
+                    "limits",
+                    "permissions"
+                  ],
+                  "properties": {
+                    "workspaceId": { "type": "string" },
+                    "principal": {
+                      "type": "object",
+                      "required": ["id", "kind", "scopes", "resourceIds", "expiresAt"],
+                      "properties": {
+                        "id": { "type": "string" },
+                        "kind": { "enum": ["owner", "workspaceKey"] },
+                        "scopes": { "type": "array", "items": { "type": "string" } },
+                        "resourceIds": { "type": "array", "items": { "type": "string" } },
+                        "expiresAt": { "type": ["string", "null"], "format": "date-time" }
+                      }
+                    },
+                    "links": {
+                      "type": "object",
+                      "required": ["self", "resources", "queries", "files"],
+                      "properties": {
+                        "self": { "type": "string" },
+                        "resources": { "type": "string" },
+                        "queries": { "type": "string" },
+                        "files": { "type": "string" }
+                      }
+                    },
+                    "capabilities": { "$ref": "#/components/schemas/Capabilities" },
+                    "limits": {
+                      "type": "object",
+                      "required": [
+                        "sqlBytes",
+                        "queryRows",
+                        "queryResultBytes",
+                        "fileUploadBytes",
+                        "sqlTimeoutSeconds",
+                        "readOnlySqlTokens",
+                        "readOnlySqlNesting"
+                      ],
+                      "properties": {
+                        "sqlBytes": { "const": 65536 },
+                        "queryRows": { "const": 1000 },
+                        "queryResultBytes": { "const": 1048576 },
+                        "fileUploadBytes": { "const": 1048576 },
+                        "sqlTimeoutSeconds": { "const": 15 },
+                        "readOnlySqlTokens": { "const": 1024 },
+                        "readOnlySqlNesting": { "const": 32 }
+                      }
+                    },
+                    "permissions": {
+                      "type": "object",
+                      "required": ["manageKeys", "createResources"],
+                      "properties": {
+                        "manageKeys": { "type": "boolean" },
+                        "createResources": { "type": "boolean" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
+        }
+      ]
+    },
+    "/workspaces/{workspaceId}/resources/{resourceId}": {
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
+        },
+        { "name": "resourceId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "operationId": "getResource",
+        "summary": "Read one resource, its permitted actions and lifecycle status",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "x-required-scope": "resources:read",
+        "security": [
+          { "workspaceKey": [] },
+          { "localOwner": [] },
+          { "accountOwner": [] },
+          { "guestOwner": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": { "data": { "$ref": "#/components/schemas/Resource" } }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteResource",
+        "summary": "Request removal and retain an observable deletion tombstone",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Local removal completes synchronously (200). Drive9/DuckDB and db9 may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; db9 requires operator reconciliation. Zero returns 405 unchanged. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.",
+        "x-required-scope": "resources:write",
+        "security": [
+          { "workspaceKey": [] },
+          { "localOwner": [] },
+          { "accountOwner": [] },
+          { "guestOwner": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": { "data": { "$ref": "#/components/schemas/Resource" } }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Deletion accepted or outcome unknown. Inspect GET at Location; repeated DELETE never retries the upstream effect. Credentials remain private and retained.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": { "data": { "$ref": "#/components/schemas/Resource" } }
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "schema": { "type": "string" },
+                "description": "URI of the retained resource and deletion status."
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            },
+            "headers": {
+              "Allow": {
+                "schema": { "const": "GET" },
+                "description": "Methods available on this provider-backed resource."
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
           }
         }
@@ -4320,6 +5344,32 @@
             ],
             "description": "Missing on legacy local resources. db9-anonymous is PostgreSQL-compatible; its NUMERIC supports 28–29 significant digits. Provider compatibility limits apply."
           },
+          "deletion": {
+            "type": "object",
+            "required": ["phase", "requestedAt"],
+            "properties": {
+              "phase": { "enum": ["outcome-unknown", "provider-accepted", "completed"] },
+              "requestedAt": { "type": "string", "format": "date-time" }
+            }
+          },
+          "allowedActions": { "type": "array", "items": { "type": "string" } },
+          "capabilities": {
+            "type": "object",
+            "required": [
+              "delete",
+              "deletionCompletion",
+              "readOnlyQueries",
+              "conditionalFileWrites"
+            ],
+            "properties": {
+              "delete": { "type": "boolean" },
+              "deletionCompletion": {
+                "enum": ["synchronous", "providerStatus", "operatorReconciliation", "unsupported"]
+              },
+              "readOnlyQueries": { "type": "boolean" },
+              "conditionalFileWrites": { "type": "boolean" }
+            }
+          },
           "uploadLimitBytes": {
             "type": "integer",
             "description": "Negotiated gateway upload limit; zero means uploads are unavailable."
@@ -4341,6 +5391,10 @@
           "resourceId": { "type": "string" },
           "path": { "type": "string" },
           "type": { "enum": ["file", "directory"] },
+          "version": {
+            "type": "string",
+            "description": "Opaque strong version validator, including its double quotes; send unchanged in If-Match."
+          },
           "content": { "type": "string" },
           "size": { "type": "integer" },
           "updatedAt": { "type": ["string", "null"], "format": "date-time" }

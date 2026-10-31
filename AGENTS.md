@@ -57,6 +57,7 @@ follow its task-specific references before implementation. Keep detailed rules c
   expiration, and revocation when changing authorization. A UI restriction is insufficient.
 - Keep the Console and API independently buildable, runnable, and packageable in this repository.
   Follow [independent delivery](docs/independent-delivery.md) and [ADR 0005](docs/decisions/0005-independent-console-and-api.md); the API must not serve Console assets.
+- New or revised public APIs follow [REST design](docs/standards/rest-api-design.md); scope agent context, lifecycle status and conditional mutations explicitly.
 - Reuse domain operations across the Console and agent APIs. Keep provider-specific behavior
   behind adapters when adding real cloud integrations.
 - Every supported customer business capability must complete through documented OpenAPI

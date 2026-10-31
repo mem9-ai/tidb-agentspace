@@ -96,8 +96,8 @@ export async function fileCases(t, { request, token, provider }) {
           raw: Buffer.from('replacement'),
           headers: { 'Content-Type': 'application/octet-stream', 'If-None-Match': '*' },
         },
-        409,
-        'FILE_CONFLICT',
+        412,
+        'PRECONDITION_FAILED',
       );
       const download = await request(path, { token });
       assert.deepEqual(download.body, bytes);

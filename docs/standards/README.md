@@ -38,6 +38,10 @@ The same standard requires complete API paths for supported customer business ca
 only pure presentation/browser interactions may be UI-only. Feature specifications map the
 workflow to operation IDs, permissions and native acceptance evidence.
 
+Public API resource modeling and HTTP methods follow [REST API design](rest-api-design.md).
+Current endpoints and target migrations are distinguished explicitly; native behavior remains
+the acceptance boundary.
+
 ## How to interpret a standard
 
 - **Verified upstream fact:** includes an official source and version/date. Recheck when

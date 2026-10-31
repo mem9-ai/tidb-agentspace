@@ -48,6 +48,7 @@ const SCOPES: &[&str] = &[
     "files:read",
     "files:write",
     "files:analyze",
+    "queries:read",
     "queries:execute",
     "usage:read",
 ];
@@ -95,10 +96,15 @@ pub struct Principal {
     pub id: String,
     pub scopes: Vec<String>,
     pub resource_ids: Vec<String>,
+    pub expires_at: Option<String>,
 }
 impl Principal {
     pub fn scope(&self, action: &str) -> Result<()> {
-        if !self.owner && !self.scopes.iter().any(|s| s == "*" || s == action) {
+        if !self.owner
+            && !self.scopes.iter().any(|s| {
+                s == "*" || s == action || (action == "queries:read" && s == "queries:execute")
+            })
+        {
             return Err(reject(403, "INSUFFICIENT_SCOPE"));
         }
         Ok(())
@@ -142,6 +148,7 @@ pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
                 .into(),
             scopes: strings(&key["scopes"]).ok_or_else(|| reject(401, "INVALID_KEY"))?,
             resource_ids: strings(&key["resourceIds"]).unwrap_or_default(),
+            expires_at: key["expiresAt"].as_str().map(str::to_owned),
         });
     }
     let (id, actor) = match credential {
@@ -169,6 +176,11 @@ pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
         id,
         scopes: vec!["*".into()],
         resource_ids: vec!["*".into()],
+        expires_at: match credential {
+            Credential::SessionOwner { expires_at, .. } => DateTime::from_timestamp(*expires_at, 0)
+                .map(|t| t.to_rfc3339_opts(SecondsFormat::Millis, true)),
+            _ => None,
+        },
     })
 }
 impl Workspace {

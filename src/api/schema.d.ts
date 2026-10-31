@@ -256,7 +256,7 @@ export interface paths {
     };
     /**
      * List up to 500 tables and views in the selected database, ordered by name; truncated means more exist
-     * @description Required workspace key scope: queries:execute. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required workspace key scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['listDatabaseTables'];
     put?: never;
@@ -280,7 +280,7 @@ export interface paths {
     };
     /**
      * Read columns and ordered index parts for an exact table name; includes a SELECT for the editor
-     * @description Required workspace key scope: queries:execute. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required workspace key scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['getDatabaseTable'];
     put?: never;
@@ -304,7 +304,7 @@ export interface paths {
     };
     /**
      * Read up to 100 unordered rows, bounded by 1 MiB and 15 seconds per statement; not pagination or a full export
-     * @description Required workspace key scope: queries:execute. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required workspace key scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['previewDatabaseTable'];
     put?: never;
@@ -444,7 +444,7 @@ export interface paths {
     put?: never;
     /**
      * Export a supplied result snapshot without rerunning its source query
-     * @description Required workspace key scope: Source database: queries:execute; source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.
+     * @description Required workspace key scope: Source database: queries:read (also implied by queries:execute); source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.
      */
     post: operations['exportResult'];
     delete?: never;
@@ -467,7 +467,7 @@ export interface paths {
     put?: never;
     /**
      * Execute one statement on a selected database; live SQL can read and write
-     * @description Required workspace key scope: queries:execute. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Requires queries:read (implied by queries:execute) and the database grant. Writes additionally require queries:execute. Read-only mode is enforced for read-only Keys even when readOnly=false. The constrained read-only subset permits at most 1024 lexer tokens and 32 nested delimiters; unsupported syntax/functions fail closed.
      */
     post: operations['executeQuery'];
     delete?: never;
@@ -648,6 +648,80 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/workspaces/{workspaceId}/files/metadata': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    /**
+     * Read file identity and an opaque conditional-write version
+     * @description Required workspace key scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     */
+    get: operations['getFileMetadata'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/workspaces/{workspaceId}/context': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    /**
+     * Discover the current caller and effective Workspace permissions
+     * @description Required workspace key scope: authenticated caller; no additional action scope. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Bootstrap with the regional Workspace API URL (including workspaceId) and one Key. No Global lookup or bearer-only scan across Workspaces. No other Key or upstream credentials are returned; effective grants do not override resource/provider availability. queries:execute implies queries:read. Owner session expiry remains governed by its authentication profile.
+     */
+    get: operations['getAgentContext'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/workspaces/{workspaceId}/resources/{resourceId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
+        resourceId: string;
+      };
+      cookie?: never;
+    };
+    /**
+     * Read one resource, its permitted actions and lifecycle status
+     * @description Required workspace key scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     */
+    get: operations['getResource'];
+    put?: never;
+    post?: never;
+    /**
+     * Request removal and retain an observable deletion tombstone
+     * @description Required workspace key scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Local removal completes synchronously (200). Drive9/DuckDB and db9 may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; db9 requires operator reconciliation. Zero returns 405 unchanged. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.
+     */
+    delete: operations['deleteResource'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/auth/guest': {
     parameters: {
       query?: never;
@@ -753,6 +827,21 @@ export interface components {
        */
       provider?:
         'local' | 'drive9-anonymous' | 'tidb-cloud-zero' | 'duckdb-drive9' | 'db9-anonymous';
+      deletion?: {
+        /** @enum {unknown} */
+        phase: 'outcome-unknown' | 'provider-accepted' | 'completed';
+        /** Format: date-time */
+        requestedAt: string;
+      };
+      allowedActions?: string[];
+      capabilities?: {
+        delete: boolean;
+        /** @enum {unknown} */
+        deletionCompletion:
+          'synchronous' | 'providerStatus' | 'operatorReconciliation' | 'unsupported';
+        readOnlyQueries: boolean;
+        conditionalFileWrites: boolean;
+      };
       /** @description Negotiated gateway upload limit; zero means uploads are unavailable. */
       uploadLimitBytes?: number;
       connectionError?: string;
@@ -770,6 +859,8 @@ export interface components {
       path: string;
       /** @enum {unknown} */
       type: 'file' | 'directory';
+      /** @description Opaque strong version validator, including its double quotes; send unchanged in If-Match. */
+      version?: string;
       content?: string;
       size: number;
       /** Format: date-time */
@@ -1207,6 +1298,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -1218,6 +1318,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -1349,6 +1458,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -1360,6 +1478,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -1489,6 +1616,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -1500,6 +1636,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -1632,6 +1777,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -1643,6 +1797,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -1746,6 +1909,8 @@ export interface operations {
       /** @description Success */
       201: {
         headers: {
+          /** @description URI of the created resource. */
+          Location?: string;
           [name: string]: unknown;
         };
         content: {
@@ -1792,6 +1957,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -1803,6 +1977,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -1959,6 +2142,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -1970,6 +2162,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -2153,6 +2354,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -2164,6 +2374,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -2337,6 +2556,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -2348,6 +2576,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -2483,6 +2720,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -2494,6 +2740,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -2569,7 +2824,12 @@ export interface operations {
   writeFile: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        /** @description One strong opaque ETag returned by file metadata. No weak tags, wildcard or lists. Atomically reject a changed/missing file with 412. Mutually exclusive with If-None-Match. */
+        'If-Match'?: string;
+        /** @description Create only; an existing path returns 412. Mutually exclusive with If-Match. */
+        'If-None-Match'?: '*';
+      };
       path: {
         /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
         workspaceId: string;
@@ -2637,6 +2897,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -2648,6 +2917,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -2786,6 +3064,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -2797,6 +3084,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -2963,7 +3259,9 @@ export interface operations {
         path: string;
       };
       header?: {
-        /** @description Only create a new file; fail if the path exists. */
+        /** @description One strong opaque ETag returned by file metadata. No weak tags, wildcard or lists. Atomically reject a changed/missing file with 412. Mutually exclusive with If-None-Match. */
+        'If-Match'?: string;
+        /** @description Create only; an existing path returns 412. Mutually exclusive with If-Match. */
         'If-None-Match'?: '*';
       };
       path: {
@@ -3026,6 +3324,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -3037,6 +3344,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -3169,6 +3485,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -3180,6 +3505,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -3310,6 +3644,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -3321,6 +3664,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -3454,6 +3806,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -3465,6 +3826,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -3597,6 +3967,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -3608,6 +3987,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -3741,6 +4129,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -3752,6 +4149,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -3894,6 +4300,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -3905,6 +4320,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -4038,6 +4462,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -4049,6 +4482,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -4182,6 +4624,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -4193,6 +4644,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -4326,6 +4786,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -4337,6 +4806,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -4470,6 +4948,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -4481,6 +4968,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -4576,6 +5072,11 @@ export interface operations {
       content: {
         'application/json': {
           resourceId: string;
+          /**
+           * @description Enforced read-only mode. Automatically enabled for queries:read-only Keys.
+           * @default false
+           */
+          readOnly?: boolean;
           /** @description DuckDB only: query-scoped CSV/JSON/NDJSON/Parquet snapshots as files.NAME. Nonempty sources require files:read, files:analyze and every source File System grant in addition to database query access. SELECT only; 16 MiB combined input and a shared 15-second deadline. Sources are not persisted. */
           sources?: {
             /** @description Unique source table name in the per-query files catalog. */
@@ -4584,7 +5085,7 @@ export interface operations {
             /** @description Exact absolute Workspace file path; no globs, traversal, external URLs or native paths. */
             path: string;
           }[];
-          /** @description Live Zero/DuckDB: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n]. */
+          /** @description queries:read grants a constrained parsed read-only SELECT/CTE/VALUES subset; unknown functions, locks, writes and multiple statements are rejected before provider I/O. queries:execute also permits reads and writes. readOnly:true constrains a full-access caller. Live Zero/DuckDB: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n]. */
           sql: string;
         };
       };
@@ -4635,6 +5136,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -4646,6 +5156,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -4780,6 +5299,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -4791,6 +5319,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -4922,6 +5459,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -4933,6 +5479,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -5064,6 +5619,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -5075,6 +5639,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -5167,6 +5740,7 @@ export interface operations {
             | 'files:read'
             | 'files:write'
             | 'files:analyze'
+            | 'queries:read'
             | 'queries:execute'
             | 'usage:read'
           )[];
@@ -5227,6 +5801,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -5238,6 +5821,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -5370,6 +5962,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -5381,6 +5982,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -5520,6 +6130,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -5531,6 +6150,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -5700,6 +6328,15 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
       /** @description Conflict or free-tier limit */
       409: {
         headers: {
@@ -5711,6 +6348,15 @@ export interface operations {
       };
       /** @description Temporary database expired */
       410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
         headers: {
           [name: string]: unknown;
         };
@@ -5810,6 +6456,712 @@ export interface operations {
             loginPath?: string;
             logoutPath?: string;
           };
+        };
+      };
+    };
+  };
+  getFileMetadata: {
+    parameters: {
+      query: {
+        resourceId: string;
+        path: string;
+      };
+      header?: never;
+      path: {
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          /** @description Strong version validator when available. Never cache authenticated metadata. */
+          ETag?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            data: {
+              resourceId: string;
+              path: string;
+              /** @enum {unknown} */
+              type: 'file' | 'directory';
+              size: number;
+              version: string | null;
+              conditionalWrites: boolean;
+            };
+          };
+        };
+      };
+      /** @description Invalid request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Missing, invalid, expired, or revoked credential */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Insufficient permission */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource or endpoint not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Conflict or free-tier limit */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Content too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Unsupported content type */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL syntax, result limit, or unsupported demo query */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider quota or rate limit */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider unavailable or invalid response */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider binding needs operator recovery */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  getAgentContext: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            workspaceId: string;
+            principal: {
+              id: string;
+              /** @enum {unknown} */
+              kind: 'owner' | 'workspaceKey';
+              scopes: string[];
+              resourceIds: string[];
+              /** Format: date-time */
+              expiresAt: string | null;
+            };
+            links: {
+              self: string;
+              resources: string;
+              queries: string;
+              files: string;
+            };
+            capabilities: components['schemas']['Capabilities'];
+            limits: {
+              /** @constant */
+              sqlBytes: 65536;
+              /** @constant */
+              queryRows: 1000;
+              /** @constant */
+              queryResultBytes: 1048576;
+              /** @constant */
+              fileUploadBytes: 1048576;
+              /** @constant */
+              sqlTimeoutSeconds: 15;
+              /** @constant */
+              readOnlySqlTokens: 1024;
+              /** @constant */
+              readOnlySqlNesting: 32;
+            };
+            permissions: {
+              manageKeys: boolean;
+              createResources: boolean;
+            };
+          };
+        };
+      };
+      /** @description Invalid request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Missing, invalid, expired, or revoked credential */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Insufficient permission */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource or endpoint not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Conflict or free-tier limit */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Content too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Unsupported content type */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL syntax, result limit, or unsupported demo query */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider quota or rate limit */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider unavailable or invalid response */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider binding needs operator recovery */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  getResource: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
+        resourceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            data: components['schemas']['Resource'];
+          };
+        };
+      };
+      /** @description Invalid request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Missing, invalid, expired, or revoked credential */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Insufficient permission */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource or endpoint not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Conflict or free-tier limit */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Content too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Unsupported content type */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL syntax, result limit, or unsupported demo query */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider quota or rate limit */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider unavailable or invalid response */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider binding needs operator recovery */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  deleteResource: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
+        resourceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            data: components['schemas']['Resource'];
+          };
+        };
+      };
+      /** @description Deletion accepted or outcome unknown. Inspect GET at Location; repeated DELETE never retries the upstream effect. Credentials remain private and retained. */
+      202: {
+        headers: {
+          /** @description URI of the retained resource and deletion status. */
+          Location?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            data: components['schemas']['Resource'];
+          };
+        };
+      };
+      /** @description Invalid request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Missing, invalid, expired, or revoked credential */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Insufficient permission */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource or endpoint not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          /** @description Methods available on this provider-backed resource. */
+          Allow?: 'GET';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Conflict or free-tier limit */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Content too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Unsupported content type */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL syntax, result limit, or unsupported demo query */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider quota or rate limit */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider unavailable or invalid response */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider binding needs operator recovery */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
         };
       };
     };

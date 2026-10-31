@@ -12,6 +12,21 @@ pub async fn execute_native(b: &Value, sql: &str, setup: bool) -> Result<Value> 
         .await
         .map_err(|_| err(504, "SQL_TIMEOUT"))?
 }
+pub async fn execute_native_read_only(b: &Value, sql: &str, read_only: bool) -> Result<Value> {
+    if !read_only {
+        return execute_native(b, sql, false).await;
+    }
+    tokio::time::timeout(Duration::from_secs(15), async {
+        if b["kind"] == "mysql" {
+            return super::mysql::execute(b, sql).await;
+        }
+        postgres_queries_mode(connect_postgres(b).await?, &[sql], false, true)
+            .await
+            .map(|mut v| v.remove(0))
+    })
+    .await
+    .map_err(|_| err(504, "SQL_TIMEOUT"))?
+}
 async fn execute(b: &Value, sql: &str, setup: bool) -> Result<Value> {
     if b["kind"] == "mysql" {
         super::mysql::execute(b, sql).await
@@ -53,19 +68,36 @@ async fn postgres_query(conn: sqlx::PgConnection, sql: &str, setup: bool) -> Res
     Ok(postgres_queries(conn, &[sql], setup).await?.remove(0))
 }
 async fn postgres_queries(
-    mut conn: sqlx::PgConnection,
+    conn: sqlx::PgConnection,
     statements: &[&str],
     setup: bool,
 ) -> Result<Vec<Value>> {
+    postgres_queries_mode(conn, statements, setup, false).await
+}
+async fn postgres_queries_mode(
+    mut conn: sqlx::PgConnection,
+    statements: &[&str],
+    setup: bool,
+    read_only: bool,
+) -> Result<Vec<Value>> {
     let result = async {
         if !setup {
-            conn.execute("SET search_path TO workspace, pg_catalog")
-                .await
-                .map_err(safe)?;
+            conn.execute(if read_only {
+                "SET search_path TO pg_catalog, workspace"
+            } else {
+                "SET search_path TO workspace, pg_catalog"
+            })
+            .await
+            .map_err(safe)?;
         }
         conn.execute("SET statement_timeout = 15000")
             .await
             .map_err(safe)?;
+        if read_only {
+            conn.execute("START TRANSACTION READ ONLY")
+                .await
+                .map_err(safe)?;
+        }
         let mut results = vec![];
         let mut bytes = 0;
         let mut rows = 0;
@@ -77,6 +109,9 @@ async fn postgres_queries(
                 return Err(err(422, "RESULT_TOO_LARGE"));
             }
             results.push(result);
+        }
+        if read_only {
+            conn.execute("ROLLBACK").await.map_err(safe)?;
         }
         Ok(results)
     }
@@ -203,7 +238,7 @@ fn safe_at(phase: &str, e: sqlx::Error) -> workspace_contracts::ServiceError {
         return match code.as_ref() {
             "42P07" => err(409, "SQL_TABLE_EXISTS"),
             "42601" => err(422, "SQL_SYNTAX_ERROR"),
-            "42501" => err(403, "SQL_PERMISSION_DENIED"),
+            "42501" | "25006" => err(403, "SQL_PERMISSION_DENIED"),
             "42P01" | "42703" | "42883" => err(422, "SQL_OBJECT_NOT_FOUND"),
             "23505" => err(409, "SQL_CONFLICT"),
             "57014" => err(504, "SQL_TIMEOUT"),
@@ -346,13 +381,14 @@ mod wire_tests {
     }
     #[tokio::test]
     async fn pg_wire_keeps_empty_fields_avoids_explain_and_terminates_connections() {
-        for (empty, batch, failing, row_count, row_bytes) in [
-            (false, false, false, 1, 1u32),
-            (true, false, false, 1, 1),
-            (false, true, false, 1, 1),
-            (false, true, true, 1, 1),
-            (false, true, false, 600, 1),
-            (false, true, false, 1, 600_000),
+        for (empty, batch, failing, row_count, row_bytes, read_only) in [
+            (false, false, false, 1, 1u32, false),
+            (false, false, false, 1, 1u32, true),
+            (true, false, false, 1, 1, false),
+            (false, true, false, 1, 1, false),
+            (false, true, true, 1, 1, false),
+            (false, true, false, 600, 1, false),
+            (false, true, false, 1, 600_000, false),
         ] {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let port = listener.local_addr().unwrap().port();
@@ -390,7 +426,10 @@ mod wire_tests {
                                 .unwrap()
                                 .to_owned();
                             statements.push(sql.clone());
-                            if sql.starts_with("SET ") {
+                            if sql.starts_with("SET ")
+                                || sql == "START TRANSACTION READ ONLY"
+                                || sql == "ROLLBACK"
+                            {
                                 send(&mut socket, b'C', b"SET\0").await;
                             } else if sql.contains("metadata_failure") {
                                 send(&mut socket, b'E', b"SERROR\0C42P01\0Mfixture failure\0\0")
@@ -455,6 +494,8 @@ mod wire_tests {
                     false,
                 )
                 .await
+            } else if read_only {
+                postgres_queries_mode(conn, &["SELECT 1 AS checked"], false, true).await
             } else {
                 postgres_query(
                     conn,
@@ -501,10 +542,28 @@ mod wire_tests {
             assert_eq!(
                 statements
                     .iter()
-                    .filter(|sql| sql.as_str() == "SET search_path TO workspace, pg_catalog")
+                    .filter(|sql| sql.as_str()
+                        == if read_only {
+                            "SET search_path TO pg_catalog, workspace"
+                        } else {
+                            "SET search_path TO workspace, pg_catalog"
+                        })
                     .count(),
                 1
             );
+            if read_only {
+                assert_eq!(
+                    statements,
+                    vec![
+                        "SET search_path TO pg_catalog, workspace",
+                        "SET statement_timeout = 15000",
+                        "START TRANSACTION READ ONLY",
+                        "SELECT 1 AS checked",
+                        "SELECT 1 AS checked",
+                        "ROLLBACK"
+                    ]
+                );
+            }
             if batch {
                 assert_eq!(
                     statements
