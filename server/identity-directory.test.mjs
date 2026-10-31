@@ -26,6 +26,8 @@ if (enabled) {
           '--example',
           'personal_login_probe',
           '--example',
+          'policy_command_probe',
+          '--example',
           'guest_signup_probe',
           '--example',
           'guest_cookie_probe',
@@ -183,6 +185,71 @@ test(
     await save({ ...policy, keyVersion: 3, policyGeneration: 3, revoked: true });
     await install(randomUUID());
     await assert.rejects(check());
+  },
+);
+
+test(
+  'signed regional Key policy survives Global metadata loss and S3 recovery',
+  { skip: !enabled, timeout: 90000 },
+  async (t) => {
+    const fixture = await metaFixture();
+    const global = await fixture.service('global');
+    let region = await fixture.service('other');
+    t.after(async () => {
+      global.client.close();
+      region.client.close();
+      await fixture.close();
+    });
+    const config = resolve(fixture.directory, 'signed-policy-region.json');
+    const input = resolve(fixture.directory, 'signed-policy-input.json');
+    const v1 = resolve(fixture.directory, 'signed-policy-v1');
+    const v2 = resolve(fixture.directory, 'signed-policy-v2');
+    const bad = resolve(fixture.directory, 'signed-policy-tampered');
+    const policyPath = resolve(fixture.directory, 'signed-policy-check.json');
+    const signedProbe = resolve('meta-service/target/debug/examples/policy_command_probe');
+    const keyProbe = resolve('meta-service/target/debug/examples/regional_key_policy_probe');
+    const policy = {
+      workspaceId: 'ws_agentlab',
+      regionId: 'region:other',
+      keyId: randomUUID(),
+      principalId: 'legacy-owner',
+      keyVersion: 1,
+      policyGeneration: 1,
+      grantRef: 'grant:existing',
+      expiresAt: 4000000000,
+      revoked: false,
+    };
+    await writeFile(config, JSON.stringify(region.clientConfig), { mode: 0o600 });
+    const sign = async (value, output) => {
+      await writeFile(input, JSON.stringify({ policy: value, commandId: randomUUID() }), {
+        mode: 0o600,
+      });
+      await exec(signedProbe, ['sign', '-', input, output]);
+    };
+    const apply = (path) => exec(signedProbe, ['apply', config, path, '-']);
+    const check = async (value) => {
+      await writeFile(policyPath, JSON.stringify(value), { mode: 0o600 });
+      return JSON.parse((await exec(keyProbe, [config, 'check', policyPath, '2000000000'])).stdout);
+    };
+    const next = { ...policy, keyVersion: 2, policyGeneration: 2 };
+    await sign(policy, v1);
+    await sign(next, v2);
+    await writeFile(bad, (await readFile(v1, 'utf8')) + 'x', { mode: 0o600 });
+    await global.stop('SIGKILL');
+    global.client.close();
+    await assert.rejects(apply(bad));
+    await assert.rejects(check(policy));
+    await apply(v1);
+    assert.equal((await check(policy)).grantRef, policy.grantRef);
+    await apply(v2);
+    await apply(v1);
+    await assert.rejects(check(policy));
+    const owner = (await region.client.health()).ownerId;
+    await region.stop('SIGKILL');
+    region.client.close();
+    region = await fixture.service('other', { previous: region, recoverOwner: owner });
+    await writeFile(config, JSON.stringify(region.clientConfig), { mode: 0o600 });
+    assert.equal((await check(next)).grantRef, policy.grantRef);
   },
 );
 
