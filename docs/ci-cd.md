@@ -15,14 +15,13 @@
   deployment to a configured EKS dev environment on `main` pushes changing API/runtime,
   build or delivery inputs, or a manual main request. Documentation/Console-only commits
   retain ordinary CI and independent Console publication without releasing an API image.
-  Images carry the source SHA in `org.opencontainers.image.revision`, so a new source
-  revision produces a distinct image even when the executable is unchanged. After setting
-  the image, CD reads the target container's image from Kubernetes and compares it with
-  the published immutable reference. Only the digest is logged. This confirms the image
-  field, not Pod health. Releases only update the existing Deployment image, without a runtime annotation gate,
-  health wait or automatic rollback. [ADR 0013](decisions/0013-dev-kubernetes-cd.md) defines
-  image delivery and the operator-owned runtime checks/recovery. Each repository must configure its own
-  environment; checking in this workflow does not provision credentials or a cluster.
+  Images carry the source SHA in `org.opencontainers.image.revision`. CD validates the
+  existing one-replica/Recreate target, applies an image-only resourceVersion-guarded update,
+  waits for readiness and verifies public API health and unauthenticated denial. A protected,
+  explicit compatibility policy can authorize recovery of the exact previous image after a
+  confirmed failed rollout; `recover` also supports guarded operator-initiated recovery.
+  See [ADR 0032](decisions/0032-writer-safe-dev-release.md) for fail-closed conditions and
+  the remaining single-writer availability limit. Runtime configuration remains operator-owned.
 - Exact npm dependency versions, a committed lockfile, fixed Node/npm versions, editor
   settings, Prettier, ESLint, strict TypeScript, and a generated-contract drift check.
 - `scripts/check-repo.mjs` checks instruction entry points, required standards and their
@@ -206,7 +205,7 @@ write path, preserve attribution, and recheck the new head; do not bypass reposi
 
 ## Internal artifact delivery
 
-The manual main-only `Internal artifact` workflow runs the quality gate and packages the reviewed native API plus static Console with source SHA and checksums. The Docker/CD path independently builds the native executable. Private native plans, keys, and state stay outside artifacts. Image delivery updates the configured existing Deployment/container without requiring a runtime marker or waiting for health. It never resets or migrates data. Follow [native deployment](native-studio-deployment.md) for the separate operator-owned runtime configuration and checks.
+The manual main-only `Internal artifact` workflow runs the quality gate and packages the reviewed native API plus static Console with source SHA and checksums. The Docker/CD path independently builds the native executable. Private native plans, keys, and state stay outside artifacts. Image delivery updates the configured existing Deployment/container without requiring a runtime marker, waits for health and follows ADR 0032 for explicitly compatible recovery. It never resets or migrates data. Follow [native deployment](native-studio-deployment.md) for the separate operator-owned runtime configuration and checks.
 
 ## Actual deployment policy for the next phase
 
@@ -288,9 +287,9 @@ Measured on 2026-10-30 for [GH-17](https://github.com/mem9-ai/tidb.ai/issues/17)
 | [Read-only inspection](https://github.com/mem9-ai/tidb.ai/actions/runs/40979807553)              | 17m 23s total                   | 14m 01s of verification before a 28s protected inspection job, with additional job scheduling delay                   |
 | [Console publication](https://github.com/mem9-ai/tidb.ai/actions/runs/40979799331)               | 9m 16s total                    | Website PR creation 2m 58s and waiting for its independent checks 1m 56s; separate from API image compilation         |
 
-The native PR image job now runs alongside the complete quality/native gate. It has no cloud identity, does not push an image, and smoke-tests the final runtime without network access or a writable root. Main releases still require the entire quality/native gate before entering the protected deployment job. Manual `inspect` consumes same-commit Console CI evidence and omits native compilation/tests because it neither packages nor deploys an API. Deploy operations retain all native/S3 checks, immutable digest verification and serialized image updates. Runtime health and recovery are operator-owned.
+The native PR image job now runs alongside the complete quality/native gate. It has no cloud identity, does not push an image, and smoke-tests the final runtime without network access or a writable root. Main releases still require the entire quality/native gate before entering the protected deployment job. Manual `inspect` consumes same-commit Console CI evidence and omits native compilation/tests because it neither packages nor deploys an API. Deploy operations retain all native/S3 checks, immutable digest verification and serialized image updates. Runtime configuration remains operator-owned; readiness and bounded recovery follow ADR 0032.
 
-Automatic API release paths match the existing PR image-input paths, including all backend/metadata sources, root Cargo/toolchain/configuration inputs, verified DuckDB preparation, the generated API contract, Docker inputs and the release workflow/helper. Ordinary CI remains unfiltered on PRs and main pushes. Pure documentation and Console changes therefore retain checks without queuing a new native API release. Manual main runs default to `deploy`, which builds, pushes and updates the Deployment image after all quality/native checks pass. Read-only `inspect` must be selected explicitly. There is no build/cache-only manual operation in CD; manual deployment and inspection remain available regardless of changed paths. Runtime configuration and initialization remain [operator-owned](native-studio-deployment.md#one-time-kubernetes-cutover-and-recurring-cd), separate from CD image updates.
+Automatic API release paths match the existing PR image-input paths, including all backend/metadata sources, root Cargo/toolchain/configuration inputs, verified DuckDB preparation, the generated API contract, Docker inputs and the release workflow/helper. Ordinary CI remains unfiltered on PRs and main pushes. Pure documentation and Console changes therefore retain checks without queuing a new native API release. Manual main runs default to `deploy`, which builds, pushes and updates the Deployment image after all quality/native checks pass. Read-only `inspect` and guarded `recover` must be selected explicitly. There is no build/cache-only manual operation in CD; manual deployment, inspection and recovery remain available regardless of changed paths. Runtime configuration and initialization remain [operator-owned](native-studio-deployment.md#one-time-kubernetes-cutover-and-recurring-cd), separate from CD image updates.
 
 The SSO fixture also showed long tail latency: its main case took 180.55s in the earlier dependency-update run and 0.86s in the first optimized quality-gate run. Cleanup hooks previously closed dependencies before their API client. Cleanup now stops that API with the existing bounded process helper, closes the fake provider's active connections, then closes metadata. A live regression holds a provider response open and verifies teardown does not wait for its client watchdog; removing connection reaping makes this case fail. All authentication assertions remain intact. This changes test fixtures only, not product session timeouts or production shutdown policy.
 

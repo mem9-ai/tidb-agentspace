@@ -5,7 +5,8 @@ name: Deploy API to dev
 # native image, push it to the container registry, then update the existing
 # in-cluster Deployment image. Runtime configuration and recovery are operator-owned.
 #
-# Releases only update the existing Deployment image.
+# Releases update the existing image, verify readiness, and use an explicitly approved
+# compatible recovery image only after a failed Kubernetes rollout.
 # All environment identifiers remain runtime inputs, never repository values.
 
 on:
@@ -32,10 +33,22 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Deploy the native API or explicitly inspect configuration read-only
+        description: Deploy, inspect, or explicitly recover an unavailable image
         type: choice
-        options: [deploy, inspect]
+        options: [deploy, inspect, recover]
         default: deploy
+      failed_image_digest:
+        description: Exact failed image digest for recover
+        required: false
+        type: string
+      recovery_image_digest:
+        description: Exact compatible recovery image digest for recover
+        required: false
+        type: string
+      recovery_confirmation:
+        description: Enter storage-compatible after verifying downgrade and writer safety
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -103,6 +116,11 @@ jobs:
       # Container name within the Deployment. Set this secret when the
       # container name differs from the Deployment name.
       K8S_CONTAINER: ${{ secrets.DEV_API_CONTAINER || secrets.DEV_API_DEPLOYMENT }}
+      SOURCE_SHA: ${{ github.sha }}
+      DEV_ROLLBACK_POLICY: ${{ vars.DEV_ROLLBACK_POLICY }}
+      FAILED_IMAGE_DIGEST: ${{ inputs.failed_image_digest }}
+      RECOVERY_IMAGE_DIGEST: ${{ inputs.recovery_image_digest }}
+      RECOVERY_CONFIRMATION: ${{ inputs.recovery_confirmation }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -139,12 +157,12 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to ECR
-        if: github.event.inputs.operation != 'inspect'
+        if: github.event.inputs.operation != 'inspect' && github.event.inputs.operation != 'recover'
         uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
 
       - name: Build and push image
         id: image
-        if: github.event.inputs.operation != 'inspect'
+        if: github.event.inputs.operation != 'inspect' && github.event.inputs.operation != 'recover'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -157,7 +175,7 @@ jobs:
           cache-from: type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
           cache-to: type=gha,scope=native-api-linux-amd64-v1,version=2,mode=max,timeout=3m,ignore-error=true
       - name: Record immutable image digest
-        if: github.event.inputs.operation != 'inspect'
+        if: github.event.inputs.operation != 'inspect' && github.event.inputs.operation != 'recover'
         env:
           IMAGE_BASE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
@@ -180,26 +198,10 @@ jobs:
         if: github.event.inputs.operation == 'inspect'
         run: node scripts/inspect-native-target.mjs
 
-      - name: Update Deployment image
-        if: github.event.inputs.operation != 'inspect'
+      - name: Deploy and verify readiness and public API
+        if: github.event.inputs.operation != 'inspect' && github.event.inputs.operation != 'recover'
         run: node scripts/deploy-dev.mjs
 
-      - name: Confirm Deployment image
-        if: github.event.inputs.operation != 'inspect'
-        run: |
-          node --input-type=module <<'NODE'
-          import { execFileSync } from 'node:child_process';
-          try {
-            const { DEPLOY_NAMESPACE, K8S_DEPLOYMENT, K8S_CONTAINER, IMAGE_REF } = process.env;
-            const target = JSON.parse(execFileSync('kubectl', [
-              '--request-timeout=30s', 'get', `deployment/${K8S_DEPLOYMENT}`,
-              '-n', DEPLOY_NAMESPACE, '-o', 'json',
-            ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 35000 }));
-            const actual = target.spec?.template?.spec?.containers?.find(c => c.name === K8S_CONTAINER)?.image;
-            if (!IMAGE_REF || actual !== IMAGE_REF) throw new Error('Image mismatch');
-            console.log(`Deployment image confirmed: ${actual.split('@')[1]}`);
-          } catch {
-            console.error('Deployment image verification failed.');
-            process.exitCode = 1;
-          }
-          NODE
+      - name: Recover a specific unavailable deployment
+        if: github.event.inputs.operation == 'recover'
+        run: node scripts/deploy-dev.mjs --recover
