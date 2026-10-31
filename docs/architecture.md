@@ -142,8 +142,10 @@ TiDB File System support does not imply those scale capabilities without a confo
 
 Tutorials (`#tutorials`) provides executable database and File System samples with expected
 results. Overview retains attempted/completed tutorials; resource headers return to the exact
-sample through `#tutorials?resourceId=…`. Progress is browser-local and workspace/resource-scoped,
-not account-synced history or stored results. Reopening never automatically repeats a write or
+sample through `#tutorials?resourceId=…`. Progress is stored as encrypted Workspace/resource records
+and follows the Workspace across browsers, with conditional Owner writes and safe legacy migration
+([ADR 0033](decisions/0033-workspace-tutorial-progress.md)). Progress is a bookmark rather than
+stored query results or an execution audit. Reopening never automatically repeats a write or
 query. See [tutorial behavior and verification](tutorial-verification.md).
 
 | Page             | Primary task                                  | Important states and interactions                                                                                                                    |

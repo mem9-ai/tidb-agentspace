@@ -7,6 +7,9 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Accepted decisions
 
+- [0033: Workspace-owned tutorial progress](0033-workspace-tutorial-progress.md) — durable
+  bookmarks, conditional Owner writes, safe browser migration and cross-browser resume.
+
 - [0001: Unified Workspace Key](0001-unified-workspace-key.md)
 - [0002: TiUI as the shared frontend foundation](0002-tiui-design-system.md) — implemented;
   see its linked standard for current integration and verification evidence.

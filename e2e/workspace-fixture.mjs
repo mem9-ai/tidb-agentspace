@@ -52,6 +52,8 @@ export const test = base.extend({
     const state = bootstrap();
     const requests = [];
     const unexpected = [];
+    const tutorials = new Map();
+    let tutorialRevision = 0;
     let rejectAutomaticName = false;
     let signInRequired = false;
     let guestEnabled = false;
@@ -60,7 +62,7 @@ export const test = base.extend({
     let signedInAsAccount = false;
     let rejectGuestLogout = false;
     page.on('pageerror', (error) => unexpected.push(error.message));
-    await context.route('**/*', async (route) => {
+    const handler = async (route) => {
       const request = route.request();
       const url = new URL(request.url());
       if (url.origin !== 'http://127.0.0.1:4389') {
@@ -108,6 +110,29 @@ export const test = base.extend({
           : reply({ data: [state.workspace] });
       const path = url.pathname.replace(`/api/v1/workspaces/${state.workspace.id}`, '');
       if (path === '/bootstrap') return reply(state);
+      if (path === '/tutorials' && method === 'GET')
+        return reply({
+          data: [...tutorials.values()].sort((a, b) => a.resourceId.localeCompare(b.resourceId)),
+          nextCursor: null,
+        });
+      if (path.startsWith('/tutorials/') && method === 'PUT') {
+        const resourceId = path.split('/').at(-1);
+        const prior = tutorials.get(resourceId);
+        const headers = request.headers();
+        if (prior ? headers['if-match'] !== prior.version : headers['if-none-match'] !== '*')
+          return reply(
+            { error: { code: 'PRECONDITION_FAILED', message: 'Tutorial changed' } },
+            412,
+          );
+        const record = {
+          ...body,
+          resourceId,
+          version: '"tutorial-' + (++tutorialRevision).toString(16).padStart(32, '0') + '"',
+          updatedAt: createdAt,
+        };
+        tutorials.set(resourceId, record);
+        return reply({ data: record }, prior ? 200 : 201);
+      }
       if (path === '/resources' && method === 'POST') {
         if (rejectAutomaticName) {
           rejectAutomaticName = false;
@@ -158,10 +183,18 @@ export const test = base.extend({
         { error: { code: 'FIXTURE_ROUTE_MISSING', message: 'Unexpected request' } },
         501,
       );
-    });
+    };
+    await context.route('**/*', handler);
     await use({
       state,
       requests,
+      tutorials,
+      async connectContext(otherContext) {
+        otherContext.on('page', (otherPage) =>
+          otherPage.on('pageerror', (error) => unexpected.push(error.message)),
+        );
+        await otherContext.route('**/*', handler);
+      },
       signInAsAccount() {
         signedInAsAccount = true;
       },

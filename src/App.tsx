@@ -33,6 +33,7 @@ import {
 } from './features/files/remote-files';
 import { regionLabel as region } from './features/resources/regions';
 import { CreateResourceDialog } from './features/resources/CreateResourceDialog';
+import { TutorialProgressProvider } from './features/portal/TutorialProgressProvider';
 import { SignInChoices } from './features/auth/SignInChoices';
 import {
   resourceKindLabels as kindLabel,
@@ -391,7 +392,11 @@ function App() {
       </div>
     );
   return (
-    <>
+    <TutorialProgressProvider
+      key={data.workspace.id}
+      workspaceId={data.workspace.id}
+      resourceIds={data.resources.map((resource) => resource.id)}
+    >
       <WorkspaceLayout
         isHostedSession={sso.sessionKind === 'account' || sso.sessionKind === 'guest'}
         liveFiles={data.resources.some((r) => r.provider === 'drive9-anonymous')}
@@ -518,7 +523,7 @@ function App() {
       {connection && (
         <Connection resource={connection} copy={copy} onClose={() => setConnection(null)} />
       )}
-    </>
+    </TutorialProgressProvider>
   );
 }
 type Shared = {

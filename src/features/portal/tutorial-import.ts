@@ -12,7 +12,7 @@ export async function loadDatabaseSample(
   api: ImportApi,
   resourceId: string,
   sampleId: string,
-  onBeforeWrite: () => void,
+  onBeforeWrite: () => void | Promise<void>,
 ) {
   const { table } = tutorialSample(sampleId);
   const fields = [
@@ -50,7 +50,7 @@ export async function loadDatabaseSample(
     );
   // Reuse the create-only import operation: TiDB does not support CREATE TABLE AS SELECT.
   // Record an uncertain write before issuing it; callers must inspect before retrying.
-  onBeforeWrite();
+  await onBeforeWrite();
   return api.createDatabaseImport({
     resourceId,
     preparationId: preparation.id,

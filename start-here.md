@@ -212,7 +212,7 @@ exact-commit evidence consumption by delivery workflows.
 
 ## Find the implementation
 
-For executable sample data, tutorial creation handoff and persistent re-entry from Overview
+For executable sample data, tutorial creation handoff and Workspace-persisted cross-browser re-entry from Overview
 or resource workspaces, read [tutorial verification](docs/tutorial-verification.md) and
 [product experience](docs/standards/product-experience.md).
 
