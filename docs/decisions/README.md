@@ -70,3 +70,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0025: Consolidated hosted and native runtime profiles](0025-consolidated-runtime-profiles.md) — retain hosted SSO/CD/storage while merging the complete native profile.
 
 - [0026: Native hosted Studio](0026-native-hosted-studio.md) — Rust SSO/public hosting, independent `/studio` publication, and explicitly fresh S3 roots/keys; supersedes hosted Node compatibility.
+
+- [0031: Agent REST P0](0031-agent-rest-p0.md) — authenticated context, parsed read-only SQL, retained resource deletion status and atomic file preconditions.

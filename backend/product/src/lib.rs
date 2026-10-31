@@ -2,6 +2,8 @@ mod database;
 mod exports;
 mod files;
 mod imports;
+mod read_only;
+mod resources;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -31,6 +33,8 @@ pub struct Product {
     pub workspace: Arc<Workspace>,
     pub providers: Providers,
     pub execute: Executor,
+    lifecycle: tokio::sync::RwLock<()>,
+    file_mutations: Mutex<()>,
     preparations: Mutex<BTreeMap<String, exports::Preparation>>,
 }
 pub struct Request<'a> {
@@ -42,9 +46,15 @@ pub struct Request<'a> {
     pub input: Value,
     pub raw: &'a [u8],
     pub condition: Option<&'a str>,
+    pub if_match: Option<&'a str>,
+    pub if_none_match: Option<&'a str>,
 }
 pub enum Reply {
     Json(Value),
+    Entity {
+        value: Value,
+        etag: String,
+    },
     Download {
         response: reqwest::Response,
         size: u64,
@@ -60,6 +70,8 @@ impl Product {
             workspace,
             providers,
             execute,
+            lifecycle: tokio::sync::RwLock::new(()),
+            file_mutations: Mutex::new(()),
             preparations: Mutex::new(BTreeMap::new()),
         })
     }
@@ -73,7 +85,11 @@ impl Product {
         p.scope(scope)?;
         let value = if let Some((id, kind)) = id {
             let resource = self.workspace.repository().resource(id).await?;
-            p.resource(&json!({"resources":[resource]}), id, kind)?
+            let r = p.resource(&json!({"resources":[resource]}), id, kind)?;
+            if r["status"] == "deleting" || r["status"] == "deleted" {
+                return Err(err(409, "RESOURCE_DELETING"));
+            }
+            r
         } else {
             self.workspace.repository().read().await?
         };
@@ -98,7 +114,7 @@ impl Product {
         )
     }
     pub async fn update_resource(&self, resource: Value, provision: bool) -> Result<Value> {
-        if !live(&resource) {
+        if !resource["deletion"].is_null() || !live(&resource) {
             return Ok(resource);
         }
         let id = text(&resource, "id")?.to_owned();
@@ -198,7 +214,20 @@ impl Product {
             input,
             raw,
             condition: idem,
+            if_match,
+            if_none_match,
         } = request;
+        let deleting = method == "DELETE" && route.starts_with("/resources/");
+        let _exclusive = if deleting {
+            Some(self.lifecycle.write().await)
+        } else {
+            None
+        };
+        let _admitted = if deleting {
+            None
+        } else {
+            Some(self.lifecycle.read().await)
+        };
         let p = self.workspace.authenticate(&credential).await?;
         let actor_value = if p.owner {
             actor.to_owned()
@@ -207,6 +236,7 @@ impl Product {
         };
         let actor = actor_value.as_str();
         let reply = match (method, route) {
+            ("GET", "/context") => Reply::Json(self.agent_context(&p).await?),
             ("GET", "/bootstrap") => {
                 if !p.owner {
                     return Err(err(403, "OWNER_REQUIRED"));
@@ -257,7 +287,7 @@ impl Product {
                     .as_array()
                     .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
                 {
-                    if p.has(text(r, "id")?) {
+                    if r["status"] != "deleted" && p.has(text(r, "id")?) {
                         data.push(self.update_resource(r.clone(), false).await?);
                     }
                 }
@@ -307,8 +337,8 @@ impl Product {
 if prior["fingerprint"]!=fingerprint{return Err(err(409,"IDEMPOTENCY_CONFLICT"));}
 return Ok((state["resources"].as_array().and_then(|v|v.iter().find(|r|r["id"]==prior["resource"]["id"])).unwrap_or(&prior["resource"]).clone(),false));}
 let resources=state["resources"].as_array().ok_or_else(||err(503,"META_RECORD_CORRUPT"))?;
-if resources.iter().any(|r|r["name"]==name){return Err(err(409,"NAME_EXISTS"));}
-if(kind=="filesystem"&&resources.iter().any(|r|r["kind"]==kind&&r["region"]==region&&r["provider"].as_str().unwrap_or("local")==provider))||(kind!="filesystem"&&resources.iter().filter(|r|r["kind"]==kind&&(kind!="postgresql"||r["provider"]==DB9)).count()>=5){return Err(err(409,"FREE_TIER_LIMIT"));}
+if resources.iter().any(|r|r["status"]!="deleted"&&r["name"]==name){return Err(err(409,"NAME_EXISTS"));}
+if(kind=="filesystem"&&resources.iter().any(|r|r["status"]!="deleted"&&r["kind"]==kind&&r["region"]==region&&r["provider"].as_str().unwrap_or("local")==provider))||(kind!="filesystem"&&resources.iter().filter(|r|r["status"]!="deleted"&&r["kind"]==kind&&(kind!="postgresql"||r["provider"]==DB9)).count()>=5){return Err(err(409,"FREE_TIER_LIMIT"));}
 let r=json!({"id":format!("{}_{}",if kind=="filesystem"{"fs"}else{"db"},secret(6)?),"name":name,"kind":kind,"region":region,"status":if provider=="local"{"active"}else{"provisioning"},"provider":provider,"createdAt":timestamp()});state["resources"].as_array_mut().expect("resources").push(r.clone());event(state,"resource.created",name,&p.actor,r["id"].as_str());
 if let Some(slot)=&slot{state["idempotency"][slot]=json!({"fingerprint":fingerprint,"resource":r});}
 Ok((r,true))}).await?;
@@ -346,6 +376,7 @@ Ok((r,true))}).await?;
             ("GET", "/files")
             | ("PUT", "/files")
             | ("DELETE", "/files")
+            | ("GET", "/files/metadata")
             | ("GET", "/files/content")
             | ("PUT", "/files/content") => {
                 return self
@@ -358,7 +389,8 @@ Ok((r,true))}).await?;
                             query,
                             input,
                             raw,
-                            condition: idem,
+                            if_match,
+                            if_none_match,
                         },
                     )
                     .await;
@@ -390,6 +422,12 @@ Ok((r,true))}).await?;
                     .split('/')
                     .filter(|v| !v.is_empty())
                     .collect::<Vec<_>>();
+                if parts.len() == 2
+                    && parts[0] == "resources"
+                    && ["GET", "DELETE"].contains(&method)
+                {
+                    return self.resource_request(&credential, method, parts[1]).await;
+                }
                 if parts.len() == 3
                     && parts[0] == "resources"
                     && parts[2] == "setup"
@@ -408,7 +446,7 @@ Ok((r,true))}).await?;
                         return Err(err(404, "NOT_FOUND"));
                     }
                     let (_, r) = self
-                        .context(&credential, "queries:execute", Some((parts[1], None)))
+                        .context(&credential, "queries:read", Some((parts[1], None)))
                         .await?;
                     Reply::Json(
                         self.browse(
@@ -453,7 +491,7 @@ pub fn visible(mut state: Value) -> Value {
     state["resources"]
         .as_array_mut()
         .expect("resources")
-        .retain(visible_resource);
+        .retain(|r| visible_resource(r) && r["status"] != "deleted");
     state["events"]
         .as_array_mut()
         .expect("events")
@@ -461,6 +499,7 @@ pub fn visible(mut state: Value) -> Value {
     state
 }
 pub fn file_view(mut f: Value) -> Value {
+    f["version"] = json!(files::local_version(&f));
     f["size"] = json!(f["content"].as_str().unwrap_or("").len());
     f
 }

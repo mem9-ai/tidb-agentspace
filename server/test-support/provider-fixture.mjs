@@ -10,6 +10,26 @@ export async function providerFixture({
   requireFileAuth = false,
 } = {}) {
   const files = new Map();
+  const fileVersions = new Map();
+  let fileIdentity = 0;
+  let writeRace;
+  let deleteLost = false;
+  let fileStatus = 'active';
+  let versionsAvailable = true;
+  const fileVersion = (path) => {
+    const bytes = files.get(path);
+    if (!bytes) return undefined;
+    const hash = createHash('sha256').update(bytes).digest('hex');
+    let v = fileVersions.get(path);
+    if (!v) {
+      v = { revision: 1, identity: `file-${++fileIdentity}`, hash };
+      fileVersions.set(path, v);
+    } else if (v.hash !== hash) {
+      v.hash = hash;
+      v.revision++;
+    }
+    return v;
+  };
   let statements = [];
   let creates = 0;
   let calls = 0;
@@ -198,7 +218,7 @@ export async function providerFixture({
       }
       if (url.pathname === '/v1/status')
         return respond(200, {
-          status: 'active',
+          status: fileStatus,
           max_upload_bytes: 1048576,
           inline_threshold: 1048576,
         });
@@ -215,6 +235,7 @@ export async function providerFixture({
         const tenant = fileTenants.get(token);
         if (!tenant) return respond(403, {});
         deleted.push({ kind: 'drive9', id: tenant });
+        if (deleteLost) return req.socket.destroy();
         return respond(202, { status: 'deleting' });
       }
       if (url.pathname.startsWith('/v1/fs')) {
@@ -234,14 +255,30 @@ export async function providerFixture({
         if (req.method === 'PUT') {
           let chunks = [];
           for await (const c of req) chunks.push(c);
-          if (req.headers['x-dat9-expected-revision'] === '0' && files.has(path))
-            return respond(409, { error: 'exists' });
-          files.set(path, Buffer.concat(chunks));
+          if (writeRace) {
+            const race = writeRace;
+            writeRace = undefined;
+            await race(path, files);
+          }
+          const current = fileVersion(path);
+          const expected = req.headers['x-dat9-expected-revision'];
+          if (
+            expected !== undefined &&
+            (expected === '0' ? files.has(path) : String(current?.revision) !== expected)
+          )
+            return respond(409, { error: 'revision conflict' });
+          const bytes = Buffer.concat(chunks);
+          files.set(path, bytes);
+          if (current) {
+            current.revision++;
+            current.hash = createHash('sha256').update(bytes).digest('hex');
+          } else fileVersion(path);
           return respond(200, {});
         }
         if (req.method === 'DELETE') {
           if (!files.has(path)) return respond(404, {});
           files.delete(path);
+          fileVersions.delete(path);
           return respond(200, {});
         }
         const b = files.get(path);
@@ -253,6 +290,12 @@ export async function providerFixture({
           'Content-Type': 'application/octet-stream',
           'Content-Length': b.length,
           'X-Dat9-IsDir': 'false',
+          ...(versionsAvailable
+            ? {
+                'X-Dat9-Revision': String(fileVersion(path).revision),
+                'X-Dat9-Resource-ID': fileVersion(path).identity,
+              }
+            : {}),
           ETag: revision,
         });
         return res.end(req.method === 'HEAD' ? undefined : b);
@@ -267,6 +310,21 @@ export async function providerFixture({
   return {
     origin,
     reset,
+    set versionsAvailable(value) {
+      versionsAvailable = value;
+    },
+    set writeRace(value) {
+      writeRace = value;
+    },
+    set deleteLost(value) {
+      deleteLost = value;
+    },
+    set fileStatus(value) {
+      fileStatus = value;
+    },
+    bindFileTenant(token, tenant) {
+      fileTenants.set(token, tenant);
+    },
     set lost(value) {
       lost = value;
     },

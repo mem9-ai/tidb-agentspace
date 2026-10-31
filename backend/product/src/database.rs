@@ -43,7 +43,7 @@ impl Product {
                 self.execute.database(id, c, sql, sources, read_only).await
             }
         } else if [ZERO, DB9].contains(&r["provider"].as_str().unwrap_or("")) {
-            self.providers.execute(r, sql).await
+            self.providers.execute(r, sql, read_only).await
         } else if r["provider"].is_null() || r["provider"] == "local" {
             let state = self.workspace.repository().read().await?;
             let sql = sql.trim().trim_end_matches(';').trim();
@@ -81,14 +81,24 @@ impl Product {
         p: &Principal,
         input: &Value,
     ) -> Result<Value> {
+        if !input["readOnly"].is_null() && !input["readOnly"].is_boolean() {
+            return Err(err(400, "INVALID_BODY"));
+        }
+        let read_only = input["readOnly"] == true || p.scope("queries:execute").is_err();
+        let scope = if read_only {
+            "queries:read"
+        } else {
+            "queries:execute"
+        };
         let id = text(input, "resourceId")?;
-        let (_, resource) = self
-            .context(credential, "queries:execute", Some((id, None)))
-            .await?;
+        let (_, resource) = self.context(credential, scope, Some((id, None))).await?;
         if resource["kind"] == "filesystem" {
             return Err(err(404, "NOT_FOUND"));
         }
         let sql = text(input, "sql").map_err(|_| err(400, "INVALID_SQL"))?;
+        if read_only {
+            read_only::validate(sql, text(&resource, "kind")?)?;
+        }
         let sources = input["sources"].as_array();
         if !input["sources"].is_null() && sources.is_none() {
             return Err(err(400, "INVALID_SOURCES"));
@@ -153,8 +163,7 @@ impl Product {
             write_private(&file, &bytes)?;
             staged.push(json!({"name":name,"format":format,"path":file}));
         }
-        self.context(credential, "queries:execute", Some((id, None)))
-            .await?;
+        self.context(credential, scope, Some((id, None))).await?;
         for (r, _, _, _) in &selected {
             self.context(
                 credential,
@@ -170,7 +179,7 @@ impl Product {
             .await?;
         }
         let result = self
-            .execute_database(&resource, sql, false, json!(staged))
+            .execute_database(&resource, sql, read_only, json!(staged))
             .await?;
         for (r, _, _, _) in &selected {
             self.context(
@@ -190,7 +199,7 @@ impl Product {
             .repository()
             .transaction(|state| {
                 let principal = principal(state, credential)?;
-                principal.scope("queries:execute")?;
+                principal.scope(scope)?;
                 principal.resource(state, id, None)?;
                 let count = state["queryCount"].as_u64().unwrap_or(0) + 1;
                 state["queryCount"] = json!(count);

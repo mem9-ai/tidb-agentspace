@@ -10,6 +10,7 @@ import { workspaceFixture } from './test-support/workspace-fixture.mjs';
 import { providerFixture, nativeSecret } from './test-support/provider-fixture.mjs';
 import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
 import { seedRecords, readState, readBinding } from './test-support/record-fixture.mjs';
+import { agentRestCases } from './test-support/agent-rest-cases.mjs';
 import { productApiCases } from './test-support/product-api-cases.mjs';
 const contract = JSON.parse(
   await readFile(new URL('../public/openapi.json', import.meta.url), 'utf8'),
@@ -39,6 +40,11 @@ const base = '/api/v1/workspaces/ws_agentlab';
 const secret = 'retained-public-workspace-key';
 const privateWrite = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
 for (const transport of ['remote', 'inProcess']) {
+  test(
+    `Agent REST P0 through ${transport} metadata`,
+    { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+    (t) => agentRestCases(t, transport),
+  );
   test(
     `OpenAPI behavioral coverage through ${transport} metadata`,
     { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },

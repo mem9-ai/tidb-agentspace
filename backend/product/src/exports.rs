@@ -339,6 +339,9 @@ impl Product {
     ) -> Result<(Principal, Value)> {
         let p = principal(state, credential)?;
         let source = p.resource(state, source_id, None)?;
+        if source["status"] == "deleting" || source["status"] == "deleted" {
+            return Err(err(409, "RESOURCE_DELETING"));
+        }
         if file_source && source["kind"] != "filesystem" {
             return Err(err(400, "INVALID_EXPORT_SOURCE"));
         }
@@ -349,7 +352,7 @@ impl Product {
                 vec!["files:read", "files:analyze"]
             }
         } else {
-            vec!["queries:execute"]
+            vec!["queries:read"]
         } {
             p.scope(scope)?;
         }
@@ -411,14 +414,16 @@ impl Product {
         }
         if r["provider"] == DRIVE9 {
             self.providers
-                .file_write(id, &path, content.to_vec(), true, || async {
+                .file_write(id, &path, content.to_vec(), true, None, || async {
                     self.export_authorize(credential, source, target, read_only, file_source)
                         .await?;
                     Ok(())
                 })
                 .await
                 .map_err(|e| {
-                    if ["FILE_CHANGED", "FILE_CONFLICT"].contains(&e.code.as_str()) {
+                    if ["FILE_CHANGED", "FILE_CONFLICT", "PRECONDITION_FAILED"]
+                        .contains(&e.code.as_str())
+                    {
                         err(409, "EXPORT_TARGET_EXISTS")
                     } else {
                         e
@@ -434,6 +439,7 @@ impl Product {
                     content: std::str::from_utf8(content)
                         .map_err(|_| err(422, "LOCAL_BINARY_UNSUPPORTED"))?,
                     create_only: true,
+                    expected_version: None,
                 },
                 |state| {
                     Self::export_authorize_state(

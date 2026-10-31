@@ -366,6 +366,7 @@ async fn policy(State(app): State<App>, mut request: Request, next: Next) -> Res
                         "authorization",
                         "idempotency-key",
                         "if-none-match",
+                        "if-match",
                     ]
                     .contains(&v.as_str())
                 })
@@ -380,7 +381,7 @@ async fn policy(State(app): State<App>, mut request: Request, next: Next) -> Res
             response.headers_mut().insert(
                 "Access-Control-Allow-Headers",
                 HeaderValue::from_static(
-                    "content-type, authorization, idempotency-key, if-none-match",
+                    "content-type, authorization, idempotency-key, if-none-match, if-match",
                 ),
             );
             response
@@ -415,7 +416,7 @@ async fn policy(State(app): State<App>, mut request: Request, next: Next) -> Res
         );
         output.insert(
             "Access-Control-Expose-Headers",
-            HeaderValue::from_static("X-Request-Id"),
+            HeaderValue::from_static("X-Request-Id, ETag, Location"),
         );
     }
     response
@@ -715,6 +716,11 @@ async fn dispatch(
                             return Err(reject(415, "BINARY_REQUIRED"));
                         }
                         json!({})
+                    } else if method == Method::DELETE && route.starts_with("/resources/") {
+                        if !bytes.is_empty() {
+                            return Err(reject(400, "INVALID_BODY"));
+                        }
+                        json!({})
                     } else if [Method::POST, Method::PUT, Method::PATCH, Method::DELETE]
                         .contains(&method)
                     {
@@ -732,22 +738,54 @@ async fn dispatch(
                                 .map(|guest| guest.actor_id.as_str())
                         })
                         .unwrap_or_else(|| cookie(&headers, "aw_session").unwrap_or_default());
-                    let condition = headers
-                        .get(if raw_upload {
-                            "if-none-match"
-                        } else {
-                            "idempotency-key"
-                        })
-                        .and_then(|v| v.to_str().ok());
+                    let precondition =
+                        |name: &str| -> std::result::Result<Option<&str>, ServiceError> {
+                            let mut values = headers.get_all(name).iter();
+                            let value = values.next();
+                            if values.next().is_some() {
+                                return Err(reject(400, "INVALID_PRECONDITION"));
+                            }
+                            value
+                                .map(|v| {
+                                    v.to_str().map_err(|_| reject(400, "INVALID_PRECONDITION"))
+                                })
+                                .transpose()
+                        };
+                    let if_match = precondition("if-match")?;
+                    let if_none_match = precondition("if-none-match")?;
+                    let condition = headers.get("idempotency-key").and_then(|v| v.to_str().ok());
                     let (status, reply) = tokio::select! {
-                        result=product.handle(workspace_product::Request {credential:credential.clone(),actor,method:method.as_str(),route,query:&query,input,raw:&bytes,condition})=>result?,
+                        result=product.handle(workspace_product::Request {credential:credential.clone(),actor,method:method.as_str(),route,query:&query,input,raw:&bytes,condition,if_match,if_none_match})=>result?,
                         _=cancellation.cancelled()=>return Err(reject(499,if route.contains("analys")||route.contains("tabular-preview"){"ANALYSIS_CANCELED"}else{"SQL_CANCELED"})),
                     };
                     credential_for_response(&app, &headers, &credential).await?;
-                    return Ok(retain_guest_lease(
-                        product_response(status, reply)?,
-                        guest_lease,
-                    ));
+                    let created_id = if method == Method::POST && route == "/resources" {
+                        match &reply {
+                            workspace_product::Reply::Json(v) => {
+                                v["data"]["id"].as_str().map(str::to_owned)
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    let mut output = product_response(status, reply)?;
+                    if let Some(id) = created_id {
+                        output.headers_mut().insert(
+                            "Location",
+                            HeaderValue::from_str(&format!("{prefix}/resources/{id}"))
+                                .map_err(|_| reject(500, "INTERNAL_ERROR"))?,
+                        );
+                    }
+                    if method == Method::DELETE && route.starts_with("/resources/") && status == 202
+                    {
+                        output.headers_mut().insert(
+                            "Location",
+                            HeaderValue::from_str(&path)
+                                .map_err(|_| reject(500, "INTERNAL_ERROR"))?,
+                        );
+                    }
+                    return Ok(retain_guest_lease(output, guest_lease));
                 }
                 return Err(reject(404, "NOT_FOUND"));
             }
@@ -841,6 +879,22 @@ fn product_response(
     reply: workspace_product::Reply,
 ) -> std::result::Result<Response, ServiceError> {
     match reply {
+        workspace_product::Reply::Entity { value, etag } => {
+            let mut response = (
+                StatusCode::from_u16(status).map_err(|_| reject(500, "INTERNAL_ERROR"))?,
+                Json(value),
+            )
+                .into_response();
+            response.headers_mut().insert(
+                "ETag",
+                HeaderValue::from_str(&etag)
+                    .map_err(|_| reject(502, "INVALID_PROVIDER_RESPONSE"))?,
+            );
+            response
+                .headers_mut()
+                .insert("Cache-Control", HeaderValue::from_static("no-store"));
+            Ok(response)
+        }
         workspace_product::Reply::Json(value) => Ok((
             StatusCode::from_u16(status).map_err(|_| reject(500, "INTERNAL_ERROR"))?,
             Json(value),

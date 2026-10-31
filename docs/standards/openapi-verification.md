@@ -110,6 +110,12 @@ snapshots with unstable values removed indiscriminately. Keep stable rows, paths
 permissions and error classes exact. Timing checks assert documented bounds with scheduling
 tolerance, not a performance improvement without a measured baseline.
 
+Public resource identities, method semantics, lifecycle status and preconditions follow
+[REST API design](rest-api-design.md). GH-67 adds native acceptance for these capabilities
+without changing rendered Console journeys; the owner explicitly excludes frontend
+interaction testing for that task. Shared quality/build checks and existing CI requirements
+remain in force.
+
 ## Current executable evidence
 
 | Evidence                                                                                                                       | What it currently establishes                                                                                                                                                                                                                                                                |

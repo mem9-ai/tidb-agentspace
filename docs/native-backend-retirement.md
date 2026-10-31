@@ -89,6 +89,27 @@ through floating point. Public request/response schemas and credential/storage f
 unchanged. Run the full native gate for backend evidence; a normal `npm test` with native
 opt-in cases skipped does not establish these outcomes. The PR owns exact candidate/results.
 
+## Agent API P0 additions
+
+[GH-67](../specs/gh-67/spec.md) and [ADR 0031](decisions/0031-agent-rest-p0.md) add
+native HTTP evidence in [agent REST cases](../server/test-support/agent-rest-cases.mjs), in
+both remote and in-process Meta compositions. They cover caller-only permission/expiry
+discovery, read-only query/catalog grants, rejected writable CTE/session/function escapes
+before provider I/O, resource details/deletion grants, synchronous local tombstones,
+accepted/unknown external removal, retained private credentials and no replay after graceful
+or explicit stopped-writer crash recovery. File cases cover strong metadata ETags, malformed
+conditions, missing/stale versions, identical-byte updates, recreation, competing writers and
+a provider change between HEAD and conditional PUT. Local comparison/write is transactional;
+Drive9 uses provider revision CAS, with the identity-race limitation stated in the spec.
+The native PostgreSQL wire fixture additionally asserts read-only transaction and search-path
+ordering. This is protocol ordering evidence, not a live PostgreSQL/TiDB service certification.
+
+Existing Keys, native bindings and format-2 storage are reused; no reset or credential
+migration is required. Existing `queries:execute` implies the new `queries:read`; new read-only
+Keys never gain import/export destination writes. Zero reports deletion unsupported. db9
+physical removal completion remains operator reconciliation. Only confirmed deleted resources
+leave the default collection; their tombstone remains addressable for authorized inspection.
+
 ## Local cutover
 
 Package reviewed clean source with a source SHA and checksums. Publish the independent

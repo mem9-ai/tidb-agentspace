@@ -26,6 +26,27 @@ const schemas = {
         description:
           'Missing on legacy local resources. db9-anonymous is PostgreSQL-compatible; its NUMERIC supports 28–29 significant digits. Provider compatibility limits apply.',
       },
+      deletion: {
+        type: 'object',
+        required: ['phase', 'requestedAt'],
+        properties: {
+          phase: { enum: ['outcome-unknown', 'provider-accepted', 'completed'] },
+          requestedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      allowedActions: { type: 'array', items: { type: 'string' } },
+      capabilities: {
+        type: 'object',
+        required: ['delete', 'deletionCompletion', 'readOnlyQueries', 'conditionalFileWrites'],
+        properties: {
+          delete: { type: 'boolean' },
+          deletionCompletion: {
+            enum: ['synchronous', 'providerStatus', 'operatorReconciliation', 'unsupported'],
+          },
+          readOnlyQueries: { type: 'boolean' },
+          conditionalFileWrites: { type: 'boolean' },
+        },
+      },
       uploadLimitBytes: {
         type: 'integer',
         description: 'Negotiated gateway upload limit; zero means uploads are unavailable.',
@@ -47,6 +68,11 @@ const schemas = {
       resourceId: { type: 'string' },
       path: { type: 'string' },
       type: { enum: ['file', 'directory'] },
+      version: {
+        type: 'string',
+        description:
+          'Opaque strong version validator, including its double quotes; send unchanged in If-Match.',
+      },
       content: { type: 'string' },
       size: { type: 'integer' },
       updatedAt: { type: ['string', 'null'], format: 'date-time' },
@@ -247,7 +273,7 @@ function operation(
     tags: [owner ? 'Owner' : 'Workspace'],
     description: owner
       ? 'Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Workspace API keys cannot perform this operation.'
-      : `Required workspace key scope: ${scope}. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.`,
+      : `Required workspace key scope: ${scope ?? 'authenticated caller; no additional action scope'}. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.`,
     'x-required-scope': scope,
     security: owner ? ownerSessions : [{ workspaceKey: [] }, ...ownerSessions],
     ...(parameters.length ? { parameters } : {}),
@@ -260,6 +286,8 @@ function operation(
       401: response(ref('Error'), 'Missing, invalid, expired, or revoked credential'),
       403: response(ref('Error'), 'Insufficient permission'),
       404: response(ref('Error'), 'Resource or endpoint not found'),
+      405: response(ref('Error'), 'Resource lifecycle operation unsupported by provider'),
+      412: response(ref('Error'), 'Version precondition failed without a write'),
       409: response(ref('Error'), 'Conflict or free-tier limit'),
       413: response(ref('Error'), 'Content too large'),
       415: response(ref('Error'), 'Unsupported content type'),
@@ -647,7 +675,7 @@ const paths = {
     get: operation(
       'listDatabaseTables',
       'List up to 500 tables and views in the selected database, ordered by name; truncated means more exist',
-      'queries:execute',
+      'queries:read',
       { output: ref('TableList') },
     ),
   },
@@ -656,7 +684,7 @@ const paths = {
     get: operation(
       'getDatabaseTable',
       'Read columns and ordered index parts for an exact table name; includes a SELECT for the editor',
-      'queries:execute',
+      'queries:read',
       {
         parameters: [
           {
@@ -677,7 +705,7 @@ const paths = {
     get: operation(
       'previewDatabaseTable',
       'Read up to 100 unordered rows, bounded by 1 MiB and 15 seconds per statement; not pagination or a full export',
-      'queries:execute',
+      'queries:read',
       {
         parameters: [
           {
@@ -772,7 +800,7 @@ const paths = {
     post: operation(
       'exportResult',
       'Export a supplied result snapshot without rerunning its source query',
-      'Source database: queries:execute; source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant',
+      'Source database: queries:read (also implied by queries:execute); source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant',
       { input: ref('ResultExportInput'), output: ref('ResultExportOutput') },
     ),
   },
@@ -787,6 +815,12 @@ const paths = {
           required: ['resourceId', 'sql'],
           properties: {
             resourceId: str,
+            readOnly: {
+              type: 'boolean',
+              default: false,
+              description:
+                'Enforced read-only mode. Automatically enabled for queries:read-only Keys.',
+            },
             sources: {
               type: 'array',
               maxItems: 4,
@@ -815,7 +849,7 @@ const paths = {
             sql: {
               type: 'string',
               description:
-                'Live Zero/DuckDB: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n].',
+                'queries:read grants a constrained parsed read-only SELECT/CTE/VALUES subset; unknown functions, locks, writes and multiple statements are rejected before provider I/O. queries:execute also permits reads and writes. readOnly:true constrains a full-access caller. Live Zero/DuckDB: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n].',
             },
           },
         },
@@ -870,6 +904,7 @@ const paths = {
                 'files:read',
                 'files:write',
                 'files:analyze',
+                'queries:read',
                 'queries:execute',
                 'usage:read',
               ],
@@ -973,6 +1008,121 @@ paths['/api/auth/config'] = {
     },
   },
 };
+paths[ws + '/queries'].post['x-required-scope'] = 'queries:read';
+paths[ws + '/queries'].post['x-write-scope'] = 'queries:execute';
+paths[ws + '/queries'].post.description =
+  'Requires queries:read (implied by queries:execute) and the database grant. Writes additionally require queries:execute. Read-only mode is enforced for read-only Keys even when readOnly=false. The constrained read-only subset permits at most 1024 lexer tokens and 32 nested delimiters; unsupported syntax/functions fail closed.';
+paths[ws + '/resources'].post.responses[201].headers = {
+  Location: { schema: str, description: 'URI of the created resource.' },
+};
+const versionConditions = [
+  {
+    name: 'If-Match',
+    in: 'header',
+    schema: { type: 'string', maxLength: 256 },
+    description:
+      'One strong opaque ETag returned by file metadata. No weak tags, wildcard or lists. Atomically reject a changed/missing file with 412. Mutually exclusive with If-None-Match.',
+  },
+  {
+    name: 'If-None-Match',
+    in: 'header',
+    schema: { const: '*' },
+    description: 'Create only; an existing path returns 412. Mutually exclusive with If-Match.',
+  },
+];
+paths[ws + '/files'].put.parameters = versionConditions;
+paths[ws + '/files/content'].put.parameters = paths[ws + '/files/content'].put.parameters
+  .filter((p) => p.in !== 'header')
+  .concat(versionConditions);
+paths[ws + '/files/metadata'] = {
+  get: operation(
+    'getFileMetadata',
+    'Read file identity and an opaque conditional-write version',
+    'files:read',
+    {
+      parameters: [
+        { name: 'resourceId', in: 'query', required: true, schema: str },
+        { name: 'path', in: 'query', required: true, schema: str },
+      ],
+      output: object({
+        data: object({
+          resourceId: str,
+          path: str,
+          type: { enum: ['file', 'directory'] },
+          size: { type: 'integer' },
+          version: { type: ['string', 'null'] },
+          conditionalWrites: { type: 'boolean' },
+        }),
+      }),
+    },
+  ),
+};
+paths[ws + '/files/metadata'].get.responses[200].headers = {
+  ETag: {
+    schema: str,
+    description: 'Strong version validator when available. Never cache authenticated metadata.',
+  },
+};
+paths[ws + '/context'] = {
+  get: operation(
+    'getAgentContext',
+    'Discover the current caller and effective Workspace permissions',
+    null,
+    {
+      output: object({
+        workspaceId: str,
+        principal: object({
+          id: str,
+          kind: { enum: ['owner', 'workspaceKey'] },
+          scopes: { type: 'array', items: str },
+          resourceIds: { type: 'array', items: str },
+          expiresAt: { type: ['string', 'null'], format: 'date-time' },
+        }),
+        links: object({ self: str, resources: str, queries: str, files: str }),
+        capabilities: ref('Capabilities'),
+        limits: object({
+          sqlBytes: { const: 65536 },
+          queryRows: { const: 1000 },
+          queryResultBytes: { const: 1048576 },
+          fileUploadBytes: { const: 1048576 },
+          sqlTimeoutSeconds: { const: 15 },
+          readOnlySqlTokens: { const: 1024 },
+          readOnlySqlNesting: { const: 32 },
+        }),
+        permissions: object({
+          manageKeys: { type: 'boolean' },
+          createResources: { type: 'boolean' },
+        }),
+      }),
+    },
+  ),
+};
+paths[ws + '/context'].get.description +=
+  ' Bootstrap with the regional Workspace API URL (including workspaceId) and one Key. No Global lookup or bearer-only scan across Workspaces. No other Key or upstream credentials are returned; effective grants do not override resource/provider availability. queries:execute implies queries:read. Owner session expiry remains governed by its authentication profile.';
+paths[ws + '/resources/{resourceId}'] = {
+  parameters: [{ name: 'resourceId', in: 'path', required: true, schema: str }],
+  get: operation(
+    'getResource',
+    'Read one resource, its permitted actions and lifecycle status',
+    'resources:read',
+    { output: object({ data: ref('Resource') }) },
+  ),
+  delete: operation(
+    'deleteResource',
+    'Request removal and retain an observable deletion tombstone',
+    'resources:write',
+    { output: object({ data: ref('Resource') }) },
+  ),
+};
+paths[ws + '/resources/{resourceId}'].delete.responses[202] = response(
+  object({ data: ref('Resource') }),
+  'Deletion accepted or outcome unknown. Inspect GET at Location; repeated DELETE never retries the upstream effect. Credentials remain private and retained.',
+);
+paths[ws + '/resources/{resourceId}'].delete.responses[202].headers = {
+  Location: { schema: str, description: 'URI of the retained resource and deletion status.' },
+};
+paths[ws + '/resources/{resourceId}'].delete.description +=
+  ' Local removal completes synchronously (200). Drive9/DuckDB and db9 may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; db9 requires operator reconciliation. Zero returns 405 unchanged. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.';
 paths['/api/auth/guest'] = {
   servers: [{ url: '/' }],
   post: {

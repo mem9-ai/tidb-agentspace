@@ -32,6 +32,9 @@ Read the [architecture](docs/architecture.md) and
 [Backend OpenAPI verification](docs/standards/openapi-verification.md) defines independent
 backend acceptance: verify native responses, authorization, effects and persistence directly.
 Internal backend changes preserving the public contract do not require frontend retesting.
+Public resource modeling follows [REST API design](docs/standards/rest-api-design.md);
+[GH-67](specs/gh-67/spec.md) defines agent context, read-only SQL, resource lifecycle and
+file version preconditions.
 It also defines product completeness: supported customer business workflows must finish
 through documented OpenAPI without Portal automation. Pure presentation/browser interactions
 are the UI-only exception; authentication and permission boundaries still apply.

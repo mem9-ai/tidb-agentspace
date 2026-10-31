@@ -13,6 +13,7 @@ reqwest.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 regex.workspace = true
+sqlparser.workspace = true
 base64.workspace = true
 sha2.workspace = true
 hex.workspace = true

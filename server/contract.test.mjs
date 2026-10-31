@@ -61,6 +61,10 @@ test(
     await request(workspace);
     await request(workspace + '/bootstrap');
     await request(workspace + '/resources');
+    await request(workspace + '/context');
+    await request(workspace + '/resources/{resourceId}', 'get', undefined, {
+      resourceId: 'db_memory',
+    });
     await request(workspace + '/resources/{resourceId}/tables', 'get', undefined, {
       resourceId: 'db_memory',
     });
@@ -97,6 +101,9 @@ test(
       path: '/contract.txt',
       type: 'file',
       content: 'hello',
+    });
+    await request(workspace + '/files/metadata', 'get', undefined, {
+      suffix: '?resourceId=fs_shared&path=/contract.txt',
     });
     await request(workspace + '/files', 'put', {
       resourceId: 'fs_shared',
@@ -238,6 +245,9 @@ test(
       {},
       { suffix: '?resourceId=fs_shared&path=/test.bin', status: 415 },
     );
+    await request(workspace + '/resources/{resourceId}', 'delete', undefined, {
+      resourceId: 'db_memory',
+    });
     const allJsonOperations = Object.values(contract.paths)
       .flatMap((item) =>
         Object.entries(item)

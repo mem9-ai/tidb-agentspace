@@ -9,13 +9,15 @@ pub(super) struct FileRequest<'a> {
     pub query: &'a BTreeMap<String, String>,
     pub input: Value,
     pub raw: &'a [u8],
-    pub condition: Option<&'a str>,
+    pub if_match: Option<&'a str>,
+    pub if_none_match: Option<&'a str>,
 }
 pub(super) struct LocalWrite<'a> {
     pub path: &'a str,
     pub kind: &'a str,
     pub content: &'a str,
     pub create_only: bool,
+    pub expected_version: Option<&'a str>,
 }
 pub(super) struct FileJob<'a> {
     pub resource_id: &'a str,
@@ -40,9 +42,25 @@ impl Product {
             query: q,
             input,
             raw,
-            condition,
+            if_match,
+            if_none_match,
         } = request;
+        let _mutation = if method == "GET" {
+            None
+        } else {
+            Some(self.file_mutations.lock().await)
+        };
         let read = method == "GET";
+        if if_match.is_some() && if_none_match.is_some()
+            || if_none_match.is_some_and(|v| v != "*")
+            || if_match.is_some_and(|v| !valid_etag(v))
+        {
+            return Err(err(400, "INVALID_PRECONDITION"));
+        }
+        let create_only = if_none_match == Some("*");
+        if method != "PUT" && (if_match.is_some() || if_none_match.is_some()) {
+            return Err(err(400, "INVALID_PRECONDITION"));
+        }
         let resource_id = if route == "/files/content" || read {
             q.get("resourceId")
                 .map(String::as_str)
@@ -82,7 +100,7 @@ impl Product {
                 .collect::<Vec<_>>();
             return Ok((200, Reply::Json(json!({"data":data}))));
         }
-        let path = clean_path(if route == "/files/content" {
+        let path = clean_path(if ["/files/content", "/files/metadata"].contains(&route) {
             q.get("path").map(String::as_str).unwrap_or("")
         } else {
             text(&input, "path")?
@@ -90,6 +108,60 @@ impl Product {
         if path == "/" {
             return Err(err(400, "INVALID_PATH"));
         }
+        if route == "/files/metadata" {
+            let mut data = if r["provider"] == DRIVE9 {
+                self.providers.file_stat(resource_id, &path).await?
+            } else {
+                self.workspace.repository().read().await?["files"]
+                    .as_array()
+                    .and_then(|v| {
+                        v.iter()
+                            .find(|f| f["resourceId"] == resource_id && f["path"] == path)
+                    })
+                    .cloned()
+                    .ok_or_else(|| err(404, "NOT_FOUND"))?
+            };
+            let version = if r["provider"] == DRIVE9 {
+                provider_version(&data)
+            } else {
+                Some(local_version(&data))
+            };
+            data = json!({"resourceId":resource_id,"path":path,"type":if data["directory"]==true||data["type"]=="directory"{"directory"}else{"file"},"size":if r["provider"]==DRIVE9 {data["size"].clone()}else{json!(data["content"].as_str().unwrap_or("").len())},"version":version,"conditionalWrites":version.is_some()&&data["type"]!="directory"&&data["directory"]!=true});
+            return Ok((
+                200,
+                match version {
+                    Some(etag) => Reply::Entity {
+                        value: json!({"data":data}),
+                        etag,
+                    },
+                    None => Reply::Json(json!({"data":data})),
+                },
+            ));
+        }
+        let expected_revision = if r["provider"] == DRIVE9 && if_match.is_some() {
+            let stat = self
+                .providers
+                .file_stat(resource_id, &path)
+                .await
+                .map_err(|e| {
+                    if e.status == 404 {
+                        err(412, "PRECONDITION_FAILED")
+                    } else {
+                        e
+                    }
+                })?;
+            if stat["directory"] == true {
+                return Err(err(400, "DIRECTORY_PRECONDITION_UNSUPPORTED"));
+            }
+            let version =
+                provider_version(&stat).ok_or_else(|| err(409, "FILE_VERSION_UNAVAILABLE"))?;
+            if Some(version.as_str()) != if_match {
+                return Err(err(412, "PRECONDITION_FAILED"));
+            }
+            Some(text(&stat, "dataRevision")?.to_owned())
+        } else {
+            None
+        };
         if route == "/files/content" {
             if r["provider"] != DRIVE9 {
                 return Err(err(400, "LOCAL_FILE_API"));
@@ -167,7 +239,8 @@ impl Product {
                     resource_id,
                     &path,
                     raw.to_vec(),
-                    condition == Some("*"),
+                    create_only,
+                    expected_revision.as_deref(),
                     || async {
                         self.context(
                             credential,
@@ -234,6 +307,9 @@ impl Product {
         if kind == "file" && (!input["content"].is_string() || content.len() > 256 * 1024) {
             return Err(err(413, "FILE_TOO_LARGE"));
         }
+        if kind == "directory" && (if_match.is_some() || create_only) {
+            return Err(err(400, "DIRECTORY_PRECONDITION_UNSUPPORTED"));
+        }
         if r["provider"] == DRIVE9 {
             if kind == "directory" {
                 self.providers
@@ -251,7 +327,8 @@ impl Product {
                         resource_id,
                         &path,
                         content.as_bytes().to_vec(),
-                        false,
+                        create_only,
+                        expected_revision.as_deref(),
                         || async {
                             self.context(
                                 credential,
@@ -283,31 +360,27 @@ impl Product {
             ));
         }
         let file = self
-            .write_local(credential, &r, &path, kind, content, false)
-            .await?;
+            .write_local_authorized(
+                credential,
+                &r,
+                LocalWrite {
+                    path: &path,
+                    kind,
+                    content,
+                    create_only,
+                    expected_version: if_match,
+                },
+                |_| Ok(()),
+            )
+            .await
+            .map_err(|e| {
+                if create_only && e.code == "EXPORT_TARGET_EXISTS" {
+                    err(412, "PRECONDITION_FAILED")
+                } else {
+                    e
+                }
+            })?;
         Ok((200, Reply::Json(json!({"data":file}))))
-    }
-    pub(super) async fn write_local(
-        &self,
-        credential: &Credential,
-        r: &Value,
-        path: &str,
-        kind: &str,
-        content: &str,
-        create_only: bool,
-    ) -> Result<Value> {
-        self.write_local_authorized(
-            credential,
-            r,
-            LocalWrite {
-                path,
-                kind,
-                content,
-                create_only,
-            },
-            |_| Ok(()),
-        )
-        .await
     }
     pub(super) async fn write_local_authorized(
         &self,
@@ -321,6 +394,7 @@ impl Product {
             kind,
             content,
             create_only,
+            expected_version,
         } = write;
         let id = text(r, "id")?;
         self.workspace.repository().transaction(|state|{authorize(state)?;
@@ -329,10 +403,11 @@ let files=state["files"].as_array_mut().expect("files");
 let dir=parent(path);
 if dir!="/"&&!files.iter().any(|f|f["resourceId"]==id&&f["path"]==dir&&f["type"]=="directory"){return Err(err(404,"PARENT_MISSING"));}
 let position=files.iter().position(|f|f["resourceId"]==id&&f["path"]==path);
+if expected_version.is_some_and(|v|position.is_none_or(|i|local_version(&files[i])!=v)){return Err(err(412,"PRECONDITION_FAILED"));}
 if create_only&&position.is_some(){return Err(err(409,"EXPORT_TARGET_EXISTS"));}
 if position.is_some_and(|i|files[i]["type"]!=kind){return Err(err(409,"TYPE_CONFLICT"));}
 if position.is_none()&&files.iter().filter(|f|f["resourceId"]==id).count()>=2000{return Err(err(409,"FREE_TIER_LIMIT"));}
-let mut f=json!({"id":position.map(|i|files[i]["id"].clone()).unwrap_or(json!(uuid::Uuid::new_v4().to_string())),"resourceId":id,"path":path,"type":kind,"updatedAt":timestamp()});
+let mut f=json!({"version":format!("\"{}\"",secret(24)?),"id":position.map(|i|files[i]["id"].clone()).unwrap_or(json!(uuid::Uuid::new_v4().to_string())),"resourceId":id,"path":path,"type":kind,"updatedAt":timestamp()});
 if kind=="file"{f["content"]=json!(content);}
 if let Some(i)=position{for(k,v)in f.as_object().expect("file"){files[i][k]=v.clone();}f=files[i].clone();}else{files.push(f.clone());}
 if !create_only{event(state,if position.is_some(){"file.updated"}else{"file.created"},path,&p.actor,Some(id));}
@@ -618,4 +693,40 @@ pub fn bash_input(path: &str) -> Value {
 }
 pub fn analysis_limits() -> Value {
     json!({"inputBytes":LIMIT,"scriptBytes":65536,"outputBytes":1024*1024,"rows":1000,"timeoutMs":15000,"concurrency":2,"workerHeapMiB":128,"duckdbMemoryMB":128})
+}
+
+pub(super) fn local_version(file: &Value) -> String {
+    file["version"]
+        .as_str()
+        .filter(|s| valid_etag(s))
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            format!(
+                "\"{}\"",
+                hex::encode(Sha256::digest(file.to_string().as_bytes()))
+            )
+        })
+}
+fn valid_etag(s: &str) -> bool {
+    s.len() >= 3
+        && s.len() <= 256
+        && s.starts_with('"')
+        && s.ends_with('"')
+        && s[1..s.len() - 1]
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+fn provider_version(stat: &Value) -> Option<String> {
+    let revision = stat["dataRevision"].as_str()?;
+    if revision.parse::<i64>().ok()? <= 0 {
+        return None;
+    }
+    let identity = stat["resourceIdentity"].as_str()?;
+    if identity.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "\"{}\"",
+        hex::encode(Sha256::digest(format!("{identity}:{revision}").as_bytes()))
+    ))
 }
