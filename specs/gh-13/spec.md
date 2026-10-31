@@ -5,6 +5,8 @@
 - Owner direction: Rust replaces the hosted Node API; old workspace data can be discarded.
 - Delivery: reviewed native implementation, automatic dev delivery and observed deployment evidence where configured access is available.
 
+> Historical baseline: [ADR 0030](../../docs/decisions/0030-personal-account-isolation.md) supersedes hosted shared-owner admission and session lifetime for managed personal Workspaces. Other requirements remain applicable.
+
 ## Accepted behavior
 
 NAT-01: Native authorization-code public-client S256 PKCE verifies JWKS signature, exact configured issuer, audience, expiration, nonce and immutable scalar subject. Owner admission requires an exact subject or explicitly configured verified-email rule; an optional organization filter never grants access alone. No client secret or provider credential reaches the Console.
