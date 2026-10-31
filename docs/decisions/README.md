@@ -73,3 +73,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0026: Native hosted Studio](0026-native-hosted-studio.md) — Rust SSO/public hosting, independent `/studio` publication, and explicitly fresh S3 roots/keys; supersedes hosted Node compatibility.
 
 - [0031: Agent REST P0](0031-agent-rest-p0.md) — authenticated context, parsed read-only SQL, retained resource deletion status and atomic file preconditions.
+
+- [0032: REST workflow resources](0032-rest-workflow-resources.md) — addressable preparations, durable setup attempts and removal of historical command routes under GH-76.
