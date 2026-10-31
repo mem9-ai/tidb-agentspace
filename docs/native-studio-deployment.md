@@ -109,8 +109,8 @@ tradeoffs, the Global restart limitation, and the current tenant/organization re
 
 Managed startup uses an internal health Workspace and does not open `ws_agentlab`. After the new
 version, real login and isolation have been verified, the explicitly dispatched protected
-`Retire legacy shared Workspace` workflow can retire only `ws_agentlab`. The workflow verifies
-same-commit CI and the exact current image digest, sets `WORKSPACE_RETIRE_LEGACY=ws_agentlab`,
+`Retire legacy shared Workspace` workflow can retire only `ws_agentlab`. Provide the immutable digest observed in the verified deployment. The workflow verifies
+same-commit CI and that the current image exactly matches that digest, sets `WORKSPACE_RETIRE_LEGACY=ws_agentlab`,
 waits for a one-replica Recreate rollout and the exact completion marker, then removes the flag
 and verifies a second healthy rollout. Failures leave an explicit state for inspection; do not
 blindly roll back to a binary expecting deleted data. Offline operators can instead stop the host
