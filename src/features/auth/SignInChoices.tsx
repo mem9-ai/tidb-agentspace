@@ -26,15 +26,24 @@ export function SignInChoices({
         fullWidth
         size="lg"
         variant="default"
+        h="auto"
+        py="sm"
+        aria-label="Continue as Guest"
+        aria-describedby="guest-expiry guest-access-note"
         disabled={!guestEnabled || guestLoading}
         loading={guestLoading}
         onClick={onGuestLogin}
       >
-        Continue as Guest
+        <Stack component="span" gap={0} align="center">
+          <span>Continue as Guest</span>
+          <Text id="guest-expiry" component="span" size="sm" fw={400}>
+            Workspace access expires after 24 hours
+          </Text>
+        </Stack>
       </Button>
-      <Text size="sm" ta="center">
+      <Text id="guest-access-note" size="sm" ta="center">
         {guestEnabled
-          ? 'Guest access ends 24 hours after creation. Your workspace becomes inaccessible, but cloud resources may remain.'
+          ? 'Cloud resources may remain after access ends.'
           : '24-hour Guest access is coming soon.'}
       </Text>
       {guestError && (
