@@ -60,6 +60,7 @@ export const test = base.extend({
     let signedInAsAccount = false;
     let rejectGuestLogout = false;
     const resourcePages = new Map();
+    const keyPages = new Map();
     page.on('pageerror', (error) => unexpected.push(error.message));
     await context.route('**/*', async (route) => {
       const request = route.request();
@@ -113,7 +114,13 @@ export const test = base.extend({
           ? reply({ error: { code: 'UNAUTHENTICATED', message: 'Sign in' } }, 401)
           : reply({ data: [state.workspace] });
       const path = url.pathname.replace(`/api/v1/workspaces/${state.workspace.id}`, '');
-      if (path === '/bootstrap') return reply(state);
+      if (path === '/bootstrap') {
+        const loadedIds = new Set(state.resources.map((resource) => resource.id));
+        return reply({
+          ...state,
+          files: state.files.filter((file) => loadedIds.has(file.resourceId)),
+        });
+      }
       if (path === '/resources' && method === 'POST') {
         if (rejectAutomaticName) {
           rejectAutomaticName = false;
@@ -142,6 +149,17 @@ export const test = base.extend({
           queryCountScope: 'workspace',
           nextCursor: null,
         });
+      if (path === '/files' && method === 'GET') {
+        const resourceId = url.searchParams.get('resourceId');
+        const folder = url.searchParams.get('path');
+        return reply({
+          data: state.files.filter(
+            (file) =>
+              file.resourceId === resourceId &&
+              (!folder || (file.path.slice(0, file.path.lastIndexOf('/')) || '/') === folder),
+          ),
+        });
+      }
       if (method === 'GET' && /^\/resources\/[^/]+$/.test(path)) {
         const id = decodeURIComponent(path.slice('/resources/'.length));
         const resource = [
@@ -161,6 +179,10 @@ export const test = base.extend({
           durationMs: 1,
         });
       if (/\/tables$/.test(path)) return reply({ data: [], mode: 'demo', truncated: false });
+      if (path === '/keys' && method === 'GET') {
+        const cursor = url.searchParams.get('cursor');
+        return reply((cursor && keyPages.get(cursor)) || { data: state.keys, nextCursor: null });
+      }
       if (path === '/keys' && method === 'POST') {
         const key = {
           ...body,
@@ -192,6 +214,9 @@ export const test = base.extend({
       requests,
       setResourcePage(cursor, data, nextCursor = null) {
         resourcePages.set(cursor, { data, nextCursor, capabilities: state.capabilities });
+      },
+      setKeyPage(cursor, data, nextCursor = null) {
+        keyPages.set(cursor, { data, nextCursor });
       },
       signInAsAccount() {
         signedInAsAccount = true;

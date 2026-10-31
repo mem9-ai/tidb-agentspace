@@ -59,7 +59,7 @@ fn counter(record: &Value, group: &str) -> Result<u64> {
 }
 
 impl Repository {
-    async fn get_many(&self, keys: Vec<String>) -> Result<Records> {
+    pub(super) async fn get_many(&self, keys: Vec<String>) -> Result<Records> {
         let mut output = Records::new();
         for batch in keys.chunks(512) {
             let result = self
@@ -103,64 +103,63 @@ impl Repository {
             if state["phase"] != "building" {
                 return Err(error("RESOURCE_INDEX_CORRUPT"));
             }
-            let after = match &state["after"] {
+            let mut next = match &state["after"] {
                 Value::Null => None,
                 Value::String(s) => Some(s.clone()),
                 _ => return Err(error("RESOURCE_INDEX_CORRUPT")),
             };
-            let page = self
-                .call(MetaRequest::List {
-                    scope: self.scope.clone(),
-                    guard: Some(self.guard.clone()),
-                    prefix: "state/resources/".into(),
-                    after,
-                    limit: 100,
-                })
-                .await?;
-            let entries = page["records"]
-                .as_array()
-                .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
             let mut names = BTreeMap::<String, (String, String)>::new();
             let mut counts = BTreeMap::<String, u64>::new();
             let mut position = state["position"]
                 .as_u64()
                 .ok_or_else(|| error("RESOURCE_INDEX_CORRUPT"))?;
-            for entry in entries {
-                let resource = &entry["value"]["record"];
-                let id = resource["id"]
-                    .as_str()
+            // Aggregate three bounded list pages into one atomic checkpoint. Index records
+            // are small even when the source resource descriptors are large.
+            for _ in 0..3 {
+                let page = self
+                    .call(MetaRequest::List {
+                        scope: self.scope.clone(),
+                        guard: Some(self.guard.clone()),
+                        prefix: "state/resources/".into(),
+                        after: next,
+                        limit: 512,
+                    })
+                    .await?;
+                let entries = page["records"]
+                    .as_array()
                     .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
-                if entry["key"] != format!("state/resources/{id}") {
-                    return Err(error("META_RECORD_CORRUPT"));
-                }
-                position = position.max(entry["value"]["position"].as_u64().unwrap_or(0));
-                if let Some(value) = name(resource) {
-                    let key = name_key(value);
-                    if let Some((other, _)) = names.insert(key, (id.into(), value.into()))
-                        && other != id
-                    {
-                        return Err(error("RESOURCE_INDEX_DUPLICATE_NAME"));
+                for entry in entries {
+                    let resource = &entry["value"]["record"];
+                    let id = resource["id"]
+                        .as_str()
+                        .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+                    if entry["key"] != format!("state/resources/{id}") {
+                        return Err(error("META_RECORD_CORRUPT"));
+                    }
+                    position = position.max(entry["value"]["position"].as_u64().unwrap_or(0));
+                    if let Some(value) = name(resource) {
+                        let key = name_key(value);
+                        if let Some((other, _)) = names.insert(key, (id.into(), value.into()))
+                            && other != id
+                        {
+                            return Err(error("RESOURCE_INDEX_DUPLICATE_NAME"));
+                        }
+                    }
+                    if let Some(group) = quota(resource) {
+                        *counts.entry(group).or_default() += 1;
                     }
                 }
-                if let Some(group) = quota(resource) {
-                    *counts.entry(group).or_default() += 1;
+                next = page["nextCursor"].as_str().map(str::to_owned);
+                if next.is_none() {
+                    break;
                 }
             }
-            let keys = names
-                .keys()
-                .cloned()
-                .chain(counts.keys().map(|group| quota_key(group)))
-                .collect();
+            let keys = counts.keys().map(|group| quota_key(group)).collect();
             let previous = self.get_many(keys).await?;
             let mut changes = Vec::new();
-            for (key, (id, value)) in names {
-                let prior = &previous[&key];
-                if !prior.is_null()
-                    && (prior["value"]["id"] != id || prior["value"]["name"] != value)
-                {
-                    return Err(error("RESOURCE_INDEX_DUPLICATE_NAME"));
-                }
-                changes.push(json!({"key":key,"expectedVersion":version(prior),"value":{"id":id,"name":value}}));
+            for (key, (id, value)) in &names {
+                changes
+                    .push(json!({"key":key,"expectedVersion":null,"value":{"id":id,"name":value}}));
             }
             for (group, increment) in counts {
                 let key = quota_key(&group);
@@ -170,10 +169,25 @@ impl Repository {
                     .ok_or_else(|| error("RESOURCE_INDEX_CORRUPT"))?;
                 changes.push(json!({"key":key,"expectedVersion":version(prior),"value":{"group":group,"count":count}}));
             }
-            let next = page["nextCursor"].as_str().map(str::to_owned);
             changes.push(json!({"key":SCHEMA,"expectedVersion":version(&marker),"value":{"format":1,"phase":if next.is_some(){"building"}else{"ready"},"after":next,"position":position}}));
-            self.commit(changes).await?;
-            self.get(SCHEMA).await
+            if let Err(failure) = self.commit(changes).await {
+                if failure.code == "META_CONFLICT" {
+                    let existing = self.get_many(names.keys().cloned().collect()).await?;
+                    if names.iter().any(|(key, (id, value))| {
+                        !existing[key].is_null()
+                            && (existing[key]["value"]["id"] != *id
+                                || existing[key]["value"]["name"] != *value)
+                    }) {
+                        return Err(error("RESOURCE_INDEX_DUPLICATE_NAME"));
+                    }
+                }
+                return Err(failure);
+            }
+            if next.is_some() {
+                Ok(Value::Null)
+            } else {
+                self.get(SCHEMA).await
+            }
         }
     }
 
@@ -357,27 +371,7 @@ impl Repository {
         if let (Some(slot), Some(key)) = (slot, slot_key) {
             changes.push(json!({"key":key,"expectedVersion":version(&prior[&key]),"value":{"mapKey":slot,"record":{"fingerprint":fingerprint,"resource":resource}}}));
         }
-        let events = self.records("state/events/").await?;
-        let mut ordered = events.iter().collect::<Vec<_>>();
-        ordered.sort_by_key(|(key, value)| {
-            (
-                value["value"]["position"].as_u64().unwrap_or(0),
-                (*key).clone(),
-            )
-        });
-        let event_position = ordered
-            .last()
-            .map(|(_, v)| v["value"]["position"].as_u64().unwrap_or(0))
-            .unwrap_or(0)
-            .checked_add(1)
-            .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
-        let event_id = event["id"]
-            .as_str()
-            .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
-        changes.push(json!({"key":format!("state/events/{event_id}"),"expectedVersion":null,"value":{"position":event_position,"record":event}}));
-        for (key, prior) in ordered.into_iter().take(events.len().saturating_sub(199)) {
-            changes.push(json!({"key":key,"expectedVersion":version(prior),"delete":true}));
-        }
+        changes.extend(self.event_changes(&event).await?);
         // Backfill can take a long time. Recheck expiry and the Region-owned policy before
         // publishing the intent; this never calls Global.
         let caller = principal(&state, credential)?;

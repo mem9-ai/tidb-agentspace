@@ -327,7 +327,7 @@ impl Product {
         let state = self
             .workspace
             .repository()
-            .view_selected(ids, false)
+            .view_selected(ids, false, Some(credential))
             .await?;
         Self::export_authorize_state(
             &state,

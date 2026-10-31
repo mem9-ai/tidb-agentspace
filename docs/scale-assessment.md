@@ -19,21 +19,24 @@ The previous ordinary repository `read` and `transaction` paths materialized `st
 failed at 4,096 records or 24 MiB. Product resource listing, bootstrap, creation, query,
 file and export paths now use bounded resource reads or projections rather than materializing
 all resource records. The legacy helpers still exist, and individual projected collections
-such as local file entries, Keys and events retain their own view limits. Thus a large file
-collection or other unconverted workflow can still hit `WORKSPACE_VIEW_LIMIT`.
+such as local files for selected File Systems retain their own view limits. Thus a large single
+File System or other unconverted workflow can still hit `WORKSPACE_VIEW_LIMIT`.
 
 At one million resources, a 100-record page size implies at least 10,000 sequential page fetches for a full scan, before accounting for associated state, latency and memory. At an illustrative 2 KiB of logical metadata each, the records alone are about 1.9 GiB; this is an arithmetic example, not measured record size or physical storage cost. Raising the limit would amplify latency, memory use and contention rather than solve the design problem.
 
 Every resource page reads by ID without materializing the whole Workspace. Resource
 status updates address one record; independent updates can progress concurrently. Key
-management, settings and event listing now load the Key and event collections plus the
-specific resources they reference, and event append loads only events. These paths still
-coordinate through a Workspace-wide gate; Key collections retain the per-prefix view limit.
-The Portal loads additional pages on demand, but retains them in memory. Creation maintains
+management and settings load only the target Key and the resources they reference. Key listing
+is paginated, and event append uses a retained ordered index. Event listing reads at most the
+200 retained events. Ordinary mutations use conditional versions and bounded conflict retries
+under the shared side of the Workspace gate; creation, backfill and legacy snapshots still take
+its exclusive side.
+The Portal keeps a bounded 200-resource window. Creation maintains
 name, quota and idempotency indexes atomically. The first creation in an existing Workspace
 backfills those indexes in resumable batches, so its total latency is proportional to existing
-resources. Deletion reads only the target resource but local cleanup still loads Workspace file
-records. Provider setup and managed-Workspace cache misses still hold shared locks across I/O.
+resources. File operations use a per-File-System index after resumable legacy backfill, but still
+materialize the selected File System's files. Provider setup and managed-Workspace cache misses
+still hold shared locks across I/O.
 
 The current product enforces free-tier limits of five databases per kind and one File System
 per region/provider. The scale fixture inserts synthetic records directly; it does not show

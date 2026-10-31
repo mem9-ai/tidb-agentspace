@@ -16,15 +16,32 @@ paths therefore continue to cause Workspace-wide contention.
 For cached regional Workspaces, authentication waits outside the shared pool mutex while a
 lease prevents eviction and cleanup. Cache misses and close/cleanup operations still hold that
 mutex across metadata I/O, so cold-tenant churn is not yet independently scalable.
-Workspace Key management, settings and event lists load the Key/event collections and only the
-resource IDs needed to validate grants or filter events. Event append scans at most the retained
-event collection and commits the new event with retention cleanup. These collections are not
-themselves unbounded/paginated, and still use the legacy write gate.
-Deletion journals and updates one resource without scanning unrelated resources; local deletion
-still loads the Workspace file collection, which is subject to the legacy view limit.
+Key listing is owner-only, ID-ordered and paginated (default 100, maximum 512); each page is
+independently authorized. The response now contains `nextCursor`; existing clients must follow
+it rather than assuming the first response contains every Key. Bootstrap contains the first Key
+page and `keysNextCursor`. Create/revoke read only their target Key and explicitly granted
+resources. Key authentication, projected resource/Key mutations and event append can run
+concurrently through the shared read gate. Mutations fence the Key and selected resource
+versions and retry confirmed conflicts with fresh authorization; unknown commit outcomes are
+not retried. The fence uses no-op conditional writes, which can contend on the same Key or
+resource and advance its metadata version.
+
+Event append maintains an ordered retention index and a head record; an existing collection of
+at most 200 retained events is indexed once. Subsequent appends address only the head, new event,
+and oldest event when pruning. Event list and bootstrap still read the retained 200 events to
+honor the existing list contract. The head is a contention point and the shared gate still
+coordinates with older transactional writers.
+
+Existing local files are indexed once by File System in resumable batches of 512. New or removed
+files update their resource index atomically with the file record. Normal local file operations
+and deletion read only files of the selected File Systems, not all Workspace files. A single
+File System's file list is still materialized and subject to the existing 4,096-record/24 MiB
+projection ceiling; directory/path point indexes and paged file browsing are not implemented.
 Bootstrap and usage return a first bounded page and a continuation cursor. The Portal loads
 subsequent pages on demand and resolves a directly linked resource separately. It currently
-retains loaded pages in browser memory. Listing, bootstrap and usage return stored status;
+retains at most 200 resource records in its current window and permits returning to the first
+page. Explicitly selected Key grants remain selected and hidden selections are disclosed.
+Key inventory and resource selectors also use bounded 200-record windows. Listing, bootstrap and usage return stored status;
 resource detail refreshes provider status. A cursor is a position, not a snapshot: concurrent
 insertions before it may be missed and deletions may disappear. A page can be empty and still
 have a next cursor. Callers of the former default unpaged resource list must follow `nextCursor`.
@@ -32,14 +49,15 @@ Workspace-wide usage query counts are reported for owner/wildcard access; for a 
 the response labels its count as page-scoped.
 
 Creation uses colocated name, free-tier quota, idempotency and resource records in an atomic
-metadata commit. Existing Workspaces build versioned indexes in batches of 100 with durable
+metadata commit. Existing Workspaces build versioned indexes in batches of up to 1,536 with durable
 checkpoints and release the Workspace gate between batches. Interruptions resume; index-changing
 updates are fenced while backfill runs. The initial request may still take a long time for a
 large existing Workspace, and an automatic background reconciler is not implemented. ID-ordered
-resource pages avoid the resource-wide view limit, but bootstrap and local file operations still
-load the Workspace file collection; Key and event collections are also bounded by legacy view
-limits. The repository mutation gate and provider setup lock remain, and conservative lifecycle
-coordination can still block unrelated resources. This is not a finished million-resource design.
+resource pages avoid the resource-wide view limit. File indexing and resource indexing still
+require a one-time scan of legacy records, and the request that triggers either backfill waits
+for completion. Resource creation, index backfill and legacy snapshots still acquire the
+exclusive Workspace gate. Provider setup and some lifecycle coordination also retain shared
+locks. This is not a finished million-resource design.
 
 ## Placement proposal
 

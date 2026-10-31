@@ -87,3 +87,21 @@ recovery or availability measurement. The source revision of the running debug b
 recorded with a binary checksum; the sample cannot be attributed to a release artifact. After
 sampling, the isolated fixture processes were stopped and their approximately 400 MiB temporary
 directory was removed. Existing cloud resources and other development data were not touched.
+
+## Later bounded sample: 100,000 resources and index backfill
+
+A subsequent local debug-build sample seeded 100,000 synthetic resources in one Workspace,
+using the same RustFS and SlateDB versions and loopback services. With four concurrent clients,
+100 page requests of 100 records each and the same 80/20 hot/cold cursor distribution had no
+errors; p50 was 23.75 ms, p95 32.09 ms and p99 39.41 ms. Seeding took 20.79 seconds. After
+the page sample, the first resource creation built the legacy name, quota and idempotency indexes
+and took 227.51 seconds; idempotent replay returned the original resource and a duplicate name
+was rejected. The provider was a fake. Other checks were running concurrently, and this was an
+intermediate binary whose exact source revision was not retained. The timings are observations,
+not comparable production measurements.
+
+In particular, legacy resource-index backfill is resumable and bounded per transaction, but it
+still runs synchronously before the first indexed creation. A large existing Workspace can wait
+minutes; asynchronous progress and operational controls remain follow-up work. This run did not
+measure many Tenants, cloud-provider provisioning or production S3 latency. Its isolated temporary
+object data was removed after the run.

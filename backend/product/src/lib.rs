@@ -252,17 +252,19 @@ impl Product {
                 }
                 let repository = self.workspace.repository();
                 let (page, next) = repository.resources_page(None, 100).await?;
+                let (keys, key_next) = repository.keys_page(None, 100).await?;
                 let ids = page
                     .iter()
                     .map(|resource| text(resource, "id").map(str::to_owned))
                     .collect::<Result<BTreeSet<_>>>()?;
                 let mut state = visible(
                     repository
-                        .workspace_transaction(
+                        .resource_transaction(
                             ids.iter().cloned().collect(),
                             true,
                             true,
                             false,
+                            &credential,
                             |state| Ok((state.clone(), false)),
                         )
                         .await?,
@@ -271,6 +273,8 @@ impl Product {
                     .as_array_mut()
                     .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
                     .retain(|resource| resource["id"].as_str().is_some_and(|id| ids.contains(id)));
+                state["keys"] = json!(keys);
+                state["keysNextCursor"] = key_next.into();
                 for file in state["files"]
                     .as_array_mut()
                     .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
@@ -392,7 +396,7 @@ impl Product {
                 let state = self
                     .workspace
                     .repository()
-                    .workspace_transaction(ids, false, true, true, |state| {
+                    .resource_transaction(ids, false, true, true, &credential, |state| {
                         Ok((state.clone(), false))
                     })
                     .await?;

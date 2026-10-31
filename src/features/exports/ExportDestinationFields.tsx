@@ -4,7 +4,7 @@ import { useResourcePages } from '../resources/use-resource-pages';
 export type DestinationKind = 'download' | 'filesystem' | 'database';
 const liveProviders = ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'];
 export function useExportDestination(kind: DestinationKind, resourceId: string) {
-  const pages = useResourcePages(kind !== 'download');
+  const pages = useResourcePages(kind !== 'download', resourceId);
   const { resources, loading } = pages;
   const targets = resources.filter(
     (resource) =>
@@ -20,6 +20,7 @@ export function useExportDestination(kind: DestinationKind, resourceId: string) 
     loadError: pages.error,
     retry: pages.retry,
     nextCursor: pages.nextCursor,
+    hasEarlier: pages.hasEarlier,
     loadMore: pages.loadMore,
   };
 }
@@ -91,7 +92,7 @@ export function ExportDestinationFields({
                   value: '',
                   label: state.targets.length
                     ? 'Choose a destination'
-                    : state.nextCursor
+                    : state.nextCursor || state.hasEarlier
                       ? 'No destinations in loaded resources'
                       : 'No available destinations',
                 },
@@ -110,6 +111,11 @@ export function ExportDestinationFields({
               onClick={() => void state.loadMore()}
             >
               Load more resources
+            </Button>
+          )}
+          {state.hasEarlier && (
+            <Button type="button" disabled={busy} onClick={state.retry}>
+              Back to first resources
             </Button>
           )}
           {kind === 'filesystem' ? (

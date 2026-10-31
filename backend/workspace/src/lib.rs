@@ -25,10 +25,14 @@ impl Credential {
         }
     }
 }
+#[derive(Clone)]
 pub enum Operation {
     ListWorkspaces,
     GetWorkspace,
-    ListKeys,
+    ListKeys {
+        cursor: Option<String>,
+        limit: usize,
+    },
     CreateKey(Value),
     RevokeKey(String),
     UpdateSettings(Value),
@@ -232,6 +236,17 @@ impl Workspace {
         self.repository.close().await
     }
     pub async fn call(&self, credential: Credential, operation: Operation) -> Result<Response> {
+        if let Operation::ListKeys { ref cursor, limit } = operation {
+            let principal = self.authenticate(&credential).await?;
+            if !principal.owner {
+                return Err(reject(403, "OWNER_REQUIRED"));
+            }
+            let (data, next) = self.repository.keys_page(cursor.as_deref(), limit).await?;
+            return Ok(Response {
+                status: 200,
+                body: json!({"data":data,"nextCursor":next}),
+            });
+        }
         if matches!(
             operation,
             Operation::ListWorkspaces | Operation::GetWorkspace
@@ -256,7 +271,7 @@ impl Workspace {
         let caller = self.authenticate(&credential).await?;
         let owner_only = matches!(
             operation,
-            Operation::ListKeys
+            Operation::ListKeys { .. }
                 | Operation::CreateKey(_)
                 | Operation::RevokeKey(_)
                 | Operation::UpdateSettings(_)
@@ -279,11 +294,23 @@ impl Workspace {
             _ => Vec::new(),
         };
         let event_resources = matches!(operation, Operation::ListEvents);
-        self.repository
-            .workspace_transaction(selected, event_resources, false, false, move |state| {
-                execute_operation(state, credential, operation)
-            })
-            .await
+        if event_resources {
+            self.repository
+                .resource_transaction(selected, true, false, false, &credential, |state| {
+                    execute_operation(state, credential.clone(), operation.clone())
+                })
+                .await
+        } else {
+            let selected_key = match &operation {
+                Operation::RevokeKey(id) => Some(id.clone()),
+                _ => None,
+            };
+            self.repository
+                .key_transaction(selected, selected_key.as_deref(), move |state| {
+                    execute_operation(state, credential.clone(), operation.clone())
+                })
+                .await
+        }
     }
 }
 fn execute_operation(
@@ -320,7 +347,7 @@ fn execute_operation(
     }
     let owner_only = matches!(
         operation,
-        Operation::ListKeys
+        Operation::ListKeys { .. }
             | Operation::CreateKey(_)
             | Operation::RevokeKey(_)
             | Operation::UpdateSettings(_)
@@ -335,7 +362,7 @@ fn execute_operation(
     let body = match operation {
         Operation::ListWorkspaces => json!({"data":[state["workspace"].clone()]}),
         Operation::GetWorkspace => json!({"data":state["workspace"].clone()}),
-        Operation::ListKeys => {
+        Operation::ListKeys { .. } => {
             let keys = state["keys"].as_array().expect("validated keys");
             if keys.iter().any(|k| !k.is_object()) {
                 return Err(reject(503, "META_RECORD_CORRUPT"));

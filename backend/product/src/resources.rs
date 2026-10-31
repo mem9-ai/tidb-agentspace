@@ -91,21 +91,28 @@ impl Product {
         }
         self.workspace
             .repository()
-            .workspace_transaction(vec![id.to_owned()], false, false, false, |state| {
-                let p = principal(state, credential)?;
-                p.scope("resources:write")?;
-                p.resource(state, id, None)?;
-                let r = state["resources"]
-                    .as_array_mut()
-                    .expect("resources")
-                    .iter_mut()
-                    .find(|r| r["id"] == id)
-                    .ok_or_else(|| err(404, "NOT_FOUND"))?;
-                r["status"] = json!("deleting");
-                r["deletion"] = json!({"phase":"outcome-unknown","requestedAt":timestamp()});
-                event(state, "resource.deletion-requested", id, &p.actor, Some(id));
-                Ok(((), true))
-            })
+            .resource_transaction(
+                vec![id.to_owned()],
+                false,
+                false,
+                false,
+                credential,
+                |state| {
+                    let p = principal(state, credential)?;
+                    p.scope("resources:write")?;
+                    p.resource(state, id, None)?;
+                    let r = state["resources"]
+                        .as_array_mut()
+                        .expect("resources")
+                        .iter_mut()
+                        .find(|r| r["id"] == id)
+                        .ok_or_else(|| err(404, "NOT_FOUND"))?;
+                    r["status"] = json!("deleting");
+                    r["deletion"] = json!({"phase":"outcome-unknown","requestedAt":timestamp()});
+                    event(state, "resource.deletion-requested", id, &p.actor, Some(id));
+                    Ok(((), true))
+                },
+            )
             .await?;
         let (status, phase) = if !live(&r) {
             ("deleted", "completed")
@@ -130,11 +137,12 @@ impl Product {
     ) -> Result<Value> {
         self.workspace
             .repository()
-            .workspace_transaction(
+            .resource_transaction(
                 vec![id.to_owned()],
                 false,
                 status == "deleted",
                 false,
+                credential,
                 |state| {
                     let p = principal(state, credential)?;
                     let r = state["resources"]

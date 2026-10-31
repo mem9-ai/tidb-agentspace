@@ -25,7 +25,7 @@ export function ImportFileSource({
   busy: boolean;
   onChange: (resourceId: string, path: string) => void;
 }) {
-  const resourcePages = useResourcePages(true);
+  const resourcePages = useResourcePages(true, resourceId);
   const systems = resourcePages.resources.filter(
     (r) => r.kind === 'filesystem' && r.status === 'active',
   );
@@ -74,7 +74,7 @@ export function ImportFileSource({
               ? 'Choose a File System'
               : resourcePages.loading
                 ? 'Loading File Systems…'
-                : resourcePages.nextCursor
+                : resourcePages.nextCursor || resourcePages.hasEarlier
                   ? 'No File Systems in loaded resources'
                   : 'No available File Systems',
           },
@@ -101,6 +101,11 @@ export function ImportFileSource({
           onClick={() => void resourcePages.loadMore()}
         >
           Load more resources
+        </Button>
+      )}
+      {resourcePages.hasEarlier && (
+        <Button type="button" disabled={busy} onClick={resourcePages.retry}>
+          Back to first resources
         </Button>
       )}
       {resourceId && (

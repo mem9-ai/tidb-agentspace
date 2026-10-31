@@ -261,6 +261,12 @@ export const workspaceApi = {
     ),
   createKey: (body: CreateKeyInput) =>
     responseData(client.POST('/workspaces/{workspaceId}/keys', { params, body })),
+  keysPage: (cursor?: string) =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/keys', {
+        params: { path: params.path, query: { limit: 100, cursor } },
+      }),
+    ),
   revokeKey: (keyId: string) =>
     responseData(
       client.DELETE('/workspaces/{workspaceId}/keys/{keyId}', {

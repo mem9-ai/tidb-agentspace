@@ -255,6 +255,10 @@ Object.assign(schemas, {
       },
       files: { type: 'array', items: ref('File') },
       keys: { type: 'array', items: ref('Key') },
+      keysNextCursor: {
+        type: ['string', 'null'],
+        description: 'Continuation for the bounded initial Key page.',
+      },
       events: { type: 'array', items: ref('Event') },
       usage: { type: 'array', items: ref('Usage') },
       queryCount: { type: 'integer' },
@@ -1000,7 +1004,18 @@ const paths = {
   [ws + '/keys']: {
     get: operation('listKeys', 'List key metadata without secrets', null, {
       owner: true,
-      output: array(ref('Key')),
+      parameters: [
+        {
+          name: 'limit',
+          in: 'query',
+          schema: { type: 'integer', minimum: 1, maximum: 512, default: 100 },
+        },
+        { name: 'cursor', in: 'query', schema: { type: 'string', maxLength: 1024 } },
+      ],
+      output: object({
+        data: { type: 'array', items: ref('Key') },
+        nextCursor: { type: ['string', 'null'] },
+      }),
     }),
     post: operation('createKey', 'Create an expiring scoped local API key', null, {
       owner: true,

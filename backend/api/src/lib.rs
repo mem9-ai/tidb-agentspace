@@ -718,7 +718,14 @@ async fn dispatch(
     } else {
         match (method.as_str(), route) {
             ("GET", "") if path == prefix => Operation::GetWorkspace,
-            ("GET", "/keys") => Operation::ListKeys,
+            ("GET", "/keys") => Operation::ListKeys {
+                cursor: query.get("cursor").cloned(),
+                limit: query.get("limit").map_or(Ok(100), |value| {
+                    value
+                        .parse::<usize>()
+                        .map_err(|_| reject(400, "INVALID_PAGE_LIMIT"))
+                })?,
+            },
             ("POST", "/keys") => Operation::CreateKey(body()?),
             ("PATCH", "/settings") => Operation::UpdateSettings(body()?),
             ("GET", "/events") => Operation::ListEvents,

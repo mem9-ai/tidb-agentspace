@@ -259,6 +259,87 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
         onProgress(Math.min(offset + changes.length, count));
       }
     },
+    async seedKeys(count) {
+      const scope = workspaceScope(region.server.authorityId, states[0].workspace.id);
+      const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
+      const guard = { ownerId: writer.records['system/writer'].value.ownerId };
+      for (let offset = 0; offset < count; offset += 1000) {
+        const changes = Array.from({ length: Math.min(1000, count - offset) }, (_, index) => {
+          const id = `key_scale_${String(offset + index).padStart(8, '0')}`;
+          return {
+            key: `state/keys/${id}`,
+            expectedVersion: null,
+            value: {
+              position: offset + index + 100,
+              record: {
+                id,
+                name: id,
+                digest: createHash('sha256').update(id).digest('hex'),
+                scopes: ['resources:read'],
+                resourceIds: ['*'],
+                expiresAt: '2099-01-01T00:00:00.000Z',
+                revokedAt: null,
+              },
+            },
+          };
+        });
+        await region.client.call({ op: 'commit', scope, guard, mutationId: randomUUID(), changes });
+      }
+    },
+    async seedFiles(count) {
+      const scope = workspaceScope(region.server.authorityId, states[0].workspace.id);
+      const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
+      const guard = { ownerId: writer.records['system/writer'].value.ownerId };
+      for (let offset = 0; offset < count; offset += 1000) {
+        const changes = Array.from({ length: Math.min(1000, count - offset) }, (_, index) => {
+          const n = offset + index;
+          const id = `file_scale_${String(n).padStart(8, '0')}`;
+          return {
+            key: `state/files/${id}`,
+            expectedVersion: null,
+            value: {
+              position: n + 100,
+              record: {
+                id,
+                resourceId: `fs_cold_${n}`,
+                path: '/cold.txt',
+                type: 'file',
+                content: 'synthetic',
+              },
+            },
+          };
+        });
+        await region.client.call({ op: 'commit', scope, guard, mutationId: randomUUID(), changes });
+      }
+    },
+    async seedLocalFileSystem(id) {
+      const scope = workspaceScope(region.server.authorityId, states[0].workspace.id);
+      const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
+      await region.client.call({
+        op: 'commit',
+        scope,
+        guard: { ownerId: writer.records['system/writer'].value.ownerId },
+        mutationId: randomUUID(),
+        changes: [
+          {
+            key: `state/resources/${id}`,
+            expectedVersion: null,
+            value: {
+              position: 50,
+              record: {
+                id,
+                name: id,
+                kind: 'filesystem',
+                region: 'aws-us-east-1',
+                provider: 'local',
+                status: 'active',
+                createdAt: states[0].workspace.createdAt,
+              },
+            },
+          },
+        ],
+      });
+    },
     async records(keys, workspace = 0) {
       const scope = workspaceScope(region.server.authorityId, states[workspace].workspace.id);
       const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });

@@ -17,9 +17,11 @@ export function ResourceCollectionPage({
   onConnect,
   isGuest,
   hasMore,
+  hasEarlier,
   loadingMore,
   pageError,
   onLoadMore,
+  onRestart,
 }: {
   kind: 'database' | 'filesystem';
   resources: Resource[];
@@ -27,9 +29,11 @@ export function ResourceCollectionPage({
   onConnect: (resource: Resource) => void;
   isGuest: boolean;
   hasMore: boolean;
+  hasEarlier: boolean;
   loadingMore: boolean;
   pageError: string;
   onLoadMore: () => Promise<void>;
+  onRestart: () => Promise<void>;
 }) {
   const files = kind === 'filesystem';
   const title = files ? 'File Systems' : 'Databases';
@@ -49,9 +53,9 @@ export function ResourceCollectionPage({
             ? 'Store files, preview their contents, and analyze your data.'
             : 'Store structured data, explore tables, and run SQL queries.'
         }
-        actions={resources.length || hasMore ? create : undefined}
+        actions={resources.length || hasMore || hasEarlier ? create : undefined}
       />
-      {!resources.length && !hasMore ? (
+      {!resources.length && !hasMore && !hasEarlier ? (
         <Paper className="panel" withBorder>
           <WorkspaceEmptyState
             label={`${title} empty state`}
@@ -74,10 +78,15 @@ export function ResourceCollectionPage({
         </Paper>
       ) : (
         <Paper className="panel table-panel" withBorder>
+          {hasEarlier && (
+            <Text p="md" size="sm">
+              Earlier resources are hidden to keep this page responsive.
+            </Text>
+          )}
           {!resources.length ? (
             <Text p="md">
-              No {files ? 'File Systems' : 'databases'} in the loaded resources. Load more to
-              continue.
+              No {files ? 'File Systems' : 'databases'} in the loaded resources.
+              {hasMore ? ' Load more to continue.' : ' Return to the first resources to continue.'}
             </Text>
           ) : (
             <Table aria-label={files ? 'File systems' : 'Databases'}>
@@ -165,11 +174,16 @@ export function ResourceCollectionPage({
               {pageError}
             </Alert>
           )}
-          {hasMore && (
+          {(hasMore || hasEarlier) && (
             <Group justify="center" my="md">
-              <Button loading={loadingMore} onClick={() => void onLoadMore()}>
-                Load more resources
-              </Button>
+              {hasEarlier && (
+                <Button onClick={() => void onRestart()}>Back to first resources</Button>
+              )}
+              {hasMore && (
+                <Button loading={loadingMore} onClick={() => void onLoadMore()}>
+                  Load more resources
+                </Button>
+              )}
             </Group>
           )}
         </Paper>

@@ -92,7 +92,7 @@ impl Product {
             let state = self
                 .workspace
                 .repository()
-                .view_selected(vec![resource_id.into()], true)
+                .view_selected(vec![resource_id.into()], true, None)
                 .await?;
             let data = state["files"]
                 .as_array()
@@ -124,7 +124,7 @@ impl Product {
             } else {
                 self.workspace
                     .repository()
-                    .view_selected(vec![resource_id.into()], true)
+                    .view_selected(vec![resource_id.into()], true, None)
                     .await?["files"]
                     .as_array()
                     .and_then(|v| {
@@ -285,29 +285,37 @@ impl Product {
             } else {
                 self.workspace
                     .repository()
-                    .workspace_transaction(vec![resource_id.into()], false, true, false, |state| {
-                        let p = principal(state, credential)?;
-                        p.scope("files:write")?;
-                        p.resource(state, resource_id, Some("filesystem"))?;
-                        let files = state["files"].as_array_mut().expect("files");
-                        if !files
-                            .iter()
-                            .any(|f| f["resourceId"] == resource_id && f["path"] == path)
-                        {
-                            return Err(err(404, "NOT_FOUND"));
-                        }
-                        if files.iter().any(|f| {
-                            f["resourceId"] == resource_id
-                                && f["path"]
-                                    .as_str()
-                                    .is_some_and(|s| s.starts_with(&(path.clone() + "/")))
-                        }) {
-                            return Err(err(409, "DIRECTORY_NOT_EMPTY"));
-                        }
-                        files.retain(|f| !(f["resourceId"] == resource_id && f["path"] == path));
-                        event(state, "file.deleted", &path, &p.actor, Some(resource_id));
-                        Ok(((), true))
-                    })
+                    .resource_transaction(
+                        vec![resource_id.into()],
+                        false,
+                        true,
+                        false,
+                        credential,
+                        |state| {
+                            let p = principal(state, credential)?;
+                            p.scope("files:write")?;
+                            p.resource(state, resource_id, Some("filesystem"))?;
+                            let files = state["files"].as_array_mut().expect("files");
+                            if !files
+                                .iter()
+                                .any(|f| f["resourceId"] == resource_id && f["path"] == path)
+                            {
+                                return Err(err(404, "NOT_FOUND"));
+                            }
+                            if files.iter().any(|f| {
+                                f["resourceId"] == resource_id
+                                    && f["path"]
+                                        .as_str()
+                                        .is_some_and(|s| s.starts_with(&(path.clone() + "/")))
+                            }) {
+                                return Err(err(409, "DIRECTORY_NOT_EMPTY"));
+                            }
+                            files
+                                .retain(|f| !(f["resourceId"] == resource_id && f["path"] == path));
+                            event(state, "file.deleted", &path, &p.actor, Some(resource_id));
+                            Ok(((), true))
+                        },
+                    )
                     .await?;
             }
             return Ok((200, Reply::Json(json!({"deleted":true}))));
@@ -402,7 +410,7 @@ impl Product {
         r: &Value,
         related_resource_ids: &[String],
         write: LocalWrite<'_>,
-        authorize: impl FnOnce(&Value) -> Result<()> + Send,
+        authorize: impl Fn(&Value) -> Result<()> + Send + Sync,
     ) -> Result<Value> {
         let LocalWrite {
             path,
@@ -414,7 +422,7 @@ impl Product {
         let id = text(r, "id")?;
         let mut selected = related_resource_ids.to_vec();
         selected.push(id.to_owned());
-        self.workspace.repository().workspace_transaction(selected, false, true, false, |state|{authorize(state)?;
+        self.workspace.repository().resource_transaction(selected, false, true, false, credential, |state|{authorize(state)?;
 let p=principal(state,credential)?;p.scope("files:write")?;p.resource(state,id,Some("filesystem"))?;
 let files=state["files"].as_array_mut().expect("files");
 let dir=parent(path);
@@ -489,7 +497,7 @@ Ok((file_view(f),true))}).await
         let state = self
             .workspace
             .repository()
-            .view_selected(vec![id.into()], true)
+            .view_selected(vec![id.into()], true, None)
             .await?;
         let file = state["files"]
             .as_array()

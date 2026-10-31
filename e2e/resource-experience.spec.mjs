@@ -84,6 +84,112 @@ test('a directly linked database outside the first page keeps query results afte
   await expect(page).toHaveURL(/#databases\/db_fixture\/sql$/);
 });
 
+test('a directly linked local File System loads its own files outside the first page', async ({
+  page,
+  workspace,
+}) => {
+  workspace.state.resources = [structuredClone(sampleResources[0])];
+  workspace.state.resourceNextCursor = 'page-two';
+  workspace.setResourcePage('page-two', [structuredClone(sampleResources[1])]);
+  workspace.state.files = [
+    {
+      id: 'file-off-page',
+      resourceId: 'fs_fixture',
+      path: '/outside.txt',
+      type: 'file',
+      content: 'preserved',
+      size: 9,
+      updatedAt: '2026-01-01T00:00:00Z',
+    },
+  ];
+  await workspace.open('#files?resourceId=fs_fixture');
+  await expect(
+    page.getByRole('navigation', { name: 'File entries' }).getByText('outside.txt'),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      workspace.requests.some(
+        (request) => request.path.endsWith('/files') && request.query.resourceId === 'fs_fixture',
+      ),
+    )
+    .toBe(true);
+});
+
+test('resource windows stay bounded and disclose selections from earlier pages', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  test.setTimeout(60000);
+  const resources = Array.from({ length: 600 }, (_, index) => ({
+    ...structuredClone(sampleResources[0]),
+    id: `db_window_${String(index).padStart(4, '0')}`,
+    name: `window-database-${String(index).padStart(4, '0')}`,
+  }));
+  workspace.state.resources = resources.slice(0, 100);
+  workspace.state.resourceNextCursor = 'window-1';
+  for (let pageNumber = 1; pageNumber <= 5; pageNumber++) {
+    workspace.setResourcePage(
+      `window-${pageNumber}`,
+      resources.slice(pageNumber * 100, (pageNumber + 1) * 100),
+      pageNumber < 5 ? `window-${pageNumber + 1}` : null,
+    );
+  }
+  await workspace.open('#keys');
+  await page.getByRole('button', { name: 'Create API key', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
+  for (let pageNumber = 0; pageNumber < 5; pageNumber++)
+    await dialog.getByRole('button', { name: 'Load more resources' }).click();
+  await expect(dialog.getByRole('checkbox', { name: 'window-database-0000' })).toHaveCount(0);
+  await expect(dialog.getByRole('checkbox', { name: 'window-database-0599' })).toBeVisible();
+  await expect(
+    dialog.getByText('100 selected resources are outside the loaded window.'),
+  ).toBeVisible();
+  if (process.env.SCALE_SCREENSHOTS) {
+    await dialog
+      .getByText('100 selected resources are outside the loaded window.')
+      .scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: `${process.env.SCALE_SCREENSHOTS}/resource-window-${testInfo.project.name}.png`,
+    });
+  }
+  await dialog.getByRole('button', { name: 'Back to first resources' }).click();
+  await expect(dialog.getByRole('checkbox', { name: 'window-database-0000' })).toBeChecked();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+});
+
+test('Key inventory pages keep a bounded window with a route back to the first page', async ({
+  page,
+  workspace,
+}) => {
+  test.setTimeout(60000);
+  const keys = Array.from({ length: 600 }, (_, index) => ({
+    id: `key_window_${String(index).padStart(4, '0')}`,
+    name: `window-key-${String(index).padStart(4, '0')}`,
+    prefix: 'fixture',
+    scopes: ['resources:read'],
+    resourceIds: ['*'],
+    createdAt: '2026-01-01T00:00:00Z',
+    expiresAt: '2099-01-01T00:00:00Z',
+    lastUsedAt: null,
+    revokedAt: null,
+  }));
+  workspace.state.keys = keys.slice(0, 100);
+  workspace.state.keysNextCursor = 'keys-1';
+  for (let pageNumber = 1; pageNumber <= 5; pageNumber++)
+    workspace.setKeyPage(
+      `keys-${pageNumber}`,
+      keys.slice(pageNumber * 100, (pageNumber + 1) * 100),
+      pageNumber < 5 ? `keys-${pageNumber + 1}` : null,
+    );
+  await workspace.open('#keys');
+  for (let pageNumber = 0; pageNumber < 5; pageNumber++)
+    await page.getByRole('button', { name: 'Load more keys' }).click();
+  await expect(page.getByText('window-key-0000', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('window-key-0599', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to first keys' }).click();
+  await expect(page.getByText('window-key-0000', { exact: true })).toBeVisible();
+});
+
 test('empty collections share one in-context create action and readable TiUI presentation', async ({
   page,
   workspace,

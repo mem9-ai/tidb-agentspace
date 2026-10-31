@@ -53,6 +53,31 @@ try {
       }
     }),
   );
+  const workloadSeconds = (performance.now() - workloadStart) / 1000;
+  let backfill;
+  if (process.env.SCALE_INDEX_BACKFILL === '1') {
+    const create = (name, key) =>
+      f.request('/resources', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': key },
+        body: { kind: 'postgresql', name, region: 'automatic' },
+      });
+    const before = performance.now();
+    const result = await create('scale-index-backfill', 'scale-backfill');
+    const seconds = (performance.now() - before) / 1000;
+    assert.equal(result.status, 201, JSON.stringify(result.body));
+    const replay = await create('scale-index-backfill', 'scale-backfill');
+    assert.equal(replay.status, 201, JSON.stringify(replay.body));
+    assert.equal(replay.body.data.id, result.body.data.id);
+    const duplicate = await create('scale-1', 'scale-duplicate');
+    assert.equal(duplicate.status, 409, JSON.stringify(duplicate.body));
+    assert.equal(duplicate.body.error.code, 'NAME_EXISTS');
+    backfill = {
+      seconds: Number(seconds.toFixed(2)),
+      replay: 'same resource',
+      duplicate: 'NAME_EXISTS',
+    };
+  }
   latencies.sort((a, b) => a - b);
   const percentile = (p) => Number(latencies[Math.ceil(p * latencies.length) - 1].toFixed(2));
   console.log(
@@ -64,13 +89,14 @@ try {
         pageSize: 100,
         mix: '80% within first 100 IDs; 20% spread across all IDs',
         seedSeconds: Number(seedSeconds.toFixed(2)),
-        workloadSeconds: Number(((performance.now() - workloadStart) / 1000).toFixed(2)),
+        workloadSeconds: Number(workloadSeconds.toFixed(2)),
         latencyMs: { p50: percentile(0.5), p95: percentile(0.95), p99: percentile(0.99) },
+        ...(backfill ? { indexBackfill: backfill } : {}),
         benchmarkProcessPeakRssBytes: process.resourceUsage().maxRSS * 1024,
         node: process.version,
         platform: `${os.platform()}-${os.arch()}`,
         cpus: os.cpus().length,
-        note: 'Fixture uses a local RustFS object store and remote Meta; resource records are synthetic; no provider operations or tenant-scale routing are measured.',
+        note: 'Fixture uses a local RustFS object store and remote Meta; resource records are synthetic; optional creation uses a fake provider. Tenant-scale routing is not measured.',
       },
       null,
       2,

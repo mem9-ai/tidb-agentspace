@@ -1314,6 +1314,8 @@ export interface components {
       resourceNextCursor?: string | null;
       files: components['schemas']['File'][];
       keys: components['schemas']['Key'][];
+      /** @description Continuation for the bounded initial Key page. */
+      keysNextCursor?: string | null;
       events: components['schemas']['Event'][];
       usage: components['schemas']['Usage'][];
       queryCount: number;
@@ -5849,7 +5851,10 @@ export interface operations {
   };
   listKeys: {
     parameters: {
-      query?: never;
+      query?: {
+        limit?: number;
+        cursor?: string;
+      };
       header?: never;
       path: {
         /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
@@ -5867,6 +5872,7 @@ export interface operations {
         content: {
           'application/json': {
             data: components['schemas']['Key'][];
+            nextCursor: string | null;
           };
         };
       };

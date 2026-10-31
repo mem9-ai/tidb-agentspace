@@ -18,6 +18,7 @@ import { FileWorkspaceHeader } from './features/files/FileWorkspaceHeader';
 import { FileUploadStatus } from './features/files/FileUploadStatus';
 import { useFileUpload } from './features/files/use-file-upload';
 import { ResourceCollectionPage } from './features/resources/ResourceCollectionPage';
+import { resourceWindow } from './features/resources/resource-window';
 import {
   resourceWorkspaceHref,
   resourceServiceLabel,
@@ -113,6 +114,7 @@ import {
 
 const FilePreviewPanel = lazy(() => import('./features/files/FilePreviewPanel'));
 type WorkspaceIcon = React.ComponentType<IconProps>;
+type PortalData = Data & { resourceWindowTruncated?: boolean };
 
 type Kind = Resource['kind'];
 const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string }> = {
@@ -220,7 +222,7 @@ function Sparkline({ large = false, range = '24h' }: { large?: boolean; range?: 
   );
 }
 function App() {
-  const [data, setData] = useState<Data | null>(null),
+  const [data, setData] = useState<PortalData | null>(null),
     [routeLocation, setRouteLocation] = useState<WorkspaceRoute>(currentRoute),
     [error, setError] = useState(''),
     [guestLoading, setGuestLoading] = useState(false),
@@ -262,17 +264,22 @@ function App() {
   const refresh = useCallback(async () => {
     const refreshed = await workspaceApi.bootstrap();
     setData((current) => {
-      const selected = current?.resources.find(
-        (resource) => resource.id === selectedResourceIdRef.current,
-      );
+      const selectedId = selectedResourceIdRef.current;
+      const relevantFiles = refreshed.files.filter((file) => file.resourceId === selectedId);
+      const selected = current?.resources.find((resource) => resource.id === selectedId);
       if (
         current?.workspace.id === refreshed.workspace.id &&
         selected &&
         !refreshed.resources.some((resource) => resource.id === selected.id)
       ) {
-        return { ...refreshed, resources: [...refreshed.resources, selected] };
+        return {
+          ...refreshed,
+          resources: [...refreshed.resources, selected],
+          files: current.files.filter((file) => file.resourceId === selected.id),
+          resourceWindowTruncated: false,
+        };
       }
-      return refreshed;
+      return { ...refreshed, files: relevantFiles };
     });
     setResourcePageError('');
     setResourceLookupFailure('');
@@ -290,17 +297,18 @@ function App() {
       ]);
       setData((current) => {
         if (!current || current.resourceNextCursor !== cursor) return current;
-        const resources = new Map(current.resources.map((resource) => [resource.id, resource]));
-        for (const resource of page.data) resources.set(resource.id, resource);
+        const window = resourceWindow(current.resources, page.data, selectedResourceIdRef.current);
         const usageByResource = new Map(current.usage.map((item) => [item.resourceId, item]));
         const pageIds = new Set(page.data.map((resource) => resource.id));
         for (const item of usage.data)
           if (pageIds.has(item.resourceId)) usageByResource.set(item.resourceId, item);
+        const retainedIds = new Set(window.resources.map((resource) => resource.id));
         return {
           ...current,
-          resources: [...resources.values()],
-          usage: [...usageByResource.values()],
+          resources: window.resources,
+          usage: [...usageByResource.values()].filter((item) => retainedIds.has(item.resourceId)),
           resourceNextCursor: page.nextCursor ?? null,
+          resourceWindowTruncated: Boolean(current.resourceWindowTruncated || window.dropped),
         };
       });
     } catch (cause) {
@@ -320,14 +328,23 @@ function App() {
     const controller = new AbortController();
     workspaceApi
       .resource(selectedResourceId, controller.signal)
-      .then((result) => {
+      .then(async (result) => {
+        const localFiles =
+          result.data.kind === 'filesystem' &&
+          (!result.data.provider || result.data.provider === 'local')
+            ? await workspaceApi.listFiles(selectedResourceId, undefined, controller.signal)
+            : null;
         if (controller.signal.aborted) return;
         setData((current) => {
           if (!current || `${current.workspace.id}:${selectedResourceId}` !== lookupKey)
             return current;
-          const resources = new Map(current.resources.map((resource) => [resource.id, resource]));
-          resources.set(result.data.id, result.data);
-          return { ...current, resources: [...resources.values()] };
+          const window = resourceWindow(current.resources, [result.data], selectedResourceId);
+          return {
+            ...current,
+            resources: window.resources,
+            files: localFiles ? localFiles.data : [],
+            resourceWindowTruncated: Boolean(current.resourceWindowTruncated || window.dropped),
+          };
         });
         setResolvedResourceKey(lookupKey);
       })
@@ -507,7 +524,7 @@ function App() {
           {route === 'overview' && <Overview {...shared} />}
           {(route === 'databases' || route === 'files') &&
           lookupKey &&
-          !selectedLoaded &&
+          (!selectedLoaded || route === 'files') &&
           resolvedResourceKey !== lookupKey &&
           resourceLookupFailure !== lookupKey ? (
             <Text role="status">Loading resource…</Text>
@@ -619,7 +636,7 @@ function App() {
   );
 }
 type Shared = {
-  data: Data;
+  data: PortalData;
   refresh: () => Promise<void>;
   notify: (s: string) => void;
   copy: (s: string) => void;
@@ -639,11 +656,13 @@ function Overview({
   loadMoreResources,
   resourcePageBusy,
   resourcePageError,
+  refresh,
 }: Shared) {
   const [range, setRange] = useState('24h');
   const dbs = data.resources.filter((r) => r.kind !== 'filesystem'),
     fs = data.resources.filter((r) => r.kind === 'filesystem'),
-    hasResources = data.resources.length > 0 || Boolean(data.resourceNextCursor);
+    hasResources =
+      data.resources.length > 0 || Boolean(data.resourceNextCursor || data.resourceWindowTruncated);
   return (
     <>
       <PageHeading
@@ -675,16 +694,28 @@ function Overview({
         }
       />
       <TutorialResume data={data} />
-      {data.resourceNextCursor && (
+      {(data.resourceNextCursor || data.resourceWindowTruncated) && (
         <Alert color="peacock" mb="md">
-          <Text>Showing {data.resources.length} loaded resources; more are available.</Text>
+          <Text>
+            Showing {data.resources.length} loaded resources.
+            {data.resourceWindowTruncated &&
+              ' Earlier resources are hidden to keep this page responsive.'}
+            {data.resourceNextCursor && ' More resources are available.'}
+          </Text>
           {resourcePageError && <Text c="red">{resourcePageError}</Text>}
-          <Button mt="sm" loading={resourcePageBusy} onClick={() => void loadMoreResources()}>
-            Load more resources
-          </Button>
+          <Group mt="sm">
+            {data.resourceWindowTruncated && (
+              <Button onClick={() => void refresh()}>Back to first resources</Button>
+            )}
+            {data.resourceNextCursor && (
+              <Button loading={resourcePageBusy} onClick={() => void loadMoreResources()}>
+                Load more resources
+              </Button>
+            )}
+          </Group>
         </Alert>
       )}
-      {!data.resourceNextCursor && (!dbs.length || !fs.length) && (
+      {!data.resourceNextCursor && !data.resourceWindowTruncated && (!dbs.length || !fs.length) && (
         <WorkspaceFirstSteps
           onCreate={onCreate}
           showDatabase={!dbs.length}
@@ -699,7 +730,7 @@ function Overview({
               Your resources{' '}
               <span>
                 {data.resources.length}
-                {data.resourceNextCursor ? '+' : ''}
+                {data.resourceNextCursor || data.resourceWindowTruncated ? '+' : ''}
               </span>
             </Heading>
           </div>
@@ -747,7 +778,9 @@ function Overview({
                       </Anchor>
                     ) : (
                       <Text component="p" className="resource-name" c="carbon.7">
-                        {data.resourceNextCursor ? 'No loaded resources' : 'No resources yet'}
+                        {data.resourceNextCursor || data.resourceWindowTruncated
+                          ? 'No loaded resources'
+                          : 'No resources yet'}
                       </Text>
                     )}
                     <div className="resource-card-bottom">
@@ -978,9 +1011,11 @@ function Databases({ routeLocation, ...shared }: Shared & { routeLocation: Works
       onConnect={onConnect}
       isGuest={isGuest}
       hasMore={Boolean(data.resourceNextCursor)}
+      hasEarlier={Boolean(data.resourceWindowTruncated)}
       loadingMore={shared.resourcePageBusy}
       pageError={shared.resourcePageError}
       onLoadMore={shared.loadMoreResources}
+      onRestart={shared.refresh}
     />
   );
 }
@@ -1035,9 +1070,11 @@ function Files(shared: Shared) {
         onConnect={shared.onConnect}
         isGuest={shared.isGuest}
         hasMore={Boolean(shared.data.resourceNextCursor)}
+        hasEarlier={Boolean(shared.data.resourceWindowTruncated)}
         loadingMore={shared.resourcePageBusy}
         pageError={shared.resourcePageError}
         onLoadMore={shared.loadMoreResources}
+        onRestart={shared.refresh}
       />
     );
   const resource = systems.find((system) => system.id === context.resourceId);
@@ -1639,7 +1676,42 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
   const [revoke, setRevoke] = useState<ApiKey | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
-  const active = data.keys.filter((k) => !k.revokedAt && Date.parse(k.expiresAt) > Date.now());
+  const [keyWindow, setKeyWindow] = useState({
+    keys: data.keys,
+    next: data.keysNextCursor ?? null,
+    earlier: false,
+  });
+  const [pageBusy, setPageBusy] = useState(false);
+  const [pageError, setPageError] = useState('');
+  useEffect(() => {
+    setKeyWindow({ keys: data.keys, next: data.keysNextCursor ?? null, earlier: false });
+    setPageError('');
+  }, [data.keys, data.keysNextCursor]);
+  async function loadKeys() {
+    if (!keyWindow.next || pageBusy) return;
+    const cursor = keyWindow.next;
+    setPageBusy(true);
+    setPageError('');
+    try {
+      const page = await workspaceApi.keysPage(cursor);
+      setKeyWindow((current) => {
+        if (current.next !== cursor) return current;
+        const merged = new Map(current.keys.map((key) => [key.id, key]));
+        for (const key of page.data) merged.set(key.id, key);
+        const keys = [...merged.values()];
+        return {
+          keys: keys.slice(-200),
+          next: page.nextCursor,
+          earlier: current.earlier || keys.length > 200,
+        };
+      });
+    } catch (cause) {
+      setPageError(cause instanceof Error ? cause.message : 'Unable to load keys.');
+    } finally {
+      setPageBusy(false);
+    }
+  }
+  const active = keyWindow.keys.filter((k) => !k.revokedAt && Date.parse(k.expiresAt) > Date.now());
   async function doRevoke() {
     if (!revoke) return;
     setBusy(true);
@@ -1660,7 +1732,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
         title="API keys"
         description="Scoped access for every agent, application, and workflow."
         actions={
-          data.keys.length ? (
+          keyWindow.keys.length || keyWindow.next || keyWindow.earlier ? (
             <Button
               variant="filled"
               leftSection={React.createElement(Plus, { size: 18 })}
@@ -1679,12 +1751,16 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
       </Alert>
       <div className="section-title">
         <Heading level={2}>
-          Workspace keys <span>{active.length} active</span>
+          Workspace keys{' '}
+          <span>
+            {active.length}
+            {keyWindow.next || keyWindow.earlier ? '+' : ''} active
+          </span>
         </Heading>
         <Badge>Workspace scoped</Badge>
       </div>
       <Paper className="panel table-panel" withBorder>
-        {data.keys.length ? (
+        {keyWindow.keys.length ? (
           <Table>
             <Table.Thead>
               <Table.Tr>
@@ -1698,7 +1774,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {data.keys.map((k) => (
+              {keyWindow.keys.map((k) => (
                 <Table.Tr key={k.id}>
                   <Table.Td>
                     <div className="key-name">
@@ -1775,6 +1851,29 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
               </Button>
             }
           />
+        )}
+        {pageError && <Alert color="red">{pageError}</Alert>}
+        {(keyWindow.next || keyWindow.earlier) && (
+          <Group justify="center" my="md">
+            {keyWindow.earlier && (
+              <Button
+                onClick={() =>
+                  setKeyWindow({
+                    keys: data.keys,
+                    next: data.keysNextCursor ?? null,
+                    earlier: false,
+                  })
+                }
+              >
+                Back to first keys
+              </Button>
+            )}
+            {keyWindow.next && (
+              <Button loading={pageBusy} onClick={() => void loadKeys()}>
+                Load more keys
+              </Button>
+            )}
+          </Group>
         )}
       </Paper>
       <div className="two-column">
@@ -1981,9 +2080,10 @@ function Monitoring({ data }: Shared) {
               {[
                 {
                   name: 'Active resources',
-                  value: data.resourceNextCursor
-                    ? `${data.resources.length}+`
-                    : data.resources.length,
+                  value:
+                    data.resourceNextCursor || data.resourceWindowTruncated
+                      ? `${data.resources.length}+`
+                      : data.resources.length,
                   unit: 'resources',
                   icon: Database,
                 },
@@ -2445,6 +2545,8 @@ function CreateKey({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [secret, setSecret] = useState('');
+  const visibleResourceIds = new Set(data.resources.map((resource) => resource.id));
+  const hiddenSelections = resourceIds.filter((id) => id !== '*' && !visibleResourceIds.has(id));
   async function create(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -2519,15 +2621,37 @@ function CreateKey({
                 setScopes((current) => current.filter((scope) => scope !== 'resources:write'));
             }}
           />
-          {data.resourceNextCursor && (
+          {hiddenSelections.length > 0 && (
             <Group mt="sm">
+              <Text size="sm">
+                {hiddenSelections.length} selected resources are outside the loaded window.
+              </Text>
               <Button
                 type="button"
-                loading={resourcePageBusy}
-                onClick={() => void loadMoreResources()}
+                onClick={() =>
+                  setResourceIds((ids) => ids.filter((id) => visibleResourceIds.has(id)))
+                }
               >
-                Load more resources
+                Clear hidden selections
               </Button>
+            </Group>
+          )}
+          {(data.resourceNextCursor || data.resourceWindowTruncated) && (
+            <Group mt="sm">
+              {data.resourceWindowTruncated && (
+                <Button type="button" onClick={() => void refresh()}>
+                  Back to first resources
+                </Button>
+              )}
+              {data.resourceNextCursor && (
+                <Button
+                  type="button"
+                  loading={resourcePageBusy}
+                  onClick={() => void loadMoreResources()}
+                >
+                  Load more resources
+                </Button>
+              )}
               <Text size="sm">Newly loaded resources are not selected automatically.</Text>
             </Group>
           )}

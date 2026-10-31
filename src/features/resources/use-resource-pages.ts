@@ -1,18 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { workspaceApi, type Resource } from '../../api/client';
+import { resourceWindow } from './resource-window';
 
 /** Bounded discovery for selectors; callers choose when to load the next page. */
-export function useResourcePages(enabled: boolean) {
-  const [resources, setResources] = useState<Resource[]>([]);
+export function useResourcePages(enabled: boolean, selectedId?: string) {
+  const [window, setWindow] = useState<{ resources: Resource[]; truncated: boolean }>({
+    resources: [],
+    truncated: false,
+  });
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const generation = useRef(0);
+  const selection = useRef(selectedId);
+  selection.current = selectedId;
   useEffect(() => {
     const generationRef = generation;
     const current = ++generationRef.current;
-    setResources([]);
+    setWindow((prior) => ({
+      resources: enabled
+        ? prior.resources.filter((resource) => resource.id === selection.current)
+        : [],
+      truncated: false,
+    }));
     setNextCursor(null);
     setError('');
     if (!enabled) {
@@ -24,7 +35,10 @@ export function useResourcePages(enabled: boolean) {
       .resourcesPage()
       .then((page) => {
         if (generation.current !== current) return;
-        setResources(page.data);
+        setWindow((prior) => ({
+          resources: resourceWindow(prior.resources, page.data, selection.current).resources,
+          truncated: false,
+        }));
         setNextCursor(page.nextCursor ?? null);
       })
       .catch((cause: unknown) => {
@@ -46,10 +60,9 @@ export function useResourcePages(enabled: boolean) {
     try {
       const page = await workspaceApi.resourcesPage(nextCursor);
       if (generation.current !== current) return;
-      setResources((prior) => {
-        const combined = new Map(prior.map((resource) => [resource.id, resource]));
-        for (const resource of page.data) combined.set(resource.id, resource);
-        return [...combined.values()];
+      setWindow((prior) => {
+        const next = resourceWindow(prior.resources, page.data, selection.current);
+        return { resources: next.resources, truncated: prior.truncated || next.dropped };
       });
       setNextCursor(page.nextCursor ?? null);
     } catch (cause) {
@@ -60,7 +73,8 @@ export function useResourcePages(enabled: boolean) {
     }
   }, [nextCursor, loading]);
   return {
-    resources,
+    resources: window.resources,
+    hasEarlier: window.truncated,
     nextCursor,
     loading,
     error,

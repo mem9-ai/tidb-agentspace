@@ -42,6 +42,151 @@ const base = '/api/v1/workspaces/ws_agentlab';
 const secret = 'retained-public-workspace-key';
 const privateWrite = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
 test(
+  'independent local File Systems can commit concurrent writes without losing events',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    await fixture.seedLocalFileSystem('fs_second');
+    const write = (resourceId) =>
+      fixture.request('/files', {
+        method: 'PUT',
+        body: { resourceId, path: '/parallel.txt', type: 'file', content: resourceId },
+      });
+    const responses = await Promise.all([write('fs_shared'), write('fs_second')]);
+    assert.deepEqual(
+      responses.map((response) => response.status),
+      [200, 200],
+      JSON.stringify(responses),
+    );
+    for (const resourceId of ['fs_shared', 'fs_second']) {
+      const files = await fixture.request(`/files?resourceId=${resourceId}`);
+      assert.equal(
+        files.body.data.find((file) => file.path === '/parallel.txt').content,
+        resourceId,
+      );
+    }
+    const events = await fixture.events();
+    assert.equal(events.filter((event) => event.resource === '/parallel.txt').length, 2);
+  },
+);
+test(
+  'local file operations read only their File System after resumable index migration',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    await fixture.seedFiles(4100);
+    const bootstrap = await fixture.request('/bootstrap');
+    assert.equal(bootstrap.status, 200, JSON.stringify(bootstrap.body));
+    assert.deepEqual(
+      bootstrap.body.files.map((file) => file.path),
+      ['/identity.txt'],
+    );
+    const initial = await fixture.request('/files?resourceId=fs_shared');
+    assert.deepEqual(
+      initial.body.data.map((file) => file.path),
+      ['/identity.txt'],
+    );
+    const write = await fixture.request('/files', {
+      method: 'PUT',
+      body: { resourceId: 'fs_shared', path: '/added.txt', type: 'file', content: 'ok' },
+    });
+    assert.equal(write.status, 200, JSON.stringify(write.body));
+    const again = await fixture.request('/files?resourceId=fs_shared');
+    assert.deepEqual(again.body.data.map((file) => file.path).sort(), [
+      '/added.txt',
+      '/identity.txt',
+    ]);
+    await fixture.restart({ crash: false });
+    const recovered = await fixture.request('/files?resourceId=fs_shared');
+    assert.deepEqual(recovered.body.data.map((file) => file.path).sort(), [
+      '/added.txt',
+      '/identity.txt',
+    ]);
+  },
+);
+test(
+  'resource actions do not enumerate unrelated Keys',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const key = await fixture.request('/keys', {
+      method: 'POST',
+      body: {
+        name: 'scale-reader',
+        scopes: ['queries:execute'],
+        resourceIds: ['db_memory'],
+        expiresInDays: 7,
+      },
+    });
+    assert.equal(key.status, 201, JSON.stringify(key.body));
+    await fixture.seedKeys(4100);
+    const page = await fixture.request('/keys?limit=50');
+    assert.equal(page.status, 200, JSON.stringify(page.body));
+    assert.equal(page.body.data.length, 50);
+    assert.ok(page.body.nextCursor);
+    const second = await fixture.request(`/keys?limit=50&cursor=${page.body.nextCursor}`);
+    assert.equal(second.status, 200, JSON.stringify(second.body));
+    assert.ok(
+      second.body.data.every((entry) => !page.body.data.some((prior) => prior.id === entry.id)),
+    );
+    assert.ok(second.body.data.every((entry) => !Object.hasOwn(entry, 'digest')));
+    const extra = await fixture.request('/keys', {
+      method: 'POST',
+      body: {
+        name: 'scale-second',
+        scopes: ['resources:read'],
+        resourceIds: ['*'],
+        expiresInDays: 7,
+      },
+    });
+    assert.equal(extra.status, 201, JSON.stringify(extra.body));
+    assert.equal(
+      (await fixture.request(`/keys/${extra.body.data.id}`, { method: 'DELETE' })).status,
+      200,
+    );
+    const bootstrap = await fixture.request('/bootstrap');
+    assert.equal(bootstrap.status, 200, JSON.stringify(bootstrap.body));
+    assert.equal(bootstrap.body.keys.length, 100);
+    assert.ok(bootstrap.body.keysNextCursor);
+    const query = await fixture.request('/queries', {
+      method: 'POST',
+      token: key.body.secret,
+      body: { resourceId: 'db_memory', sql: 'SELECT 1' },
+    });
+    assert.equal(query.status, 200, JSON.stringify(query.body));
+  },
+);
+test(
+  'concurrent Key authentication preserves access and revocation',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const created = await fixture.request('/keys', {
+      method: 'POST',
+      body: {
+        name: 'concurrent-reader',
+        scopes: ['resources:read'],
+        resourceIds: ['*'],
+        expiresInDays: 7,
+      },
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const token = created.body.secret;
+    const responses = await Promise.all(
+      Array.from({ length: 4 }, () => fixture.request('/context', { token })),
+    );
+    assert.ok(
+      responses.every((response) => response.status === 200),
+      JSON.stringify(responses),
+    );
+    assert.equal(
+      (await fixture.request(`/keys/${created.body.data.id}`, { method: 'DELETE' })).status,
+      200,
+    );
+    assert.equal((await fixture.request('/context', { token })).status, 401);
+  },
+);
+test(
   'resource indexes backfill existing records and preserve name, quota and idempotency rules',
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
   async (t) => {

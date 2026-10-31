@@ -48,7 +48,7 @@ impl Product {
             let state = self
                 .workspace
                 .repository()
-                .view_selected(vec![], false)
+                .view_selected(vec![], false, None)
                 .await?;
             let sql = sql.trim().trim_end_matches(';').trim();
             if regex::Regex::new(r"(?i)^select\s+1(?:\s+as\s+connected)?$")
@@ -201,20 +201,27 @@ impl Product {
         }
         self.workspace
             .repository()
-            .workspace_transaction(vec![id.to_owned()], false, false, true, |state| {
-                let principal = principal(state, credential)?;
-                principal.scope(scope)?;
-                principal.resource(state, id, None)?;
-                let count = state["queryCount"].as_u64().unwrap_or(0) + 1;
-                state["queryCount"] = json!(count);
-                if !state["resourceQueryCounts"].is_object() {
-                    state["resourceQueryCounts"] = json!({});
-                }
-                let n = state["resourceQueryCounts"][id].as_u64().unwrap_or(0) + 1;
-                state["resourceQueryCounts"][id] = json!(n);
-                event(state, "query.executed", id, &p.actor, Some(id));
-                Ok(((), true))
-            })
+            .resource_transaction(
+                vec![id.to_owned()],
+                false,
+                false,
+                true,
+                credential,
+                |state| {
+                    let principal = principal(state, credential)?;
+                    principal.scope(scope)?;
+                    principal.resource(state, id, None)?;
+                    let count = state["queryCount"].as_u64().unwrap_or(0) + 1;
+                    state["queryCount"] = json!(count);
+                    if !state["resourceQueryCounts"].is_object() {
+                        state["resourceQueryCounts"] = json!({});
+                    }
+                    let n = state["resourceQueryCounts"][id].as_u64().unwrap_or(0) + 1;
+                    state["resourceQueryCounts"][id] = json!(n);
+                    event(state, "query.executed", id, &p.actor, Some(id));
+                    Ok(((), true))
+                },
+            )
             .await
             .map_err(|_| err(500, "QUERY_RECORD_FAILED"))?;
         Ok(result)
@@ -386,7 +393,7 @@ impl Product {
                 let state = self
                     .workspace
                     .repository()
-                    .view_selected(vec![], false)
+                    .view_selected(vec![], false, None)
                     .await?;
                 return Ok(
                     json!({"columns":demo_columns(),"rows":demo_rows(&state),"rowCount":3,"mode":"demo","durationMs":0}),
