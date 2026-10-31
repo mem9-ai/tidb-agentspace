@@ -117,3 +117,14 @@ blindly roll back to a binary expecting deleted data. Offline operators can inst
 and run `workspace-backend purge-legacy --config <private-deployment.json> --workspace ws_agentlab`.
 The operation logically deletes live metadata and credentials; it does not physically erase
 historical SlateDB/object-store versions or delete provider instances.
+
+## Hosted Execute configuration repair
+
+A previously deployed private API configuration used `product.compute`, while the current
+canonical runtime accepts only `product.execute`. Rename that field in both `api.json` and
+`api-bootstrap.json` before starting a canonical-only image; preserve its value and every other
+Secret entry. The protected recovery workflow's explicit `repair-config` operation reads only
+referenced Secrets, requires exactly one matching API configuration Secret, applies a
+resourceVersion-guarded patch through stdin, restarts the same immutable deployment image,
+and checks public health. If the Secret update or rollout result is uncertain, inspect before
+retrying. The operation does not change Workspace or provider data.
