@@ -6,6 +6,15 @@
 
 ## Resource and HTTP rules
 
+Global is the common public management and Region-discovery entry. SQL, table/file access,
+analysis, import/export and regional operation observations use the selected Region's public
+OpenAPI directly. Each operation must declare its serving authority; publishing its schema
+through a Global catalog does not make Global a data proxy. Reuse validated known Region
+routes without a mandatory Global preflight, preserving regional autonomy during Global
+outage. The [regional API/auth contract](../../specs/gh-74/regional-api-auth.md#global-entry-and-operation-ownership)
+owns the detailed target boundary and migration/acceptance gates. The current generated
+contract remains the regional prototype surface; multi-origin discovery is not yet shipped.
+
 1. Give a business object a stable, tenant-scoped URI. Use plural collection nouns and opaque
    IDs: `/workspaces/{workspaceId}/resources/{resourceId}`. Put representations such as
    `/files/content` and filters such as `?path=` in the contract explicitly. Never encode
