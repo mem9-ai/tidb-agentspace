@@ -7,6 +7,10 @@ on:
         description: Exact authorized legacy Workspace ID
         required: true
         type: string
+      image_digest:
+        description: Exact immutable digest observed in the verified deployment
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -55,7 +59,7 @@ jobs:
       DEPLOY_NAMESPACE: ${{ secrets.DEV_DEPLOY_NAMESPACE }}
       K8S_DEPLOYMENT: ${{ secrets.DEV_API_DEPLOYMENT }}
       K8S_CONTAINER: ${{ secrets.DEV_API_CONTAINER || secrets.DEV_API_DEPLOYMENT }}
-      SOURCE_SHA: ${{ github.sha }}
+      IMAGE_DIGEST: ${{ inputs.image_digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -80,12 +84,11 @@ jobs:
         with:
           role-to-assume: ${{ env.AWS_ASSUME_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      - name: Resolve verified release image
+      - name: Validate observed release image
         run: |
           set -euo pipefail
-          digest="$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids "imageTag=sha-$SOURCE_SHA" --query 'imageDetails[0].imageDigest' --output text)"
-          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
-          printf 'IMAGE_REF=%s/%s@%s\n' "$ECR_REGISTRY" "$ECR_REPOSITORY" "$digest" >> "$GITHUB_ENV"
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          printf 'IMAGE_REF=%s/%s@%s\n' "$ECR_REGISTRY" "$ECR_REPOSITORY" "$IMAGE_DIGEST" >> "$GITHUB_ENV"
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
       - name: Retire only the authorized shared Workspace
