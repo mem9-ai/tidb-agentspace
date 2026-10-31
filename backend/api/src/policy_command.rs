@@ -175,6 +175,9 @@ impl PolicyCommandVerifier {
             || trust.keys.is_empty()
             || trust.keys.len() > 32
             || trust.keys.keys().any(|kid| !valid_id(kid))
+            || trust.keys.values().any(|key| {
+                !ed25519_dalek::VerifyingKey::from_bytes(key).is_ok_and(|key| !key.is_weak())
+            })
         {
             return Err(ServiceError::new(503, "POLICY_TRUST_INVALID"));
         }
@@ -349,6 +352,16 @@ mod tests {
 
     #[test]
     fn global_signer_mints_short_lived_envelopes_bound_to_the_selected_region() {
+        assert!(
+            PolicyCommandVerifier::new(PolicyTrust {
+                issuer: "https://global.example".into(),
+                audience: "region:a/control".into(),
+                environment: "test".into(),
+                region_id: "region:a".into(),
+                keys: BTreeMap::from([("key-1".into(), [0u8; 32])]),
+            })
+            .is_err()
+        );
         let config = || PolicySignerConfig {
             issuer: "https://global.example".into(),
             audience: "region:a/control".into(),

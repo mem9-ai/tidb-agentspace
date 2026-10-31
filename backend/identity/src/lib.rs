@@ -2,6 +2,7 @@
 //! regional access; callers must supply an already verified issuer and subject.
 
 pub mod cleanup;
+pub mod dpop;
 pub mod embedded_region;
 pub mod global_keys;
 pub mod global_owner_sessions;

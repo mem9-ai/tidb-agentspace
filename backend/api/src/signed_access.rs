@@ -165,6 +165,9 @@ impl AccessVerifier {
             || keys.is_empty()
             || keys.len() > 32
             || keys.keys().any(|kid| !id(kid))
+            || keys.values().any(|key| {
+                !ed25519_dalek::VerifyingKey::from_bytes(key).is_ok_and(|key| !key.is_weak())
+            })
         {
             return Err(ServiceError::new(503, "TOKEN_TRUST_INVALID"));
         }
@@ -422,6 +425,18 @@ mod tests {
 
     #[test]
     fn region_signer_can_only_issue_family_bound_region_tokens() {
+        assert!(
+            AccessVerifier::new(AccessTrust {
+                issuer: "https://region-a.example".into(),
+                audience: "region:a/audience".into(),
+                environment: "test".into(),
+                region: Some("region:a".into()),
+                max_lifetime: 900,
+                issuer_kind: IssuerKind::Region,
+                keys: BTreeMap::from([("key-1".into(), [0u8; 32])]),
+            })
+            .is_err()
+        );
         let public = URL_SAFE_NO_PAD
             .decode("11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo")
             .unwrap();

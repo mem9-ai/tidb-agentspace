@@ -6,7 +6,9 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+base64.workspace = true
 chrono.workspace = true
+ed25519-dalek = "=2.2.0"
 hex.workspace = true
 getrandom.workspace = true
 hmac = "=0.12.1"
@@ -16,9 +18,11 @@ sha2.workspace = true
 subtle = "=2.6.1"
 tokio.workspace = true
 uuid.workspace = true
+url = "=2.5.8"
 workspace-contracts.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
+jsonwebtoken.workspace = true
 workspace-meta-client.workspace = true
 workspace-domain.workspace = true
