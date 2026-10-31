@@ -2,6 +2,9 @@
 
 Status: code inspection, updated 2026-10-31. This is not a capacity benchmark or service-level commitment. The current co-located single-writer dev deployment cannot be claimed to support millions of Tenants or one Workspace with a million resources. The latter is already blocked by a concrete implementation limit. An opt-in bounded resource list and single-record update have been implemented, but most product paths still require the legacy Workspace view; see [ADR 0033](decisions/0033-sparse-scale-metadata.md) for status and the proposed shard design.
 
+An exploratory [single-Workspace million-record page measurement](scale-benchmark-2026-10-31.md)
+is available; its limited request sample does not establish end-to-end capacity.
+
 ## What exists
 
 - Verified `(iss, sub)` maps to a deterministic identity-scoped Global metadata record; personal Tenant and Workspace IDs are distinct. Records share the configured Global SlateDB authority, not one database or process per Tenant. Separate Global and Region authorities use separate object-store roots. Region session verification does not call Global.
