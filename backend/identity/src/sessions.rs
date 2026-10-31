@@ -209,6 +209,31 @@ impl Sessions {
         self.issue_at(workspace, principal, now()?).await
     }
 
+    /// Authenticate a regional OIDC continuity grant without contacting Global. The caller
+    /// retains the grant in a protected, host-only browser cookie and revokes it on logout.
+    pub async fn authenticate_oidc_grant(
+        &self,
+        workspace: &str,
+        renewal: &str,
+    ) -> Result<GuestAccess> {
+        let scope = self.scope(workspace)?;
+        let (grant, _, grant_digest) = self.grant(&scope, renewal).await?;
+        let policy = self.policy(workspace).await?;
+        let current = now()?;
+        if grant.kind != GrantKind::Continuity
+            || !matches!(policy.identity, OwnerIdentity::Oidc { .. })
+        {
+            return Err(error(401, "SESSION_UNAUTHORIZED"));
+        }
+        Self::matches(&policy, &grant.user_id, grant.generation, current)?;
+        Ok(GuestAccess {
+            session_id: grant_digest,
+            user_id: grant.user_id,
+            generation: grant.generation,
+            expires_at: session_expiry(&policy, current)?,
+        })
+    }
+
     async fn issue_at(
         &self,
         workspace: &str,
@@ -504,6 +529,76 @@ mod tests {
             issuer: "https://issuer.example",
             subject: "alice",
         }
+    }
+
+    #[tokio::test]
+    async fn oidc_browser_grant_is_workspace_bound_and_revocable() {
+        let metadata = region();
+        let sessions = Sessions::open(metadata, "region:a").await.unwrap();
+        let account = oidc_policy();
+        sessions
+            .policies
+            .install(&account, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        let grant = sessions
+            .issue_owner(&account.workspace_id, alice())
+            .await
+            .unwrap();
+        let access = sessions
+            .authenticate_oidc_grant(&account.workspace_id, &grant.renewal)
+            .await
+            .unwrap();
+        assert_eq!(access.user_id, account.user_id);
+        assert!(
+            sessions
+                .authenticate_oidc_grant(&Uuid::new_v4().to_string(), &grant.renewal)
+                .await
+                .is_err()
+        );
+        sessions
+            .revoke(&account.workspace_id, &grant.renewal)
+            .await
+            .unwrap();
+        assert!(
+            sessions
+                .authenticate_oidc_grant(&account.workspace_id, &grant.renewal)
+                .await
+                .is_err()
+        );
+
+        let current = now().unwrap();
+        let secret = [17u8; 32];
+        let mut guest = oidc_policy();
+        let guest_id = Uuid::new_v4().to_string();
+        guest.identity = OwnerIdentity::Guest {
+            guest_id: guest_id.clone(),
+            verifier: hex::encode(Sha256::digest(secret)),
+            created_at: current,
+            expires_at: current + 86_400,
+        };
+        sessions
+            .policies
+            .install(&guest, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        let guest_secret = hex::encode(secret);
+        let guest_grant = sessions
+            .issue_owner(
+                &guest.workspace_id,
+                Principal::Guest {
+                    guest_id: &guest_id,
+                    secret: &guest_secret,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(
+            sessions
+                .authenticate_oidc_grant(&guest.workspace_id, &guest_grant.renewal)
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]

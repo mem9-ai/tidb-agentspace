@@ -492,6 +492,65 @@ impl Repository {
         }
         Ok(())
     }
+
+    /// Operator-only retirement of the old shared hosted Workspace. This removes live
+    /// metadata and credentials, not historical S3 object versions or provider resources.
+    /// The repository's exclusive writer must be held and the API stopped beforehand.
+    pub async fn purge_legacy_records(&self) -> Result<()> {
+        if self.scope.owner_id != "ws_agentlab"
+            || !self.get("ownership/onboarding").await?.is_null()
+        {
+            return Err(ServiceError::new(403, "LEGACY_PURGE_DENIED"));
+        }
+        let _lock = self.queue.lock().await;
+        let mut after = None;
+        loop {
+            let page = self
+                .call(MetaRequest::List {
+                    scope: self.scope.clone(),
+                    guard: Some(self.guard.clone()),
+                    prefix: "".into(),
+                    after,
+                    limit: 100,
+                })
+                .await?;
+            let records = page["records"]
+                .as_array()
+                .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+            let mut changes = Vec::new();
+            for record in records {
+                let key = record["key"]
+                    .as_str()
+                    .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+                if key != "system/writer" && key != "state/workspace" {
+                    let version = record["version"]
+                        .as_str()
+                        .filter(|v| !v.is_empty())
+                        .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+                    changes.push(json!({"key": key, "expectedVersion": version, "delete": true}));
+                }
+            }
+            self.commit(changes).await?;
+            after = page["nextCursor"].as_str().map(str::to_owned);
+            if after.is_none() {
+                break;
+            }
+        }
+        // Keep the core record until every other page is gone so an interrupted purge can
+        // reopen the same Workspace. Remove the core and writer atomically at the end.
+        let core = self.get("state/workspace").await?;
+        let writer = self.get("system/writer").await?;
+        if core.is_null() || writer["value"]["ownerId"] != self.guard.owner_id {
+            return Err(error("LEGACY_PURGE_STATE_INVALID"));
+        }
+        self.commit(vec![
+            json!({"key":"state/workspace", "expectedVersion":version(&core), "delete":true}),
+            json!({"key":"system/writer", "expectedVersion":version(&writer), "delete":true}),
+        ])
+        .await?;
+        self.closed.store(true, Ordering::Release);
+        Ok(())
+    }
     pub async fn close(&self) -> Result<()> {
         let _lock = self.queue.lock().await;
         if self.closed.swap(true, Ordering::AcqRel) {

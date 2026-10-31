@@ -54,6 +54,13 @@ impl GlobalGuest {
     pub async fn finish(&self, guest: &GuestRegistration) -> Result<Registration> {
         self.onboarding.guest(guest).await
     }
+
+    /// The identity is supplied exclusively by the verified OIDC callback.
+    pub(crate) async fn personal(&self, issuer: &str, subject: &str) -> Result<Registration> {
+        self.onboarding
+            .personal(VerifiedIdentity { issuer, subject }, &self.region)
+            .await
+    }
 }
 
 impl GlobalLogin {

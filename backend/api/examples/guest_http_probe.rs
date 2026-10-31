@@ -3,7 +3,8 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 use workspace_api::{
     Config, GuestRuntime, WorkspaceServer, global_login::GlobalGuest, guest_entry::GuestEntry,
-    managed_workspaces::ManagedWorkspaces, regional_guest::RegionalGuest,
+    managed_workspaces::ManagedWorkspaces, regional_account::RegionalAccount,
+    regional_guest::RegionalGuest,
 };
 use workspace_identity::{Directory, embedded_region::EmbeddedRegion};
 use workspace_meta_client::{ClientConfig, RemoteMetadata};
@@ -26,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
     let regional =
         Arc::new(RegionalGuest::open(regional_meta.clone(), &authority, "/studio").await?);
     let entry = Arc::new(GuestEntry::new(
-        Some(signup),
+        Some(signup.clone()),
         regional.clone(),
         vec!["https://studio.example.test".into()],
     )?);
@@ -40,8 +41,13 @@ async fn main() -> anyhow::Result<()> {
         workspace_identity::cleanup::Queue::open(regional_meta.clone(), &authority).await?,
     );
     let runtime = Arc::new(GuestRuntime {
+        guest_enabled: true,
         entry,
         region: regional,
+        account: Arc::new(
+            RegionalAccount::open(regional_meta.clone(), &authority, "/studio", true).await?,
+        ),
+        account_onboarding: Some(signup),
         workspaces: pool.clone(),
         cleanup_processor: Arc::new(workspace_api::guest_cleanup::GuestCleanup::new(
             queue.clone(),
