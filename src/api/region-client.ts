@@ -61,7 +61,8 @@ export function createRegionClient(
   fetcher: typeof fetch = fetch,
 ) {
   const target = validateRegionEndpoint(endpoint, allowedOrigins);
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(workspaceId)) throw new Error('Invalid Workspace identity.');
+  if (!/^[A-Za-z0-9_.:-]{1,128}$/.test(workspaceId) || ['.', '..'].includes(workspaceId))
+    throw new Error('Invalid Workspace identity.');
   if (!credential || /[\r\n]/.test(credential)) throw new Error('Invalid regional credential.');
   const apiPath = target.apiPathPrefix + '/api/v1';
   const workspacePath = `${apiPath}/workspaces/${encodeURIComponent(workspaceId)}`;

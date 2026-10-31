@@ -77,6 +77,21 @@ test('regional credentials go only to the pinned Region origin and API prefix', 
   assert.throws(() =>
     createRegionClient(endpoint, [endpoint.apiOrigin], '../other', 'region-secret'),
   );
+  assert.throws(() => createRegionClient(endpoint, [endpoint.apiOrigin], '..', 'region-secret'));
+  const legacy = createRegionClient(
+    endpoint,
+    [endpoint.apiOrigin],
+    'legacy:workspace.1',
+    'region-secret',
+    async (r) => {
+      requests.push(r);
+      return Response.json({ data: [] });
+    },
+  );
+  await legacy.GET('/workspaces/{workspaceId}/resources', {
+    params: { path: { workspaceId: 'legacy:workspace.1' } },
+  });
+  assert.match(requests[1].url, /legacy%3Aworkspace\.1\/resources$/);
   for (const value of [
     { ...endpoint, apiOrigin: 'https://attacker.example' },
     { ...endpoint, apiOrigin: 'https://region.example/redirect' },

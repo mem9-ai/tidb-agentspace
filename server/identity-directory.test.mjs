@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import http from 'node:http';
-import { readFile, writeFile } from 'node:fs/promises';
+import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test, { before } from 'node:test';
 import { promisify } from 'node:util';
@@ -40,7 +40,18 @@ if (enabled) {
       );
       await exec(
         'cargo',
-        ['build', '--locked', '-p', 'workspace-identity', '--example', 'identity_probe'],
+        [
+          'build',
+          '--locked',
+          '-p',
+          'workspace-identity',
+          '--example',
+          'identity_probe',
+          '--example',
+          'regional_key_policy_probe',
+          '--example',
+          'global_key_probe',
+        ],
         { timeout: 180_000 },
       );
       await exec(
@@ -52,6 +63,126 @@ if (enabled) {
     { timeout: 540_000 },
   );
 }
+
+test(
+  'Global Key versions and secrets survive metadata recovery without plaintext storage',
+  { skip: !enabled, timeout: 90000 },
+  async (t) => {
+    const fixture = await metaFixture();
+    t.after(() => fixture.close());
+    let global = await fixture.service('global');
+    t.after(() => global.client.close());
+    const config = resolve(fixture.directory, 'global-key-client.json');
+    const keyFile = resolve(fixture.directory, 'global-key-credential.json');
+    const oldKeyFile = resolve(fixture.directory, 'global-key-old.json');
+    const probe = resolve('meta-service/target/debug/examples/global_key_probe');
+    const run = (mode, file, mutation = randomUUID()) =>
+      exec(probe, [config, mode, file, mutation]);
+    await writeFile(config, JSON.stringify(global.clientConfig), { mode: 0o600 });
+    const creation = randomUUID();
+    const attempts = await Promise.allSettled(
+      Array.from({ length: 8 }, () => run('create', keyFile, creation)),
+    );
+    assert.equal(attempts.filter((attempt) => attempt.status === 'fulfilled').length, 1);
+    const original = JSON.parse((await run('check', keyFile)).stdout);
+    assert.equal(original.keyVersion, 1);
+    assert.equal(original.workspaceId, 'ws_agentlab');
+    const secret = JSON.parse(await readFile(keyFile, 'utf8')).secret;
+    const verifier = createHash('sha256').update(secret).digest('hex');
+    const stored = await global.client.call({
+      op: 'list',
+      scope: {
+        authorityId: 'global',
+        ownerKind: 'workspace',
+        ownerId: 'ws_agentlab',
+        family: 'global-keys',
+        partitionId: 'primary',
+      },
+      prefix: '',
+      after: null,
+      limit: 100,
+    });
+    assert.ok(!JSON.stringify(stored).includes(secret));
+    assert.ok(stored.records.every((record) => !record.key.includes(verifier)));
+    assert.equal(stored.records.filter((record) => record.key.startsWith('keys/')).length, 1);
+    const owner = (await global.client.health()).ownerId;
+    await global.stop('SIGKILL');
+    global.client.close();
+    global = await fixture.service('global', { previous: global, recoverOwner: owner });
+    await writeFile(config, JSON.stringify(global.clientConfig), { mode: 0o600 });
+    assert.deepEqual(JSON.parse((await run('check', keyFile)).stdout), original);
+    await run('renew', keyFile);
+    const renewed = JSON.parse((await run('check', keyFile)).stdout);
+    assert.equal(renewed.keyId, original.keyId);
+    assert.equal(renewed.keyVersion, 2);
+    assert.equal(renewed.expiresAt, original.expiresAt + 600);
+    await copyFile(keyFile, oldKeyFile);
+    await run('rotate', keyFile);
+    const rotated = JSON.parse((await run('check', keyFile)).stdout);
+    assert.equal(rotated.keyId, original.keyId);
+    assert.equal(rotated.keyVersion, 3);
+    await assert.rejects(run('check', oldKeyFile));
+    await run('revoke', keyFile);
+    await assert.rejects(run('check', keyFile));
+  },
+);
+
+test(
+  'regional Key version floor survives Global loss and regional metadata recovery',
+  { skip: !enabled, timeout: 90000 },
+  async (t) => {
+    const fixture = await metaFixture();
+    t.after(() => fixture.close());
+    const global = await fixture.service('global');
+    let region = await fixture.service('other');
+    t.after(() => {
+      global.client.close();
+      region.client.close();
+    });
+    const config = resolve(fixture.directory, 'key-policy-region.json');
+    const input = resolve(fixture.directory, 'key-policy-input.json');
+    const probe = resolve('meta-service/target/debug/examples/regional_key_policy_probe');
+    await writeFile(config, JSON.stringify(region.clientConfig), { mode: 0o600 });
+    const policy = {
+      workspaceId: 'ws_agentlab',
+      regionId: region.server.authorityId,
+      keyId: randomUUID(),
+      principalId: 'legacy-owner',
+      keyVersion: 1,
+      policyGeneration: 1,
+      grantRef: 'grant:existing',
+      expiresAt: 4000000000,
+      revoked: false,
+    };
+    const command = randomUUID();
+    const save = async (value) => writeFile(input, JSON.stringify(value), { mode: 0o600 });
+    const install = async (commandId) => exec(probe, [config, 'install', input, commandId]);
+    const check = async (now = '2000000000') =>
+      JSON.parse((await exec(probe, [config, 'check', input, now])).stdout);
+    await save(policy);
+    await install(command);
+    await install(command);
+    assert.equal((await check()).grantRef, policy.grantRef);
+    await save({ ...policy, keyVersion: 2, policyGeneration: 2 });
+    await assert.rejects(install(command));
+    await install(randomUUID());
+    await save(policy);
+    await assert.rejects(check());
+    await global.stop('SIGKILL');
+    global.client.close();
+    const owner = (await region.client.health()).ownerId;
+    await region.stop('SIGKILL');
+    region.client.close();
+    region = await fixture.service('other', { previous: region, recoverOwner: owner });
+    await writeFile(config, JSON.stringify(region.clientConfig), { mode: 0o600 });
+    await save({ ...policy, keyVersion: 2, policyGeneration: 2 });
+    assert.equal((await check()).grantRef, policy.grantRef);
+    await assert.rejects(check('4000000000'));
+    await save({ ...policy, keyVersion: 3, policyGeneration: 3, revoked: true });
+    await install(randomUUID());
+    await assert.rejects(check());
+  },
+);
 
 test(
   'verified OIDC login creates one isolated personal user and Workspace',
