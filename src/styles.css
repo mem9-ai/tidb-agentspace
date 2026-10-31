@@ -1018,3 +1018,44 @@ form > .modal-actions {
     animation: none;
   }
 }
+
+/* Quick starts use the same steps in the overview and empty collections. */
+.resource-quickstart {
+  width: 100%;
+  text-align: left;
+}
+.resource-quickstart-label {
+  color: var(--muted);
+  letter-spacing: 0.06em;
+}
+.resource-quickstart-steps {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 0;
+  padding-left: 24px;
+}
+.resource-quickstart-steps li {
+  padding-left: 4px;
+}
+.resource-quickstart-steps li::marker {
+  color: var(--muted);
+  font-weight: 600;
+}
+.resource-quickstart-steps li span {
+  display: block;
+}
+.resource-quickstart-steps li span + span {
+  color: var(--muted);
+  margin-top: 2px;
+}
+.guest-expiry-notice {
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+.empty .resource-quickstart {
+  max-width: 480px;
+}
+.empty .guest-expiry-notice {
+  max-width: 480px;
+  margin-bottom: 0;
+}

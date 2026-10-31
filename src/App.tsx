@@ -305,6 +305,7 @@ function App() {
       setModal('resource');
     },
     onConnect: (r: Resource) => setConnection(r),
+    isGuest: sso.sessionKind === 'guest',
   };
   const ssoButton =
     sso.enabled && sso.loginPath ? (
@@ -417,8 +418,9 @@ type Shared = {
   copy: (s: string) => void;
   onCreate: (target?: ResourceCreationTarget) => void;
   onConnect: (r: Resource) => void;
+  isGuest: boolean;
 };
-function Overview({ data, onCreate, onConnect, copy }: Shared) {
+function Overview({ data, onCreate, onConnect, copy, isGuest }: Shared) {
   const [range, setRange] = useState('24h');
   const dbs = data.resources.filter((r) => r.kind !== 'filesystem'),
     fs = data.resources.filter((r) => r.kind === 'filesystem');
@@ -452,7 +454,14 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
           ) : undefined
         }
       />
-      {!data.resources.length && <WorkspaceFirstSteps onCreate={onCreate} />}
+      {(!dbs.length || !fs.length) && (
+        <WorkspaceFirstSteps
+          onCreate={onCreate}
+          showDatabase={!dbs.length}
+          showFileSystem={!fs.length}
+          isGuest={isGuest}
+        />
+      )}
       {!!data.resources.length && (
         <>
           <div className="section-title">
@@ -462,6 +471,7 @@ function Overview({ data, onCreate, onConnect, copy }: Shared) {
           </div>
           <section className="resource-grid">
             {(['mysql', 'postgresql', 'duckdb', 'filesystem'] as Kind[])
+              .filter((kind) => kind !== 'filesystem' || fs.length > 0)
               .filter(
                 (kind) =>
                   kind !== 'postgresql' ||
@@ -690,7 +700,7 @@ function eventLabel(action: string) {
 }
 function Databases({ routeLocation, ...shared }: Shared & { routeLocation: WorkspaceRoute }) {
   const { databaseId } = routeLocation;
-  const { data, onCreate, onConnect } = shared;
+  const { data, onCreate, onConnect, isGuest } = shared;
   const databases = data.resources
     .filter((r) => r.kind !== 'filesystem')
     .sort(
@@ -732,6 +742,7 @@ function Databases({ routeLocation, ...shared }: Shared & { routeLocation: Works
       resources={databases}
       onCreate={() => onCreate('database')}
       onConnect={onConnect}
+      isGuest={isGuest}
     />
   );
 }
@@ -784,6 +795,7 @@ function Files(shared: Shared) {
         resources={systems}
         onCreate={() => shared.onCreate('filesystem')}
         onConnect={shared.onConnect}
+        isGuest={shared.isGuest}
       />
     );
   const resource = systems.find((system) => system.id === context.resourceId);
