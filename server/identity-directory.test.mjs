@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import http from 'node:http';
-import { copyFile, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, readFile, stat, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test, { before } from 'node:test';
 import { promisify } from 'node:util';
@@ -51,6 +51,8 @@ if (enabled) {
           'regional_key_policy_probe',
           '--example',
           'global_key_probe',
+          '--example',
+          'global_owner_session_probe',
         ],
         { timeout: 180_000 },
       );
@@ -275,11 +277,19 @@ test(
     };
     await writeFile(ssoConfig, JSON.stringify(settings), { mode: 0o600 });
     const probe = resolve('meta-service/target/debug/examples/personal_login_probe');
-    const login = async () =>
+    const ownerFile = resolve(fixture.directory, 'global-owner-credential');
+    const login = async (sessionFile) =>
       JSON.parse(
-        (await exec(probe, [ssoConfig, globalConfig, regionConfig], { timeout: 30000 })).stdout,
+        (
+          await exec(
+            probe,
+            [ssoConfig, globalConfig, regionConfig, ...(sessionFile ? [sessionFile] : [])],
+            { timeout: 30000 },
+          )
+        ).stdout,
       );
-    const alice = await login();
+    const alice = await login(ownerFile);
+    assert.equal((await stat(ownerFile)).mode & 0o777, 0o600);
     const again = await login();
     assert.deepEqual(again, alice);
     await writeFile(ssoConfig, JSON.stringify({ ...settings, ownerSubjects: ['alice'] }), {
@@ -334,6 +344,16 @@ test(
     );
     assert.notEqual(entryGuest.workspaceId, firstGuest.registration.workspaceId);
     const owner = (await region.client.health()).ownerId;
+    const globalOwner = (await global.client.health()).ownerId;
+    await global.stop('SIGKILL');
+    global.client.close();
+    global = await fixture.service('global', { previous: global, recoverOwner: globalOwner });
+    await writeFile(globalConfig, JSON.stringify(global.clientConfig), { mode: 0o600 });
+    const ownerProbe = resolve('meta-service/target/debug/examples/global_owner_session_probe');
+    await exec(ownerProbe, [globalConfig, 'check', alice.workspaceId, ownerFile]);
+    await assert.rejects(exec(ownerProbe, [globalConfig, 'check', bob.workspaceId, ownerFile]));
+    await exec(ownerProbe, [globalConfig, 'revoke', alice.workspaceId, ownerFile]);
+    await assert.rejects(exec(ownerProbe, [globalConfig, 'check', alice.workspaceId, ownerFile]));
     await global.stop('SIGKILL');
     global.client.close();
     await region.stop('SIGKILL');

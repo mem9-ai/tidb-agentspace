@@ -9,7 +9,10 @@ use workspace_meta_client::{ClientConfig, RemoteMetadata};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args: Vec<_> = std::env::args().collect();
-    anyhow::ensure!(args.len() == 4, "expected isolated fixture configurations");
+    anyhow::ensure!(
+        args.len() == 4 || args.len() == 5,
+        "expected isolated fixture configurations"
+    );
     let config: SsoConfig = serde_json::from_slice(&std::fs::read(&args[1])?)?;
     let global: ClientConfig = serde_json::from_slice(&std::fs::read(&args[2])?)?;
     let region: ClientConfig = serde_json::from_slice(&std::fs::read(&args[3])?)?;
@@ -81,19 +84,30 @@ async fn main() -> anyhow::Result<()> {
             .await
             .is_err()
     );
-    sessions
-        .revoke(
-            &registration.workspace_id,
-            &session.secret,
-            &uuid::Uuid::new_v4().to_string(),
-        )
-        .await?;
-    anyhow::ensure!(
+    if let Some(path) = args.get(4) {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)?;
+        file.write_all(session.secret.as_bytes())?;
+    } else {
         sessions
-            .authenticate(&registration.workspace_id, &session.secret)
-            .await
-            .is_err()
-    );
+            .revoke(
+                &registration.workspace_id,
+                &session.secret,
+                &uuid::Uuid::new_v4().to_string(),
+            )
+            .await?;
+        anyhow::ensure!(
+            sessions
+                .authenticate(&registration.workspace_id, &session.secret)
+                .await
+                .is_err()
+        );
+    }
     for workspace in [&registration.workspace_id, "foreign-workspace"] {
         let (authorization_url, flow) = login.begin("127.0.0.1").await?;
         let url = reqwest::Url::parse(&authorization_url)?;
