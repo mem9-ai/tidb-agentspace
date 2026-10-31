@@ -9,7 +9,7 @@ is available; its limited request sample does not establish end-to-end capacity.
 
 - Verified `(iss, sub)` maps to a deterministic identity-scoped Global metadata record; personal Tenant and Workspace IDs are distinct. Records share the configured Global SlateDB authority, not one database or process per Tenant. Separate Global and Region authorities use separate object-store roots. Region session verification does not call Global.
 - SlateDB provides serializable transactions, native ordered-prefix scans, durability barriers and fenced ownership in the current Meta implementation. The public resource list and Portal now use bounded pages; these underlying primitives do not by themselves make the public product scalable.
-- The regional managed Workspace cache defaults to 128 open entries, configurable up to 4,096. This is a limit on simultaneously cached/open Workspaces, not a limit on the total number of tenants. Eviction closes an idle Workspace; if every entry is in use the pool returns 429. Authentication of a cached Workspace releases the pool mutex while waiting on metadata and retains a lease so eviction and Guest cleanup cannot close it. Cleanup and shutdown release that mutex before I/O, but cache misses and eviction still hold it during remote open/close, and eviction scans the pool. Churn and slow storage can therefore create cross-Tenant contention.
+- The regional managed Workspace cache defaults to 128 open entries, configurable up to 4,096. This is a limit on simultaneously cached/open Workspaces, not a limit on the total number of tenants. Cached authorization, cold opens, eviction, cleanup and shutdown perform metadata I/O outside the pool mutex; per-Workspace reservations prevent overlapping writers and pinned leases prevent unsafe eviction. Pending opens count toward the limit and the pool returns 429 if no idle entry is available. Eviction still scans the bounded pool. Unknown writer outcomes fail the pool closed for operator recovery; the system never automatically adopts an existing writer.
 - The regional API's in-process request semaphore permits eight simultaneous requests. The separate HTTP Meta server has its own eight-permit semaphore; in-process Meta access does not traverse that HTTP server. These are concurrency limits, not measured throughput limits.
 - Guest expiry has 64 durable partitions. The co-located host runs one scheduler at a one-second interval, requesting up to 128 due and 128 logout entries in one partition per tick, then processes those entries sequentially. Even before provider and storage latency, a full empty scan takes roughly 64 ticks; actual deletion throughput and expiry lag are unmeasured. Unsupported deletes remain pending reconciliation.
 
@@ -37,7 +37,7 @@ starts resumable background backfill; while it is running, creation can return
 `RESOURCE_INDEX_MIGRATING` without creating a resource. File operations use a per-File-System
 index after resumable legacy backfill; point operations and directory pages no longer
 materialize the selected File System. The usage counter is a per-File-System contention point.
-Provider setup and managed-Workspace cache misses still hold shared locks across I/O.
+Provider setup and resource lifecycle coordination still use scoped locks across I/O.
 
 The current product enforces free-tier limits of five databases per kind and one File System
 per region/provider. The scale fixture inserts synthetic records directly; it does not show

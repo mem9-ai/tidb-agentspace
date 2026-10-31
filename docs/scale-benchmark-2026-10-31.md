@@ -126,3 +126,13 @@ configuration while other checks ran. The fixture used isolated RustFS and a fak
 created no cloud resources and removed its temporary object data. This is a correctness sample,
 not a production latency benchmark. The direct seed intentionally exceeds the local product's
 2,000-entry creation limit.
+
+## Regional Workspace pool: 10,000 synthetic identities
+
+A targeted Rust test seeds 10,000 Workspace IDs into an in-memory metadata test double. Only
+three are active; four concurrent callers perform 100 cached acquisitions, and the test checks
+that only those three writers are opened and all are released on shutdown. Separate deterministic
+fault tests exercise cold-open and eviction isolation, concurrent opens for the same Workspace,
+caller cancellation, a rejected caller, shutdown and unknown writer claim/release recovery. A
+separate isolated local RustFS/SlateDB case verifies actual metadata writer fencing; the 10,000-ID
+test itself does not use SlateDB, measure production latency or establish Tenant-scale capacity.

@@ -115,7 +115,9 @@ impl Repository {
             Ok(())
         }.await;
         if let Err(e) = initialized {
-            let _ = result.close().await;
+            if result.close().await.is_err() {
+                return Err(error("META_WRITER_RELEASE_UNCERTAIN"));
+            }
             return Err(e);
         }
         Ok(result)

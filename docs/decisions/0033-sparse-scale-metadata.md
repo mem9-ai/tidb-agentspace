@@ -13,10 +13,16 @@ grants. Existing records need no backfill for this ID index. Updates of one reso
 inflate the entire Workspace. Independent point updates can run concurrently, while a shared
 read/write gate still excludes them during legacy snapshot transactions; the remaining legacy
 paths therefore continue to cause Workspace-wide contention.
-For cached regional Workspaces, authentication waits outside the shared pool mutex while a
-lease prevents eviction and cleanup. Cleanup and shutdown release the pool mutex before metadata
-I/O, while reserving the affected Workspace or shutting down the pool. Cache misses and eviction
-still hold that mutex across metadata I/O, so cold-tenant churn is not yet independently scalable.
+Regional Workspace cache access holds the pool mutex only for bookkeeping. Authentication,
+cold opening, eviction, cleanup and shutdown perform metadata I/O outside it. A per-Workspace
+in-flight reservation coordinates callers of the same Workspace and fences a victim until its
+writer is released; waiters receive their own pinned lease and are independently authenticated.
+Open jobs continue if the originating request is cancelled. Pending opens consume bounded pool
+capacity and may return `WORKSPACE_POOL_BUSY`; eviction still scans the bounded cache for an idle
+victim. An unknown writer claim or release fails the pool closed until operator recovery: the
+service does not automatically adopt an existing writer. Shutdown drains or rejects in-flight
+reservations before declaring success. This removes metadata I/O from the shared lock; it does
+not eliminate short in-memory synchronization, SlateDB writer limits, or cold-churn costs.
 Key listing is owner-only, ID-ordered and paginated (default 100, maximum 512); each page is
 independently authorized. The response now contains `nextCursor`; existing clients must follow
 it rather than assuming the first response contains every Key. Bootstrap contains the first Key
@@ -64,9 +70,9 @@ updates are fenced while backfill runs. The first file-index migration remains r
 Resource creation, local file operations, bindings, setup attempts and index backfill use
 conditional commits under the shared side of the Workspace gate; confirmed conflicts retry with
 fresh reads. Migration-marker absence is fenced against concurrent index-changing writes. Legacy
-snapshot and writer close operations still acquire the exclusive side. Managed Workspace cache
-misses, remote provider operations and lifecycle coordination retain shared locks. This is not a
-finished million-resource design.
+snapshot and writer close operations still acquire the exclusive side. Remote provider operations
+and resource lifecycle coordination retain resource-scoped locks. This is not a finished
+million-resource design.
 
 ## Placement proposal
 
