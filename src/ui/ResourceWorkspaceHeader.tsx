@@ -31,6 +31,20 @@ export function ResourceConnectButton({
   );
 }
 
+export function ResourceTutorialButton({
+  onClick,
+  disabled,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Button variant="subtle" onClick={onClick} disabled={disabled}>
+      Tutorial
+    </Button>
+  );
+}
+
 export function ResourceCollectionButton({
   label,
   onClick,

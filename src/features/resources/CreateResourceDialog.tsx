@@ -5,7 +5,7 @@ import {
   IconPlus as Plus,
   IconZap as Zap,
 } from '@tidbcloud/uikit/icons';
-import { workspaceApi, type Data } from '../../api/client';
+import { workspaceApi, type Data, type Resource } from '../../api/client';
 import { WorkspaceApiError } from '../../api/transport';
 import { WorkspaceModal as Modal } from '../../ui/WorkspaceModal';
 import { regionLabel as region } from './regions';
@@ -25,12 +25,14 @@ export function CreateResourceDialog({
   notify,
   onClose,
   target,
+  onCreated,
 }: {
   data: Data;
   refresh: () => Promise<void>;
   notify: (message: string) => void;
   onClose: () => void;
   target: ResourceCreationTarget;
+  onCreated?: (resource: Resource) => void;
 }) {
   const context = resourceCreationContext(target, data.capabilities);
   const initialKind = context.initialKind;
@@ -88,6 +90,10 @@ export function CreateResourceDialog({
       );
       onClose();
       const resource = created.data;
+      if (resource && onCreated) {
+        onCreated(resource);
+        return;
+      }
       location.hash = resource
         ? resource.kind === 'filesystem'
           ? fileSystemHash(resource.id)

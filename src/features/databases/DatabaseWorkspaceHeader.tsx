@@ -7,9 +7,11 @@ import {
   ResourceDetails,
   ResourceWorkspaceBar,
   ResourceWorkspaceHeader,
+  ResourceTutorialButton,
 } from '../../ui/ResourceWorkspaceHeader';
 import { regionLabel } from '../resources/regions';
 import { resourceKindLabels } from '../resources/resource-creation';
+import { tutorialHash } from '../navigation/workspace-route';
 
 export function DatabaseWorkspaceHeader({
   database,
@@ -81,6 +83,12 @@ export function DatabaseWorkspaceHeader({
                 <Text>Persistent DuckDB with private backing storage.</Text>
               )}
             </ResourceDetails>
+            <ResourceTutorialButton
+              disabled={busy}
+              onClick={() => {
+                location.hash = tutorialHash(database.id);
+              }}
+            />
             <ResourceConnectButton onClick={onConnect} />
             <Button
               variant="filled"

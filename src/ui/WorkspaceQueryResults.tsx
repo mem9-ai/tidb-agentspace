@@ -91,7 +91,11 @@ export function WorkspaceQueryResults({
             aria-label="Query result data"
             tabIndex={0}
           >
-            <Table verticalSpacing={12} stickyHeader>
+            <Table
+              verticalSpacing={12}
+              stickyHeader
+              miw={result.columns.length <= 2 ? '100%' : undefined}
+            >
               <Table.Thead>
                 <Table.Tr>
                   {result.columns.map((column) => (

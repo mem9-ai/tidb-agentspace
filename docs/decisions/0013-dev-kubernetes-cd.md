@@ -1,6 +1,6 @@
 # ADR 0013: Dev Kubernetes CD for the API server
 
-- Status: dev-only continuous deployment. The historical Node runtime contract below is superseded by [ADR 0026](0026-native-hosted-studio.md) and [native deployment](../native-studio-deployment.md). The owner's 2026-10-30 clarification limits CD to image updates; runtime configuration, readiness and recovery are operator-owned.
+- Status: dev-only continuous deployment. The historical Node runtime contract below is superseded by [ADR 0026](0026-native-hosted-studio.md) and [native deployment](../native-studio-deployment.md). The image-only readiness/recovery policy below is superseded by [ADR 0032](0032-writer-safe-dev-release.md); runtime configuration remains operator-owned.
 - Workflow: [.github/workflows/dev-cd.yml](../../.github/workflows/dev-cd.yml).
 - Related: [ADR 0005](0005-independent-console-and-api.md), [independent delivery](../independent-delivery.md).
 

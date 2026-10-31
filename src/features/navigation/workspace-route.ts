@@ -3,6 +3,7 @@ const pages = [
   'databases',
   'files',
   'connect',
+  'tutorials',
   'keys',
   'api',
   'monitoring',
@@ -17,7 +18,16 @@ export type WorkspaceRoute = {
   databaseView?: 'tables' | 'sql';
   tableName?: string;
   fileLink?: string;
+  tutorialResourceId?: string;
+  tutorialKind?: 'database' | 'filesystem';
 };
+
+export function tutorialHash(resourceId: string): string {
+  return '#tutorials?' + new URLSearchParams({ resourceId }).toString();
+}
+export function tutorialKindHash(kind: 'database' | 'filesystem'): string {
+  return '#tutorials?' + new URLSearchParams({ kind }).toString();
+}
 
 function databaseHash(resourceId: string, view: 'tables' | 'sql', tableName?: string): string {
   return `#databases/${encodeURIComponent(resourceId)}/${view}${tableName ? `?table=${encodeURIComponent(tableName)}` : ''}`;
@@ -40,6 +50,16 @@ export function tableSelectSql(
 }
 export function parseWorkspaceRoute(hash: string): WorkspaceRoute {
   const value = hash.replace(/^#/, '');
+  if (value.startsWith('tutorials?')) {
+    const query = new URLSearchParams(value.slice(10));
+    const resourceId = query.get('resourceId');
+    const kind = query.get('kind');
+    return {
+      page: 'tutorials',
+      ...(resourceId ? { tutorialResourceId: resourceId } : {}),
+      ...(kind === 'database' || kind === 'filesystem' ? { tutorialKind: kind } : {}),
+    };
+  }
   if (value.startsWith('files?')) return { page: 'files', fileLink: value };
   if (value === 'sql') return { page: 'databases' };
   const database = /^databases\/([^/]+)\/(tables|sql)(?:\?table=([^&]*))?$/.exec(value);
