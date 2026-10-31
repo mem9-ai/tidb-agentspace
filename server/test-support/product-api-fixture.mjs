@@ -286,7 +286,7 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
         await region.client.call({ op: 'commit', scope, guard, mutationId: randomUUID(), changes });
       }
     },
-    async seedFiles(count) {
+    async seedFiles(count, resourceId) {
       const scope = workspaceScope(region.server.authorityId, states[0].workspace.id);
       const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
       const guard = { ownerId: writer.records['system/writer'].value.ownerId };
@@ -301,8 +301,8 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
               position: n + 100,
               record: {
                 id,
-                resourceId: `fs_cold_${n}`,
-                path: '/cold.txt',
+                resourceId: resourceId || `fs_cold_${n}`,
+                path: resourceId ? `/synthetic-${String(n).padStart(8, '0')}.txt` : '/cold.txt',
                 type: 'file',
                 content: 'synthetic',
               },

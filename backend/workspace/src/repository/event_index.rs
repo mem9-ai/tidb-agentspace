@@ -72,10 +72,12 @@ impl Repository {
                     limit: 1,
                 })
                 .await?;
-            let oldest = page["records"]
-                .as_array()
-                .and_then(|items| items.first())
-                .ok_or_else(|| error("EVENT_INDEX_CORRUPT"))?;
+            let Some(oldest) = page["records"].as_array().and_then(|items| items.first()) else {
+                if version(&self.get(HEAD).await?) != version(&head) {
+                    return Err(ServiceError::new(409, "META_CONFLICT"));
+                }
+                return Err(error("EVENT_INDEX_CORRUPT"));
+            };
             let index_key = oldest["key"]
                 .as_str()
                 .ok_or_else(|| error("EVENT_INDEX_CORRUPT"))?;
@@ -85,9 +87,12 @@ impl Repository {
                 .ok_or_else(|| error("EVENT_INDEX_CORRUPT"))?;
             let old_key = format!("state/events/{old_id}");
             let old = self.get(&old_key).await?;
-            let old_position = old["value"]["position"]
-                .as_u64()
-                .ok_or_else(|| error("EVENT_INDEX_CORRUPT"))?;
+            let Some(old_position) = old["value"]["position"].as_u64() else {
+                if version(&self.get(HEAD).await?) != version(&head) {
+                    return Err(ServiceError::new(409, "META_CONFLICT"));
+                }
+                return Err(error("EVENT_INDEX_CORRUPT"));
+            };
             if old["value"]["record"]["id"] != old_id
                 || index_key != format!("{ORDER}{old_position:020}/{old_id}")
             {

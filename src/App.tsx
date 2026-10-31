@@ -328,12 +328,7 @@ function App() {
     const controller = new AbortController();
     workspaceApi
       .resource(selectedResourceId, controller.signal)
-      .then(async (result) => {
-        const localFiles =
-          result.data.kind === 'filesystem' &&
-          (!result.data.provider || result.data.provider === 'local')
-            ? await workspaceApi.listFiles(selectedResourceId, undefined, controller.signal)
-            : null;
+      .then((result) => {
         if (controller.signal.aborted) return;
         setData((current) => {
           if (!current || `${current.workspace.id}:${selectedResourceId}` !== lookupKey)
@@ -342,7 +337,7 @@ function App() {
           return {
             ...current,
             resources: window.resources,
-            files: localFiles ? localFiles.data : [],
+            files: [],
             resourceWindowTruncated: Boolean(current.resourceWindowTruncated || window.dropped),
           };
         });
@@ -1113,17 +1108,14 @@ function FileWorkspace({
     initialResource && initialLocation
       ? data.files.find(
           (f) => f.resourceId === initialResource.id && f.path === initialLocation.path,
-        ) ||
-        (initialResource.provider === 'drive9-anonymous'
-          ? {
-              id: `${initialResource.id}:${initialLocation.path}`,
-              resourceId: initialResource.id,
-              path: initialLocation.path,
-              type: 'file' as const,
-              size: 0,
-              updatedAt: null,
-            }
-          : null)
+        ) || {
+          id: `${initialResource.id}:${initialLocation.path}`,
+          resourceId: initialResource.id,
+          path: initialLocation.path,
+          type: 'file' as const,
+          size: 0,
+          updatedAt: null,
+        }
       : null;
   const restoreFile = useRef(initialFile);
   const [previewView, setPreviewView] = useState<FileView>(initialLocation?.view || 'preview');
@@ -1145,7 +1137,8 @@ function FileWorkspace({
     [deleting, setDeleting] = useState<WorkspaceFile | null>(null);
   const selectedSystem = systems.find((r) => r.id === system);
   const remote = selectedSystem?.provider === 'drive9-anonymous';
-  const listing = useRemoteFiles(system, path, remote);
+  const localUsage = data.usage.find((item) => item.resourceId === system);
+  const listing = useRemoteFiles(system, path, Boolean(system));
   const [browserCollapsed, setBrowserCollapsed] = useState(false);
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -1182,7 +1175,7 @@ function FileWorkspace({
     else action();
   }
   const upload = useRef<HTMLInputElement>(null);
-  const files = remote ? listing.files : data.files.filter((f) => f.resourceId === system);
+  const files = listing.files;
   const fileUpload = useFileUpload({
     resource: selectedSystem,
     directory: path,
@@ -1204,8 +1197,9 @@ function FileWorkspace({
       setContent(file.content || '');
       setError('');
       setUnavailableReason('');
-      setPreviewLoading(remote);
-      if (!remote) return;
+      const needsPreview = remote || file.content === undefined;
+      setPreviewLoading(needsPreview);
+      if (!needsPreview) return;
       try {
         const result = await workspaceApi.previewFile(file, controller.signal);
         if (controller.signal.aborted) return;
@@ -1295,8 +1289,18 @@ function FileWorkspace({
         resource={selectedSystem}
         resources={systems}
         busy={busy || analysisBusy}
-        fileCount={files.filter((file) => file.type === 'file').length}
-        sizeLabel={`${bytes(files.reduce((total, file) => total + fileSize(file), 0))}${remote ? ' in folder' : ' / 2 GiB'}`}
+        fileCount={
+          remote
+            ? files.filter((file) => file.type === 'file').length
+            : (localUsage?.fileCount ?? files.filter((file) => file.type === 'file').length)
+        }
+        sizeLabel={
+          remote
+            ? `${bytes(files.reduce((total, file) => total + fileSize(file), 0))} in folder`
+            : localUsage?.storageBytes != null
+              ? `${bytes(localUsage.storageBytes)} / 2 GiB`
+              : `${bytes(files.reduce((total, file) => total + fileSize(file), 0))} loaded`
+        }
         onConnect={() => {
           if (selectedSystem) onConnect(selectedSystem);
         }}
@@ -1372,7 +1376,18 @@ function FileWorkspace({
           onToggle={() => setBrowserCollapsed((value) => !value)}
           footer={
             <>
-              <span>{children.length} items</span>
+              <span>
+                {children.length} {listing.nextCursor || listing.earlier ? 'loaded ' : ''}items
+              </span>
+              {(listing.nextCursor || listing.earlier) && (
+                <span>Filter applies to loaded files.</span>
+              )}
+              {listing.earlier && <Button onClick={listing.refresh}>Back to first files</Button>}
+              {listing.nextCursor && (
+                <Button loading={listing.loading} onClick={() => void listing.loadMore()}>
+                  Load more files
+                </Button>
+              )}
               <span>
                 {remote
                   ? `Stored in Singapore · Upload up to ${bytes(selectedSystem?.uploadLimitBytes || 0)}`
@@ -1381,7 +1396,7 @@ function FileWorkspace({
             </>
           }
         >
-          {listing.loading && remote && (
+          {listing.loading && (
             <Text p={24}>
               <Loader size="sm" /> Loading files…
             </Text>

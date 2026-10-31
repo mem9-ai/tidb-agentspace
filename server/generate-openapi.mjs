@@ -604,10 +604,25 @@ const paths = {
             name: 'path',
             in: 'query',
             schema: str,
-            description: 'Directory to list. Drive9 defaults to root; omit for all local files.',
+            description: 'Directory to list; defaults to the root for both providers.',
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 32, default: 32 },
+            description: 'Local File System page size; Drive9 listing is provider-defined.',
+          },
+          {
+            name: 'cursor',
+            in: 'query',
+            schema: { type: 'string', maxLength: 64 },
+            description: 'Continuation cursor from the previous local directory page.',
           },
         ],
-        output: array(ref('File')),
+        output: object(
+          { data: { type: 'array', items: ref('File') }, nextCursor: { type: ['string', 'null'] } },
+          ['data', 'nextCursor'],
+        ),
       },
     ),
     put: operation('writeFile', 'Create or replace a UTF-8 file or directory', 'files:write', {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Alert,
   Button,
@@ -10,7 +10,7 @@ import {
   TextInput,
 } from '@tidbcloud/uikit';
 import { IconFile01, IconFolder } from '@tidbcloud/uikit/icons';
-import { workspaceApi, type WorkspaceFile } from '../../api/client';
+import { useRemoteFiles } from '../files/remote-files';
 import { WorkspaceBrowserItem } from '../../ui/WorkspaceBrowserItem';
 import { useResourcePages } from '../resources/use-resource-pages';
 
@@ -29,38 +29,9 @@ export function ImportFileSource({
   const systems = resourcePages.resources.filter(
     (r) => r.kind === 'filesystem' && r.status === 'active',
   );
-  const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [folder, setFolder] = useState('/');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [revision, setRevision] = useState(0);
-  useEffect(() => {
-    if (!resourceId) {
-      setFiles([]);
-      return;
-    }
-    const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    workspaceApi
-      .listFiles(resourceId, folder, controller.signal)
-      .then((value) => {
-        if (!controller.signal.aborted)
-          setFiles(
-            value.data.filter(
-              (file) => (file.path.slice(0, file.path.lastIndexOf('/')) || '/') === folder,
-            ),
-          );
-      })
-      .catch((cause) => {
-        if (!controller.signal.aborted)
-          setError(cause instanceof Error ? cause.message : 'Unable to list files.');
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [resourceId, folder, revision]);
+  const listing = useRemoteFiles(resourceId, folder, Boolean(resourceId));
+  const { files, error, loading } = listing;
   return (
     <Stack gap="md">
       <NativeSelect
@@ -114,7 +85,7 @@ export function ImportFileSource({
             <Text c="dimmed" style={{ overflowWrap: 'anywhere' }}>
               {folder}
             </Text>
-            <Button disabled={busy || loading} onClick={() => setRevision((v) => v + 1)}>
+            <Button disabled={busy || loading} onClick={listing.refresh}>
               Refresh files
             </Button>
           </Group>
@@ -153,6 +124,16 @@ export function ImportFileSource({
                   />
                 ))}
                 {!files.length && !error && <Text c="dimmed">No files in this folder.</Text>}
+                {listing.earlier && (
+                  <Button disabled={busy} onClick={listing.refresh}>
+                    Back to first files
+                  </Button>
+                )}
+                {listing.nextCursor && (
+                  <Button disabled={busy} loading={loading} onClick={() => void listing.loadMore()}>
+                    Load more files
+                  </Button>
+                )}
               </Stack>
             </ScrollArea.Autosize>
           )}
@@ -168,7 +149,7 @@ export function ImportFileSource({
       {error && (
         <Alert color="red">
           {error}
-          <Button ml="sm" disabled={busy} onClick={() => setRevision((v) => v + 1)}>
+          <Button ml="sm" disabled={busy} onClick={listing.refresh}>
             Try again
           </Button>
         </Alert>

@@ -40,7 +40,7 @@ impl Repository {
             _ => Err(error("FILE_INDEX_CORRUPT")),
         }
     }
-    /// One atomic checkpoint; callers release the Workspace gate between batches.
+    /// One atomic checkpoint; conditional versions fence concurrent mutations.
     pub(super) async fn advance_file_index(&self) -> Result<bool> {
         let mut head = self.get(HEAD).await?;
         if head.is_null() {
@@ -201,7 +201,9 @@ impl Repository {
         }
         let head = self.get(HEAD).await?;
         if head.is_null() {
-            return Ok(Vec::new());
+            return Ok(vec![
+                json!({"key":HEAD,"expectedVersion":null,"delete":true}),
+            ]);
         }
         if head["value"]["format"] != 1 {
             return Err(error("FILE_INDEX_CORRUPT"));
@@ -226,5 +228,125 @@ impl Repository {
             }
         }
         Ok(changes)
+    }
+}
+
+impl Repository {
+    /// Remove a deleted File System's local metadata in bounded, restartable batches.
+    pub async fn purge_local_files(
+        &self,
+        resource: &str,
+        credential: &crate::Credential,
+    ) -> Result<()> {
+        self.ensure_file_indexes().await?;
+        loop {
+            let mut finished = false;
+            for attempt in 0..8 {
+                let _lock = self.queue.read().await;
+                let state = match credential {
+                    crate::Credential::Bearer(token) => {
+                        self.key_state(&hex::encode(Sha256::digest(token.as_bytes())))
+                            .await?
+                    }
+                    _ => json!({"workspace":{"id":self.workspace_id()}}),
+                };
+                let actor = crate::principal(&state, credential)?;
+                actor.scope("resources:write")?;
+                if !actor.has(resource) {
+                    return Err(ServiceError::new(403, "RESOURCE_ACCESS_DENIED"));
+                }
+                let resource_key = format!("state/resources/{resource}");
+                let owner = self.get(&resource_key).await?;
+                if owner["value"]["record"]["kind"] != "filesystem"
+                    || !["deleting", "deleted"]
+                        .contains(&owner["value"]["record"]["status"].as_str().unwrap_or(""))
+                {
+                    return Err(error("FILE_CLEANUP_STATE_INVALID"));
+                }
+                let page = self
+                    .call(MetaRequest::List {
+                        scope: self.scope.clone(),
+                        guard: Some(self.guard.clone()),
+                        prefix: file_prefix(resource),
+                        after: None,
+                        limit: 8,
+                    })
+                    .await?;
+                let indexes = page["records"]
+                    .as_array()
+                    .ok_or_else(|| error("FILE_INDEX_CORRUPT"))?;
+                if indexes.is_empty() {
+                    finished = true;
+                    break;
+                }
+                let mut paths = Vec::new();
+                for entry in indexes {
+                    let id = entry["value"]["id"]
+                        .as_str()
+                        .ok_or_else(|| error("FILE_INDEX_CORRUPT"))?;
+                    if entry["value"]["resourceId"] != resource
+                        || entry["key"] != index_key(resource, id)
+                    {
+                        return Err(error("FILE_INDEX_CORRUPT"));
+                    }
+                    paths.push(format!("state/files/{id}"));
+                }
+                let records = self.get_many(paths.clone()).await?;
+                let mut updates = Vec::new();
+                let mut changes = Vec::new();
+                for path in paths {
+                    let prior = &records[&path];
+                    if prior.is_null() || prior["value"]["record"]["resourceId"] != resource {
+                        return Err(error("FILE_INDEX_CORRUPT"));
+                    }
+                    updates.push((prior["value"]["record"].clone(), Value::Null));
+                    changes
+                        .push(json!({"key":path,"expectedVersion":version(prior),"delete":true}));
+                }
+                changes.extend(self.file_index_changes(&updates).await?);
+                changes.extend(self.file_path_changes(&updates, true).await?);
+                changes.push(json!({"key":resource_key,"expectedVersion":version(&owner),"value":owner["value"]}));
+                crate::principal(&state, credential)?.scope("resources:write")?;
+                if !self.get("ownership/onboarding").await?.is_null() {
+                    let (owner_id, generation) = self.managed_owner().await?;
+                    match credential {
+                        crate::Credential::SessionOwner {
+                            id,
+                            policy_generation: Some(current),
+                            ..
+                        } if *id == owner_id && *current == generation => {}
+                        crate::Credential::Bearer(_) => {}
+                        _ => return Err(ServiceError::new(401, "UNAUTHENTICATED")),
+                    }
+                }
+                if matches!(credential, crate::Credential::Bearer(_)) {
+                    let key = state["keys"]
+                        .as_array()
+                        .and_then(|keys| keys.first())
+                        .ok_or_else(|| ServiceError::new(401, "INVALID_KEY"))?;
+                    let id = key["id"]
+                        .as_str()
+                        .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+                    let path = format!("state/keys/{id}");
+                    let prior_key = self.get(&path).await?;
+                    if prior_key["value"]["record"] != *key {
+                        if attempt < 7 {
+                            continue;
+                        }
+                        return Err(ServiceError::new(409, "META_CONFLICT"));
+                    }
+                    changes.push(json!({"key":path,"expectedVersion":version(&prior_key),"value":prior_key["value"]}));
+                }
+                match self.commit(changes).await {
+                    Ok(()) => break,
+                    Err(error) if error.code == "META_CONFLICT" && attempt < 7 => continue,
+                    Err(error) => return Err(error),
+                }
+            }
+            if finished {
+                return Ok(());
+            }
+            tokio::task::yield_now().await;
+        }
     }
 }

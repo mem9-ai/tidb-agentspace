@@ -75,12 +75,13 @@ impl Repository {
             }
             let _reset = Reset(repository.clone());
             loop {
-                let lock = repository.queue.write().await;
+                let lock = repository.queue.read().await;
                 let result = repository.advance_resource_indexes().await;
                 drop(lock);
                 match result {
                     Ok(marker) if marker["value"]["phase"] == "ready" => return,
                     Ok(_) => tokio::task::yield_now().await,
+                    Err(error) if error.code == "META_CONFLICT" => tokio::task::yield_now().await,
                     Err(error) => {
                         if let Ok(mut failure) = repository.resource_backfill_error.lock() {
                             *failure = Some(error);
@@ -117,8 +118,8 @@ impl Repository {
         Ok(output)
     }
 
-    /// Advance at most one batch while the writer gate is held. Each checkpoint is atomic.
-    async fn advance_resource_indexes(&self) -> Result<Value> {
+    /// Advance one atomic checkpoint. Conditional versions fence concurrent mutations.
+    pub(super) async fn advance_resource_indexes(&self) -> Result<Value> {
         let mut marker = self.get(SCHEMA).await?;
         if marker.is_null() {
             self.commit(vec![json!({"key":SCHEMA,"expectedVersion":null,"value":{"format":1,"phase":"building","after":null,"position":0}})]).await?;
@@ -239,7 +240,10 @@ impl Repository {
         }
         let marker = self.get(SCHEMA).await?;
         if marker.is_null() {
-            return Ok(Vec::new());
+            // Fence the absence of a migration marker against a concurrent backfill start.
+            return Ok(vec![
+                json!({"key":SCHEMA,"expectedVersion":null,"delete":true}),
+            ]);
         }
         if marker["value"]["format"] != 1 {
             return Err(error("RESOURCE_INDEX_CORRUPT"));
@@ -316,133 +320,167 @@ impl Repository {
         event: Value,
     ) -> Result<Value> {
         let slot_key = slot.map(idempotency_key);
-        let (marker, _lock, state) = loop {
-            let lock = self.queue.write().await;
-            let state = match credential {
-                Credential::Bearer(token) => {
-                    self.key_state(&hex::encode(Sha256::digest(token.as_bytes())))
-                        .await?
+        for attempt in 0..8 {
+            let (marker, _lock, state) = loop {
+                let lock = self.queue.read().await;
+                let state = match credential {
+                    Credential::Bearer(token) => {
+                        self.key_state(&hex::encode(Sha256::digest(token.as_bytes())))
+                            .await?
+                    }
+                    _ => json!({"workspace":{"id":self.workspace_id()}}),
+                };
+                let actor = principal(&state, credential)?;
+                actor.scope("resources:write")?;
+                if !actor.has("*") {
+                    return Err(ServiceError::new(403, "WORKSPACE_GRANT_REQUIRED"));
                 }
-                _ => json!({"workspace":{"id":self.workspace_id()}}),
+                if let (Some(slot), Some(key)) = (slot, slot_key.as_ref()) {
+                    let prior = self.get(key).await?;
+                    if !prior.is_null() {
+                        if prior["value"]["mapKey"] != slot {
+                            return Err(error("RESOURCE_INDEX_CORRUPT"));
+                        }
+                        let record = &prior["value"]["record"];
+                        if record["fingerprint"] != fingerprint {
+                            return Err(ServiceError::new(409, "IDEMPOTENCY_CONFLICT"));
+                        }
+                        let id = record["resource"]["id"]
+                            .as_str()
+                            .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+                        let current = self.resource(id).await?;
+                        return Ok(if current.is_null() {
+                            record["resource"].clone()
+                        } else {
+                            current
+                        });
+                    }
+                }
+                let marker = self.get(SCHEMA).await?;
+                if let Some(failure) = self
+                    .resource_backfill_error
+                    .lock()
+                    .map_err(|_| error("RESOURCE_INDEX_RECOVERY_FAILED"))?
+                    .take()
+                {
+                    return Err(failure);
+                }
+                if marker["value"]["phase"] != "ready" {
+                    drop(lock);
+                    self.start_resource_backfill();
+                    if tokio::time::timeout(std::time::Duration::from_millis(250), async {
+                        while self.resource_backfill_running.load(Ordering::Acquire) {
+                            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                        }
+                    })
+                    .await
+                    .is_err()
+                    {
+                        return Err(ServiceError::new(503, "RESOURCE_INDEX_MIGRATING"));
+                    }
+                    continue;
+                }
+                break (marker, lock, state);
             };
-            let actor = principal(&state, credential)?;
-            actor.scope("resources:write")?;
-            if !actor.has("*") {
+            let id = resource["id"]
+                .as_str()
+                .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+            let value = name(&resource).ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+            let group = quota(&resource).ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+            let name_path = name_key(value);
+            let quota_path = quota_key(&group);
+            let mut paths = vec![
+                name_path.clone(),
+                quota_path.clone(),
+                format!("state/resources/{id}"),
+            ];
+            if let Some(key) = &slot_key {
+                paths.push(key.clone());
+            }
+            let prior = self.get_many(paths).await?;
+            if slot_key.as_ref().is_some_and(|key| !prior[key].is_null()) {
+                if attempt < 7 {
+                    continue;
+                }
+                return Err(ServiceError::new(409, "META_CONFLICT"));
+            }
+            if !prior[&name_path].is_null() {
+                return Err(ServiceError::new(409, "NAME_EXISTS"));
+            }
+            let count = counter(&prior[&quota_path], &group)?;
+            let limit = if resource["kind"] == "filesystem" {
+                1
+            } else {
+                5
+            };
+            if count >= limit {
+                return Err(ServiceError::new(409, "FREE_TIER_LIMIT"));
+            }
+            let position = marker["value"]["position"]
+                .as_u64()
+                .and_then(|n| n.checked_add(1))
+                .ok_or_else(|| error("RESOURCE_INDEX_CORRUPT"))?;
+            let resource_path = format!("state/resources/{id}");
+            if !prior[&resource_path].is_null() {
+                return Err(error("RESOURCE_ID_CONFLICT"));
+            }
+            let mut changes = vec![
+                json!({"key":resource_path,"expectedVersion":null,"value":{"position":position,"record":resource}}),
+                json!({"key":name_path,"expectedVersion":null,"value":{"name":value,"id":id}}),
+                json!({"key":quota_path,"expectedVersion":version(&prior[&quota_path]),"value":{"group":group,"count":count+1}}),
+                json!({"key":SCHEMA,"expectedVersion":version(&marker),"value":{"format":1,"phase":"ready","after":null,"position":position}}),
+            ];
+            if let (Some(slot), Some(key)) = (slot, slot_key.as_ref()) {
+                changes.push(json!({"key":key,"expectedVersion":version(&prior[key]),"value":{"mapKey":slot,"record":{"fingerprint":fingerprint,"resource":resource}}}));
+            }
+            match self.event_changes(&event).await {
+                Ok(event_changes) => changes.extend(event_changes),
+                Err(error) if error.code == "META_CONFLICT" && attempt < 7 => continue,
+                Err(error) => return Err(error),
+            }
+            // Backfill can take a long time. Recheck expiry and the Region-owned policy before
+            // publishing the intent; this never calls Global.
+            let caller = principal(&state, credential)?;
+            caller.scope("resources:write")?;
+            if !caller.has("*") {
                 return Err(ServiceError::new(403, "WORKSPACE_GRANT_REQUIRED"));
             }
-            if let (Some(slot), Some(key)) = (slot, slot_key.as_ref()) {
-                let prior = self.get(key).await?;
-                if !prior.is_null() {
-                    if prior["value"]["mapKey"] != slot {
-                        return Err(error("RESOURCE_INDEX_CORRUPT"));
+            if matches!(credential, Credential::Bearer(_)) {
+                let key = state["keys"]
+                    .as_array()
+                    .and_then(|keys| keys.first())
+                    .ok_or_else(|| ServiceError::new(401, "INVALID_KEY"))?;
+                let id = key["id"]
+                    .as_str()
+                    .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+                let path = format!("state/keys/{id}");
+                let prior_key = self.get(&path).await?;
+                if prior_key["value"]["record"] != *key {
+                    if attempt < 7 {
+                        continue;
                     }
-                    let record = &prior["value"]["record"];
-                    if record["fingerprint"] != fingerprint {
-                        return Err(ServiceError::new(409, "IDEMPOTENCY_CONFLICT"));
-                    }
-                    let id = record["resource"]["id"]
-                        .as_str()
-                        .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
-                    let current = self.resource(id).await?;
-                    return Ok(if current.is_null() {
-                        record["resource"].clone()
-                    } else {
-                        current
-                    });
+                    return Err(ServiceError::new(409, "META_CONFLICT"));
+                }
+                changes.push(json!({"key":path,"expectedVersion":version(&prior_key),"value":prior_key["value"]}));
+            }
+            if !self.get("ownership/onboarding").await?.is_null() {
+                let (owner, generation) = self.managed_owner().await?;
+                match credential {
+                    Credential::SessionOwner {
+                        id,
+                        policy_generation: Some(value),
+                        ..
+                    } if id == &owner && *value == generation => {}
+                    Credential::Bearer(_) => {}
+                    _ => return Err(ServiceError::new(401, "UNAUTHENTICATED")),
                 }
             }
-            let marker = self.get(SCHEMA).await?;
-            if let Some(failure) = self
-                .resource_backfill_error
-                .lock()
-                .map_err(|_| error("RESOURCE_INDEX_RECOVERY_FAILED"))?
-                .take()
-            {
-                return Err(failure);
-            }
-            if marker["value"]["phase"] != "ready" {
-                drop(lock);
-                self.start_resource_backfill();
-                if tokio::time::timeout(std::time::Duration::from_millis(250), async {
-                    while self.resource_backfill_running.load(Ordering::Acquire) {
-                        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-                    }
-                })
-                .await
-                .is_err()
-                {
-                    return Err(ServiceError::new(503, "RESOURCE_INDEX_MIGRATING"));
-                }
-                continue;
-            }
-            break (marker, lock, state);
-        };
-        let id = resource["id"]
-            .as_str()
-            .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
-        let value = name(&resource).ok_or_else(|| error("META_RECORD_CORRUPT"))?;
-        let group = quota(&resource).ok_or_else(|| error("META_RECORD_CORRUPT"))?;
-        let name_path = name_key(value);
-        let quota_path = quota_key(&group);
-        let mut paths = vec![
-            name_path.clone(),
-            quota_path.clone(),
-            format!("state/resources/{id}"),
-        ];
-        if let Some(key) = &slot_key {
-            paths.push(key.clone());
-        }
-        let prior = self.get_many(paths).await?;
-        if !prior[&name_path].is_null() {
-            return Err(ServiceError::new(409, "NAME_EXISTS"));
-        }
-        let count = counter(&prior[&quota_path], &group)?;
-        let limit = if resource["kind"] == "filesystem" {
-            1
-        } else {
-            5
-        };
-        if count >= limit {
-            return Err(ServiceError::new(409, "FREE_TIER_LIMIT"));
-        }
-        let position = marker["value"]["position"]
-            .as_u64()
-            .and_then(|n| n.checked_add(1))
-            .ok_or_else(|| error("RESOURCE_INDEX_CORRUPT"))?;
-        let resource_path = format!("state/resources/{id}");
-        if !prior[&resource_path].is_null() {
-            return Err(error("RESOURCE_ID_CONFLICT"));
-        }
-        let mut changes = vec![
-            json!({"key":resource_path,"expectedVersion":null,"value":{"position":position,"record":resource}}),
-            json!({"key":name_path,"expectedVersion":null,"value":{"name":value,"id":id}}),
-            json!({"key":quota_path,"expectedVersion":version(&prior[&quota_path]),"value":{"group":group,"count":count+1}}),
-            json!({"key":SCHEMA,"expectedVersion":version(&marker),"value":{"format":1,"phase":"ready","after":null,"position":position}}),
-        ];
-        if let (Some(slot), Some(key)) = (slot, slot_key) {
-            changes.push(json!({"key":key,"expectedVersion":version(&prior[&key]),"value":{"mapKey":slot,"record":{"fingerprint":fingerprint,"resource":resource}}}));
-        }
-        changes.extend(self.event_changes(&event).await?);
-        // Backfill can take a long time. Recheck expiry and the Region-owned policy before
-        // publishing the intent; this never calls Global.
-        let caller = principal(&state, credential)?;
-        caller.scope("resources:write")?;
-        if !caller.has("*") {
-            return Err(ServiceError::new(403, "WORKSPACE_GRANT_REQUIRED"));
-        }
-        if !self.get("ownership/onboarding").await?.is_null() {
-            let (owner, generation) = self.managed_owner().await?;
-            match credential {
-                Credential::SessionOwner {
-                    id,
-                    policy_generation: Some(value),
-                    ..
-                } if id == &owner && *value == generation => {}
-                Credential::Bearer(_) => {}
-                _ => return Err(ServiceError::new(401, "UNAUTHENTICATED")),
+            match self.commit(changes).await {
+                Ok(()) => return Ok(resource),
+                Err(error) if error.code == "META_CONFLICT" && attempt < 7 => continue,
+                Err(error) => return Err(error),
             }
         }
-        self.commit(changes).await?;
-        Ok(resource)
+        unreachable!()
     }
 }

@@ -96,6 +96,7 @@ async function tutorialApi(context, workspace, { uncertainSeed = false } = {}) {
         data: workspace.state.files.filter(
           (file) => file.resourceId === url.searchParams.get('resourceId'),
         ),
+        nextCursor: null,
       });
     if (path === '/file-analyses/capabilities')
       return reply({

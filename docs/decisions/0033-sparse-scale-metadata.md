@@ -14,8 +14,9 @@ inflate the entire Workspace. Independent point updates can run concurrently, wh
 read/write gate still excludes them during legacy snapshot transactions; the remaining legacy
 paths therefore continue to cause Workspace-wide contention.
 For cached regional Workspaces, authentication waits outside the shared pool mutex while a
-lease prevents eviction and cleanup. Cache misses and close/cleanup operations still hold that
-mutex across metadata I/O, so cold-tenant churn is not yet independently scalable.
+lease prevents eviction and cleanup. Cleanup and shutdown release the pool mutex before metadata
+I/O, while reserving the affected Workspace or shutting down the pool. Cache misses and eviction
+still hold that mutex across metadata I/O, so cold-tenant churn is not yet independently scalable.
 Key listing is owner-only, ID-ordered and paginated (default 100, maximum 512); each page is
 independently authorized. The response now contains `nextCursor`; existing clients must follow
 it rather than assuming the first response contains every Key. Bootstrap contains the first Key
@@ -32,11 +33,16 @@ and oldest event when pruning. Event list and bootstrap still read the retained 
 honor the existing list contract. The head is a contention point and the shared gate still
 coordinates with older transactional writers.
 
-Existing local files are indexed once by File System in resumable batches of 512. New or removed
-files update their resource index atomically with the file record. Normal local file operations
-and deletion read only files of the selected File Systems, not all Workspace files. A single
-File System's file list is still materialized and subject to the existing 4,096-record/24 MiB
-projection ceiling; directory/path point indexes and paged file browsing are not implemented.
+Existing local demo files receive resumable path, directory and usage indexes. Single-file
+reads and writes address the target and parent; updates atomically maintain the indexes and
+usage counters. Directory listing is cursor-paged (default and maximum 32). `/files` now defaults
+to the root directory, and clients follow `nextCursor`; `/bootstrap` no longer embeds local file
+contents. Portal directory browsing retains at most 200 entries. The first legacy file-index
+build still scans old file records and waits for completion. Drive9 continues to own its file
+contents and listing behavior. The local demo remains limited to 2,000 newly created entries per
+File System, so synthetic records above that count do not establish product capacity.
+Deleting a local File System clears its records in bounded batches while rechecking the caller;
+an interrupted cleanup remains in the deleting state and can be resumed by retrying deletion.
 Bootstrap and usage return a first bounded page and a continuation cursor. The Portal loads
 subsequent pages on demand and resolves a directly linked resource separately. It currently
 retains at most 200 resource records in its current window and permits returning to the first
@@ -55,8 +61,11 @@ batches. A creation request waits briefly for small backfills. Otherwise it retu
 `RESOURCE_INDEX_MIGRATING` without creating a resource, and a client may retry the same request.
 The task is started on demand; after shutdown or a failure a later creation resumes it. Index-changing
 updates are fenced while backfill runs. The first file-index migration remains request-driven.
-Resource creation, index backfill and legacy snapshots still acquire the exclusive Workspace
-gate; provider setup and some lifecycle coordination also retain shared locks. This is not a
+Resource creation, local file operations, bindings, setup attempts and index backfill use
+conditional commits under the shared side of the Workspace gate; confirmed conflicts retry with
+fresh reads. Migration-marker absence is fenced against concurrent index-changing writes. Legacy
+snapshot and writer close operations still acquire the exclusive side. Managed Workspace cache
+misses, remote provider operations and lifecycle coordination retain shared locks. This is not a
 finished million-resource design.
 
 ## Placement proposal

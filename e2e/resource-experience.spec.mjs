@@ -115,6 +115,32 @@ test('a directly linked local File System loads its own files outside the first 
     .toBe(true);
 });
 
+test('local File System loads directory pages on demand', async ({ page, workspace }, testInfo) => {
+  workspace.addResources();
+  workspace.state.files = Array.from({ length: 40 }, (_, index) => ({
+    id: `file-${index}`,
+    resourceId: 'fs_fixture',
+    path: `/page-${String(index).padStart(2, '0')}.txt`,
+    type: 'file',
+    content: 'sample',
+    size: 6,
+    updatedAt: '2026-01-01T00:00:00Z',
+  }));
+  await workspace.open('#files?resourceId=fs_fixture');
+  const entries = page.getByRole('navigation', { name: 'File entries' });
+  await expect(entries.getByText('page-00.txt')).toBeVisible();
+  await expect(entries.getByText('page-39.txt')).toHaveCount(0);
+  const more = page.getByRole('button', { name: 'Load more files' });
+  await expect(more).toBeVisible();
+  if (process.env.FILE_PAGE_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.FILE_PAGE_SCREENSHOTS}/files-${testInfo.project.name}.png`,
+    });
+  await more.click();
+  await expect(entries.getByText('page-39.txt')).toBeVisible();
+  await expect(more).toHaveCount(0);
+});
+
 test('resource windows stay bounded and disclose selections from earlier pages', async ({
   page,
   workspace,

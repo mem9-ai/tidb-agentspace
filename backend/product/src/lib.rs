@@ -262,7 +262,7 @@ impl Product {
                         .resource_transaction(
                             ids.iter().cloned().collect(),
                             true,
-                            true,
+                            false,
                             false,
                             &credential,
                             |state| Ok((state.clone(), false)),
@@ -292,7 +292,10 @@ impl Product {
                         key["resourceIds"] = json!([]);
                     }
                 }
-                let usage = usage(&state);
+                let usage = indexed_usage(&repository, &state).await?;
+                if !self.workspace.authenticate(&credential).await?.owner {
+                    return Err(err(403, "OWNER_REQUIRED"));
+                }
                 state["capabilities"] = self.capabilities();
                 state["usage"] = usage;
                 state["resourceNextCursor"] = next
@@ -396,11 +399,19 @@ impl Product {
                 let state = self
                     .workspace
                     .repository()
-                    .resource_transaction(ids, false, true, true, &credential, |state| {
+                    .resource_transaction(ids, false, false, true, &credential, |state| {
                         Ok((state.clone(), false))
                     })
                     .await?;
-                let mut data = usage(&state).as_array().expect("usage").clone();
+                let mut data = indexed_usage(&self.workspace.repository(), &state)
+                    .await?
+                    .as_array()
+                    .expect("usage")
+                    .clone();
+                self.workspace
+                    .authenticate(&credential)
+                    .await?
+                    .scope("usage:read")?;
                 data.sort_by(|a, b| a["resourceId"].as_str().cmp(&b["resourceId"].as_str()));
                 let count = if p.has("*") {
                     state["queryCount"].as_u64().unwrap_or(0)
@@ -607,6 +618,30 @@ pub fn clean_path(path: &str) -> Result<String> {
 fn usage(state: &Value) -> Value {
     json!(state["resources"].as_array().expect("resources").iter().filter(|r|visible_resource(r)).map(|r|{let native=live(r);
 let files=state["files"].as_array().expect("files").iter().filter(|f|f["resourceId"]==r["id"]).collect::<Vec<_>>();json!({"resourceId":r["id"],"name":r["name"],"kind":r["kind"],"storageBytes":if native{Value::Null}else{json!(files.iter().map(|f|f["content"].as_str().unwrap_or("").len()).sum::<usize>())},"storageLimitBytes":if native{Value::Null}else{json!((if r["kind"]=="filesystem"{2u64}else{5})*1024*1024*1024)},"measured":!native,"fileCount":if native{Value::Null}else{json!(files.iter().filter(|f|f["type"]=="file").count())},"monthlyRU":if native{Value::Null}else{json!(0)},"monthlyRULimit":if [ZERO,DB9,DUCKDB].contains(&r["provider"].as_str().unwrap_or(""))||r["kind"]!="mysql"{Value::Null}else{json!(50_000_000)}})}).collect::<Vec<_>>())
+}
+async fn indexed_usage(repository: &workspace_domain::Repository, state: &Value) -> Result<Value> {
+    let mut output = usage(state);
+    let resources = state["resources"]
+        .as_array()
+        .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?;
+    let local = resources
+        .iter()
+        .filter(|r| r["kind"] == "filesystem" && !live(r))
+        .collect::<Vec<_>>();
+    if !local.is_empty() {
+        repository.ensure_file_indexes().await?;
+    }
+    for resource in local {
+        let id = text(resource, "id")?;
+        let summary = repository.local_file_summary(id).await?;
+        let row = output
+            .as_array_mut()
+            .and_then(|rows| rows.iter_mut().find(|row| row["resourceId"] == id))
+            .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?;
+        row["storageBytes"] = summary["bytes"].clone();
+        row["fileCount"] = summary["files"].clone();
+    }
+    Ok(output)
 }
 fn message(code: &str) -> &str {
     match code {

@@ -2770,8 +2770,12 @@ export interface operations {
     parameters: {
       query: {
         resourceId: string;
-        /** @description Directory to list. Drive9 defaults to root; omit for all local files. */
+        /** @description Directory to list; defaults to the root for both providers. */
         path?: string;
+        /** @description Local File System page size; Drive9 listing is provider-defined. */
+        limit?: number;
+        /** @description Continuation cursor from the previous local directory page. */
+        cursor?: string;
       };
       header?: never;
       path: {
@@ -2790,6 +2794,7 @@ export interface operations {
         content: {
           'application/json': {
             data: components['schemas']['File'][];
+            nextCursor: string | null;
           };
         };
       };

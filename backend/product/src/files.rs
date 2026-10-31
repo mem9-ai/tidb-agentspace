@@ -63,15 +63,6 @@ impl Product {
         } else {
             text(&input, "resourceId")?
         };
-        let _mutation = if read {
-            None
-        } else {
-            Some(
-                self.file_mutations[resource_locks::stripe(resource_id)]
-                    .lock()
-                    .await,
-            )
-        };
         let (_, r) = self
             .context(
                 credential,
@@ -79,34 +70,52 @@ impl Product {
                 Some((resource_id, Some("filesystem"))),
             )
             .await?;
+        let _mutation = if !read && r["provider"] == DRIVE9 {
+            Some(
+                self.file_mutations[resource_locks::stripe(resource_id)]
+                    .lock()
+                    .await,
+            )
+        } else {
+            None
+        };
         if read && route == "/files" {
             let path = q.get("path").map(|p| clean_path(p)).transpose()?;
             if r["provider"] == DRIVE9 {
                 return Ok((
                     200,
                     Reply::Json(
-                        json!({"data":self.providers.file_list(resource_id,path.as_deref().unwrap_or("/")).await?}),
+                        json!({"data":self.providers.file_list(resource_id,path.as_deref().unwrap_or("/")).await?,"nextCursor":null}),
                     ),
                 ));
             }
-            let state = self
+            let limit = q
+                .get("limit")
+                .map(|value| value.parse::<usize>())
+                .transpose()
+                .map_err(|_| err(400, "INVALID_LIMIT"))?
+                .unwrap_or(32);
+            if !(1..=32).contains(&limit) {
+                return Err(err(400, "INVALID_LIMIT"));
+            }
+            let (files, next) = self
                 .workspace
                 .repository()
-                .view_selected(vec![resource_id.into()], true, None)
+                .local_file_page(
+                    resource_id,
+                    path.as_deref().unwrap_or("/"),
+                    q.get("cursor").map(String::as_str),
+                    limit,
+                )
                 .await?;
-            let data = state["files"]
-                .as_array()
-                .expect("files")
-                .iter()
-                .filter(|f| {
-                    f["resourceId"] == resource_id
-                        && path
-                            .as_ref()
-                            .is_none_or(|p| parent(f["path"].as_str().unwrap_or("")) == *p)
-                })
-                .map(|f| file_view(f.clone()))
-                .collect::<Vec<_>>();
-            return Ok((200, Reply::Json(json!({"data":data}))));
+            self.context(
+                credential,
+                "files:read",
+                Some((resource_id, Some("filesystem"))),
+            )
+            .await?;
+            let data = files.into_iter().map(file_view).collect::<Vec<_>>();
+            return Ok((200, Reply::Json(json!({"data":data,"nextCursor":next}))));
         }
         let path = clean_path(
             if ["/files/content", "/files/metadata", "/files/entry"].contains(&route) {
@@ -124,15 +133,8 @@ impl Product {
             } else {
                 self.workspace
                     .repository()
-                    .view_selected(vec![resource_id.into()], true, None)
-                    .await?["files"]
-                    .as_array()
-                    .and_then(|v| {
-                        v.iter()
-                            .find(|f| f["resourceId"] == resource_id && f["path"] == path)
-                    })
-                    .cloned()
-                    .ok_or_else(|| err(404, "NOT_FOUND"))?
+                    .local_file(resource_id, &path, credential)
+                    .await?
             };
             let version = if r["provider"] == DRIVE9 {
                 provider_version(&data)
@@ -177,6 +179,21 @@ impl Product {
         };
         if route == "/files/content" {
             if r["provider"] != DRIVE9 {
+                if read && q.get("preview").map(String::as_str) == Some("1") {
+                    let file = self
+                        .workspace
+                        .repository()
+                        .local_file(resource_id, &path, credential)
+                        .await?;
+                    if file["type"] == "directory" {
+                        return Err(err(400, "NOT_A_FILE"));
+                    }
+                    let content = file["content"].as_str().unwrap_or("");
+                    return Ok((
+                        200,
+                        Reply::Json(json!({"size":content.len(),"content":content})),
+                    ));
+                }
                 return Err(err(400, "LOCAL_FILE_API"));
             }
             if read {
@@ -285,11 +302,10 @@ impl Product {
             } else {
                 self.workspace
                     .repository()
-                    .resource_transaction(
+                    .local_file_transaction(
                         vec![resource_id.into()],
-                        false,
-                        true,
-                        false,
+                        resource_id,
+                        vec![path.clone()],
                         credential,
                         |state| {
                             let p = principal(state, credential)?;
@@ -301,14 +317,6 @@ impl Product {
                                 .any(|f| f["resourceId"] == resource_id && f["path"] == path)
                             {
                                 return Err(err(404, "NOT_FOUND"));
-                            }
-                            if files.iter().any(|f| {
-                                f["resourceId"] == resource_id
-                                    && f["path"]
-                                        .as_str()
-                                        .is_some_and(|s| s.starts_with(&(path.clone() + "/")))
-                            }) {
-                                return Err(err(409, "DIRECTORY_NOT_EMPTY"));
                             }
                             files
                                 .retain(|f| !(f["resourceId"] == resource_id && f["path"] == path));
@@ -422,7 +430,7 @@ impl Product {
         let id = text(r, "id")?;
         let mut selected = related_resource_ids.to_vec();
         selected.push(id.to_owned());
-        self.workspace.repository().resource_transaction(selected, false, true, false, credential, |state|{authorize(state)?;
+        self.workspace.repository().local_file_transaction(selected, id, vec![path.into(), parent(path)], credential, |state|{authorize(state)?;
 let p=principal(state,credential)?;p.scope("files:write")?;p.resource(state,id,Some("filesystem"))?;
 let files=state["files"].as_array_mut().expect("files");
 let dir=parent(path);
@@ -431,7 +439,6 @@ let position=files.iter().position(|f|f["resourceId"]==id&&f["path"]==path);
 if expected_version.is_some_and(|v|position.is_none_or(|i|local_version(&files[i])!=v)){return Err(err(412,"PRECONDITION_FAILED"));}
 if create_only&&position.is_some(){return Err(err(409,"EXPORT_TARGET_EXISTS"));}
 if position.is_some_and(|i|files[i]["type"]!=kind){return Err(err(409,"TYPE_CONFLICT"));}
-if position.is_none()&&files.iter().filter(|f|f["resourceId"]==id).count()>=2000{return Err(err(409,"FREE_TIER_LIMIT"));}
 let mut f=json!({"version":format!("\"{}\"",secret(24)?),"id":position.map(|i|files[i]["id"].clone()).unwrap_or(json!(uuid::Uuid::new_v4().to_string())),"resourceId":id,"path":path,"type":kind,"updatedAt":timestamp()});
 if kind=="file"{f["content"]=json!(content);}
 if let Some(i)=position{for(k,v)in f.as_object().expect("file"){files[i][k]=v.clone();}f=files[i].clone();}else{files.push(f.clone());}
@@ -494,18 +501,11 @@ Ok((file_view(f),true))}).await
                 .await?;
             return Ok((json!({"size":size}), bytes));
         }
-        let state = self
+        let file = self
             .workspace
             .repository()
-            .view_selected(vec![id.into()], true, None)
+            .local_file(id, path, credential)
             .await?;
-        let file = state["files"]
-            .as_array()
-            .and_then(|v| {
-                v.iter()
-                    .find(|f| f["resourceId"] == id && f["path"] == path)
-            })
-            .ok_or_else(|| err(404, "NOT_FOUND"))?;
         if file["type"] == "directory" {
             return Err(err(400, "NOT_A_FILE"));
         }

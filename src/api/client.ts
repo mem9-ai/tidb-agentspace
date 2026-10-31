@@ -226,10 +226,10 @@ export const workspaceApi = {
         params: { path: params.path, query: entry },
       }),
     ),
-  listFiles: (resourceId: string, path?: string, signal?: AbortSignal) =>
+  listFiles: (resourceId: string, path?: string, signal?: AbortSignal, cursor?: string) =>
     responseData(
       client.GET('/workspaces/{workspaceId}/files', {
-        params: { path: params.path, query: { resourceId, path } },
+        params: { path: params.path, query: { resourceId, path, cursor } },
         signal,
       }),
     ),

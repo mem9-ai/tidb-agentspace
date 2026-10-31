@@ -1,5 +1,6 @@
 mod event_index;
 mod file_index;
+mod file_paths;
 mod resource_index;
 mod setup_attempts;
 use serde_json::{Value, json};
@@ -33,6 +34,7 @@ struct Projection<'a> {
     resources: Vec<String>,
     events: bool,
     files: bool,
+    file_paths: Option<(String, Vec<String>)>,
     statistics: bool,
     keys: KeyLoad<'a>,
     exclusive: bool,
@@ -303,6 +305,7 @@ impl Repository {
                 resources: selected_resources,
                 events: include_event_resources,
                 files: include_files,
+                file_paths: None,
                 statistics: include_statistics,
                 keys: KeyLoad::All,
                 exclusive: true,
@@ -327,11 +330,66 @@ impl Repository {
                 resources: selected_resources,
                 events: include_event_resources,
                 files: include_files,
+                file_paths: None,
                 statistics: include_statistics,
                 keys: KeyLoad::Credential(credential),
                 exclusive: false,
             },
             apply,
+        )
+        .await
+    }
+
+    /// Restrict a local file operation to the target and its parent directory.
+    pub async fn local_file_transaction<T>(
+        &self,
+        selected_resources: Vec<String>,
+        file_resource: &str,
+        paths: Vec<String>,
+        credential: &crate::Credential,
+        apply: impl FnMut(&mut Value) -> Result<(T, bool)> + Send,
+    ) -> Result<T> {
+        self.projected_transaction(
+            Projection {
+                resources: selected_resources,
+                events: false,
+                files: true,
+                file_paths: Some((file_resource.into(), paths)),
+                statistics: false,
+                keys: KeyLoad::Credential(credential),
+                exclusive: false,
+            },
+            apply,
+        )
+        .await
+    }
+
+    pub async fn local_file(
+        &self,
+        resource: &str,
+        path: &str,
+        credential: &crate::Credential,
+    ) -> Result<Value> {
+        self.local_file_transaction(
+            vec![resource.into()],
+            resource,
+            vec![path.into()],
+            credential,
+            |state| {
+                let actor = crate::principal(state, credential)?;
+                actor.scope("files:read")?;
+                actor.resource(state, resource, Some("filesystem"))?;
+                let file = state["files"]
+                    .as_array()
+                    .and_then(|files| {
+                        files
+                            .iter()
+                            .find(|file| file["resourceId"] == resource && file["path"] == path)
+                    })
+                    .cloned()
+                    .ok_or_else(|| ServiceError::new(404, "NOT_FOUND"))?;
+                Ok((file, false))
+            },
         )
         .await
     }
@@ -348,6 +406,7 @@ impl Repository {
                 resources: selected_resources,
                 events: false,
                 files: false,
+                file_paths: None,
                 statistics: false,
                 keys,
                 exclusive: false,
@@ -366,25 +425,12 @@ impl Repository {
             let _lock = self.queue.write().await;
             if projection.files {
                 while !self.advance_file_index().await? {}
+                while !self.advance_file_paths().await? {}
             }
             return self.projected_once(&projection, &mut apply, false).await;
         }
         if projection.files {
-            loop {
-                {
-                    let _lock = self.queue.read().await;
-                    if self.file_index_ready().await? {
-                        break;
-                    }
-                }
-                let lock = self.queue.write().await;
-                let ready = self.advance_file_index().await?;
-                drop(lock);
-                if ready {
-                    break;
-                }
-                tokio::task::yield_now().await;
-            }
+            self.ensure_file_indexes().await?;
         }
         for attempt in 0..8 {
             let _lock = self.queue.read().await;
@@ -395,6 +441,46 @@ impl Repository {
             }
         }
         unreachable!()
+    }
+
+    pub async fn ensure_file_indexes(&self) -> Result<()> {
+        let mut conflicts = 0;
+        loop {
+            {
+                let _lock = self.queue.read().await;
+                if self.file_index_ready().await? && self.file_paths_ready().await? {
+                    break;
+                }
+            }
+            let lock = self.queue.read().await;
+            let result = if !self.file_index_ready().await? {
+                match self.advance_file_index().await {
+                    Ok(true) => self.file_paths_ready().await,
+                    Ok(false) => Ok(false),
+                    Err(error) => Err(error),
+                }
+            } else {
+                self.advance_file_paths().await
+            };
+            drop(lock);
+            let ready = match result {
+                Ok(ready) => {
+                    conflicts = 0;
+                    ready
+                }
+                Err(error) if error.code == "META_CONFLICT" && conflicts < 7 => {
+                    conflicts += 1;
+                    tokio::task::yield_now().await;
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+            if ready {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        Ok(())
     }
 
     async fn projected_once<T>(
@@ -510,7 +596,13 @@ impl Repository {
                 .collect::<std::collections::BTreeSet<_>>()
                 .into_iter()
                 .collect::<Vec<_>>();
-            previous.extend(self.files_for_resources(&filesystems).await?);
+            if let Some((resource, paths)) = &projection.file_paths {
+                if filesystems.contains(resource) {
+                    previous.extend(self.files_for_paths(resource, paths).await?);
+                }
+            } else {
+                previous.extend(self.files_for_resources(&filesystems).await?);
+            }
         }
         self.apply_transaction(previous, apply, fence_reads).await
     }
@@ -527,6 +619,7 @@ impl Repository {
                 resources: ids,
                 events: false,
                 files: include_files,
+                file_paths: None,
                 statistics: false,
                 keys,
                 exclusive: false,
@@ -601,6 +694,7 @@ impl Repository {
             }
         }
         changes.extend(self.file_index_changes(&file_updates).await?);
+        changes.extend(self.file_path_changes(&file_updates, false).await?);
         if let Some(event) = new_events.first() {
             changes.retain(|change| {
                 !change["key"]
@@ -626,10 +720,17 @@ impl Repository {
                 .get(key)
                 .map(|v| &v["value"]["record"])
                 .unwrap_or(&Value::Null);
-            changes.extend(
-                self.resource_index_changes(before, &value["record"])
-                    .await?,
-            );
+            for change in self
+                .resource_index_changes(before, &value["record"])
+                .await?
+            {
+                let duplicate_absence_fence = change["key"] == "indexes/resource-v1/schema"
+                    && change["delete"] == true
+                    && changes.iter().any(|existing: &Value| existing == &change);
+                if !duplicate_absence_fence {
+                    changes.push(change);
+                }
+            }
         }
         // Digest indexes are committed with their canonical Key; authorization is a point lookup.
         let old_keys = inflate(&previous)?["keys"]
@@ -680,7 +781,9 @@ impl Repository {
                 .map(str::to_owned)
                 .collect::<std::collections::BTreeSet<_>>();
             for (key, prior) in &previous {
-                if (key.starts_with("state/keys/") || key.starts_with("state/resources/"))
+                if (key.starts_with("state/keys/")
+                    || key.starts_with("state/resources/")
+                    || key.starts_with("state/files/"))
                     && !written.contains(key)
                 {
                     changes.push(
@@ -701,7 +804,11 @@ impl Repository {
     pub async fn append_event(&self, event: Value) -> Result<()> {
         let _lock = self.queue.read().await;
         for attempt in 0..8 {
-            let changes = self.event_changes(&event).await?;
+            let changes = match self.event_changes(&event).await {
+                Ok(changes) => changes,
+                Err(error) if error.code == "META_CONFLICT" && attempt < 7 => continue,
+                Err(error) => return Err(error),
+            };
             match self.commit(changes).await {
                 Ok(()) => return Ok(()),
                 Err(error) if error.code == "META_CONFLICT" && attempt < 7 => continue,
@@ -944,7 +1051,6 @@ impl Repository {
         Ok(value)
     }
     pub async fn save_binding(&self, provider: &str, id: &str, value: Value) -> Result<()> {
-        let _lock = self.queue.write().await;
         let mut public = serde_json::Map::new();
         let mut secret = serde_json::Map::new();
         let keys = [
@@ -973,26 +1079,35 @@ impl Repository {
         if !secret.is_empty() {
             public.insert("credentialRef".into(), json!(keys[1]));
         }
-        let old = self
-            .call(MetaRequest::Get {
-                scope: self.scope.clone(),
-                guard: Some(self.guard.clone()),
-                keys: keys.to_vec(),
-            })
-            .await?;
-        let mut changes = Vec::new();
-        for (path, map) in keys.into_iter().zip([public, secret]) {
-            let prior = &old["records"][&path];
-            if map.is_empty() {
-                if !prior.is_null() {
-                    changes
-                        .push(json!({"key":path,"expectedVersion":version(prior),"delete":true}));
+        for retry in 0..8 {
+            let _lock = self.queue.read().await;
+            let old = self
+                .call(MetaRequest::Get {
+                    scope: self.scope.clone(),
+                    guard: Some(self.guard.clone()),
+                    keys: keys.to_vec(),
+                })
+                .await?;
+            let mut changes = Vec::new();
+            for (path, map) in keys.iter().zip([&public, &secret]) {
+                let prior = &old["records"][path];
+                if map.is_empty() {
+                    if !prior.is_null() {
+                        changes.push(
+                            json!({"key":path,"expectedVersion":version(prior),"delete":true}),
+                        );
+                    }
+                } else {
+                    changes.push(json!({"key":path,"expectedVersion":version(prior),"value":map}));
                 }
-            } else {
-                changes.push(json!({"key":path,"expectedVersion":version(prior),"value":map}));
+            }
+            match self.commit(changes).await {
+                Ok(()) => return Ok(()),
+                Err(error) if error.code == "META_CONFLICT" && retry < 7 => continue,
+                Err(error) => return Err(error),
             }
         }
-        self.commit(changes).await
+        unreachable!()
     }
     pub async fn account(&self, provider: &str) -> Result<Value> {
         Ok(self
@@ -1001,13 +1116,22 @@ impl Repository {
             .clone())
     }
     pub async fn save_account(&self, provider: &str, value: Value) -> Result<()> {
-        let _lock = self.queue.write().await;
         let path = format!("credentials/accounts/{provider}");
-        let prior = self.get(&path).await?;
-        self.commit(vec![
-            json!({"key":path,"expectedVersion":version(&prior),"value":value}),
-        ])
-        .await
+        for retry in 0..8 {
+            let _lock = self.queue.read().await;
+            let prior = self.get(&path).await?;
+            match self
+                .commit(vec![
+                    json!({"key":path,"expectedVersion":version(&prior),"value":value}),
+                ])
+                .await
+            {
+                Ok(()) => return Ok(()),
+                Err(error) if error.code == "META_CONFLICT" && retry < 7 => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        unreachable!()
     }
     pub async fn health(&self) -> Result<()> {
         let workspace = self.get("state/workspace").await?;
@@ -1236,7 +1360,8 @@ mod concurrency_tests {
             Box::pin(async move {
                 match request {
                     MetaRequest::Get { keys, .. } => {
-                        let should_pause = keys == ["state/resources/a"]
+                        let should_pause = (keys == ["state/resources/a"]
+                            || keys == ["state/keys/key-revoke"])
                             && self.first.swap(false, Ordering::AcqRel);
                         let records = {
                             let values = self.values.lock().unwrap();
@@ -1254,6 +1379,14 @@ mod concurrency_tests {
                         Ok(json!({"records":records}))
                     }
                     MetaRequest::Commit { changes, .. } => {
+                        if changes
+                            .iter()
+                            .any(|change| change["key"] == "state/resources/race")
+                            && self.first.swap(false, Ordering::AcqRel)
+                        {
+                            self.paused.notify_one();
+                            self.resume.notified().await;
+                        }
                         let unknown_after_commit =
                             changes.iter().any(|change| {
                                 change["key"] == "indexes/resource-v1/schema"
@@ -1261,8 +1394,12 @@ mod concurrency_tests {
                             }) && self.fail_backfill_once.swap(false, Ordering::AcqRel);
                         let file_unknown_after_commit =
                             changes.iter().any(|change| {
-                                change["key"] == "indexes/file-v1/head"
-                                    && change["value"]["after"] == "state/files/file_000511"
+                                (change["key"] == "indexes/file-v1/head"
+                                    && change["value"]["after"] == "state/files/file_000511")
+                                    || (change["key"] == "indexes/file-v2/head"
+                                        && change["value"]["after"] == "state/files/file_000127")
+                                    || (change["key"] == "state/files/file_000000"
+                                        && change["delete"] == true)
                             }) && self.fail_file_backfill_once.swap(false, Ordering::AcqRel);
                         let event_unknown_after_commit =
                             changes.iter().any(|change| {
@@ -1380,6 +1517,10 @@ mod concurrency_tests {
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         });
+        metadata.values.lock().unwrap().insert(
+            "indexes/resource-v1/schema".into(),
+            json!({"version":"v1","value":{"format":1,"phase":"ready","after":null,"position":2}}),
+        );
         let stalled = tokio::spawn({
             let repository = repository.clone();
             async move {
@@ -1402,6 +1543,16 @@ mod concurrency_tests {
         .await
         .expect("independent update was serialized")
         .unwrap();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            repository.create_indexed_resource(
+                &crate::Credential::LocalDemoOwner,
+                Some("owner:independent"),
+                "fingerprint",
+                json!({"id":"db_new","name":"independent-duck","kind":"duckdb","status":"active","region":"automatic","provider":"local"}),
+                json!({"id":"event-independent","action":"resource.created"}),
+            ),
+        ).await.expect("independent creation was serialized").unwrap();
         let setup = tokio::time::timeout(
             std::time::Duration::from_secs(2),
             repository.begin_setup_attempt("b", "owner", "once", json!({"id":"attempt-a"})),
@@ -1416,6 +1567,20 @@ mod concurrency_tests {
             .unwrap();
         assert!(!replay.1);
         assert_eq!(replay.0["id"], "attempt-a");
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            repository.save_binding("provider", "b", json!({"state":"ready","secret":"test"})),
+        )
+        .await
+        .expect("independent binding was serialized")
+        .unwrap();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            repository.save_account("provider", json!({"token":"test"})),
+        )
+        .await
+        .expect("independent account was serialized")
+        .unwrap();
         metadata.resume.notify_one();
         stalled.await.unwrap().unwrap();
         let values = metadata.values.lock().unwrap();
@@ -1512,6 +1677,119 @@ mod concurrency_tests {
         let records = metadata.values.lock().unwrap();
         assert_eq!(records["state/resources/a"]["value"]["record"]["n"], 1);
         assert_eq!(records["state/resources/b"]["value"]["record"]["n"], 1);
+    }
+
+    #[tokio::test]
+    async fn a_resource_update_racing_index_initialization_is_retried() {
+        let metadata = Arc::new(MetadataGate {
+            values:std::sync::Mutex::new([("state/resources/race".into(),json!({"version":"v1","value":{"position":1,"record":{"id":"race","name":"old-name","kind":"mysql","status":"active","region":"automatic"}}}))].into_iter().collect()),
+            paused:Notify::new(), resume:Notify::new(), first:AtomicBool::new(true),
+            fail_backfill_once:AtomicBool::new(false), fail_file_backfill_once:AtomicBool::new(false),
+            fail_event_backfill_once:AtomicBool::new(false), forbid_event_scan:AtomicBool::new(false), forbid_file_scan:AtomicBool::new(false),
+        });
+        let repository = Arc::new(Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        });
+        let update = tokio::spawn({
+            let repository = repository.clone();
+            async move {
+                repository
+                    .update_resource("race", |resource| {
+                        resource["name"] = json!("new-name");
+                        Ok(())
+                    })
+                    .await
+            }
+        });
+        metadata.paused.notified().await;
+        repository.advance_resource_indexes().await.unwrap();
+        metadata.resume.notify_one();
+        update.await.unwrap().unwrap();
+        let values = metadata.values.lock().unwrap();
+        assert_eq!(
+            values["state/resources/race"]["value"]["record"]["name"],
+            "new-name"
+        );
+        let names = values
+            .iter()
+            .filter(|(key, _)| key.starts_with("indexes/resource-v1/names/"))
+            .map(|(_, value)| value["value"]["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["new-name"]);
+    }
+
+    #[tokio::test]
+    async fn resource_creation_rechecks_key_revocation_before_commit() {
+        let token = "test-create-token";
+        let digest = hex::encode(Sha256::digest(token.as_bytes()));
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new([
+                (format!("indexes/key-digest/{digest}"), json!({"version":"v1","value":"key-revoke"})),
+                ("state/keys/key-revoke".into(), json!({"version":"v1","value":{"position":1,"record":{"id":"key-revoke","name":"writer","digest":digest,"scopes":["resources:write"],"resourceIds":["*"],"expiresAt":"2099-01-01T00:00:00Z","revokedAt":null}}})),
+                ("indexes/resource-v1/schema".into(), json!({"version":"v1","value":{"format":1,"phase":"ready","after":null,"position":0}})),
+            ].into_iter().collect()),
+            paused: Notify::new(), resume: Notify::new(), first: AtomicBool::new(true),
+            fail_backfill_once: AtomicBool::new(false), fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false), forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Arc::new(Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        });
+        let pending = tokio::spawn({
+            let repository = repository.clone();
+            async move {
+                repository.create_indexed_resource(
+                &crate::Credential::Bearer(token.into()), Some("owner:key-race"), "fingerprint",
+                json!({"id":"db_revoke","name":"revoke-test","kind":"duckdb","status":"active","region":"automatic","provider":"local"}),
+                json!({"id":"event-revoke","action":"resource.created"}),
+            ).await
+            }
+        });
+        metadata.paused.notified().await;
+        {
+            let mut values = metadata.values.lock().unwrap();
+            let key = values.get_mut("state/keys/key-revoke").unwrap();
+            key["version"] = json!("v2");
+            key["value"]["record"]["revokedAt"] = json!("2026-10-31T00:00:00Z");
+        }
+        metadata.resume.notify_one();
+        assert_eq!(pending.await.unwrap().unwrap_err().code, "INVALID_KEY");
+        assert!(
+            !metadata
+                .values
+                .lock()
+                .unwrap()
+                .contains_key("state/resources/db_revoke")
+        );
     }
 
     #[tokio::test]
@@ -1972,6 +2250,146 @@ mod concurrency_tests {
                 .filter(|key| key.starts_with("state/files/"))
                 .count(),
             600
+        );
+    }
+
+    #[tokio::test]
+    async fn file_path_index_resumes_unknown_commit_without_double_counting() {
+        let mut values = (0..130).map(|n| {
+            let id = format!("file_{n:06}");
+            (format!("state/files/{id}"), json!({"version":"v1","value":{"position":n,"record":{"id":id,"resourceId":"fs_a","path":format!("/file-{n}.txt"),"type":"file","content":"abc"}}}))
+        }).collect::<Records>();
+        values.insert(
+            "indexes/file-v1/head".into(),
+            json!({"version":"v1","value":{"format":1,"phase":"ready","after":null}}),
+        );
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(values),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(true),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        assert_eq!(
+            repository.advance_file_paths().await.unwrap_err().code,
+            "META_COMMIT_UNKNOWN"
+        );
+        assert!(repository.advance_file_paths().await.unwrap());
+        assert_eq!(
+            repository.local_file_summary("fs_a").await.unwrap()["files"],
+            130
+        );
+        assert_eq!(
+            repository.local_file_summary("fs_a").await.unwrap()["bytes"],
+            390
+        );
+        metadata.forbid_file_scan.store(true, Ordering::Release);
+        let first = repository
+            .local_file_page("fs_a", "/", None, 16)
+            .await
+            .unwrap();
+        assert_eq!(first.0.len(), 16);
+        let second = repository
+            .local_file_page("fs_a", "/", first.1.as_deref(), 16)
+            .await
+            .unwrap();
+        assert_eq!(second.0.len(), 16);
+        assert!(
+            first
+                .0
+                .iter()
+                .all(|file| second.0.iter().all(|other| file["id"] != other["id"]))
+        );
+        let point = repository
+            .files_for_paths("fs_a", &["/file-129.txt".into()])
+            .await
+            .unwrap();
+        assert_eq!(point.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn file_system_cleanup_resumes_after_unknown_commit() {
+        let mut values = (0..20).map(|n| {
+            let id = format!("file_{n:06}");
+            (format!("state/files/{id}"),json!({"version":"v1","value":{"position":n,"record":{"id":id,"resourceId":"fs_a","path":format!("/file-{n}.txt"),"type":"file","content":"abc"}}}))
+        }).collect::<Records>();
+        values.insert("state/resources/fs_a".into(),json!({"version":"v1","value":{"position":1,"record":{"id":"fs_a","kind":"filesystem","status":"deleting"}}}));
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(values),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        repository.ensure_file_indexes().await.unwrap();
+        metadata
+            .fail_file_backfill_once
+            .store(true, Ordering::Release);
+        assert_eq!(
+            repository
+                .purge_local_files("fs_a", &crate::Credential::LocalDemoOwner)
+                .await
+                .unwrap_err()
+                .code,
+            "META_COMMIT_UNKNOWN"
+        );
+        repository
+            .purge_local_files("fs_a", &crate::Credential::LocalDemoOwner)
+            .await
+            .unwrap();
+        assert_eq!(
+            repository.local_file_summary("fs_a").await.unwrap()["count"],
+            0
+        );
+        assert!(
+            !metadata
+                .values
+                .lock()
+                .unwrap()
+                .keys()
+                .any(|key| key.starts_with("state/files/"))
         );
     }
 

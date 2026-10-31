@@ -152,13 +152,26 @@ export const test = base.extend({
       if (path === '/files' && method === 'GET') {
         const resourceId = url.searchParams.get('resourceId');
         const folder = url.searchParams.get('path');
+        const offset = Number(url.searchParams.get('cursor') || 0);
+        const matching = state.files.filter(
+          (file) =>
+            file.resourceId === resourceId &&
+            (!folder || (file.path.slice(0, file.path.lastIndexOf('/')) || '/') === folder),
+        );
         return reply({
-          data: state.files.filter(
-            (file) =>
-              file.resourceId === resourceId &&
-              (!folder || (file.path.slice(0, file.path.lastIndexOf('/')) || '/') === folder),
-          ),
+          data: matching.slice(offset, offset + 32),
+          nextCursor: offset + 32 < matching.length ? String(offset + 32) : null,
         });
+      }
+      if (path === '/files/content' && method === 'GET') {
+        const file = state.files.find(
+          (item) =>
+            item.resourceId === url.searchParams.get('resourceId') &&
+            item.path === url.searchParams.get('path'),
+        );
+        return file
+          ? reply({ content: file.content || '', size: Buffer.byteLength(file.content || '') })
+          : reply({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404);
       }
       if (method === 'GET' && /^\/resources\/[^/]+$/.test(path)) {
         const id = decodeURIComponent(path.slice('/resources/'.length));

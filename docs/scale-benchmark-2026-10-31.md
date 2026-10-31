@@ -116,3 +116,13 @@ creation succeeded after 5.41 seconds in total; idempotent replay and duplicate-
 were checked. Other checks ran concurrently, and the intermediate test binary was not a release
 artifact. This is not a production latency, Tenant-scale or cloud provisioning result. The
 fixture's isolated object data was removed after the sample.
+
+## Local demo file index: 10,000 synthetic files
+
+A focused native HTTP test seeded 10,000 small synthetic files directly into one local demo
+File System and checked index migration, 16-entry directory pages, direct metadata lookup,
+overwrite, preview and aggregate usage. The test passed in about 16 seconds on the local debug
+configuration while other checks ran. The fixture used isolated RustFS and a fake provider; it
+created no cloud resources and removed its temporary object data. This is a correctness sample,
+not a production latency benchmark. The direct seed intentionally exceeds the local product's
+2,000-entry creation limit.

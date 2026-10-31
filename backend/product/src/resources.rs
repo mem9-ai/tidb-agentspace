@@ -77,6 +77,12 @@ impl Product {
             return Ok((200, Reply::Json(json!({"data":self.resource_view(r,&p)}))));
         }
         if !r["deletion"].is_null() {
+            if !live(&r) && r["status"] == "deleting" {
+                let r = self
+                    .finish_deletion(credential, id, "deleted", "completed")
+                    .await?;
+                return Ok((200, Reply::Json(json!({"data":self.resource_view(r,&p)}))));
+            }
             return Ok((
                 if r["status"] == "deleted" { 200 } else { 202 },
                 Reply::Json(json!({"data":self.resource_view(r,&p)})),
@@ -135,12 +141,19 @@ impl Product {
         status: &str,
         phase: &str,
     ) -> Result<Value> {
+        if status == "deleted" {
+            let repository = self.workspace.repository();
+            let resource = repository.resource(id).await?;
+            if resource["kind"] == "filesystem" && !live(&resource) {
+                repository.purge_local_files(id, credential).await?;
+            }
+        }
         self.workspace
             .repository()
             .resource_transaction(
                 vec![id.to_owned()],
                 false,
-                status == "deleted",
+                false,
                 false,
                 credential,
                 |state| {
@@ -154,12 +167,6 @@ impl Product {
                     r["status"] = json!(status);
                     r["deletion"]["phase"] = json!(phase);
                     let result = r.clone();
-                    if status == "deleted" {
-                        state["files"]
-                            .as_array_mut()
-                            .expect("files")
-                            .retain(|f| f["resourceId"] != id);
-                    }
                     event(state, "resource.deletion-observed", id, &p.actor, Some(id));
                     Ok((result, true))
                 },

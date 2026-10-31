@@ -194,6 +194,7 @@ impl ManagedWorkspaces {
         if let Some(cached) = state.entries.remove(workspace_id) {
             return Ok(cached.entry);
         }
+        drop(state);
         let repository = match Repository::open(
             self.metadata.clone(),
             &self.authority,
@@ -205,7 +206,7 @@ impl ManagedWorkspaces {
         {
             Ok(value) => value,
             Err(error) => {
-                state.cleanup.remove(workspace_id);
+                self.state.lock().await.cleanup.remove(workspace_id);
                 return Err(error);
             }
         };
@@ -214,7 +215,9 @@ impl ManagedWorkspaces {
             match workspace_product::Product::new(workspace.clone(), config).await {
                 Ok(value) => Some(Arc::new(value)),
                 Err(error) => {
-                    if workspace.close().await.is_err() {
+                    let failed = workspace.close().await.is_err();
+                    let mut state = self.state.lock().await;
+                    if failed {
                         state.release_uncertain = true;
                     }
                     state.cleanup.remove(workspace_id);
@@ -232,11 +235,13 @@ impl ManagedWorkspaces {
         workspace_id: &str,
         entry: Arc<ManagedWorkspace>,
     ) -> Result<()> {
-        let mut state = self.state.lock().await;
+        let state = self.state.lock().await;
         if !state.cleanup.contains(workspace_id) || Arc::strong_count(&entry) != 1 {
             return Err(ServiceError::new(409, "WORKSPACE_POOL_BUSY"));
         }
+        drop(state);
         let result = entry.workspace.close().await;
+        let mut state = self.state.lock().await;
         state.cleanup.remove(workspace_id);
         if result.is_err() {
             state.release_uncertain = true;
@@ -249,14 +254,16 @@ impl ManagedWorkspaces {
     pub async fn close(&self) -> Result<()> {
         let mut state = self.state.lock().await;
         state.shutdown = true;
-        if state
-            .entries
-            .values()
-            .any(|cached| Arc::strong_count(&cached.entry) != 1)
+        if !state.cleanup.is_empty()
+            || state
+                .entries
+                .values()
+                .any(|cached| Arc::strong_count(&cached.entry) != 1)
         {
             return Err(ServiceError::new(409, "WORKSPACE_POOL_BUSY"));
         }
         let entries = std::mem::take(&mut state.entries);
+        drop(state);
         let mut failed = false;
         for cached in entries.into_values() {
             if cached.entry.workspace.close().await.is_err() {
@@ -264,7 +271,7 @@ impl ManagedWorkspaces {
             }
         }
         if failed {
-            state.release_uncertain = true;
+            self.state.lock().await.release_uncertain = true;
             Err(ServiceError::new(503, "WORKSPACE_RELEASE_UNCERTAIN"))
         } else {
             Ok(())
@@ -288,6 +295,7 @@ mod tests {
 
     struct MetadataGate {
         pause: AtomicBool,
+        pause_release: AtomicBool,
         paused: Notify,
         resume: Notify,
     }
@@ -301,6 +309,13 @@ mod tests {
             Box::pin(async move {
                 match request {
                     MetaRequest::Get { scope, keys, .. } => {
+                        if scope.owner_id == A
+                            && keys == ["system/writer"]
+                            && self.pause_release.swap(false, Ordering::AcqRel)
+                        {
+                            self.paused.notify_one();
+                            self.resume.notified().await;
+                        }
                         if scope.owner_id == A
                             && keys == ["ownership/onboarding"]
                             && self.pause.swap(false, Ordering::AcqRel)
@@ -343,6 +358,7 @@ mod tests {
     async fn cached_authentication_does_not_block_other_workspaces_or_lose_its_lease() {
         let metadata = Arc::new(MetadataGate {
             pause: AtomicBool::new(true),
+            pause_release: AtomicBool::new(false),
             paused: Notify::new(),
             resume: Notify::new(),
         });
@@ -380,5 +396,23 @@ mod tests {
         );
         metadata.resume.notify_one();
         assert!(stalled.await.unwrap().is_ok());
+        drop(other);
+        let cleanup = pool.acquire_cleanup(A).await.unwrap();
+        metadata.pause_release.store(true, Ordering::Release);
+        let closing = tokio::spawn({
+            let pool = pool.clone();
+            async move { pool.release_cleanup(A, cleanup).await }
+        });
+        metadata.paused.notified().await;
+        let other = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            pool.acquire(B, &credential(B)),
+        )
+        .await
+        .expect("unrelated Workspace waited for cleanup I/O")
+        .unwrap();
+        assert_eq!(other.workspace().repository().workspace_id(), B);
+        metadata.resume.notify_one();
+        closing.await.unwrap().unwrap();
     }
 }

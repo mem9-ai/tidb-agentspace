@@ -70,6 +70,113 @@ test(
   },
 );
 test(
+  'local File System deletion clears indexed files in bounded batches',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    await fixture.seedFiles(64, 'fs_shared');
+    for (const [path, type, content] of [
+      ['/nested', 'directory', ''],
+      ['/nested/item.txt', 'file', 'item'],
+    ]) {
+      const result = await fixture.request('/files', {
+        method: 'PUT',
+        body: { resourceId: 'fs_shared', path, type, content },
+      });
+      assert.equal(result.status, 200, JSON.stringify(result.body));
+    }
+    const deleted = await fixture.request('/resources/fs_shared', { method: 'DELETE' });
+    assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
+    assert.equal(deleted.body.data.status, 'deleted');
+    const records = await fixture.records([
+      'state/files/file_scale_00000000',
+      'state/files/file_scale_00000063',
+    ]);
+    assert.equal(records['state/files/file_scale_00000000'], null);
+    assert.equal(records['state/files/file_scale_00000063'], null);
+    assert.equal((await fixture.request('/files?resourceId=fs_shared')).status, 409);
+  },
+);
+test(
+  'concurrent local file writes preserve directory and version checks',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const put = (path, type, content, headers = {}) =>
+      fixture.request('/files', {
+        method: 'PUT',
+        headers,
+        body: { resourceId: 'fs_shared', path, type, content },
+      });
+    assert.equal((await put('/race', 'directory', '')).status, 200);
+    const [child, remove] = await Promise.all([
+      put('/race/child.txt', 'file', 'child'),
+      fixture.request('/files/entry?resourceId=fs_shared&path=%2Frace', { method: 'DELETE' }),
+    ]);
+    assert.ok(
+      !(child.status === 200 && remove.status === 200),
+      JSON.stringify([child.body, remove.body]),
+    );
+    if (child.status === 200) assert.equal(remove.body.error.code, 'DIRECTORY_NOT_EMPTY');
+    if (remove.status === 200) assert.equal(child.body.error.code, 'PARENT_MISSING');
+    assert.equal((await put('/compare.txt', 'file', 'before')).status, 200);
+    const metadata = await fixture.request(
+      '/files/metadata?resourceId=fs_shared&path=%2Fcompare.txt',
+    );
+    assert.equal(metadata.status, 200);
+    const headers = { 'If-Match': metadata.body.data.version };
+    const writes = await Promise.all([
+      put('/compare.txt', 'file', 'one', headers),
+      put('/compare.txt', 'file', 'two', headers),
+    ]);
+    assert.deepEqual(writes.map((result) => result.status).sort(), [200, 412]);
+  },
+);
+test(
+  'a local File System with 10000 files supports bounded pages and point operations',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    await fixture.seedFiles(10000, 'fs_shared');
+    const bootstrap = await fixture.request('/bootstrap');
+    assert.equal(bootstrap.status, 200, JSON.stringify(bootstrap.body));
+    assert.deepEqual(bootstrap.body.files, []);
+    assert.equal(
+      bootstrap.body.usage.find((item) => item.resourceId === 'fs_shared').fileCount,
+      10001,
+    );
+    const first = await fixture.request('/files?resourceId=fs_shared&limit=16');
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    assert.equal(first.body.data.length, 16);
+    assert.ok(first.body.nextCursor);
+    const second = await fixture.request(
+      `/files?resourceId=fs_shared&limit=16&cursor=${first.body.nextCursor}`,
+    );
+    assert.equal(second.status, 200, JSON.stringify(second.body));
+    assert.equal(second.body.data.length, 16);
+    assert.ok(
+      first.body.data.every((file) => !second.body.data.some((other) => other.id === file.id)),
+    );
+    const path = '/synthetic-00009999.txt';
+    const metadata = await fixture.request(
+      `/files/metadata?resourceId=fs_shared&path=${encodeURIComponent(path)}`,
+    );
+    assert.equal(metadata.status, 200, JSON.stringify(metadata.body));
+    const write = await fixture.request('/files', {
+      method: 'PUT',
+      body: { resourceId: 'fs_shared', path, type: 'file', content: 'updated' },
+    });
+    assert.equal(write.status, 200, JSON.stringify(write.body));
+    const preview = await fixture.request(
+      `/files/content?resourceId=fs_shared&path=${encodeURIComponent(path)}&preview=1`,
+    );
+    assert.equal(preview.status, 200, JSON.stringify(preview.body));
+    assert.equal(preview.body.content, 'updated');
+    const usage = await fixture.request('/usage');
+    assert.equal(usage.body.data.find((item) => item.resourceId === 'fs_shared').fileCount, 10001);
+  },
+);
+test(
   'local file operations read only their File System after resumable index migration',
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
   async (t) => {
@@ -77,10 +184,8 @@ test(
     await fixture.seedFiles(4100);
     const bootstrap = await fixture.request('/bootstrap');
     assert.equal(bootstrap.status, 200, JSON.stringify(bootstrap.body));
-    assert.deepEqual(
-      bootstrap.body.files.map((file) => file.path),
-      ['/identity.txt'],
-    );
+    assert.deepEqual(bootstrap.body.files, []);
+    assert.equal(bootstrap.body.usage.find((item) => item.resourceId === 'fs_shared').fileCount, 1);
     const initial = await fixture.request('/files?resourceId=fs_shared');
     assert.deepEqual(
       initial.body.data.map((file) => file.path),
@@ -184,6 +289,26 @@ test(
       200,
     );
     assert.equal((await fixture.request('/context', { token })).status, 401);
+  },
+);
+test(
+  'concurrent resource creation preserves idempotency without a Workspace writer lock',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const create = () =>
+      fixture.request('/resources', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'concurrent-same' },
+        body: { kind: 'mysql', name: 'concurrent-same', region: 'automatic' },
+      });
+    const results = await Promise.all([create(), create()]);
+    assert.deepEqual(
+      results.map((item) => item.status),
+      [201, 201],
+      JSON.stringify(results),
+    );
+    assert.equal(results[0].body.data.id, results[1].body.data.id);
   },
 );
 test(

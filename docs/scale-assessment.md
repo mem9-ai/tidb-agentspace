@@ -9,7 +9,7 @@ is available; its limited request sample does not establish end-to-end capacity.
 
 - Verified `(iss, sub)` maps to a deterministic identity-scoped Global metadata record; personal Tenant and Workspace IDs are distinct. Records share the configured Global SlateDB authority, not one database or process per Tenant. Separate Global and Region authorities use separate object-store roots. Region session verification does not call Global.
 - SlateDB provides serializable transactions, native ordered-prefix scans, durability barriers and fenced ownership in the current Meta implementation. The public resource list and Portal now use bounded pages; these underlying primitives do not by themselves make the public product scalable.
-- The regional managed Workspace cache defaults to 128 open entries, configurable up to 4,096. This is a limit on simultaneously cached/open Workspaces, not a limit on the total number of tenants. Eviction closes an idle Workspace; if every entry is in use the pool returns 429. Authentication of a cached Workspace releases the pool mutex while waiting on metadata and retains a lease so eviction and Guest cleanup cannot close it. Cache misses, eviction and cleanup still hold the shared mutex during remote open/close, and eviction scans the pool, so churn and slow storage can create cross-Tenant contention.
+- The regional managed Workspace cache defaults to 128 open entries, configurable up to 4,096. This is a limit on simultaneously cached/open Workspaces, not a limit on the total number of tenants. Eviction closes an idle Workspace; if every entry is in use the pool returns 429. Authentication of a cached Workspace releases the pool mutex while waiting on metadata and retains a lease so eviction and Guest cleanup cannot close it. Cleanup and shutdown release that mutex before I/O, but cache misses and eviction still hold it during remote open/close, and eviction scans the pool. Churn and slow storage can therefore create cross-Tenant contention.
 - The regional API's in-process request semaphore permits eight simultaneous requests. The separate HTTP Meta server has its own eight-permit semaphore; in-process Meta access does not traverse that HTTP server. These are concurrency limits, not measured throughput limits.
 - Guest expiry has 64 durable partitions. The co-located host runs one scheduler at a one-second interval, requesting up to 128 due and 128 logout entries in one partition per tick, then processes those entries sequentially. Even before provider and storage latency, a full empty scan takes roughly 64 ticks; actual deletion throughput and expiry lag are unmeasured. Unsupported deletes remain pending reconciliation.
 
@@ -18,9 +18,9 @@ is available; its limited request sample does not establish end-to-end capacity.
 The previous ordinary repository `read` and `transaction` paths materialized `state/` and
 failed at 4,096 records or 24 MiB. Product resource listing, bootstrap, creation, query,
 file and export paths now use bounded resource reads or projections rather than materializing
-all resource records. The legacy helpers still exist, and individual projected collections
-such as local files for selected File Systems retain their own view limits. Thus a large single
-File System or other unconverted workflow can still hit `WORKSPACE_VIEW_LIMIT`.
+all resource records. Local demo file point operations and directory pages use path indexes,
+while bootstrap and usage read aggregate counters. Legacy helpers and their view limits still
+exist, and the first file-index migration still scans old records.
 
 At one million resources, a 100-record page size implies at least 10,000 sequential page fetches for a full scan, before accounting for associated state, latency and memory. At an illustrative 2 KiB of logical metadata each, the records alone are about 1.9 GiB; this is an arithmetic example, not measured record size or physical storage cost. Raising the limit would amplify latency, memory use and contention rather than solve the design problem.
 
@@ -29,15 +29,15 @@ status updates address one record; independent updates can progress concurrently
 management and settings load only the target Key and the resources they reference. Key listing
 is paginated, and event append uses a retained ordered index. Event listing reads at most the
 200 retained events. Ordinary mutations use conditional versions and bounded conflict retries
-under the shared side of the Workspace gate; creation, backfill and legacy snapshots still take
-its exclusive side.
+under the shared side of the Workspace gate, including backfill and resource creation. Legacy
+snapshots and writer close still take its exclusive side. Confirmed version conflicts are retried.
 The Portal keeps a bounded 200-resource window. Creation maintains
 name, quota and idempotency indexes atomically. The first creation in an existing Workspace
 starts resumable background backfill; while it is running, creation can return
 `RESOURCE_INDEX_MIGRATING` without creating a resource. File operations use a per-File-System
-index after resumable legacy backfill, but still
-materialize the selected File System's files. Provider setup and managed-Workspace cache misses
-still hold shared locks across I/O.
+index after resumable legacy backfill; point operations and directory pages no longer
+materialize the selected File System. The usage counter is a per-File-System contention point.
+Provider setup and managed-Workspace cache misses still hold shared locks across I/O.
 
 The current product enforces free-tier limits of five databases per kind and one File System
 per region/provider. The scale fixture inserts synthetic records directly; it does not show
