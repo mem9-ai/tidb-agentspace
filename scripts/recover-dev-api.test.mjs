@@ -1,0 +1,56 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { recover } from './recover-dev-api.mjs';
+
+const image = `registry.example/api@sha256:${'a'.repeat(64)}`;
+const previous = `registry.example/api@sha256:${'b'.repeat(64)}`;
+const options = { namespace: 'dev', deployment: 'workspace', container: 'api', image };
+function fake({ actual = image, retirement = false } = {}) {
+  const calls = [];
+  const kubectl = (args) => {
+    calls.push(args);
+    if (args[0] === 'get')
+      return JSON.stringify({
+        spec: {
+          template: {
+            spec: {
+              containers: [
+                {
+                  name: 'api',
+                  image: actual,
+                  env: retirement
+                    ? [{ name: 'WORKSPACE_RETIRE_LEGACY', value: 'ws_agentlab' }]
+                    : [],
+                },
+              ],
+            },
+          },
+        },
+      });
+    if (args[1] === 'undo') actual = previous;
+    return '';
+  };
+  return { calls, kubectl };
+}
+
+test('rollback checks the failed image and verifies the prior image and public health', async () => {
+  const f = fake();
+  await recover(options, f.kubectl, async () => ({ ok: true }));
+  assert.ok(f.calls.some((args) => args[1] === 'undo'));
+});
+
+test('rollback refuses changed deployments and any legacy retirement state', async () => {
+  for (const setting of [{ actual: previous }, { retirement: true }]) {
+    const f = fake(setting);
+    await assert.rejects(recover(options, f.kubectl, async () => ({ ok: true })));
+    assert.ok(!f.calls.some((args) => args[1] === 'undo'));
+  }
+});
+
+test('rollback reports an unhealthy public API', async () => {
+  const f = fake();
+  await assert.rejects(
+    recover(options, f.kubectl, async () => ({ ok: false })),
+    /health remains unavailable/,
+  );
+});

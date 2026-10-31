@@ -109,6 +109,7 @@ for (const name of names.filter((file) => /\.ya?ml$/.test(file))) {
       'console-publish.yml',
       'guest-enable.yml',
       'retire-legacy-workspace.yml',
+      'recover-dev-api.yml',
     ].includes(name) &&
     jobs.some((job) =>
       job.steps.some((step) => step.run?.startsWith('node scripts/require-ci.mjs ')),
