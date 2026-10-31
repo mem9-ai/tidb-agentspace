@@ -8,6 +8,7 @@ import { resolve } from 'node:path';
 import test from 'node:test';
 import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
 import { providerFixture } from './test-support/provider-fixture.mjs';
+import { assertSessionContract } from './test-support/assert-session-contract.mjs';
 
 test(
   'hosted Guest survives restart and Global outage with isolated regional Workspaces',
@@ -154,8 +155,10 @@ test(
     const create = async () => {
       const response = await request('/api/auth/guest', { method: 'POST' });
       assert.equal(response.status, 200, diagnostics);
+      const cookie = response.headers.get('set-cookie').split(';')[0];
+      assertSessionContract(cookie);
       return {
-        cookie: response.headers.get('set-cookie').split(';')[0],
+        cookie,
         ...(await response.json()),
       };
     };

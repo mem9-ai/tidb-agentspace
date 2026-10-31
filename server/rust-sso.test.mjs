@@ -10,6 +10,7 @@ import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
 import { providerFixture } from './test-support/provider-fixture.mjs';
 import { createMetaClient } from './meta/client.mjs';
+import { assertSessionContract } from './test-support/assert-session-contract.mjs';
 
 const enabled = process.env.WORKSPACE_BACKEND_TEST === '1';
 const base = '/api/v1/workspaces/ws_agentlab';
@@ -729,6 +730,7 @@ test(
       );
       assert.ok(header && header.includes('HttpOnly') && header.includes('Secure'));
       const cookie = header.split(';')[0];
+      assertSessionContract(cookie);
       const listed = await request('/api/v1/workspaces', { cookie });
       assert.equal(listed.status, 200);
       assert.equal(listed.body.data.length, 1);

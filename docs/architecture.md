@@ -289,6 +289,11 @@ flowchart TB
 
 The Console and agents use the same domain commands and authorization. Console-specific
 read aggregation can reduce round trips; it must not create a separate authorization model.
+Accepted product rule (2026-10-31): supported customer business capabilities must be
+completable through documented OpenAPI without operating the Portal. Pure presentation and
+browser interactions may remain UI-only. Owner and Workspace Key permissions remain distinct.
+The [capability completeness standard](standards/openapi-verification.md#product-capability-completeness)
+defines workflow coverage and acceptance; it does not mark proposed capabilities implemented.
 MCP maps tool calls onto the same operations. File preview/analysis/import tasks receive only
 selected immutable snapshots; persistent DuckDB tasks receive only their dedicated private
 storage connection. Execute retains cancellation, bounded admission, the existing deadlines

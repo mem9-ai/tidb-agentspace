@@ -34,6 +34,9 @@ for visual review. Automatic gate ownership follows [ADR 0027](../decisions/0027
 For backend changes, follow [OpenAPI verification](openapi-verification.md): native HTTP
 behavior, authorization, effects and recovery are the independent acceptance boundary.
 Backend-only changes preserving the public contract do not require frontend/browser tests.
+The same standard requires complete API paths for supported customer business capabilities;
+only pure presentation/browser interactions may be UI-only. Feature specifications map the
+workflow to operation IDs, permissions and native acceptance evidence.
 
 ## How to interpret a standard
 

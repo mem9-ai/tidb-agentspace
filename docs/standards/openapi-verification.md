@@ -7,6 +7,62 @@ acceptance, not a claim that finite tests prove every possible implementation eq
 
 ## The acceptance boundary
 
+### Product capability completeness
+
+Accepted owner direction, [GH-62](https://github.com/mem9-ai/tidb.ai/issues/62), 2026-10-31:
+supported customer business capabilities must be completable through documented OpenAPI
+operations without driving the Portal. The Console is a client of those operations. This
+requirement covers capability discovery, required preparation/review/confirmation, execution,
+result or status retrieval, and supported failure recovery; a route existing or a button
+working alone does not establish completion. SDK/CLI/MCP adapters can compose the same APIs.
+
+Only presentation and browser interaction may remain UI-only: theme, layout, tabs, focus,
+editor presentation, clipboard, native file pickers and displaying/saving API-provided bytes.
+A confirmation dialog may be UI-specific, but a required business confirmation, permission
+check or source-version check must also be enforced through the API. Ephemeral editor drafts
+and display preferences may remain client state; authoritative customer business state must
+not exist exclusively in browser storage.
+
+API completeness does not mean equal privileges for every credential. Document the supported
+authentication mode, actor, action scopes and resource/Workspace grants for each operation.
+Owner-only Key/settings APIs retain Owner authentication; an ordinary Workspace Key does not
+gain administration rights. Interactive identity-provider sign-in/consent can require human
+interaction, but subsequent supported business operations must not require Portal clicks or
+undocumented browser state. Private Meta/Execute/provider and operator interfaces retain their
+own authority boundaries; this rule does not expose them as public customer APIs.
+
+The contract declares `aw_account`, `aw_guest` and the explicit local/legacy `aw_session`
+as separate cookie security schemes, each with its actual lifetime/profile. Native tests
+match issued cookies to the documented alternatives and keep Key administration Owner-only.
+
+For every business feature, its specification maps the user outcome to operation IDs and
+method/path, authentication/permissions, inputs/results/errors, and native acceptance evidence.
+Tests must complete its minimum useful workflow with HTTP calls and synthetic credentials,
+including material negative cases and side effects. A feature with a necessary Portal-only
+business step is incomplete until it has an API path. A purely visual feature may state why
+no business API applies. Planned capabilities remain planned until implementation and evidence
+exist; this policy is not a claim that every proposed feature is already available.
+
+Current inspected Console mappings (`src/api/client.ts`, with generated operation IDs) include:
+
+| Business capability                        | Existing API operations                                                                                                  |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Workspace discovery and resource lifecycle | `listWorkspaces`, `getWorkspace`, `listResources`, `createResource`, `retryDatabaseSetup`                                |
+| Database catalog and queries               | `listDatabaseTables`, `getDatabaseTable`, `previewDatabaseTable`, `executeQuery`                                         |
+| Files, binary transfers and fixed preview  | `listFiles`, `writeFile`, `deleteFile`, `uploadFile`, `downloadFile`, `tabularFilePreview`                               |
+| Custom file analysis                       | `fileAnalysisCapabilities`, `analyzeFile`                                                                                |
+| Import preparation and confirmation        | `prepareDatabaseImport`, `prepareDatabaseImportUpload`, `commitDatabaseImport`                                           |
+| File/result exports                        | `prepareFileExport`, `exportFileContent`, `exportResult`                                                                 |
+| Keys and Workspace settings                | `listKeys`, `createKey`, `revokeKey`, `updateSettings` (Owner authentication)                                            |
+| Usage and activity                         | `getUsage`, `listEvents`                                                                                                 |
+| Auth/session lifecycle                     | `getAuthConfig`, local/Guest session operations, TiDB sign-in/callback/logout operations, each under its documented mode |
+
+This is a source-inspected capability map, not exhaustive behavioral evidence. The native
+cases below and the [coverage audit](../native-backend-retirement.md#openapi-behavior-coverage-audit)
+establish specific tested outcomes. Review this mapping when adding a supported capability.
+
+### Backend behavioral compatibility
+
 For an internal backend change, preserve the accepted public HTTP behavior and verify it
 directly through OpenAPI/native integration tests. Frontend/browser tests and manual Portal
 retesting are not required when neither the Console nor its public contract changes. This
