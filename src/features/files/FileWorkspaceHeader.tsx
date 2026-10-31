@@ -7,6 +7,7 @@ import {
   ResourceDetails,
   ResourceWorkspaceBar,
   ResourceWorkspaceHeader,
+  ResourceTutorialButton,
 } from '../../ui/ResourceWorkspaceHeader';
 import { regionLabel } from '../resources/regions';
 
@@ -20,6 +21,7 @@ export function FileWorkspaceHeader({
   onConnect,
   onUpload,
   onBack,
+  onTutorial,
 }: {
   resource?: Resource;
   resources: Resource[];
@@ -30,6 +32,7 @@ export function FileWorkspaceHeader({
   onConnect: () => void;
   onUpload: () => void;
   onBack: () => void;
+  onTutorial: () => void;
 }) {
   const live = resource?.provider === 'drive9-anonymous';
   return (
@@ -51,6 +54,7 @@ export function FileWorkspaceHeader({
               </>
             )}
           </ResourceDetails>
+          <ResourceTutorialButton onClick={onTutorial} disabled={busy || !resource} />
           <ResourceConnectButton onClick={onConnect} disabled={!resource} />
           <Button
             variant="filled"

@@ -5,7 +5,23 @@ import {
   databaseTablesHash,
   tableSelectSql,
   parseWorkspaceRoute,
+  tutorialHash,
 } from './workspace-route.ts';
+
+test('tutorial links resume the exact resource through reload and history', () => {
+  for (const resourceId of ['db_memory', 'fs_shared', 'missing', 'resource / with % and #']) {
+    assert.deepEqual(parseWorkspaceRoute(tutorialHash(resourceId)), {
+      page: 'tutorials',
+      tutorialResourceId: resourceId,
+    });
+  }
+  assert.deepEqual(parseWorkspaceRoute('#connect'), { page: 'connect' });
+  assert.deepEqual(parseWorkspaceRoute('#tutorials?resourceId='), { page: 'tutorials' });
+  assert.deepEqual(parseWorkspaceRoute('#tutorials?kind=filesystem'), {
+    page: 'tutorials',
+    tutorialKind: 'filesystem',
+  });
+});
 
 test('database editor links retain the exact resource identity for reload and history', () => {
   for (const databaseId of ['db_memory', 'db_vectors', 'database / with % and #']) {

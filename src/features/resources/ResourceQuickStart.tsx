@@ -1,4 +1,5 @@
-import { Text } from '@tidbcloud/uikit';
+import { Anchor, Text } from '@tidbcloud/uikit';
+import { tutorialKindHash } from '../navigation/workspace-route';
 
 export type QuickStartKind = 'database' | 'filesystem';
 
@@ -49,6 +50,7 @@ export function ResourceQuickStart({ kind }: { kind: QuickStartKind }) {
           </li>
         ))}
       </ol>
+      <Anchor href={tutorialKindHash(kind)}>Try with sample data</Anchor>
     </div>
   );
 }

@@ -36,6 +36,16 @@ a Key or discard work to save a click. Backend authorization remains authoritati
 
 ## One interaction language
 
+**Executable, resumable tutorials (owner correction 2026-10-31):** database and File System
+tutorials continue beyond creation with prepared sample data, an explicit query/analysis,
+expected output and a useful next action. Retain a named Tutorials destination after completion,
+show attempted/completed tutorials on Overview, and link back from each resource. Reopening
+reuses the exact sample and resource; it must not automatically seed or execute another copy.
+Keep uncertain writes inspectable without automatic replay, resource availability explicit and
+file-draft guards intact. Browser-local progress is distinct from account-synced history and
+persisted results. Verify both complete flows, create handoff, fresh-tab re-entry, resource
+identity, and error/draft states. See [implementation and evidence](../tutorial-verification.md).
+
 - Comparable screens share implemented primitives and state transitions, not independently
   copied markup. Reuse `WorkspacePageHeader`, `WorkspaceEmptyState`, `ResourceCollectionPage`
   and existing resource/browser/execution/results adapters where applicable.

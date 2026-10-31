@@ -135,6 +135,12 @@ TiDB File System support does not imply those scale capabilities without a confo
 
 ## Console information architecture
 
+Tutorials (`#tutorials`) provides executable database and File System samples with expected
+results. Overview retains attempted/completed tutorials; resource headers return to the exact
+sample through `#tutorials?resourceId=…`. Progress is browser-local and workspace/resource-scoped,
+not account-synced history or stored results. Reopening never automatically repeats a write or
+query. See [tutorial behavior and verification](tutorial-verification.md).
+
 | Page             | Primary task                                  | Important states and interactions                                                                                                                    |
 | ---------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Overview         | Understand resources and the next useful step | Resource health, create resource, connect agent, allowance summary, recent activity, empty-workspace onboarding                                      |
