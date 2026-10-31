@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -65,12 +66,85 @@ export function diagnose({ namespace, deployment, container }, kubectl) {
     ['createSecrets', 'create', 'secrets'],
     ['patchSecrets', 'patch', 'secrets'],
     ['patchDeployments', 'patch', 'deployments'],
+    ['listSecrets', 'list', 'secrets'],
   ]) {
     try {
       const value = kubectl(['auth', 'can-i', verb, resource, '-n', namespace]).trim();
       result.permissions[label] = value === 'yes' ? true : value === 'no' ? false : null;
     } catch (error) {
       result.permissions[label] = String(error.stdout || '').trim() === 'no' ? false : null;
+    }
+  }
+  const classify = (error) => {
+    const text = String(error.stderr || '');
+    if (/forbidden|unauthorized/i.test(text)) return 'denied';
+    if (/invalid|unprocessable/i.test(text)) return 'invalid';
+    if (/conflict|modified/i.test(text)) return 'conflict';
+    return 'unavailable';
+  };
+  const probe = (args, input) => {
+    try {
+      kubectl(args, JSON.stringify(input));
+      return 'accepted';
+    } catch (error) {
+      return classify(error);
+    }
+  };
+  // Kubernetes server dry-run performs admission/authorization without persisting objects.
+  const dummy = {
+    apiVersion: 'v1',
+    kind: 'Secret',
+    metadata: { name: `workspace-check-${randomBytes(6).toString('hex')}`, namespace },
+    immutable: true,
+    data: { probe: 'eA==' },
+  };
+  result.repairProbe = {
+    createDryRun: probe(
+      ['create', '-f', '-', '-n', namespace, '--dry-run=server', '-o', 'name'],
+      dummy,
+    ),
+    patchDryRun: null,
+    replacementCopies: null,
+  };
+  if (target.metadata?.resourceVersion) {
+    result.repairProbe.patchDryRun = probe(
+      [
+        'patch',
+        `deployment/${deployment}`,
+        '-n',
+        namespace,
+        '--type=merge',
+        '--patch-file=/dev/stdin',
+        '--dry-run=server',
+        '-o',
+        'name',
+      ],
+      { metadata: { resourceVersion: target.metadata.resourceVersion } },
+    );
+  }
+  if (result.permissions.listSecrets === true) {
+    try {
+      const names = kubectl([
+        'get',
+        'secrets',
+        '-n',
+        namespace,
+        '-o=jsonpath={.items[*].metadata.name}',
+      ])
+        .trim()
+        .split(/\s+/);
+      const references = (target.spec?.template?.spec?.volumes || [])
+        .map((volume) => volume.secret?.secretName)
+        .filter(Boolean);
+      result.repairProbe.replacementCopies = names.filter((name) =>
+        references.some(
+          (reference) =>
+            name.startsWith(`${reference}-execute-`) &&
+            /^[a-f0-9]{12}$/.test(name.slice(reference.length + 9)),
+        ),
+      ).length;
+    } catch {
+      /* Listing can be unavailable even when self-review says it is permitted. */
     }
   }
   for (const pod of (pods.items || []).slice(0, 8)) {
@@ -120,10 +194,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         deployment: process.env.K8S_DEPLOYMENT,
         container: process.env.K8S_CONTAINER,
       },
-      (args) =>
+      (args, input) =>
         execFileSync('kubectl', ['--request-timeout=30s', ...args], {
+          input,
           encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'pipe'],
+          stdio: ['pipe', 'pipe', 'pipe'],
           timeout: 35_000,
         }),
     );

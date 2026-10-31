@@ -74,6 +74,54 @@ test('permission checks expose only booleans and never change cluster state', ()
     createSecrets: false,
     patchSecrets: true,
     patchDeployments: true,
+    listSecrets: true,
   });
-  assert.ok(!calls.some((args) => ['create', 'patch', 'delete', 'rollout'].includes(args[0])));
+  assert.ok(!calls.some((args) => ['delete', 'rollout'].includes(args[0])));
+  assert.ok(
+    calls
+      .filter((args) => ['create', 'patch'].includes(args[0]))
+      .every((args) => args.includes('--dry-run=server')),
+  );
+});
+
+test('server dry-run reports fixed error categories and detects replacement copies without outputting names', () => {
+  const calls = [];
+  const result = diagnose(
+    { namespace: 'dev', deployment: 'api', container: 'api' },
+    (args, input) => {
+      calls.push({ args, input });
+      if (args[0] === 'get' && args[1] === 'deployment/api')
+        return JSON.stringify({
+          metadata: { resourceVersion: '5' },
+          spec: {
+            replicas: 1,
+            selector: { matchLabels: { app: 'api' } },
+            template: { spec: { volumes: [{ secret: { secretName: 'private-config' } }] } },
+          },
+          status: {},
+        });
+      if (args[0] === 'get' && args[1] === 'pods') return JSON.stringify({ items: [] });
+      if (args[0] === 'auth') return 'yes';
+      if (args[0] === 'get' && args[1] === 'secrets')
+        return 'private-config private-config-execute-123456abcdef';
+      if (args[0] === 'create') {
+        const error = new Error('private');
+        error.stderr = 'Forbidden private';
+        throw error;
+      }
+      if (args[0] === 'patch') return 'deployment/api';
+      throw new Error('unexpected');
+    },
+  );
+  assert.deepEqual(result.repairProbe, {
+    createDryRun: 'denied',
+    patchDryRun: 'accepted',
+    replacementCopies: 1,
+  });
+  assert.ok(!JSON.stringify(result).includes('private-config'));
+  assert.ok(
+    calls
+      .filter(({ args }) => ['create', 'patch'].includes(args[0]))
+      .every(({ args }) => args.includes('--dry-run=server')),
+  );
 });
