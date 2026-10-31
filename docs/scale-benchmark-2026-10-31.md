@@ -63,3 +63,27 @@ storage cost or production p99. It cannot establish that the product supports th
 scale. At the measured revision, Portal/bootstrap and creation retained the legacy Workspace
 view limit and shared coordination gate. Later changes are described in [ADR 0033](decisions/0033-sparse-scale-metadata.md);
 the numbers above have not been rerun against those changes.
+
+## Later bounded sample: at least 500,000 resources
+
+On the same machine, a later run used RustFS 1.0.4, SlateDB 0.17.0, loopback Meta/API,
+debug binaries with the indexed/paginated implementation, and Node 24.22.1. At the owner's
+request, seeding was paused after **at least 500,000 acknowledged synthetic resource records**;
+one batch could have been in flight. A separate client then measured 100 owner-page requests,
+four at a time, with 100 records per page and an 80/20 hot/cold mix across those 500,000 IDs.
+The client also made one bootstrap request. The page sample had no errors:
+
+| Observation            |      Result |
+| ---------------------- | ----------: |
+| Bootstrap, one request | 1,264.95 ms |
+| Page p50               |    75.21 ms |
+| Page p95               |   110.37 ms |
+| Page p99               |   137.06 ms |
+| Page sample duration   |      1.90 s |
+
+This small, warm-cache sample covers one synthetic Workspace only. It is not a million-Tenant
+test or a production capacity, provider provisioning, creation-index backfill, cold-start,
+recovery or availability measurement. The source revision of the running debug binaries was not
+recorded with a binary checksum; the sample cannot be attributed to a release artifact. After
+sampling, the isolated fixture processes were stopped and their approximately 400 MiB temporary
+directory was removed. Existing cloud resources and other development data were not touched.
