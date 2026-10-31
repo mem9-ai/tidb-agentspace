@@ -1,6 +1,6 @@
 # Tenant and Workspace scale assessment
 
-Status: code inspection, updated 2026-10-31. This is not a capacity benchmark or service-level commitment. The current co-located single-writer dev deployment cannot be claimed to support millions of Tenants or one Workspace with a million resources. The latter is already blocked by a concrete implementation limit. An opt-in bounded resource list and single-record update have been implemented, but most product paths still require the legacy Workspace view; see [ADR 0033](decisions/0033-sparse-scale-metadata.md) for status and the proposed shard design.
+Status: code inspection, updated 2026-10-31. This is not a capacity benchmark or service-level commitment. The current co-located single-writer dev deployment cannot be claimed to support millions of Tenants or one Workspace with a million resources. Resource listing, creation and several resource operations now use bounded pages or point reads, but other collections and shared coordination remain; see [ADR 0033](decisions/0033-sparse-scale-metadata.md) for status and the proposed shard design.
 
 An exploratory [single-Workspace million-record page measurement](scale-benchmark-2026-10-31.md)
 is available; its limited request sample does not establish end-to-end capacity.
@@ -8,24 +8,32 @@ is available; its limited request sample does not establish end-to-end capacity.
 ## What exists
 
 - Verified `(iss, sub)` maps to a deterministic identity-scoped Global metadata record; personal Tenant and Workspace IDs are distinct. Records share the configured Global SlateDB authority, not one database or process per Tenant. Separate Global and Region authorities use separate object-store roots. Region session verification does not call Global.
-- SlateDB provides serializable transactions, native ordered-prefix scans, durability barriers and fenced ownership in the current Meta implementation. The API layer is not yet a direct paginated resource repository: these underlying primitives do not by themselves make the public product scalable.
+- SlateDB provides serializable transactions, native ordered-prefix scans, durability barriers and fenced ownership in the current Meta implementation. The public resource list and Portal now use bounded pages; these underlying primitives do not by themselves make the public product scalable.
 - The regional managed Workspace cache defaults to 128 open entries, configurable up to 4,096. This is a limit on simultaneously cached/open Workspaces, not a limit on the total number of tenants. Eviction closes an idle Workspace; if every entry is in use the pool returns 429. Authentication of a cached Workspace releases the pool mutex while waiting on metadata and retains a lease so eviction and Guest cleanup cannot close it. Cache misses, eviction and cleanup still hold the shared mutex during remote open/close, and eviction scans the pool, so churn and slow storage can create cross-Tenant contention.
 - The regional API's in-process request semaphore permits eight simultaneous requests. The separate HTTP Meta server has its own eight-permit semaphore; in-process Meta access does not traverse that HTTP server. These are concurrency limits, not measured throughput limits.
 - Guest expiry has 64 durable partitions. The co-located host runs one scheduler at a one-second interval, requesting up to 128 due and 128 logout entries in one partition per tick, then processes those entries sequentially. Even before provider and storage latency, a full empty scan takes roughly 64 ticks; actual deletion throughput and expiry lag are unmeasured. Unsupported deletes remain pending reconciliation.
 
 ## One Workspace with one million resources
 
-The ordinary repository `read` and `transaction` paths take a Workspace-wide lock and scan/materialize the `state/` records, with a hard limit of 4,096 records or 24 MiB. Resources share that budget with other state; 4,096 is **not** a promise of 4,096 usable resources. Once the aggregate limit is reached the code returns `WORKSPACE_VIEW_LIMIT` (413). Individual resource point lookups, explicit resource pages and Guest cleanup have more targeted paths, but they do not remove the ordinary state-view limit. Most writes inflate, modify and compare the full state; some Key comparisons are nested. Consequently ordinary reads/writes become more expensive as state grows even before the hard cap.
+The previous ordinary repository `read` and `transaction` paths materialized `state/` and
+failed at 4,096 records or 24 MiB. Product resource listing, bootstrap, creation, query,
+file and export paths now use bounded resource reads or projections rather than materializing
+all resource records. The legacy helpers still exist, and individual projected collections
+such as local file entries, Keys and events retain their own view limits. Thus a large file
+collection or other unconverted workflow can still hit `WORKSPACE_VIEW_LIMIT`.
 
 At one million resources, a 100-record page size implies at least 10,000 sequential page fetches for a full scan, before accounting for associated state, latency and memory. At an illustrative 2 KiB of logical metadata each, the records alone are about 1.9 GiB; this is an arithmetic example, not measured record size or physical storage cost. Raising the limit would amplify latency, memory use and contention rather than solve the design problem.
 
-An explicit resource page reads by ID without materializing the whole Workspace. Resource
+Every resource page reads by ID without materializing the whole Workspace. Resource
 status updates address one record; independent updates can progress concurrently. Key
 management, settings and event listing now load the Key and event collections plus the
 specific resources they reference, and event append loads only events. These paths still
-coordinate with legacy transactions through a Workspace-wide gate; Key collections retain
-the per-prefix view limit, and the Portal/bootstrap and resource creation are still limited.
-Deletion reads only the target resource but local cleanup still loads Workspace file records.
+coordinate through a Workspace-wide gate; Key collections retain the per-prefix view limit.
+The Portal loads additional pages on demand, but retains them in memory. Creation maintains
+name, quota and idempotency indexes atomically. The first creation in an existing Workspace
+backfills those indexes in resumable batches, so its total latency is proportional to existing
+resources. Deletion reads only the target resource but local cleanup still loads Workspace file
+records. Provider setup and managed-Workspace cache misses still hold shared locks across I/O.
 
 ## Millions of Tenants
 

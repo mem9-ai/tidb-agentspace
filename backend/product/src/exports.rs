@@ -320,7 +320,15 @@ impl Product {
         read_only: bool,
         file_source: bool,
     ) -> Result<(Principal, Value)> {
-        let state = self.workspace.repository().read().await?;
+        let mut ids = vec![source_id.to_owned()];
+        if let Some(id) = target["resourceId"].as_str() {
+            ids.push(id.to_owned());
+        }
+        let state = self
+            .workspace
+            .repository()
+            .view_selected(ids, false)
+            .await?;
         Self::export_authorize_state(
             &state,
             credential,
@@ -434,6 +442,7 @@ impl Product {
             self.write_local_authorized(
                 credential,
                 &r,
+                &[source.to_owned()],
                 LocalWrite {
                     path: &path,
                     kind: "file",

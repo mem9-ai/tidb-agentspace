@@ -407,7 +407,7 @@
             "name": "limit",
             "in": "query",
             "schema": { "type": "integer", "minimum": 1, "maximum": 512, "default": 100 },
-            "description": "Opt into bounded pagination; the limit is evaluated before authorization and visibility filtering, so a page may be empty."
+            "description": "Page size, default 100; evaluated before authorization and visibility filtering, so a page may be empty."
           },
           {
             "name": "cursor",
@@ -423,7 +423,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["data", "capabilities"],
+                  "required": ["data", "capabilities", "nextCursor"],
                   "properties": {
                     "data": {
                       "type": "array",
@@ -3711,6 +3711,14 @@
           { "accountOwner": [] },
           { "guestOwner": [] }
         ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 512, "default": 100 }
+          },
+          { "name": "cursor", "in": "query", "schema": { "type": "string", "maxLength": 1024 } }
+        ],
         "responses": {
           "200": {
             "description": "Success",
@@ -3718,11 +3726,16 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["data", "mode", "queryCount"],
+                  "required": ["data", "mode", "queryCount", "queryCountScope", "nextCursor"],
                   "properties": {
                     "data": { "type": "array", "items": { "$ref": "#/components/schemas/Usage" } },
                     "mode": { "const": "demo" },
-                    "queryCount": { "type": "integer" }
+                    "queryCount": { "type": "integer" },
+                    "queryCountScope": {
+                      "enum": ["workspace", "page"],
+                      "description": "Workspace total for wildcard access; this page only for resource-scoped Keys."
+                    },
+                    "nextCursor": { "type": ["string", "null"] }
                   }
                 }
               }
@@ -6758,6 +6771,10 @@
           "workspace": { "$ref": "#/components/schemas/Workspace" },
           "profile": { "$ref": "#/components/schemas/Profile" },
           "resources": { "type": "array", "items": { "$ref": "#/components/schemas/Resource" } },
+          "resourceNextCursor": {
+            "type": ["string", "null"],
+            "description": "Continuation for the bounded initial resource page; counts are for loaded resources."
+          },
           "files": { "type": "array", "items": { "$ref": "#/components/schemas/File" } },
           "keys": { "type": "array", "items": { "$ref": "#/components/schemas/Key" } },
           "events": { "type": "array", "items": { "$ref": "#/components/schemas/Event" } },

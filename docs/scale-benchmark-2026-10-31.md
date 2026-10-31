@@ -60,5 +60,6 @@ This sample does not test one million Tenants, live provider creation or deletio
 Portal/bootstrap, the unpaged list, Workspace-wide resource creation, mixed reads and writes,
 authorization under load, cold caches, durable recovery, shard movement, S3 network latency,
 storage cost or production p99. It cannot establish that the product supports the requested
-scale. In particular, the Portal/bootstrap and creation paths retain the legacy Workspace
-view limit and shared coordination gate.
+scale. At the measured revision, Portal/bootstrap and creation retained the legacy Workspace
+view limit and shared coordination gate. Later changes are described in [ADR 0033](decisions/0033-sparse-scale-metadata.md);
+the numbers above have not been rerun against those changes.

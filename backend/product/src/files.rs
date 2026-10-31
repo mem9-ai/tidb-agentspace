@@ -45,11 +45,6 @@ impl Product {
             if_match,
             if_none_match,
         } = request;
-        let _mutation = if method == "GET" {
-            None
-        } else {
-            Some(self.file_mutations.lock().await)
-        };
         let read = method == "GET";
         if if_match.is_some() && if_none_match.is_some()
             || if_none_match.is_some_and(|v| v != "*")
@@ -68,6 +63,15 @@ impl Product {
         } else {
             text(&input, "resourceId")?
         };
+        let _mutation = if read {
+            None
+        } else {
+            Some(
+                self.file_mutations[resource_locks::stripe(resource_id)]
+                    .lock()
+                    .await,
+            )
+        };
         let (_, r) = self
             .context(
                 credential,
@@ -85,7 +89,11 @@ impl Product {
                     ),
                 ));
             }
-            let state = self.workspace.repository().read().await?;
+            let state = self
+                .workspace
+                .repository()
+                .view_selected(vec![resource_id.into()], true)
+                .await?;
             let data = state["files"]
                 .as_array()
                 .expect("files")
@@ -114,7 +122,10 @@ impl Product {
             let mut data = if r["provider"] == DRIVE9 {
                 self.providers.file_stat(resource_id, &path).await?
             } else {
-                self.workspace.repository().read().await?["files"]
+                self.workspace
+                    .repository()
+                    .view_selected(vec![resource_id.into()], true)
+                    .await?["files"]
                     .as_array()
                     .and_then(|v| {
                         v.iter()
@@ -274,7 +285,7 @@ impl Product {
             } else {
                 self.workspace
                     .repository()
-                    .transaction(|state| {
+                    .workspace_transaction(vec![resource_id.into()], false, true, false, |state| {
                         let p = principal(state, credential)?;
                         p.scope("files:write")?;
                         p.resource(state, resource_id, Some("filesystem"))?;
@@ -365,6 +376,7 @@ impl Product {
             .write_local_authorized(
                 credential,
                 &r,
+                &[],
                 LocalWrite {
                     path: &path,
                     kind,
@@ -388,6 +400,7 @@ impl Product {
         &self,
         credential: &Credential,
         r: &Value,
+        related_resource_ids: &[String],
         write: LocalWrite<'_>,
         authorize: impl FnOnce(&Value) -> Result<()> + Send,
     ) -> Result<Value> {
@@ -399,7 +412,9 @@ impl Product {
             expected_version,
         } = write;
         let id = text(r, "id")?;
-        self.workspace.repository().transaction(|state|{authorize(state)?;
+        let mut selected = related_resource_ids.to_vec();
+        selected.push(id.to_owned());
+        self.workspace.repository().workspace_transaction(selected, false, true, false, |state|{authorize(state)?;
 let p=principal(state,credential)?;p.scope("files:write")?;p.resource(state,id,Some("filesystem"))?;
 let files=state["files"].as_array_mut().expect("files");
 let dir=parent(path);
@@ -471,7 +486,11 @@ Ok((file_view(f),true))}).await
                 .await?;
             return Ok((json!({"size":size}), bytes));
         }
-        let state = self.workspace.repository().read().await?;
+        let state = self
+            .workspace
+            .repository()
+            .view_selected(vec![id.into()], true)
+            .await?;
         let file = state["files"]
             .as_array()
             .and_then(|v| {

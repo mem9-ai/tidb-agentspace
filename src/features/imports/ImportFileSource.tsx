@@ -10,8 +10,9 @@ import {
   TextInput,
 } from '@tidbcloud/uikit';
 import { IconFile01, IconFolder } from '@tidbcloud/uikit/icons';
-import { workspaceApi, type Resource, type WorkspaceFile } from '../../api/client';
+import { workspaceApi, type WorkspaceFile } from '../../api/client';
 import { WorkspaceBrowserItem } from '../../ui/WorkspaceBrowserItem';
+import { useResourcePages } from '../resources/use-resource-pages';
 
 export function ImportFileSource({
   resourceId,
@@ -24,27 +25,15 @@ export function ImportFileSource({
   busy: boolean;
   onChange: (resourceId: string, path: string) => void;
 }) {
-  const [systems, setSystems] = useState<Resource[]>([]);
+  const resourcePages = useResourcePages(true);
+  const systems = resourcePages.resources.filter(
+    (r) => r.kind === 'filesystem' && r.status === 'active',
+  );
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [folder, setFolder] = useState('/');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
-  useEffect(() => {
-    let current = true;
-    workspaceApi
-      .resources()
-      .then((value) => {
-        if (current)
-          setSystems(value.data.filter((r) => r.kind === 'filesystem' && r.status === 'active'));
-      })
-      .catch(() => {
-        if (current) setError('Unable to load File Systems. Try again.');
-      });
-    return () => {
-      current = false;
-    };
-  }, [revision]);
   useEffect(() => {
     if (!resourceId) {
       setFiles([]);
@@ -90,6 +79,17 @@ export function ImportFileSource({
           onChange(e.currentTarget.value, '');
         }}
       />
+      {resourcePages.error && <Alert color="red">{resourcePages.error}</Alert>}
+      {resourcePages.nextCursor && (
+        <Button
+          type="button"
+          disabled={busy}
+          loading={resourcePages.loading}
+          onClick={() => void resourcePages.loadMore()}
+        >
+          Load more resources
+        </Button>
+      )}
       {resourceId && (
         <>
           <Group justify="space-between">

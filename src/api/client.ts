@@ -153,7 +153,26 @@ export const workspaceApi = {
   },
   bootstrap: () => responseData(client.GET('/workspaces/{workspaceId}/bootstrap', { params })),
   resources: () => responseData(client.GET('/workspaces/{workspaceId}/resources', { params })),
+  resourcesPage: (cursor?: string) =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/resources', {
+        params: { path: params.path, query: { limit: 100, cursor } },
+      }),
+    ),
+  resource: (resourceId: string, signal?: AbortSignal) =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/resources/{resourceId}', {
+        params: { path: { workspaceId, resourceId } },
+        signal,
+      }),
+    ),
   usage: () => responseData(client.GET('/workspaces/{workspaceId}/usage', { params })),
+  usagePage: (cursor?: string) =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/usage', {
+        params: { path: params.path, query: { limit: 100, cursor } },
+      }),
+    ),
   events: () => responseData(client.GET('/workspaces/{workspaceId}/events', { params })),
   createResource: (body: JsonBody<operations['createResource']>, idempotencyKey: string) =>
     responseData(

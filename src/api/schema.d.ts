@@ -1310,6 +1310,8 @@ export interface components {
       workspace: components['schemas']['Workspace'];
       profile: components['schemas']['Profile'];
       resources: components['schemas']['Resource'][];
+      /** @description Continuation for the bounded initial resource page; counts are for loaded resources. */
+      resourceNextCursor?: string | null;
       files: components['schemas']['File'][];
       keys: components['schemas']['Key'][];
       events: components['schemas']['Event'][];
@@ -1819,7 +1821,7 @@ export interface operations {
   listResources: {
     parameters: {
       query?: {
-        /** @description Opt into bounded pagination; the limit is evaluated before authorization and visibility filtering, so a page may be empty. */
+        /** @description Page size, default 100; evaluated before authorization and visibility filtering, so a page may be empty. */
         limit?: number;
         /** @description Opaque cursor from the previous page. Each page is independently authorized; concurrent changes can affect results. Pages contain stored state without refreshing providers. */
         cursor?: string;
@@ -1842,7 +1844,7 @@ export interface operations {
           'application/json': {
             data: components['schemas']['Resource'][];
             capabilities: components['schemas']['Capabilities'];
-            nextCursor?: string | null;
+            nextCursor: string | null;
           };
         };
       };
@@ -5515,7 +5517,10 @@ export interface operations {
   };
   getUsage: {
     parameters: {
-      query?: never;
+      query?: {
+        limit?: number;
+        cursor?: string;
+      };
       header?: never;
       path: {
         /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
@@ -5536,6 +5541,12 @@ export interface operations {
             /** @constant */
             mode: 'demo';
             queryCount: number;
+            /**
+             * @description Workspace total for wildcard access; this page only for resource-scoped Keys.
+             * @enum {unknown}
+             */
+            queryCountScope: 'workspace' | 'page';
+            nextCursor: string | null;
           };
         };
       };

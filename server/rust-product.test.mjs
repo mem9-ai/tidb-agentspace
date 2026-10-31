@@ -42,6 +42,37 @@ const base = '/api/v1/workspaces/ws_agentlab';
 const secret = 'retained-public-workspace-key';
 const privateWrite = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
 test(
+  'resource indexes backfill existing records and preserve name, quota and idempotency rules',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    await fixture.request('/resources?limit=1');
+    const create = (name, key) =>
+      fixture.request('/resources', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': key },
+        body: { kind: 'mysql', name, region: 'automatic' },
+      });
+    const existing = await create('fixture-mysql', 'existing');
+    assert.equal(existing.status, 409);
+    assert.equal(existing.body.error.code, 'NAME_EXISTS');
+    const concurrent = await Promise.all([
+      create('indexed-race', 'race-a'),
+      create('indexed-race', 'race-b'),
+    ]);
+    assert.deepEqual(concurrent.map((result) => result.status).sort(), [201, 409]);
+    const winner = concurrent.find((result) => result.status === 201);
+    const winnerKey = concurrent[0].status === 201 ? 'race-a' : 'race-b';
+    assert.equal((await create('indexed-race', winnerKey)).body.data.id, winner.body.data.id);
+    assert.equal((await create('changed-name', winnerKey)).body.error.code, 'IDEMPOTENCY_CONFLICT');
+    assert.equal((await create('indexed-two', 'two')).status, 201);
+    assert.equal((await create('indexed-three', 'three')).status, 201);
+    assert.equal((await create('indexed-limit', 'limit')).body.error.code, 'FREE_TIER_LIMIT');
+    assert.equal((await fixture.request('/resources/db_memory', { method: 'DELETE' })).status, 200);
+    assert.equal((await create('fixture-mysql', 'reused')).status, 201);
+  },
+);
+test(
   'bounded resource pages work beyond the legacy Workspace view limit',
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
   async (t) => {
@@ -50,6 +81,24 @@ test(
     await fixture.seedResources(4100);
     assert.equal((await fixture.request('/api/health')).status, 200);
     assert.equal((await fixture.request('/api/v1/workspaces')).status, 200);
+    const bootstrap = await fixture.request('/bootstrap');
+    assert.equal(bootstrap.status, 200, JSON.stringify(bootstrap.body));
+    assert.ok(bootstrap.body.resources.length <= 100);
+    assert.ok(bootstrap.body.resourceNextCursor);
+    const query = await fixture.request('/queries', {
+      method: 'POST',
+      body: { resourceId: 'db_scale_00000000', sql: 'SELECT 1' },
+    });
+    assert.equal(query.status, 200, JSON.stringify(query.body));
+    const usage = await fixture.request('/usage?limit=10');
+    assert.equal(usage.status, 200, JSON.stringify(usage.body));
+    assert.ok(usage.body.data.length <= 10);
+    assert.ok(usage.body.nextCursor);
+    const localFile = await fixture.request('/files', {
+      method: 'PUT',
+      body: { resourceId: 'fs_shared', path: '/local-scale.txt', type: 'file', content: 'ok' },
+    });
+    assert.equal(localFile.status, 200, JSON.stringify(localFile.body));
     const details = await Promise.all(
       ['db_live', 'db_pg'].map((id) => fixture.request(`/resources/${id}`)),
     );
@@ -110,6 +159,18 @@ test(
       cursor = page.body.nextCursor;
     } while (cursor);
     assert.equal(count, 4100);
+    const indexedCreate = await fixture.request('/resources', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'large-backfill' },
+      body: { kind: 'postgresql', name: 'large-backfill', region: 'automatic' },
+    });
+    assert.equal(indexedCreate.status, 201, JSON.stringify(indexedCreate.body));
+    const duplicate = await fixture.request('/resources', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'large-duplicate' },
+      body: { kind: 'postgresql', name: 'scale-1', region: 'automatic' },
+    });
+    assert.equal(duplicate.body.error.code, 'NAME_EXISTS');
     const deleted = await fixture.request('/resources/db_scale_00000000', { method: 'DELETE' });
     assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
     assert.equal(deleted.body.data.status, 'deleted');
@@ -117,7 +178,10 @@ test(
       (await fixture.request('/resources/db_scale_00000000')).body.data.status,
       'deleted',
     );
-    assert.equal((await fixture.request('/resources')).body.error.code, 'WORKSPACE_VIEW_LIMIT');
+    const defaultPage = await fixture.request('/resources');
+    assert.equal(defaultPage.status, 200);
+    assert.ok(defaultPage.body.data.length <= 100);
+    assert.ok(defaultPage.body.nextCursor);
   },
 );
 for (const transport of ['remote', 'inProcess']) {

@@ -21,6 +21,45 @@ const collections = [
   },
 ];
 
+test('resource pages distinguish unloaded collections and resolve deep links', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  workspace.state.resources = [structuredClone(sampleResources[0])];
+  workspace.state.resourceNextCursor = 'page-two';
+  workspace.setResourcePage('page-two', [structuredClone(sampleResources[1])]);
+  await workspace.open('#files');
+  await expect(
+    page.getByText('No File Systems in the loaded resources. Load more to continue.'),
+  ).toBeVisible();
+  if (process.env.QUICKSTART_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.QUICKSTART_SCREENSHOTS}/pagination-${testInfo.project.name}.png`,
+      fullPage: true,
+    });
+  await expect(page.getByRole('region', { name: 'File Systems empty state' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Load more resources' }).click();
+  await expect(
+    page.getByRole('table', { name: 'File systems' }).getByText('filesystem-fixture'),
+  ).toBeVisible();
+  expect(workspace.requests).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: `/api/v1/workspaces/${workspace.state.workspace.id}/resources`,
+        query: expect.objectContaining({ cursor: 'page-two', limit: '100' }),
+      }),
+    ]),
+  );
+  await workspace.open('#files?resourceId=fs_fixture');
+  await page.reload();
+  await expect(page.getByText('File System unavailable')).toHaveCount(0);
+  await expect
+    .poll(() =>
+      workspace.requests.some((request) => request.path.endsWith('/resources/fs_fixture')),
+    )
+    .toBe(true);
+});
+
 test('empty collections share one in-context create action and readable TiUI presentation', async ({
   page,
   workspace,

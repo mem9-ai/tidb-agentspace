@@ -12,7 +12,7 @@ impl Repository {
         idempotency: &str,
         attempt: Value,
     ) -> Result<(Value, bool)> {
-        let _lock = self.queue.lock().await;
+        let _lock = self.queue.write().await;
         let digest = hex::encode(Sha256::digest(
             json!([resource, actor, idempotency]).to_string().as_bytes(),
         ));
@@ -78,7 +78,7 @@ impl Repository {
         code: Option<&str>,
         updates: Value,
     ) -> Result<Value> {
-        let _lock = self.queue.lock().await;
+        let _lock = self.queue.write().await;
         let key = attempt_key(resource, id);
         let prior = self.get(&key).await?;
         let resource_key = format!("state/resources/{resource}");
@@ -106,11 +106,15 @@ impl Repository {
         attempt["updatedAt"] =
             json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
         attempt["resource"] = stored["record"].clone();
-        self.commit(vec![
+        let mut changes = vec![
             json!({"key":key,"expectedVersion":version(&prior),"value":attempt}),
             json!({"key":resource_key,"expectedVersion":version(&original),"value":stored}),
-        ])
-        .await?;
+        ];
+        changes.extend(
+            self.resource_index_changes(&original["value"]["record"], &stored["record"])
+                .await?,
+        );
+        self.commit(changes).await?;
         Ok(attempt)
     }
 }

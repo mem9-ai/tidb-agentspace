@@ -1,3 +1,4 @@
+mod resource_index;
 mod setup_attempts;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -272,6 +273,7 @@ impl Repository {
         selected_resources: Vec<String>,
         include_event_resources: bool,
         include_files: bool,
+        include_statistics: bool,
         apply: impl FnOnce(&mut Value) -> Result<(T, bool)> + Send,
     ) -> Result<T> {
         let _lock = self.queue.write().await;
@@ -280,7 +282,7 @@ impl Repository {
         if include_files {
             previous.extend(self.records("state/files/").await?);
         }
-        for key in ["state/workspace", "state/profile"] {
+        for key in ["state/workspace", "state/profile", "state/queryCount"] {
             let value = self.get(key).await?;
             if !value.is_null() {
                 previous.insert(key.into(), value);
@@ -289,6 +291,21 @@ impl Repository {
         let mut ids = selected_resources
             .into_iter()
             .collect::<std::collections::BTreeSet<_>>();
+        if include_statistics {
+            for id in &ids {
+                let key = format!(
+                    "state/resourceQueryCounts/{}",
+                    hex::encode(Sha256::digest(id.as_bytes()))
+                );
+                let value = self.get(&key).await?;
+                if !value.is_null() {
+                    if value["value"]["mapKey"] != *id {
+                        return Err(error("META_RECORD_CORRUPT"));
+                    }
+                    previous.insert(key, value);
+                }
+            }
+        }
         if include_event_resources {
             ids.extend(
                 previous
@@ -331,6 +348,13 @@ impl Repository {
         self.apply_transaction(previous, apply).await
     }
 
+    pub async fn view_selected(&self, ids: Vec<String>, include_files: bool) -> Result<Value> {
+        self.workspace_transaction(ids, false, include_files, false, |state| {
+            Ok((state.clone(), false))
+        })
+        .await
+    }
+
     async fn apply_transaction<T>(
         &self,
         previous: Records,
@@ -353,8 +377,35 @@ impl Repository {
         }
         for (key, prior) in &previous {
             if !next.contains_key(key) {
+                if key.starts_with("state/resources/")
+                    && !self.get("indexes/resource-v1/schema").await?.is_null()
+                {
+                    return Err(error("RESOURCE_INDEX_BATCH_UNSUPPORTED"));
+                }
                 changes.push(json!({"key":key,"expectedVersion":version(prior),"delete":true}));
             }
+        }
+        let resource_changes = next
+            .iter()
+            .filter(|(key, value)| {
+                key.starts_with("state/resources/")
+                    && previous
+                        .get(*key)
+                        .is_none_or(|prior| prior["value"] != **value)
+            })
+            .collect::<Vec<_>>();
+        if resource_changes.len() > 1 && !self.get("indexes/resource-v1/schema").await?.is_null() {
+            return Err(error("RESOURCE_INDEX_BATCH_UNSUPPORTED"));
+        }
+        for (key, value) in resource_changes {
+            let before = previous
+                .get(key)
+                .map(|v| &v["value"]["record"])
+                .unwrap_or(&Value::Null);
+            changes.extend(
+                self.resource_index_changes(before, &value["record"])
+                    .await?,
+            );
         }
         // Digest indexes are committed with their canonical Key; authorization is a point lookup.
         let old_keys = inflate(&previous)?["keys"]
@@ -480,12 +531,13 @@ impl Repository {
             if value == stored["value"] {
                 return Ok(result);
             }
-            match self
-                .commit(vec![
-                    json!({"key":key,"expectedVersion":version(&stored),"value":value}),
-                ])
-                .await
-            {
+            let mut changes =
+                vec![json!({"key":key,"expectedVersion":version(&stored),"value":value})];
+            changes.extend(
+                self.resource_index_changes(&stored["value"]["record"], &value["record"])
+                    .await?,
+            );
+            match self.commit(changes).await {
                 Ok(()) => return Ok(result),
                 Err(error) if error.code == "META_CONFLICT" && attempt < 3 => continue,
                 Err(error) => return Err(error),
@@ -865,6 +917,7 @@ mod concurrency_tests {
         paused: Notify,
         resume: Notify,
         first: AtomicBool,
+        fail_backfill_once: AtomicBool,
     }
 
     impl Metadata for MetadataGate {
@@ -894,6 +947,11 @@ mod concurrency_tests {
                         Ok(json!({"records":records}))
                     }
                     MetaRequest::Commit { changes, .. } => {
+                        let unknown_after_commit =
+                            changes.iter().any(|change| {
+                                change["key"] == "indexes/resource-v1/schema"
+                                    && change["value"]["after"] == "state/resources/db_000199"
+                            }) && self.fail_backfill_once.swap(false, Ordering::AcqRel);
                         let mut values = self.values.lock().unwrap();
                         for change in changes {
                             let key = change["key"].as_str().unwrap();
@@ -908,7 +966,11 @@ mod concurrency_tests {
                                 values.insert(key.into(), json!({"version":Uuid::new_v4().to_string(),"value":change["value"]}));
                             }
                         }
-                        Ok(json!({}))
+                        if unknown_after_commit {
+                            Err(error("META_COMMIT_UNKNOWN"))
+                        } else {
+                            Ok(json!({}))
+                        }
                     }
                     MetaRequest::List {
                         prefix,
@@ -962,6 +1024,7 @@ mod concurrency_tests {
             paused: Notify::new(),
             resume: Notify::new(),
             first: AtomicBool::new(true),
+            fail_backfill_once: AtomicBool::new(false),
         });
         let repository = Arc::new(Repository {
             metadata: metadata.clone(),
@@ -1021,6 +1084,7 @@ mod concurrency_tests {
             paused: Notify::new(),
             resume: Notify::new(),
             first: AtomicBool::new(true),
+            fail_backfill_once: AtomicBool::new(false),
         });
         let repository = Arc::new(Repository {
             metadata: metadata.clone(),
@@ -1079,6 +1143,7 @@ mod concurrency_tests {
             paused: Notify::new(),
             resume: Notify::new(),
             first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
         });
         let repository = Repository {
             metadata: metadata.clone(),
@@ -1103,5 +1168,80 @@ mod concurrency_tests {
         assert_eq!(values.len(), 200);
         assert!(!values.contains_key("state/events/event-000"));
         assert_eq!(values["state/events/event-new"]["value"]["position"], 200);
+    }
+
+    #[tokio::test]
+    async fn resource_index_backfill_resumes_without_double_counting() {
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new((0..205).map(|n| {
+                let id = format!("db_{n:06}");
+                (format!("state/resources/{id}"), json!({"version":"v1","value":{"position":n,"record":{
+                    "id":id,"name":format!("existing-{n}"),"kind":"mysql","status":"active","region":"automatic"
+                }}}))
+            }).collect()),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(true),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+        };
+        let resource = json!({"id":"db_new","name":"new-duck","kind":"duckdb","status":"active","region":"automatic","provider":"local"});
+        let event = json!({"id":"event-new","action":"resource.created"});
+        let result = repository
+            .create_indexed_resource(
+                &crate::Credential::LocalDemoOwner,
+                Some("owner:retry"),
+                "fingerprint",
+                resource.clone(),
+                event.clone(),
+            )
+            .await;
+        assert_eq!(result.unwrap_err().code, "META_COMMIT_UNKNOWN");
+        assert_eq!(
+            metadata.values.lock().unwrap()["indexes/resource-v1/schema"]["value"]["after"],
+            "state/resources/db_000199"
+        );
+        let created = repository
+            .create_indexed_resource(
+                &crate::Credential::LocalDemoOwner,
+                Some("owner:retry"),
+                "fingerprint",
+                resource,
+                event,
+            )
+            .await
+            .unwrap();
+        assert_eq!(created["id"], "db_new");
+        let values = metadata.values.lock().unwrap();
+        let counts = values
+            .iter()
+            .filter(|(key, _)| key.starts_with("indexes/resource-v1/quotas/"))
+            .map(|(_, value)| {
+                (
+                    value["value"]["group"].as_str().unwrap(),
+                    value["value"]["count"].as_u64().unwrap(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(counts.get("[\"database\",\"mysql\"]"), Some(&205));
+        assert_eq!(counts.get("[\"database\",\"duckdb\"]"), Some(&1));
+        assert_eq!(
+            values["indexes/resource-v1/schema"]["value"]["phase"],
+            "ready"
+        );
     }
 }

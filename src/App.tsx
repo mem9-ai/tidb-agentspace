@@ -233,11 +233,18 @@ function App() {
     [creationTarget, setCreationTarget] = useState<ResourceCreationTarget>('resource'),
     [sso, setSso] = useState<SsoAuthConfig>({ enabled: false }),
     [connection, setConnection] = useState<Resource | null>(null);
+  const [resourcePageBusy, setResourcePageBusy] = useState(false);
+  const [resourcePageError, setResourcePageError] = useState('');
+  const [resourceLookupFailure, setResourceLookupFailure] = useState('');
   const [tutorialCreation, setTutorialCreation] = useState(false);
   const route = routeLocation.page;
   const selectedResourceId =
     routeLocation.databaseId ??
     parseFileSystemLocation('#' + (routeLocation.fileLink || 'files'))?.resourceId;
+  const lookupKey = data && selectedResourceId ? `${data.workspace.id}:${selectedResourceId}` : '';
+  const selectedLoaded = Boolean(
+    data?.resources.some((resource) => resource.id === selectedResourceId),
+  );
   const resourceName = data?.resources.find(
     (resource) =>
       resource.id === selectedResourceId &&
@@ -251,7 +258,60 @@ function App() {
   }
   const refresh = useCallback(async () => {
     setData(await workspaceApi.bootstrap());
+    setResourcePageError('');
+    setResourceLookupFailure('');
   }, []);
+  const loadMoreResources = useCallback(async () => {
+    const cursor = data?.resourceNextCursor;
+    if (!cursor || resourcePageBusy) return;
+    setResourcePageBusy(true);
+    setResourcePageError('');
+    try {
+      const [page, usage] = await Promise.all([
+        workspaceApi.resourcesPage(cursor),
+        workspaceApi.usagePage(cursor),
+      ]);
+      setData((current) => {
+        if (!current || current.resourceNextCursor !== cursor) return current;
+        const resources = new Map(current.resources.map((resource) => [resource.id, resource]));
+        for (const resource of page.data) resources.set(resource.id, resource);
+        const usageByResource = new Map(current.usage.map((item) => [item.resourceId, item]));
+        const pageIds = new Set(page.data.map((resource) => resource.id));
+        for (const item of usage.data)
+          if (pageIds.has(item.resourceId)) usageByResource.set(item.resourceId, item);
+        return {
+          ...current,
+          resources: [...resources.values()],
+          usage: [...usageByResource.values()],
+          resourceNextCursor: page.nextCursor ?? null,
+        };
+      });
+    } catch (cause) {
+      setResourcePageError(cause instanceof Error ? cause.message : 'Unable to load resources.');
+    } finally {
+      setResourcePageBusy(false);
+    }
+  }, [data?.resourceNextCursor, resourcePageBusy]);
+  useEffect(() => {
+    if (!lookupKey || !selectedResourceId || selectedLoaded || resourceLookupFailure === lookupKey)
+      return;
+    const controller = new AbortController();
+    workspaceApi
+      .resource(selectedResourceId, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        setData((current) => {
+          if (!current || `${current.workspace.id}:${selectedResourceId}` !== lookupKey)
+            return current;
+          if (current.resources.some((resource) => resource.id === result.data.id)) return current;
+          return { ...current, resources: [...current.resources, result.data] };
+        });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setResourceLookupFailure(lookupKey);
+      });
+    return () => controller.abort();
+  }, [lookupKey, selectedResourceId, selectedLoaded, resourceLookupFailure]);
   // Boot the workspace. When SSO is enabled the anonymous demo session is disabled, so we never
   // auto-start one: we only try to use an existing (SSO) session and, failing that, show the
   // sign-in screen. When SSO is unconfigured, the local demo session starts as before.
@@ -340,6 +400,9 @@ function App() {
     },
     onConnect: (r: Resource) => setConnection(r),
     isGuest: sso.sessionKind === 'guest',
+    loadMoreResources,
+    resourcePageBusy,
+    resourcePageError,
   };
   const ssoButton =
     sso.enabled && sso.loginPath ? (
@@ -418,8 +481,17 @@ function App() {
       >
         <div key={route}>
           {route === 'overview' && <Overview {...shared} />}
-          {route === 'databases' && <Databases {...shared} routeLocation={routeLocation} />}
-          {route === 'files' && <Files key={routeLocation.fileLink || 'files'} {...shared} />}
+          {(route === 'databases' || route === 'files') &&
+          lookupKey &&
+          !selectedLoaded &&
+          resourceLookupFailure !== lookupKey ? (
+            <Text role="status">Loading resource…</Text>
+          ) : (
+            <>
+              {route === 'databases' && <Databases {...shared} routeLocation={routeLocation} />}
+              {route === 'files' && <Files key={routeLocation.fileLink || 'files'} {...shared} />}
+            </>
+          )}
           {route === 'connect' && <Connect {...shared} onNewKey={() => setModal('key')} />}
           {route === 'tutorials' && (
             <>
@@ -529,23 +601,36 @@ type Shared = {
   onCreate: (target?: ResourceCreationTarget) => void;
   onConnect: (r: Resource) => void;
   isGuest: boolean;
+  loadMoreResources: () => Promise<void>;
+  resourcePageBusy: boolean;
+  resourcePageError: string;
 };
-function Overview({ data, onCreate, onConnect, copy, isGuest }: Shared) {
+function Overview({
+  data,
+  onCreate,
+  onConnect,
+  copy,
+  isGuest,
+  loadMoreResources,
+  resourcePageBusy,
+  resourcePageError,
+}: Shared) {
   const [range, setRange] = useState('24h');
   const dbs = data.resources.filter((r) => r.kind !== 'filesystem'),
-    fs = data.resources.filter((r) => r.kind === 'filesystem');
+    fs = data.resources.filter((r) => r.kind === 'filesystem'),
+    hasResources = data.resources.length > 0 || Boolean(data.resourceNextCursor);
   return (
     <>
       <PageHeading
         eyebrow="YOUR WORKSPACE"
-        title={data.resources.length ? data.workspace.name : 'Start with your data'}
+        title={hasResources ? data.workspace.name : 'Start with your data'}
         description={
-          data.resources.length
+          hasResources
             ? 'Your data, files, and agents. All in one place.'
             : 'Create a database for SQL or a File System for files. Connect your agent when you are ready.'
         }
         actions={
-          data.resources.length ? (
+          hasResources ? (
             <>
               <Button
                 leftSection={React.createElement(Workflow, { size: 18 })}
@@ -565,7 +650,16 @@ function Overview({ data, onCreate, onConnect, copy, isGuest }: Shared) {
         }
       />
       <TutorialResume data={data} />
-      {(!dbs.length || !fs.length) && (
+      {data.resourceNextCursor && (
+        <Alert color="peacock" mb="md">
+          <Text>Showing {data.resources.length} loaded resources; more are available.</Text>
+          {resourcePageError && <Text c="red">{resourcePageError}</Text>}
+          <Button mt="sm" loading={resourcePageBusy} onClick={() => void loadMoreResources()}>
+            Load more resources
+          </Button>
+        </Alert>
+      )}
+      {!data.resourceNextCursor && (!dbs.length || !fs.length) && (
         <WorkspaceFirstSteps
           onCreate={onCreate}
           showDatabase={!dbs.length}
@@ -577,7 +671,11 @@ function Overview({ data, onCreate, onConnect, copy, isGuest }: Shared) {
         <>
           <div className="section-title">
             <Heading level={2}>
-              Your resources <span>{data.resources.length}</span>
+              Your resources{' '}
+              <span>
+                {data.resources.length}
+                {data.resourceNextCursor ? '+' : ''}
+              </span>
             </Heading>
           </div>
           <section className="resource-grid">
@@ -624,7 +722,7 @@ function Overview({ data, onCreate, onConnect, copy, isGuest }: Shared) {
                       </Anchor>
                     ) : (
                       <Text component="p" className="resource-name" c="carbon.7">
-                        No resources yet
+                        {data.resourceNextCursor ? 'No loaded resources' : 'No resources yet'}
                       </Text>
                     )}
                     <div className="resource-card-bottom">
@@ -854,6 +952,10 @@ function Databases({ routeLocation, ...shared }: Shared & { routeLocation: Works
       onCreate={() => onCreate('database')}
       onConnect={onConnect}
       isGuest={isGuest}
+      hasMore={Boolean(data.resourceNextCursor)}
+      loadingMore={shared.resourcePageBusy}
+      pageError={shared.resourcePageError}
+      onLoadMore={shared.loadMoreResources}
     />
   );
 }
@@ -907,6 +1009,10 @@ function Files(shared: Shared) {
         onCreate={() => shared.onCreate('filesystem')}
         onConnect={shared.onConnect}
         isGuest={shared.isGuest}
+        hasMore={Boolean(shared.data.resourceNextCursor)}
+        loadingMore={shared.resourcePageBusy}
+        pageError={shared.resourcePageError}
+        onLoadMore={shared.loadMoreResources}
       />
     );
   const resource = systems.find((system) => system.id === context.resourceId);
@@ -1850,7 +1956,9 @@ function Monitoring({ data }: Shared) {
               {[
                 {
                   name: 'Active resources',
-                  value: data.resources.length,
+                  value: data.resourceNextCursor
+                    ? `${data.resources.length}+`
+                    : data.resources.length,
                   unit: 'resources',
                   icon: Database,
                 },
@@ -2291,7 +2399,16 @@ function WorkspaceSettings({
     </>
   );
 }
-function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose: () => void }) {
+function CreateKey({
+  data,
+  refresh,
+  notify,
+  copy,
+  onClose,
+  loadMoreResources,
+  resourcePageBusy,
+  resourcePageError,
+}: Shared & { onClose: () => void }) {
   const [name, setName] = useState(''),
     [scopes, setScopes] = useState<CreateKeyInput['scopes']>([
       'resources:read',
@@ -2377,6 +2494,19 @@ function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose:
                 setScopes((current) => current.filter((scope) => scope !== 'resources:write'));
             }}
           />
+          {data.resourceNextCursor && (
+            <Group mt="sm">
+              <Button
+                type="button"
+                loading={resourcePageBusy}
+                onClick={() => void loadMoreResources()}
+              >
+                Load more resources
+              </Button>
+              <Text size="sm">Newly loaded resources are not selected automatically.</Text>
+            </Group>
+          )}
+          {resourcePageError && <Alert color="red">{resourcePageError}</Alert>}
           <Fieldset legend="Allowed actions">
             <div className="scope-picker">
               {allScopes.map((s) => (

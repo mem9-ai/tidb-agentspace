@@ -45,7 +45,11 @@ impl Product {
         } else if [ZERO, DB9].contains(&r["provider"].as_str().unwrap_or("")) {
             self.providers.execute(r, sql, read_only).await
         } else if r["provider"].is_null() || r["provider"] == "local" {
-            let state = self.workspace.repository().read().await?;
+            let state = self
+                .workspace
+                .repository()
+                .view_selected(vec![], false)
+                .await?;
             let sql = sql.trim().trim_end_matches(';').trim();
             if regex::Regex::new(r"(?i)^select\s+1(?:\s+as\s+connected)?$")
                 .expect("regex")
@@ -197,7 +201,7 @@ impl Product {
         }
         self.workspace
             .repository()
-            .transaction(|state| {
+            .workspace_transaction(vec![id.to_owned()], false, false, true, |state| {
                 let principal = principal(state, credential)?;
                 principal.scope(scope)?;
                 principal.resource(state, id, None)?;
@@ -379,7 +383,11 @@ impl Product {
             .ok_or_else(|| err(404, "TABLE_NOT_FOUND"))?;
         if action == "table/rows" {
             if !native {
-                let state = self.workspace.repository().read().await?;
+                let state = self
+                    .workspace
+                    .repository()
+                    .view_selected(vec![], false)
+                    .await?;
                 return Ok(
                     json!({"columns":demo_columns(),"rows":demo_rows(&state),"rowCount":3,"mode":"demo","durationMs":0}),
                 );

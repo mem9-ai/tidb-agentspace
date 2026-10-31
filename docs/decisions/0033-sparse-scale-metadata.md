@@ -7,8 +7,8 @@
 
 ## Current slice
 
-An explicit `limit` or `cursor` on the resource list selects an independently authorized,
-bounded ID-ordered page of stored resource records. A restricted Key reads only its explicit
+The resource list defaults to an independently authorized, bounded ID-ordered page of stored
+resource records (100 by default, up to 512). A restricted Key reads only its explicit
 grants. Existing records need no backfill for this ID index. Updates of one resource no longer
 inflate the entire Workspace. Independent point updates can run concurrently, while a shared
 read/write gate still excludes them during legacy snapshot transactions; the remaining legacy
@@ -22,11 +22,24 @@ event collection and commits the new event with retention cleanup. These collect
 themselves unbounded/paginated, and still use the legacy write gate.
 Deletion journals and updates one resource without scanning unrelated resources; local deletion
 still loads the Workspace file collection, which is subject to the legacy view limit.
-The ordinary unpaged resource list, bootstrap, create, usage, local files and other
-paths have not been converted; neither Portal nor the default API can support a million-resource
-Workspace yet. The new cursor is a position, not a snapshot: concurrent insertions before it
-may be missed and deletions may disappear. A page can be empty and still have a next cursor.
-The paged endpoint does not refresh upstream provider status.
+Bootstrap and usage return a first bounded page and a continuation cursor. The Portal loads
+subsequent pages on demand and resolves a directly linked resource separately. It currently
+retains loaded pages in browser memory. Listing, bootstrap and usage return stored status;
+resource detail refreshes provider status. A cursor is a position, not a snapshot: concurrent
+insertions before it may be missed and deletions may disappear. A page can be empty and still
+have a next cursor. Callers of the former default unpaged resource list must follow `nextCursor`.
+Workspace-wide usage query counts are reported for owner/wildcard access; for a restricted Key,
+the response labels its count as page-scoped.
+
+Creation uses colocated name, free-tier quota, idempotency and resource records in an atomic
+metadata commit. Existing Workspaces build versioned indexes in batches of 100 with durable
+checkpoints and release the Workspace gate between batches. Interruptions resume; index-changing
+updates are fenced while backfill runs. The initial request may still take a long time for a
+large existing Workspace, and an automatic background reconciler is not implemented. ID-ordered
+resource pages avoid the resource-wide view limit, but bootstrap and local file operations still
+load the Workspace file collection; Key and event collections are also bounded by legacy view
+limits. The repository mutation gate and provider setup lock remain, and conservative lifecycle
+coordination can still block unrelated resources. This is not a finished million-resource design.
 
 ## Placement proposal
 

@@ -59,6 +59,7 @@ export const test = base.extend({
     let signedInAsGuest = false;
     let signedInAsAccount = false;
     let rejectGuestLogout = false;
+    const resourcePages = new Map();
     page.on('pageerror', (error) => unexpected.push(error.message));
     await context.route('**/*', async (route) => {
       const request = route.request();
@@ -70,7 +71,12 @@ export const test = base.extend({
       if (!url.pathname.startsWith('/api/')) return route.continue();
       const method = request.method();
       const body = request.postDataJSON();
-      requests.push({ path: url.pathname, method, body });
+      requests.push({
+        path: url.pathname,
+        method,
+        body,
+        query: Object.fromEntries(url.searchParams),
+      });
       const reply = (json, status = 200) => route.fulfill({ status, json });
       if (url.pathname === '/api/auth/config')
         return reply(
@@ -123,7 +129,29 @@ export const test = base.extend({
         state.resources.push(resource);
         return reply({ data: resource, mode: 'demo' }, 201);
       }
-      if (path === '/resources') return reply({ data: state.resources, mode: 'demo' });
+      if (path === '/resources') {
+        const cursor = url.searchParams.get('cursor');
+        if (cursor && resourcePages.has(cursor)) return reply(resourcePages.get(cursor));
+        return reply({ data: state.resources, capabilities: state.capabilities, nextCursor: null });
+      }
+      if (path === '/usage')
+        return reply({
+          data: state.usage,
+          mode: 'demo',
+          queryCount: state.queryCount,
+          queryCountScope: 'workspace',
+          nextCursor: null,
+        });
+      if (method === 'GET' && /^\/resources\/[^/]+$/.test(path)) {
+        const id = decodeURIComponent(path.slice('/resources/'.length));
+        const resource = [
+          ...state.resources,
+          ...[...resourcePages.values()].flatMap((entry) => entry.data),
+        ].find((item) => item.id === id);
+        return resource
+          ? reply({ data: resource })
+          : reply({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404);
+      }
       if (path === '/queries' && method === 'POST')
         return reply({
           columns: ['event'],
@@ -162,6 +190,9 @@ export const test = base.extend({
     await use({
       state,
       requests,
+      setResourcePage(cursor, data, nextCursor = null) {
+        resourcePages.set(cursor, { data, nextCursor, capabilities: state.capabilities });
+      },
       signInAsAccount() {
         signedInAsAccount = true;
       },

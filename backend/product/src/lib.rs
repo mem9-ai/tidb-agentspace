@@ -4,6 +4,8 @@ mod files;
 mod imports;
 mod preparations;
 mod read_only;
+mod resource_locks;
+mod resource_pages;
 mod resources;
 mod setup_attempts;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -36,9 +38,9 @@ pub struct Product {
     pub workspace: Arc<Workspace>,
     pub providers: Providers,
     pub execute: Executor,
-    lifecycle: tokio::sync::RwLock<()>,
-    file_mutations: Mutex<()>,
-    setup_admission: Mutex<()>,
+    lifecycle: Vec<tokio::sync::RwLock<()>>,
+    file_mutations: Vec<Mutex<()>>,
+    setup_admission: Vec<Mutex<()>>,
     preparations: Mutex<BTreeMap<String, exports::Preparation>>,
 }
 pub struct Request<'a> {
@@ -77,9 +79,15 @@ impl Product {
             workspace,
             providers,
             execute,
-            lifecycle: tokio::sync::RwLock::new(()),
-            file_mutations: Mutex::new(()),
-            setup_admission: Mutex::new(()),
+            lifecycle: (0..resource_locks::STRIPES)
+                .map(|_| tokio::sync::RwLock::new(()))
+                .collect(),
+            file_mutations: (0..resource_locks::STRIPES)
+                .map(|_| Mutex::new(()))
+                .collect(),
+            setup_admission: (0..resource_locks::STRIPES)
+                .map(|_| Mutex::new(()))
+                .collect(),
             preparations: Mutex::new(BTreeMap::new()),
         })
     }
@@ -99,7 +107,7 @@ impl Product {
             }
             r
         } else {
-            self.workspace.repository().read().await?
+            return Err(err(500, "RESOURCE_CONTEXT_REQUIRED"));
         };
         Ok((p, value))
     }
@@ -219,17 +227,16 @@ impl Product {
             binary_upload,
             table_name,
         } = request;
-        let deleting = method == "DELETE" && route.starts_with("/resources/");
-        let _exclusive = if deleting {
-            Some(self.lifecycle.write().await)
-        } else {
-            None
-        };
-        let _admitted = if deleting {
-            None
-        } else {
-            Some(self.lifecycle.read().await)
-        };
+        let (deleting, stripes) = resource_locks::plan(method, route, query, &input);
+        let mut _exclusive = Vec::new();
+        let mut _admitted = Vec::new();
+        for index in stripes {
+            if deleting {
+                _exclusive.push(self.lifecycle[index].write().await);
+            } else {
+                _admitted.push(self.lifecycle[index].read().await);
+            }
+        }
         let p = self.workspace.authenticate(&credential).await?;
         let actor_value = if p.owner {
             actor.to_owned()
@@ -243,14 +250,27 @@ impl Product {
                 if !p.owner {
                     return Err(err(403, "OWNER_REQUIRED"));
                 }
-                let state = visible(self.workspace.repository().read().await?);
-                for r in state["resources"]
-                    .as_array()
+                let repository = self.workspace.repository();
+                let (page, next) = repository.resources_page(None, 100).await?;
+                let ids = page
+                    .iter()
+                    .map(|resource| text(resource, "id").map(str::to_owned))
+                    .collect::<Result<BTreeSet<_>>>()?;
+                let mut state = visible(
+                    repository
+                        .workspace_transaction(
+                            ids.iter().cloned().collect(),
+                            true,
+                            true,
+                            false,
+                            |state| Ok((state.clone(), false)),
+                        )
+                        .await?,
+                );
+                state["resources"]
+                    .as_array_mut()
                     .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
-                {
-                    self.update_resource(r.clone(), false).await?;
-                }
-                let mut state = visible(self.workspace.repository().read().await?);
+                    .retain(|resource| resource["id"].as_str().is_some_and(|id| ids.contains(id)));
                 for file in state["files"]
                     .as_array_mut()
                     .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
@@ -271,6 +291,14 @@ impl Product {
                 let usage = usage(&state);
                 state["capabilities"] = self.capabilities();
                 state["usage"] = usage;
+                state["resourceNextCursor"] = next
+                    .map(|key| {
+                        key.strip_prefix("state/resources/")
+                            .map(|id| URL_SAFE_NO_PAD.encode(id))
+                            .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))
+                    })
+                    .transpose()?
+                    .into();
                 state["mode"] = json!(if state["resources"]
                     .as_array()
                     .is_some_and(|v| v.iter().any(live))
@@ -283,87 +311,11 @@ impl Product {
                 Reply::Json(state)
             }
             ("GET", "/resources") => {
-                if query.contains_key("limit") || query.contains_key("cursor") {
-                    p.scope("resources:read")?;
-                    let limit = query.get("limit").map_or(Ok(100), |value| {
-                        value
-                            .parse::<usize>()
-                            .map_err(|_| err(400, "INVALID_PAGE_LIMIT"))
-                    })?;
-                    if !(1..=512).contains(&limit) {
-                        return Err(err(400, "INVALID_PAGE_LIMIT"));
-                    }
-                    let after = query
-                        .get("cursor")
-                        .map(|cursor| {
-                            if cursor.len() > 1024 {
-                                return Err(err(400, "INVALID_PAGE_CURSOR"));
-                            }
-                            String::from_utf8(
-                                URL_SAFE_NO_PAD
-                                    .decode(cursor)
-                                    .map_err(|_| err(400, "INVALID_PAGE_CURSOR"))?,
-                            )
-                            .map_err(|_| err(400, "INVALID_PAGE_CURSOR"))
-                        })
-                        .transpose()?;
-                    if after
-                        .as_ref()
-                        .is_some_and(|id| id.is_empty() || id.contains('/') || !p.has(id))
-                    {
-                        return Err(err(400, "INVALID_PAGE_CURSOR"));
-                    }
-                    let (items, next) = if p.owner || p.resource_ids.iter().any(|id| id == "*") {
-                        let (items, next) = self
-                            .workspace
-                            .repository()
-                            .resources_page(after.map(|id| format!("state/resources/{id}")), limit)
-                            .await?;
-                        let next = next
-                            .map(|key| {
-                                key.strip_prefix("state/resources/")
-                                    .map(str::to_owned)
-                                    .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))
-                            })
-                            .transpose()?;
-                        (items, next)
-                    } else {
-                        let ids = p.resource_ids.iter().collect::<BTreeSet<_>>();
-                        let mut remaining = ids
-                            .into_iter()
-                            .filter(|id| after.as_ref().is_none_or(|a| id.as_str() > a.as_str()));
-                        let selected = remaining.by_ref().take(limit).collect::<Vec<_>>();
-                        let next = if remaining.next().is_some() {
-                            selected.last().map(|id| (*id).clone())
-                        } else {
-                            None
-                        };
-                        let ids = selected.iter().map(|id| id.as_str()).collect::<Vec<_>>();
-                        let items = self.workspace.repository().resources_by_id(&ids).await?;
-                        (items, next)
-                    };
-                    let data = items
-                        .into_iter()
-                        .filter(|r| visible_resource(r) && r["status"] != "deleted")
-                        .collect::<Vec<_>>();
-                    return Ok((
-                        200,
-                        Reply::Json(
-                            json!({"data":data,"capabilities":self.capabilities(),"nextCursor":next.map(|v|URL_SAFE_NO_PAD.encode(v))}),
-                        ),
-                    ));
-                }
-                let (_, state) = self.context(&credential, "resources:read", None).await?;
-                let mut data = vec![];
-                for r in visible(state)["resources"]
-                    .as_array()
-                    .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
-                {
-                    if r["status"] != "deleted" && p.has(text(r, "id")?) {
-                        data.push(self.update_resource(r.clone(), false).await?);
-                    }
-                }
-                Reply::Json(json!({"data":data,"capabilities":self.capabilities()}))
+                p.scope("resources:read")?;
+                let (data, next) = self.resource_page(&p, query).await?;
+                Reply::Json(
+                    json!({"data":data,"capabilities":self.capabilities(),"nextCursor":next}),
+                )
             }
             ("POST", "/resources") => {
                 p.scope("resources:write")?;
@@ -405,16 +357,25 @@ impl Product {
                     "postgresql" => DB9,
                     _ => DUCKDB,
                 };
-                let resource=self.workspace.repository().transaction(|state|{if let Some(slot)=&slot&& !state["idempotency"][slot].is_null(){let prior=&state["idempotency"][slot];
-if prior["fingerprint"]!=fingerprint{return Err(err(409,"IDEMPOTENCY_CONFLICT"));}
-return Ok((state["resources"].as_array().and_then(|v|v.iter().find(|r|r["id"]==prior["resource"]["id"])).unwrap_or(&prior["resource"]).clone(),false));}
-let resources=state["resources"].as_array().ok_or_else(||err(503,"META_RECORD_CORRUPT"))?;
-if resources.iter().any(|r|r["status"]!="deleted"&&r["name"]==name){return Err(err(409,"NAME_EXISTS"));}
-if(kind=="filesystem"&&resources.iter().any(|r|r["status"]!="deleted"&&r["kind"]==kind&&r["region"]==region&&r["provider"].as_str().unwrap_or("local")==provider))||(kind!="filesystem"&&resources.iter().filter(|r|r["status"]!="deleted"&&r["kind"]==kind&&(kind!="postgresql"||r["provider"]==DB9)).count()>=5){return Err(err(409,"FREE_TIER_LIMIT"));}
-let r=json!({"id":format!("{}_{}",if kind=="filesystem"{"fs"}else{"db"},secret(6)?),"name":name,"kind":kind,"region":region,"status":if provider=="local"{"active"}else{"provisioning"},"provider":provider,"createdAt":timestamp()});state["resources"].as_array_mut().expect("resources").push(r.clone());event(state,"resource.created",name,&p.actor,r["id"].as_str());
-if let Some(slot)=&slot{state["idempotency"][slot]=json!({"fingerprint":fingerprint,"resource":r});}
-Ok((r,true))}).await?;
+                let resource = json!({"id":format!("{}_{}",if kind=="filesystem"{"fs"}else{"db"},secret(6)?),"name":name,"kind":kind,"region":region,"status":if provider=="local"{"active"}else{"provisioning"},"provider":provider,"createdAt":timestamp()});
+                let event = json!({"id":uuid::Uuid::new_v4().to_string(),"action":"resource.created","resource":name,"resourceId":resource["id"],"actor":p.actor,"at":timestamp(),"outcome":"success"});
+                let resource = self
+                    .workspace
+                    .repository()
+                    .create_indexed_resource(
+                        &credential,
+                        slot.as_deref(),
+                        &fingerprint,
+                        resource,
+                        event,
+                    )
+                    .await?;
                 let is_live = live(&resource);
+                let authorized = self.workspace.authenticate(&credential).await?;
+                authorized.scope("resources:write")?;
+                if !authorized.has("*") {
+                    return Err(err(403, "WORKSPACE_GRANT_REQUIRED"));
+                }
                 let data = self.update_resource(resource, true).await?;
                 return Ok((
                     201,
@@ -422,14 +383,21 @@ Ok((r,true))}).await?;
                 ));
             }
             ("GET", "/usage") => {
-                let (_, state) = self.context(&credential, "usage:read", None).await?;
-                let data = usage(&state)
-                    .as_array()
-                    .expect("usage")
+                p.scope("usage:read")?;
+                let (resources, next) = self.resource_page(&p, query).await?;
+                let ids = resources
                     .iter()
-                    .filter(|r| p.has(r["resourceId"].as_str().unwrap_or("")))
-                    .cloned()
-                    .collect::<Vec<_>>();
+                    .map(|resource| text(resource, "id").map(str::to_owned))
+                    .collect::<Result<Vec<_>>>()?;
+                let state = self
+                    .workspace
+                    .repository()
+                    .workspace_transaction(ids, false, true, true, |state| {
+                        Ok((state.clone(), false))
+                    })
+                    .await?;
+                let mut data = usage(&state).as_array().expect("usage").clone();
+                data.sort_by(|a, b| a["resourceId"].as_str().cmp(&b["resourceId"].as_str()));
                 let count = if p.has("*") {
                     state["queryCount"].as_u64().unwrap_or(0)
                 } else {
@@ -443,7 +411,9 @@ Ok((r,true))}).await?;
                         })
                         .unwrap_or(0)
                 };
-                Reply::Json(json!({"data":data,"mode":"demo","queryCount":count}))
+                Reply::Json(
+                    json!({"data":data,"mode":"demo","queryCount":count,"queryCountScope":if p.has("*"){"workspace"}else{"page"},"nextCursor":next}),
+                )
             }
             ("GET", "/files")
             | ("PUT", "/files")
