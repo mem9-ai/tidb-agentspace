@@ -35,6 +35,11 @@ backfills those indexes in resumable batches, so its total latency is proportion
 resources. Deletion reads only the target resource but local cleanup still loads Workspace file
 records. Provider setup and managed-Workspace cache misses still hold shared locks across I/O.
 
+The current product enforces free-tier limits of five databases per kind and one File System
+per region/provider. The scale fixture inserts synthetic records directly; it does not show
+that a customer can provision a million resources under the current quota policy. Larger
+paid/enterprise quotas and the corresponding provider capacity are not implemented here.
+
 ## Millions of Tenants
 
 Nothing in the per-identity key encoding is itself a demonstrated million-Tenant ceiling. However, one Global and one Region Meta authority each own one SlateDB root/writer, and the co-located host, bounded open pool, common request capacity, per-Workspace writer coordination and cleanup executor form shared bottlenecks and failure domains. Every Meta operation currently checks object-store ownership and acquires an appropriate durable snapshot, so network latency, request rate and object-store operation costs matter even when total data fits. There is no measured million-Tenant scale, high-cardinality load profile, noisy-neighbor isolation, shard balancing, region failover or recovery SLO in this repository. Tenant count alone does not determine required throughput: active fraction, request mix, concurrency, skew and bursts must be specified.
