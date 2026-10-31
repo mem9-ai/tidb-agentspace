@@ -52,6 +52,54 @@ test('failed, skipped, ambiguous and incomplete checks cannot authorize a releas
   assert.equal(evaluateEvidence(pending, [jobs[0]], sha, 'console'), false);
 });
 
+test('browser inapplicability requires explicit scope and native success in both release modes', () => {
+  const scope = { name: 'Backend-only scope', status: 'completed', conclusion: 'success' };
+  const skipped = [jobs[0], { ...jobs[1], conclusion: 'skipped' }, jobs[2], scope];
+  const pending = { ...run, status: 'in_progress', conclusion: null };
+  for (const mode of ['console', 'full']) {
+    assert.equal(evaluateEvidence(run, skipped, sha, mode), true);
+    for (const name of ['Backend-only scope', 'Rust backend and S3 integration']) {
+      const without = skipped.filter((job) => job.name !== name);
+      assert.throws(() => evaluateEvidence(run, without, sha, mode), /Missing/);
+      assert.equal(evaluateEvidence(pending, without, sha, mode), false);
+      const target = skipped.find((job) => job.name === name);
+      assert.throws(() => evaluateEvidence(run, [...skipped, target], sha, mode), /Ambiguous/);
+      for (const conclusion of ['failure', 'cancelled', 'skipped', 'neutral', 'timed_out']) {
+        const failed = skipped.map((job) => (job.name === name ? { ...job, conclusion } : job));
+        assert.throws(() => evaluateEvidence(run, failed, sha, mode), /Required/);
+      }
+    }
+    for (const conclusion of ['failure', 'cancelled', 'neutral', 'timed_out']) {
+      assert.throws(
+        () =>
+          evaluateEvidence(
+            run,
+            skipped.map((job) => (job.name === 'Browser smoke' ? { ...job, conclusion } : job)),
+            sha,
+            mode,
+          ),
+        /Required/,
+      );
+    }
+    assert.throws(
+      () =>
+        evaluateEvidence(
+          run,
+          skipped.filter((job) => job.name !== 'Browser smoke'),
+          sha,
+          mode,
+        ),
+      /Missing/,
+    );
+    assert.throws(
+      () => evaluateEvidence({ ...run, head_sha: 'b'.repeat(40) }, skipped, sha, mode),
+      /Untrusted/,
+    );
+  }
+  assert.equal(evaluateEvidence(pending, skipped, sha, 'console'), true);
+  assert.equal(evaluateEvidence(pending, skipped, sha, 'full'), false);
+});
+
 test('waits for registration and the newest attempt, never reuses an older success', async () => {
   let polls = 0;
   const paths = [];

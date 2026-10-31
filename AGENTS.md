@@ -106,6 +106,10 @@ follow its task-specific references before implementation. Keep detailed rules c
   policy, formatting, lint, generated API contract, tests, types, and production build.
 - For Rust backend/module/transport changes, also run `npm run backend:check` (workspace
   format/Clippy/tests and isolated real S3/compatibility cases); follow [the Rust runtime guide](docs/rust-backend.md).
+- Follow [OpenAPI verification](docs/standards/openapi-verification.md) for backend acceptance.
+  Internal backend changes preserving the public API and Console contract require native API
+  evidence, without frontend/browser or manual Portal retesting. Contract/Console or uncertain
+  mixed changes retain browser verification; CI records applicability explicitly.
 - Run targeted checks during development. Add meaningful behavior/regression tests for API,
   authorization, persistence, and billing changes; do not add tests that merely restate code.
 - For UI behavior changes, run the assertion-driven browser suite following

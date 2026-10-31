@@ -31,6 +31,10 @@ For browser journeys and UI acceptance, follow [browser verification](browser-ve
 assert rendered behavior and request/results, use traces for diagnosis, and reserve screenshots
 for visual review. Automatic gate ownership follows [ADR 0027](../decisions/0027-single-ci-evidence.md).
 
+For backend changes, follow [OpenAPI verification](openapi-verification.md): native HTTP
+behavior, authorization, effects and recovery are the independent acceptance boundary.
+Backend-only changes preserving the public contract do not require frontend/browser tests.
+
 ## How to interpret a standard
 
 - **Verified upstream fact:** includes an official source and version/date. Recheck when

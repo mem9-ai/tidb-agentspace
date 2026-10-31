@@ -25,7 +25,13 @@ export function evaluateEvidence(run, jobs, sha, mode) {
   if (!checks[mode] || !trustedRun(run, sha)) throw new Error('Untrusted CI evidence.');
   if (run.status === 'completed' && run.conclusion !== 'success')
     throw new Error('The exact-commit CI run did not succeed.');
-  for (const name of checks[mode]) {
+  const browser = jobs.filter((job) => job.name === 'Browser smoke');
+  if (browser.length > 1) throw new Error('Ambiguous CI evidence.');
+  const backendOnly = browser[0]?.status === 'completed' && browser[0].conclusion === 'skipped';
+  const required = backendOnly
+    ? ['Quality', 'Backend-only scope', 'Rust backend and S3 integration']
+    : checks[mode];
+  for (const name of required) {
     const found = jobs.filter((job) => job.name === name);
     if (found.length > 1) throw new Error('Ambiguous CI evidence.');
     const job = found[0];
