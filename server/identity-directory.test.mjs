@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import http from 'node:http';
-import { copyFile, readFile, stat, writeFile } from 'node:fs/promises';
+import https from 'node:https';
+import { connect as connectTcp } from 'node:net';
+import { chmod, copyFile, readFile, stat, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test, { before } from 'node:test';
 import { promisify } from 'node:util';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
-import { metaFixture } from './test-support/meta-fixture.mjs';
+import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
+import { metadataCertificates } from './test-support/meta-tls.mjs';
 
 const exec = promisify(execFile);
 const enabled = process.env.WORKSPACE_META_TEST === '1';
@@ -27,6 +30,8 @@ if (enabled) {
           'personal_login_probe',
           '--example',
           'policy_command_probe',
+          '--example',
+          'policy_transport_probe',
           '--example',
           'guest_signup_probe',
           '--example',
@@ -185,6 +190,205 @@ test(
     await save({ ...policy, keyVersion: 3, policyGeneration: 3, revoked: true });
     await install(randomUUID());
     await assert.rejects(check());
+  },
+);
+
+test(
+  'signed Region policy transport requires pinned TLS 1.3 mTLS and never follows redirects',
+  { skip: !enabled, timeout: 90000 },
+  async (t) => {
+    const fixture = await metaFixture();
+    const global = await fixture.service('global');
+    const region = await fixture.service('other');
+    let server;
+    let redirectServer;
+    t.after(async () => {
+      if (server && server.exitCode === null && !server.signalCode) {
+        const exited = new Promise((done) => server.once('exit', done));
+        server.kill('SIGTERM');
+        await exited;
+      }
+      if (redirectServer?.listening) {
+        redirectServer.closeAllConnections();
+        await new Promise((done) => redirectServer.close(done));
+      }
+      global.client.close();
+      region.client.close();
+      await fixture.close();
+    });
+    const certs = await metadataCertificates(fixture.directory);
+    const otherKey = resolve(fixture.directory, 'other-client.key');
+    const otherCsr = resolve(fixture.directory, 'other-client.csr');
+    const otherCert = resolve(fixture.directory, 'other-client.crt');
+    const otherExt = resolve(fixture.directory, 'other-client.ext');
+    await exec('openssl', [
+      'req',
+      '-newkey',
+      'rsa:2048',
+      '-nodes',
+      '-keyout',
+      otherKey,
+      '-out',
+      otherCsr,
+      '-subj',
+      '/CN=other-client',
+    ]);
+    await writeFile(otherExt, 'extendedKeyUsage=clientAuth\n');
+    await exec('openssl', [
+      'x509',
+      '-req',
+      '-in',
+      otherCsr,
+      '-CA',
+      certs.server.clientCaFile,
+      '-CAkey',
+      resolve(fixture.directory, 'ca.key'),
+      '-CAcreateserial',
+      '-out',
+      otherCert,
+      '-days',
+      '1',
+      '-extfile',
+      otherExt,
+    ]);
+    await chmod(otherKey, 0o600);
+    const config = resolve(fixture.directory, 'transport-region.json');
+    const serverFile = resolve(fixture.directory, 'transport-server.json');
+    const clientFile = resolve(fixture.directory, 'transport-client.json');
+    const input = resolve(fixture.directory, 'transport-policy-input.json');
+    const signed = resolve(fixture.directory, 'transport-policy-signed');
+    const receiptFile = resolve(fixture.directory, 'transport-receipt.json');
+    await writeFile(config, JSON.stringify(region.clientConfig), { mode: 0o600 });
+    const listen = await port();
+    await writeFile(
+      serverFile,
+      JSON.stringify({
+        metaFile: config,
+        bind: `127.0.0.1:${listen}`,
+        ...certs.server,
+        globalClientCertificate: certs.client.certificateFile,
+      }),
+      { mode: 0o600 },
+    );
+    const transportProbe = resolve('meta-service/target/debug/examples/policy_transport_probe');
+    server = spawn(transportProbe, ['serve', serverFile], { stdio: 'ignore' });
+    await until(
+      () =>
+        new Promise((done, reject) => {
+          if (server.exitCode !== null) return reject(new Error('Control fixture exited'));
+          const socket = connectTcp({ host: '127.0.0.1', port: listen });
+          socket.once('connect', () => {
+            socket.destroy();
+            done();
+          });
+          socket.once('error', reject);
+        }),
+    );
+    const policy = {
+      workspaceId: 'ws_agentlab',
+      regionId: 'region:other',
+      keyId: randomUUID(),
+      principalId: 'legacy-owner',
+      keyVersion: 1,
+      policyGeneration: 1,
+      grantRef: 'grant:existing',
+      expiresAt: 4000000000,
+      revoked: false,
+    };
+    const commandId = randomUUID();
+    await writeFile(input, JSON.stringify({ policy, commandId }), { mode: 0o600 });
+    const commandProbe = resolve('meta-service/target/debug/examples/policy_command_probe');
+    await exec(commandProbe, ['sign', '-', input, signed]);
+    const command = await readFile(signed, 'utf8');
+    const receipt = {
+      commandId,
+      workspaceId: policy.workspaceId,
+      regionId: policy.regionId,
+      keyId: policy.keyId,
+      keyVersion: 1,
+      policyGeneration: 1,
+    };
+    await writeFile(receiptFile, JSON.stringify(receipt), { mode: 0o600 });
+    const origin = `https://127.0.0.1:${listen}`;
+    const clientInput = { origin, ...certs.client, commandFile: signed, receiptFile };
+    await writeFile(clientFile, JSON.stringify(clientInput), { mode: 0o600 });
+    const credentials = {
+      ca: await readFile(certs.client.caFile),
+      cert: await readFile(certs.client.certificateFile),
+      key: await readFile(certs.client.privateKeyFile),
+    };
+    const request = (options = {}, bodyCommand = command) =>
+      new Promise((done, reject) => {
+        const req = https.request(
+          origin + '/internal/v1/region-key-policy-commands',
+          {
+            ...credentials,
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            ...options,
+          },
+          (res) => {
+            const chunks = [];
+            res.on('data', (chunk) => chunks.push(chunk));
+            res.on('end', () =>
+              done({ status: res.statusCode, body: Buffer.concat(chunks).toString() }),
+            );
+          },
+        );
+        req.on('error', reject);
+        req.end(JSON.stringify({ command: bodyCommand }));
+      });
+    await assert.rejects(request({ cert: undefined, key: undefined }));
+    await assert.rejects(
+      request({ cert: await readFile(otherCert), key: await readFile(otherKey) }),
+    );
+    await assert.rejects(request({ servername: 'wrong.example' }));
+    await assert.rejects(request({ minVersion: 'TLSv1.2', maxVersion: 'TLSv1.2' }));
+    assert.equal((await request({}, 'x'.repeat(25 * 1024))).status, 413);
+    assert.equal((await request({}, command + 'x')).status, 401);
+    await global.stop('SIGKILL');
+    global.client.close();
+    const response = await request();
+    assert.equal(response.status, 202);
+    assert.deepEqual(JSON.parse(response.body), { status: 'stored', receipt });
+    await exec(transportProbe, ['send', clientFile]);
+    await writeFile(receiptFile, JSON.stringify({ ...receipt, workspaceId: 'other-workspace' }), {
+      mode: 0o600,
+    });
+    await assert.rejects(exec(transportProbe, ['send', clientFile]));
+    await writeFile(receiptFile, JSON.stringify(receipt), { mode: 0o600 });
+    let leaked = 0;
+    redirectServer = https.createServer(
+      {
+        cert: await readFile(certs.server.certificateFile),
+        key: await readFile(certs.server.privateKeyFile),
+        ca: credentials.ca,
+        requestCert: true,
+        rejectUnauthorized: true,
+      },
+      (req, res) => {
+        if (req.url === '/leak') leaked += 1;
+        res.writeHead(302, { location: '/leak' });
+        res.end();
+      },
+    );
+    await new Promise((done) => redirectServer.listen(0, '127.0.0.1', done));
+    await writeFile(
+      clientFile,
+      JSON.stringify({
+        ...clientInput,
+        origin: `https://127.0.0.1:${redirectServer.address().port}`,
+      }),
+      { mode: 0o600 },
+    );
+    await assert.rejects(exec(transportProbe, ['send', clientFile]));
+    assert.equal(leaked, 0);
+    await writeFile(
+      clientFile,
+      JSON.stringify({ ...clientInput, origin: `http://127.0.0.1:${listen}` }),
+      { mode: 0o600 },
+    );
+    await assert.rejects(exec(transportProbe, ['send', clientFile]));
   },
 );
 

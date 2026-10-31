@@ -4935,6 +4935,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "axum-server",
  "base64 0.22.1",
  "chrono",
  "futures",
@@ -4943,6 +4944,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rustls",
+ "rustls-pemfile",
  "serde",
  "serde_json",
  "sha2 0.10.9",

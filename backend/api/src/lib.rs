@@ -4,6 +4,7 @@ pub mod guest_entry;
 mod http_policy;
 pub mod managed_workspaces;
 pub mod policy_command;
+pub mod policy_transport;
 pub mod regional_account;
 pub mod regional_guest;
 pub mod signed_access;

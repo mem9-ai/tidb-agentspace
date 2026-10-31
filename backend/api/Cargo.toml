@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 axum.workspace = true
+axum-server = { version = "=0.8.0", features = ["tls-rustls-no-provider"] }
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -29,3 +30,4 @@ jsonwebtoken.workspace = true
 chrono.workspace = true
 
 rustls.workspace = true
+rustls-pemfile = "=2.2.0"

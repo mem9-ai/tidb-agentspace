@@ -50,6 +50,19 @@ pub struct PolicyCommandVerifier {
     trust: PolicyTrust,
 }
 
+/// Evidence that one Region Meta durably stored a command. On replay a newer policy may
+/// already supersede it. This does not prove current state or that revocation is effective.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PolicyReceipt {
+    pub command_id: String,
+    pub workspace_id: String,
+    pub region_id: String,
+    pub key_id: String,
+    pub key_version: u64,
+    pub policy_generation: u64,
+}
+
 pub struct PolicySignerConfig {
     pub issuer: String,
     pub audience: String,
@@ -219,9 +232,22 @@ impl PolicyCommandVerifier {
     /// The calling transport must first authenticate Global and its exact deployment identity,
     /// and bind any outer route's Workspace and Region to this signed command. A signed
     /// command alone is not authorization to expose this method publicly.
-    pub async fn apply(&self, command: &str, now: i64, policies: &KeyPolicies) -> Result<()> {
+    pub async fn apply(
+        &self,
+        command: &str,
+        now: i64,
+        policies: &KeyPolicies,
+    ) -> Result<PolicyReceipt> {
         let claims = self.verify(command, now)?;
-        policies.install(&claims.policy, &claims.jti).await
+        policies.install(&claims.policy, &claims.jti).await?;
+        Ok(PolicyReceipt {
+            command_id: claims.jti,
+            workspace_id: claims.policy.workspace_id,
+            region_id: claims.policy.region_id,
+            key_id: claims.policy.key_id,
+            key_version: claims.policy.key_version,
+            policy_generation: claims.policy.policy_generation,
+        })
     }
 }
 
