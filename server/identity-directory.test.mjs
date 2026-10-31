@@ -4,43 +4,59 @@ import { createHash, randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import test from 'node:test';
+import test, { before } from 'node:test';
 import { promisify } from 'node:util';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { metaFixture } from './test-support/meta-fixture.mjs';
 
 const exec = promisify(execFile);
 const enabled = process.env.WORKSPACE_META_TEST === '1';
+if (enabled) {
+  // Compilation has its own finite budget; keep the 120-second behavior deadline
+  // independent of whether probe binaries are already linked on this machine.
+  before(
+    async () => {
+      await exec(
+        'cargo',
+        [
+          'build',
+          '--locked',
+          '-p',
+          'workspace-api',
+          '--example',
+          'personal_login_probe',
+          '--example',
+          'guest_signup_probe',
+          '--example',
+          'guest_cookie_probe',
+          '--example',
+          'guest_pool_probe',
+          '--example',
+          'guest_entry_probe',
+          '--example',
+          'guest_http_probe',
+        ],
+        { timeout: 180_000 },
+      );
+      await exec(
+        'cargo',
+        ['build', '--locked', '-p', 'workspace-identity', '--example', 'identity_probe'],
+        { timeout: 180_000 },
+      );
+      await exec(
+        'cargo',
+        ['build', '--locked', '-p', 'workspace-providers', '--example', 'guest_cleanup_probe'],
+        { timeout: 180_000 },
+      );
+    },
+    { timeout: 540_000 },
+  );
+}
+
 test(
   'verified OIDC login creates one isolated personal user and Workspace',
   { skip: !enabled, timeout: 120_000 },
   async (t) => {
-    await exec('cargo', [
-      'build',
-      '--locked',
-      '-p',
-      'workspace-api',
-      '--example',
-      'personal_login_probe',
-      '--example',
-      'guest_signup_probe',
-      '--example',
-      'guest_cookie_probe',
-      '--example',
-      'guest_pool_probe',
-      '--example',
-      'guest_entry_probe',
-      '--example',
-      'guest_http_probe',
-    ]);
-    await exec('cargo', [
-      'build',
-      '--locked',
-      '-p',
-      'workspace-identity',
-      '--example',
-      'identity_probe',
-    ]);
     const fixture = await metaFixture();
     let provider;
     let global;
@@ -219,14 +235,6 @@ test(
   'Global identity reservations survive S3 recovery and isolate concurrent accounts',
   { skip: !enabled, timeout: 120_000 },
   async (t) => {
-    await exec('cargo', [
-      'build',
-      '--locked',
-      '-p',
-      'workspace-identity',
-      '--example',
-      'identity_probe',
-    ]);
     const fixture = await metaFixture();
     t.after(() => fixture.close());
     let global = await fixture.service('global');
@@ -527,14 +535,6 @@ test(
   'Guest DB9 and Drive9 deletion attempts are scope-bound, journaled, and not blindly retried',
   { skip: !enabled, timeout: 120_000 },
   async (t) => {
-    await exec('cargo', [
-      'build',
-      '--locked',
-      '-p',
-      'workspace-providers',
-      '--example',
-      'guest_cleanup_probe',
-    ]);
     const fixture = await metaFixture();
     t.after(() => fixture.close());
     const region = await fixture.service('cleanup');
