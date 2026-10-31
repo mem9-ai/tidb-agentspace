@@ -5,6 +5,7 @@ mod http_policy;
 pub mod managed_workspaces;
 pub mod regional_account;
 pub mod regional_guest;
+pub mod signed_access;
 mod sso;
 use anyhow::{Result, bail};
 use axum::{
