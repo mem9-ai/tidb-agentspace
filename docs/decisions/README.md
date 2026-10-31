@@ -61,7 +61,7 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 - [0019: Portable Workspace KV control plane](0019-workspace-kv-control-plane.md) — Global-initiated encrypted control, independent regional serving, pooled cells/bounded groups, selected hosted SlateDB/object storage, private regional storage directory and identity-preserving migration; phased implementation.
 
-- [0021: Native Rust computation](0021-native-rust-computation.md) — bundled DuckDB, restricted Bashkit snapshot workers, native SQL and Node-free regional serving.
+- [0021: Native Rust computation](0021-native-rust-computation.md) — Region-internal Execute with same-binary child tasks; bundled DuckDB, restricted Bashkit snapshot workers, native SQL and Node-free regional serving.
 
 - [0024: Fresh record metadata](0024-fresh-record-metadata.md) — accepted local reset direction; removes document/import and Node handoff paths.
 

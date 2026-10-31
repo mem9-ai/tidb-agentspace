@@ -263,28 +263,37 @@ implementation; a common executable can embed roles or start them as independent
 Global/regional authority and separate Meta instances remain mandatory in either form.
 Co-located roles share process failure; production regional independence requires separate
 processes/hosts. Customer computation remains isolated. The old Node backend and its dedicated tests are removed. Node is limited to build/operator tooling and native test fixtures; the full Rust regional profile implements the existing API. The diagram
-below is a functional view, not one shared metadata database or a centralized data path.
+below shows the implemented regional execution boundary. Execute is a module called by
+Product, with a same-binary child as its internal strategy. It has no independently deployed
+service, listener or task queue. Global control/policy and production scale remain separate
+work described above; Global metadata is not on the regional data request path.
 
 ```mermaid
 flowchart TB
-  console[Developer Console] --> gateway[Product API / regional data gateways]
-  agent[Agent / CLI / SDK] --> gateway
-  mcp[MCP transport: future] --> gateway
-  gateway --> policy[Workspace Key: action + resource policy]
-  policy --> core[Workspace domain operations]
-  core --> metadata[Independent KV metadata authorities and outboxes]
-  core --> usage[Usage attribution + product billing]
-  core --> audit[Activity / metrics / request tracing]
-  core --> worker[Provisioning and reconciliation worker]
-  core --> adapters[Internal MySQL / PG / File System adapters]
-  worker --> adapters
-  adapters --> provider[Existing TiDB Cloud services]
-  broker[Internal credential broker / secret manager] --> adapters
+  console[Console / Agent] --> http
+  subgraph region[Region runtime]
+    subgraph api[Rust API process]
+      http[HTTP / regional authentication] --> core[Workspace / Product operations]
+      core --> repo[Versioned record repositories]
+      core --> adapters[Native provider adapters]
+      core --> execute[Execute module: execute task]
+    end
+    execute -->|exec same binary; bounded JSON pipes| child[workspace-backend execute: one task then exit]
+    repo --> meta[Regional Meta Service / SlateDB]
+    meta --> rs3[Regional S3: WAL / SST / manifests]
+  end
+  adapters --> provider[MySQL / PostgreSQL / public File Systems]
+  child -->|persistent DuckDB tasks only| private[Dedicated private DuckDB storage]
+  gm[Independent Global Meta / SlateDB] --> gs3[Independent Global S3 root]
 ```
 
 The Console and agents use the same domain commands and authorization. Console-specific
 read aggregation can reduce round trips; it must not create a separate authorization model.
-MCP maps tool calls onto the same operations.
+MCP maps tool calls onto the same operations. File preview/analysis/import tasks receive only
+selected immutable snapshots; persistent DuckDB tasks receive only their dedicated private
+storage connection. Execute retains cancellation, bounded admission, the existing deadlines
+and flushed result pipes. Native MySQL/PostgreSQL calls use provider drivers directly.
+See [the Execute runtime](rust-backend.md#regional-execute) and [ADR 0021](decisions/0021-native-rust-computation.md).
 
 Separate resource management from bounded SQL/file data operations. Both public paths accept
 the customer's Workspace Key. Internally, regional gateways can pool SQL connections and

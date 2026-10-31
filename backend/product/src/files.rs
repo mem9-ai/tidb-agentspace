@@ -518,7 +518,7 @@ Ok((file_view(f),true))}).await
                 .ok_or_else(|| err(400, "INVALID_ANALYSIS"))?
         };
         let _slot = self
-            .compute
+            .execute
             .analysis_slots
             .try_acquire()
             .map_err(|_| err(429, "ANALYSIS_BUSY"))?;
@@ -527,7 +527,7 @@ Ok((file_view(f),true))}).await
             .snapshot(credential, &resource, &path, false, LIMIT)
             .await?;
         let result = self
-            .run_file_worker(FileJob {
+            .execute_file(FileJob {
                 resource_id,
                 path: &path,
                 bytes,
@@ -555,7 +555,7 @@ Ok((file_view(f),true))}).await
         }
         Ok(result)
     }
-    pub(super) async fn run_file_worker(&self, job: FileJob<'_>) -> Result<Value> {
+    pub(super) async fn execute_file(&self, job: FileJob<'_>) -> Result<Value> {
         let FileJob {
             resource_id,
             path,
@@ -584,7 +584,7 @@ Ok((file_view(f),true))}).await
             file.write_all(&bytes)
                 .map_err(|_| err(503, "ANALYSIS_UNAVAILABLE"))?;
         }
-        let mut result=self.compute.worker(json!({"mode":mode,"engine":engine,"format":format,"script":script,"sourcePath":source,"workspacePath":path,"parsing":parsing})).await?;
+        let mut result=self.execute.execute(json!({"mode":mode,"engine":engine,"format":format,"script":script,"sourcePath":source,"workspacePath":path,"parsing":parsing})).await?;
         result["resourceId"] = json!(resource_id);
         result["path"] = json!(path);
         result["readOnly"] = json!(true);

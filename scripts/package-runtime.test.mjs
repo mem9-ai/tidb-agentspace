@@ -54,7 +54,7 @@ test(
     const source = resolve(directory, 'selected.csv');
     await writeFile(source, 'name,n\nalice,1\n');
     const value = await new Promise((done, reject) => {
-      const child = spawn(binary, ['worker'], {
+      const child = spawn(binary, ['execute'], {
         env: { PATH: '/nonexistent' },
         stdio: ['pipe', 'pipe', 'pipe'],
       });

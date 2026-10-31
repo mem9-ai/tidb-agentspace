@@ -38,9 +38,9 @@ impl Product {
                 .file_connection(text(&b, "storageId")?)
                 .await?;
             if import_write {
-                self.compute.import_statement(id, c, sql).await
+                self.execute.import_statement(id, c, sql).await
             } else {
-                self.compute.database(id, c, sql, sources, read_only).await
+                self.execute.database(id, c, sql, sources, read_only).await
             }
         } else if [ZERO, DB9].contains(&r["provider"].as_str().unwrap_or("")) {
             self.providers.execute(r, sql).await
@@ -136,7 +136,7 @@ impl Product {
             selected.push((r, path, name.to_owned(), format));
         }
         if resource["provider"] == DUCKDB {
-            self.compute.verify()?;
+            self.execute.verify()?;
         }
         let directory = tempfile::tempdir().map_err(|_| err(503, "SOURCE_UNAVAILABLE"))?;
         let mut staged = vec![];

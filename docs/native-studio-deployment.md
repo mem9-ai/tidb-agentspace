@@ -37,7 +37,7 @@ Prepare an owner-only input file outside Git with these fields. Keep actual valu
 }
 ```
 
-Use S3 workload identity where the runtime actually supports it, or add the existing private `accessKeyId`/`secretAccessKey` credentials to `s3`. The pipeline's short-lived ECR/EKS identity is not automatically available inside the Pod. Supply verified native tidbfs artifacts through `product.compute` before enabling native DuckDB database creation. Selected-file parsing does not need that extension.
+Use S3 workload identity where the runtime actually supports it, or add the existing private `accessKeyId`/`secretAccessKey` credentials to `s3`. The pipeline's short-lived ECR/EKS identity is not automatically available inside the Pod. Supply verified native tidbfs artifacts through `product.execute` before enabling native DuckDB database creation. Selected-file parsing does not need that extension.
 
 Run `node scripts/init-hosted-config.mjs /private/input.json /private/new-output-directory`. It exclusively creates 0600 private files and new random installation roots/keys. Run `workspace-backend initialize --config /run/workspace/bootstrap.json` once with those files mounted. Initialization opens only the selected new roots, commits an empty Workspace and releases ownership; it does not start public listeners. Then use `workspace-backend serve --config /run/workspace/deployment.json`, whose flags disable initialization. Keep that exact configuration/key set through restarts. Missing/incompatible roots fail closed; do not generate a second installation to hide a failure.
 

@@ -20,4 +20,4 @@ tempfile.workspace = true
 workspace-contracts.workspace = true
 workspace-domain.workspace = true
 workspace-providers.workspace = true
-workspace-compute.workspace = true
+workspace-execute.workspace = true
