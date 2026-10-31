@@ -59,7 +59,20 @@ export function diagnose({ namespace, deployment, container }, kubectl) {
     desired: target.spec?.replicas ?? 0,
     available: target.status?.availableReplicas ?? 0,
     pods: [],
+    permissions: {},
   };
+  for (const [label, verb, resource] of [
+    ['createSecrets', 'create', 'secrets'],
+    ['patchSecrets', 'patch', 'secrets'],
+    ['patchDeployments', 'patch', 'deployments'],
+  ]) {
+    try {
+      const value = kubectl(['auth', 'can-i', verb, resource, '-n', namespace]).trim();
+      result.permissions[label] = value === 'yes' ? true : value === 'no' ? false : null;
+    } catch (error) {
+      result.permissions[label] = String(error.stdout || '').trim() === 'no' ? false : null;
+    }
+  }
   for (const pod of (pods.items || []).slice(0, 8)) {
     const name = pod.metadata?.name;
     if (!dns.test(name || '')) continue;
