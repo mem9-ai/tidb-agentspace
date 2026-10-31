@@ -625,7 +625,7 @@ async fn dispatch(
         Duration::from_secs(10),
         to_bytes(
             request.into_body(),
-            if path.contains("/file-exports") {
+            if path.ends_with("/file-exports") || path.ends_with("/file-export-preparations") {
                 8 * 1024 * 1024
             } else {
                 1024 * 1024
@@ -731,8 +731,38 @@ async fn dispatch(
             }
             _ => {
                 if let Some(product) = &app.product {
-                    let raw_upload = (method == Method::PUT && route == "/files/content")
-                        || (method == Method::POST && route == "/database-imports/prepare-upload");
+                    let parts = route
+                        .split('/')
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>();
+                    let retired = matches!(
+                        route,
+                        "/database-imports/prepare"
+                            | "/database-imports/prepare-upload"
+                            | "/file-exports/prepare"
+                    ) || matches!(
+                        parts.as_slice(),
+                        ["resources", _, "setup" | "table"] | ["resources", _, "table", "rows"]
+                    ) || (method == Method::DELETE && route == "/files");
+                    if retired {
+                        app.workspace.authenticate(&credential).await?;
+                        return Err(reject(404, "NOT_FOUND"));
+                    }
+                    let table_name = if method == Method::GET
+                        && matches!(
+                            parts.as_slice(),
+                            ["resources", _, "tables", _] | ["resources", _, "tables", _, "rows"]
+                        ) {
+                        Some(decode_table_name(parts[3])?)
+                    } else {
+                        None
+                    };
+                    let binary_upload = method == Method::POST
+                        && route == "/database-import-preparations"
+                        && headers.get("content-type").and_then(|v| v.to_str().ok())
+                            == Some("application/octet-stream");
+                    let raw_upload =
+                        (method == Method::PUT && route == "/files/content") || binary_upload;
                     let input = if raw_upload {
                         if headers.get("content-type").and_then(|v| v.to_str().ok())
                             != Some("application/octet-stream")
@@ -740,7 +770,12 @@ async fn dispatch(
                             return Err(reject(415, "BINARY_REQUIRED"));
                         }
                         json!({})
-                    } else if method == Method::DELETE && route.starts_with("/resources/") {
+                    } else if (method == Method::DELETE
+                        && (route.starts_with("/resources/")
+                            || route == "/files/entry"
+                            || route.contains("-preparations/")))
+                        || (method == Method::POST && route.ends_with("/setup-attempts"))
+                    {
                         if !bytes.is_empty() {
                             return Err(reject(400, "INVALID_BODY"));
                         }
@@ -779,14 +814,19 @@ async fn dispatch(
                     let if_none_match = precondition("if-none-match")?;
                     let condition = headers.get("idempotency-key").and_then(|v| v.to_str().ok());
                     let (status, reply) = tokio::select! {
-                        result=product.handle(workspace_product::Request {credential:credential.clone(),actor,method:method.as_str(),route,query:&query,input,raw:&bytes,condition,if_match,if_none_match})=>result?,
+                        result=product.handle(workspace_product::Request {credential:credential.clone(),actor,method:method.as_str(),route,query:&query,input,raw:&bytes,condition,if_match,if_none_match,binary_upload,table_name})=>result?,
                         _=cancellation.cancelled()=>return Err(reject(499,if route.contains("analys")||route.contains("tabular-preview"){"ANALYSIS_CANCELED"}else{"SQL_CANCELED"})),
                     };
                     credential_for_response(&app, &headers, &credential).await?;
-                    let created_id = if method == Method::POST && route == "/resources" {
+                    let created_id = if method == Method::POST && status == 201 {
                         match &reply {
                             workspace_product::Reply::Json(v) => {
-                                v["data"]["id"].as_str().map(str::to_owned)
+                                if route.ends_with("-preparations") {
+                                    v["id"].as_str()
+                                } else {
+                                    v["data"]["id"].as_str()
+                                }
+                                .map(str::to_owned)
                             }
                             _ => None,
                         }
@@ -797,8 +837,11 @@ async fn dispatch(
                     if let Some(id) = created_id {
                         output.headers_mut().insert(
                             "Location",
-                            HeaderValue::from_str(&format!("{prefix}/resources/{id}"))
-                                .map_err(|_| reject(500, "INTERNAL_ERROR"))?,
+                            HeaderValue::from_str(&format!(
+                                "{}/{id}",
+                                route.rsplit('/').next().unwrap_or_default()
+                            ))
+                            .map_err(|_| reject(500, "INTERNAL_ERROR"))?,
                         );
                     }
                     if method == Method::DELETE && route.starts_with("/resources/") && status == 202
@@ -898,11 +941,35 @@ async fn credential_for_response(
     app.workspace.authenticate(input).await?;
     Ok(())
 }
+
+fn decode_table_name(segment: &str) -> std::result::Result<String, ServiceError> {
+    let bytes = segment.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            if i + 2 >= bytes.len()
+                || !bytes[i + 1].is_ascii_hexdigit()
+                || !bytes[i + 2].is_ascii_hexdigit()
+            {
+                return Err(reject(400, "INVALID_TABLE_NAME"));
+            }
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    percent_encoding::percent_decode_str(segment)
+        .decode_utf8()
+        .map(|s| s.into_owned())
+        .map_err(|_| reject(400, "INVALID_TABLE_NAME"))
+}
+
 fn product_response(
     status: u16,
     reply: workspace_product::Reply,
 ) -> std::result::Result<Response, ServiceError> {
     match reply {
+        workspace_product::Reply::Empty => Ok(StatusCode::NO_CONTENT.into_response()),
         workspace_product::Reply::Entity { value, etag } => {
             let mut response = (
                 StatusCode::from_u16(status).map_err(|_| reject(500, "INTERNAL_ERROR"))?,

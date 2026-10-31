@@ -71,14 +71,14 @@ try {
   const list = await call(base + `/resources/${resourceId}/tables`, 'GET', undefined, full.secret);
   assert.ok(list.body.data.some((t) => t.name === table));
   const detail = await call(
-    base + `/resources/${resourceId}/table?name=${table}`,
+    base + `/resources/${resourceId}/tables/${encodeURIComponent(table)}`,
     'GET',
     undefined,
     full.secret,
   );
   assert.equal(detail.body.columns[0].key, 'PRI');
   const rows = await call(
-    base + `/resources/${resourceId}/table/rows?name=${table}`,
+    base + `/resources/${resourceId}/tables/${encodeURIComponent(table)}/rows`,
     'GET',
     undefined,
     full.secret,

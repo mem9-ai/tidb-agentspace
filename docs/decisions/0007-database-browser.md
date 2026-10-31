@@ -1,5 +1,7 @@
 # ADR 0007: Database browsing through the SQL boundary
 
+HTTP naming in this historical decision is superseded by [ADR 0032](0032-rest-workflow-resources.md): use setup-attempt resources and `/resources/{id}/tables/{tableName}[/rows]`; old routes are removed.
+
 - Status: Accepted project choice for the owner-requested database browser, 2026-10-28.
 - Implementation evidence: [verification](../database-browser-verification.md).
 

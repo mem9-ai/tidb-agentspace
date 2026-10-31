@@ -61,7 +61,7 @@ impl Product {
         if method != "PUT" && (if_match.is_some() || if_none_match.is_some()) {
             return Err(err(400, "INVALID_PRECONDITION"));
         }
-        let resource_id = if route == "/files/content" || read {
+        let resource_id = if ["/files/content", "/files/entry"].contains(&route) || read {
             q.get("resourceId")
                 .map(String::as_str)
                 .ok_or_else(|| err(404, "NOT_FOUND"))?
@@ -100,11 +100,13 @@ impl Product {
                 .collect::<Vec<_>>();
             return Ok((200, Reply::Json(json!({"data":data}))));
         }
-        let path = clean_path(if ["/files/content", "/files/metadata"].contains(&route) {
-            q.get("path").map(String::as_str).unwrap_or("")
-        } else {
-            text(&input, "path")?
-        })?;
+        let path = clean_path(
+            if ["/files/content", "/files/metadata", "/files/entry"].contains(&route) {
+                q.get("path").map(String::as_str).unwrap_or("")
+            } else {
+                text(&input, "path")?
+            },
+        )?;
         if path == "/" {
             return Err(err(400, "INVALID_PATH"));
         }

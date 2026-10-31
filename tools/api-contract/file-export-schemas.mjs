@@ -36,8 +36,10 @@ export const fileExportSchemas = {
     source: { $ref: '#/components/schemas/FileExportSource' },
     parsing: { $ref: '#/components/schemas/FileExportParsing' },
   }),
-  FileExportPreparation: object({
-    preparationId: str,
+  Preparation: object({
+    id: { ...str, format: 'uuid' },
+    status: { enum: ['ready', 'consumed'] },
+    createdAt: { type: 'string', format: 'date-time' },
     expiresAt: str,
     fields,
     rows: { type: 'array', maxItems: 20, items: { type: 'object', additionalProperties: true } },

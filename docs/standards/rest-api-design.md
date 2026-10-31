@@ -35,23 +35,31 @@
    Additive backend capabilities without changed rendered journeys are accepted through
    native HTTP tests. Frontend interaction tests are outside GH-67 per explicit owner scope.
 
-## Complete target resource model
+## Current resource model and remaining proposals
 
-| Job                | Resource design                                                                       | Implementation status                                                                                          |
-| ------------------ | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Discover caller    | GET `/context`                                                                        | GH-67                                                                                                          |
-| Manage resource    | GET/POST `/resources`; GET/DELETE `/resources/{id}`                                   | GH-67 completes detail/removal                                                                                 |
-| Browse database    | GET `/resources/{id}/tables`; target GET `/tables/{tableName}` and `/rows`            | Existing singular `/table?name=` needs a coordinated caller migration                                          |
-| Submit SQL         | POST `/queries` creates a bounded query-result representation                         | Implemented synchronous result; durable query IDs/results remain future work                                   |
-| Read/write file    | GET `/files`, GET `/files/metadata`, GET/PUT `/files/content`, JSON PUT `/files`      | GH-67 adds metadata/conditions; DELETE body is historical debt; target DELETE `/files/entry?resourceId=&path=` |
-| Review import      | POST `/database-import-preparations` (upload representation selected by Content-Type) | Target replacement for `/database-imports/prepare[-upload]`                                                    |
-| Commit import      | POST `/database-imports` referencing reviewed preparation                             | Implemented; durable import status remains future work                                                         |
-| Review export      | POST `/file-export-preparations`                                                      | Target replacement for `/file-exports/prepare`                                                                 |
-| Export result/file | POST `/result-exports`, POST `/file-exports`                                          | Implemented synchronous result; durable export IDs remain future work                                          |
-| Resume setup       | POST `/resources/{id}/setup-attempts` with an addressable attempt/status              | Target replacement for `/setup`; never blindly repeats unknown provisioning                                    |
+| Job                  | Resource design                                                                                            | Status                                                                                 |
+| -------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Discover caller      | GET `/context`                                                                                             | Implemented GH-67                                                                      |
+| Manage resources     | GET/POST `/resources`; GET/DELETE `/resources/{id}`                                                        | Implemented GH-67                                                                      |
+| Browse database      | GET `/resources/{id}/tables`; GET `/tables/{tableName}` and `/rows` below the resource                     | Implemented GH-76; table identity is one encoded path segment                          |
+| Submit SQL           | POST `/queries` returns a bounded result                                                                   | Implemented synchronous result; durable query IDs remain proposed                      |
+| Read/write files     | GET/PUT `/files`, GET `/files/metadata`, GET/PUT `/files/content`, DELETE `/files/entry?resourceId=&path=` | Implemented; deletion has no body                                                      |
+| Review imports       | POST `/database-import-preparations`; GET/DELETE `/{id}`                                                   | Implemented GH-76; Content-Type selects JSON Workspace input or uploaded bytes         |
+| Confirm imports      | POST `/database-imports` references preparationId                                                          | Implemented; durable import jobs remain proposed                                       |
+| Review exports       | POST `/file-export-preparations`; GET/DELETE `/{id}`                                                       | Implemented GH-76                                                                      |
+| Export results/files | POST `/result-exports`, POST `/file-exports`                                                               | Implemented synchronous result; durable export jobs remain proposed                    |
+| Resume setup         | POST `/resources/{id}/setup-attempts`; GET collection and `/{attemptId}`                                   | Implemented GH-76; durable records, scoped idempotency and observation without retries |
 
-Paths above are relative to `/api/v1/workspaces/{workspaceId}`. Targets are design, not
-routes promised by the current OpenAPI. A later migration must update first-party callers
-and native acceptance together; simply renaming a verb endpoint does not create a resource.
+Paths are relative to `/api/v1/workspaces/{workspaceId}`. No aliases remain for historical
+prepare/prepare-upload/setup, singular-table or DELETE-body routes. Preparation resources
+retain their explicit process-local five-minute lifetime; setup attempts are independent
+durable encrypted records. A new setup key explicitly requests supported reconciliation
+or idempotent setup using existing bindings; missing bindings cannot create replacements.
+See [GH-76](../../specs/gh-76/rest-workflows.md) and
+[ADR 0032](../decisions/0032-rest-workflow-resources.md). Frozen historical specifications
+retain their original names; active docs/callers follow the generated OpenAPI.
+
+Creation Location references are relative to the request URI, so they resolve through the
+same regional origin and any mounted API prefix without trusting forwarded Host headers.
 
 Review this standard when adding durable operations, pagination or a new provider.

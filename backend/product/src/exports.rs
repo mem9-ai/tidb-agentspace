@@ -12,11 +12,12 @@ use sha2::{Digest, Sha256};
 pub(super) struct Preparation {
     pub(super) actor: String,
     pub(super) destination: Option<String>,
-    source: Value,
+    pub(super) source: Value,
     version: String,
     parsed: Value,
     pub(super) expires: i64,
-    used: bool,
+    pub(super) used: bool,
+    pub(super) review: Value,
 }
 fn invalid() -> ServiceError {
     err(400, "INVALID_EXPORT")
@@ -604,7 +605,7 @@ impl Product {
                 )
                 .await;
         }
-        let prepare = route == "/file-exports/prepare";
+        let prepare = route == "/file-export-preparations";
         if !exact(
             &input,
             if prepare {
@@ -749,6 +750,7 @@ impl Product {
         let expires = chrono::Utc::now().timestamp_millis() + 300000;
         let id = uuid::Uuid::new_v4().to_string();
         let version = text(&parsed, "fileVersion")?.to_owned();
+        let review = json!({"id":id,"status":"ready","createdAt":timestamp(),"expiresAt":chrono::DateTime::from_timestamp_millis(expires).map(|d|d.to_rfc3339_opts(chrono::SecondsFormat::Millis,true)),"fields":fields,"rows":parsed["rows"].as_array().expect("rows").iter().take(20).collect::<Vec<_>>(),"rowCount":parsed["rows"].as_array().expect("rows").len(),"sourceVersion":version,"inputBytes":parsed["inputBytes"],"format":format});
         let entry = Preparation {
             actor: actor.into(),
             destination,
@@ -757,6 +759,7 @@ impl Product {
             parsed: parsed.clone(),
             expires,
             used: false,
+            review: review.clone(),
         };
         let mut map = self.preparations.lock().await;
         map.retain(|_, v| v.expires > chrono::Utc::now().timestamp_millis());
@@ -769,10 +772,8 @@ impl Product {
                 map.remove(&key);
             }
         }
-        map.insert(id.clone(), entry);
-        Ok(
-            json!({"preparationId":id,"expiresAt":chrono::DateTime::from_timestamp_millis(expires).map(|d|d.to_rfc3339_opts(chrono::SecondsFormat::Millis,true)),"fields":fields,"rows":parsed["rows"].as_array().expect("rows").iter().take(20).collect::<Vec<_>>(),"rowCount":parsed["rows"].as_array().expect("rows").len(),"sourceVersion":version,"inputBytes":parsed["inputBytes"],"format":format}),
-        )
+        map.insert(id, entry);
+        Ok(review)
     }
     async fn export_database(
         &self,

@@ -15,8 +15,8 @@ export async function authorizationCases(t, { request, key, token, resources, pa
           },
         ],
         ['/resources/db_live/tables'],
-        ['/resources/db_live/table?name=demo_table'],
-        ['/resources/db_live/table/rows?name=demo_table'],
+        ['/resources/db_live/tables/demo_table'],
+        ['/resources/db_live/tables/demo_table/rows'],
         ['/files?resourceId=fs_live'],
         [
           '/files',
@@ -30,7 +30,10 @@ export async function authorizationCases(t, { request, key, token, resources, pa
             },
           },
         ],
-        ['/files', { method: 'DELETE', body: { resourceId: 'fs_live', path: '/live.csv' } }],
+        [
+          '/files/entry?' + new URLSearchParams({ resourceId: 'fs_live', path: '/live.csv' }),
+          { method: 'DELETE' },
+        ],
         ['/files/content?resourceId=fs_live&path=/binary.bin'],
         [
           '/files/content?resourceId=fs_live&path=/forbidden.bin',
@@ -55,7 +58,7 @@ export async function authorizationCases(t, { request, key, token, resources, pa
           },
         ],
         [
-          '/database-imports/prepare',
+          '/database-import-preparations',
           {
             method: 'POST',
             body: {
@@ -66,7 +69,7 @@ export async function authorizationCases(t, { request, key, token, resources, pa
           },
         ],
         [
-          '/database-imports/prepare-upload?' +
+          '/database-import-preparations?' +
             new URLSearchParams({ resourceId: 'db_live', filename: 'x.csv', ...parsing }),
           {
             method: 'POST',
@@ -101,7 +104,7 @@ export async function authorizationCases(t, { request, key, token, resources, pa
           },
         ],
         [
-          '/file-exports/prepare',
+          '/file-export-preparations',
           {
             method: 'POST',
             body: {

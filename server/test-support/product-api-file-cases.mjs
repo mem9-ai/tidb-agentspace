@@ -23,8 +23,8 @@ export async function fileCases(t, { request, token, provider }) {
         'updated\r\n😀',
       );
       await request(
-        '/files',
-        { method: 'DELETE', token, body: { resourceId: 'fs_shared', path: '/notes' } },
+        '/files/entry?' + new URLSearchParams({ resourceId: 'fs_shared', path: '/notes' }),
+        { method: 'DELETE', token },
         409,
         'DIRECTORY_NOT_EMPTY',
       );
@@ -57,14 +57,13 @@ export async function fileCases(t, { request, token, provider }) {
           'INVALID_PATH',
         );
       assert.equal(provider.calls, before);
-      await request('/files', {
-        method: 'DELETE',
-        token,
-        body: { resourceId: 'fs_shared', path: '/notes/测试.txt' },
-      });
       await request(
-        '/files',
-        { method: 'DELETE', token, body: { resourceId: 'fs_shared', path: '/notes/测试.txt' } },
+        '/files/entry?' + new URLSearchParams({ resourceId: 'fs_shared', path: '/notes/测试.txt' }),
+        { method: 'DELETE', token },
+      );
+      await request(
+        '/files/entry?' + new URLSearchParams({ resourceId: 'fs_shared', path: '/notes/测试.txt' }),
+        { method: 'DELETE', token },
         404,
         'NOT_FOUND',
       );
@@ -114,11 +113,10 @@ export async function fileCases(t, { request, token, provider }) {
         headers: { 'Content-Type': 'application/octet-stream' },
       });
       assert.deepEqual((await request(path, { token })).body, Buffer.from('updated'));
-      await request('/files', {
-        method: 'DELETE',
-        token,
-        body: { resourceId: 'fs_live', path: '/二进制.bin' },
-      });
+      await request(
+        '/files/entry?' + new URLSearchParams({ resourceId: 'fs_live', path: '/二进制.bin' }),
+        { method: 'DELETE', token },
+      );
       await request(path, { token }, 404, 'NOT_FOUND');
     },
   );

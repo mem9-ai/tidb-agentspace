@@ -10,25 +10,30 @@ async function tutorialApi(context, workspace, { uncertainSeed = false } = {}) {
     const path = url.pathname.replace(`/api/v1/workspaces/${workspace.state.workspace.id}`, '');
     const method = request.method();
     const reply = (body, status = 200) => route.fulfill({ json: body, status });
-    if (path === '/database-imports/prepare-upload' && method === 'POST') {
+    if (path === '/database-import-preparations' && method === 'POST') {
       calls.push({ action: 'prepare', resourceId: url.searchParams.get('resourceId') });
       expect(request.postData()).toBe(ordersCsv);
       expect(url.searchParams.get('format')).toBe('csv');
       expect(url.searchParams.get('header')).toBe('true');
-      return reply({
-        preparationId: 'tutorial-preparation',
-        expiresAt: '2099-01-01T00:00:00Z',
-        fields: [
-          { source: 'id', name: 'id', type: 'BIGINT' },
-          { source: 'region', name: 'region', type: 'TEXT' },
-          { source: 'amount', name: 'amount', type: 'BIGINT' },
-        ],
-        rows: orderRows,
-        rowCount: 6,
-        sourceVersion: 'tutorial-source',
-        inputBytes: ordersCsv.length,
-        format: 'csv',
-      });
+      return reply(
+        {
+          id: 'tutorial-preparation',
+          status: 'ready',
+          createdAt: '2026-10-31T00:00:00Z',
+          expiresAt: '2099-01-01T00:00:00Z',
+          fields: [
+            { source: 'id', name: 'id', type: 'BIGINT' },
+            { source: 'region', name: 'region', type: 'TEXT' },
+            { source: 'amount', name: 'amount', type: 'BIGINT' },
+          ],
+          rows: orderRows,
+          rowCount: 6,
+          sourceVersion: 'tutorial-source',
+          inputBytes: ordersCsv.length,
+          format: 'csv',
+        },
+        201,
+      );
     }
     if (path === '/database-imports' && method === 'POST') {
       const body = request.postDataJSON();

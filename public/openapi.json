@@ -1579,9 +1579,25 @@
           }
         ]
       },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
+        }
+      ]
+    },
+    "/workspaces/{workspaceId}/files/entry": {
       "delete": {
         "operationId": "deleteFile",
-        "summary": "Delete a file or empty directory",
+        "summary": "Delete a file or empty directory identified by its URI",
         "tags": ["Workspace"],
         "description": "Required workspace key scope: files:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
         "x-required-scope": "files:write",
@@ -1591,24 +1607,20 @@
           { "accountOwner": [] },
           { "guestOwner": [] }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["resourceId", "path"],
-                "properties": { "resourceId": { "type": "string" }, "path": { "type": "string" } }
-              }
-            }
-          }
-        },
+        "parameters": [
+          { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "path", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
         "responses": {
           "200": {
             "description": "Success",
             "content": {
               "application/json": {
-                "schema": { "type": "object", "properties": { "deleted": { "type": "boolean" } } }
+                "schema": {
+                  "type": "object",
+                  "required": ["deleted"],
+                  "properties": { "deleted": { "type": "boolean" } }
+                }
               }
             }
           },
@@ -1951,7 +1963,7 @@
         }
       ]
     },
-    "/workspaces/{workspaceId}/resources/{resourceId}/setup": {
+    "/workspaces/{workspaceId}/resources/{resourceId}/setup-attempts": {
       "parameters": [
         {
           "name": "workspaceId",
@@ -1968,11 +1980,298 @@
         { "name": "resourceId", "in": "path", "required": true, "schema": { "type": "string" } }
       ],
       "post": {
-        "operationId": "retryDatabaseSetup",
-        "summary": "Resume managed database setup on the same saved storage/instance; never replace an uncertain request",
+        "operationId": "createResourceSetupAttempt",
+        "summary": "Create a durable setup attempt on the saved target",
         "tags": ["Workspace"],
-        "description": "Required workspace key scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required workspace key scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Journaled before I/O; executes inline without a queue. Same caller/resource/idempotency key replays without effects. A different key explicitly requests a new attempt using saved bindings and supported reconciliation/idempotent setup only. Missing bindings cannot provision a replacement. succeeded/failed/outcome-unknown describe the attempt, not HTTP resource creation. GET never executes setup; existing credentials are retained.",
         "x-required-scope": "resources:write",
+        "security": [
+          { "workspaceKey": [] },
+          { "localOwner": [] },
+          { "accountOwner": [] },
+          { "guestOwner": [] }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "description": "Caller/resource-scoped key. Replays return the original attempt without executing setup. No body."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": { "data": { "$ref": "#/components/schemas/ResourceSetupAttempt" } }
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "schema": { "type": "string" },
+                "description": "Address of the durable setup attempt."
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listResourceSetupAttempts",
+        "summary": "List retained setup attempts by opaque ID",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: resources:read or resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "x-required-scope": "resources:read or resources:write",
+        "security": [
+          { "workspaceKey": [] },
+          { "localOwner": [] },
+          { "accountOwner": [] },
+          { "guestOwner": [] }
+        ],
+        "parameters": [
+          { "name": "cursor", "in": "query", "schema": { "type": "string", "format": "uuid" } },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "nextCursor"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "maxItems": 100,
+                      "items": { "$ref": "#/components/schemas/ResourceSetupAttempt" }
+                    },
+                    "nextCursor": { "type": ["string", "null"] }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/resources/{resourceId}/setup-attempts/{attemptId}": {
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
+        },
+        { "name": "resourceId", "in": "path", "required": true, "schema": { "type": "string" } },
+        {
+          "name": "attemptId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "format": "uuid" }
+        }
+      ],
+      "get": {
+        "operationId": "getResourceSetupAttempt",
+        "summary": "Observe a setup attempt without provider calls or retry",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: resources:read or resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "x-required-scope": "resources:read or resources:write",
         "security": [
           { "workspaceKey": [] },
           { "localOwner": [] },
@@ -1986,7 +2285,8 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": { "data": { "$ref": "#/components/schemas/Resource" } }
+                  "required": ["data"],
+                  "properties": { "data": { "$ref": "#/components/schemas/ResourceSetupAttempt" } }
                 }
               }
             }
@@ -2212,7 +2512,7 @@
         }
       }
     },
-    "/workspaces/{workspaceId}/resources/{resourceId}/table": {
+    "/workspaces/{workspaceId}/resources/{resourceId}/tables/{tableName}": {
       "parameters": [
         {
           "name": "workspaceId",
@@ -2242,8 +2542,8 @@
         ],
         "parameters": [
           {
-            "name": "name",
-            "in": "query",
+            "name": "tableName",
+            "in": "path",
             "required": true,
             "schema": { "type": "string", "minLength": 1, "maxLength": 64 },
             "description": "Exact table name in the current database; not a schema-qualified SQL expression."
@@ -2349,7 +2649,7 @@
         }
       }
     },
-    "/workspaces/{workspaceId}/resources/{resourceId}/table/rows": {
+    "/workspaces/{workspaceId}/resources/{resourceId}/tables/{tableName}/rows": {
       "parameters": [
         {
           "name": "workspaceId",
@@ -2366,7 +2666,7 @@
         { "name": "resourceId", "in": "path", "required": true, "schema": { "type": "string" } }
       ],
       "get": {
-        "operationId": "previewDatabaseTable",
+        "operationId": "getDatabaseTableRows",
         "summary": "Read up to 100 unordered rows, bounded by 1 MiB and 15 seconds per statement; not pagination or a full export",
         "tags": ["Workspace"],
         "description": "Required workspace key scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
@@ -2379,8 +2679,8 @@
         ],
         "parameters": [
           {
-            "name": "name",
-            "in": "query",
+            "name": "tableName",
+            "in": "path",
             "required": true,
             "schema": { "type": "string", "minLength": 1, "maxLength": 64 }
           }
@@ -2485,150 +2785,13 @@
         }
       }
     },
-    "/workspaces/{workspaceId}/database-imports/prepare": {
+    "/workspaces/{workspaceId}/database-import-preparations": {
       "post": {
-        "operationId": "prepareDatabaseImport",
-        "summary": "Parse a Workspace CSV/Parquet for a fixed destination database",
+        "operationId": "createDatabaseImportPreparation",
+        "summary": "Create a private destination-bound import review",
         "tags": ["Workspace"],
-        "description": "Required workspace key scope: queries:execute on destination; files:read and files:analyze on source. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
-        "x-required-scope": "queries:execute on destination; files:read and files:analyze on source",
-        "security": [
-          { "workspaceKey": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": { "$ref": "#/components/schemas/DatabaseImportPreparationInput" }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/FileExportPreparation" }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, expired, or revoked credential",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "403": {
-            "description": "Insufficient permission",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "404": {
-            "description": "Resource or endpoint not found",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "405": {
-            "description": "Resource lifecycle operation unsupported by provider",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "409": {
-            "description": "Conflict or free-tier limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "410": {
-            "description": "Temporary database expired",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "412": {
-            "description": "Version precondition failed without a write",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "413": {
-            "description": "Content too large",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "415": {
-            "description": "Unsupported content type",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "422": {
-            "description": "SQL syntax, result limit, or unsupported demo query",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "429": {
-            "description": "Provider quota or rate limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "502": {
-            "description": "Provider unavailable or invalid response",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "503": {
-            "description": "Provider binding needs operator recovery",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "504": {
-            "description": "SQL timeout; a write outcome may be unknown",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          }
-        }
-      },
-      "parameters": [
-        {
-          "name": "workspaceId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[A-Za-z0-9_.:-]+$"
-          },
-          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
-        }
-      ]
-    },
-    "/workspaces/{workspaceId}/database-imports/prepare-upload": {
-      "post": {
-        "operationId": "prepareDatabaseImportUpload",
-        "summary": "Upload up to 1 MiB of local CSV/Parquet for private schema review",
-        "tags": ["Workspace"],
-        "description": "Required workspace key scope: queries:execute on destination. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
-        "x-required-scope": "queries:execute on destination",
+        "description": "Required workspace key scope: queries:execute on destination; Workspace inputs also require source files:read/analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
+        "x-required-scope": "queries:execute on destination; Workspace inputs also require source files:read/analyze",
         "security": [
           { "workspaceKey": [] },
           { "localOwner": [] },
@@ -2636,39 +2799,47 @@
           { "guestOwner": [] }
         ],
         "parameters": [
-          { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
+          {
+            "name": "resourceId",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Required only for octet-stream uploads. Forbidden on JSON requests."
+          },
           {
             "name": "filename",
             "in": "query",
-            "required": true,
             "schema": { "type": "string", "minLength": 1, "maxLength": 255 },
-            "description": "A basename of at most 255 UTF-8 bytes, not a File System path."
+            "description": "Upload basename, required for octet-stream."
           },
           {
             "name": "format",
             "in": "query",
-            "required": true,
-            "schema": { "enum": ["csv", "parquet"] }
+            "schema": { "enum": ["csv", "parquet"] },
+            "description": "Required for octet-stream."
           },
           {
             "name": "header",
             "in": "query",
             "schema": { "enum": ["true", "false"] },
-            "description": "Required for CSV; forbidden for Parquet."
+            "description": "Required for CSV uploads, forbidden for Parquet."
           },
           {
             "name": "delimiter",
             "in": "query",
             "schema": { "enum": [",", "\t", ";", "|"] },
-            "description": "Required for CSV; forbidden for Parquet."
+            "description": "Required for CSV uploads, forbidden for Parquet."
           }
         ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Success",
             "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/FileExportPreparation" }
+              "application/json": { "schema": { "$ref": "#/components/schemas/Preparation" } }
+            },
+            "headers": {
+              "Location": {
+                "schema": { "type": "string" },
+                "description": "Address of the created actor-bound review resource."
               }
             }
           },
@@ -2766,6 +2937,9 @@
         "requestBody": {
           "required": true,
           "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DatabaseImportPreparationInput" }
+            },
             "application/octet-stream": { "schema": { "type": "string", "format": "binary" } }
           }
         }
@@ -2787,7 +2961,7 @@
     },
     "/workspaces/{workspaceId}/database-imports": {
       "post": {
-        "operationId": "commitDatabaseImport",
+        "operationId": "createDatabaseImport",
         "summary": "Confirm reviewed server rows and create a new database table",
         "tags": ["Workspace"],
         "description": "Required workspace key scope: queries:execute on destination; Workspace files additionally require source files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
@@ -2920,9 +3094,9 @@
         }
       ]
     },
-    "/workspaces/{workspaceId}/file-exports/prepare": {
+    "/workspaces/{workspaceId}/file-export-preparations": {
       "post": {
-        "operationId": "prepareFileExport",
+        "operationId": "createFileExportPreparation",
         "summary": "Parse an original file or Bash stream for explicit schema review",
         "tags": ["Workspace"],
         "description": "Required workspace key scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Also requires files:read and the source File System grant. Fixed CSV/Parquet/text-line parsing, no scripts. Up to 16 MiB original or 1 MiB output text, 1000 rows/100 columns/1 MiB parsed data and 15 seconds, shared worker admission. Returns 20 sample rows and suggested field types with an actor-bound five-minute preparation. Parsing writes nothing. CSV keeps leading zeros and distinguishes quoted empty strings from NULL. Text lines are explicit one-column records.",
@@ -2942,11 +3116,15 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "Success",
             "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/FileExportPreparation" }
+              "application/json": { "schema": { "$ref": "#/components/schemas/Preparation" } }
+            },
+            "headers": {
+              "Location": {
+                "schema": { "type": "string" },
+                "description": "Address of the created actor-bound review resource."
               }
             }
           },
@@ -3062,7 +3240,7 @@
         "operationId": "exportFileContent",
         "summary": "Copy original bytes, export Bash text or commit a confirmed database import",
         "tags": ["Workspace"],
-        "description": "Required workspace key scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Original copies require read access; Bash output requires read plus analyze. File targets require files:write and a target grant. Database commits require the exact actor preparation, confirmed=true, reviewed fields, source read/analyze and target queries:execute/grant. Original versions must match; single-use writes, no append/overwrite/retry. Output text is client-supplied authorization context, not attested command lineage. Only these two routes permit an 8 MiB JSON envelope for at most 1 MiB output text. Original downloads retain /files/content (local files use /files).",
+        "description": "Required workspace key scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Original copies require read access; Bash output requires read plus analyze. File targets require files:write and a target grant. Database commits require the exact actor preparation, confirmed=true, reviewed fields, source read/analyze and target queries:execute/grant. Original versions must match; single-use writes, no append/overwrite/retry. Output text is client-supplied authorization context, not attested command lineage. Only file-exports and file-export-preparations permit an 8 MiB JSON envelope for at most 1 MiB output text. Original downloads retain /files/content (local files use /files).",
         "x-required-scope": "files:read",
         "security": [
           { "workspaceKey": [] },
@@ -5286,6 +5464,488 @@
           }
         }
       }
+    },
+    "/workspaces/{workspaceId}/database-import-preparations/{preparationId}": {
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
+        },
+        {
+          "name": "preparationId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "format": "uuid" }
+        }
+      ],
+      "get": {
+        "operationId": "getDatabaseImportPreparation",
+        "summary": "Read the current actor review without parsing or provider I/O",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: queries:execute on destination; source files:read/analyze when present. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "x-required-scope": "queries:execute on destination; source files:read/analyze when present",
+        "security": [
+          { "workspaceKey": [] },
+          { "localOwner": [] },
+          { "accountOwner": [] },
+          { "guestOwner": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Preparation" } }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteDatabaseImportPreparation",
+        "summary": "Cancel an unconsumed review",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: queries:execute on destination; source files:read/analyze when present. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "x-required-scope": "queries:execute on destination; source files:read/analyze when present",
+        "security": [
+          { "workspaceKey": [] },
+          { "localOwner": [] },
+          { "accountOwner": [] },
+          { "guestOwner": [] }
+        ],
+        "responses": {
+          "204": {
+            "description": "Review cancelled; no response body. Already consumed reviews return 409."
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/file-export-preparations/{preparationId}": {
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
+        },
+        {
+          "name": "preparationId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "format": "uuid" }
+        }
+      ],
+      "get": {
+        "operationId": "getFileExportPreparation",
+        "summary": "Read the current actor review without parsing or provider I/O",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "x-required-scope": "files:read and files:analyze",
+        "security": [
+          { "workspaceKey": [] },
+          { "localOwner": [] },
+          { "accountOwner": [] },
+          { "guestOwner": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Preparation" } }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteFileExportPreparation",
+        "summary": "Cancel an unconsumed review",
+        "tags": ["Workspace"],
+        "description": "Required workspace key scope: files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "x-required-scope": "files:read and files:analyze",
+        "security": [
+          { "workspaceKey": [] },
+          { "localOwner": [] },
+          { "accountOwner": [] },
+          { "guestOwner": [] }
+        ],
+        "responses": {
+          "204": {
+            "description": "Review cancelled; no response body. Already consumed reviews return 409."
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "Temporary database expired",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5610,11 +6270,13 @@
           "parsing": { "$ref": "#/components/schemas/FileExportParsing" }
         }
       },
-      "FileExportPreparation": {
+      "Preparation": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "preparationId",
+          "id",
+          "status",
+          "createdAt",
           "expiresAt",
           "fields",
           "rows",
@@ -5624,7 +6286,9 @@
           "format"
         ],
         "properties": {
-          "preparationId": { "type": "string" },
+          "id": { "type": "string", "format": "uuid" },
+          "status": { "enum": ["ready", "consumed"] },
+          "createdAt": { "type": "string", "format": "date-time" },
           "expiresAt": { "type": "string" },
           "fields": {
             "type": "array",
@@ -6083,6 +6747,27 @@
           "queryCount": { "type": "integer" },
           "capabilities": { "$ref": "#/components/schemas/Capabilities" },
           "mode": { "enum": ["demo", "hybrid"] }
+        }
+      },
+      "ResourceSetupAttempt": {
+        "type": "object",
+        "required": [
+          "id",
+          "resourceId",
+          "createdAt",
+          "updatedAt",
+          "status",
+          "errorCode",
+          "resource"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "resourceId": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "status": { "enum": ["succeeded", "failed", "outcome-unknown"] },
+          "errorCode": { "type": ["string", "null"] },
+          "resource": { "$ref": "#/components/schemas/Resource" }
         }
       }
     }

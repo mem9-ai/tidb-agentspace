@@ -28,7 +28,7 @@ export const databaseImportSchemas = {
     preparationId: str,
     confirmed: { const: true },
     table: str,
-    fields: fileExportSchemas.FileExportPreparation.properties.fields,
+    fields: fileExportSchemas.Preparation.properties.fields,
   }),
   DatabaseImportResult: fileExportSchemas.FileExportOutput.oneOf[2],
 };

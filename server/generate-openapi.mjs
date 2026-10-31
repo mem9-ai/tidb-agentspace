@@ -260,6 +260,15 @@ const response = (schema, description = 'Success') => ({
   description,
   content: { 'application/json': { schema } },
 });
+schemas.ResourceSetupAttempt = object({
+  id: { type: 'string', format: 'uuid' },
+  resourceId: str,
+  createdAt: { type: 'string', format: 'date-time' },
+  updatedAt: { type: 'string', format: 'date-time' },
+  status: { enum: ['succeeded', 'failed', 'outcome-unknown'] },
+  errorCode: { type: ['string', 'null'] },
+  resource: ref('Resource'),
+});
 const ownerSessions = [{ localOwner: [] }, { accountOwner: [] }, { guestOwner: [] }];
 function operation(
   id,
@@ -579,14 +588,20 @@ const paths = {
       },
       output: { type: 'object', properties: { data: ref('File') } },
     }),
-    delete: operation('deleteFile', 'Delete a file or empty directory', 'files:write', {
-      input: {
-        type: 'object',
-        required: ['resourceId', 'path'],
-        properties: { resourceId: str, path: str },
+  },
+  [ws + '/files/entry']: {
+    delete: operation(
+      'deleteFile',
+      'Delete a file or empty directory identified by its URI',
+      'files:write',
+      {
+        parameters: [
+          { name: 'resourceId', in: 'query', required: true, schema: str },
+          { name: 'path', in: 'query', required: true, schema: str },
+        ],
+        output: object({ deleted: { type: 'boolean' } }),
       },
-      output: { type: 'object', properties: { deleted: { type: 'boolean' } } },
-    }),
+    ),
   },
   [ws + '/files/content']: {
     get: {
@@ -659,15 +674,57 @@ const paths = {
       },
     },
   },
-  [ws + '/resources/{resourceId}/setup']: {
+  [ws + '/resources/{resourceId}/setup-attempts']: {
     parameters: [{ name: 'resourceId', in: 'path', required: true, schema: str }],
     post: operation(
-      'retryDatabaseSetup',
-      'Resume managed database setup on the same saved storage/instance; never replace an uncertain request',
+      'createResourceSetupAttempt',
+      'Create a durable setup attempt on the saved target',
       'resources:write',
       {
-        output: { type: 'object', properties: { data: { $ref: '#/components/schemas/Resource' } } },
+        status: 201,
+        parameters: [
+          {
+            name: 'Idempotency-Key',
+            in: 'header',
+            required: true,
+            schema: { type: 'string', minLength: 1, maxLength: 128 },
+            description:
+              'Caller/resource-scoped key. Replays return the original attempt without executing setup. No body.',
+          },
+        ],
+        output: object({ data: ref('ResourceSetupAttempt') }),
       },
+    ),
+    get: operation(
+      'listResourceSetupAttempts',
+      'List retained setup attempts by opaque ID',
+      'resources:read or resources:write',
+      {
+        parameters: [
+          { name: 'cursor', in: 'query', schema: { type: 'string', format: 'uuid' } },
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+          },
+        ],
+        output: object({
+          data: { type: 'array', maxItems: 100, items: ref('ResourceSetupAttempt') },
+          nextCursor: { type: ['string', 'null'] },
+        }),
+      },
+    ),
+  },
+  [ws + '/resources/{resourceId}/setup-attempts/{attemptId}']: {
+    parameters: [
+      { name: 'resourceId', in: 'path', required: true, schema: str },
+      { name: 'attemptId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+    ],
+    get: operation(
+      'getResourceSetupAttempt',
+      'Observe a setup attempt without provider calls or retry',
+      'resources:read or resources:write',
+      { output: object({ data: ref('ResourceSetupAttempt') }) },
     ),
   },
   [ws + '/resources/{resourceId}/tables']: {
@@ -679,7 +736,7 @@ const paths = {
       { output: ref('TableList') },
     ),
   },
-  [ws + '/resources/{resourceId}/table']: {
+  [ws + '/resources/{resourceId}/tables/{tableName}']: {
     parameters: [{ name: 'resourceId', in: 'path', required: true, schema: str }],
     get: operation(
       'getDatabaseTable',
@@ -688,8 +745,8 @@ const paths = {
       {
         parameters: [
           {
-            name: 'name',
-            in: 'query',
+            name: 'tableName',
+            in: 'path',
             required: true,
             schema: { type: 'string', minLength: 1, maxLength: 64 },
             description:
@@ -700,17 +757,17 @@ const paths = {
       },
     ),
   },
-  [ws + '/resources/{resourceId}/table/rows']: {
+  [ws + '/resources/{resourceId}/tables/{tableName}/rows']: {
     parameters: [{ name: 'resourceId', in: 'path', required: true, schema: str }],
     get: operation(
-      'previewDatabaseTable',
+      'getDatabaseTableRows',
       'Read up to 100 unordered rows, bounded by 1 MiB and 15 seconds per statement; not pagination or a full export',
       'queries:read',
       {
         parameters: [
           {
-            name: 'name',
-            in: 'query',
+            name: 'tableName',
+            in: 'path',
             required: true,
             schema: { type: 'string', minLength: 1, maxLength: 64 },
           },
@@ -719,69 +776,75 @@ const paths = {
       },
     ),
   },
-  [ws + '/database-imports/prepare']: {
-    post: operation(
-      'prepareDatabaseImport',
-      'Parse a Workspace CSV/Parquet for a fixed destination database',
-      'queries:execute on destination; files:read and files:analyze on source',
-      { input: ref('DatabaseImportPreparationInput'), output: ref('FileExportPreparation') },
-    ),
-  },
-  [ws + '/database-imports/prepare-upload']: {
+  [ws + '/database-import-preparations']: {
     post: {
       ...operation(
-        'prepareDatabaseImportUpload',
-        'Upload up to 1 MiB of local CSV/Parquet for private schema review',
-        'queries:execute on destination',
+        'createDatabaseImportPreparation',
+        'Create a private destination-bound import review',
+        'queries:execute on destination; Workspace inputs also require source files:read/analyze',
         {
+          status: 201,
           parameters: [
-            { name: 'resourceId', in: 'query', required: true, schema: str },
+            {
+              name: 'resourceId',
+              in: 'query',
+              schema: str,
+              description: 'Required only for octet-stream uploads. Forbidden on JSON requests.',
+            },
             {
               name: 'filename',
               in: 'query',
-              required: true,
               schema: { type: 'string', minLength: 1, maxLength: 255 },
-              description: 'A basename of at most 255 UTF-8 bytes, not a File System path.',
+              description: 'Upload basename, required for octet-stream.',
             },
-            { name: 'format', in: 'query', required: true, schema: { enum: ['csv', 'parquet'] } },
+            {
+              name: 'format',
+              in: 'query',
+              schema: { enum: ['csv', 'parquet'] },
+              description: 'Required for octet-stream.',
+            },
             {
               name: 'header',
               in: 'query',
               schema: { enum: ['true', 'false'] },
-              description: 'Required for CSV; forbidden for Parquet.',
+              description: 'Required for CSV uploads, forbidden for Parquet.',
             },
             {
               name: 'delimiter',
               in: 'query',
               schema: { enum: [',', '\t', ';', '|'] },
-              description: 'Required for CSV; forbidden for Parquet.',
+              description: 'Required for CSV uploads, forbidden for Parquet.',
             },
           ],
-          output: ref('FileExportPreparation'),
+          output: ref('Preparation'),
         },
       ),
       requestBody: {
         required: true,
-        content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+        content: {
+          'application/json': { schema: ref('DatabaseImportPreparationInput') },
+          'application/octet-stream': { schema: { type: 'string', format: 'binary' } },
+        },
       },
     },
   },
   [ws + '/database-imports']: {
     post: operation(
-      'commitDatabaseImport',
+      'createDatabaseImport',
       'Confirm reviewed server rows and create a new database table',
       'queries:execute on destination; Workspace files additionally require source files:read and files:analyze',
       { input: ref('DatabaseImportInput'), output: ref('DatabaseImportResult') },
     ),
   },
-  [ws + '/file-exports/prepare']: {
+  [ws + '/file-export-preparations']: {
     post: operation(
-      'prepareFileExport',
+      'createFileExportPreparation',
       'Parse an original file or Bash stream for explicit schema review',
       'files:analyze',
       {
+        status: 201,
         input: ref('FileExportPreparationInput'),
-        output: ref('FileExportPreparation'),
+        output: ref('Preparation'),
       },
     ),
   },
@@ -1196,20 +1259,59 @@ paths['/api/auth/tidbcloud/logout'] = {
     },
   },
 };
+for (const collection of ['database-import-preparations', 'file-export-preparations']) {
+  paths[ws + '/' + collection + '/{preparationId}'] = {
+    parameters: [
+      {
+        name: 'preparationId',
+        in: 'path',
+        required: true,
+        schema: { type: 'string', format: 'uuid' },
+      },
+    ],
+    get: operation(
+      collection === 'database-import-preparations'
+        ? 'getDatabaseImportPreparation'
+        : 'getFileExportPreparation',
+      'Read the current actor review without parsing or provider I/O',
+      collection === 'database-import-preparations'
+        ? 'queries:execute on destination; source files:read/analyze when present'
+        : 'files:read and files:analyze',
+      { output: ref('Preparation') },
+    ),
+    delete: operation(
+      collection === 'database-import-preparations'
+        ? 'deleteDatabaseImportPreparation'
+        : 'deleteFileExportPreparation',
+      'Cancel an unconsumed review',
+      collection === 'database-import-preparations'
+        ? 'queries:execute on destination; source files:read/analyze when present'
+        : 'files:read and files:analyze',
+      { status: 204 },
+    ),
+  };
+  paths[ws + '/' + collection + '/{preparationId}'].delete.responses[204] = {
+    description: 'Review cancelled; no response body. Already consumed reviews return 409.',
+  };
+  paths[ws + '/' + collection].post.responses[201].headers = {
+    Location: { schema: str, description: 'Address of the created actor-bound review resource.' },
+  };
+}
+paths[ws + '/resources/{resourceId}/setup-attempts'].post.responses[201].headers = {
+  Location: { schema: str, description: 'Address of the durable setup attempt.' },
+};
+paths[ws + '/resources/{resourceId}/setup-attempts'].post.description +=
+  ' Journaled before I/O; executes inline without a queue. Same caller/resource/idempotency key replays without effects. A different key explicitly requests a new attempt using saved bindings and supported reconciliation/idempotent setup only. Missing bindings cannot provision a replacement. succeeded/failed/outcome-unknown describe the attempt, not HTTP resource creation. GET never executes setup; existing credentials are retained.';
 for (const [path, item] of Object.entries(paths))
   if (path.includes('{workspaceId}')) item.parameters = [workspaceId, ...(item.parameters || [])];
-for (const route of [
-  '/database-imports/prepare',
-  '/database-imports/prepare-upload',
-  '/database-imports',
-]) {
+for (const route of ['/database-import-preparations', '/database-imports']) {
   paths[ws + route].post.description +=
     ' CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.';
 }
-paths[ws + '/file-exports/prepare'].post.description +=
+paths[ws + '/file-export-preparations'].post.description +=
   ' Also requires files:read and the source File System grant. Fixed CSV/Parquet/text-line parsing, no scripts. Up to 16 MiB original or 1 MiB output text, 1000 rows/100 columns/1 MiB parsed data and 15 seconds, shared worker admission. Returns 20 sample rows and suggested field types with an actor-bound five-minute preparation. Parsing writes nothing. CSV keeps leading zeros and distinguishes quoted empty strings from NULL. Text lines are explicit one-column records.';
 paths[ws + '/file-exports'].post.description +=
-  ' Original copies require read access; Bash output requires read plus analyze. File targets require files:write and a target grant. Database commits require the exact actor preparation, confirmed=true, reviewed fields, source read/analyze and target queries:execute/grant. Original versions must match; single-use writes, no append/overwrite/retry. Output text is client-supplied authorization context, not attested command lineage. Only these two routes permit an 8 MiB JSON envelope for at most 1 MiB output text. Original downloads retain /files/content (local files use /files).';
+  ' Original copies require read access; Bash output requires read plus analyze. File targets require files:write and a target grant. Database commits require the exact actor preparation, confirmed=true, reviewed fields, source read/analyze and target queries:execute/grant. Original versions must match; single-use writes, no append/overwrite/retry. Output text is client-supplied authorization context, not attested command lineage. Only file-exports and file-export-preparations permit an 8 MiB JSON envelope for at most 1 MiB output text. Original downloads retain /files/content (local files use /files).';
 paths[ws + '/files/tabular-preview'].get.description +=
   ' Fixed CSV/Parquet schema/sample only: accepts resourceId/path, no custom SQL or engine settings. Requires files:read, not files:analyze. Whole version-verified snapshot up to 16 MiB, 15 seconds and shared two-worker budget; at most 20 rows, 50 columns, 128 KiB. CSV types are inferred and totalRows unknown; Parquet count is metadata. No automatic retry. Download unsupported or over-budget files.';
 paths[ws + '/file-analyses'].post.description +=
