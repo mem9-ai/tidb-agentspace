@@ -21,16 +21,27 @@ fn parsing(value: &Value) -> Result<Value> {
         _ => Err(invalid()),
     }
 }
+pub(super) struct DatabaseImportRequest<'a> {
+    pub route: &'a str,
+    pub query: &'a BTreeMap<String, String>,
+    pub input: Value,
+    pub raw: &'a [u8],
+    pub upload: bool,
+}
 impl Product {
     pub(super) async fn database_import(
         &self,
         credential: &Credential,
         actor: &str,
-        route: &str,
-        query: &BTreeMap<String, String>,
-        input: Value,
-        raw: &[u8],
+        request: DatabaseImportRequest<'_>,
     ) -> Result<Value> {
+        let DatabaseImportRequest {
+            route,
+            query,
+            input,
+            raw,
+            upload,
+        } = request;
         if route == "/database-imports" {
             if !exact(
                 &input,
@@ -61,7 +72,7 @@ impl Product {
             }
             return self.export(credential,actor,"/file-exports",json!({"preparationId":id,"confirmed":true,"fields":input["fields"],"target":{"kind":"database","resourceId":resource_id,"table":input["table"]}})).await;
         }
-        let upload = route == "/database-imports/prepare-upload";
+
         let (resource_id, source, options) = if upload {
             let csv = query.get("format").map(String::as_str) == Some("csv");
             let keys = if csv {
@@ -102,6 +113,9 @@ impl Product {
             let source = json!({"kind":"upload","resourceId":resource_id,"filename":filename});
             (resource_id, source, options)
         } else {
+            if !query.is_empty() {
+                return Err(invalid());
+            }
             if !exact(&input, &["resourceId", "source", "parsing"])
                 || !exact(&input["source"], &["resourceId", "path"])
             {

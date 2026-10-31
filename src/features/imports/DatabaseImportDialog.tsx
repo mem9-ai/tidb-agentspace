@@ -106,7 +106,7 @@ export function DatabaseImportDialog({
     try {
       const parsed =
         source === 'local' && file
-          ? await workspaceApi.prepareDatabaseImportUpload(
+          ? await workspaceApi.createDatabaseImportPreparationUpload(
               database.id,
               file,
               parsing,
@@ -123,7 +123,7 @@ export function DatabaseImportDialog({
               },
               controller.signal,
             )
-          : await workspaceApi.prepareDatabaseImport(
+          : await workspaceApi.createDatabaseImportPreparation(
               { resourceId: database.id, source: { resourceId: sourceId, path }, parsing },
               controller.signal,
             );
@@ -158,9 +158,9 @@ export function DatabaseImportDialog({
     }
     begin('writing');
     try {
-      const saved = await workspaceApi.commitDatabaseImport({
+      const saved = await workspaceApi.createDatabaseImport({
         resourceId: database.id,
-        preparationId: review.preparationId,
+        preparationId: review.id,
         confirmed: true,
         table,
         fields: fields

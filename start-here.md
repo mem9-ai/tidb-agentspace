@@ -35,6 +35,9 @@ Internal backend changes preserving the public contract do not require frontend 
 Public resource modeling follows [REST API design](docs/standards/rest-api-design.md);
 [GH-67](specs/gh-67/spec.md) defines agent context, read-only SQL, resource lifecycle and
 file version preconditions.
+[REST workflows](specs/gh-76/rest-workflows.md) replaces historical command URLs with
+addressable preparations/setup attempts and explicit table/file identity. It retains
+existing resources and credentials without old HTTP aliases or a metadata reset.
 It also defines product completeness: supported customer business workflows must finish
 through documented OpenAPI without Portal automation. Pure presentation/browser interactions
 are the UI-only exception; authentication and permission boundaries still apply.

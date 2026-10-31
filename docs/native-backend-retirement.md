@@ -110,6 +110,19 @@ Keys never gain import/export destination writes. Zero reports deletion unsuppor
 physical removal completion remains operator reconciliation. Only confirmed deleted resources
 leave the default collection; their tombstone remains addressable for authorized inspection.
 
+## REST workflow resources
+
+[GH-76](../specs/gh-76/rest-workflows.md) extends native acceptance to preparation creation,
+inspection, cancellation and consumption, plus setup-attempt identity, bounded pagination,
+scoped idempotency, unknown outcomes and recovery. Historical routes are removed rather
+than forwarded. Setup journals use `operations/setup/{resourceId}/{attemptId}` and scoped
+`indexes/setup-idempotency/{digest}` records outside bootstrap state, under the existing
+encrypted Workspace writer fence. No reset or migration of resources, Keys, bindings or
+credentials is required. Table names are encoded URI segments; file deletion identity uses
+URI fields without a body. Existing transport/downloaded agent instructions use the same
+contract; rendered journeys are unchanged. Creation Location references resolve relative
+to the request URI, preserving regional origins and mounted API prefixes.
+
 ## Local cutover
 
 Package reviewed clean source with a source SHA and checksums. Publish the independent

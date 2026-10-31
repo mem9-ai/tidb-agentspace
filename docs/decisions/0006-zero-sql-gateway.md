@@ -8,6 +8,10 @@ The PG withdrawal described here is historical. [ADR 0011](0011-db9-postgres.md)
 real db9 PostgreSQL while keeping retired simulated PG records inaccessible. TiDB Cloud PG
 Starter remains a separate future integration.
 
+HTTP naming in this historical decision is superseded by
+[ADR 0032](0032-rest-workflow-resources.md): use addressable setup attempts and
+`/resources/{id}/tables/{tableName}[/rows]`. Old command/singular-table URLs are removed.
+
 ## Decision and verified sources
 
 The owner explicitly chose TiDB Cloud Zero for the first real SQL integration and asked to

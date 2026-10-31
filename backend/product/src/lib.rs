@@ -2,8 +2,10 @@ mod database;
 mod exports;
 mod files;
 mod imports;
+mod preparations;
 mod read_only;
 mod resources;
+mod setup_attempts;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -35,6 +37,7 @@ pub struct Product {
     pub execute: Executor,
     lifecycle: tokio::sync::RwLock<()>,
     file_mutations: Mutex<()>,
+    setup_admission: Mutex<()>,
     preparations: Mutex<BTreeMap<String, exports::Preparation>>,
 }
 pub struct Request<'a> {
@@ -48,9 +51,11 @@ pub struct Request<'a> {
     pub condition: Option<&'a str>,
     pub if_match: Option<&'a str>,
     pub if_none_match: Option<&'a str>,
+    pub binary_upload: bool,
 }
 pub enum Reply {
     Json(Value),
+    Empty,
     Entity {
         value: Value,
         etag: String,
@@ -72,6 +77,7 @@ impl Product {
             execute,
             lifecycle: tokio::sync::RwLock::new(()),
             file_mutations: Mutex::new(()),
+            setup_admission: Mutex::new(()),
             preparations: Mutex::new(BTreeMap::new()),
         })
     }
@@ -216,6 +222,7 @@ impl Product {
             condition: idem,
             if_match,
             if_none_match,
+            binary_upload,
         } = request;
         let deleting = method == "DELETE" && route.starts_with("/resources/");
         let _exclusive = if deleting {
@@ -375,7 +382,7 @@ Ok((r,true))}).await?;
             }
             ("GET", "/files")
             | ("PUT", "/files")
-            | ("DELETE", "/files")
+            | ("DELETE", "/files/entry")
             | ("GET", "/files/metadata")
             | ("GET", "/files/content")
             | ("PUT", "/files/content") => {
@@ -406,15 +413,46 @@ Ok((r,true))}).await?;
                 )
                 .await?,
             ),
-            ("POST", "/database-imports")
-            | ("POST", "/database-imports/prepare")
-            | ("POST", "/database-imports/prepare-upload") => Reply::Json(
-                self.database_import(&credential, actor, route, query, input, raw)
-                    .await?,
+            ("POST", "/database-imports") => Reply::Json(
+                self.database_import(
+                    &credential,
+                    actor,
+                    imports::DatabaseImportRequest {
+                        route,
+                        query,
+                        input,
+                        raw,
+                        upload: false,
+                    },
+                )
+                .await?,
             ),
-            ("POST", "/result-exports")
-            | ("POST", "/file-exports")
-            | ("POST", "/file-exports/prepare") => {
+            ("POST", "/database-import-preparations") => {
+                return Ok((
+                    201,
+                    Reply::Json(
+                        self.database_import(
+                            &credential,
+                            actor,
+                            imports::DatabaseImportRequest {
+                                route,
+                                query,
+                                input,
+                                raw,
+                                upload: binary_upload,
+                            },
+                        )
+                        .await?,
+                    ),
+                ));
+            }
+            ("POST", "/file-export-preparations") => {
+                return Ok((
+                    201,
+                    Reply::Json(self.export(&credential, actor, route, input).await?),
+                ));
+            }
+            ("POST", "/result-exports") | ("POST", "/file-exports") => {
                 Reply::Json(self.export(&credential, actor, route, input).await?)
             }
             _ => {
@@ -428,34 +466,33 @@ Ok((r,true))}).await?;
                 {
                     return self.resource_request(&credential, method, parts[1]).await;
                 }
-                if parts.len() == 3
-                    && parts[0] == "resources"
-                    && parts[2] == "setup"
-                    && method == "POST"
+                if parts.len() == 2
+                    && ["database-import-preparations", "file-export-preparations"]
+                        .contains(&parts[0])
+                    && ["GET", "DELETE"].contains(&method)
                 {
-                    let (_, r) = self
-                        .context(&credential, "resources:write", Some((parts[1], None)))
-                        .await?;
-                    if ![ZERO, DB9, DUCKDB].contains(&r["provider"].as_str().unwrap_or("")) {
-                        return Err(err(400, "UNSUPPORTED_PROVIDER"));
-                    }
-                    Reply::Json(json!({"data":self.update_resource(r,true).await?}))
+                    return self
+                        .preparation_request(&credential, actor, method, parts[0], parts[1])
+                        .await;
+                }
+                if parts.len() >= 3 && parts[0] == "resources" && parts[2] == "setup-attempts" {
+                    return self
+                        .setup_attempt_request(&credential, method, &parts, query, idem, &input)
+                        .await;
                 } else if method == "GET" && parts.len() >= 3 && parts[0] == "resources" {
-                    let action = parts[2..].join("/");
-                    if !["tables", "table", "table/rows"].contains(&action.as_str()) {
-                        return Err(err(404, "NOT_FOUND"));
-                    }
+                    let (action, name) = match parts.as_slice() {
+                        [_, _, "tables"] => ("tables", None),
+                        [_, _, "tables", name] => ("table", Some(*name)),
+                        [_, _, "tables", name, "rows"] => ("table/rows", Some(*name)),
+                        _ => return Err(err(404, "NOT_FOUND")),
+                    };
+                    let name = name.map(decode_table_name).transpose()?;
                     let (_, r) = self
                         .context(&credential, "queries:read", Some((parts[1], None)))
                         .await?;
                     Reply::Json(
-                        self.browse(
-                            &credential,
-                            &r,
-                            &action,
-                            query.get("name").map(String::as_str),
-                        )
-                        .await?,
+                        self.browse(&credential, &r, action, name.as_deref())
+                            .await?,
                     )
                 } else {
                     return Err(err(404, "NOT_FOUND"));
@@ -628,6 +665,28 @@ fn fingerprint(bytes: &[u8]) -> Result<String> {
     use sha2::{Digest, Sha256};
     let v: Ordered = serde_json::from_slice(bytes).map_err(|_| err(400, "INVALID_JSON"))?;
     Ok(hex::encode(Sha256::digest(v.0.as_bytes())))
+}
+
+fn decode_table_name(segment: &str) -> Result<String> {
+    let bytes = segment.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            if i + 2 >= bytes.len()
+                || !bytes[i + 1].is_ascii_hexdigit()
+                || !bytes[i + 2].is_ascii_hexdigit()
+            {
+                return Err(err(400, "INVALID_TABLE_NAME"));
+            }
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    percent_encoding::percent_decode_str(segment)
+        .decode_utf8()
+        .map(|s| s.into_owned())
+        .map_err(|_| err(400, "INVALID_TABLE_NAME"))
 }
 
 #[cfg(test)]

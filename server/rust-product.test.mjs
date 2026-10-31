@@ -1,3 +1,4 @@
+import { restWorkflowCases } from './test-support/rest-workflow-cases.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Ajv2020 from 'ajv/dist/2020.js';
@@ -41,6 +42,11 @@ const secret = 'retained-public-workspace-key';
 const privateWrite = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
 for (const transport of ['remote', 'inProcess']) {
   test(
+    `REST workflow resources through ${transport} metadata`,
+    { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+    (t) => restWorkflowCases(t, transport),
+  );
+  test(
     `Agent REST P0 through ${transport} metadata`,
     { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
     (t) => agentRestCases(t, transport),
@@ -83,7 +89,13 @@ function parquetImportInput() {
   return readFile(new URL('./test-support/fixtures/import.parquet', import.meta.url));
 }
 async function scenarios(request, provider) {
-  async function run(path, options, expected = 200) {
+  async function run(
+    path,
+    options,
+    expected = options?.method === 'POST' && path.split('?')[0].endsWith('-preparations')
+      ? 201
+      : 200,
+  ) {
     const r = await request(path, options);
     assert.equal(
       r.status,
@@ -113,12 +125,12 @@ async function scenarios(request, provider) {
     assert.equal(q.body.mode, 'live');
     await run(base + `/resources/${id}/tables`);
     const beforeMetadata = provider.statements.length;
-    const table = await run(base + `/resources/${id}/table?name=demo_table`);
+    const table = await run(base + `/resources/${id}/tables/demo_table`);
     if (id === 'db_live') assert.equal(provider.statements.length - beforeMetadata, 1);
     assert.equal(table.body.columns[0].key, 'PRI');
     assert.equal(table.body.indexes[0].columns[0].name, 'id');
     assert.equal(table.body.recordKind, undefined);
-    await run(base + `/resources/${id}/table/rows?name=demo_table`);
+    await run(base + `/resources/${id}/tables/demo_table/rows`);
   }
   const file = {
     resourceId: 'fs_shared',
@@ -258,7 +270,7 @@ async function scenarios(request, provider) {
       target: { kind: 'database', resourceId: 'db_live', table: 'export_probe' },
     },
   });
-  const preparation = await run(base + '/file-exports/prepare', {
+  const preparation = await run(base + '/file-export-preparations', {
     method: 'POST',
     body: {
       source: { kind: 'original', resourceId: 'fs_shared', path: '/orders.csv' },
@@ -271,7 +283,7 @@ async function scenarios(request, provider) {
     ['TEXT', 'BIGINT'],
   );
   const commit = {
-    preparationId: preparation.body.preparationId,
+    preparationId: preparation.body.id,
     confirmed: true,
     fields: preparation.body.fields,
     target: { kind: 'database', resourceId: 'db_pg', table: 'import_probe' },
@@ -298,7 +310,7 @@ async function scenarios(request, provider) {
   );
   const rawPath =
     base +
-    '/database-imports/prepare-upload?' +
+    '/database-import-preparations?' +
     new URLSearchParams({
       resourceId: 'db_live',
       filename: 'local.csv',
@@ -318,7 +330,7 @@ async function scenarios(request, provider) {
   assert.equal(importedPreparation.body.rows[0].value, '9007199254740993');
   const importCommit = {
     resourceId: 'db_live',
-    preparationId: importedPreparation.body.preparationId,
+    preparationId: importedPreparation.body.id,
     confirmed: true,
     table: 'direct_import',
     fields: importedPreparation.body.fields,
@@ -349,7 +361,7 @@ async function scenarios(request, provider) {
   );
   const beforeSourceDenied = provider.calls;
   await run(
-    base + '/database-imports/prepare',
+    base + '/database-import-preparations',
     {
       method: 'POST',
       token: importKey.body.secret,
@@ -385,7 +397,7 @@ async function scenarios(request, provider) {
   );
   const parquetPath =
     base +
-    '/database-imports/prepare-upload?' +
+    '/database-import-preparations?' +
     new URLSearchParams({ resourceId: 'db_live', filename: 'sample.parquet', format: 'parquet' });
   const parquetReview = await run(parquetPath, {
     method: 'POST',
@@ -403,13 +415,13 @@ async function scenarios(request, provider) {
     token: importKey.body.secret,
     body: {
       resourceId: 'db_live',
-      preparationId: parquetReview.body.preparationId,
+      preparationId: parquetReview.body.id,
       confirmed: true,
       table: 'parquet_import',
       fields: parquetReview.body.fields,
     },
   });
-  const fileImport = await run(base + '/database-imports/prepare', {
+  const fileImport = await run(base + '/database-import-preparations', {
     method: 'POST',
     body: {
       resourceId: 'db_pg',
@@ -422,7 +434,7 @@ async function scenarios(request, provider) {
     {
       method: 'POST',
       body: {
-        preparationId: fileImport.body.preparationId,
+        preparationId: fileImport.body.id,
         confirmed: true,
         fields: fileImport.body.fields,
         target: { kind: 'database', resourceId: 'db_live', table: 'file_bypass' },
@@ -434,7 +446,7 @@ async function scenarios(request, provider) {
     method: 'POST',
     body: {
       resourceId: 'db_pg',
-      preparationId: fileImport.body.preparationId,
+      preparationId: fileImport.body.id,
       confirmed: true,
       table: 'file_import',
       fields: fileImport.body.fields,
@@ -446,7 +458,7 @@ async function scenarios(request, provider) {
       method: 'POST',
       body: {
         resourceId: 'db_pg',
-        preparationId: preparation.body.preparationId,
+        preparationId: preparation.body.id,
         confirmed: true,
         table: 'legacy_ticket',
         fields: preparation.body.fields,
@@ -498,10 +510,10 @@ async function scenarios(request, provider) {
     },
     403,
   );
-  await run(base + '/files', {
-    method: 'DELETE',
-    body: { resourceId: 'fs_shared', path: '/copied.csv' },
-  });
+  await run(
+    base + '/files/entry?' + new URLSearchParams({ resourceId: 'fs_shared', path: '/copied.csv' }),
+    { method: 'DELETE' },
+  );
   await run(base + '/usage');
 }
 for (const transport of ['remote', 'inProcess']) {
@@ -812,20 +824,21 @@ test(
     child.kill('SIGTERM');
     await new Promise((r) => child.once('exit', r));
     request = await start();
-    const recovered = await request(base + `/resources/${unknownPg.body.data.id}/setup`, {
+    const recovered = await request(base + `/resources/${unknownPg.body.data.id}/setup-attempts`, {
       method: 'POST',
-      body: {},
+      headers: { 'Idempotency-Key': 'restore-pg' },
     });
-    assert.equal(recovered.status, 200);
-    assert.equal(recovered.body.data.status, 'active');
+    assert.equal(recovered.status, 201);
+    assert.equal(recovered.body.data.status, 'succeeded');
+    assert.equal(recovered.body.data.resource.status, 'active');
     assert.notEqual(
       (
-        await request(base + `/resources/${unknownZero.body.data.id}/setup`, {
+        await request(base + `/resources/${unknownZero.body.data.id}/setup-attempts`, {
           method: 'POST',
-          body: {},
+          headers: { 'Idempotency-Key': 'restore-zero' },
         })
       ).body.data.status,
-      'active',
+      'succeeded',
     );
     await create('filesystem', 'unknown-files', 'lost-file');
     assert.deepEqual(provider.nativeCreates, { zero: 2, db9: 2, account: 1 });

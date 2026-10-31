@@ -110,7 +110,10 @@ export function FileExportDialog({
     const parsing: FileExportParsing =
       format === 'csv' ? { format, header, delimiter } : { format };
     try {
-      const value = await workspaceApi.prepareFileExport({ source, parsing }, abort.signal);
+      const value = await workspaceApi.createFileExportPreparation(
+        { source, parsing },
+        abort.signal,
+      );
       if (!abort.signal.aborted) {
         setReview(value);
         setFields(value.fields.map((field) => ({ ...field, selected: true })));
@@ -142,7 +145,7 @@ export function FileExportDialog({
     if (kind === 'database') {
       if (!review) return;
       input = {
-        preparationId: review.preparationId,
+        preparationId: review.id,
         confirmed: true,
         fields: fields
           .filter((field) => field.selected)

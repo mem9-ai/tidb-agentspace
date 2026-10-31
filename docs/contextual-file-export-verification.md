@@ -51,8 +51,8 @@ Use the usual Workspace Key Bearer header and workspace prefix for these JSON op
 }
 ```
 
-POST that body to `/api/v1/workspaces/{workspaceId}/file-exports/prepare`. The response supplies
-`preparationId`, `expiresAt`, `fields`, at most 20 sample `rows`, full bounded `rowCount`,
+POST that body to `/api/v1/workspaces/{workspaceId}/file-export-preparations`. The response supplies
+`id`, `status`, `createdAt`, `expiresAt`, `fields`, at most 20 sample `rows`, full bounded `rowCount`,
 `sourceVersion`, `inputBytes` and `format`. Review those fields, then POST to `/file-exports`:
 
 ```json
@@ -207,3 +207,9 @@ Screenshots retain the running context; narrow captures use the existing file-br
 The PR records the final quality gate and all latest-head CI checks. This presentation-only
 change retains TiUI 2.9.1 and SQL Editor 0.0.6; no dependencies, API, metadata or backend runtime
 are changed. Revisit the shared action when introducing additional export entry points.
+
+The preparation URI in `Location` supports GET and DELETE. The returned `id` is the
+`preparationId` foreign key used in the subsequent confirmed export. GET is a cached,
+currently authorized actor-bound review, not another parse. DELETE returns 204 for an
+unconsumed review; a consumed review returns 409. Five-minute expiry and process-local
+restart behavior remain explicit. Historical command URLs have no compatibility aliases.

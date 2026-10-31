@@ -24,7 +24,7 @@ export type TabularFilePreview =
   operations['tabularFilePreview']['responses'][200]['content']['application/json'];
 export type FileExportSource = components['schemas']['FileExportSource'];
 export type FileExportParsing = components['schemas']['FileExportParsing'];
-export type FileExportPreparation = components['schemas']['FileExportPreparation'];
+export type FileExportPreparation = components['schemas']['Preparation'];
 export type FileExportPreparationInput = components['schemas']['FileExportPreparationInput'];
 export type FileExportInput = components['schemas']['FileExportInput'];
 export type FileExportOutput = components['schemas']['FileExportOutput'];
@@ -66,14 +66,18 @@ export function configureApi(config: unknown) {
 }
 
 export const workspaceApi = {
-  prepareDatabaseImport: (
+  createDatabaseImportPreparation: (
     body: components['schemas']['DatabaseImportPreparationInput'],
     signal?: AbortSignal,
   ) =>
     responseData(
-      client.POST('/workspaces/{workspaceId}/database-imports/prepare', { params, body, signal }),
+      client.POST('/workspaces/{workspaceId}/database-import-preparations', {
+        params,
+        body,
+        signal,
+      }),
     ),
-  prepareDatabaseImportUpload: (
+  createDatabaseImportPreparationUpload: (
     resourceId: string,
     file: File,
     parsing: DatabaseImportParsing,
@@ -82,7 +86,7 @@ export const workspaceApi = {
   ) =>
     responseData(
       createWorkspaceClient(apiBaseUrl, createUploadFetch(onProgress)).POST(
-        '/workspaces/{workspaceId}/database-imports/prepare-upload',
+        '/workspaces/{workspaceId}/database-import-preparations',
         {
           params: {
             path: params.path,
@@ -99,17 +103,17 @@ export const workspaceApi = {
             },
           },
           body: file,
-          bodySerializer: (value) => value,
+          bodySerializer: () => file,
           headers: { 'Content-Type': 'application/octet-stream' },
           signal,
         },
       ),
     ),
-  commitDatabaseImport: (body: components['schemas']['DatabaseImportInput']) =>
+  createDatabaseImport: (body: components['schemas']['DatabaseImportInput']) =>
     responseData(client.POST('/workspaces/{workspaceId}/database-imports', { params, body })),
-  prepareFileExport: (body: FileExportPreparationInput, signal?: AbortSignal) =>
+  createFileExportPreparation: (body: FileExportPreparationInput, signal?: AbortSignal) =>
     responseData(
-      client.POST('/workspaces/{workspaceId}/file-exports/prepare', { params, body, signal }),
+      client.POST('/workspaces/{workspaceId}/file-export-preparations', { params, body, signal }),
     ),
   exportFileContent: (body: FileExportInput) =>
     responseData(client.POST('/workspaces/{workspaceId}/file-exports', { params, body })),
@@ -158,10 +162,13 @@ export const workspaceApi = {
         body,
       }),
     ),
-  retryDatabaseSetup: (resourceId: string) =>
+  createResourceSetupAttempt: (resourceId: string) =>
     responseData(
-      client.POST('/workspaces/{workspaceId}/resources/{resourceId}/setup', {
-        params: { path: { workspaceId, resourceId } },
+      client.POST('/workspaces/{workspaceId}/resources/{resourceId}/setup-attempts', {
+        params: {
+          path: { workspaceId, resourceId },
+          header: { 'Idempotency-Key': crypto.randomUUID() },
+        },
       }),
     ),
   tables: (resourceId: string, signal?: AbortSignal) =>
@@ -173,15 +180,15 @@ export const workspaceApi = {
     ),
   table: (resourceId: string, name: string, signal?: AbortSignal) =>
     responseData(
-      client.GET('/workspaces/{workspaceId}/resources/{resourceId}/table', {
-        params: { path: { workspaceId, resourceId }, query: { name } },
+      client.GET('/workspaces/{workspaceId}/resources/{resourceId}/tables/{tableName}', {
+        params: { path: { workspaceId, resourceId, tableName: name } },
         signal,
       }),
     ),
   tableRows: (resourceId: string, name: string, signal?: AbortSignal) =>
     responseData(
-      client.GET('/workspaces/{workspaceId}/resources/{resourceId}/table/rows', {
-        params: { path: { workspaceId, resourceId }, query: { name } },
+      client.GET('/workspaces/{workspaceId}/resources/{resourceId}/tables/{tableName}/rows', {
+        params: { path: { workspaceId, resourceId, tableName: name } },
         signal,
       }),
     ),
@@ -194,8 +201,12 @@ export const workspaceApi = {
         { params, body },
       ),
     ),
-  deleteFile: (body: JsonBody<operations['deleteFile']>) =>
-    responseData(client.DELETE('/workspaces/{workspaceId}/files', { params, body })),
+  deleteFile: (entry: Pick<WorkspaceFile, 'resourceId' | 'path'>) =>
+    responseData(
+      client.DELETE('/workspaces/{workspaceId}/files/entry', {
+        params: { path: params.path, query: entry },
+      }),
+    ),
   listFiles: (resourceId: string, path?: string, signal?: AbortSignal) =>
     responseData(
       client.GET('/workspaces/{workspaceId}/files', {

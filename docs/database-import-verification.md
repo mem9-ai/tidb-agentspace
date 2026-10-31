@@ -32,11 +32,11 @@ provider configuration, hidden public staging resource or billing behavior chang
 The generated OpenAPI/client types describe these routes under
 `/api/v1/workspaces/{workspaceId}`:
 
-| Operation                               | Request                                                                                               | Purpose                        |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `POST /database-imports/prepare-upload` | Raw octet-stream; query `resourceId`, `filename`, `format`; CSV also `header=true/false`, `delimiter` | Parse ephemeral local bytes    |
-| `POST /database-imports/prepare`        | `{resourceId, source:{resourceId,path}, parsing}`                                                     | Parse an authorized saved file |
-| `POST /database-imports`                | `{resourceId, preparationId, confirmed:true, table, fields}`                                          | Create a reviewed new table    |
+| Operation                            | Request                                                                                               | Purpose                        |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `POST /database-import-preparations` | Raw octet-stream; query `resourceId`, `filename`, `format`; CSV also `header=true/false`, `delimiter` | Parse ephemeral local bytes    |
+| `POST /database-import-preparations` | `{resourceId, source:{resourceId,path}, parsing}`                                                     | Parse an authorized saved file |
+| `POST /database-imports`             | `{resourceId, preparationId, confirmed:true, table, fields}`                                          | Create a reviewed new table    |
 
 Example saved-file preparation:
 
@@ -114,3 +114,15 @@ Never replace the live metadata service or introduce demo metadata to make a pre
 Preserve active customer resources. See [Rust runtime](rust-backend.md) and
 [independent delivery](independent-delivery.md). Larger imports, append/upsert, durable jobs,
 resumable transfers and production compute isolation remain outside this iteration.
+
+## Addressable preparation lifecycle (GH-76)
+
+Both source modes create `POST /database-import-preparations` resources. Content-Type selects
+JSON Workspace-source input or raw octet-stream upload; do not send upload query fields on a
+JSON request. Success is **201**, with an `id` and `Location`. GET that URI reads the same
+actor-bound cached review without parsing again; DELETE cancels an unconsumed review with
+**204** and no body. Confirmation still sends `preparationId: review.id`. Consumed reviews
+remain observable until expiry/eviction but cannot be cancelled. Their process-local
+five-minute lifetime is unchanged; restart makes them unavailable without changing source
+files, database tables, resources or credentials. The old prepare/prepare-upload URLs are
+removed, with no aliases. See [ADR 0032](decisions/0032-rest-workflow-resources.md).

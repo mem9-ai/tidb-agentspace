@@ -57,7 +57,13 @@ export async function productApiCases(t, transport) {
       return { body: rowset(stored.has(binding.kind) ? [stored.get(binding.kind)] : []) };
   });
   const { provider } = f;
-  async function request(path, options, status = 200, code, workspace = 0) {
+  async function request(
+    path,
+    options,
+    status = options?.method === 'POST' && path.split('?')[0].endsWith('-preparations') ? 201 : 200,
+    code,
+    workspace = 0,
+  ) {
     const response = await f.request(path, options, workspace);
     assert.equal(
       response.status,
@@ -93,7 +99,7 @@ export async function productApiCases(t, transport) {
     text = 'id,value\n001,9007199254740993\n',
   ) =>
     request(
-      '/database-imports/prepare-upload?' +
+      '/database-import-preparations?' +
         new URLSearchParams({ resourceId, filename: 'source.csv', ...parsing }),
       {
         method: 'POST',
@@ -104,7 +110,7 @@ export async function productApiCases(t, transport) {
     );
   const commit = (review, table, resourceId = 'db_live') => ({
     resourceId,
-    preparationId: review.preparationId,
+    preparationId: review.id,
     confirmed: true,
     table,
     fields: review.fields,
