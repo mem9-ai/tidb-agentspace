@@ -4,7 +4,12 @@ import { nativeSecret } from './provider-fixture.mjs';
 
 export async function agentRestCases(t, transport) {
   const f = await productApiFixture(t, transport);
-  const request = async (path, options = {}, status = 200, code) => {
+  const request = async (
+    path,
+    options = {},
+    status = options.method === 'POST' && path.split('?')[0].endsWith('-preparations') ? 201 : 200,
+    code,
+  ) => {
     const r = await f.request(path, options);
     assert.equal(r.status, status, `${options.method || 'GET'} ${path}: ${JSON.stringify(r.body)}`);
     if (code) assert.equal(r.body.error.code, code);
@@ -162,7 +167,7 @@ export async function agentRestCases(t, transport) {
         'INVALID_BODY',
       );
       await request(
-        '/database-imports/prepare-upload?resourceId=db_live&filename=x.csv&format=csv&header=true&delimiter=%2C',
+        '/database-import-preparations?resourceId=db_live&filename=x.csv&format=csv&header=true&delimiter=%2C',
         {
           method: 'POST',
           token,
@@ -238,7 +243,10 @@ export async function agentRestCases(t, transport) {
         version,
       );
       await request('/files', write('fs_shared', path, 'exists', { 'If-None-Match': '*' }), 412);
-      await request('/files', { method: 'DELETE', token, body: { resourceId: 'fs_shared', path } });
+      await request('/files/entry?' + new URLSearchParams({ resourceId: 'fs_shared', path }), {
+        method: 'DELETE',
+        token,
+      });
       await request('/files', write('fs_shared', path, 'missing', { 'If-Match': version }), 412);
       await request('/files', write('fs_shared', path, 'recreated'));
       await request(

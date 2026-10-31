@@ -35,6 +35,9 @@ Internal backend changes preserving the public contract do not require frontend 
 Public resource modeling follows [REST API design](docs/standards/rest-api-design.md);
 [GH-67](specs/gh-67/spec.md) defines agent context, read-only SQL, resource lifecycle and
 file version preconditions.
+[REST workflows](specs/gh-76/rest-workflows.md) replaces historical command URLs with
+addressable preparations/setup attempts and explicit table/file identity. It retains
+existing resources and credentials without old HTTP aliases or a metadata reset.
 It also defines product completeness: supported customer business workflows must finish
 through documented OpenAPI without Portal automation. Pure presentation/browser interactions
 are the UI-only exception; authentication and permission boundaries still apply.
@@ -119,6 +122,8 @@ denials still apply. Production mTLS and regional autonomy require implementatio
 For direct regional OpenAPI/SDK routes and credential lifetime/renewal, read the
 [regional API/auth contract](specs/gh-74/regional-api-auth.md). It separates explicit continuity
 grants from existing expiring Keys and preserves the current single-origin implementation status.
+Global is the common management/discovery entry; clients use the selected Region OpenAPI
+directly for data and regional operation status, with no mandatory Global hop for known routes.
 
 | Task                                                      | Required starting points                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

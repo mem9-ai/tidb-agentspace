@@ -11,7 +11,7 @@ import { workspaceFixture } from './workspace-fixture.mjs';
 
 // Two actual Workspace APIs share a Meta authority. Resource IDs and paths deliberately
 // collide, so isolation cannot pass merely because an unrelated ID was not found.
-export async function productApiFixture(t, transport, onSql) {
+export async function productApiFixture(t, transport, onSql, { missingBinding = false } = {}) {
   const meta = await metaFixture();
   let provider, region;
   const children = [];
@@ -58,6 +58,16 @@ export async function productApiFixture(t, transport, onSql) {
         name: resourceId.replaceAll('_', '-'),
         status: 'active',
         region: kind === 'filesystem' ? 'aws-ap-southeast-1' : 'automatic',
+        createdAt: state.workspace.createdAt,
+      });
+    if (missingBinding)
+      state.resources.push({
+        id: 'db_missing',
+        name: 'missing-binding',
+        kind: 'postgresql',
+        provider: 'db9-anonymous',
+        region: 'automatic',
+        status: 'failed',
         createdAt: state.workspace.createdAt,
       });
     return state;
@@ -215,7 +225,7 @@ export async function productApiFixture(t, transport, onSql) {
     const value = response.headers.get('content-type')?.includes('application/json')
       ? await response.json()
       : Buffer.from(await response.arrayBuffer());
-    return { status: response.status, body: value, headers: response.headers };
+    return { status: response.status, body: value, headers: response.headers, url: response.url };
   }
   return {
     provider,

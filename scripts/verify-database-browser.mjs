@@ -69,8 +69,8 @@ try {
   );
   created = true;
   const path = `${base}/resources/${resourceId}`;
-  const suffix = '?name=' + encodeURIComponent(table);
-  const detail = await request(path + '/table' + suffix, { token });
+  const tablePath = path + '/tables/' + encodeURIComponent(table);
+  const detail = await request(tablePath, { token });
   assert.equal(detail.name, table);
   assert.equal(detail.mode, 'live');
   assert.equal(detail.query, `SELECT * FROM ${quoted} LIMIT 100;`);
@@ -85,7 +85,7 @@ try {
       ['id', null],
     ],
   );
-  const empty = await request(path + '/table/rows' + suffix, { token });
+  const empty = await request(tablePath + '/rows', { token });
   assert.equal(empty.rowCount, 0);
   assert.deepEqual(empty.columns, ['id', 'label', 'amount', 'payload']);
   const values = Array.from(
@@ -93,7 +93,7 @@ try {
     (_, index) => `(${9007199254740993n + BigInt(index)},${index === 0 ? 'NULL' : "'fixture'"})`,
   ).join(',');
   await query(`INSERT INTO ${quoted} (id, label) VALUES ${values}`);
-  const rows = await request(path + '/table/rows' + suffix, { token });
+  const rows = await request(tablePath + '/rows', { token });
   assert.equal(rows.rowCount, 100);
   assert.ok(rows.rows.every((row) => typeof row.id === 'string' && row.amount === '1.2500'));
   const list = await request(path + '/tables', { token });
@@ -102,7 +102,7 @@ try {
   assert.equal(editor.rowCount, 100);
   await query(`DELETE FROM ${quoted}`);
   await query(`INSERT INTO ${quoted} (id, payload) VALUES (1, REPEAT('x', 1048577))`);
-  const oversize = await request(path + '/table/rows' + suffix, { token, status: 422 });
+  const oversize = await request(tablePath + '/rows', { token, status: 422 });
   assert.equal(oversize.error.code, 'RESULT_TOO_LARGE');
   const denied = await key(['resources:read']);
   await request(path + '/tables', { token: denied.secret, status: 403 });

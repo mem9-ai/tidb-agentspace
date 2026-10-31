@@ -21,7 +21,20 @@ test(
       path,
       method = 'get',
       body,
-      { owner = true, suffix = '', status = 200, keyId = '', resourceId = '' } = {},
+      {
+        owner = true,
+        suffix = '',
+        status = method === 'post' &&
+        (path.endsWith('-preparations') || path.endsWith('/setup-attempts'))
+          ? 201
+          : 200,
+        keyId = '',
+        resourceId = '',
+        tableName = '',
+        preparationId = '',
+        attemptId = '',
+        headers = {},
+      } = {},
     ) {
       const operation = contract.paths[path][method];
       assert.ok(operation, `${method} ${path} is documented`);
@@ -29,16 +42,25 @@ test(
       const route = path
         .replace('{workspaceId}', 'ws_agentlab')
         .replace('{keyId}', keyId)
-        .replace('{resourceId}', resourceId);
+        .replace('{resourceId}', resourceId)
+        .replace('{tableName}', encodeURIComponent(tableName))
+        .replace('{preparationId}', preparationId)
+        .replace('{attemptId}', attemptId);
       const response = await fetch(origin + root.replace(/\/$/, '') + route + suffix, {
         method: method.toUpperCase(),
         headers: {
           'Content-Type': 'application/json',
           ...(owner && cookie ? { Cookie: cookie } : {}),
+          ...headers,
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
       assert.equal(response.status, status, `${operation.operationId} HTTP status`);
+      if (status === 204) {
+        assert.equal(await response.text(), '');
+        covered.add(operation.operationId);
+        return { result: undefined, response };
+      }
       const schema = operation.responses[status]?.content?.['application/json']?.schema;
       assert.ok(schema, `${operation.operationId} documents status ${status}`);
       const validate = ajv.compile({ ...schema, components: contract.components });
@@ -68,17 +90,17 @@ test(
     await request(workspace + '/resources/{resourceId}/tables', 'get', undefined, {
       resourceId: 'db_memory',
     });
-    await request(workspace + '/resources/{resourceId}/table', 'get', undefined, {
+    await request(workspace + '/resources/{resourceId}/tables/{tableName}', 'get', undefined, {
       resourceId: 'db_memory',
-      suffix: '?name=agent_events',
+      tableName: 'agent_events',
     });
-    await request(workspace + '/resources/{resourceId}/table/rows', 'get', undefined, {
+    await request(workspace + '/resources/{resourceId}/tables/{tableName}/rows', 'get', undefined, {
       resourceId: 'db_memory',
-      suffix: '?name=agent_events',
+      tableName: 'agent_events',
     });
-    await request(workspace + '/resources/{resourceId}/table', 'get', undefined, {
+    await request(workspace + '/resources/{resourceId}/tables/{tableName}', 'get', undefined, {
       resourceId: 'db_memory',
-      suffix: '?name=missing',
+      tableName: 'missing',
       status: 404,
     });
 
@@ -122,9 +144,16 @@ test(
       source: { kind: 'original', resourceId: 'fs_shared', path: '/preview.csv' },
       target: { kind: 'filesystem', resourceId: 'fs_shared', path: '/copied.csv' },
     });
-    await request(workspace + '/file-exports/prepare', 'post', {
+    const fileReview = await request(workspace + '/file-export-preparations', 'post', {
       source: { kind: 'output', resourceId: 'fs_shared', stream: 'stdout', text: 'id\n001\n' },
       parsing: { format: 'csv', header: true, delimiter: ',' },
+    });
+    await request(workspace + '/file-export-preparations/{preparationId}', 'get', undefined, {
+      preparationId: fileReview.result.id,
+    });
+    await request(workspace + '/file-export-preparations/{preparationId}', 'delete', undefined, {
+      preparationId: fileReview.result.id,
+      status: 204,
     });
     const textCapabilities = await request(
       workspace + '/file-analyses/capabilities',
@@ -173,30 +202,58 @@ test(
         path: '/contract.csv',
         ...query,
       });
-    await request(workspace + '/files', 'delete', {
-      resourceId: 'fs_shared',
-      path: '/contract.txt',
+    await request(workspace + '/files/entry', 'delete', undefined, {
+      suffix: '?resourceId=fs_shared&path=/contract.txt',
     });
     await request(workspace + '/queries', 'post', { resourceId: 'db_memory', sql: 'SELECT 1' });
-    await request(workspace + '/resources/{resourceId}/setup', 'post', undefined, {
+    const setup = await request(
+      workspace + '/resources/{resourceId}/setup-attempts',
+      'post',
+      undefined,
+      {
+        resourceId: database.result.data.id,
+        headers: { 'Idempotency-Key': 'contract-setup' },
+      },
+    );
+    await request(workspace + '/resources/{resourceId}/setup-attempts', 'get', undefined, {
       resourceId: database.result.data.id,
     });
+    await request(
+      workspace + '/resources/{resourceId}/setup-attempts/{attemptId}',
+      'get',
+      undefined,
+      { resourceId: database.result.data.id, attemptId: setup.result.data.id },
+    );
     await request(workspace + '/queries', 'post', {
       resourceId: database.result.data.id,
       sql: 'SELECT 1',
     });
-    const imported = await request(workspace + '/database-imports/prepare', 'post', {
+    const imported = await request(workspace + '/database-import-preparations', 'post', {
       resourceId: database.result.data.id,
       source: { resourceId: 'fs_shared', path: '/preview.csv' },
       parsing: { format: 'csv', header: true, delimiter: ',' },
     });
+    await request(workspace + '/database-import-preparations/{preparationId}', 'get', undefined, {
+      preparationId: imported.result.id,
+    });
     await request(workspace + '/database-imports', 'post', {
       resourceId: database.result.data.id,
-      preparationId: imported.result.preparationId,
+      preparationId: imported.result.id,
       confirmed: true,
       table: 'database_import',
       fields: imported.result.fields,
     });
+    const cancelled = await request(workspace + '/database-import-preparations', 'post', {
+      resourceId: database.result.data.id,
+      source: { resourceId: 'fs_shared', path: '/preview.csv' },
+      parsing: { format: 'csv', header: true, delimiter: ',' },
+    });
+    await request(
+      workspace + '/database-import-preparations/{preparationId}',
+      'delete',
+      undefined,
+      { preparationId: cancelled.result.id, status: 204 },
+    );
     for (const target of [
       { kind: 'download', format: 'csv' },
       { kind: 'download', format: 'json' },
@@ -259,7 +316,6 @@ test(
           ![
             'uploadFile',
             'downloadFile',
-            'prepareDatabaseImportUpload',
             'startGuestSession', // Success is covered by guest_http_probe.
             'logoutGuestSession', // Success is covered by guest-host.test.mjs.
             'startTidbLogin',

@@ -12,10 +12,12 @@ resource or open the existing contextual create dialog. Creation returns to the 
 the actual returned resource selected. Normal resource creation and Connect an agent retain
 their existing flows.
 
-- Live MySQL, db9 PostgreSQL and DuckDB tutorials explicitly create a uniquely named table
-  containing six orders in one create-only SQL statement. PostgreSQL uses `workspace`; DuckDB
-  uses `main`. Local database demos use the three preloaded `agent_events` instead of unsupported
-  writes and remain visibly labeled.
+- Live MySQL, db9 PostgreSQL and DuckDB tutorials import the fixed six-order CSV into a
+  uniquely named table through the existing destination-bound, create-only database import
+  operations. The Load action confirms this visible dataset and its schema: `id BIGINT`,
+  `region TEXT`, `amount BIGINT`. The parsed six rows and fields must match before committing. PostgreSQL
+  uses `workspace`; DuckDB uses `main`. Local database demos use the three preloaded `agent_events`
+  instead of unsupported writes and remain visibly labeled.
 - The File System tutorial explicitly saves the same six-row CSV at a unique root path, checks
   SQL analysis availability and analyzes the saved snapshot as table `file`. Live uploads use
   the existing create-only upload operation; local files use the UTF-8 files operation.
@@ -39,6 +41,15 @@ loses these convenience links; ordinary sample data remains in the selected reso
 deleted or expired. No saved query results, provider secrets or extra API privileges are stored.
 
 ## Verification and limits
+
+Live TiDB verification on 2026-10-31 found that the original `CREATE TABLE AS SELECT` sample
+failed even though ordinary SQL queries worked. TiDB documents that statement as unsupported
+in its [MySQL compatibility reference](https://docs.pingcap.com/tidb/stable/mysql-compatibility/).
+Tutorial loading now reuses the supported database import path instead of assuming cross-provider
+DDL compatibility. `tutorial-import.test.mjs` verifies exact destination/schema, rejection of
+unexpected parsing, and no replay after an uncertain commit. Preparing a CSV is read-only;
+progress becomes write-attempted immediately before the commit, so preparation failures do not
+incorrectly block a safe retry. Arbitrary customer imports retain the normal review dialog.
 
 `tutorial-progress.test.mjs` covers tab/session reopen, workspace/resource isolation, migration
 of an uncertain write, blocked storage and malformed identifiers. Navigation tests preserve
@@ -64,3 +75,5 @@ Representative current-build screenshots:
 
 Validation commands: `npm run check` and `npm run test:browser` under the pinned runtime.
 The PR records the evaluated source revision and the actual latest-head CI results.
+
+The GH-76 transport update uses POST `/database-import-preparations` with a 201 review entity (`id`), then POST `/database-imports` with that `preparationId`. It preserves this tutorial's fixed dataset confirmation and uncertain-write boundary; rendered steps are unchanged.

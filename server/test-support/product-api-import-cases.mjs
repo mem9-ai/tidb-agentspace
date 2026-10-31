@@ -71,7 +71,7 @@ export async function importCases(
           body: { resourceId: id, path, type: 'file', content: 'n\n1\n' },
         });
         const prepared = (
-          await request('/database-imports/prepare', {
+          await request('/database-import-preparations', {
             method: 'POST',
             token,
             body: { resourceId: 'db_live', source: { resourceId: id, path }, parsing },
@@ -98,7 +98,7 @@ export async function importCases(
     'import row bounds and reviewed dialect-safe field mappings are enforced before SQL',
     async () => {
       const path =
-        '/database-imports/prepare-upload?' +
+        '/database-import-preparations?' +
         new URLSearchParams({ resourceId: 'db_live', filename: 'source.csv', ...parsing });
       const before = provider.calls;
       await request(

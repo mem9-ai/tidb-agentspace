@@ -115,8 +115,13 @@ Resolved telemetry may be archived/compacted in Region without Global ACK; recov
 missing observations or a snapshot and preserves regional policy/deny floors and resource IDs.
 
 The [regional API/auth contract](../specs/gh-74/regional-api-auth.md) separates public Global,
-public Region and private control OpenAPI/client origins. SQL/files/results and regional
-auth go directly to Region, including token exchange/refresh and independent reauthentication.
+public Region and private control OpenAPI/client origins. Global provides the common
+management/documentation entry and authorized Region discovery. Clients then call the
+selected Region directly for table/file access, SQL, analysis, import/export and regional
+operation status; validated known routes do not require a Global preflight. Global owns
+policy/placement and Region owns admitted execution; the contract explicitly separates future
+desired-state delegation from the current regional resource mutation routes. Regional auth
+also goes directly to Region, including token exchange/refresh and independent reauthentication.
 Short access-token expiry is separate from a durable, explicitly approved continuity grant
 and rotatable credential versions. Existing 7/30/90-day Keys retain their hard expiry; they
 are not silently converted into persistent grants. A Global-only expiring root cannot provide

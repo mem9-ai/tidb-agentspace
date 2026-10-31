@@ -2,6 +2,7 @@
 
 - Status: Proposed extension of the [control-plane specification](spec.md), [autonomy/channel contract](control-channel.md) and [ADR 0019](../../docs/decisions/0019-workspace-kv-control-plane.md).
 - Owner direction: Global and regional API origins differ; data requests go directly to Region, and Global failure must not disable established regional service.
+- Owner clarification (2026-10-31): Global is the common management/discovery entry; clients use the discovered Region OpenAPI directly for regional data work. Entry/discovery must not become a required hop for every data request.
 - Implementation: Design only. Current generated OpenAPI, routes, Key/session expiry and Console single-origin configuration remain unchanged.
 
 ## 1. Contract and origin ownership
@@ -37,6 +38,43 @@ Global data proxy or forward credentials through an automatic cross-origin redir
 
 ## 2. Direct data requests and discovery
 
+### Global entry and operation ownership
+
+Global is the common entry for API documentation/catalogs, account and Workspace management,
+and authorized Region/placement discovery. Its catalog links the Global and Region contracts;
+each contract still declares the authority that actually serves its operations. Downloading
+a contract from Global does not make Global the execution origin for its regional operations.
+
+| Work                                                                                                                                      | Serving authority and boundary                                                                                                                                                                                                                      |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity, Organization/Workspace policy, Key/grant administration and regional assignment                                                 | Global manages authoritative policy and placement. Cross-plane installation and observation are Global-initiated control calls.                                                                                                                     |
+| Regional resource inventory/details, table metadata and rows, SQL, files and previews, analysis, import/export preparations and execution | Client calls the selected Region API directly. SQL, uploads, downloads and result bytes remain on the regional path.                                                                                                                                |
+| Setup-attempt execution/history and other admitted regional operation observations                                                        | Region executes against saved local bindings and serves its own operation records; observation never starts work.                                                                                                                                   |
+| Resource desired lifecycle/placement versus provider execution                                                                            | Global owns desired state/placement; Region owns admitted execution, credentials and observed state. Any public regional mutation of desired state requires explicit installed delegation and quota authority, not an implicit call back to Global. |
+
+This ownership is the target multi-origin boundary. The current regional `POST /resources`
+and `DELETE /resources/{id}` remain implemented under their existing contract. Their future
+Global/delegated ownership must be specified and migrated explicitly; this clarification
+does not move a running route or assert a Global API implementation.
+
+```mermaid
+flowchart LR
+  C["Agent / SDK / Console"] -->|"Management and authorized discovery"| G["Global public API"]
+  G -->|"Initiate policy / desired state / observation calls"| RC["Private Region control API"]
+  C -->|"Direct data requests at discovered origin"| R["Region public OpenAPI"]
+  R --> D["Regional operations and data plane"]
+  RC --> D
+```
+
+The client learns or is configured with a Region origin once and can reuse that validated
+route. Discovery is not a mandatory preflight for every call. Global does not relay a data
+request, buffer its payload, or transparently retry it at another Region. Cached or explicitly
+configured Region access continues during Global outage, within locally installed grants.
+Preparations, setup attempts and other operation IDs stay bound to their originating Region;
+their Location links resolve there. Cross-resource imports/exports must validate every source
+and target's regional ownership; cross-Region transfer needs its own explicit contract and
+cannot silently route bytes through Global.
+
 Client -> Region API carries SQL/file bytes and receives results directly. Global API does
 not proxy those bytes, authorize each request or issue a required redirect. Regional public
 API HTTPS and private Global/Region mTLS follow their own declared identity profiles.
@@ -46,6 +84,12 @@ auth issuer/audience, schema/capability version and routing identity. Clients pe
 known descriptors; synchronization age is diagnostic, not a Global-availability deadline.
 An explicitly configured known Region endpoint also works without Global discovery.
 Regional bootstrap returns only its installed Workspace/resource scope and own auth metadata.
+
+Acceptance for the later multi-origin implementation must prove discovery followed by direct
+regional requests, audience/Region rejection before provider effects, origin-local operation
+links, and continued known-Region requests after Global is blackholed. Verify SQL, file
+upload/download, preparation/confirmation and setup observations without a Global data hop.
+The current single-origin tests do not establish those multi-origin properties.
 
 Route from canonical product `regionId`, not provider `automatic`/geography labels. Stable
 regional DNS, gateways and issuer endpoints are independently available. Wrong-region access

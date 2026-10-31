@@ -1,5 +1,5 @@
 import { test, expect } from './workspace-fixture.mjs';
-import { ordersCsv, expectedTotals } from '../src/features/portal/tutorial-data.ts';
+import { ordersCsv, orderRows, expectedTotals } from '../src/features/portal/tutorial-data.ts';
 
 async function tutorialApi(context, workspace, { uncertainSeed = false } = {}) {
   const calls = [];
@@ -10,30 +10,55 @@ async function tutorialApi(context, workspace, { uncertainSeed = false } = {}) {
     const path = url.pathname.replace(`/api/v1/workspaces/${workspace.state.workspace.id}`, '');
     const method = request.method();
     const reply = (body, status = 200) => route.fulfill({ json: body, status });
+    if (path === '/database-import-preparations' && method === 'POST') {
+      calls.push({ action: 'prepare', resourceId: url.searchParams.get('resourceId') });
+      expect(request.postData()).toBe(ordersCsv);
+      expect(url.searchParams.get('format')).toBe('csv');
+      expect(url.searchParams.get('header')).toBe('true');
+      return reply(
+        {
+          id: 'tutorial-preparation',
+          status: 'ready',
+          createdAt: '2026-10-31T00:00:00Z',
+          expiresAt: '2099-01-01T00:00:00Z',
+          fields: [
+            { source: 'id', name: 'id', type: 'BIGINT' },
+            { source: 'region', name: 'region', type: 'TEXT' },
+            { source: 'amount', name: 'amount', type: 'BIGINT' },
+          ],
+          rows: orderRows,
+          rowCount: 6,
+          sourceVersion: 'tutorial-source',
+          inputBytes: ordersCsv.length,
+          format: 'csv',
+        },
+        201,
+      );
+    }
+    if (path === '/database-imports' && method === 'POST') {
+      const body = request.postDataJSON();
+      calls.push({ ...body, action: 'seed' });
+      expect(body.preparationId).toBe('tutorial-preparation');
+      expect(body.confirmed).toBe(true);
+      expect(body.table).toMatch(/^tutorial_orders_[a-f0-9]{32}$/);
+      expect(tables.has(body.table)).toBe(false);
+      tables.add(body.table);
+      if (uncertainSeed) {
+        uncertainSeed = false;
+        return reply({ error: { code: 'UNAVAILABLE', message: 'Save outcome is unknown.' } }, 503);
+      }
+      return reply({
+        kind: 'database',
+        resourceId: body.resourceId,
+        table: body.table,
+        rowCount: 6,
+        columns: body.fields.map(({ name, type }) => ({ name, type })),
+      });
+    }
     if (path === '/queries' && method === 'POST') {
       const body = request.postDataJSON();
       calls.push({ ...body, action: 'query' });
-      if (body.sql.startsWith('CREATE TABLE')) {
-        const table = /tutorial_orders_[a-f0-9]{32}/.exec(body.sql)?.[0];
-        expect(table).toBeTruthy();
-        expect(tables.has(table)).toBe(false);
-        tables.add(table);
-        if (uncertainSeed) {
-          uncertainSeed = false;
-          return reply(
-            { error: { code: 'UNAVAILABLE', message: 'Save outcome is unknown.' } },
-            503,
-          );
-        }
-        return reply({
-          columns: [],
-          rows: [],
-          rowCount: 0,
-          affectedRows: 6,
-          mode: 'live',
-          durationMs: 1,
-        });
-      }
+      expect(body.sql).not.toMatch(/^CREATE TABLE/i);
       if (body.sql.includes('agent_events'))
         return reply({
           columns: ['id', 'status'],
@@ -121,9 +146,7 @@ test('tutorial samples run once and can be found and resumed after reopening a t
   await files.getByRole('button', { name: 'Save sample CSV', exact: true }).click();
   await files.getByRole('button', { name: 'Run tutorial query', exact: true }).click();
   await expect(files.getByRole('region', { name: 'Query result data' })).toContainText('180');
-  const originalTable = /tutorial_orders_[a-f0-9]{32}/.exec(
-    calls.find((call) => call.sql?.startsWith('CREATE TABLE')).sql,
-  )[0];
+  const originalTable = calls.find((call) => call.action === 'seed').table;
   const originalPath = calls.find((call) => call.action === 'file').path;
   const before = calls.length;
   await page.close();
@@ -159,7 +182,7 @@ test('tutorial samples run once and can be found and resumed after reopening a t
   await expect(reopened).toHaveURL(/#tutorials\?resourceId=fs_fixture$/);
   await expect(reopened.locator('#tutorial-filesystem')).toContainText(originalPath);
   expect(calls.filter((call) => call.action === 'file')).toHaveLength(1);
-  expect(calls.filter((call) => call.sql?.startsWith('CREATE TABLE'))).toHaveLength(1);
+  expect(calls.filter((call) => call.action === 'seed')).toHaveLength(1);
   await expect
     .poll(() => reopened.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     .toBe(true);
@@ -233,7 +256,7 @@ test('uncertain tutorial writes are checked without replay and missing resource 
   ).toBeDisabled();
   await database.getByRole('button', { name: 'Check saved sample', exact: true }).click();
   await expect(database.getByRole('region', { name: 'Query result data' })).toContainText('240');
-  expect(calls.filter((call) => call.sql?.startsWith('CREATE TABLE'))).toHaveLength(1);
+  expect(calls.filter((call) => call.action === 'seed')).toHaveLength(1);
   await page.goto('/#tutorials?resourceId=missing');
   await expect(page.getByText('Tutorial resource unavailable', { exact: true })).toBeVisible();
   await expect(page.locator('#tutorial-database')).toHaveCount(0);

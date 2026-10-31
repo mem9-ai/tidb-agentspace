@@ -648,7 +648,7 @@ for (const managed of [false, true])
       const resourceId = created.body.data.id;
       const prep = await f.request(
         workspaceBase +
-          '/database-imports/prepare-upload?' +
+          '/database-import-preparations?' +
           new URLSearchParams({
             resourceId,
             filename: 'input.csv',
@@ -663,10 +663,10 @@ for (const managed of [false, true])
           headers: { 'Content-Type': 'application/octet-stream' },
         },
       );
-      assert.equal(prep.status, 200, JSON.stringify(prep.body));
+      assert.equal(prep.status, 201, JSON.stringify(prep.body));
       const commit = {
         resourceId,
-        preparationId: prep.body.preparationId,
+        preparationId: prep.body.id,
         confirmed: true,
         table: 'mid_logout_import',
         fields: prep.body.fields,
