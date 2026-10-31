@@ -123,9 +123,9 @@ impl AccessVerifier {
             issuer,
             audience,
             token_type: if region.is_some() {
-                "db9-region-access+jwt"
+                "workspace-region-access+jwt"
             } else {
-                "db9-global-access+jwt"
+                "workspace-global-access+jwt"
             }
             .into(),
             environment,
@@ -265,7 +265,7 @@ mod tests {
     #[test]
     fn authenticates_only_the_exact_local_profile_and_valid_interval() {
         let verifier = verifier();
-        let good = token(&claims(), "key-1", "db9-region-access+jwt");
+        let good = token(&claims(), "key-1", "workspace-region-access+jwt");
         assert_eq!(
             verifier.verify(&good, 1000).unwrap().workspace_id,
             "ws_agentlab"
@@ -289,19 +289,25 @@ mod tests {
             bad[field] = value;
             assert!(
                 verifier
-                    .verify(&token(&bad, "key-1", "db9-region-access+jwt"), 1000)
+                    .verify(&token(&bad, "key-1", "workspace-region-access+jwt"), 1000)
                     .is_err(),
                 "{field}"
             );
         }
         assert!(
             verifier
-                .verify(&token(&claims(), "key-2", "db9-region-access+jwt"), 1000)
+                .verify(
+                    &token(&claims(), "key-2", "workspace-region-access+jwt"),
+                    1000
+                )
                 .is_err()
         );
         assert!(
             verifier
-                .verify(&token(&claims(), "key-1", "db9-global-access+jwt"), 1000)
+                .verify(
+                    &token(&claims(), "key-1", "workspace-global-access+jwt"),
+                    1000
+                )
                 .is_err()
         );
     }
@@ -314,28 +320,29 @@ mod tests {
             "{},\"aud\":\"region:a/audience\"}}",
             &base[..base.len() - 1]
         );
-        let header = r#"{"alg":"EdDSA","typ":"db9-region-access+jwt","kid":"key-1"}"#;
+        let header = r#"{"alg":"EdDSA","typ":"workspace-region-access+jwt","kid":"key-1"}"#;
         assert!(
             verifier
                 .verify(&signed_raw(header, &duplicate), 1000)
                 .is_err()
         );
-        let untrusted = r#"{"alg":"EdDSA","typ":"db9-region-access+jwt","kid":"key-1","jku":"https://attacker.example/jwks"}"#;
+        let untrusted = r#"{"alg":"EdDSA","typ":"workspace-region-access+jwt","kid":"key-1","jku":"https://attacker.example/jwks"}"#;
         assert!(
             verifier
                 .verify(&signed_raw(untrusted, &base), 1000)
                 .is_err()
         );
-        let wrong_algorithm = r#"{"alg":"HS256","typ":"db9-region-access+jwt","kid":"key-1"}"#;
+        let wrong_algorithm =
+            r#"{"alg":"HS256","typ":"workspace-region-access+jwt","kid":"key-1"}"#;
         assert!(
             verifier
                 .verify(&signed_raw(wrong_algorithm, &base), 1000)
                 .is_err()
         );
-        let none = r#"{"alg":"none","typ":"db9-region-access+jwt","kid":"key-1"}"#;
+        let none = r#"{"alg":"none","typ":"workspace-region-access+jwt","kid":"key-1"}"#;
         assert!(verifier.verify(&signed_raw(none, &base), 1000).is_err());
         let duplicate_header =
-            r#"{"alg":"EdDSA","alg":"EdDSA","typ":"db9-region-access+jwt","kid":"key-1"}"#;
+            r#"{"alg":"EdDSA","alg":"EdDSA","typ":"workspace-region-access+jwt","kid":"key-1"}"#;
         assert!(
             verifier
                 .verify(&signed_raw(duplicate_header, &base), 1000)
@@ -347,7 +354,7 @@ mod tests {
                 .verify(&signed_raw(header, &unknown), 1000)
                 .is_err()
         );
-        let good = token(&claims(), "key-1", "db9-region-access+jwt");
+        let good = token(&claims(), "key-1", "workspace-region-access+jwt");
         let (prefix, _) = good.rsplit_once('.').unwrap();
         assert!(
             verifier
@@ -383,20 +390,20 @@ mod tests {
         value["iss"] = json!("https://region-a.example");
         assert!(
             region
-                .verify(&token(&value, "key-1", "db9-region-access+jwt"), 1000)
+                .verify(&token(&value, "key-1", "workspace-region-access+jwt"), 1000)
                 .is_err()
         );
         value["familyId"] = json!("00000000-0000-4000-8000-000000000003");
         value["familyEpoch"] = json!(1);
         assert!(
             region
-                .verify(&token(&value, "key-1", "db9-region-access+jwt"), 1000)
+                .verify(&token(&value, "key-1", "workspace-region-access+jwt"), 1000)
                 .is_ok()
         );
         value["iss"] = json!("https://global.example");
         assert!(
             verifier()
-                .verify(&token(&value, "key-1", "db9-region-access+jwt"), 1000)
+                .verify(&token(&value, "key-1", "workspace-region-access+jwt"), 1000)
                 .is_err()
         );
         assert!(
