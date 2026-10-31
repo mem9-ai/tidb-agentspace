@@ -42,9 +42,14 @@ expected output and a useful next action. Retain a named Tutorials destination a
 show attempted/completed tutorials on Overview, and link back from each resource. Reopening
 reuses the exact sample and resource; it must not automatically seed or execute another copy.
 Keep uncertain writes inspectable without automatic replay, resource availability explicit and
-file-draft guards intact. Browser-local progress is distinct from account-synced history and
-persisted results. Verify both complete flows, create handoff, fresh-tab re-entry, resource
-identity, and error/draft states. See [implementation and evidence](../tutorial-verification.md).
+file-draft guards intact. **Workspace persistence (owner correction, GH-83):** save progress with
+the Workspace so another browser signed into that Workspace can find and continue the same
+sample. Migrate existing browser progress create-only; Workspace state wins over old copies.
+Load authoritative progress before enabling actions, acknowledge an attempt before sample
+writes, and reject stale concurrent updates. Progress remains distinct from saved query results
+and an execution audit. Verify both complete flows, create handoff, isolated-browser re-entry,
+resource identity, unavailable persistence, conflicts and error/draft states. See
+[implementation and evidence](../tutorial-verification.md) and [ADR 0033](../decisions/0033-workspace-tutorial-progress.md).
 
 - Comparable screens share implemented primitives and state transitions, not independently
   copied markup. Reuse `WorkspacePageHeader`, `WorkspaceEmptyState`, `ResourceCollectionPage`
