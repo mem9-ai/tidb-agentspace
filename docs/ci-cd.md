@@ -2,7 +2,7 @@
 
 ## What is implemented
 
-[ADR 0026](decisions/0026-native-hosted-studio.md) makes Rust the only serving runtime. `Quality` builds the Console and checks Console/tooling/contracts; `Rust backend and S3 integration` builds/tests all native phases, and `Browser smoke` builds the same candidate and asserts Console journeys in parallel. Dev CD packages a native-only Linux amd64 image, the currently verified Linux static DuckDB target. Node is not present in that image. [Native deployment](native-studio-deployment.md) defines fresh S3 roots/keys and the one-time target bootstrap.
+[ADR 0026](decisions/0026-native-hosted-studio.md) makes Rust the only serving runtime. `Quality` builds the Console and checks Console/tooling/contracts; `Rust backend and S3 integration` builds/tests all native phases, and applicable `Browser smoke` builds the same candidate and asserts Console journeys in parallel. Internal backend changes use [OpenAPI behavior verification](standards/openapi-verification.md) without frontend retesting. Dev CD packages a native-only Linux amd64 image, the currently verified Linux static DuckDB target. Node is not present in that image. [Native deployment](native-studio-deployment.md) defines fresh S3 roots/keys and the one-time target bootstrap.
 
 - `.github/workflows/ci.yml`: clean installation and `npm run check` on PRs, pushes to
   `main`, merge-queue candidates, and manual requests. Quality uploads the Console artifact;
@@ -43,8 +43,9 @@ mark completed draft PRs ready and merge task-scoped changes without another con
 or a separate human approval after all of the following are true:
 
 - The diff has been reviewed for behavior, scope, compatibility, and credentials.
-- `Quality`, Browser smoke, and all applicable CI checks pass on the latest PR head. A skipped
-  Rust/S3 job is acceptable only for the narrowly classified UI-only PR path described below.
+- `Quality` and all applicable CI checks pass on the latest PR head. A skipped Rust/S3 job
+  is acceptable only for the narrowly classified UI-only PR path. A skipped Browser smoke
+  requires successful native and `Backend-only scope` jobs as described below.
 - The PR has no merge conflict, and any enforced GitHub requirements are satisfied.
 - Contributor attribution is preserved.
 
@@ -61,10 +62,24 @@ candidate. For PR merge candidates only, an allowlist of UI `.tsx`/`.css` files 
 specified browser tests and experience guidance may skip the Rust/S3 job. At least one UI file
 must change; a backend, contract, dependency, workflow, other test or unrecognized file requires
 the full job. The classifier runs the policy from the tested base, compares both sides of renames,
-and falls back to full checks when the merge or policy cannot be verified. Quality, Browser smoke
-and security checks remain applicable. Main pushes, merge queues and manual runs always execute
+and falls back to full checks when the merge or policy cannot be verified. Quality and security
+checks remain applicable. Main pushes, merge queues and manual runs always execute
 Rust/S3. Main CI runs use independent SHA groups so later pushes do not cancel evidence awaited by
 delivery. Only superseded PR/merge-queue candidates cancel.
+
+For native-only PR/main changes, the trusted-base policy may skip Browser smoke. At least
+one allowlisted native source must change, and every path must belong to native implementation,
+build inputs, native test fixtures or specified backend guides. Console/client code, public
+contracts (including `backend/contracts`), npm dependencies, workflow/policy and unknown/mixed
+paths retain Browser smoke. PRs use the first merge parent; main pushes use the entire event
+`before..HEAD` range and the policy at `before`. Both sides of renames are checked. Missing or
+non-ancestor baselines, manual and queue events default to both gates. This policy PR cannot
+self-select a skip through candidate policy edits.
+
+The `Backend-only scope` job records browser inapplicability only after trusted scope selection
+and native API/S3 success. Browser smoke remains visibly skipped. This is applicability
+evidence, not an additional test gate or a passing browser result. The [OpenAPI standard](standards/openapi-verification.md)
+defines the required response, authorization, side-effect, failure and recovery assertions.
 
 Dev CD no longer triggers on PRs or repeats quality/native commands. Its read-only verify
 job runs `scripts/require-ci.mjs full "$SOURCE_SHA"`, then the existing protected dev job
@@ -72,6 +87,9 @@ builds/pushes and updates the image. Console publishing consumes `console` evide
 and Browser smoke) before its independent `/studio/` build; unrelated Rust work can still
 be running. Source freshness, website checks, protected branches and exact-tree merge checks
 remain in place. The manual internal-artifact workflow retains isolated verification.
+If the exact source SHA has a skipped Browser smoke job, both `console` and `full` modes
+instead require successful native and `Backend-only scope` jobs in that same CI run/attempt.
+This handles a later backend-only main revision selected by independent Console publication.
 
 Console publication fetches the website without `site/releases/` blobs while preserving the
 complete Git index and release subtree. All website validation and protected merge gates
@@ -79,8 +97,9 @@ remain required; the [publication guide](console-publishing.md#website-checkout-
 owns the sparse-checkout guard, regression and timing comparison procedure.
 
 Evidence is bound to this repository's `ci.yml`, trusted main push/manual event, exact SHA,
-and newest run/attempt. Required jobs must succeed; missing, cancelled, skipped, ambiguous,
-wrong-source or untrusted results fail closed. Caches are never evidence. Missing results
+and newest run/attempt. Required jobs must succeed; only the explicit native-backed browser
+skip above is accepted. Other skipped, missing, cancelled, ambiguous, wrong-source or untrusted
+results fail closed. Caches are never evidence. Missing results
 require running CI for the selected main SHA before retrying delivery. All automatic
 consumers read Actions metadata with a read-only token, without deployment credentials.
 

@@ -18,7 +18,7 @@ use workspace_providers::{DB9, DRIVE9, DUCKDB, Providers, ZERO, err, timestamp};
 pub struct Config {
     #[serde(default)]
     pub providers: workspace_providers::Config,
-    #[serde(default, alias = "compute")]
+    #[serde(default)]
     pub execute: workspace_execute::Config,
 }
 
@@ -596,21 +596,21 @@ mod execute_config_tests {
     use super::*;
 
     #[test]
-    fn legacy_compute_and_execute_configuration_preserve_extension_bindings() {
+    fn execute_configuration_uses_one_name_and_rejects_obsolete_fields() {
         let extension = json!({"extensionPath":"/private/tidbfs.duckdb_extension","extensionSha256":"retained-checksum"});
-        let legacy: Config = serde_json::from_value(json!({"compute":extension})).unwrap();
         let current: Config = serde_json::from_value(json!({"execute":extension})).unwrap();
-        assert_eq!(
-            serde_json::to_value(&legacy).unwrap(),
-            serde_json::to_value(&current).unwrap()
-        );
         assert_eq!(
             serde_json::to_value(&current).unwrap()["execute"],
             extension
         );
-        assert!(
-            serde_json::from_value::<Config>(json!({"compute":extension,"execute":extension}))
-                .is_err()
-        );
+        for value in [
+            json!({"compute":extension}),
+            json!({"compute":extension,"execute":extension}),
+        ] {
+            let error = serde_json::from_value::<Config>(value)
+                .err()
+                .expect("obsolete configuration accepted");
+            assert!(error.to_string().contains("unknown field `compute`"));
+        }
     }
 }

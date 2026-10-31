@@ -53,6 +53,7 @@ const instructionLinks = {
     'docs/standards/intent-driven-development.md',
     'docs/standards/github-contribution-workflow.md',
     'docs/ci-cd.md',
+    'docs/standards/openapi-verification.md',
   ],
   'AGENTS.md': [
     'start-here.md',
@@ -60,6 +61,7 @@ const instructionLinks = {
     'docs/standards/tiui-design-system.md',
     'docs/standards/product-experience.md',
     'docs/standards/knowledge-maintenance.md',
+    'docs/standards/openapi-verification.md',
   ],
   'src/AGENTS.md': [
     '../AGENTS.md',
@@ -72,6 +74,7 @@ const instructionLinks = {
     'tiui-design-system.md',
     'product-experience.md',
     'knowledge-maintenance.md',
+    'openapi-verification.md',
     '../../src/AGENTS.md',
   ],
   'docs/standards/tiui-design-system.md': ['../decisions/0002-tiui-design-system.md'],

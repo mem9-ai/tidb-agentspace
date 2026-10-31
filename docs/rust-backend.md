@@ -70,13 +70,13 @@ Product operations call `Executor.execute(task)` in process. The default impleme
 starts `workspace-backend execute` using the currently running executable, passes one bounded
 JSON request through stdin and receives one bounded JSON reply through stdout. The child
 exits after that task. There is no Execute listener, service discovery, broker, durable task
-queue, independently deployed binary or separately configured service. The old `worker`
-subcommand remains an alias for operator compatibility; normal calls use `execute`.
+queue, independently deployed binary or separately configured service.
 
-`product.execute` configures the verified native extension. Existing `product.compute`
-configuration remains accepted as an alias, including the original path/checksum; specifying
-both is rejected. Provider connections, metadata and public HTTP request/response contracts
-are unchanged. This refactor does not add an in-process thread strategy.
+`product.execute` is the sole native-extension configuration. Unknown product fields reject
+at startup rather than silently selecting a fallback. Pre-production development names are
+replaced directly; there are no transitional command/configuration aliases. Provider
+connections, metadata and public HTTP request/response contracts are unchanged. This refactor
+does not add an in-process thread strategy.
 
 Execute owns child lifecycle, an empty environment, bounded pipes, discarded stderr and
 kill-on-drop cancellation. The normal deadline is 15 seconds; only server-generated native
@@ -87,7 +87,7 @@ private storage connection. Native MySQL/PostgreSQL requests use provider driver
 
 Each child flushes the same stdout handle before process/runtime exit. Awaiting Tokio
 `write_all` alone is not a completion barrier for its background writer. Buffered-output,
-flush-failure, child cancellation/deadline and native CLI compatibility tests enforce this
+flush-failure, child cancellation/deadline and native CLI tests enforce this
 boundary. Diagnostics report only exit status or response byte count, never input or secrets.
 See [ADR 0021](decisions/0021-native-rust-computation.md) and the implemented
 [architecture diagram](architecture.md#backend-boundaries).

@@ -29,6 +29,10 @@ and compatibility form the agreement between implementations; identical code is 
 Read the [architecture](docs/architecture.md) and
 [development system](docs/standards/intent-driven-development.md) for the full reasoning.
 
+[Backend OpenAPI verification](docs/standards/openapi-verification.md) defines independent
+backend acceptance: verify native responses, authorization, effects and persistence directly.
+Internal backend changes preserving the public contract do not require frontend retesting.
+
 The Console and API build, run, and package independently in this repository. The Console
 consumes generated API types and selects its API origin at runtime. This implemented boundary
 is documented in [independent delivery](docs/independent-delivery.md) and
