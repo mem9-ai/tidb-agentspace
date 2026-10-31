@@ -82,6 +82,7 @@ within the task's scope. A proposed architecture does not establish a runtime ca
 ## Read for your task
 
 For metadata architecture, start with [SlateDB Metadata Architecture Version 1](docs/slatedb-metadata-design.md) and the [current scale assessment](docs/scale-assessment.md).
+For the sparse-activity sharding proposal and the current pagination slice, see [ADR 0035](docs/decisions/0035-sparse-scale-metadata.md).
 It covers independent Global/Region authorities, clean entity/group/index modeling, native
 transactions, object durability, credentials, recovery and the scale/iteration plan. Historical
 storage shapes do not constrain the target model. Its status table separates implementation

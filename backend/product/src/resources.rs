@@ -77,6 +77,12 @@ impl Product {
             return Ok((200, Reply::Json(json!({"data":self.resource_view(r,&p)}))));
         }
         if !r["deletion"].is_null() {
+            if !live(&r) && r["status"] == "deleting" {
+                let r = self
+                    .finish_deletion(credential, id, "deleted", "completed")
+                    .await?;
+                return Ok((200, Reply::Json(json!({"data":self.resource_view(r,&p)}))));
+            }
             return Ok((
                 if r["status"] == "deleted" { 200 } else { 202 },
                 Reply::Json(json!({"data":self.resource_view(r,&p)})),
@@ -91,21 +97,28 @@ impl Product {
         }
         self.workspace
             .repository()
-            .transaction(|state| {
-                let p = principal(state, credential)?;
-                p.scope("resources:write")?;
-                p.resource(state, id, None)?;
-                let r = state["resources"]
-                    .as_array_mut()
-                    .expect("resources")
-                    .iter_mut()
-                    .find(|r| r["id"] == id)
-                    .ok_or_else(|| err(404, "NOT_FOUND"))?;
-                r["status"] = json!("deleting");
-                r["deletion"] = json!({"phase":"outcome-unknown","requestedAt":timestamp()});
-                event(state, "resource.deletion-requested", id, &p.actor, Some(id));
-                Ok(((), true))
-            })
+            .resource_transaction(
+                vec![id.to_owned()],
+                false,
+                false,
+                false,
+                credential,
+                |state| {
+                    let p = principal(state, credential)?;
+                    p.scope("resources:write")?;
+                    p.resource(state, id, None)?;
+                    let r = state["resources"]
+                        .as_array_mut()
+                        .expect("resources")
+                        .iter_mut()
+                        .find(|r| r["id"] == id)
+                        .ok_or_else(|| err(404, "NOT_FOUND"))?;
+                    r["status"] = json!("deleting");
+                    r["deletion"] = json!({"phase":"outcome-unknown","requestedAt":timestamp()});
+                    event(state, "resource.deletion-requested", id, &p.actor, Some(id));
+                    Ok(((), true))
+                },
+            )
             .await?;
         let (status, phase) = if !live(&r) {
             ("deleted", "completed")
@@ -128,28 +141,36 @@ impl Product {
         status: &str,
         phase: &str,
     ) -> Result<Value> {
+        if status == "deleted" {
+            let repository = self.workspace.repository();
+            let resource = repository.resource(id).await?;
+            if resource["kind"] == "filesystem" && !live(&resource) {
+                repository.purge_local_files(id, credential).await?;
+            }
+        }
         self.workspace
             .repository()
-            .transaction(|state| {
-                let p = principal(state, credential)?;
-                let r = state["resources"]
-                    .as_array_mut()
-                    .expect("resources")
-                    .iter_mut()
-                    .find(|r| r["id"] == id)
-                    .ok_or_else(|| err(404, "NOT_FOUND"))?;
-                r["status"] = json!(status);
-                r["deletion"]["phase"] = json!(phase);
-                let result = r.clone();
-                if status == "deleted" {
-                    state["files"]
+            .resource_transaction(
+                vec![id.to_owned()],
+                false,
+                false,
+                false,
+                credential,
+                |state| {
+                    let p = principal(state, credential)?;
+                    let r = state["resources"]
                         .as_array_mut()
-                        .expect("files")
-                        .retain(|f| f["resourceId"] != id);
-                }
-                event(state, "resource.deletion-observed", id, &p.actor, Some(id));
-                Ok((result, true))
-            })
+                        .expect("resources")
+                        .iter_mut()
+                        .find(|r| r["id"] == id)
+                        .ok_or_else(|| err(404, "NOT_FOUND"))?;
+                    r["status"] = json!(status);
+                    r["deletion"]["phase"] = json!(phase);
+                    let result = r.clone();
+                    event(state, "resource.deletion-observed", id, &p.actor, Some(id));
+                    Ok((result, true))
+                },
+            )
             .await
     }
 }

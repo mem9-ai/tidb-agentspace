@@ -67,6 +67,8 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 - [0034: Global Key authority and independently serving Regions](0034-openapi-security-authorities.md) — owner-confirmed Key/Token and regional autonomy direction; detailed implementation and security gates proposed.
 
+- [0035: Sparse-activity metadata scale](0035-sparse-scale-metadata.md) — proposed independent authority shards and Workspace resource partitioning; bounded resource page reads are a first slice.
+
 - [0019: Portable Workspace KV control plane](0019-workspace-kv-control-plane.md) — Global-initiated encrypted control, independent regional serving, pooled cells/bounded groups, selected hosted SlateDB/object storage, private regional storage directory and identity-preserving migration; phased implementation.
 
 - [0021: Native Rust computation](0021-native-rust-computation.md) — Region-internal Execute with same-binary child tasks; bundled DuckDB, restricted Bashkit snapshot workers, native SQL and Node-free regional serving.

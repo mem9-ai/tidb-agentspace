@@ -1,3 +1,7 @@
+mod event_index;
+mod file_index;
+mod file_paths;
+mod resource_index;
 mod setup_attempts;
 mod tutorials;
 use serde_json::{Value, json};
@@ -9,7 +13,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 use workspace_contracts::{MetaRequest, Metadata, Result, Scope, ServiceError, WriterGuard};
 
@@ -20,12 +24,30 @@ fn version(record: &Value) -> Value {
     record.get("version").cloned().unwrap_or(Value::Null)
 }
 type Records = BTreeMap<String, Value>;
+#[derive(Clone, Copy)]
+enum KeyLoad<'a> {
+    All,
+    Credential(&'a crate::Credential),
+    One(&'a str),
+    None,
+}
+struct Projection<'a> {
+    resources: Vec<String>,
+    events: bool,
+    files: bool,
+    file_paths: Option<(String, Vec<String>)>,
+    statistics: bool,
+    keys: KeyLoad<'a>,
+    exclusive: bool,
+}
 pub struct Repository {
     metadata: Arc<dyn Metadata>,
     scope: Scope,
     guard: WriterGuard,
-    queue: Mutex<()>,
+    queue: RwLock<()>,
     closed: AtomicBool,
+    resource_backfill_running: AtomicBool,
+    resource_backfill_error: std::sync::Mutex<Option<ServiceError>>,
 }
 impl Repository {
     /// The scope is established by the host, not by a customer request.
@@ -78,8 +100,10 @@ impl Repository {
             metadata,
             scope,
             guard: WriterGuard { owner_id: owner },
-            queue: Mutex::new(()),
+            queue: RwLock::new(()),
             closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
         };
         let initialized=async {
             let core=result.get("state/workspace").await?;
@@ -92,7 +116,9 @@ impl Repository {
             Ok(())
         }.await;
         if let Err(e) = initialized {
-            let _ = result.close().await;
+            if result.close().await.is_err() {
+                return Err(error("META_WRITER_RELEASE_UNCERTAIN"));
+            }
             return Err(e);
         }
         Ok(result)
@@ -254,22 +280,386 @@ impl Repository {
         Ok(result)
     }
     pub async fn read(&self) -> Result<Value> {
-        let _lock = self.queue.lock().await;
+        let _lock = self.queue.write().await;
         inflate(&self.records("state/").await?)
     }
     pub async fn transaction<T>(
         &self,
         apply: impl FnOnce(&mut Value) -> Result<(T, bool)> + Send,
     ) -> Result<T> {
-        let _lock = self.queue.lock().await;
+        let _lock = self.queue.write().await;
         let previous = self.records("state/").await?;
+        self.apply_transaction(previous, apply, false).await
+    }
+
+    /// Key, settings and event operations need only their bounded collections and the
+    /// resources named in grants/events. Keep the legacy gate until all writers migrate.
+    pub async fn workspace_transaction<T>(
+        &self,
+        selected_resources: Vec<String>,
+        include_event_resources: bool,
+        include_files: bool,
+        include_statistics: bool,
+        apply: impl FnOnce(&mut Value) -> Result<(T, bool)> + Send,
+    ) -> Result<T> {
+        let mut apply = Some(apply);
+        self.projected_transaction(
+            Projection {
+                resources: selected_resources,
+                events: include_event_resources,
+                files: include_files,
+                file_paths: None,
+                statistics: include_statistics,
+                keys: KeyLoad::All,
+                exclusive: true,
+            },
+            move |state| apply.take().expect("exclusive transaction invoked once")(state),
+        )
+        .await
+    }
+
+    /// Resource operations need only the caller's Key, never the whole Key collection.
+    pub async fn resource_transaction<T>(
+        &self,
+        selected_resources: Vec<String>,
+        include_event_resources: bool,
+        include_files: bool,
+        include_statistics: bool,
+        credential: &crate::Credential,
+        apply: impl FnMut(&mut Value) -> Result<(T, bool)> + Send,
+    ) -> Result<T> {
+        self.projected_transaction(
+            Projection {
+                resources: selected_resources,
+                events: include_event_resources,
+                files: include_files,
+                file_paths: None,
+                statistics: include_statistics,
+                keys: KeyLoad::Credential(credential),
+                exclusive: false,
+            },
+            apply,
+        )
+        .await
+    }
+
+    /// Restrict a local file operation to the target and its parent directory.
+    pub async fn local_file_transaction<T>(
+        &self,
+        selected_resources: Vec<String>,
+        file_resource: &str,
+        paths: Vec<String>,
+        credential: &crate::Credential,
+        apply: impl FnMut(&mut Value) -> Result<(T, bool)> + Send,
+    ) -> Result<T> {
+        self.projected_transaction(
+            Projection {
+                resources: selected_resources,
+                events: false,
+                files: true,
+                file_paths: Some((file_resource.into(), paths)),
+                statistics: false,
+                keys: KeyLoad::Credential(credential),
+                exclusive: false,
+            },
+            apply,
+        )
+        .await
+    }
+
+    pub async fn local_file(
+        &self,
+        resource: &str,
+        path: &str,
+        credential: &crate::Credential,
+    ) -> Result<Value> {
+        self.local_file_transaction(
+            vec![resource.into()],
+            resource,
+            vec![path.into()],
+            credential,
+            |state| {
+                let actor = crate::principal(state, credential)?;
+                actor.scope("files:read")?;
+                actor.resource(state, resource, Some("filesystem"))?;
+                let file = state["files"]
+                    .as_array()
+                    .and_then(|files| {
+                        files
+                            .iter()
+                            .find(|file| file["resourceId"] == resource && file["path"] == path)
+                    })
+                    .cloned()
+                    .ok_or_else(|| ServiceError::new(404, "NOT_FOUND"))?;
+                Ok((file, false))
+            },
+        )
+        .await
+    }
+
+    pub async fn key_transaction<T>(
+        &self,
+        selected_resources: Vec<String>,
+        key_id: Option<&str>,
+        apply: impl FnMut(&mut Value) -> Result<(T, bool)> + Send,
+    ) -> Result<T> {
+        let keys = key_id.map_or(KeyLoad::None, KeyLoad::One);
+        self.projected_transaction(
+            Projection {
+                resources: selected_resources,
+                events: false,
+                files: false,
+                file_paths: None,
+                statistics: false,
+                keys,
+                exclusive: false,
+            },
+            apply,
+        )
+        .await
+    }
+
+    async fn projected_transaction<T>(
+        &self,
+        projection: Projection<'_>,
+        mut apply: impl FnMut(&mut Value) -> Result<(T, bool)> + Send,
+    ) -> Result<T> {
+        if projection.exclusive {
+            let _lock = self.queue.write().await;
+            if projection.files {
+                while !self.advance_file_index().await? {}
+                while !self.advance_file_paths().await? {}
+            }
+            return self.projected_once(&projection, &mut apply, false).await;
+        }
+        if projection.files {
+            self.ensure_file_indexes().await?;
+        }
+        for attempt in 0..8 {
+            let _lock = self.queue.read().await;
+            match self.projected_once(&projection, &mut apply, true).await {
+                Ok(result) => return Ok(result),
+                Err(error) if error.code == "META_CONFLICT" && attempt < 7 => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        unreachable!()
+    }
+
+    pub async fn ensure_file_indexes(&self) -> Result<()> {
+        let mut conflicts = 0;
+        loop {
+            {
+                let _lock = self.queue.read().await;
+                if self.file_index_ready().await? && self.file_paths_ready().await? {
+                    break;
+                }
+            }
+            let lock = self.queue.read().await;
+            let result = if !self.file_index_ready().await? {
+                match self.advance_file_index().await {
+                    Ok(true) => self.file_paths_ready().await,
+                    Ok(false) => Ok(false),
+                    Err(error) => Err(error),
+                }
+            } else {
+                self.advance_file_paths().await
+            };
+            drop(lock);
+            let ready = match result {
+                Ok(ready) => {
+                    conflicts = 0;
+                    ready
+                }
+                Err(error) if error.code == "META_CONFLICT" && conflicts < 7 => {
+                    conflicts += 1;
+                    tokio::task::yield_now().await;
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+            if ready {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        Ok(())
+    }
+
+    async fn projected_once<T>(
+        &self,
+        projection: &Projection<'_>,
+        apply: &mut (impl FnMut(&mut Value) -> Result<(T, bool)> + Send),
+        fence_reads: bool,
+    ) -> Result<T> {
+        let mut previous = match projection.keys {
+            KeyLoad::All => self.records("state/keys/").await?,
+            KeyLoad::Credential(crate::Credential::Bearer(token)) => {
+                let digest = hex::encode(Sha256::digest(token.as_bytes()));
+                let index = self.get(&format!("indexes/key-digest/{digest}")).await?;
+                let mut keys = Records::new();
+                if let Some(id) = index["value"].as_str() {
+                    let path = format!("state/keys/{id}");
+                    let key = self.get(&path).await?;
+                    if key["value"]["record"]["digest"] != digest {
+                        return Err(error("META_RECORD_CORRUPT"));
+                    }
+                    keys.insert(path, key);
+                }
+                keys
+            }
+            KeyLoad::One(id) => {
+                let path = format!("state/keys/{id}");
+                let value = self.get(&path).await?;
+                let mut keys = Records::new();
+                if !value.is_null() {
+                    keys.insert(path, value);
+                }
+                keys
+            }
+            KeyLoad::Credential(_) | KeyLoad::None => Records::new(),
+        };
+        if projection.events {
+            previous.extend(self.records("state/events/").await?);
+        }
+        for key in ["state/workspace", "state/profile", "state/queryCount"] {
+            let value = self.get(key).await?;
+            if !value.is_null() {
+                previous.insert(key.into(), value);
+            }
+        }
+        let selected_file_resources = projection.resources.clone();
+        let mut ids = projection
+            .resources
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        if projection.statistics {
+            for id in &ids {
+                let key = format!(
+                    "state/resourceQueryCounts/{}",
+                    hex::encode(Sha256::digest(id.as_bytes()))
+                );
+                let value = self.get(&key).await?;
+                if !value.is_null() {
+                    if value["value"]["mapKey"] != *id {
+                        return Err(error("META_RECORD_CORRUPT"));
+                    }
+                    previous.insert(key, value);
+                }
+            }
+        }
+        if projection.events {
+            ids.extend(
+                previous
+                    .iter()
+                    .filter(|(key, _)| key.starts_with("state/events/"))
+                    .filter_map(|(_, value)| {
+                        value["value"]["record"]["resourceId"]
+                            .as_str()
+                            .map(str::to_owned)
+                    }),
+            );
+        }
+        let paths = ids
+            .into_iter()
+            .filter(|id| {
+                id != "*"
+                    && !id.is_empty()
+                    && id.len() <= 496
+                    && id
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"/_-.:".contains(&b))
+            })
+            .map(|id| format!("state/resources/{id}"))
+            .collect::<Vec<_>>();
+        for batch in paths.chunks(512) {
+            let result = self
+                .call(MetaRequest::Get {
+                    scope: self.scope.clone(),
+                    guard: Some(self.guard.clone()),
+                    keys: batch.to_vec(),
+                })
+                .await?;
+            for key in batch {
+                let value = &result["records"][key];
+                if !value.is_null() {
+                    previous.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        if projection.files {
+            let filesystems = selected_file_resources
+                .into_iter()
+                .filter(|id| {
+                    previous
+                        .get(&format!("state/resources/{id}"))
+                        .is_some_and(|record| record["value"]["record"]["kind"] == "filesystem")
+                })
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            if let Some((resource, paths)) = &projection.file_paths {
+                if filesystems.contains(resource) {
+                    previous.extend(self.files_for_paths(resource, paths).await?);
+                }
+            } else {
+                previous.extend(self.files_for_resources(&filesystems).await?);
+            }
+        }
+        self.apply_transaction(previous, apply, fence_reads).await
+    }
+
+    pub async fn view_selected(
+        &self,
+        ids: Vec<String>,
+        include_files: bool,
+        credential: Option<&crate::Credential>,
+    ) -> Result<Value> {
+        let keys = credential.map_or(KeyLoad::None, KeyLoad::Credential);
+        self.projected_transaction(
+            Projection {
+                resources: ids,
+                events: false,
+                files: include_files,
+                file_paths: None,
+                statistics: false,
+                keys,
+                exclusive: false,
+            },
+            |state| Ok((state.clone(), false)),
+        )
+        .await
+    }
+
+    async fn apply_transaction<T>(
+        &self,
+        previous: Records,
+        apply: impl FnOnce(&mut Value) -> Result<(T, bool)> + Send,
+        fence_reads: bool,
+    ) -> Result<T> {
         let mut state = inflate(&previous)?;
         let (result, dirty) = apply(&mut state)?;
         if !dirty {
             return Ok(result);
         }
         let next = flatten(&state, &previous)?;
+        let new_events = state["events"]
+            .as_array()
+            .ok_or_else(|| error("META_RECORD_CORRUPT"))?
+            .iter()
+            .filter(|event| {
+                event["id"]
+                    .as_str()
+                    .is_some_and(|id| !previous.contains_key(&format!("state/events/{id}")))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if new_events.len() > 1 {
+            return Err(error("EVENT_INDEX_BATCH_UNSUPPORTED"));
+        }
         let mut changes = Vec::new();
+        let mut file_updates = Vec::new();
         for (key, value) in &next {
             if previous
                 .get(key)
@@ -280,7 +670,69 @@ impl Repository {
         }
         for (key, prior) in &previous {
             if !next.contains_key(key) {
+                if key.starts_with("state/resources/")
+                    && !self.get("indexes/resource-v1/schema").await?.is_null()
+                {
+                    return Err(error("RESOURCE_INDEX_BATCH_UNSUPPORTED"));
+                }
                 changes.push(json!({"key":key,"expectedVersion":version(prior),"delete":true}));
+            }
+        }
+        for (key, value) in &next {
+            if key.starts_with("state/files/")
+                && previous
+                    .get(key)
+                    .is_none_or(|prior| prior["value"] != *value)
+            {
+                let before = previous
+                    .get(key)
+                    .map(|prior| &prior["value"]["record"])
+                    .unwrap_or(&Value::Null);
+                file_updates.push((before.clone(), value["record"].clone()));
+            }
+        }
+        for (key, prior) in &previous {
+            if key.starts_with("state/files/") && !next.contains_key(key) {
+                file_updates.push((prior["value"]["record"].clone(), Value::Null));
+            }
+        }
+        changes.extend(self.file_index_changes(&file_updates).await?);
+        changes.extend(self.file_path_changes(&file_updates, false).await?);
+        if let Some(event) = new_events.first() {
+            changes.retain(|change| {
+                !change["key"]
+                    .as_str()
+                    .is_some_and(|key| key.starts_with("state/events/"))
+            });
+            changes.extend(self.event_changes(event).await?);
+        }
+        let resource_changes = next
+            .iter()
+            .filter(|(key, value)| {
+                key.starts_with("state/resources/")
+                    && previous
+                        .get(*key)
+                        .is_none_or(|prior| prior["value"] != **value)
+            })
+            .collect::<Vec<_>>();
+        if resource_changes.len() > 1 && !self.get("indexes/resource-v1/schema").await?.is_null() {
+            return Err(error("RESOURCE_INDEX_BATCH_UNSUPPORTED"));
+        }
+        for (key, value) in resource_changes {
+            let before = previous
+                .get(key)
+                .map(|v| &v["value"]["record"])
+                .unwrap_or(&Value::Null);
+            for change in self
+                .resource_index_changes(before, &value["record"])
+                .await?
+            {
+                let duplicate_absence_fence = change["key"] == "indexes/resource-v1/schema"
+                    && change["delete"] == true
+                    && changes.iter().any(|existing: &Value| existing == &change);
+                if !duplicate_absence_fence {
+                    changes.push(change);
+                }
             }
         }
         // Digest indexes are committed with their canonical Key; authorization is a point lookup.
@@ -315,8 +767,32 @@ impl Repository {
                         .ok_or_else(|| error("META_RECORD_CORRUPT"))?
                 );
                 let prior = self.get(&path).await?;
+                if !prior.is_null() {
+                    return Err(error("KEY_DIGEST_CONFLICT"));
+                }
                 changes
                     .push(json!({"key":path,"expectedVersion":version(&prior),"value":key["id"]}));
+            }
+        }
+        if fence_reads {
+            // A Key revocation or resource transition racing this mutation must win or
+            // force a fresh authorization/read before retry. These bounded no-op writes
+            // act as version preconditions; unknown outcomes are never retried here.
+            let written = changes
+                .iter()
+                .filter_map(|change| change["key"].as_str())
+                .map(str::to_owned)
+                .collect::<std::collections::BTreeSet<_>>();
+            for (key, prior) in &previous {
+                if (key.starts_with("state/keys/")
+                    || key.starts_with("state/resources/")
+                    || key.starts_with("state/files/"))
+                    && !written.contains(key)
+                {
+                    changes.push(
+                        json!({"key":key,"expectedVersion":version(prior),"value":prior["value"]}),
+                    );
+                }
             }
         }
         self.commit(changes).await?;
@@ -326,15 +802,160 @@ impl Repository {
         Ok(self.get(&format!("state/resources/{id}")).await?["value"]["record"].clone())
     }
 
-    /// Region-internal cleanup inventory, paginated independently of the Workspace view limit.
-    /// Call only after fencing and draining Guest operations.
-    pub async fn cleanup_resources_page(
+    /// Keep the legacy event retention and ordering without loading unrelated resources.
+    /// The write gate coordinates this append with legacy snapshot transactions.
+    pub async fn append_event(&self, event: Value) -> Result<()> {
+        let _lock = self.queue.read().await;
+        for attempt in 0..8 {
+            let changes = match self.event_changes(&event).await {
+                Ok(changes) => changes,
+                Err(error) if error.code == "META_CONFLICT" && attempt < 7 => continue,
+                Err(error) => return Err(error),
+            };
+            match self.commit(changes).await {
+                Ok(()) => return Ok(()),
+                Err(error) if error.code == "META_CONFLICT" && attempt < 7 => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        unreachable!()
+    }
+
+    pub async fn resources_by_id(&self, ids: &[&str]) -> Result<Vec<Value>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let keys = ids
+            .iter()
+            .map(|id| format!("state/resources/{id}"))
+            .collect::<Vec<_>>();
+        let result = self
+            .call(MetaRequest::Get {
+                scope: self.scope.clone(),
+                guard: Some(self.guard.clone()),
+                keys: keys.clone(),
+            })
+            .await?;
+        let mut resources = Vec::with_capacity(ids.len());
+        for (id, key) in ids.iter().zip(keys) {
+            let stored = &result["records"][&key];
+            if stored.is_null() {
+                continue;
+            }
+            let resource = &stored["value"]["record"];
+            if resource["id"] != *id {
+                return Err(error("META_RECORD_CORRUPT"));
+            }
+            resources.push(resource.clone());
+        }
+        Ok(resources)
+    }
+
+    pub async fn keys_page(
+        &self,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<(Vec<Value>, Option<String>)> {
+        if !(1..=512).contains(&limit) {
+            return Err(ServiceError::new(400, "INVALID_PAGE_LIMIT"));
+        }
+        let after = cursor
+            .map(|cursor| {
+                if cursor.len() > 1024 {
+                    return Err(ServiceError::new(400, "INVALID_PAGE_CURSOR"));
+                }
+                let id = String::from_utf8(
+                    hex::decode(cursor)
+                        .map_err(|_| ServiceError::new(400, "INVALID_PAGE_CURSOR"))?,
+                )
+                .map_err(|_| ServiceError::new(400, "INVALID_PAGE_CURSOR"))?;
+                if id.is_empty()
+                    || id.len() > 501
+                    || !id
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"_-.:".contains(&b))
+                {
+                    return Err(ServiceError::new(400, "INVALID_PAGE_CURSOR"));
+                }
+                Ok(format!("state/keys/{id}"))
+            })
+            .transpose()?;
+        let page = self
+            .call(MetaRequest::List {
+                scope: self.scope.clone(),
+                guard: Some(self.guard.clone()),
+                prefix: "state/keys/".into(),
+                after,
+                limit,
+            })
+            .await?;
+        let records = page["records"]
+            .as_array()
+            .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+        let mut keys = Vec::with_capacity(records.len());
+        for entry in records {
+            let record = &entry["value"]["record"];
+            let id = record["id"]
+                .as_str()
+                .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+            if entry["key"] != format!("state/keys/{id}") || !record.is_object() {
+                return Err(error("META_RECORD_CORRUPT"));
+            }
+            keys.push(crate::key_view(record));
+        }
+        let next = page["nextCursor"]
+            .as_str()
+            .map(|key| {
+                key.strip_prefix("state/keys/")
+                    .map(hex::encode)
+                    .ok_or_else(|| error("META_RECORD_CORRUPT"))
+            })
+            .transpose()?;
+        Ok((keys, next))
+    }
+
+    /// Coordinate with legacy snapshots while allowing independent point updates to
+    /// proceed concurrently. Retry only a confirmed CAS conflict, never an unknown commit.
+    pub async fn update_resource<T>(
+        &self,
+        id: &str,
+        apply: impl Fn(&mut Value) -> Result<T> + Send,
+    ) -> Result<T> {
+        let _lock = self.queue.read().await;
+        let key = format!("state/resources/{id}");
+        for attempt in 0..4 {
+            let stored = self.get(&key).await?;
+            let mut value = stored["value"].clone();
+            if value["record"]["id"] != id {
+                return Err(ServiceError::new(404, "NOT_FOUND"));
+            }
+            let result = apply(&mut value["record"])?;
+            if value == stored["value"] {
+                return Ok(result);
+            }
+            let mut changes =
+                vec![json!({"key":key,"expectedVersion":version(&stored),"value":value})];
+            changes.extend(
+                self.resource_index_changes(&stored["value"]["record"], &value["record"])
+                    .await?,
+            );
+            match self.commit(changes).await {
+                Ok(()) => return Ok(result),
+                Err(error) if error.code == "META_CONFLICT" && attempt < 3 => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        unreachable!()
+    }
+
+    /// Bounded ID-ordered inventory. Guest cleanup must first fence and drain its operations.
+    pub async fn resources_page(
         &self,
         after: Option<String>,
         limit: usize,
     ) -> Result<(Vec<Value>, Option<String>)> {
         if limit == 0 || limit > 512 {
-            return Err(ServiceError::new(400, "INVALID_CLEANUP_LIMIT"));
+            return Err(ServiceError::new(400, "INVALID_PAGE_LIMIT"));
         }
         let page = self
             .call(MetaRequest::List {
@@ -362,32 +983,43 @@ impl Repository {
         Ok((resources, page["nextCursor"].as_str().map(str::to_owned)))
     }
     pub async fn authenticate_key(&self, token: &str) -> Result<crate::Principal> {
-        let _lock = self.queue.lock().await;
-        let state = self
-            .key_state(&hex::encode(Sha256::digest(token.as_bytes())))
-            .await?;
+        // Authentication of unrelated Keys can proceed concurrently. The read gate still
+        // fences legacy revocation transactions; the per-record CAS resolves simultaneous
+        // last-used updates for the same Key without serializing every Workspace request.
+        let _lock = self.queue.read().await;
+        let digest = hex::encode(Sha256::digest(token.as_bytes()));
         let credential = crate::Credential::Bearer(token.into());
-        let principal = crate::principal(&state, &credential)?;
-        let path = format!("state/keys/{}", principal.id);
-        let mut stored = self.get(&path).await?;
-        let current = stored["value"]["record"].clone();
-        // Revalidate the canonical record before touching usage; revocations never rely on an index/cache.
-        let principal = crate::principal(&json!({"keys":[current]}), &credential)?;
-        let recent = stored["value"]["record"]["lastUsedAt"]
-            .as_str()
-            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-            .is_some_and(|t| {
-                chrono::Utc::now().signed_duration_since(t) < chrono::Duration::minutes(1)
-            });
-        if !recent {
+        for attempt in 0..4 {
+            let state = self.key_state(&digest).await?;
+            let principal = crate::principal(&state, &credential)?;
+            let path = format!("state/keys/{}", principal.id);
+            let mut stored = self.get(&path).await?;
+            let current = stored["value"]["record"].clone();
+            // Revocations never rely on the index or a cached principal.
+            let principal = crate::principal(&json!({"keys":[current]}), &credential)?;
+            let recent = stored["value"]["record"]["lastUsedAt"]
+                .as_str()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .is_some_and(|t| {
+                    chrono::Utc::now().signed_duration_since(t) < chrono::Duration::minutes(1)
+                });
+            if recent {
+                return Ok(principal);
+            }
             stored["value"]["record"]["lastUsedAt"] =
                 json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
-            self.commit(vec![
-                json!({"key":path,"expectedVersion":version(&stored),"value":stored["value"]}),
-            ])
-            .await?;
+            match self
+                .commit(vec![
+                    json!({"key":path,"expectedVersion":version(&stored),"value":stored["value"]}),
+                ])
+                .await
+            {
+                Ok(()) => return Ok(principal),
+                Err(error) if error.code == "META_CONFLICT" && attempt < 3 => continue,
+                Err(error) => return Err(error),
+            }
         }
-        Ok(principal)
+        unreachable!()
     }
     pub async fn key_state(&self, digest: &str) -> Result<Value> {
         let index = self.get(&format!("indexes/key-digest/{digest}")).await?;
@@ -422,7 +1054,6 @@ impl Repository {
         Ok(value)
     }
     pub async fn save_binding(&self, provider: &str, id: &str, value: Value) -> Result<()> {
-        let _lock = self.queue.lock().await;
         let mut public = serde_json::Map::new();
         let mut secret = serde_json::Map::new();
         let keys = [
@@ -451,26 +1082,35 @@ impl Repository {
         if !secret.is_empty() {
             public.insert("credentialRef".into(), json!(keys[1]));
         }
-        let old = self
-            .call(MetaRequest::Get {
-                scope: self.scope.clone(),
-                guard: Some(self.guard.clone()),
-                keys: keys.to_vec(),
-            })
-            .await?;
-        let mut changes = Vec::new();
-        for (path, map) in keys.into_iter().zip([public, secret]) {
-            let prior = &old["records"][&path];
-            if map.is_empty() {
-                if !prior.is_null() {
-                    changes
-                        .push(json!({"key":path,"expectedVersion":version(prior),"delete":true}));
+        for retry in 0..8 {
+            let _lock = self.queue.read().await;
+            let old = self
+                .call(MetaRequest::Get {
+                    scope: self.scope.clone(),
+                    guard: Some(self.guard.clone()),
+                    keys: keys.to_vec(),
+                })
+                .await?;
+            let mut changes = Vec::new();
+            for (path, map) in keys.iter().zip([&public, &secret]) {
+                let prior = &old["records"][path];
+                if map.is_empty() {
+                    if !prior.is_null() {
+                        changes.push(
+                            json!({"key":path,"expectedVersion":version(prior),"delete":true}),
+                        );
+                    }
+                } else {
+                    changes.push(json!({"key":path,"expectedVersion":version(prior),"value":map}));
                 }
-            } else {
-                changes.push(json!({"key":path,"expectedVersion":version(prior),"value":map}));
+            }
+            match self.commit(changes).await {
+                Ok(()) => return Ok(()),
+                Err(error) if error.code == "META_CONFLICT" && retry < 7 => continue,
+                Err(error) => return Err(error),
             }
         }
-        self.commit(changes).await
+        unreachable!()
     }
     pub async fn account(&self, provider: &str) -> Result<Value> {
         Ok(self
@@ -479,13 +1119,22 @@ impl Repository {
             .clone())
     }
     pub async fn save_account(&self, provider: &str, value: Value) -> Result<()> {
-        let _lock = self.queue.lock().await;
         let path = format!("credentials/accounts/{provider}");
-        let prior = self.get(&path).await?;
-        self.commit(vec![
-            json!({"key":path,"expectedVersion":version(&prior),"value":value}),
-        ])
-        .await
+        for retry in 0..8 {
+            let _lock = self.queue.read().await;
+            let prior = self.get(&path).await?;
+            match self
+                .commit(vec![
+                    json!({"key":path,"expectedVersion":version(&prior),"value":value}),
+                ])
+                .await
+            {
+                Ok(()) => return Ok(()),
+                Err(error) if error.code == "META_CONFLICT" && retry < 7 => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        unreachable!()
     }
     pub async fn health(&self) -> Result<()> {
         let workspace = self.get("state/workspace").await?;
@@ -504,7 +1153,7 @@ impl Repository {
         {
             return Err(ServiceError::new(403, "LEGACY_PURGE_DENIED"));
         }
-        let _lock = self.queue.lock().await;
+        let _lock = self.queue.write().await;
         let mut after = None;
         loop {
             let page = self
@@ -554,7 +1203,7 @@ impl Repository {
         Ok(())
     }
     pub async fn close(&self) -> Result<()> {
-        let _lock = self.queue.lock().await;
+        let _lock = self.queue.write().await;
         if self.closed.swap(true, Ordering::AcqRel) {
             return Ok(());
         }
@@ -685,4 +1334,1130 @@ fn flatten(state: &Value, previous: &Records) -> Result<BTreeMap<String, Value>>
         }
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod concurrency_tests {
+    use super::*;
+    use tokio::sync::Notify;
+    use workspace_contracts::Call;
+
+    struct MetadataGate {
+        values: std::sync::Mutex<Records>,
+        paused: Notify,
+        resume: Notify,
+        first: AtomicBool,
+        fail_backfill_once: AtomicBool,
+        fail_file_backfill_once: AtomicBool,
+        fail_event_backfill_once: AtomicBool,
+        forbid_event_scan: AtomicBool,
+        forbid_file_scan: AtomicBool,
+    }
+
+    impl Metadata for MetadataGate {
+        fn health(&self) -> Call<'_> {
+            Box::pin(async { Ok(json!({})) })
+        }
+
+        fn execute(&self, request: MetaRequest) -> Call<'_> {
+            Box::pin(async move {
+                match request {
+                    MetaRequest::Get { keys, .. } => {
+                        let should_pause = (keys == ["state/resources/a"]
+                            || keys == ["state/keys/key-revoke"])
+                            && self.first.swap(false, Ordering::AcqRel);
+                        let records = {
+                            let values = self.values.lock().unwrap();
+                            keys.into_iter()
+                                .map(|key| {
+                                    let value = values.get(&key).cloned().unwrap_or(Value::Null);
+                                    (key, value)
+                                })
+                                .collect::<serde_json::Map<_, _>>()
+                        };
+                        if should_pause {
+                            self.paused.notify_one();
+                            self.resume.notified().await;
+                        }
+                        Ok(json!({"records":records}))
+                    }
+                    MetaRequest::Commit { changes, .. } => {
+                        if changes
+                            .iter()
+                            .any(|change| change["key"] == "state/resources/race")
+                            && self.first.swap(false, Ordering::AcqRel)
+                        {
+                            self.paused.notify_one();
+                            self.resume.notified().await;
+                        }
+                        let unknown_after_commit =
+                            changes.iter().any(|change| {
+                                change["key"] == "indexes/resource-v1/schema"
+                                    && change["value"]["after"] == "state/resources/db_001535"
+                            }) && self.fail_backfill_once.swap(false, Ordering::AcqRel);
+                        let file_unknown_after_commit =
+                            changes.iter().any(|change| {
+                                (change["key"] == "indexes/file-v1/head"
+                                    && change["value"]["after"] == "state/files/file_000511")
+                                    || (change["key"] == "indexes/file-v2/head"
+                                        && change["value"]["after"] == "state/files/file_000127")
+                                    || (change["key"] == "state/files/file_000000"
+                                        && change["delete"] == true)
+                            }) && self.fail_file_backfill_once.swap(false, Ordering::AcqRel);
+                        let event_unknown_after_commit =
+                            changes.iter().any(|change| {
+                                change["key"] == "indexes/event-v1/head"
+                                    && change["expectedVersion"].is_null()
+                            }) && self.fail_event_backfill_once.swap(false, Ordering::AcqRel);
+                        let mut values = self.values.lock().unwrap();
+                        for change in &changes {
+                            let key = change["key"].as_str().unwrap();
+                            if version(values.get(key).unwrap_or(&Value::Null))
+                                != change["expectedVersion"]
+                            {
+                                return Err(ServiceError::new(409, "META_CONFLICT"));
+                            }
+                        }
+                        for change in changes {
+                            let key = change["key"].as_str().unwrap();
+                            if change["delete"] == true {
+                                values.remove(key);
+                            } else {
+                                values.insert(key.into(), json!({"version":Uuid::new_v4().to_string(),"value":change["value"]}));
+                            }
+                        }
+                        if unknown_after_commit
+                            || file_unknown_after_commit
+                            || event_unknown_after_commit
+                        {
+                            Err(error("META_COMMIT_UNKNOWN"))
+                        } else {
+                            Ok(json!({}))
+                        }
+                    }
+                    MetaRequest::List {
+                        prefix,
+                        after,
+                        limit,
+                        ..
+                    } => {
+                        assert!(
+                            !(prefix == "state/events/"
+                                && self.forbid_event_scan.load(Ordering::Acquire)),
+                            "steady event append must not enumerate the event collection"
+                        );
+                        assert!(
+                            !(prefix == "state/files/"
+                                && self.forbid_file_scan.load(Ordering::Acquire)),
+                            "steady file access must not enumerate all Workspace files"
+                        );
+                        let values = self.values.lock().unwrap();
+                        let mut selected = values
+                            .iter()
+                            .filter(|(key, _)| {
+                                key.starts_with(&prefix)
+                                    && after.as_ref().is_none_or(|cursor| *key > cursor)
+                            })
+                            .take(limit + 1)
+                            .collect::<Vec<_>>();
+                        let more = selected.len() > limit;
+                        if more {
+                            selected.pop();
+                        }
+                        let cursor = if more {
+                            selected.last().map(|(key, _)| (*key).clone())
+                        } else {
+                            None
+                        };
+                        let records = selected.into_iter().map(|(key, value)|
+                            json!({"key":key,"version":value["version"],"value":value["value"]})
+                        ).collect::<Vec<_>>();
+                        Ok(json!({"records":records,"nextCursor":cursor}))
+                    }
+                    _ => panic!("unexpected request"),
+                }
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn independent_point_updates_do_not_wait_for_a_stalled_resource() {
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(
+                ["a", "b"]
+                    .into_iter()
+                    .map(|id| {
+                        (
+                            format!("state/resources/{id}"),
+                            json!({"version":"v1","value":{"position":0,"record":{"id":id,"n":0}}}),
+                        )
+                    })
+                    .collect(),
+            ),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(true),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Arc::new(Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        });
+        metadata.values.lock().unwrap().insert(
+            "indexes/resource-v1/schema".into(),
+            json!({"version":"v1","value":{"format":1,"phase":"ready","after":null,"position":2}}),
+        );
+        let stalled = tokio::spawn({
+            let repository = repository.clone();
+            async move {
+                repository
+                    .update_resource("a", |resource| {
+                        resource["n"] = json!(1);
+                        Ok(())
+                    })
+                    .await
+            }
+        });
+        metadata.paused.notified().await;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            repository.update_resource("b", |resource| {
+                resource["n"] = json!(2);
+                Ok(())
+            }),
+        )
+        .await
+        .expect("independent update was serialized")
+        .unwrap();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            repository.create_indexed_resource(
+                &crate::Credential::LocalDemoOwner,
+                Some("owner:independent"),
+                "fingerprint",
+                json!({"id":"db_new","name":"independent-duck","kind":"duckdb","status":"active","region":"automatic","provider":"local"}),
+                json!({"id":"event-independent","action":"resource.created"}),
+            ),
+        ).await.expect("independent creation was serialized").unwrap();
+        let setup = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            repository.begin_setup_attempt("b", "owner", "once", json!({"id":"attempt-a"})),
+        )
+        .await
+        .expect("independent setup was serialized")
+        .unwrap();
+        assert!(setup.1);
+        let replay = repository
+            .begin_setup_attempt("b", "owner", "once", json!({"id":"attempt-b"}))
+            .await
+            .unwrap();
+        assert!(!replay.1);
+        assert_eq!(replay.0["id"], "attempt-a");
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            repository.save_binding("provider", "b", json!({"state":"ready","secret":"test"})),
+        )
+        .await
+        .expect("independent binding was serialized")
+        .unwrap();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            repository.save_account("provider", json!({"token":"test"})),
+        )
+        .await
+        .expect("independent account was serialized")
+        .unwrap();
+        metadata.resume.notify_one();
+        stalled.await.unwrap().unwrap();
+        let values = metadata.values.lock().unwrap();
+        assert_eq!(values["state/resources/a"]["value"]["record"]["n"], 1);
+        assert_eq!(values["state/resources/b"]["value"]["record"]["n"], 2);
+    }
+
+    #[tokio::test]
+    async fn independent_resource_transactions_do_not_share_an_exclusive_gate() {
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(
+                [
+                    (
+                        "state/workspace".into(),
+                        json!({"version":"v1","value":{"id":"test"}}),
+                    ),
+                    ("state/profile".into(), json!({"version":"v1","value":{}})),
+                    (
+                        "state/resources/a".into(),
+                        json!({"version":"v1","value":{"position":1,"record":{"id":"a","n":0}}}),
+                    ),
+                    (
+                        "state/resources/b".into(),
+                        json!({"version":"v1","value":{"position":2,"record":{"id":"b","n":0}}}),
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(true),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Arc::new(Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        });
+        let stalled = tokio::spawn({
+            let repository = repository.clone();
+            async move {
+                repository
+                    .resource_transaction(
+                        vec!["a".into()],
+                        false,
+                        false,
+                        false,
+                        &crate::Credential::LocalDemoOwner,
+                        |state| {
+                            state["resources"][0]["n"] = json!(1);
+                            Ok(((), true))
+                        },
+                    )
+                    .await
+            }
+        });
+        metadata.paused.notified().await;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            repository.resource_transaction(
+                vec!["b".into()],
+                false,
+                false,
+                false,
+                &crate::Credential::LocalDemoOwner,
+                |state| {
+                    state["resources"][0]["n"] = json!(1);
+                    Ok(((), true))
+                },
+            ),
+        )
+        .await
+        .expect("unrelated resource transaction was blocked")
+        .unwrap();
+        metadata.resume.notify_one();
+        stalled.await.unwrap().unwrap();
+        let records = metadata.values.lock().unwrap();
+        assert_eq!(records["state/resources/a"]["value"]["record"]["n"], 1);
+        assert_eq!(records["state/resources/b"]["value"]["record"]["n"], 1);
+    }
+
+    #[tokio::test]
+    async fn a_resource_update_racing_index_initialization_is_retried() {
+        let metadata = Arc::new(MetadataGate {
+            values:std::sync::Mutex::new([("state/resources/race".into(),json!({"version":"v1","value":{"position":1,"record":{"id":"race","name":"old-name","kind":"mysql","status":"active","region":"automatic"}}}))].into_iter().collect()),
+            paused:Notify::new(), resume:Notify::new(), first:AtomicBool::new(true),
+            fail_backfill_once:AtomicBool::new(false), fail_file_backfill_once:AtomicBool::new(false),
+            fail_event_backfill_once:AtomicBool::new(false), forbid_event_scan:AtomicBool::new(false), forbid_file_scan:AtomicBool::new(false),
+        });
+        let repository = Arc::new(Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        });
+        let update = tokio::spawn({
+            let repository = repository.clone();
+            async move {
+                repository
+                    .update_resource("race", |resource| {
+                        resource["name"] = json!("new-name");
+                        Ok(())
+                    })
+                    .await
+            }
+        });
+        metadata.paused.notified().await;
+        repository.advance_resource_indexes().await.unwrap();
+        metadata.resume.notify_one();
+        update.await.unwrap().unwrap();
+        let values = metadata.values.lock().unwrap();
+        assert_eq!(
+            values["state/resources/race"]["value"]["record"]["name"],
+            "new-name"
+        );
+        let names = values
+            .iter()
+            .filter(|(key, _)| key.starts_with("indexes/resource-v1/names/"))
+            .map(|(_, value)| value["value"]["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["new-name"]);
+    }
+
+    #[tokio::test]
+    async fn resource_creation_rechecks_key_revocation_before_commit() {
+        let token = "test-create-token";
+        let digest = hex::encode(Sha256::digest(token.as_bytes()));
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new([
+                (format!("indexes/key-digest/{digest}"), json!({"version":"v1","value":"key-revoke"})),
+                ("state/keys/key-revoke".into(), json!({"version":"v1","value":{"position":1,"record":{"id":"key-revoke","name":"writer","digest":digest,"scopes":["resources:write"],"resourceIds":["*"],"expiresAt":"2099-01-01T00:00:00Z","revokedAt":null}}})),
+                ("indexes/resource-v1/schema".into(), json!({"version":"v1","value":{"format":1,"phase":"ready","after":null,"position":0}})),
+            ].into_iter().collect()),
+            paused: Notify::new(), resume: Notify::new(), first: AtomicBool::new(true),
+            fail_backfill_once: AtomicBool::new(false), fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false), forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Arc::new(Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        });
+        let pending = tokio::spawn({
+            let repository = repository.clone();
+            async move {
+                repository.create_indexed_resource(
+                &crate::Credential::Bearer(token.into()), Some("owner:key-race"), "fingerprint",
+                json!({"id":"db_revoke","name":"revoke-test","kind":"duckdb","status":"active","region":"automatic","provider":"local"}),
+                json!({"id":"event-revoke","action":"resource.created"}),
+            ).await
+            }
+        });
+        metadata.paused.notified().await;
+        {
+            let mut values = metadata.values.lock().unwrap();
+            let key = values.get_mut("state/keys/key-revoke").unwrap();
+            key["version"] = json!("v2");
+            key["value"]["record"]["revokedAt"] = json!("2026-10-31T00:00:00Z");
+        }
+        metadata.resume.notify_one();
+        assert_eq!(pending.await.unwrap().unwrap_err().code, "INVALID_KEY");
+        assert!(
+            !metadata
+                .values
+                .lock()
+                .unwrap()
+                .contains_key("state/resources/db_revoke")
+        );
+    }
+
+    #[tokio::test]
+    async fn key_revocation_fences_a_concurrent_resource_commit() {
+        let token = "concurrent-key";
+        let digest = hex::encode(Sha256::digest(token.as_bytes()));
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new([
+                ("state/workspace".into(), json!({"version":"v1","value":{"id":"test"}})),
+                ("state/profile".into(), json!({"version":"v1","value":{}})),
+                (format!("indexes/key-digest/{digest}"), json!({"version":"v1","value":"key-a"})),
+                ("state/keys/key-a".into(), json!({"version":"v1","value":{"position":1,"record":{"id":"key-a","name":"key","digest":digest,"scopes":["files:write"],"resourceIds":["a"],"expiresAt":"2099-01-01T00:00:00Z","revokedAt":null}}})),
+                ("state/resources/a".into(), json!({"version":"v1","value":{"position":1,"record":{"id":"a","kind":"filesystem","n":0}}})),
+            ].into_iter().collect()),
+            paused: Notify::new(), resume: Notify::new(), first: AtomicBool::new(true),
+            fail_backfill_once: AtomicBool::new(false), fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false), forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Arc::new(Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        });
+        let stalled = tokio::spawn({
+            let repository = repository.clone();
+            async move {
+                let credential = crate::Credential::Bearer(token.into());
+                repository
+                    .resource_transaction(
+                        vec!["a".into()],
+                        false,
+                        false,
+                        false,
+                        &credential,
+                        |state| {
+                            crate::principal(state, &credential)?.scope("files:write")?;
+                            state["resources"][0]["n"] = json!(1);
+                            Ok(((), true))
+                        },
+                    )
+                    .await
+            }
+        });
+        metadata.paused.notified().await;
+        repository
+            .key_transaction(Vec::new(), Some("key-a"), |state| {
+                state["keys"][0]["revokedAt"] = json!("2026-01-01T00:00:00Z");
+                Ok(((), true))
+            })
+            .await
+            .unwrap();
+        metadata.resume.notify_one();
+        assert_eq!(stalled.await.unwrap().unwrap_err().code, "INVALID_KEY");
+        assert_eq!(
+            metadata.values.lock().unwrap()["state/resources/a"]["value"]["record"]["n"],
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn conflicting_point_updates_retry_against_the_latest_value() {
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(
+                [(
+                    "state/resources/a".into(),
+                    json!({"version":"v1","value":{"position":0,"record":{"id":"a","n":0}}}),
+                )]
+                .into_iter()
+                .collect(),
+            ),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(true),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Arc::new(Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        });
+        let stalled = tokio::spawn({
+            let repository = repository.clone();
+            async move {
+                repository
+                    .update_resource("a", |resource| {
+                        resource["n"] = json!(resource["n"].as_u64().unwrap() + 1);
+                        Ok(())
+                    })
+                    .await
+            }
+        });
+        metadata.paused.notified().await;
+        repository
+            .update_resource("a", |resource| {
+                resource["n"] = json!(resource["n"].as_u64().unwrap() + 1);
+                Ok(())
+            })
+            .await
+            .unwrap();
+        metadata.resume.notify_one();
+        stalled.await.unwrap().unwrap();
+        let values = metadata.values.lock().unwrap();
+        assert_eq!(values["state/resources/a"]["value"]["record"]["n"], 2);
+    }
+
+    #[tokio::test]
+    async fn event_append_keeps_only_the_most_recent_200() {
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(
+                (0..200)
+                    .map(|n| {
+                        let id = format!("event-{n:03}");
+                        (
+                            format!("state/events/{id}"),
+                            json!({"version":"v1","value":{"position":n,"record":{"id":id}}}),
+                        )
+                    })
+                    .collect(),
+            ),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        repository
+            .append_event(json!({"id":"event-new"}))
+            .await
+            .unwrap();
+        {
+            let values = metadata.values.lock().unwrap();
+            assert_eq!(
+                values
+                    .keys()
+                    .filter(|key| key.starts_with("state/events/"))
+                    .count(),
+                200
+            );
+            assert!(!values.contains_key("state/events/event-000"));
+            assert_eq!(values["state/events/event-new"]["value"]["position"], 200);
+        }
+        metadata.forbid_event_scan.store(true, Ordering::Release);
+        repository
+            .append_event(json!({"id":"event-next"}))
+            .await
+            .unwrap();
+        let values = metadata.values.lock().unwrap();
+        assert_eq!(
+            values
+                .keys()
+                .filter(|key| key.starts_with("state/events/"))
+                .count(),
+            200
+        );
+        assert!(!values.contains_key("state/events/event-001"));
+        assert_eq!(values["state/events/event-next"]["value"]["position"], 201);
+    }
+
+    #[tokio::test]
+    async fn resource_index_backfill_resumes_without_double_counting() {
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new((0..1541).map(|n| {
+                let id = format!("db_{n:06}");
+                (format!("state/resources/{id}"), json!({"version":"v1","value":{"position":n,"record":{
+                    "id":id,"name":format!("existing-{n}"),"kind":"mysql","status":"active","region":"automatic"
+                }}}))
+            }).collect()),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(true),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        let repository = Arc::new(repository);
+        let resource = json!({"id":"db_new","name":"new-duck","kind":"duckdb","status":"active","region":"automatic","provider":"local"});
+        let event = json!({"id":"event-new","action":"resource.created"});
+        let result = repository
+            .create_indexed_resource(
+                &crate::Credential::LocalDemoOwner,
+                Some("owner:retry"),
+                "fingerprint",
+                resource.clone(),
+                event.clone(),
+            )
+            .await;
+        assert_eq!(result.unwrap_err().code, "META_COMMIT_UNKNOWN");
+        assert_eq!(
+            metadata.values.lock().unwrap()["indexes/resource-v1/schema"]["value"]["after"],
+            "state/resources/db_001535"
+        );
+        let created = repository
+            .create_indexed_resource(
+                &crate::Credential::LocalDemoOwner,
+                Some("owner:retry"),
+                "fingerprint",
+                resource.clone(),
+                event.clone(),
+            )
+            .await;
+        let created = match created {
+            Ok(created) => created,
+            Err(error) if error.code == "RESOURCE_INDEX_MIGRATING" => {
+                tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                    while repository.resource_backfill_running.load(Ordering::Acquire) {
+                        tokio::task::yield_now().await;
+                    }
+                })
+                .await
+                .unwrap();
+                repository
+                    .create_indexed_resource(
+                        &crate::Credential::LocalDemoOwner,
+                        Some("owner:retry"),
+                        "fingerprint",
+                        resource,
+                        event,
+                    )
+                    .await
+                    .unwrap()
+            }
+            Err(error) => panic!("unexpected error: {error}"),
+        };
+        assert_eq!(created["id"], "db_new");
+        let values = metadata.values.lock().unwrap();
+        let counts = values
+            .iter()
+            .filter(|(key, _)| key.starts_with("indexes/resource-v1/quotas/"))
+            .map(|(_, value)| {
+                (
+                    value["value"]["group"].as_str().unwrap(),
+                    value["value"]["count"].as_u64().unwrap(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(counts.get("[\"database\",\"mysql\"]"), Some(&1541));
+        assert_eq!(counts.get("[\"database\",\"duckdb\"]"), Some(&1));
+        assert_eq!(
+            values["indexes/resource-v1/schema"]["value"]["phase"],
+            "ready"
+        );
+    }
+
+    #[tokio::test]
+    async fn backfill_detects_names_duplicated_across_checkpoints() {
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new((0..1542).map(|n| {
+                let id = format!("db_{n:06}");
+                let name = if n == 1540 { "existing-0".to_owned() } else { format!("existing-{n}") };
+                (format!("state/resources/{id}"), json!({"version":"v1","value":{"position":n,"record":{
+                    "id":id,"name":name,"kind":"mysql","status":"active","region":"automatic"
+                }}}))
+            }).collect()),
+            paused: Notify::new(), resume: Notify::new(), first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        let repository = Arc::new(repository);
+        let resource = json!({"id":"db_new","name":"new-duck","kind":"duckdb","status":"active","region":"automatic","provider":"local"});
+        let event = json!({"id":"event-new","action":"resource.created"});
+        let create = || {
+            repository.create_indexed_resource(
+                &crate::Credential::LocalDemoOwner,
+                Some("owner:retry"),
+                "fingerprint",
+                resource.clone(),
+                event.clone(),
+            )
+        };
+        let mut failure = create().await.unwrap_err();
+        if failure.code == "RESOURCE_INDEX_MIGRATING" {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                while repository.resource_backfill_running.load(Ordering::Acquire) {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            failure = create().await.unwrap_err();
+        }
+        assert_eq!(failure.code, "RESOURCE_INDEX_DUPLICATE_NAME");
+        {
+            let mut records = metadata.values.lock().unwrap();
+            assert_eq!(
+                records["indexes/resource-v1/schema"]["value"]["after"],
+                "state/resources/db_001535"
+            );
+            records.get_mut("state/resources/db_001540").unwrap()["value"]["record"]["name"] =
+                json!("existing-1540");
+        }
+        let mut created = create().await;
+        if created
+            .as_ref()
+            .is_err_and(|error| error.code == "RESOURCE_INDEX_MIGRATING")
+        {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                while repository.resource_backfill_running.load(Ordering::Acquire) {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            created = create().await;
+        }
+        assert_eq!(created.unwrap()["id"], "db_new");
+        let records = metadata.values.lock().unwrap();
+        assert!(records.values().any(|entry| entry["value"]["group"]
+            == "[\"database\",\"mysql\"]"
+            && entry["value"]["count"] == 1542));
+    }
+
+    #[tokio::test]
+    async fn file_index_resumes_unknown_commit_and_keeps_resource_boundaries() {
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new((0..600).map(|n| {
+                let id = format!("file_{n:06}");
+                let resource = if n % 2 == 0 { "fs_a" } else { "fs_b" };
+                (format!("state/files/{id}"), json!({"version":"v1","value":{"position":n,"record":{"id":id,"resourceId":resource,"path":"/kept.txt","type":"file","content":"kept"}}}))
+            }).collect()),
+            paused: Notify::new(), resume: Notify::new(), first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false), fail_file_backfill_once: AtomicBool::new(true),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        assert_eq!(
+            repository.advance_file_index().await.unwrap_err().code,
+            "META_COMMIT_UNKNOWN"
+        );
+        assert_eq!(
+            metadata.values.lock().unwrap()["indexes/file-v1/head"]["value"]["after"],
+            "state/files/file_000511"
+        );
+        assert!(repository.advance_file_index().await.unwrap());
+        metadata.forbid_file_scan.store(true, Ordering::Release);
+        let files = repository
+            .files_for_resources(&["fs_a".into()])
+            .await
+            .unwrap();
+        assert_eq!(files.len(), 300);
+        assert!(
+            files
+                .values()
+                .all(|record| record["value"]["record"]["resourceId"] == "fs_a"
+                    && record["value"]["record"]["content"] == "kept")
+        );
+        assert_eq!(
+            metadata
+                .values
+                .lock()
+                .unwrap()
+                .keys()
+                .filter(|key| key.starts_with("state/files/"))
+                .count(),
+            600
+        );
+    }
+
+    #[tokio::test]
+    async fn file_path_index_resumes_unknown_commit_without_double_counting() {
+        let mut values = (0..130).map(|n| {
+            let id = format!("file_{n:06}");
+            (format!("state/files/{id}"), json!({"version":"v1","value":{"position":n,"record":{"id":id,"resourceId":"fs_a","path":format!("/file-{n}.txt"),"type":"file","content":"abc"}}}))
+        }).collect::<Records>();
+        values.insert(
+            "indexes/file-v1/head".into(),
+            json!({"version":"v1","value":{"format":1,"phase":"ready","after":null}}),
+        );
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(values),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(true),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        assert_eq!(
+            repository.advance_file_paths().await.unwrap_err().code,
+            "META_COMMIT_UNKNOWN"
+        );
+        assert!(repository.advance_file_paths().await.unwrap());
+        assert_eq!(
+            repository.local_file_summary("fs_a").await.unwrap()["files"],
+            130
+        );
+        assert_eq!(
+            repository.local_file_summary("fs_a").await.unwrap()["bytes"],
+            390
+        );
+        metadata.forbid_file_scan.store(true, Ordering::Release);
+        let first = repository
+            .local_file_page("fs_a", "/", None, 16)
+            .await
+            .unwrap();
+        assert_eq!(first.0.len(), 16);
+        let second = repository
+            .local_file_page("fs_a", "/", first.1.as_deref(), 16)
+            .await
+            .unwrap();
+        assert_eq!(second.0.len(), 16);
+        assert!(
+            first
+                .0
+                .iter()
+                .all(|file| second.0.iter().all(|other| file["id"] != other["id"]))
+        );
+        let point = repository
+            .files_for_paths("fs_a", &["/file-129.txt".into()])
+            .await
+            .unwrap();
+        assert_eq!(point.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn file_system_cleanup_resumes_after_unknown_commit() {
+        let mut values = (0..20).map(|n| {
+            let id = format!("file_{n:06}");
+            (format!("state/files/{id}"),json!({"version":"v1","value":{"position":n,"record":{"id":id,"resourceId":"fs_a","path":format!("/file-{n}.txt"),"type":"file","content":"abc"}}}))
+        }).collect::<Records>();
+        values.insert("state/resources/fs_a".into(),json!({"version":"v1","value":{"position":1,"record":{"id":"fs_a","kind":"filesystem","status":"deleting"}}}));
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(values),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        repository.ensure_file_indexes().await.unwrap();
+        metadata
+            .fail_file_backfill_once
+            .store(true, Ordering::Release);
+        assert_eq!(
+            repository
+                .purge_local_files("fs_a", &crate::Credential::LocalDemoOwner)
+                .await
+                .unwrap_err()
+                .code,
+            "META_COMMIT_UNKNOWN"
+        );
+        repository
+            .purge_local_files("fs_a", &crate::Credential::LocalDemoOwner)
+            .await
+            .unwrap();
+        assert_eq!(
+            repository.local_file_summary("fs_a").await.unwrap()["count"],
+            0
+        );
+        assert!(
+            !metadata
+                .values
+                .lock()
+                .unwrap()
+                .keys()
+                .any(|key| key.starts_with("state/files/"))
+        );
+    }
+
+    #[tokio::test]
+    async fn event_index_recovers_after_unknown_initialization() {
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(
+                (0..3)
+                    .map(|n| {
+                        let id = format!("event-{n}");
+                        (
+                            format!("state/events/{id}"),
+                            json!({"version":"v1","value":{"position":n,"record":{"id":id}}}),
+                        )
+                    })
+                    .collect(),
+            ),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(true),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        assert_eq!(
+            repository
+                .append_event(json!({"id":"event-new"}))
+                .await
+                .unwrap_err()
+                .code,
+            "META_COMMIT_UNKNOWN"
+        );
+        metadata.forbid_event_scan.store(true, Ordering::Release);
+        repository
+            .append_event(json!({"id":"event-new"}))
+            .await
+            .unwrap();
+        let records = metadata.values.lock().unwrap();
+        assert_eq!(
+            records
+                .keys()
+                .filter(|key| key.starts_with("state/events/"))
+                .count(),
+            4
+        );
+        assert_eq!(records["state/events/event-new"]["value"]["position"], 3);
+        assert!(records.contains_key("state/events/event-0"));
+    }
 }

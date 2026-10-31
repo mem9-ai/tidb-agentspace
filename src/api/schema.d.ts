@@ -1361,8 +1361,12 @@ export interface components {
       workspace: components['schemas']['Workspace'];
       profile: components['schemas']['Profile'];
       resources: components['schemas']['Resource'][];
+      /** @description Continuation for the bounded initial resource page; counts are for loaded resources. */
+      resourceNextCursor?: string | null;
       files: components['schemas']['File'][];
       keys: components['schemas']['Key'][];
+      /** @description Continuation for the bounded initial Key page. */
+      keysNextCursor?: string | null;
       events: components['schemas']['Event'][];
       usage: components['schemas']['Usage'][];
       queryCount: number;
@@ -2407,7 +2411,12 @@ export interface operations {
   };
   listResources: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Page size, default 100; evaluated before authorization and visibility filtering, so a page may be empty. */
+        limit?: number;
+        /** @description Opaque cursor from the previous page. Each page is independently authorized; concurrent changes can affect results. Pages contain stored state without refreshing providers. */
+        cursor?: string;
+      };
       header?: never;
       path: {
         /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
@@ -2426,6 +2435,7 @@ export interface operations {
           'application/json': {
             data: components['schemas']['Resource'][];
             capabilities: components['schemas']['Capabilities'];
+            nextCursor: string | null;
           };
         };
       };
@@ -2726,7 +2736,7 @@ export interface operations {
           'application/json': components['schemas']['Error'];
         };
       };
-      /** @description Provider binding needs operator recovery */
+      /** @description A provider needs recovery, or RESOURCE_INDEX_MIGRATING means existing Workspace resources are being indexed in the background. That response creates no resource; retry the same request later. */
       503: {
         headers: {
           [name: string]: unknown;
@@ -3349,8 +3359,12 @@ export interface operations {
     parameters: {
       query: {
         resourceId: string;
-        /** @description Directory to list. Drive9 defaults to root; omit for all local files. */
+        /** @description Directory to list; defaults to the root for both providers. */
         path?: string;
+        /** @description Local File System page size; Drive9 listing is provider-defined. */
+        limit?: number;
+        /** @description Continuation cursor from the previous local directory page. */
+        cursor?: string;
       };
       header?: never;
       path: {
@@ -3369,6 +3383,7 @@ export interface operations {
         content: {
           'application/json': {
             data: components['schemas']['File'][];
+            nextCursor: string | null;
           };
         };
       };
@@ -6098,7 +6113,10 @@ export interface operations {
   };
   getUsage: {
     parameters: {
-      query?: never;
+      query?: {
+        limit?: number;
+        cursor?: string;
+      };
       header?: never;
       path: {
         /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
@@ -6119,6 +6137,12 @@ export interface operations {
             /** @constant */
             mode: 'demo';
             queryCount: number;
+            /**
+             * @description Workspace total for wildcard access; this page only for resource-scoped Keys.
+             * @enum {unknown}
+             */
+            queryCountScope: 'workspace' | 'page';
+            nextCursor: string | null;
           };
         };
       };
@@ -6421,7 +6445,10 @@ export interface operations {
   };
   listKeys: {
     parameters: {
-      query?: never;
+      query?: {
+        limit?: number;
+        cursor?: string;
+      };
       header?: never;
       path: {
         /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
@@ -6439,6 +6466,7 @@ export interface operations {
         content: {
           'application/json': {
             data: components['schemas']['Key'][];
+            nextCursor: string | null;
           };
         };
       };
@@ -7108,7 +7136,10 @@ export interface operations {
           'application/json': {
             /** @constant */
             status: 'ok';
-            /** @enum {unknown} */
+            /**
+             * @description Configured provider mode, not a count or a health check of provisioned resources.
+             * @enum {unknown}
+             */
             mode: 'demo' | 'hybrid';
             filesProvider: string;
           };

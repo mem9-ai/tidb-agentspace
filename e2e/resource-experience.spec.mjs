@@ -21,6 +21,201 @@ const collections = [
   },
 ];
 
+test('resource pages distinguish unloaded collections and resolve deep links', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  workspace.state.resources = [structuredClone(sampleResources[0])];
+  workspace.state.resourceNextCursor = 'page-two';
+  workspace.setResourcePage('page-two', [structuredClone(sampleResources[1])]);
+  await workspace.open('#files');
+  await expect(
+    page.getByText('No File Systems in the loaded resources. Load more to continue.'),
+  ).toBeVisible();
+  if (process.env.QUICKSTART_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.QUICKSTART_SCREENSHOTS}/pagination-${testInfo.project.name}.png`,
+      fullPage: true,
+    });
+  await expect(page.getByRole('region', { name: 'File Systems empty state' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Load more resources' }).click();
+  await expect(
+    page.getByRole('table', { name: 'File systems' }).getByText('filesystem-fixture'),
+  ).toBeVisible();
+  expect(workspace.requests).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: `/api/v1/workspaces/${workspace.state.workspace.id}/resources`,
+        query: expect.objectContaining({ cursor: 'page-two', limit: '100' }),
+      }),
+    ]),
+  );
+  const beforeSelection = workspace.requests.length;
+  await workspace.open('#files?resourceId=fs_fixture');
+  await expect
+    .poll(() =>
+      workspace.requests
+        .slice(beforeSelection)
+        .some((request) => request.path.endsWith('/resources/fs_fixture')),
+    )
+    .toBe(true);
+  const beforeReload = workspace.requests.length;
+  await page.reload();
+  await expect(page.getByText('File System unavailable')).toHaveCount(0);
+  await expect
+    .poll(() =>
+      workspace.requests
+        .slice(beforeReload)
+        .some((request) => request.path.endsWith('/resources/fs_fixture')),
+    )
+    .toBe(true);
+});
+
+test('a directly linked database outside the first page keeps query results after refresh', async ({
+  page,
+  workspace,
+}) => {
+  workspace.state.resources = [structuredClone(sampleResources[1])];
+  workspace.state.resourceNextCursor = 'page-two';
+  workspace.setResourcePage('page-two', [structuredClone(sampleResources[0])]);
+  await workspace.open('#databases/db_fixture/sql');
+  await page.getByRole('button', { name: 'Run query', exact: true }).click();
+  await expect(page.getByText('agent_started', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/#databases\/db_fixture\/sql$/);
+});
+
+test('a directly linked local File System loads its own files outside the first page', async ({
+  page,
+  workspace,
+}) => {
+  workspace.state.resources = [structuredClone(sampleResources[0])];
+  workspace.state.resourceNextCursor = 'page-two';
+  workspace.setResourcePage('page-two', [structuredClone(sampleResources[1])]);
+  workspace.state.files = [
+    {
+      id: 'file-off-page',
+      resourceId: 'fs_fixture',
+      path: '/outside.txt',
+      type: 'file',
+      content: 'preserved',
+      size: 9,
+      updatedAt: '2026-01-01T00:00:00Z',
+    },
+  ];
+  await workspace.open('#files?resourceId=fs_fixture');
+  await expect(
+    page.getByRole('navigation', { name: 'File entries' }).getByText('outside.txt'),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      workspace.requests.some(
+        (request) => request.path.endsWith('/files') && request.query.resourceId === 'fs_fixture',
+      ),
+    )
+    .toBe(true);
+});
+
+test('local File System loads directory pages on demand', async ({ page, workspace }, testInfo) => {
+  workspace.addResources();
+  workspace.state.files = Array.from({ length: 40 }, (_, index) => ({
+    id: `file-${index}`,
+    resourceId: 'fs_fixture',
+    path: `/page-${String(index).padStart(2, '0')}.txt`,
+    type: 'file',
+    content: 'sample',
+    size: 6,
+    updatedAt: '2026-01-01T00:00:00Z',
+  }));
+  await workspace.open('#files?resourceId=fs_fixture');
+  const entries = page.getByRole('navigation', { name: 'File entries' });
+  await expect(entries.getByText('page-00.txt')).toBeVisible();
+  await expect(entries.getByText('page-39.txt')).toHaveCount(0);
+  const more = page.getByRole('button', { name: 'Load more files' });
+  await expect(more).toBeVisible();
+  if (process.env.FILE_PAGE_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.FILE_PAGE_SCREENSHOTS}/files-${testInfo.project.name}.png`,
+    });
+  await more.click();
+  await expect(entries.getByText('page-39.txt')).toBeVisible();
+  await expect(more).toHaveCount(0);
+});
+
+test('resource windows stay bounded and disclose selections from earlier pages', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  test.setTimeout(60000);
+  const resources = Array.from({ length: 600 }, (_, index) => ({
+    ...structuredClone(sampleResources[0]),
+    id: `db_window_${String(index).padStart(4, '0')}`,
+    name: `window-database-${String(index).padStart(4, '0')}`,
+  }));
+  workspace.state.resources = resources.slice(0, 100);
+  workspace.state.resourceNextCursor = 'window-1';
+  for (let pageNumber = 1; pageNumber <= 5; pageNumber++) {
+    workspace.setResourcePage(
+      `window-${pageNumber}`,
+      resources.slice(pageNumber * 100, (pageNumber + 1) * 100),
+      pageNumber < 5 ? `window-${pageNumber + 1}` : null,
+    );
+  }
+  await workspace.open('#keys');
+  await page.getByRole('button', { name: 'Create API key', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
+  for (let pageNumber = 0; pageNumber < 5; pageNumber++)
+    await dialog.getByRole('button', { name: 'Load more resources' }).click();
+  await expect(dialog.getByRole('checkbox', { name: 'window-database-0000' })).toHaveCount(0);
+  await expect(dialog.getByRole('checkbox', { name: 'window-database-0599' })).toBeVisible();
+  await expect(
+    dialog.getByText('100 selected resources are outside the loaded window.'),
+  ).toBeVisible();
+  if (process.env.SCALE_SCREENSHOTS) {
+    await dialog
+      .getByText('100 selected resources are outside the loaded window.')
+      .scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: `${process.env.SCALE_SCREENSHOTS}/resource-window-${testInfo.project.name}.png`,
+    });
+  }
+  await dialog.getByRole('button', { name: 'Back to first resources' }).click();
+  await expect(dialog.getByRole('checkbox', { name: 'window-database-0000' })).toBeChecked();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+});
+
+test('Key inventory pages keep a bounded window with a route back to the first page', async ({
+  page,
+  workspace,
+}) => {
+  test.setTimeout(60000);
+  const keys = Array.from({ length: 600 }, (_, index) => ({
+    id: `key_window_${String(index).padStart(4, '0')}`,
+    name: `window-key-${String(index).padStart(4, '0')}`,
+    prefix: 'fixture',
+    scopes: ['resources:read'],
+    resourceIds: ['*'],
+    createdAt: '2026-01-01T00:00:00Z',
+    expiresAt: '2099-01-01T00:00:00Z',
+    lastUsedAt: null,
+    revokedAt: null,
+  }));
+  workspace.state.keys = keys.slice(0, 100);
+  workspace.state.keysNextCursor = 'keys-1';
+  for (let pageNumber = 1; pageNumber <= 5; pageNumber++)
+    workspace.setKeyPage(
+      `keys-${pageNumber}`,
+      keys.slice(pageNumber * 100, (pageNumber + 1) * 100),
+      pageNumber < 5 ? `keys-${pageNumber + 1}` : null,
+    );
+  await workspace.open('#keys');
+  for (let pageNumber = 0; pageNumber < 5; pageNumber++)
+    await page.getByRole('button', { name: 'Load more keys' }).click();
+  await expect(page.getByText('window-key-0000', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('window-key-0599', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to first keys' }).click();
+  await expect(page.getByText('window-key-0000', { exact: true })).toBeVisible();
+});
+
 test('empty collections share one in-context create action and readable TiUI presentation', async ({
   page,
   workspace,

@@ -42,7 +42,7 @@ impl Repository {
         expected: Option<&str>,
         input: Value,
     ) -> Result<(Value, bool)> {
-        let _lock = self.queue.lock().await;
+        let _lock = self.queue.read().await;
         let key = format!("{PREFIX}{resource}");
         let prior = self.get(&key).await?;
         let created = prior.is_null();
@@ -59,10 +59,18 @@ impl Repository {
             "version":format!("\"tutorial-{}\"", Uuid::new_v4().simple()),
             "updatedAt":chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
         });
-        self.commit(vec![
-            json!({"key":key,"expectedVersion":version(&prior),"value":value}),
-        ])
-        .await?;
+        match self
+            .commit(vec![
+                json!({"key":key,"expectedVersion":version(&prior),"value":value}),
+            ])
+            .await
+        {
+            Ok(()) => {}
+            Err(error) if error.code == "META_CONFLICT" => {
+                return Err(ServiceError::new(412, "PRECONDITION_FAILED"));
+            }
+            Err(error) => return Err(error),
+        }
         Ok((value, created))
     }
 }

@@ -4,9 +4,12 @@ mod files;
 mod imports;
 mod preparations;
 mod read_only;
+mod resource_locks;
+mod resource_pages;
 mod resources;
 mod setup_attempts;
 mod tutorials;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -36,9 +39,9 @@ pub struct Product {
     pub workspace: Arc<Workspace>,
     pub providers: Providers,
     pub execute: Executor,
-    lifecycle: tokio::sync::RwLock<()>,
-    file_mutations: Mutex<()>,
-    setup_admission: Mutex<()>,
+    lifecycle: Vec<tokio::sync::RwLock<()>>,
+    file_mutations: Vec<Mutex<()>>,
+    setup_admission: Vec<Mutex<()>>,
     preparations: Mutex<BTreeMap<String, exports::Preparation>>,
 }
 pub struct Request<'a> {
@@ -77,9 +80,15 @@ impl Product {
             workspace,
             providers,
             execute,
-            lifecycle: tokio::sync::RwLock::new(()),
-            file_mutations: Mutex::new(()),
-            setup_admission: Mutex::new(()),
+            lifecycle: (0..resource_locks::STRIPES)
+                .map(|_| tokio::sync::RwLock::new(()))
+                .collect(),
+            file_mutations: (0..resource_locks::STRIPES)
+                .map(|_| Mutex::new(()))
+                .collect(),
+            setup_admission: (0..resource_locks::STRIPES)
+                .map(|_| Mutex::new(()))
+                .collect(),
             preparations: Mutex::new(BTreeMap::new()),
         })
     }
@@ -99,7 +108,7 @@ impl Product {
             }
             r
         } else {
-            self.workspace.repository().read().await?
+            return Err(err(500, "RESOURCE_CONTEXT_REQUIRED"));
         };
         Ok((p, value))
     }
@@ -108,12 +117,11 @@ impl Product {
         json!({"mysql":{"label":"TiDB Starter · MySQL","regions":if c.mysql_provider==ZERO{vec!["automatic"]}else{vec!["aws-us-east-1","aws-us-west-2"]},"storageGiB":if c.mysql_provider==ZERO{Value::Null}else{json!(5)},"monthlyRU":if c.mysql_provider==ZERO{Value::Null}else{json!(50_000_000)},"preview":false,"provider":c.mysql_provider},"postgresql":{"label":"PostgreSQL · db9","regions":["automatic"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":c.postgres_provider==DB9,"provider":DB9},"duckdb":{"label":"DuckDB","regions":["aws-ap-southeast-1"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":self.execute.available,"provider":DUCKDB},"filesystem":{"label":"TiDB Cloud File System","regions":if c.files_provider==DRIVE9{vec!["aws-ap-southeast-1"]}else{vec!["aws-ap-southeast-1","aws-us-west-2"]},"storageGiB":if c.files_provider==DRIVE9{Value::Null}else{json!(2)},"maxFiles":if c.files_provider==DRIVE9{Value::Null}else{json!(2000)},"preview":true,"provider":c.files_provider}})
     }
     pub async fn mode(&self) -> Result<&'static str> {
-        let state = self.workspace.repository().read().await?;
+        let config = &self.providers.config;
         Ok(
-            if self.providers.config.files_provider == DRIVE9
-                || state["resources"]
-                    .as_array()
-                    .is_some_and(|v| v.iter().any(live))
+            if config.files_provider == DRIVE9
+                || config.mysql_provider == ZERO
+                || config.postgres_provider == DB9
             {
                 "hybrid"
             } else {
@@ -147,11 +155,7 @@ impl Product {
         };
         self.workspace
             .repository()
-            .transaction(|state| {
-                let current = state["resources"]
-                    .as_array_mut()
-                    .and_then(|v| v.iter_mut().find(|r| r["id"] == id))
-                    .ok_or_else(|| err(404, "NOT_FOUND"))?;
+            .update_resource(&id, |current| {
                 current
                     .as_object_mut()
                     .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
@@ -162,7 +166,7 @@ impl Product {
                 {
                     current[k] = v.clone();
                 }
-                Ok((current.clone(), true))
+                Ok(current.clone())
             })
             .await
     }
@@ -206,10 +210,7 @@ impl Product {
     ) -> Result<()> {
         self.workspace
             .repository()
-            .transaction(|state| {
-                event(state, action, resource, actor, resource_id);
-                Ok(((), true))
-            })
+            .append_event(json!({"id":uuid::Uuid::new_v4().to_string(),"action":action,"resource":resource,"resourceId":resource_id,"actor":actor,"at":timestamp(),"outcome":"success"}))
             .await
     }
     pub async fn handle(&self, request: Request<'_>) -> Result<(u16, Reply)> {
@@ -227,17 +228,16 @@ impl Product {
             binary_upload,
             table_name,
         } = request;
-        let deleting = method == "DELETE" && route.starts_with("/resources/");
-        let _exclusive = if deleting {
-            Some(self.lifecycle.write().await)
-        } else {
-            None
-        };
-        let _admitted = if deleting {
-            None
-        } else {
-            Some(self.lifecycle.read().await)
-        };
+        let (deleting, stripes) = resource_locks::plan(method, route, query, &input);
+        let mut _exclusive = Vec::new();
+        let mut _admitted = Vec::new();
+        for index in stripes {
+            if deleting {
+                _exclusive.push(self.lifecycle[index].write().await);
+            } else {
+                _admitted.push(self.lifecycle[index].read().await);
+            }
+        }
         let p = self.workspace.authenticate(&credential).await?;
         let actor_value = if p.owner {
             actor.to_owned()
@@ -267,14 +267,31 @@ impl Product {
                 if !p.owner {
                     return Err(err(403, "OWNER_REQUIRED"));
                 }
-                let state = visible(self.workspace.repository().read().await?);
-                for r in state["resources"]
-                    .as_array()
+                let repository = self.workspace.repository();
+                let (page, next) = repository.resources_page(None, 100).await?;
+                let (keys, key_next) = repository.keys_page(None, 100).await?;
+                let ids = page
+                    .iter()
+                    .map(|resource| text(resource, "id").map(str::to_owned))
+                    .collect::<Result<BTreeSet<_>>>()?;
+                let mut state = visible(
+                    repository
+                        .resource_transaction(
+                            ids.iter().cloned().collect(),
+                            true,
+                            false,
+                            false,
+                            &credential,
+                            |state| Ok((state.clone(), false)),
+                        )
+                        .await?,
+                );
+                state["resources"]
+                    .as_array_mut()
                     .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
-                {
-                    self.update_resource(r.clone(), false).await?;
-                }
-                let mut state = visible(self.workspace.repository().read().await?);
+                    .retain(|resource| resource["id"].as_str().is_some_and(|id| ids.contains(id)));
+                state["keys"] = json!(keys);
+                state["keysNextCursor"] = key_next.into();
                 for file in state["files"]
                     .as_array_mut()
                     .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
@@ -292,9 +309,20 @@ impl Product {
                         key["resourceIds"] = json!([]);
                     }
                 }
-                let usage = usage(&state);
+                let usage = indexed_usage(&repository, &state).await?;
+                if !self.workspace.authenticate(&credential).await?.owner {
+                    return Err(err(403, "OWNER_REQUIRED"));
+                }
                 state["capabilities"] = self.capabilities();
                 state["usage"] = usage;
+                state["resourceNextCursor"] = next
+                    .map(|key| {
+                        key.strip_prefix("state/resources/")
+                            .map(|id| URL_SAFE_NO_PAD.encode(id))
+                            .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))
+                    })
+                    .transpose()?
+                    .into();
                 state["mode"] = json!(if state["resources"]
                     .as_array()
                     .is_some_and(|v| v.iter().any(live))
@@ -307,17 +335,11 @@ impl Product {
                 Reply::Json(state)
             }
             ("GET", "/resources") => {
-                let (_, state) = self.context(&credential, "resources:read", None).await?;
-                let mut data = vec![];
-                for r in visible(state)["resources"]
-                    .as_array()
-                    .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?
-                {
-                    if r["status"] != "deleted" && p.has(text(r, "id")?) {
-                        data.push(self.update_resource(r.clone(), false).await?);
-                    }
-                }
-                Reply::Json(json!({"data":data,"capabilities":self.capabilities()}))
+                p.scope("resources:read")?;
+                let (data, next) = self.resource_page(&p, query).await?;
+                Reply::Json(
+                    json!({"data":data,"capabilities":self.capabilities(),"nextCursor":next}),
+                )
             }
             ("POST", "/resources") => {
                 p.scope("resources:write")?;
@@ -359,16 +381,25 @@ impl Product {
                     "postgresql" => DB9,
                     _ => DUCKDB,
                 };
-                let resource=self.workspace.repository().transaction(|state|{if let Some(slot)=&slot&& !state["idempotency"][slot].is_null(){let prior=&state["idempotency"][slot];
-if prior["fingerprint"]!=fingerprint{return Err(err(409,"IDEMPOTENCY_CONFLICT"));}
-return Ok((state["resources"].as_array().and_then(|v|v.iter().find(|r|r["id"]==prior["resource"]["id"])).unwrap_or(&prior["resource"]).clone(),false));}
-let resources=state["resources"].as_array().ok_or_else(||err(503,"META_RECORD_CORRUPT"))?;
-if resources.iter().any(|r|r["status"]!="deleted"&&r["name"]==name){return Err(err(409,"NAME_EXISTS"));}
-if(kind=="filesystem"&&resources.iter().any(|r|r["status"]!="deleted"&&r["kind"]==kind&&r["region"]==region&&r["provider"].as_str().unwrap_or("local")==provider))||(kind!="filesystem"&&resources.iter().filter(|r|r["status"]!="deleted"&&r["kind"]==kind&&(kind!="postgresql"||r["provider"]==DB9)).count()>=5){return Err(err(409,"FREE_TIER_LIMIT"));}
-let r=json!({"id":format!("{}_{}",if kind=="filesystem"{"fs"}else{"db"},secret(6)?),"name":name,"kind":kind,"region":region,"status":if provider=="local"{"active"}else{"provisioning"},"provider":provider,"createdAt":timestamp()});state["resources"].as_array_mut().expect("resources").push(r.clone());event(state,"resource.created",name,&p.actor,r["id"].as_str());
-if let Some(slot)=&slot{state["idempotency"][slot]=json!({"fingerprint":fingerprint,"resource":r});}
-Ok((r,true))}).await?;
+                let resource = json!({"id":format!("{}_{}",if kind=="filesystem"{"fs"}else{"db"},secret(6)?),"name":name,"kind":kind,"region":region,"status":if provider=="local"{"active"}else{"provisioning"},"provider":provider,"createdAt":timestamp()});
+                let event = json!({"id":uuid::Uuid::new_v4().to_string(),"action":"resource.created","resource":name,"resourceId":resource["id"],"actor":p.actor,"at":timestamp(),"outcome":"success"});
+                let resource = self
+                    .workspace
+                    .repository()
+                    .create_indexed_resource(
+                        &credential,
+                        slot.as_deref(),
+                        &fingerprint,
+                        resource,
+                        event,
+                    )
+                    .await?;
                 let is_live = live(&resource);
+                let authorized = self.workspace.authenticate(&credential).await?;
+                authorized.scope("resources:write")?;
+                if !authorized.has("*") {
+                    return Err(err(403, "WORKSPACE_GRANT_REQUIRED"));
+                }
                 let data = self.update_resource(resource, true).await?;
                 return Ok((
                     201,
@@ -376,14 +407,29 @@ Ok((r,true))}).await?;
                 ));
             }
             ("GET", "/usage") => {
-                let (_, state) = self.context(&credential, "usage:read", None).await?;
-                let data = usage(&state)
+                p.scope("usage:read")?;
+                let (resources, next) = self.resource_page(&p, query).await?;
+                let ids = resources
+                    .iter()
+                    .map(|resource| text(resource, "id").map(str::to_owned))
+                    .collect::<Result<Vec<_>>>()?;
+                let state = self
+                    .workspace
+                    .repository()
+                    .resource_transaction(ids, false, false, true, &credential, |state| {
+                        Ok((state.clone(), false))
+                    })
+                    .await?;
+                let mut data = indexed_usage(&self.workspace.repository(), &state)
+                    .await?
                     .as_array()
                     .expect("usage")
-                    .iter()
-                    .filter(|r| p.has(r["resourceId"].as_str().unwrap_or("")))
-                    .cloned()
-                    .collect::<Vec<_>>();
+                    .clone();
+                self.workspace
+                    .authenticate(&credential)
+                    .await?
+                    .scope("usage:read")?;
+                data.sort_by(|a, b| a["resourceId"].as_str().cmp(&b["resourceId"].as_str()));
                 let count = if p.has("*") {
                     state["queryCount"].as_u64().unwrap_or(0)
                 } else {
@@ -397,7 +443,9 @@ Ok((r,true))}).await?;
                         })
                         .unwrap_or(0)
                 };
-                Reply::Json(json!({"data":data,"mode":"demo","queryCount":count}))
+                Reply::Json(
+                    json!({"data":data,"mode":"demo","queryCount":count,"queryCountScope":if p.has("*"){"workspace"}else{"page"},"nextCursor":next}),
+                )
             }
             ("GET", "/files")
             | ("PUT", "/files")
@@ -587,6 +635,30 @@ pub fn clean_path(path: &str) -> Result<String> {
 fn usage(state: &Value) -> Value {
     json!(state["resources"].as_array().expect("resources").iter().filter(|r|visible_resource(r)).map(|r|{let native=live(r);
 let files=state["files"].as_array().expect("files").iter().filter(|f|f["resourceId"]==r["id"]).collect::<Vec<_>>();json!({"resourceId":r["id"],"name":r["name"],"kind":r["kind"],"storageBytes":if native{Value::Null}else{json!(files.iter().map(|f|f["content"].as_str().unwrap_or("").len()).sum::<usize>())},"storageLimitBytes":if native{Value::Null}else{json!((if r["kind"]=="filesystem"{2u64}else{5})*1024*1024*1024)},"measured":!native,"fileCount":if native{Value::Null}else{json!(files.iter().filter(|f|f["type"]=="file").count())},"monthlyRU":if native{Value::Null}else{json!(0)},"monthlyRULimit":if [ZERO,DB9,DUCKDB].contains(&r["provider"].as_str().unwrap_or(""))||r["kind"]!="mysql"{Value::Null}else{json!(50_000_000)}})}).collect::<Vec<_>>())
+}
+async fn indexed_usage(repository: &workspace_domain::Repository, state: &Value) -> Result<Value> {
+    let mut output = usage(state);
+    let resources = state["resources"]
+        .as_array()
+        .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?;
+    let local = resources
+        .iter()
+        .filter(|r| r["kind"] == "filesystem" && !live(r))
+        .collect::<Vec<_>>();
+    if !local.is_empty() {
+        repository.ensure_file_indexes().await?;
+    }
+    for resource in local {
+        let id = text(resource, "id")?;
+        let summary = repository.local_file_summary(id).await?;
+        let row = output
+            .as_array_mut()
+            .and_then(|rows| rows.iter_mut().find(|row| row["resourceId"] == id))
+            .ok_or_else(|| err(503, "META_RECORD_CORRUPT"))?;
+        row["storageBytes"] = summary["bytes"].clone();
+        row["fileCount"] = summary["files"].clone();
+    }
+    Ok(output)
 }
 fn message(code: &str) -> &str {
     match code {

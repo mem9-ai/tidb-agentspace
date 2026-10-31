@@ -12,31 +12,39 @@ impl Repository {
         idempotency: &str,
         attempt: Value,
     ) -> Result<(Value, bool)> {
-        let _lock = self.queue.lock().await;
         let digest = hex::encode(Sha256::digest(
             json!([resource, actor, idempotency]).to_string().as_bytes(),
         ));
         let index = format!("indexes/setup-idempotency/{digest}");
-        let prior = self.get(&index).await?;
-        if !prior.is_null() {
-            let id = prior["value"]
+        for retry in 0..8 {
+            let _lock = self.queue.read().await;
+            let prior = self.get(&index).await?;
+            if !prior.is_null() {
+                let id = prior["value"]
+                    .as_str()
+                    .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+                let record = self.get(&attempt_key(resource, id)).await?;
+                if record.is_null() {
+                    return Err(error("META_RECORD_CORRUPT"));
+                }
+                return Ok((record["value"].clone(), false));
+            }
+            let id = attempt["id"]
                 .as_str()
                 .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
-            let record = self.get(&attempt_key(resource, id)).await?;
-            if record.is_null() {
-                return Err(error("META_RECORD_CORRUPT"));
+            match self
+                .commit(vec![
+                    json!({"key":attempt_key(resource,id),"expectedVersion":null,"value":attempt}),
+                    json!({"key":index,"expectedVersion":null,"value":id}),
+                ])
+                .await
+            {
+                Ok(()) => return Ok((attempt, true)),
+                Err(error) if error.code == "META_CONFLICT" && retry < 7 => continue,
+                Err(error) => return Err(error),
             }
-            return Ok((record["value"].clone(), false));
         }
-        let id = attempt["id"]
-            .as_str()
-            .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
-        self.commit(vec![
-            json!({"key":attempt_key(resource,id),"expectedVersion":null,"value":attempt}),
-            json!({"key":index,"expectedVersion":null,"value":id}),
-        ])
-        .await?;
-        Ok((attempt, true))
+        unreachable!()
     }
     pub async fn setup_attempt(&self, resource: &str, id: &str) -> Result<Value> {
         Ok(self.get(&attempt_key(resource, id)).await?["value"].clone())
@@ -78,39 +86,50 @@ impl Repository {
         code: Option<&str>,
         updates: Value,
     ) -> Result<Value> {
-        let _lock = self.queue.lock().await;
-        let key = attempt_key(resource, id);
-        let prior = self.get(&key).await?;
-        let resource_key = format!("state/resources/{resource}");
-        let original = self.get(&resource_key).await?;
-        if prior.is_null() || original.is_null() {
-            return Err(error("META_RECORD_CORRUPT"));
-        }
-        let mut stored = original["value"].clone();
-        let r = stored["record"]
-            .as_object_mut()
-            .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
-        r.remove("connectionError");
-        for (k, v) in updates
-            .as_object()
-            .ok_or_else(|| error("META_RECORD_CORRUPT"))?
-        {
-            if ["status", "expiresAt", "uploadLimitBytes", "connectionError"].contains(&k.as_str())
+        for retry in 0..8 {
+            let _lock = self.queue.read().await;
+            let key = attempt_key(resource, id);
+            let prior = self.get(&key).await?;
+            let resource_key = format!("state/resources/{resource}");
+            let original = self.get(&resource_key).await?;
+            if prior.is_null() || original.is_null() {
+                return Err(error("META_RECORD_CORRUPT"));
+            }
+            let mut stored = original["value"].clone();
+            let r = stored["record"]
+                .as_object_mut()
+                .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+            r.remove("connectionError");
+            for (k, v) in updates
+                .as_object()
+                .ok_or_else(|| error("META_RECORD_CORRUPT"))?
             {
-                r.insert(k.clone(), v.clone());
+                if ["status", "expiresAt", "uploadLimitBytes", "connectionError"]
+                    .contains(&k.as_str())
+                {
+                    r.insert(k.clone(), v.clone());
+                }
+            }
+            let mut attempt = prior["value"].clone();
+            attempt["status"] = json!(status);
+            attempt["errorCode"] = json!(code);
+            attempt["updatedAt"] =
+                json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+            attempt["resource"] = stored["record"].clone();
+            let mut changes = vec![
+                json!({"key":key,"expectedVersion":version(&prior),"value":attempt}),
+                json!({"key":resource_key,"expectedVersion":version(&original),"value":stored}),
+            ];
+            changes.extend(
+                self.resource_index_changes(&original["value"]["record"], &stored["record"])
+                    .await?,
+            );
+            match self.commit(changes).await {
+                Ok(()) => return Ok(attempt),
+                Err(error) if error.code == "META_CONFLICT" && retry < 7 => continue,
+                Err(error) => return Err(error),
             }
         }
-        let mut attempt = prior["value"].clone();
-        attempt["status"] = json!(status);
-        attempt["errorCode"] = json!(code);
-        attempt["updatedAt"] =
-            json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
-        attempt["resource"] = stored["record"].clone();
-        self.commit(vec![
-            json!({"key":key,"expectedVersion":version(&prior),"value":attempt}),
-            json!({"key":resource_key,"expectedVersion":version(&original),"value":stored}),
-        ])
-        .await?;
-        Ok(attempt)
+        unreachable!()
     }
 }
