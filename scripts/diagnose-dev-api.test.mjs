@@ -36,3 +36,23 @@ test('diagnostics report only safe bounded status and fixed error labels', () =>
   assert.ok(!JSON.stringify(result).includes('private'));
   assert.ok(!calls.some((args) => ['set', 'delete', 'rollout'].includes(args[0])));
 });
+
+test('diagnostics distinguish forbidden logs without exposing private errors', () => {
+  const result = diagnose({ namespace: 'dev', deployment: 'api', container: 'api' }, (args) => {
+    if (args[1] === 'deployment/api')
+      return JSON.stringify({
+        spec: { replicas: 1, selector: { matchLabels: { app: 'api' } } },
+        status: {},
+      });
+    if (args[1] === 'pods')
+      return JSON.stringify({
+        items: [{ metadata: { name: 'api-123' }, status: { phase: 'Running' } }],
+      });
+    const error = new Error('private value');
+    error.stderr = 'Forbidden private value';
+    throw error;
+  });
+  assert.equal(result.pods[0].logReads, 0);
+  assert.equal(result.pods[0].logAccessDenied, true);
+  assert.ok(!JSON.stringify(result).includes('private value'));
+});

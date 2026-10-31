@@ -13,6 +13,22 @@ const signals = [
   ['META_WRITER_ACTIVE', 'workspace-writer-active'],
   ['META_WORKSPACE_MISSING', 'workspace-missing'],
   ['Installation mismatch', 'metadata-installation-mismatch'],
+  ['Invalid private deployment configuration', 'deployment-config-invalid'],
+  ['Invalid private Workspace configuration', 'workspace-config-invalid'],
+  ['Invalid private service configuration', 'metadata-config-invalid'],
+  ['Private configuration requires', 'private-config-permissions'],
+  ['No such file or directory', 'required-file-missing'],
+  ['Permission denied', 'permission-denied'],
+  ['Metadata authority, identity, key, token or listener is shared', 'metadata-config-collision'],
+  ['Metadata storage roots overlap', 'metadata-roots-overlap'],
+  ['A co-located Guest service requires', 'global-authority-missing'],
+  ['An in-process dependency must be explicitly hosted', 'regional-authority-missing'],
+  ['Guest requires explicit co-located', 'guest-config-invalid'],
+  ['Invalid authority/environment identity', 'metadata-identity-invalid'],
+  ['Metadata startup failed', 'metadata-start-failed'],
+  ['Owner active/uncertain', 'metadata-owner-uncertain'],
+  ['error while loading shared libraries', 'native-library-missing'],
+  ['Error:', 'process-error'],
 ];
 
 // Read-only: print bounded statuses and fixed labels only, never pod names, raw logs or config.
@@ -55,6 +71,8 @@ export function diagnose({ namespace, deployment, container }, kubectl) {
       ready: state?.ready === true,
       restarts: state?.restartCount ?? 0,
       exitCode: state?.lastState?.terminated?.exitCode ?? null,
+      logReads: 0,
+      logAccessDenied: false,
       indicators: [],
     };
     for (const previous of [false, true]) {
@@ -69,11 +87,12 @@ export function diagnose({ namespace, deployment, container }, kubectl) {
         ];
         if (previous) args.push('--previous');
         const logs = kubectl(args);
+        entry.logReads += 1;
         for (const [needle, label] of signals)
           if (logs.includes(needle) && !entry.indicators.includes(label))
             entry.indicators.push(label);
-      } catch {
-        /* Logs may not exist for pending pods. */
+      } catch (error) {
+        if (/forbidden/i.test(String(error.stderr || ''))) entry.logAccessDenied = true;
       }
     }
     result.pods.push(entry);
