@@ -100,7 +100,7 @@ solely because a flow resembles OAuth.
    201, Location and secret once, `Cache-Control: no-store`; never recover plaintext later.
    Idempotent replay must not create a second secret; a lost secret response requires an explicit
    new Key rather than exposing or silently rotating the original.
-2. Client `POST /api/v1/token-issuances` to Global authenticates the Workspace Key in an
+2. Client `POST /api/v1/workspaces/{workspaceId}/token-issuances` to Global authenticates the Workspace Key in an
    Authorization header and requests `audience: global` or a specific canonical `regionId` and
    optional narrower scopes. Global validates current Key/version/state/expiry, Workspace,
    Region assignment and grants before issuance. Return a short-lived access token, `expiresAt`,
@@ -408,6 +408,20 @@ control-plane writes do not by themselves prove capacity.
    path explicitly specified and tested; do not hash the digest as if it were the original Key.
    Existing restricted grants never become wildcard and legacy Keys do not acquire continuity
    authority or longer expiry by exchange.
+   Existing regional `aw_demo_...` Keys have no embedded Key ID. To locate them without a
+   workspace-wide scan or exposing the SHA-256 verifier in a metadata key, use a versioned
+   Global-only lookup index `HMAC-SHA256(indexKey, domain || length(workspaceId) || workspaceId
+|| SHA256(rawKey)) -> keyId`. During migration compute the index from the already stored
+   SHA-256 digest, without recovering or changing the Key secret. The verifier remains inside
+   encrypted values and is compared after lookup; failures for unknown IDs, wrong secrets,
+   expiry and revocation do not disclose which part matched. Index-key material is independently
+   protected by Global KMS/secret storage, never returned to callers or sent to Region.
+   New Global Keys may instead include an opaque Key ID plus 256 bits of random secret, enabling
+   direct lookup while keeping the verifier out of index keys. Both formats remain versioned.
+   A loss or rotation of the Global index key must not silently strand existing Keys: retain
+   recoverable versioned key material, stage replacement indexes with dual-read and single-writer
+   fencing, and verify every version before retiring its predecessor. A missing index key fails
+   closed with an operator-recoverable Global error, without weakening regional availability.
 3. Global initiates a bounded, authenticated Region export of **only the minimum verifier and
    grant metadata needed** under a dedicated migration identity; native provider passwords and
    tokens stay in Region. Encrypt transport and target metadata, prohibit logs, require Region
@@ -452,6 +466,8 @@ implemented promise; update runtime, generator, types, clients, docs and tests t
 No existing single-origin test, mocked SQL provider, cached route or successful metadata startup
 alone proves SEC-05 or real cloud compatibility. CI must use isolated temporary S3-compatible
 storage and credentials; any live provider verification is separate and explicitly authorized.
+SEC-07 additionally verifies versioned keyed-index lookup of an unchanged legacy Key, including
+index-key rotation/loss, constant-time verifier checks, no workspace-wide scan and no leaked digest.
 Complete implementation and measured capacity evidence precede production/security claims.
 
 ## 11. Release sequencing and unresolved implementation decisions
