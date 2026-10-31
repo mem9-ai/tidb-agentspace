@@ -39,9 +39,11 @@ requiring the customer to manage upstream credentials.
 - Key creation now requires `resourceIds`; clients must send exact IDs or `["*"]`.
 - Existing prototype keys without this field retain no resource access. Reissue them with an
   explicit grant; never silently upgrade legacy keys to wildcard access.
-- Workspace key revocation immediately blocks new public requests to all granted components.
-  Future streaming connections, cached grants, and delegated sessions need bounded lifetimes,
-  revocation propagation, and their own integration tests before release.
+- In the current regional authority, Workspace Key revocation blocks new public requests to all
+  granted components. Across independently serving Regions, Global revocation becomes effective
+  per Region when that Region durably applies it; disconnected targets remain pending under
+  [ADR 0034](0034-openapi-security-authorities.md). Streams and admitted operations need
+  explicitly tested cancellation/completion semantics.
 - Internal credential rotation is independent of the public key. Production broker/secret
   storage remains proposed work. [ADR 0004](0004-drive9-anonymous-provider.md) implements a real File System adapter with separate local private credential storage.
 - Exact resource selection plus common action scopes is implemented. Per-resource action
@@ -52,9 +54,9 @@ requiring the customer to manage upstream credentials.
 The [proposed regional API/auth profile](../../specs/gh-74/regional-api-auth.md) extends the
 same permission model with optional regional access tokens and explicit continuity grants.
 It does not implement new routes or change existing expiring Keys. Legacy/imported `expiresAt`
-remains a hard limit; a durable grant requires separate owner approval and regional renewal
-authority. Proposed ADR 0017 distinguishes locally effective revocation from pending delivery
-to a disconnected Region; the current single-process immediate-revocation tests remain valid.
+remains a hard limit; a durable grant requires explicit owner-authorized regional renewal
+authority, which may be granted with Key creation. ADR 0034 distinguishes locally effective revocation from pending delivery to a
+disconnected Region; the current single-process immediate-revocation tests remain valid.
 
 API tests exercise a single key that can query PG and read/write Files, receives a denial for
 MySQL, sees filtered discovery/usage/activity, and loses access to both services on revocation.
