@@ -7,6 +7,30 @@ export type RegionEndpoint = {
   apiPathPrefix: string;
 };
 
+export type RegionRoute = {
+  workspaceId: string;
+  principalId: string;
+  endpoint: RegionEndpoint;
+};
+
+/** Revalidate a cached route before use; a known route needs no Global request. */
+export async function resolveRegionRoute(
+  identity: Pick<RegionRoute, 'workspaceId' | 'principalId'> & { regionId: string },
+  allowedOrigins: readonly string[],
+  cached: RegionRoute | undefined,
+  discover: () => Promise<RegionRoute>,
+): Promise<RegionRoute> {
+  if (!identity.workspaceId || !identity.principalId) throw new Error('Invalid route identity.');
+  const candidate = cached ?? (await discover());
+  if (
+    candidate.workspaceId !== identity.workspaceId ||
+    candidate.principalId !== identity.principalId ||
+    candidate.endpoint.regionId !== identity.regionId
+  )
+    throw new Error('Region route identity mismatch.');
+  return { ...candidate, endpoint: validateRegionEndpoint(candidate.endpoint, allowedOrigins) };
+}
+
 /** Validate a Region endpoint against deployment-owned trust, never a redirect or error body. */
 export function validateRegionEndpoint(
   endpoint: RegionEndpoint,

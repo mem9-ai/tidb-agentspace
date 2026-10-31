@@ -1,7 +1,45 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import http from 'node:http';
-import { createRegionClient, validateRegionEndpoint } from './region-client.ts';
+import { createRegionClient, resolveRegionRoute, validateRegionEndpoint } from './region-client.ts';
+
+test('a validated route remains usable without discovery and stays bound to its actor', async () => {
+  const endpoint = {
+    regionId: 'region:test',
+    apiOrigin: 'https://region.example',
+    apiPathPrefix: '',
+  };
+  const identity = {
+    workspaceId: 'workspace-a',
+    principalId: 'principal-a',
+    regionId: 'region:test',
+  };
+  let lookups = 0;
+  const discover = async () => {
+    lookups++;
+    if (lookups > 1) throw new Error('Global is offline');
+    return { workspaceId: identity.workspaceId, principalId: identity.principalId, endpoint };
+  };
+  const first = await resolveRegionRoute(identity, [endpoint.apiOrigin], undefined, discover);
+  const cached = await resolveRegionRoute(identity, [endpoint.apiOrigin], first, discover);
+  assert.equal(lookups, 1);
+  assert.deepEqual(cached, first);
+  await assert.rejects(
+    () =>
+      resolveRegionRoute(
+        { ...identity, principalId: 'other' },
+        [endpoint.apiOrigin],
+        first,
+        discover,
+      ),
+    /identity mismatch/,
+  );
+  await assert.rejects(
+    () => resolveRegionRoute(identity, [], first, discover),
+    /Untrusted Region endpoint/,
+  );
+  assert.equal(lookups, 1);
+});
 
 test('regional credentials go only to the pinned Region origin and API prefix', async () => {
   const endpoint = {
