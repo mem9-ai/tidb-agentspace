@@ -54,6 +54,7 @@ Current inspected Console mappings (`src/api/client.ts`, with generated operatio
 | Import preparation and confirmation        | `prepareDatabaseImport`, `prepareDatabaseImportUpload`, `commitDatabaseImport`                                           |
 | File/result exports                        | `prepareFileExport`, `exportFileContent`, `exportResult`                                                                 |
 | Keys and Workspace settings                | `listKeys`, `createKey`, `revokeKey`, `updateSettings` (Owner authentication)                                            |
+| Workspace tutorial progress                | `listTutorials`, `getTutorial`, `replaceTutorial` (Owner authentication, conditional writes)                             |
 | Usage and activity                         | `getUsage`, `listEvents`                                                                                                 |
 | Auth/session lifecycle                     | `getAuthConfig`, local/Guest session operations, TiDB sign-in/callback/logout operations, each under its documented mode |
 

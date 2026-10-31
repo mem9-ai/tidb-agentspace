@@ -124,3 +124,34 @@ test('invalid sample names and preparation failures perform no write; uncertain 
     ['prepare', 'write-attempted', 'unknown-commit'],
   );
 });
+
+test('database writes wait for durable progress acknowledgement and stop on a failed acknowledgement', async () => {
+  const { api, calls } = fixture();
+  let acknowledge;
+  const saved = new Promise((resolve) => {
+    acknowledge = resolve;
+  });
+  const loading = loadDatabaseSample(api, 'db_selected', sampleId, () => saved);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(
+    calls.map((call) => call.action),
+    ['prepare'],
+  );
+  acknowledge();
+  await loading;
+  assert.deepEqual(
+    calls.map((call) => call.action),
+    ['prepare', 'commit'],
+  );
+  calls.length = 0;
+  await assert.rejects(
+    loadDatabaseSample(api, 'db_selected', sampleId, async () => {
+      throw new Error('Progress not saved');
+    }),
+    /Progress not saved/,
+  );
+  assert.deepEqual(
+    calls.map((call) => call.action),
+    ['prepare'],
+  );
+});

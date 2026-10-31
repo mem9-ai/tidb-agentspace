@@ -4,6 +4,7 @@ import { firstWorkspaceId } from './workspace-selection';
 import type { components, operations } from './schema';
 
 export type Resource = components['schemas']['Resource'];
+export type Tutorial = components['schemas']['Tutorial'];
 export type TableList = components['schemas']['TableList'];
 export type TableDetail = components['schemas']['TableDetail'];
 export type ApiKey = components['schemas']['Key'];
@@ -66,6 +67,27 @@ export function configureApi(config: unknown) {
 }
 
 export const workspaceApi = {
+  listTutorials: (id: string, cursor?: string) =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/tutorials', {
+        params: { path: { workspaceId: id }, query: { limit: 100, ...(cursor ? { cursor } : {}) } },
+      }),
+    ),
+  replaceTutorial: (
+    id: string,
+    resourceId: string,
+    body: components['schemas']['TutorialInput'],
+    version?: string,
+  ) =>
+    responseData(
+      client.PUT('/workspaces/{workspaceId}/tutorials/{resourceId}', {
+        params: {
+          path: { workspaceId: id, resourceId },
+          header: version ? { 'If-Match': version } : { 'If-None-Match': '*' },
+        },
+        body,
+      }),
+    ),
   createDatabaseImportPreparation: (
     body: components['schemas']['DatabaseImportPreparationInput'],
     signal?: AbortSignal,

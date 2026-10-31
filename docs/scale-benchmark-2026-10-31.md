@@ -2,7 +2,7 @@
 
 Status: local exploratory measurement, not a production capacity or latency commitment.
 The implementation remains incomplete for a million-resource Workspace. See
-[ADR 0033](decisions/0033-sparse-scale-metadata.md) and
+[ADR 0035](decisions/0035-sparse-scale-metadata.md) and
 [the scale assessment](scale-assessment.md) for the outstanding paths.
 
 ## Environment and data
@@ -61,7 +61,7 @@ Portal/bootstrap, the unpaged list, Workspace-wide resource creation, mixed read
 authorization under load, cold caches, durable recovery, shard movement, S3 network latency,
 storage cost or production p99. It cannot establish that the product supports the requested
 scale. At the measured revision, Portal/bootstrap and creation retained the legacy Workspace
-view limit and shared coordination gate. Later changes are described in [ADR 0033](decisions/0033-sparse-scale-metadata.md);
+view limit and shared coordination gate. Later changes are described in [ADR 0035](decisions/0035-sparse-scale-metadata.md);
 the numbers above have not been rerun against those changes.
 
 ## Later bounded sample: at least 500,000 resources

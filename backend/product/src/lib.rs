@@ -8,6 +8,7 @@ mod resource_locks;
 mod resource_pages;
 mod resources;
 mod setup_attempts;
+mod tutorials;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -244,6 +245,22 @@ impl Product {
             format!("key:{}", p.id)
         };
         let actor = actor_value.as_str();
+        if route == "/tutorials" || route.starts_with("/tutorials/") {
+            return self
+                .tutorial_request(
+                    &credential,
+                    &p,
+                    tutorials::TutorialRequest {
+                        method,
+                        route,
+                        query,
+                        input,
+                        if_match,
+                        if_none_match,
+                    },
+                )
+                .await;
+        }
         let reply = match (method, route) {
             ("GET", "/context") => Reply::Json(self.agent_context(&p).await?),
             ("GET", "/bootstrap") => {

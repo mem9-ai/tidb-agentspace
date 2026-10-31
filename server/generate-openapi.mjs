@@ -292,6 +292,23 @@ schemas.ResourceSetupAttempt = object({
   errorCode: { type: ['string', 'null'] },
   resource: ref('Resource'),
 });
+schemas.TutorialInput = {
+  ...object({
+    sampleId: { type: 'string', pattern: '^[a-f0-9]{32}$' },
+    state: { enum: ['pending', 'attempted', 'ready', 'completed'] },
+  }),
+  additionalProperties: false,
+};
+schemas.Tutorial = object({
+  ...schemas.TutorialInput.properties,
+  resourceId: str,
+  version: {
+    type: 'string',
+    pattern: '^"tutorial-[a-f0-9]{32}"$',
+    description: 'Strong opaque ETag, including quotes. Send unchanged in If-Match.',
+  },
+  updatedAt: { type: 'string', format: 'date-time' },
+});
 const ownerSessions = [{ localOwner: [] }, { accountOwner: [] }, { guestOwner: [] }];
 function operation(
   id,
@@ -356,6 +373,70 @@ const paths = {
       owner: true,
       output: ref('Bootstrap'),
     }),
+  },
+  [ws + '/tutorials']: {
+    get: operation(
+      'listTutorials',
+      'List durable Workspace tutorial progress in resource-ID order',
+      null,
+      {
+        owner: true,
+        parameters: [
+          {
+            name: 'cursor',
+            in: 'query',
+            schema: { type: 'string', minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$' },
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 100 },
+          },
+        ],
+        output: object({
+          data: { type: 'array', maxItems: 100, items: ref('Tutorial') },
+          nextCursor: { type: ['string', 'null'] },
+        }),
+      },
+    ),
+  },
+  [ws + '/tutorials/{resourceId}']: {
+    parameters: [{ name: 'resourceId', in: 'path', required: true, schema: str }],
+    get: operation(
+      'getTutorial',
+      'Read a tutorial bookmark without querying or writing sample data',
+      null,
+      {
+        owner: true,
+        output: object({ data: ref('Tutorial') }),
+      },
+    ),
+    put: operation(
+      'replaceTutorial',
+      'Create or conditionally replace Workspace tutorial progress',
+      null,
+      {
+        owner: true,
+        input: ref('TutorialInput'),
+        output: object({ data: ref('Tutorial') }),
+        parameters: [
+          {
+            name: 'If-Match',
+            in: 'header',
+            schema: str,
+            description:
+              'Existing tutorial version, including quotes. Required for replacement; stale/missing records return 412 without changes. Mutually exclusive with If-None-Match.',
+          },
+          {
+            name: 'If-None-Match',
+            in: 'header',
+            schema: { const: '*' },
+            description:
+              'Required for create-only progress migration/creation. An existing record returns 412 without changes. Mutually exclusive with If-Match.',
+          },
+        ],
+      },
+    ),
   },
   [ws + '/resources']: {
     get: operation('listResources', 'Discover databases and file systems', 'resources:read', {
@@ -1163,6 +1244,31 @@ paths['/api/auth/config'] = {
   },
 };
 paths[ws + '/queries'].post['x-required-scope'] = 'queries:read';
+paths[ws + '/tutorials'].get.description +=
+  ' Each resource has one current bookmark, retained across sessions and API restarts in encrypted Workspace metadata. This owner-reported progress is a navigation hint, not saved results or proof of data availability. No provider or sample-data I/O occurs.';
+paths[ws + '/tutorials/{resourceId}'].put.description +=
+  ' One version precondition is mandatory (428 when absent). Creates return 201; replacements return 200. Failed or unknown acknowledgements must be inspected before proceeding. Save attempted before sample writes; saving progress never creates or executes sample data. A new sampleId explicitly replaces the bookmark while keeping previous data intact.';
+paths[ws + '/tutorials/{resourceId}'].put.responses[201] = response(
+  object({ data: ref('Tutorial') }),
+  'Tutorial created',
+);
+paths[ws + '/tutorials/{resourceId}'].put.responses[201].headers = {
+  Location: { schema: str, description: 'URI of this tutorial bookmark.' },
+};
+paths[ws + '/tutorials/{resourceId}'].put.responses[428] = response(
+  ref('Error'),
+  'A version precondition is required',
+);
+for (const [method, status] of [
+  ['get', 200],
+  ['put', 200],
+  ['put', 201],
+]) {
+  paths[ws + '/tutorials/{resourceId}'][method].responses[status].headers = {
+    ...paths[ws + '/tutorials/{resourceId}'][method].responses[status].headers,
+    ETag: { schema: str, description: 'Strong opaque tutorial version; equals data.version.' },
+  };
+}
 paths[ws + '/queries'].post['x-write-scope'] = 'queries:execute';
 paths[ws + '/queries'].post.description =
   'Requires queries:read (implied by queries:execute) and the database grant. Writes additionally require queries:execute. Read-only mode is enforced for read-only Keys even when readOnly=false. The constrained read-only subset permits at most 1024 lexer tokens and 32 nested delimiters; unsupported syntax/functions fail closed.';

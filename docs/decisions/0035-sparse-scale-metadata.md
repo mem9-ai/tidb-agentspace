@@ -1,4 +1,4 @@
-# ADR 0033: Sparse-activity metadata scale
+# ADR 0035: Sparse-activity metadata scale
 
 - Status: proposed architecture and partial implementation, 2026-10-31.
 - Scope: Global and regional metadata for a large population of mostly idle Tenants and

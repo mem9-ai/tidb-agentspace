@@ -3,12 +3,13 @@ import type { Data } from '../../api/client';
 import { Heading } from '../../ui/WorkspaceHeading';
 import { databaseEditorHash, tutorialHash } from '../navigation/workspace-route';
 import { fileHash } from '../files/file-location';
-import { getTutorialStore } from './tutorial-progress';
+import { TutorialProgressStatus, useTutorialStore } from './TutorialProgressProvider';
 import { liveDatabase, tutorialSample } from './tutorial-data';
 import './tutorials.css';
 
 export function TutorialResume({ data }: { data: Data }) {
-  const store = getTutorialStore(data.workspace.id);
+  const { store, loading, error } = useTutorialStore();
+  if (loading || error) return <TutorialProgressStatus />;
   const tutorials = data.resources.flatMap((resource) => {
     const progress = store.readSample(resource.id);
     return progress?.attempted ? [{ resource, progress }] : [];
@@ -21,9 +22,14 @@ export function TutorialResume({ data }: { data: Data }) {
           <Heading level={2}>Your tutorials</Heading>
           <Text>Revisit a result or pick up where you left off.</Text>
         </div>
-        <Button component="a" href="#tutorials" variant="subtle">
-          All tutorials
-        </Button>
+        <Group>
+          <Button variant="subtle" onClick={() => void store.refresh()}>
+            Refresh tutorials
+          </Button>
+          <Button component="a" href="#tutorials" variant="subtle">
+            All tutorials
+          </Button>
+        </Group>
       </Group>
       <div className="data-tutorials">
         {tutorials.map(({ resource, progress }) => {
@@ -71,7 +77,8 @@ export function TutorialResume({ data }: { data: Data }) {
         })}
       </div>
       <Text size="sm" c="carbon.7">
-        Progress is saved in this browser. Results are fetched when you run a query.
+        Progress is saved in this Workspace and available across browsers. Results are fetched when
+        you run a query.
       </Text>
     </section>
   );

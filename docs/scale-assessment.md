@@ -1,6 +1,6 @@
 # Tenant and Workspace scale assessment
 
-Status: code inspection, updated 2026-10-31. This is not a capacity benchmark or service-level commitment. The current co-located single-writer dev deployment cannot be claimed to support millions of Tenants or one Workspace with a million resources. Resource listing, creation and several resource operations now use bounded pages or point reads, but other collections and shared coordination remain; see [ADR 0033](decisions/0033-sparse-scale-metadata.md) for status and the proposed shard design.
+Status: code inspection, updated 2026-10-31. This is not a capacity benchmark or service-level commitment. The current co-located single-writer dev deployment cannot be claimed to support millions of Tenants or one Workspace with a million resources. Resource listing, creation and several resource operations now use bounded pages or point reads, but other collections and shared coordination remain; see [ADR 0035](decisions/0035-sparse-scale-metadata.md) for status and the proposed shard design.
 
 An exploratory [single-Workspace million-record page measurement](scale-benchmark-2026-10-31.md)
 is available; its limited request sample does not establish end-to-end capacity.

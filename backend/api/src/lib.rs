@@ -844,6 +844,13 @@ async fn dispatch(
                         None
                     };
                     let mut output = product_response(status, reply)?;
+                    if method == Method::PUT && status == 201 && route.starts_with("/tutorials/") {
+                        output.headers_mut().insert(
+                            "Location",
+                            HeaderValue::from_str(route.rsplit('/').next().unwrap_or_default())
+                                .map_err(|_| reject(500, "INTERNAL_ERROR"))?,
+                        );
+                    }
                     if let Some(id) = created_id {
                         output.headers_mut().insert(
                             "Location",

@@ -4,7 +4,7 @@ import { ordersCsv, orderRows, expectedTotals } from '../src/features/portal/tut
 async function tutorialApi(context, workspace, { uncertainSeed = false } = {}) {
   const calls = [];
   const tables = new Set();
-  await context.route('**/api/**', async (route) => {
+  const handler = async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname.replace(`/api/v1/workspaces/${workspace.state.workspace.id}`, '');
@@ -123,18 +123,21 @@ async function tutorialApi(context, workspace, { uncertainSeed = false } = {}) {
       });
     }
     return route.fallback();
-  });
-  return calls;
+  };
+  await context.route('**/api/**', handler);
+  return { calls, connectContext: (other) => other.route('**/api/**', handler) };
 }
 
-test('tutorial samples run once and can be found and resumed after reopening a tab', async ({
+test('Workspace tutorials resume in an isolated browser with no browser progress or duplicate sample writes', async ({
   page,
   context,
   workspace,
+  browser,
 }, testInfo) => {
   workspace.addResources();
   workspace.state.resources[0].provider = 'tidb-cloud-zero';
-  const calls = await tutorialApi(context, workspace);
+  const tutorial = await tutorialApi(context, workspace);
+  const { calls } = tutorial;
   await workspace.open('#tutorials');
   const database = page.locator('#tutorial-database');
   const files = page.locator('#tutorial-filesystem');
@@ -151,42 +154,72 @@ test('tutorial samples run once and can be found and resumed after reopening a t
   const originalPath = calls.find((call) => call.action === 'file').path;
   const before = calls.length;
   await page.close();
-  const reopened = await context.newPage();
-  await reopened.goto('/#overview');
-  const resume = reopened.getByRole('region', { name: 'Your tutorials', exact: true });
-  await expect(resume.getByText('Completed', { exact: true })).toHaveCount(2);
-  if (process.env.TUTORIAL_SCREENSHOTS) {
-    await resume.scrollIntoViewIfNeeded();
-    await reopened.screenshot({
-      path: `${process.env.TUTORIAL_SCREENSHOTS}/resume-${testInfo.project.name}.png`,
-      fullPage: false,
-    });
+  const freshContext = await browser.newContext({
+    viewport: testInfo.project.use.viewport,
+    colorScheme: testInfo.project.metadata.theme,
+  });
+  try {
+    await workspace.connectContext(freshContext);
+    await tutorial.connectContext(freshContext);
+    const reopened = await freshContext.newPage();
+    await reopened.goto('/#overview');
+    const resume = reopened.getByRole('region', { name: 'Your tutorials', exact: true });
+    await expect(resume.getByText('Completed', { exact: true })).toHaveCount(2);
+    expect(
+      await reopened.evaluate(() =>
+        Object.keys(localStorage).filter((key) => key.startsWith('workspace-tutorial:')),
+      ),
+    ).toEqual([]);
+    await expect(resume).toContainText('saved in this Workspace');
+    if (process.env.TUTORIAL_SCREENSHOTS) {
+      await resume.scrollIntoViewIfNeeded();
+      await reopened.screenshot({
+        path: `${process.env.TUTORIAL_SCREENSHOTS}/resume-${testInfo.project.name}.png`,
+        fullPage: false,
+      });
+    }
+    await resume
+      .locator('.tutorial-resume-card')
+      .filter({ hasText: 'mysql-fixture' })
+      .getByRole('link', { name: 'Revisit tutorial', exact: true })
+      .click();
+    await expect(reopened).toHaveURL(/#tutorials\?resourceId=db_fixture$/);
+    await expect(reopened.locator('#tutorial-database')).toContainText(originalTable);
+    await expect(
+      reopened.locator('#tutorial-database').getByText('Tutorial completed', { exact: true }),
+    ).toBeVisible();
+    expect(calls).toHaveLength(before);
+    await reopened
+      .locator('#tutorial-database')
+      .getByRole('button', { name: 'Run tutorial query', exact: true })
+      .click();
+    await expect(
+      reopened.locator('#tutorial-database').getByRole('region', { name: 'Query result data' }),
+    ).toContainText('240');
+    await reopened.goto('/#overview');
+    await reopened
+      .getByRole('region', { name: 'Your tutorials', exact: true })
+      .locator('.tutorial-resume-card')
+      .filter({ hasText: 'filesystem-fixture' })
+      .getByRole('link', { name: 'Revisit tutorial', exact: true })
+      .click();
+    await expect(reopened).toHaveURL(/#tutorials\?resourceId=fs_fixture$/);
+    await expect(reopened.locator('#tutorial-filesystem')).toContainText(originalPath);
+    await reopened
+      .locator('#tutorial-filesystem')
+      .getByRole('button', { name: 'Run tutorial query', exact: true })
+      .click();
+    await expect(
+      reopened.locator('#tutorial-filesystem').getByRole('region', { name: 'Query result data' }),
+    ).toContainText('180');
+    expect(calls.filter((call) => call.action === 'file')).toHaveLength(1);
+    expect(calls.filter((call) => call.action === 'seed')).toHaveLength(1);
+    await expect
+      .poll(() => reopened.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      .toBe(true);
+  } finally {
+    await freshContext.close();
   }
-  await resume
-    .locator('.tutorial-resume-card')
-    .filter({ hasText: 'mysql-fixture' })
-    .getByRole('link', { name: 'Revisit tutorial', exact: true })
-    .click();
-  await expect(reopened).toHaveURL(/#tutorials\?resourceId=db_fixture$/);
-  await expect(reopened.locator('#tutorial-database')).toContainText(originalTable);
-  await expect(
-    reopened.locator('#tutorial-database').getByText('Tutorial completed', { exact: true }),
-  ).toBeVisible();
-  expect(calls).toHaveLength(before);
-  await reopened.goto('/#overview');
-  await reopened
-    .getByRole('region', { name: 'Your tutorials', exact: true })
-    .locator('.tutorial-resume-card')
-    .filter({ hasText: 'filesystem-fixture' })
-    .getByRole('link', { name: 'Revisit tutorial', exact: true })
-    .click();
-  await expect(reopened).toHaveURL(/#tutorials\?resourceId=fs_fixture$/);
-  await expect(reopened.locator('#tutorial-filesystem')).toContainText(originalPath);
-  expect(calls.filter((call) => call.action === 'file')).toHaveLength(1);
-  expect(calls.filter((call) => call.action === 'seed')).toHaveLength(1);
-  await expect
-    .poll(() => reopened.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
-    .toBe(true);
 });
 
 test('tutorial creation selects the returned resource and continues with included data', async ({
@@ -194,7 +227,7 @@ test('tutorial creation selects the returned resource and continues with include
   context,
   workspace,
 }) => {
-  const calls = await tutorialApi(context, workspace);
+  const { calls } = await tutorialApi(context, workspace);
   await workspace.open('#tutorials');
   await page
     .locator('#tutorial-database')
@@ -247,7 +280,7 @@ test('uncertain tutorial writes are checked without replay and missing resource 
 }) => {
   workspace.addResources();
   workspace.state.resources[0].provider = 'tidb-cloud-zero';
-  const calls = await tutorialApi(context, workspace, { uncertainSeed: true });
+  const { calls } = await tutorialApi(context, workspace, { uncertainSeed: true });
   await workspace.open('#tutorials?resourceId=db_fixture');
   const database = page.locator('#tutorial-database');
   await database.getByRole('button', { name: 'Load sample orders', exact: true }).click();
@@ -287,4 +320,109 @@ test('resource workspaces return to their own tutorial and preserve unsaved file
   await page.getByRole('button', { name: 'Tutorial', exact: true }).click();
   await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
   await expect(page).toHaveURL(/#tutorials\?resourceId=fs_fixture$/);
+});
+
+test('unavailable progress blocks sample writes and unknown save acknowledgements are checked without replay', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  workspace.addResources();
+  workspace.state.resources[0].provider = 'tidb-cloud-zero';
+  const { calls } = await tutorialApi(context, workspace);
+  let unavailable = true;
+  let loseAcknowledgement = true;
+  await context.route('**/api/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (unavailable && path.endsWith('/tutorials'))
+      return route.fulfill({
+        status: 503,
+        json: { error: { code: 'UNAVAILABLE', message: 'Progress unavailable' } },
+      });
+    if (
+      loseAcknowledgement &&
+      request.method() === 'PUT' &&
+      path.endsWith('/tutorials/db_fixture')
+    ) {
+      loseAcknowledgement = false;
+      workspace.tutorials.set('db_fixture', {
+        ...request.postDataJSON(),
+        resourceId: 'db_fixture',
+        version: '"tutorial-' + 'f'.repeat(32) + '"',
+        updatedAt: '2026-10-31T00:00:00Z',
+      });
+      return route.fulfill({
+        status: 503,
+        json: { error: { code: 'UNAVAILABLE', message: 'Acknowledgement lost' } },
+      });
+    }
+    return route.fallback();
+  });
+  await workspace.open('#tutorials');
+  await expect(page.getByRole('alert')).toContainText('Could not load or migrate');
+  await expect(page.getByRole('button', { name: 'Load sample orders', exact: true })).toHaveCount(
+    0,
+  );
+  expect(calls).toHaveLength(0);
+  unavailable = false;
+  await page.getByRole('button', { name: 'Retry tutorial progress', exact: true }).click();
+  const database = page.locator('#tutorial-database');
+  await database.getByRole('button', { name: 'Load sample orders', exact: true }).click();
+  await expect(database.getByRole('alert')).toContainText('No sample action was retried');
+  await expect(
+    database.getByRole('button', { name: 'Load sample orders', exact: true }),
+  ).toBeDisabled();
+  expect(calls.filter((call) => call.action === 'seed')).toHaveLength(0);
+  await database.getByRole('button', { name: 'Check saved sample', exact: true }).click();
+  await expect(database.getByRole('alert')).toContainText('Sample table is missing');
+  await database
+    .getByRole('button', { name: 'Use a new sample name (keep the previous sample)', exact: true })
+    .click();
+  await database.getByRole('button', { name: 'Load sample orders', exact: true }).click();
+  await database.getByRole('button', { name: 'Run tutorial query', exact: true }).click();
+  await expect(database.getByRole('region', { name: 'Query result data' })).toContainText('240');
+  expect(calls.filter((call) => call.action === 'seed')).toHaveLength(1);
+});
+
+test('legacy browser migration retains uncertain sample identity and Workspace state wins', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  workspace.addResources();
+  const { calls } = await tutorialApi(context, workspace);
+  workspace.tutorials.set('db_fixture', {
+    resourceId: 'db_fixture',
+    sampleId: 'c'.repeat(32),
+    state: 'ready',
+    version: '"tutorial-' + 'e'.repeat(32) + '"',
+    updatedAt: '2026-10-31T00:00:00Z',
+  });
+  await context.addInitScript(() => {
+    localStorage.setItem(
+      'workspace-tutorial:v1:ws_personal_fixture:db_fixture',
+      JSON.stringify({ id: 'a'.repeat(32), attempted: true, ready: true, completed: true }),
+    );
+    localStorage.setItem(
+      'workspace-tutorial:v1:ws_personal_fixture:fs_fixture',
+      JSON.stringify({ id: 'b'.repeat(32), attempted: true, ready: false, completed: false }),
+    );
+  });
+  await workspace.open('#overview');
+  const resume = page.getByRole('region', { name: 'Your tutorials', exact: true });
+  await expect(resume.getByText('Sample ready', { exact: true })).toBeVisible();
+  await expect(resume.getByText('Check sample', { exact: true })).toBeVisible();
+  await resume
+    .locator('.tutorial-resume-card')
+    .filter({ hasText: 'filesystem-fixture' })
+    .getByRole('link', { name: 'Continue tutorial', exact: true })
+    .click();
+  await expect(page.locator('#tutorial-filesystem')).toContainText(
+    '/tutorial-orders-' + 'b'.repeat(32) + '.csv',
+  );
+  await expect(page.getByRole('button', { name: 'Save sample CSV', exact: true })).toBeDisabled();
+  expect(workspace.tutorials.get('db_fixture').sampleId).toBe('c'.repeat(32));
+  expect(workspace.tutorials.get('fs_fixture').state).toBe('attempted');
+  expect(calls).toHaveLength(0);
 });

@@ -1,4 +1,5 @@
 import { restWorkflowCases } from './test-support/rest-workflow-cases.mjs';
+import { tutorialCases } from './test-support/tutorial-cases.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Ajv2020 from 'ajv/dist/2020.js';
@@ -465,6 +466,11 @@ test(
   },
 );
 for (const transport of ['remote', 'inProcess']) {
+  test(
+    `Workspace tutorial progress through ${transport} metadata`,
+    { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+    (t) => tutorialCases(t, transport),
+  );
   test(
     `REST workflow resources through ${transport} metadata`,
     { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },

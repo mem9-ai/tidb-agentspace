@@ -39,6 +39,9 @@ only pure presentation/browser interactions may be UI-only. Feature specificatio
 workflow to operation IDs, permissions and native acceptance evidence.
 
 Public API resource modeling and HTTP methods follow [REST API design](rest-api-design.md).
+For Global/Region credentials, refresh, revocation and migration, also follow the
+[OpenAPI security design](../../specs/gh-84/openapi-security.md) and
+[ADR 0034](../decisions/0034-openapi-security-authorities.md).
 Current endpoints and target migrations are distinguished explicitly; native behavior remains
 the acceptance boundary.
 
