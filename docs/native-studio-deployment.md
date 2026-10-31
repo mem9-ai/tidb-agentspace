@@ -98,3 +98,22 @@ Automated native tests use a local signed fake provider and isolated temporary S
 The main-only manual `inspect` operation uses the existing protected GitHub dev identity. It first reports only the target's referenced configuration field names. It then queries one bounded S3 bucket-name page (100), filters project name hints (`drive9`, `mem9`, `slatedb`, `workspace`, `tidb-ai`/`tidb.ai`), and reports region/project tags for at most eight candidates. It never reads objects, changes IAM, creates resources or chooses a bucket automatically. Unrelated bucket names, owner identifiers, pagination tokens and non-project tags are omitted. A permission-denied result is explicit and never falls back to exporting the short-lived deployment credentials into a Pod. A name match is a discovery hint, not authorization to use that storage; confirm the intended bucket and runtime access identity before initialization.
 
 Observed after PR #15: protected inspection successfully connected to the configured EKS target; the target was still the old runtime, with one replica/Recreate and only SSO fields in its referenced ConfigMap. No S3 endpoint, bucket or credential reference was present. [Inspection run](https://github.com/mem9-ai/tidb.ai/actions/runs/40979807553). The main-triggered image release was cancelled during credential-free verification, before cluster operations; the live API was left running. Source and Console publication are complete; first native bootstrap remains separate.
+
+## Personal account isolation and old shared Workspace
+
+Managed TiDB Account login uses the separate Global directory and Region policy/session metadata;
+every verified `(iss, sub)` has a stable personal tenant and Workspace. Region access uses its
+own durable browser grant without contacting Global. Guest signup can be disabled independently.
+See [ADR 0030](decisions/0030-personal-account-isolation.md) for the continuity and revocation
+tradeoffs, the Global restart limitation, and the current tenant/organization representation.
+
+Managed startup uses an internal health Workspace and does not open `ws_agentlab`. After the new
+version, real login and isolation have been verified, the explicitly dispatched protected
+`Retire legacy shared Workspace` workflow can retire only `ws_agentlab`. The workflow verifies
+same-commit CI and the exact current image digest, sets `WORKSPACE_RETIRE_LEGACY=ws_agentlab`,
+waits for a one-replica Recreate rollout and the exact completion marker, then removes the flag
+and verifies a second healthy rollout. Failures leave an explicit state for inspection; do not
+blindly roll back to a binary expecting deleted data. Offline operators can instead stop the host
+and run `workspace-backend purge-legacy --config <private-deployment.json> --workspace ws_agentlab`.
+The operation logically deletes live metadata and credentials; it does not physically erase
+historical SlateDB/object-store versions or delete provider instances.

@@ -1,8 +1,8 @@
 # 0028: Guest expiry with deferred provider cleanup
 
 Status: Partially superseded by [ADR 0029](0029-guest-logout-cleanup.md), which adds an
-explicit logout cleanup request and provider deletion attempts. Independent per-account
-Workspace onboarding remains incomplete.
+explicit logout cleanup request and provider deletion attempts. [ADR 0030](0030-personal-account-isolation.md)
+defines independent personal TiDB Account onboarding.
 
 A Guest receives an independent User, Organization and Workspace with an absolute 24-hour
 expiry. The regional browser credential is host-only, Secure and HttpOnly. The Region checks its
@@ -19,8 +19,7 @@ and Region metadata authorities,
 a trusted HTTPS public origin and SSO configuration. When Global is absent at host startup,
 existing regional Guest sessions work but new signup is unavailable until the host reconnects;
 the current implementation requires a restart to reconnect. A Guest Workspace Key can address its Workspace directly without a browser cookie; listing
-Workspaces from a Key without specifying its Workspace is not yet supported. Normal TiDB Account login still uses the existing shared
-Workspace. A crashed Workspace writer may require operator reconciliation; graceful shutdown drains
+Workspaces from a Key without specifying its Workspace is not yet supported. TiDB Account login uses an independent personal Workspace in the managed host. A crashed Workspace writer may require operator reconciliation; graceful shutdown drains
 leases. These limitations must be resolved or explicitly scoped before a hosted cutover.
 
 Verification uses the native host with isolated RustFS/S3 and mock providers. Separate Guest

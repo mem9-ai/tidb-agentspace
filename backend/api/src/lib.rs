@@ -3,6 +3,7 @@ pub mod guest_cleanup;
 pub mod guest_entry;
 mod http_policy;
 pub mod managed_workspaces;
+pub mod regional_account;
 pub mod regional_guest;
 mod sso;
 use anyhow::{Result, bail};
@@ -163,13 +164,17 @@ struct App {
     capacity: Arc<Semaphore>,
     guest_runtime: Option<Arc<GuestRuntime>>,
     current_guest: Option<regional_guest::AuthorizedGuest>,
+    current_account: Option<regional_account::AuthorizedAccount>,
 }
 
 /// Explicit co-located integration. Separate services require authenticated control transport;
 /// hosted rollout also requires independent account routing and crash recovery.
 pub struct GuestRuntime {
+    pub guest_enabled: bool,
     pub entry: Arc<guest_entry::GuestEntry>,
     pub region: Arc<regional_guest::RegionalGuest>,
+    pub account: Arc<regional_account::RegionalAccount>,
+    pub account_onboarding: Option<Arc<global_login::GlobalGuest>>,
     pub workspaces: Arc<managed_workspaces::ManagedWorkspaces>,
     pub cleanup: Arc<workspace_identity::cleanup::Queue>,
     pub cleanup_processor: Arc<guest_cleanup::GuestCleanup>,
@@ -186,17 +191,27 @@ impl WorkspaceServer {
     }
 
     pub async fn open_with_guest(
-        config: Config,
+        mut config: Config,
         metadata: Arc<dyn Metadata>,
         guest_runtime: Option<Arc<GuestRuntime>>,
     ) -> Result<Self> {
         config.validate()?;
         if guest_runtime.is_some()
-            && (config.sso.is_none() || (!config.insecure_loopback && config.guest.is_none()))
+            && (config.sso.is_none()
+                || (!config.insecure_loopback
+                    && (!matches!(&config.metadata, MetaBinding::InProcess { .. })
+                        || config.public_origins.is_empty())))
         {
             bail!("Guest requires an explicitly configured trusted host");
         }
         let listener = TcpListener::bind(config.bind).await?;
+        // Managed hosts no longer open the historical shared customer Workspace. The
+        // health sentinel is internal and never selected by an authenticated API request.
+        if guest_runtime.is_some() {
+            config.workspace_id = "system-host-health".into();
+            config.initialize_workspace = true;
+            config.recover_writer_owner = None;
+        }
         let repository = Repository::open(
             metadata,
             &config.authority_id,
@@ -235,6 +250,7 @@ impl WorkspaceServer {
                 capacity: Arc::new(Semaphore::new(8)),
                 guest_runtime,
                 current_guest: None,
+                current_account: None,
             },
         })
     }
@@ -464,7 +480,7 @@ async fn dispatch(
     }
     // An authenticated regional cookie selects exactly one managed Workspace.
     // A valid TiDB Account session takes precedence when both cookies exist.
-    let account_session = if let Some(token) = cookie(&headers, "aw_session") {
+    let legacy_account_session = if let Some(token) = cookie(&headers, "aw_session") {
         app.sessions
             .lock()
             .await
@@ -473,9 +489,43 @@ async fn dispatch(
     } else {
         false
     };
+    let regional_account = if path != "/api/health"
+        && path != "/api/session"
+        && !headers.contains_key("authorization")
+        && let Some(runtime) = &app.guest_runtime
+        && regional_account::RegionalAccount::has_cookie(&headers)
+    {
+        match runtime.account.authenticate(&headers).await {
+            Ok(account) => Some(account),
+            Err(e) if e.status == 401 || e.code == "POLICY_DENIED" => None,
+            Err(e) => return Err(e),
+        }
+    } else {
+        None
+    };
     let guest_lease = if path != "/api/health" && path != "/api/session" {
         if let Some(runtime) = &app.guest_runtime
-            && !account_session
+            && let Some(account) = regional_account
+        {
+            let permitted = format!("/api/v1/workspaces/{}", account.workspace_id);
+            if path != "/api/v1/workspaces"
+                && path != permitted
+                && !path.starts_with(&(permitted + "/"))
+            {
+                return Err(reject(404, "NOT_FOUND"));
+            }
+            let lease = runtime
+                .workspaces
+                .acquire(&account.workspace_id, &account.credential)
+                .await?;
+            app.workspace = lease.workspace();
+            app.product = lease.product();
+            app.config.workspace_id = account.workspace_id.clone();
+            app.current_account = Some(account);
+            Some(lease)
+        } else if let Some(runtime) = &app.guest_runtime
+            && !legacy_account_session
+            && !headers.contains_key("authorization")
             && regional_guest::RegionalGuest::has_cookie(&headers)
         {
             let guest = runtime.region.authenticate(&headers).await?;
@@ -516,6 +566,15 @@ async fn dispatch(
     } else {
         None
     };
+    // Never expose the historical shared Workspace through an old session or Key on a
+    // managed host, including when Global/Region onboarding is temporarily unavailable.
+    if path != "/api/health"
+        && path != "/api/session"
+        && (app.guest_runtime.is_some() && guest_lease.is_none()
+            || app.sso.is_some() && !app.config.insecure_loopback && app.guest_runtime.is_none())
+    {
+        return Err(reject(401, "UNAUTHENTICATED"));
+    }
     let prefix = format!("/api/v1/workspaces/{}", app.config.workspace_id);
     // Reject another Workspace before reading metadata or constructing a principal.
     if path != "/api/health"
@@ -664,9 +723,14 @@ async fn dispatch(
                         json!({})
                     };
                     let actor = app
-                        .current_guest
+                        .current_account
                         .as_ref()
-                        .map(|guest| guest.actor_id.as_str())
+                        .map(|account| account.actor_id.as_str())
+                        .or_else(|| {
+                            app.current_guest
+                                .as_ref()
+                                .map(|guest| guest.actor_id.as_str())
+                        })
                         .unwrap_or_else(|| cookie(&headers, "aw_session").unwrap_or_default());
                     let condition = headers
                         .get(if raw_upload {
@@ -727,6 +791,15 @@ async fn credential(
             .filter(|s| !s.is_empty() && !s.chars().any(char::is_whitespace))
             .ok_or_else(|| reject(401, "INVALID_KEY"))?;
         return Ok(Credential::Bearer(token.to_owned()));
+    }
+    if let Some(runtime) = &app.guest_runtime
+        && app.current_account.is_some()
+    {
+        let account = runtime.account.authenticate(headers).await?;
+        if account.workspace_id != app.config.workspace_id {
+            return Err(reject(401, "UNAUTHENTICATED"));
+        }
+        return Ok(account.credential);
     }
     if let Some(runtime) = &app.guest_runtime
         && app.current_guest.is_some()
@@ -844,7 +917,7 @@ async fn auth_route(
     peer: Option<SocketAddr>,
 ) -> Response {
     if path == "/api/auth/config" && *method == Method::GET {
-        let account = if let Some(token) = cookie(headers, "aw_session") {
+        let legacy_account = if let Some(token) = cookie(headers, "aw_session") {
             app.sessions
                 .lock()
                 .await
@@ -852,6 +925,17 @@ async fn auth_route(
                 .is_some_and(|session| session.expires > Instant::now())
         } else {
             false
+        };
+        let account = if let Some(runtime) = &app.guest_runtime
+            && regional_account::RegionalAccount::has_cookie(headers)
+        {
+            match runtime.account.authenticate(headers).await {
+                Ok(_) => true,
+                Err(e) if e.status == 401 || e.code == "POLICY_DENIED" => false,
+                Err(e) => return error(e),
+            }
+        } else {
+            legacy_account
         };
         let guest = if !account
             && let Some(runtime) = &app.guest_runtime
@@ -866,7 +950,7 @@ async fn auth_route(
             false
         };
         let mut config = if app.sso.is_some() {
-            json!({"enabled":true,"provider":"tidbcloud","label":"Continue with TiDB Account","loginPath":"/api/auth/tidbcloud/login","logoutPath":"/api/auth/tidbcloud/logout","guestEnabled":app.guest_runtime.is_some(),"guestCleanupEnabled":app.guest_runtime.is_some()})
+            json!({"enabled":true,"provider":"tidbcloud","label":"Continue with TiDB Account","loginPath":"/api/auth/tidbcloud/login","logoutPath":"/api/auth/tidbcloud/logout","guestEnabled":app.guest_runtime.as_ref().is_some_and(|runtime| runtime.guest_enabled),"guestCleanupEnabled":app.guest_runtime.is_some()})
         } else {
             json!({"enabled":false,"guestEnabled":false})
         };
@@ -881,6 +965,9 @@ async fn auth_route(
         let Some(runtime) = &app.guest_runtime else {
             return error(reject(404, "NOT_FOUND"));
         };
+        if !runtime.guest_enabled {
+            return error(reject(404, "NOT_FOUND"));
+        }
         let Some(peer) = peer else {
             return error(reject(403, "LOCAL_ONLY"));
         };
@@ -896,6 +983,15 @@ async fn auth_route(
         };
     }
     if path == "/api/auth/guest/logout" && *method == Method::POST {
+        if let Some(runtime) = &app.guest_runtime
+            && regional_account::RegionalAccount::has_cookie(headers)
+        {
+            match runtime.account.authenticate(headers).await {
+                Ok(_) => return error(reject(403, "GUEST_REQUIRED")),
+                Err(e) if e.status == 401 || e.code == "POLICY_DENIED" => {}
+                Err(e) => return error(e),
+            }
+        }
         if let Some(token) = cookie(headers, "aw_session")
             && app
                 .sessions
@@ -950,7 +1046,15 @@ async fn auth_route(
         )
     };
     if path == "/api/auth/tidbcloud/logout" && [Method::GET, Method::POST].contains(method) {
-        let account = if let Some(token) = cookie(headers, "aw_session") {
+        let account = if let Some(runtime) = &app.guest_runtime
+            && regional_account::RegionalAccount::has_cookie(headers)
+        {
+            match runtime.account.authenticate(headers).await {
+                Ok(_) => true,
+                Err(e) if e.status == 401 || e.code == "POLICY_DENIED" => false,
+                Err(e) => return error(e),
+            }
+        } else if let Some(token) = cookie(headers, "aw_session") {
             app.sessions
                 .lock()
                 .await
@@ -967,6 +1071,22 @@ async fn auth_route(
         }
         // Revoke any attached Guest session as well as the account session; otherwise
         // signing out silently resumes the Guest on the next page load.
+        let account_cookie = if let Some(runtime) = &app.guest_runtime
+            && regional_account::RegionalAccount::has_cookie(headers)
+        {
+            match runtime.account.revoke(headers).await {
+                Ok(value) => Some(value),
+                Err(e) if e.status == 401 || e.code == "POLICY_DENIED" => {
+                    match runtime.account.clear_cookie() {
+                        Ok(value) => Some(value),
+                        Err(e) => return error(e),
+                    }
+                }
+                Err(e) => return error(e),
+            }
+        } else {
+            None
+        };
         let guest_cookie = if let Some(runtime) = &app.guest_runtime
             && regional_guest::RegionalGuest::has_cookie(headers)
         {
@@ -998,6 +1118,9 @@ async fn auth_route(
             Json(json!({"loggedOut":true})).into_response()
         };
         set_cookie(&mut response, session_cookie("", 0));
+        if let Some(value) = account_cookie {
+            response.headers_mut().append("Set-Cookie", value);
+        }
         if let Some(value) = guest_cookie {
             response.headers_mut().append("Set-Cookie", value);
         }
@@ -1027,12 +1150,54 @@ async fn auth_route(
         };
     }
     if path == "/api/auth/tidbcloud/callback" && *method == Method::GET {
-        let result = sso
+        let verified = sso
             .callback(cookie(headers, "aw_sso_flow").unwrap_or_default(), query)
-            .await
-            .and_then(|login| {
-                sso::shared_workspace_owner(&sso.config, &login, &app.config.workspace_id)
-            });
+            .await;
+        if let Some(runtime) = &app.guest_runtime {
+            let result = match verified {
+                Err(e) => Err(e),
+                Ok(login) => {
+                    let (issuer, subject) = login.identity();
+                    match &runtime.account_onboarding {
+                        None => Err(reject(503, "ACCOUNT_ONBOARDING_UNAVAILABLE")),
+                        Some(onboarding) => match onboarding.personal(issuer, subject).await {
+                            Ok(registration) => {
+                                runtime
+                                    .account
+                                    .establish(&registration.workspace_id, issuer, subject)
+                                    .await
+                            }
+                            Err(e) => Err(e),
+                        },
+                    }
+                }
+            };
+            let mut response = match result {
+                Ok(account_cookie) => {
+                    if regional_account::RegionalAccount::has_cookie(headers)
+                        && let Err(e) = runtime.account.revoke(headers).await
+                        && e.status != 401
+                        && e.code != "POLICY_DENIED"
+                    {
+                        return error(e);
+                    }
+                    let mut response = redirect(&sso.config.post_login(&app.config.public_path));
+                    response.headers_mut().append("Set-Cookie", account_cookie);
+                    response
+                }
+                Err(e) => error(e),
+            };
+            set_cookie(&mut response, flow_cookie("", 0));
+            return response;
+        }
+        // The historical shared owner is retained only for isolated loopback test profiles.
+        // A hosted deployment without the regional identity services must fail closed.
+        let result = verified.and_then(|login| {
+            if !app.config.insecure_loopback {
+                return Err(reject(503, "ACCOUNT_ONBOARDING_UNAVAILABLE"));
+            }
+            sso::shared_workspace_owner(&sso.config, &login, &app.config.workspace_id)
+        });
         let mut response = match result {
             Err(e) => error(e),
             Ok(credential) => {

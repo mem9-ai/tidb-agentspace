@@ -6,7 +6,7 @@ use tokio::sync::watch;
 use workspace_api::{
     GuestRuntime, MetaBinding, WorkspaceServer, global_login::GlobalGuest,
     guest_cleanup::GuestCleanup, guest_entry::GuestEntry, managed_workspaces::ManagedWorkspaces,
-    regional_guest::RegionalGuest,
+    regional_account::RegionalAccount, regional_guest::RegionalGuest,
 };
 use workspace_contracts::Metadata;
 use workspace_identity::{
@@ -33,6 +33,14 @@ async fn main() -> Result<()> {
         workspace_execute::execute_entry().await?;
         return Ok(());
     }
+    if args.len() == 5
+        && args[0] == "purge-legacy"
+        && args[1] == "--config"
+        && args[3] == "--workspace"
+        && args[4] == "ws_agentlab"
+    {
+        return purge_legacy(plan::Plan::load(Path::new(&args[2]))?).await;
+    }
     if args.len() != 3
         || !["serve", "initialize"].contains(&args[0].as_str())
         || args[1] != "--config"
@@ -43,6 +51,17 @@ async fn main() -> Result<()> {
     if args[0] == "initialize" {
         return initialize(plan).await;
     }
+    let retire_legacy = match std::env::var("WORKSPACE_RETIRE_LEGACY") {
+        Err(std::env::VarError::NotPresent) => false,
+        Ok(value)
+            if value == "ws_agentlab"
+                && plan.workspaces.len() == 1
+                && plan.workspaces[0].workspace_id == value =>
+        {
+            true
+        }
+        _ => bail!("Invalid legacy retirement selection"),
+    };
     let (meta_stop, meta_receiver) = watch::channel(false);
     let (api_stop, api_receiver) = watch::channel(false);
     let mut metadata: BTreeMap<String, Arc<MetaService>> = BTreeMap::new();
@@ -90,7 +109,15 @@ async fn main() -> Result<()> {
                 "workspace-keys-only profile"
             };
             let guest_setup: Result<_> = async {
-                if let Some(settings) = &config.guest {
+                let settings = config.guest.clone().or_else(|| {
+                    (config.sso.is_some()
+                        && matches!(&config.metadata, MetaBinding::InProcess { .. }))
+                    .then(|| workspace_api::GuestConfig {
+                        global_authority_id: "global".into(),
+                        workspace_limit: 128,
+                    })
+                });
+                if let Some(settings) = &settings {
                     let region = Arc::new(
                         RegionalGuest::open(port.clone(), &authority, &config.public_path).await?,
                     );
@@ -114,7 +141,7 @@ async fn main() -> Result<()> {
                         settings.workspace_limit,
                     )?);
                     let entry = Arc::new(GuestEntry::new(
-                        signup,
+                        signup.clone(),
                         region.clone(),
                         config.public_origins.clone(),
                     )?);
@@ -122,8 +149,19 @@ async fn main() -> Result<()> {
                     let scheduler = Scheduler::new(queue.clone(), processor.clone(), 128)?;
                     Ok((
                         Some(Arc::new(GuestRuntime {
+                            guest_enabled: config.guest.is_some(),
                             entry,
                             region,
+                            account: Arc::new(
+                                RegionalAccount::open(
+                                    port.clone(),
+                                    &authority,
+                                    &config.public_path,
+                                    config.sso.as_ref().is_some_and(|s| s.secure()),
+                                )
+                                .await?,
+                            ),
+                            account_onboarding: signup,
                             workspaces: pool,
                             cleanup: queue,
                             cleanup_processor: processor,
@@ -148,6 +186,15 @@ async fn main() -> Result<()> {
             let guest_pool = guest_runtime
                 .as_ref()
                 .map(|runtime| runtime.workspaces.clone());
+            if retire_legacy {
+                anyhow::ensure!(
+                    guest_runtime.is_some()
+                        && matches!(&config.metadata, MetaBinding::InProcess { .. }),
+                    "Legacy retirement requires a managed regional API"
+                );
+                purge_legacy_workspace(port.clone(), &config).await?;
+                println!("Legacy Workspace live metadata and credentials removed.");
+            }
             match WorkspaceServer::open_with_guest(config, port, guest_runtime).await {
                 Ok(server) => {
                     if let Some(scheduler) = scheduler {
@@ -207,6 +254,85 @@ async fn main() -> Result<()> {
             );
         }
     }
+    Ok(())
+}
+
+// Deliberate offline operator operation. The running host owns this Meta root and prevents
+// opening a second writer. Never use this command against an active deployment.
+async fn purge_legacy(plan: plan::Plan) -> Result<()> {
+    anyhow::ensure!(
+        plan.workspaces.len() == 1,
+        "Expected exactly one configured Workspace"
+    );
+    let config = &plan.workspaces[0];
+    anyhow::ensure!(
+        config.workspace_id == "ws_agentlab"
+            && matches!(&config.metadata, MetaBinding::InProcess { .. }),
+        "Legacy Workspace configuration does not match"
+    );
+    let mut roles = plan
+        .metadata
+        .into_iter()
+        .filter(|role| role.config.authority_id == config.authority_id);
+    let role = roles
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Regional metadata configuration missing"))?;
+    anyhow::ensure!(
+        roles.next().is_none() && !role.initialize,
+        "Unexpected regional metadata configuration"
+    );
+    let service =
+        Arc::new(MetaService::open(role.config, false, role.recover_owner.as_deref()).await?);
+    let result = purge_legacy_workspace(service.clone(), config).await;
+    let closed = service.close().await;
+    result?;
+    closed?;
+    println!("Legacy Workspace live metadata and credentials removed.");
+    Ok(())
+}
+
+async fn purge_legacy_workspace(
+    metadata: Arc<dyn Metadata>,
+    config: &workspace_api::Config,
+) -> Result<()> {
+    anyhow::ensure!(
+        config.workspace_id == "ws_agentlab",
+        "Legacy Workspace configuration does not match"
+    );
+    let scope = workspace_contracts::Scope {
+        authority_id: config.authority_id.clone(),
+        owner_kind: "workspace".into(),
+        owner_id: "ws_agentlab".into(),
+        family: "workspace".into(),
+        partition_id: "primary".into(),
+    };
+    let page = metadata
+        .execute(workspace_contracts::MetaRequest::List {
+            scope,
+            guard: None,
+            prefix: "".into(),
+            after: None,
+            limit: 1,
+        })
+        .await?;
+    if page["records"]
+        .as_array()
+        .is_some_and(|records| records.is_empty())
+    {
+        return Ok(());
+    }
+    let repository = workspace_domain::Repository::open(
+        metadata,
+        &config.authority_id,
+        "ws_agentlab",
+        false,
+        config.recover_writer_owner.as_deref(),
+    )
+    .await?;
+    let result = repository.purge_legacy_records().await;
+    let close = repository.close().await;
+    result?;
+    close?;
     Ok(())
 }
 
