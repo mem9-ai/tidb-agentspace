@@ -91,7 +91,9 @@ export function ExportDestinationFields({
                   value: '',
                   label: state.targets.length
                     ? 'Choose a destination'
-                    : 'No available destinations',
+                    : state.nextCursor
+                      ? 'No destinations in loaded resources'
+                      : 'No available destinations',
                 },
                 ...state.targets.map((resource) => ({
                   value: resource.id,

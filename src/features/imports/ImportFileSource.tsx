@@ -70,7 +70,13 @@ export function ImportFileSource({
         data={[
           {
             value: '',
-            label: systems.length ? 'Choose a File System' : 'No available File Systems',
+            label: systems.length
+              ? 'Choose a File System'
+              : resourcePages.loading
+                ? 'Loading File Systems…'
+                : resourcePages.nextCursor
+                  ? 'No File Systems in loaded resources'
+                  : 'No available File Systems',
           },
           ...systems.map((r) => ({ value: r.id, label: r.name })),
         ]}
@@ -79,7 +85,14 @@ export function ImportFileSource({
           onChange(e.currentTarget.value, '');
         }}
       />
-      {resourcePages.error && <Alert color="red">{resourcePages.error}</Alert>}
+      {resourcePages.error && (
+        <Alert color="red">
+          <Text>{resourcePages.error}</Text>
+          <Button mt="sm" disabled={busy} onClick={resourcePages.retry}>
+            Try again
+          </Button>
+        </Alert>
+      )}
       {resourcePages.nextCursor && (
         <Button
           type="button"
