@@ -58,6 +58,10 @@ export async function agentRestCases(t, transport) {
       cursor = page.nextCursor;
     } while (cursor);
     assert.deepEqual(ids, ['db_live', 'fs_shared']);
+    assert.equal(
+      (await f.request('/resources?limit=1', { token: selected.secret }, 1)).status,
+      401,
+    );
     await request('/resources?limit=0', { token: selected.secret }, 400, 'INVALID_PAGE_LIMIT');
     await request('/resources?limit=513', { token: selected.secret }, 400, 'INVALID_PAGE_LIMIT');
     await request('/resources?cursor=!!!', { token: selected.secret }, 400, 'INVALID_PAGE_CURSOR');
