@@ -121,6 +121,9 @@ denials still apply. Production mTLS and regional autonomy require implementatio
 For direct regional OpenAPI/SDK routes and credential lifetime/renewal, read the
 [regional API/auth contract](specs/gh-74/regional-api-auth.md). It separates explicit continuity
 grants from existing expiring Keys and preserves the current single-origin implementation status.
+For Global Workspace Key lifecycle, token/refresh security, local enforcement, pending
+revocation and credential-preserving migration, see the proposed [OpenAPI security design](specs/gh-84/openapi-security.md)
+and [ADR 0034](docs/decisions/0034-openapi-security-authorities.md). These are not implemented capabilities.
 Global is the common management/discovery entry; clients use the selected Region OpenAPI
 directly for data and regional operation status, with no mandatory Global hop for known routes.
 
