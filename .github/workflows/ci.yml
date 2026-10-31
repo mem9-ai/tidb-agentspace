@@ -69,7 +69,7 @@ jobs:
   metadata:
     name: Rust backend and S3 integration
     needs: scope
-    if: ${{ always() && (github.event_name != 'pull_request' || needs.scope.outputs.ui_only != 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.ui_only != 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
