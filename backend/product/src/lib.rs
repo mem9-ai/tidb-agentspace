@@ -194,10 +194,7 @@ impl Product {
     ) -> Result<()> {
         self.workspace
             .repository()
-            .transaction(|state| {
-                event(state, action, resource, actor, resource_id);
-                Ok(((), true))
-            })
+            .append_event(json!({"id":uuid::Uuid::new_v4().to_string(),"action":action,"resource":resource,"resourceId":resource_id,"actor":actor,"at":timestamp(),"outcome":"success"}))
             .await
     }
     pub async fn handle(&self, request: Request<'_>) -> Result<(u16, Reply)> {

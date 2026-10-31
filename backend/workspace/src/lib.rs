@@ -252,8 +252,22 @@ impl Workspace {
             });
         }
         self.authorize_managed(&credential).await?;
+        let selected = match &operation {
+            Operation::CreateKey(input) => input["resourceIds"]
+                .as_array()
+                .map(|ids| {
+                    ids.iter()
+                        .filter_map(|id| id.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        let event_resources = matches!(operation, Operation::ListEvents);
         self.repository
-            .transaction(move |state| execute_operation(state, credential, operation))
+            .workspace_transaction(selected, event_resources, move |state| {
+                execute_operation(state, credential, operation)
+            })
             .await
     }
 }

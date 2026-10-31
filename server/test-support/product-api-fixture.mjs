@@ -260,6 +260,20 @@ export async function productApiFixture(t, transport, onSql) {
       });
       return response.records;
     },
+    async events(workspace = 0) {
+      const scope = workspaceScope(region.server.authorityId, states[workspace].workspace.id);
+      const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
+      return (
+        await region.client.call({
+          op: 'list',
+          scope,
+          guard: { ownerId: writer.records['system/writer'].value.ownerId },
+          prefix: 'state/events/',
+          after: null,
+          limit: 512,
+        })
+      ).records.map((entry) => entry.value.record);
+    },
     async restart({ crash = false } = {}) {
       writerRecovery = [];
       metadataRecovery = undefined;

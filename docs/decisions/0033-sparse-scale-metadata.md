@@ -13,7 +13,11 @@ grants. Existing records need no backfill for this ID index. Updates of one reso
 inflate the entire Workspace. Independent point updates can run concurrently, while a shared
 read/write gate still excludes them during legacy snapshot transactions; the remaining legacy
 paths therefore continue to cause Workspace-wide contention.
-The ordinary unpaged list, bootstrap, create, delete, usage, files, Key management and other
+Workspace Key management, settings and event lists load the Key/event collections and only the
+resource IDs needed to validate grants or filter events. Event append scans at most the retained
+event collection and commits the new event with retention cleanup. These collections are not
+themselves unbounded/paginated, and still use the legacy write gate.
+The ordinary unpaged resource list, bootstrap, create, delete, usage, local files and other
 paths have not been converted; neither Portal nor the default API can support a million-resource
 Workspace yet. The new cursor is a position, not a snapshot: concurrent insertions before it
 may be missed and deletions may disappear. A page can be empty and still have a next cursor.

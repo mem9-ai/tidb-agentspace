@@ -261,6 +261,76 @@ impl Repository {
     ) -> Result<T> {
         let _lock = self.queue.write().await;
         let previous = self.records("state/").await?;
+        self.apply_transaction(previous, apply).await
+    }
+
+    /// Key, settings and event operations need only their bounded collections and the
+    /// resources named in grants/events. Keep the legacy gate until all writers migrate.
+    pub async fn workspace_transaction<T>(
+        &self,
+        selected_resources: Vec<String>,
+        include_event_resources: bool,
+        apply: impl FnOnce(&mut Value) -> Result<(T, bool)> + Send,
+    ) -> Result<T> {
+        let _lock = self.queue.write().await;
+        let mut previous = self.records("state/keys/").await?;
+        previous.extend(self.records("state/events/").await?);
+        for key in ["state/workspace", "state/profile"] {
+            let value = self.get(key).await?;
+            if !value.is_null() {
+                previous.insert(key.into(), value);
+            }
+        }
+        let mut ids = selected_resources
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        if include_event_resources {
+            ids.extend(
+                previous
+                    .iter()
+                    .filter(|(key, _)| key.starts_with("state/events/"))
+                    .filter_map(|(_, value)| {
+                        value["value"]["record"]["resourceId"]
+                            .as_str()
+                            .map(str::to_owned)
+                    }),
+            );
+        }
+        let paths = ids
+            .into_iter()
+            .filter(|id| {
+                id != "*"
+                    && !id.is_empty()
+                    && id.len() <= 496
+                    && id
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"/_-.:".contains(&b))
+            })
+            .map(|id| format!("state/resources/{id}"))
+            .collect::<Vec<_>>();
+        for batch in paths.chunks(512) {
+            let result = self
+                .call(MetaRequest::Get {
+                    scope: self.scope.clone(),
+                    guard: Some(self.guard.clone()),
+                    keys: batch.to_vec(),
+                })
+                .await?;
+            for key in batch {
+                let value = &result["records"][key];
+                if !value.is_null() {
+                    previous.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        self.apply_transaction(previous, apply).await
+    }
+
+    async fn apply_transaction<T>(
+        &self,
+        previous: Records,
+        apply: impl FnOnce(&mut Value) -> Result<(T, bool)> + Send,
+    ) -> Result<T> {
         let mut state = inflate(&previous)?;
         let (result, dirty) = apply(&mut state)?;
         if !dirty {
@@ -322,6 +392,38 @@ impl Repository {
     }
     pub async fn resource(&self, id: &str) -> Result<Value> {
         Ok(self.get(&format!("state/resources/{id}")).await?["value"]["record"].clone())
+    }
+
+    /// Keep the legacy event retention and ordering without loading unrelated resources.
+    /// The write gate coordinates this append with legacy snapshot transactions.
+    pub async fn append_event(&self, event: Value) -> Result<()> {
+        let id = event["id"]
+            .as_str()
+            .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+        let _lock = self.queue.write().await;
+        let previous = self.records("state/events/").await?;
+        let mut ordered = previous.iter().collect::<Vec<_>>();
+        ordered.sort_by(|(key_a, a), (key_b, b)| {
+            a["value"]["position"]
+                .as_u64()
+                .unwrap_or(0)
+                .cmp(&b["value"]["position"].as_u64().unwrap_or(0))
+                .then_with(|| key_a.cmp(key_b))
+        });
+        let position = ordered
+            .last()
+            .map(|(_, record)| record["value"]["position"].as_u64().unwrap_or(0))
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+        let key = format!("state/events/{id}");
+        let mut changes = vec![
+            json!({"key":key,"expectedVersion":null,"value":{"position":position,"record":event}}),
+        ];
+        for (key, prior) in ordered.into_iter().take(previous.len().saturating_sub(199)) {
+            changes.push(json!({"key":key,"expectedVersion":version(prior),"delete":true}));
+        }
+        self.commit(changes).await
     }
 
     pub async fn resources_by_id(&self, ids: &[&str]) -> Result<Vec<Value>> {
@@ -793,9 +895,42 @@ mod concurrency_tests {
                             {
                                 return Err(ServiceError::new(409, "META_CONFLICT"));
                             }
-                            values.insert(key.into(), json!({"version":Uuid::new_v4().to_string(),"value":change["value"]}));
+                            if change["delete"] == true {
+                                values.remove(key);
+                            } else {
+                                values.insert(key.into(), json!({"version":Uuid::new_v4().to_string(),"value":change["value"]}));
+                            }
                         }
                         Ok(json!({}))
+                    }
+                    MetaRequest::List {
+                        prefix,
+                        after,
+                        limit,
+                        ..
+                    } => {
+                        let values = self.values.lock().unwrap();
+                        let mut selected = values
+                            .iter()
+                            .filter(|(key, _)| {
+                                key.starts_with(&prefix)
+                                    && after.as_ref().is_none_or(|cursor| *key > cursor)
+                            })
+                            .take(limit + 1)
+                            .collect::<Vec<_>>();
+                        let more = selected.len() > limit;
+                        if more {
+                            selected.pop();
+                        }
+                        let cursor = if more {
+                            selected.last().map(|(key, _)| (*key).clone())
+                        } else {
+                            None
+                        };
+                        let records = selected.into_iter().map(|(key, value)|
+                            json!({"key":key,"version":value["version"],"value":value["value"]})
+                        ).collect::<Vec<_>>();
+                        Ok(json!({"records":records,"nextCursor":cursor}))
                     }
                     _ => panic!("unexpected request"),
                 }
@@ -863,5 +998,48 @@ mod concurrency_tests {
         let values = metadata.values.lock().unwrap();
         assert_eq!(values["state/resources/a"]["value"]["record"]["n"], 1);
         assert_eq!(values["state/resources/b"]["value"]["record"]["n"], 2);
+    }
+
+    #[tokio::test]
+    async fn event_append_keeps_only_the_most_recent_200() {
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(
+                (0..200)
+                    .map(|n| {
+                        let id = format!("event-{n:03}");
+                        (
+                            format!("state/events/{id}"),
+                            json!({"version":"v1","value":{"position":n,"record":{"id":id}}}),
+                        )
+                    })
+                    .collect(),
+            ),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+        };
+        repository
+            .append_event(json!({"id":"event-new"}))
+            .await
+            .unwrap();
+        let values = metadata.values.lock().unwrap();
+        assert_eq!(values.len(), 200);
+        assert!(!values.contains_key("state/events/event-000"));
+        assert_eq!(values["state/events/event-new"]["value"]["position"], 200);
     }
 }

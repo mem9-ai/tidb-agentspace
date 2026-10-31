@@ -16,6 +16,13 @@ The ordinary repository `read` and `transaction` paths take a Workspace-wide loc
 
 At one million resources, a 100-record page size implies at least 10,000 sequential page fetches for a full scan, before accounting for associated state, latency and memory. At an illustrative 2 KiB of logical metadata each, the records alone are about 1.9 GiB; this is an arithmetic example, not measured record size or physical storage cost. Raising the limit would amplify latency, memory use and contention rather than solve the design problem.
 
+An explicit resource page reads by ID without materializing the whole Workspace. Resource
+status updates address one record; independent updates can progress concurrently. Key
+management, settings and event listing now load the Key and event collections plus the
+specific resources they reference, and event append loads only events. These paths still
+coordinate with legacy transactions through a Workspace-wide gate; Key collections retain
+the per-prefix view limit, and the Portal/bootstrap and resource lifecycle are still limited.
+
 ## Millions of Tenants
 
 Nothing in the per-identity key encoding is itself a demonstrated million-Tenant ceiling. However, one Global and one Region Meta authority each own one SlateDB root/writer, and the co-located host, bounded open pool, common request capacity, per-Workspace writer coordination and cleanup executor form shared bottlenecks and failure domains. Every Meta operation currently checks object-store ownership and acquires an appropriate durable snapshot, so network latency, request rate and object-store operation costs matter even when total data fits. There is no measured million-Tenant scale, high-cardinality load profile, noisy-neighbor isolation, shard balancing, region failover or recovery SLO in this repository. Tenant count alone does not determine required throughput: active fraction, request mix, concurrency, skew and bursts must be specified.

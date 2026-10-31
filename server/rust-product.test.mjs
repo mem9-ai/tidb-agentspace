@@ -53,6 +53,50 @@ test(
       ['db_live', 'db_pg'].map((id) => fixture.request(`/resources/${id}`)),
     );
     assert.ok(details.every((response) => response.status === 200));
+    const write = await fixture.request('/files', {
+      method: 'PUT',
+      body: { resourceId: 'fs_live', path: '/large-workspace.txt', type: 'file', content: 'ok' },
+    });
+    assert.equal(write.status, 200, JSON.stringify(write.body));
+    assert.ok(
+      (await fixture.events()).some(
+        (event) => event.action === 'file.saved' && event.resource === '/large-workspace.txt',
+      ),
+    );
+    const key = await fixture.request('/keys', {
+      method: 'POST',
+      body: {
+        name: 'scale-key',
+        scopes: ['resources:read'],
+        resourceIds: ['db_scale_00000000'],
+        expiresInDays: 7,
+      },
+    });
+    assert.equal(key.status, 201, JSON.stringify(key.body));
+    const allowed = await fixture.request('/resources?limit=1', { token: key.body.secret });
+    assert.deepEqual(
+      allowed.body.data.map((resource) => resource.id),
+      ['db_scale_00000000'],
+    );
+    assert.equal((await fixture.request('/keys')).status, 200);
+    assert.equal((await fixture.request('/events')).status, 200);
+    assert.equal(
+      (
+        await fixture.request('/settings', {
+          method: 'PATCH',
+          body: { workspaceName: 'Scale workspace', name: 'Developer' },
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await fixture.request(`/keys/${key.body.data.id}`, { method: 'DELETE' })).status,
+      200,
+    );
+    assert.equal(
+      (await fixture.request('/resources?limit=1', { token: key.body.secret })).status,
+      401,
+    );
     let cursor;
     let count = 0;
     do {
