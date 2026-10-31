@@ -55,8 +55,8 @@ npm run test:browser
 ```
 
 The suite reuses a built artifact; it does not rebuild or connect to a user's active preview.
-CI downloads the exact build from its successful Quality job, installs only Chromium and
-runs two workers. CI allows one diagnostic retry and fails on flaky tests: a retry cannot
+CI builds the same candidate independently of Quality, installs only Chromium and runs two
+workers. This small duplicate build lets both gates run in parallel. CI allows one diagnostic retry and fails on flaky tests: a retry cannot
 turn an initial failure into an accepted change. No retries are enabled locally by default.
 
 ## Diagnose failures and inspect changes

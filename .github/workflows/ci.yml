@@ -131,7 +131,6 @@ jobs:
 
   browser:
     name: Browser smoke
-    needs: quality
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -145,10 +144,8 @@ jobs:
       - name: Select the pinned npm version
         run: npm install --global npm@11.6.2 --ignore-scripts
       - run: npm ci
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
-        with:
-          name: console-dist-${{ github.sha }}
-          path: dist/
+      - name: Build the same candidate Console
+        run: npm run build:console
       - name: Install Chromium only
         run: npx playwright install chromium --with-deps
       - name: Assert Console user journeys against isolated fixtures

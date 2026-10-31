@@ -11,7 +11,7 @@ publication repeated the normal gate again. On the GH-35 candidate, ordinary CI 
 CD repeated validation took 177s, and native image verification took 26s. Jobs overlap;
 these times must not be added as an end-to-end measurement.
 
-CI owns one Quality job, Rust/S3 validation, Browser smoke using the Quality artifact,
+CI owns one Quality job, Rust/S3 validation, Browser smoke building the same SHA in parallel,
 and parallel credential-free native image validation when PR image inputs change. The owner
 accepts a narrow PR-only UI fast path: the merge candidate's files must be exclusively
 allowlisted UI files and their specified tests/guidance, with at least one UI file. The trusted

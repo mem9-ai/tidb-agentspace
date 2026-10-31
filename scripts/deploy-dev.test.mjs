@@ -95,7 +95,11 @@ test('automatic checks execute once and releases require exact-commit native evi
     );
   assert.ok(!JSON.stringify(workflow.jobs.verify).includes('secrets.'));
   assert.equal(ci.jobs.quality.steps.filter((step) => step.run === 'npm run check').length, 1);
-  assert.equal(ci.jobs.browser.needs, 'quality');
+  assert.equal(ci.jobs.browser.needs, undefined);
+  assert.equal(
+    ci.jobs.browser.steps.filter((step) => step.run === 'npm run build:console').length,
+    1,
+  );
   assert.equal(ci.jobs.metadata.needs, 'scope');
   assert.equal(
     ci.jobs.metadata.if,
