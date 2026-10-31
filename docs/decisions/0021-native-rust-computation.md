@@ -1,6 +1,6 @@
 # ADR 0021: Native computation in the Rust serving artifact
 
-- Status: Implemented under GH-92; Region-internal Execute clarification under GH-52 (2026-10-31).
+- Status: Implemented under GH-92; Region-internal Execute under GH-52, canonical-only interfaces under GH-54 (2026-10-31).
 - Date: 2026-10-29.
 - Complements [ADR 0020](0020-modular-rust-backend.md); preserves the selected-file and
   credential boundaries of [ADR 0010](0010-read-only-file-analysis.md).
@@ -16,8 +16,11 @@ retired under [the native source boundary](../native-backend-retirement.md).
 Expose computation as the Region-internal `Executor.execute(task)` module in `backend/execute`.
 Its default exec strategy starts the same executable as `workspace-backend execute`, rather
 than deploying a Worker service. It needs no listener, service role, broker or task queue.
-Keep `worker` as a CLI alias and `product.compute` as a configuration alias for the canonical
-`product.execute`; public API contracts, provider identities and stored records stay unchanged.
+Use one task command, `execute`, and one configuration field, `product.execute`. The owner
+explicitly permits replacing pre-production interfaces instead of carrying compatibility
+aliases; the initial GH-52 alias choice is superseded. Public HTTP behavior, provider
+identities and stored records stay unchanged. See the current
+[interface iteration policy](../standards/intent-driven-development.md#preserve-compatibility-and-recovery).
 No in-process/thread strategy is added by this decision.
 
 Run each task in a short-lived child with an empty environment, bounded stdin/stdout,
@@ -55,7 +58,7 @@ A process deadline, virtual filesystem and DuckDB configuration are the existing
 boundary. They do not provide production kernel/container isolation against a compromised
 native engine. Public compute needs OS/container CPU/memory/filesystem/network controls
 before public hosting. The API and internal execution child share one distributed executable
-without sharing a process. Native CLI tests cover both command names without a private
+without sharing a process. Native CLI tests cover the task command without a private
 deployment plan or Node; lifecycle tests verify child termination on cancellation and deadline.
 See [the runtime guide](../rust-backend.md#regional-execute) for execution and compatibility.
 

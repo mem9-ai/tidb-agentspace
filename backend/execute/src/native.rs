@@ -420,7 +420,7 @@ pub fn duckdb(input: &Value) -> Result<Value> {
     } else {
         let path = input["sourcePath"]
             .as_str()
-            .ok_or_else(|| err(400, "INVALID_WORKER_INPUT"))?;
+            .ok_or_else(|| err(400, "INVALID_EXECUTE_INPUT"))?;
         if mode == "import" && input["parsing"]["format"] == "lines" {
             let bytes = std::fs::read(path).map_err(|_| err(422, "IMPORT_FORMAT"))?;
             let text = std::str::from_utf8(&bytes).map_err(|_| err(422, "IMPORT_FORMAT"))?;
