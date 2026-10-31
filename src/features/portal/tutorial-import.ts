@@ -1,7 +1,10 @@
 import type { workspaceApi } from '../../api/client';
 import { orderRows, ordersCsv, tutorialSample } from './tutorial-data.ts';
 
-type ImportApi = Pick<typeof workspaceApi, 'prepareDatabaseImportUpload' | 'commitDatabaseImport'>;
+type ImportApi = Pick<
+  typeof workspaceApi,
+  'createDatabaseImportPreparationUpload' | 'createDatabaseImport'
+>;
 
 // The tutorial's explicit Load action confirms only this fixed, visible dataset. Arbitrary
 // customer uploads continue to use the import dialog's parsing/schema confirmation flow.
@@ -17,7 +20,7 @@ export async function loadDatabaseSample(
     { source: 'region', name: 'region', type: 'TEXT' as const },
     { source: 'amount', name: 'amount', type: 'BIGINT' as const },
   ];
-  const preparation = await api.prepareDatabaseImportUpload(
+  const preparation = await api.createDatabaseImportPreparationUpload(
     resourceId,
     new File([ordersCsv], 'tutorial-orders.csv', { type: 'text/csv' }),
     { format: 'csv', header: true, delimiter: ',' },
@@ -48,9 +51,9 @@ export async function loadDatabaseSample(
   // Reuse the create-only import operation: TiDB does not support CREATE TABLE AS SELECT.
   // Record an uncertain write before issuing it; callers must inspect before retrying.
   onBeforeWrite();
-  return api.commitDatabaseImport({
+  return api.createDatabaseImport({
     resourceId,
-    preparationId: preparation.preparationId,
+    preparationId: preparation.id,
     confirmed: true,
     table,
     fields,

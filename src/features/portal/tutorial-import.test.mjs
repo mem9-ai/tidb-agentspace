@@ -5,7 +5,9 @@ import { loadDatabaseSample } from './tutorial-import.ts';
 const sampleId = 'a'.repeat(32);
 function fixture() {
   const preparation = {
-    preparationId: 'prepared-orders',
+    id: 'prepared-orders',
+    status: 'ready',
+    createdAt: '2026-10-31T00:00:00Z',
     fields: [
       { source: 'id', name: 'id', type: 'BIGINT' },
       { source: 'region', name: 'region', type: 'TEXT' },
@@ -23,11 +25,11 @@ function fixture() {
   };
   const calls = [];
   const api = {
-    async prepareDatabaseImportUpload(resourceId, file, parsing) {
+    async createDatabaseImportPreparationUpload(resourceId, file, parsing) {
       calls.push({ action: 'prepare', resourceId, content: await file.text(), parsing });
       return preparation;
     },
-    async commitDatabaseImport(body) {
+    async createDatabaseImport(body) {
       calls.push({ action: 'commit', body });
       return { kind: 'database', rowCount: 6, table: body.table, resourceId: body.resourceId };
     },
@@ -100,7 +102,7 @@ test('invalid sample names and preparation failures perform no write; uncertain 
   assert.equal(calls.length, 0);
   const failedPreparation = {
     ...api,
-    prepareDatabaseImportUpload: async () => {
+    createDatabaseImportPreparationUpload: async () => {
       throw new Error('Parse unavailable');
     },
   };
@@ -109,7 +111,7 @@ test('invalid sample names and preparation failures perform no write; uncertain 
     /Parse unavailable/,
   );
   assert.equal(calls.length, 0);
-  api.commitDatabaseImport = async () => {
+  api.createDatabaseImport = async () => {
     calls.push({ action: 'unknown-commit' });
     throw new Error('Write outcome unknown');
   };

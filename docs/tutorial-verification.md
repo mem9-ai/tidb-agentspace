@@ -75,3 +75,5 @@ Representative current-build screenshots:
 
 Validation commands: `npm run check` and `npm run test:browser` under the pinned runtime.
 The PR records the evaluated source revision and the actual latest-head CI results.
+
+The GH-76 transport update uses POST `/database-import-preparations` with a 201 review entity (`id`), then POST `/database-imports` with that `preparationId`. It preserves this tutorial's fixed dataset confirmation and uncertain-write boundary; rendered steps are unchanged.
