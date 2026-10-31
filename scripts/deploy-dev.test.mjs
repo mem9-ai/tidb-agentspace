@@ -95,7 +95,17 @@ test('automatic checks execute once and releases require exact-commit native evi
     );
   assert.ok(!JSON.stringify(workflow.jobs.verify).includes('secrets.'));
   assert.equal(ci.jobs.quality.steps.filter((step) => step.run === 'npm run check').length, 1);
-  assert.equal(ci.jobs.browser.needs, undefined);
+  assert.equal(ci.jobs.browser.needs, 'scope');
+  assert.equal(
+    ci.jobs.browser.if,
+    "${{ !cancelled() && needs.scope.outputs.backend_only != 'true' }}",
+  );
+  assert.deepEqual(ci.jobs['backend-scope'].needs, ['scope', 'metadata']);
+  assert.equal(ci.jobs['backend-scope'].name, 'Backend-only scope');
+  assert.equal(
+    ci.jobs['backend-scope'].if,
+    "${{ !cancelled() && needs.scope.outputs.backend_only == 'true' && needs.metadata.result == 'success' }}",
+  );
   assert.equal(
     ci.jobs.browser.steps.filter((step) => step.run === 'npm run build:console').length,
     1,
@@ -106,9 +116,19 @@ test('automatic checks execute once and releases require exact-commit native evi
     "${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.ui_only != 'true') }}",
   );
   const scope = ci.jobs.scope.steps.find((step) => step.id === 'scope');
-  assert.equal(scope.if, "github.event_name == 'pull_request' && github.base_ref == 'main'");
-  assert.match(scope.run, /git show HEAD\^1:scripts\/ci-ui-scope\.mjs/);
+  assert.equal(
+    scope.if,
+    "(github.event_name == 'pull_request' && github.base_ref == 'main') || github.event_name == 'push'",
+  );
+  assert.equal(scope.env.BEFORE_SHA, '${{ github.event.before }}');
+  assert.match(scope.run, /policy_ref='HEAD\^1'/);
+  assert.match(scope.run, /policy_ref="\$BEFORE_SHA"/);
+  assert.match(scope.run, /merge-base --is-ancestor/);
+  assert.match(scope.run, /git show "\$policy_ref:scripts\/ci-ui-scope\.mjs"/);
   assert.match(scope.run, /ui_only=false/);
+  assert.match(scope.run, /backend_only=false/);
+  assert.equal(ci.jobs.scope.outputs.backend_only, '${{ steps.scope.outputs.backend_only }}');
+  assert.equal(ci.jobs.scope.steps[0].with['fetch-depth'], 0);
   for (const command of [
     'npm run backend:fmt',
     'npm run backend:build -- --timings',

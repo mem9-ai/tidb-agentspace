@@ -6,6 +6,13 @@ review and failure diagnosis. See [CI/CD](../ci-cd.md) for delivery gates.
 
 ## Choose the right layer
 
+For internal backend changes preserving public HTTP behavior and the Console contract, use
+[OpenAPI verification](openapi-verification.md). Native API tests are the acceptance boundary;
+do not run frontend/browser tests or manually retest the Portal for that change. Console/client
+or intentional public-contract changes retain browser checks, as do uncertain mixed CI scopes.
+The trusted classifier and explicit native-backed applicability evidence are described in
+[CI/CD](../ci-cd.md); a skipped browser job is not a passing browser test.
+
 | Layer                   | Verify                                                                                | Command                                                                         |
 | ----------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | Unit and contract tools | Pure state, parsing, generated contracts, workflow/evidence policy                    | `npm run check`                                                                 |

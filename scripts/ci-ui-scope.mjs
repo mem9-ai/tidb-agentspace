@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 const uiFile = /^src\/(?!api\/).+\.(?:tsx|css)$/;
 const companionFile =
   /^(?:e2e\/[^/]+\.spec\.mjs|docs\/standards\/(?:product-experience|browser-verification)\.md)$/;
+const nativeSource = /^(?:backend\/(?!contracts\/)|meta-service\/).+\.rs$/;
+const nativeFile =
+  /^(?:(?:backend|meta-service)\/.+\.(?:rs|toml)|Cargo\.(?:toml|lock)|rust-toolchain\.toml|\.cargo\/config\.toml|server\/(?:[^/]+\.test\.mjs|test-support\/.+)|docs\/(?:rust-backend|meta-service|native-backend-retirement)\.md)$/;
 
 export function isUiOnlyPullRequest(event, parents, files) {
   return (
@@ -17,28 +20,44 @@ export function isUiOnlyPullRequest(event, parents, files) {
   );
 }
 
+export function isBackendOnly(event, parents, files) {
+  return (
+    (event === 'push' || (event === 'pull_request' && parents === 2)) &&
+    files.some((file) => nativeSource.test(file)) &&
+    files.every((file) => nativeFile.test(file) && !file.startsWith('backend/contracts/'))
+  );
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   let uiOnly = false;
+  let backendOnly = false;
   try {
+    const event = process.env.GITHUB_EVENT_NAME;
     const parents =
       execFileSync('git', ['rev-list', '--parents', '-n', '1', 'HEAD'], {
         encoding: 'utf8',
       })
         .trim()
         .split(/\s+/).length - 1;
-    const files = execFileSync(
-      'git',
-      ['diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD'],
-      {
-        encoding: 'utf8',
-      },
-    )
+    let base = 'HEAD^1';
+    if (event === 'push') {
+      base = process.env.BEFORE_SHA;
+      if (!/^[a-f0-9]{40}$/.test(base || '') || /^0+$/.test(base))
+        throw new Error('Missing push baseline.');
+      execFileSync('git', ['merge-base', '--is-ancestor', base, 'HEAD'], { stdio: 'pipe' });
+    } else if (event !== 'pull_request' || parents !== 2) {
+      throw new Error('Not a known merge candidate.');
+    }
+    const files = execFileSync('git', ['diff', '--name-only', '--no-renames', '-z', base, 'HEAD'], {
+      encoding: 'utf8',
+    })
       .split('\0')
       .filter(Boolean);
-    uiOnly = isUiOnlyPullRequest(process.env.GITHUB_EVENT_NAME, parents, files);
+    uiOnly = isUiOnlyPullRequest(event, parents, files);
+    backendOnly = isBackendOnly(event, parents, files);
   } catch {
-    console.log('Unable to classify the merge candidate; run the full native job.');
+    console.log('Unable to classify the candidate; run native and browser checks.');
   }
-  await appendFile(process.env.GITHUB_OUTPUT, `ui_only=${uiOnly}\n`);
-  console.log(uiOnly ? 'UI-only PR: native checks run on main.' : 'Full native checks required.');
+  await appendFile(process.env.GITHUB_OUTPUT, `ui_only=${uiOnly}\nbackend_only=${backendOnly}\n`);
+  console.log({ uiOnly, backendOnly });
 }

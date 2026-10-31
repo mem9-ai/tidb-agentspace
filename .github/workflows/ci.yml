@@ -22,24 +22,37 @@ jobs:
     timeout-minutes: 5
     outputs:
       ui_only: ${{ steps.scope.outputs.ui_only }}
+      backend_only: ${{ steps.scope.outputs.backend_only }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        if: (github.event_name == 'pull_request' && github.base_ref == 'main') || github.event_name == 'push'
         with:
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
-      - name: Classify the PR merge candidate using the base policy
+      - name: Classify the candidate using the trusted base policy
         id: scope
-        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        if: (github.event_name == 'pull_request' && github.base_ref == 'main') || github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
         shell: bash
         run: |
           set -euo pipefail
           policy="$RUNNER_TEMP/ci-ui-scope.mjs"
-          if git show HEAD^1:scripts/ci-ui-scope.mjs > "$policy"; then
+          policy_ref='HEAD^1'
+          if [[ "$GITHUB_EVENT_NAME" == 'push' ]]; then
+            if [[ ! "$BEFORE_SHA" =~ ^[a-f0-9]{40}$ ]] || ! git merge-base --is-ancestor "$BEFORE_SHA" HEAD; then
+              echo 'ui_only=false' >> "$GITHUB_OUTPUT"
+              echo 'backend_only=false' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            policy_ref="$BEFORE_SHA"
+          fi
+          if git show "$policy_ref:scripts/ci-ui-scope.mjs" > "$policy"; then
             node "$policy"
           else
-            echo 'Base scope policy unavailable; run the full native job.'
+            echo 'Base scope policy unavailable; run native and browser checks.'
             echo 'ui_only=false' >> "$GITHUB_OUTPUT"
+            echo 'backend_only=false' >> "$GITHUB_OUTPUT"
           fi
 
   quality:
@@ -129,8 +142,20 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  backend-scope:
+    name: Backend-only scope
+    needs: [scope, metadata]
+    if: ${{ !cancelled() && needs.scope.outputs.backend_only == 'true' && needs.metadata.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Record browser applicability after native API verification
+        run: echo 'Native-only change; Console and public contract inputs unchanged. Native API/S3 verification passed. Browser smoke is not applicable.'
+
   browser:
     name: Browser smoke
+    needs: scope
+    if: ${{ !cancelled() && needs.scope.outputs.backend_only != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
