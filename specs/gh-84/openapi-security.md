@@ -214,6 +214,21 @@ An expired token rejected before provider I/O can be refreshed; an ambiguous tim
 Cancellation/revocation stops future admission; already admitted bounded operations and streams
 follow documented completion/cancellation behavior and do not claim retroactive rollback.
 
+Region-issued access tokens obtained from a refresh family also bind that family ID and a
+family security epoch. Each admission checks the locally durable family state/epoch: family
+revocation denies its already issued access tokens as well as future refreshes without revoking
+other families under the same Key. Normal credential rotation increments the refresh generation,
+not the security epoch, so it does not unexpectedly cancel concurrent valid access tokens.
+Global-issued initial Region tokens that predate enrollment remain Key-bound; a Region can
+apply an authorized, scoped token-ID denial until that token's original expiry without
+modifying the parent Key. Such denials are regional state, subject to the same durability,
+authorization, no-callback and rollback safeguards as other local policy. Never treat merely
+guessing a token or family ID as authority to revoke it.
+For a multi-node Region, a revocation/apply acknowledgement is valid only after every node that
+can admit the affected request observes the new floor, or stale nodes are fenced out of serving.
+Returning/recovered nodes load the durable floor before admission. Caches may accelerate checks
+only with this invalidation/fencing guarantee; a process-local flag alone cannot establish it.
+
 ## 5. Key lifecycle and distributed revocation
 
 Each Key has a stable `keyId`, monotonically increasing `version`, explicit expiry and independent
@@ -380,7 +395,7 @@ implemented promise; update runtime, generator, types, clients, docs and tests t
 | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | SEC-01 | Owner versus Key creation/management; correct and wrong Workspace, Region, audience, issuer, scope, resource, expiry and revoked Key; no provider I/O on denial.                                                                                                                                                                                                                                           |
 | SEC-02 | Signed token type/algorithm/claims/key rotation, wrong environment or Region, unknown key, malformed/oversized and cross-audience substitution. No Global introspection or redirect-based credential forwarding.                                                                                                                                                                                           |
-| SEC-03 | Issuance/enrollment/refresh, lost response, simultaneous requests, replay and family revocation; restart preserves verifier/generation and emits no duplicate credentials.                                                                                                                                                                                                                                 |
+| SEC-03 | Issuance/enrollment/refresh, lost response, simultaneous requests and replay; local family revocation denies its issued access tokens without affecting another family; authorized token-ID denial is scoped and expires safely; restart preserves verifier/generation and emits no duplicate credentials.                                                                                                 |
 | SEC-04 | Rotate/revoke/narrow grants: Global and each Region report pending versus applied; old Key-version tokens/families fail after local apply; expiry remains a hard local bound.                                                                                                                                                                                                                              |
 | SEC-05 | Independent Global and Region processes: discover/enroll, stop or partition Global and its Meta, advance an injected clock past the access-token expiry while the Key remains valid, then locally renew, perform Region SQL and file writes/readback, restart Region and renew/read/write again; observe no Region-to-Global connection. Test fixed-Key-expiry denial and missing client proof separately. |
 | SEC-06 | Compromised or old signer, overlapping rotation, unknown `kid`, delayed/stale/gapped/corrupt policy, mTLS identity and TLS downgrade; no stale policy rollback or accidental fail-open.                                                                                                                                                                                                                    |
