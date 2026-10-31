@@ -50,8 +50,10 @@ pub(super) fn plan(
         ["resources", id, ..] => Some(*id),
         _ => None,
     };
-    if method == "DELETE" && resource.is_some() {
-        return (true, vec![stripe(resource.expect("resource"))]);
+    if method == "DELETE"
+        && let Some(id) = resource
+    {
+        return (true, vec![stripe(id)]);
     }
     if method == "GET" && ["/context", "/bootstrap", "/resources", "/usage"].contains(&route) {
         return (false, Vec::new());
