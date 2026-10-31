@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Badge, Button, Group, NativeSelect, Paper, Stack, Text } from '@tidbcloud/uikit';
 import { IconDatabase01, IconFolder } from '@tidbcloud/uikit/icons';
 import { workspaceApi, type Data, type QueryResult, type Resource } from '../../api/client';
@@ -17,7 +17,8 @@ import {
 } from './tutorial-data';
 import './tutorials.css';
 import { loadDatabaseSample } from './tutorial-import';
-import { getTutorialStore, type TutorialProgress, type TutorialStore } from './tutorial-progress';
+import type { TutorialProgress, TutorialStore } from './tutorial-progress';
+import { TutorialProgressStatus, useTutorialStore } from './TutorialProgressProvider';
 
 type Props = {
   data: Data;
@@ -44,7 +45,7 @@ export function DataTutorials({
   refresh,
   copy,
 }: Props) {
-  const store = useMemo(() => getTutorialStore(data.workspace.id), [data.workspace.id]);
+  const { store, loading, error: progressError } = useTutorialStore();
   const [databaseId, setDatabaseId] = useState(() => store.readSelection('database'));
   const [filesystemId, setFilesystemId] = useState(() => store.readSelection('filesystem'));
   const [databaseBusy, setDatabaseBusy] = useState(false);
@@ -68,7 +69,8 @@ export function DataTutorials({
       card?.scrollIntoView({ block: 'start' });
       card?.focus({ preventScroll: true });
     }
-  }, [targetId, targetKind, requestedKind, store]);
+  }, [targetId, targetKind, requestedKind, store, loading]);
+  if (loading || progressError) return <TutorialProgressStatus />;
   if (resourceId && !target)
     return (
       <Alert color="yellow" mb="xl" title="Tutorial resource unavailable">
@@ -192,7 +194,8 @@ function TutorialSteps({
   onRunningChange: (busy: boolean) => void;
   store: TutorialStore;
 }) {
-  const [sample, setSample] = useState(() => store.readSample(resource.id) ?? freshSample());
+  const [initialSample] = useState(freshSample);
+  const sample = store.readSample(resource.id) ?? initialSample;
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
   const [error, setError] = useState('');
@@ -206,11 +209,7 @@ function TutorialSteps({
   const active = resource.status === 'active';
   const available = active && !resource.connectionError;
   const ready = sample.ready || demo;
-  function updateSample(next: TutorialProgress) {
-    setSample(next);
-    store.saveSample(resource.id, next);
-  }
-  async function run(action: 'prepare' | 'query' | 'verify') {
+  async function run(action: 'prepare' | 'query' | 'verify' | 'reset') {
     if (running.current || !available) return;
     running.current = true;
     setBusy(true);
@@ -218,11 +217,17 @@ function TutorialSteps({
     setError('');
     setNotice('');
     if (action !== 'prepare') setResult(null);
+    let progress = sample;
+    async function updateSample(next: TutorialProgress) {
+      progress = await store.saveSample(resource.id, { ...next, version: progress.version });
+    }
     try {
-      if (action === 'prepare') {
+      if (action === 'reset') {
+        await updateSample(freshSample());
+      } else if (action === 'prepare') {
         if (sample.attempted || demo) return;
         if (files) {
-          updateSample({ ...sample, attempted: true });
+          await updateSample({ ...progress, attempted: true });
           if (resource.provider === 'drive9-anonymous') {
             await workspaceApi.uploadFile(
               { resourceId: resource.id, path },
@@ -241,7 +246,7 @@ function TutorialSteps({
           await loadDatabaseSample(workspaceApi, resource.id, sample.id, () =>
             updateSample({ ...sample, attempted: true }),
           );
-        updateSample({ ...sample, attempted: true, ready: true });
+        await updateSample({ ...progress, attempted: true, ready: true });
         await refresh().catch(() =>
           setNotice('Sample saved. The workspace summary could not refresh; continue with step 3.'),
         );
@@ -256,7 +261,7 @@ function TutorialSteps({
           throw new Error(
             'The saved file does not match this tutorial sample. Open the File System to inspect it.',
           );
-        updateSample({ ...sample, attempted: true, ready: true });
+        await updateSample({ ...progress, attempted: true, ready: true });
       } else {
         if (files) {
           const cap = await workspaceApi.fileAnalysisCapabilities(resource.id, path);
@@ -276,7 +281,7 @@ function TutorialSteps({
           });
           if (output.engine !== 'duckdb') throw new Error('Expected a SQL result.');
           setResult({ ...output, mode: 'live' });
-          updateSample({ ...sample, completed: matchesTotals(output.rows) });
+          await updateSample({ ...progress, completed: matchesTotals(output.rows) });
           if (!matchesTotals(output.rows))
             setNotice(
               'The result differs from the sample totals. The saved data may have changed; inspect the file.',
@@ -284,8 +289,8 @@ function TutorialSteps({
         } else {
           const output = await workspaceApi.query({ resourceId: resource.id, sql: query });
           setResult(output);
-          updateSample({
-            ...sample,
+          await updateSample({
+            ...progress,
             attempted: true,
             ready: true,
             completed: demo
@@ -299,6 +304,7 @@ function TutorialSteps({
         }
       }
     } catch (cause) {
+      setResult(null);
       setError(cause instanceof Error ? cause.message : 'The tutorial action failed.');
     } finally {
       running.current = false;
@@ -376,16 +382,7 @@ function TutorialSteps({
           </Text>
         )}
         {sample.attempted && !sample.ready && error && (
-          <Button
-            mt="sm"
-            variant="subtle"
-            disabled={busy}
-            onClick={() => {
-              updateSample(freshSample());
-              setResult(null);
-              setError('');
-            }}
-          >
+          <Button mt="sm" variant="subtle" disabled={busy} onClick={() => void run('reset')}>
             Use a new sample name (keep the previous sample)
           </Button>
         )}

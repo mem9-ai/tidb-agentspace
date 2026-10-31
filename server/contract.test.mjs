@@ -82,6 +82,29 @@ test(
     await request('/workspaces');
     await request(workspace);
     await request(workspace + '/bootstrap');
+    await request(workspace + '/tutorials');
+    const tutorial = await request(
+      workspace + '/tutorials/{resourceId}',
+      'put',
+      { sampleId: 'a'.repeat(32), state: 'attempted' },
+      { resourceId: 'db_memory', status: 201, headers: { 'If-None-Match': '*' } },
+    );
+    assert.equal(tutorial.response.headers.get('etag'), tutorial.result.data.version);
+    await request(workspace + '/tutorials/{resourceId}', 'get', undefined, {
+      resourceId: 'db_memory',
+    });
+    await request(
+      workspace + '/tutorials/{resourceId}',
+      'put',
+      { sampleId: 'a'.repeat(32), state: 'completed' },
+      { resourceId: 'db_memory', headers: { 'If-Match': tutorial.result.data.version } },
+    );
+    await request(
+      workspace + '/tutorials/{resourceId}',
+      'put',
+      { sampleId: 'a'.repeat(32), state: 'ready' },
+      { resourceId: 'db_memory', status: 428 },
+    );
     await request(workspace + '/resources');
     await request(workspace + '/context');
     await request(workspace + '/resources/{resourceId}', 'get', undefined, {

@@ -7,6 +7,9 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Accepted decisions
 
+- [0033: Workspace-owned tutorial progress](0033-workspace-tutorial-progress.md) — durable
+  bookmarks, conditional Owner writes, safe browser migration and cross-browser resume.
+
 - [0001: Unified Workspace Key](0001-unified-workspace-key.md)
 - [0002: TiUI as the shared frontend foundation](0002-tiui-design-system.md) — implemented;
   see its linked standard for current integration and verification evidence.
@@ -61,6 +64,8 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0032: Writer-safe dev release](0032-writer-safe-dev-release.md) — bounded health checks and explicitly compatible, fenced image recovery for the single-writer profile.
 
 ## Proposed decisions
+
+- [0034: Global Key authority and independently serving Regions](0034-openapi-security-authorities.md) — owner-confirmed Key/Token and regional autonomy direction; detailed implementation and security gates proposed.
 
 - [0019: Portable Workspace KV control plane](0019-workspace-kv-control-plane.md) — Global-initiated encrypted control, independent regional serving, pooled cells/bounded groups, selected hosted SlateDB/object storage, private regional storage directory and identity-preserving migration; phased implementation.
 

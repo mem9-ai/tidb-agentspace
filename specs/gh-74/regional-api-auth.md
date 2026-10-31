@@ -4,6 +4,7 @@
 - Owner direction: Global and regional API origins differ; data requests go directly to Region, and Global failure must not disable established regional service.
 - Owner clarification (2026-10-31): Global is the common management/discovery entry; clients use the discovered Region OpenAPI directly for regional data work. Entry/discovery must not become a required hop for every data request.
 - Implementation: Design only. Current generated OpenAPI, routes, Key/session expiry and Console single-origin configuration remain unchanged.
+- Key version, derived-token invalidation and per-Region applied/pending semantics are refined in [the OpenAPI security design](../gh-84/openapi-security.md); that design does not claim implementation.
 
 ## 1. Contract and origin ownership
 
@@ -123,36 +124,37 @@ Offer two clearly versioned policies:
   token/session validity is bounded by it. Existing/imported Keys do not become durable
   continuation grants and cannot enable that mode merely by exchanging a token.
 - **Regional continuity grant:** an authorized owner explicitly provisions a durable grant
-  and regional authentication/rotation authority. A bootstrap credential can expire without
-  canceling separately enrolled regional credentials under that grant. Region can renew those
-  credentials for the same principal/region/ceiling, but cannot mint Global-management rights,
-  add another Workspace or extend an actual grant end. Revoking the logical grant affects all
-  its regional descendants once each target applies the denial.
+  and regional authentication/rotation authority. It does not expire merely because policy
+  synchronization stops. For a Key-derived grant, every descendant remains bounded by that Key's
+  actual expiry and current locally applied version/denial. Region can renew within the same
+  principal/Region/ceiling, but cannot mint Global rights, add a Workspace, or extend the Key
+  or grant end. A separately authorized grant not derived from that Key would need a distinct
+  future contract; do not silently create one during Key exchange.
 
 This preserves one customer permission model. Derived regional sessions are product
 credentials managed by the SDK/session flow, not upstream keys customers must supply.
-Grant rotation, credential-version rotation and full descendant revocation have separate
-explicit semantics and audit identities; expiring one bootstrap secret is not ambiguous
-permission to keep a legacy expiring Key alive forever.
-Revoking the logical Workspace Key/continuity grant must deny its regional descendants;
-rotating/retiring only a bootstrap credential version is a separately named operation.
+Grant rotation, Key-version rotation and full descendant revocation have explicit semantics
+and audit identities. Revoking or rotating the logical Workspace Key denies descendants of the
+old version after each Region applies the change; actual Key expiry is enforced locally.
 
 ## 4. Recommended exchange and renewal flows
 
 Illustrative paths are proposed product protocols, not an assertion of OAuth conformance:
 
-| Public Region API                  | Authentication / result                                                                                                                          |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `POST /api/v1/auth/exchange`       | Verify a Workspace Key or approved enrollment proof locally; return a region-bound access token within its delegated policy                      |
-| `POST /api/v1/auth/refresh`        | Verify a regional refresh family/client binding and current local grant; rotate locally and return a narrowed access token                       |
-| `POST /api/v1/auth/reauthenticate` | Verify a previously enrolled regional factor/client credential when full reauthentication is required; never redirect to Global as the sole path |
-| `POST /api/v1/auth/logout`         | Revoke the caller's regional family locally, retaining replay/audit evidence                                                                     |
+| Public Region API                                                     | Authentication / result                                                                            |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/workspaces/{workspaceId}/refresh-families`              | Verify an approved Region-bound enrollment ticket and client proof; create a local refresh family. |
+| `POST /api/v1/workspaces/{workspaceId}/token-issuances`               | Verify and rotate a regional refresh credential under the current local Key/version/grant ceiling. |
+| `DELETE /api/v1/workspaces/{workspaceId}/refresh-families/{familyId}` | Revoke the authorized regional family locally, retaining replay/audit evidence.                    |
 
-For agents, direct Workspace Key authentication remains the simple bounded compatibility
-path. An SDK can exchange that Key at the target Region and cache short access tokens. While
-the Key remains valid it can exchange again locally without a separate refresh token. For
-continuity beyond bootstrap-Key expiry, explicitly enroll under the continuity grant; do not
-pretend exchange extends a legacy Key's deadline.
+Region-local reauthentication after losing a family requires an independently valid enrolled
+proof and a separately specified REST resource flow. No Global-only redirect may be presented as
+an outage-independent reauthentication mechanism.
+
+For agents, direct regional Workspace Key authentication remains an existing bounded
+compatibility path. The proposed new default exchanges the Key at Global and explicitly enrolls
+the Region for local refresh. A separately delegated regional Key-exchange profile requires its
+own verifier and security review. None of these flows extends an expired Key's deadline.
 
 For a human/browser, regional session/refresh state and signer live in Region. An online
 Global login can supply a one-use audience-bound enrollment ticket, but it is not a recurring
@@ -173,7 +175,8 @@ No secret/root-key rotation or new identity implementation is authorized by this
 
 SDKs persist enrolled regional refresh/client credentials in appropriate client-side secure
 storage, separate from in-memory access-token caches. Client/process restart during a Global
-outage must not require reenrollment using an expired bootstrap secret. Losing every local
+outage must not require Global reenrollment while the Key, local grant and client proof remain
+valid. Losing every local
 credential still requires a valid independent reauthentication proof; it is not permission
 to bypass authentication. Browser persistence uses the protected cookie flow below.
 
@@ -195,8 +198,8 @@ Effective permission is the intersection of the enrolled session's ceiling, curr
 installed grant/deny, requested token scopes and canonical resource ownership. Token claims
 do not override a local revocation before their expiry. A refresh cannot widen exact grants
 to wildcard, confer global administration or include hidden DuckDB storage. Large grants are
-indexed references, not million-ID arrays in JWTs. The actual grant end and legacy source-Key
-expiry cap token/session validity; short bootstrap delivery expiry is not such a grant end.
+indexed references, not million-ID arrays in JWTs. The actual grant end and source-Key expiry
+cap all Key-derived token/session validity; ticket delivery expiry is not a grant end.
 
 ## 6. Refresh state, rotation and browsers
 

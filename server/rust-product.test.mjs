@@ -1,4 +1,5 @@
 import { restWorkflowCases } from './test-support/rest-workflow-cases.mjs';
+import { tutorialCases } from './test-support/tutorial-cases.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Ajv2020 from 'ajv/dist/2020.js';
@@ -41,6 +42,11 @@ const base = '/api/v1/workspaces/ws_agentlab';
 const secret = 'retained-public-workspace-key';
 const privateWrite = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
 for (const transport of ['remote', 'inProcess']) {
+  test(
+    `Workspace tutorial progress through ${transport} metadata`,
+    { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+    (t) => tutorialCases(t, transport),
+  );
   test(
     `REST workflow resources through ${transport} metadata`,
     { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
