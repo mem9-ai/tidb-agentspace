@@ -101,10 +101,22 @@ impl ManagedWorkspaces {
         }
         state.sequence = state.sequence.saturating_add(1);
         let sequence = state.sequence;
-        if let Some(cached) = state.entries.get_mut(workspace_id) {
-            cached.entry.workspace.authenticate(credential).await?;
-            cached.used = sequence;
-            return Ok(cached.entry.clone());
+        if let Some(entry) = state
+            .entries
+            .get(workspace_id)
+            .map(|cached| cached.entry.clone())
+        {
+            // The clone pins the entry: eviction and Guest cleanup cannot close it while
+            // authorization awaits metadata, and unrelated Workspaces need not wait.
+            drop(state);
+            entry.workspace.authenticate(credential).await?;
+            let mut state = self.state.lock().await;
+            if let Some(cached) = state.entries.get_mut(workspace_id)
+                && Arc::ptr_eq(&cached.entry, &entry)
+            {
+                cached.used = cached.used.max(sequence);
+            }
+            return Ok(entry);
         }
         if state.entries.len() >= self.limit {
             let victim = state
@@ -257,5 +269,116 @@ impl ManagedWorkspaces {
         } else {
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{Value, json};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tokio::sync::Notify;
+    use workspace_contracts::{Call, MetaRequest};
+
+    const REGION: &str = "region:test";
+    const USER: &str = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const ORGANIZATION: &str = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const A: &str = "11111111-1111-4111-8111-111111111111";
+    const B: &str = "22222222-2222-4222-8222-222222222222";
+
+    struct MetadataGate {
+        pause: AtomicBool,
+        paused: Notify,
+        resume: Notify,
+    }
+
+    impl Metadata for MetadataGate {
+        fn health(&self) -> Call<'_> {
+            Box::pin(async { Ok(json!({"authorityId":REGION,"capabilities":["recordsV1"]})) })
+        }
+
+        fn execute(&self, request: MetaRequest) -> Call<'_> {
+            Box::pin(async move {
+                match request {
+                    MetaRequest::Get { scope, keys, .. } => {
+                        if scope.owner_id == A
+                            && keys == ["ownership/onboarding"]
+                            && self.pause.swap(false, Ordering::AcqRel)
+                        {
+                            self.paused.notify_one();
+                            self.resume.notified().await;
+                        }
+                        let records = keys.into_iter().map(|key| {
+                            let value = match key.as_str() {
+                                "system/writer" => Value::Null,
+                                "state/workspace" => json!({"id":scope.owner_id}),
+                                "ownership/onboarding" => json!({"workspaceId":scope.owner_id,"userId":USER,"organizationId":ORGANIZATION}),
+                                "owner-policy" => json!({"workspaceId":scope.owner_id,"regionId":REGION,"userId":USER,"organizationId":ORGANIZATION,"generation":1,"denied":false,"identity":{"kind":"oidc","issuer":"issuer","subject":"subject"}}),
+                                _ => panic!("unexpected metadata key"),
+                            };
+                            let envelope = if value.is_null() { Value::Null } else {json!({"version":"v1","value":value})};
+                            (key, envelope)
+                        }).collect::<serde_json::Map<_,_>>();
+                        Ok(json!({"records":records}))
+                    }
+                    MetaRequest::Commit { .. } => Ok(json!({})),
+                    _ => panic!("unexpected metadata operation"),
+                }
+            })
+        }
+    }
+
+    fn credential(workspace_id: &str) -> Credential {
+        Credential::SessionOwner {
+            id: USER.into(),
+            actor: "Owner".into(),
+            workspace_id: workspace_id.into(),
+            policy_generation: Some(1),
+            expires_at: chrono::Utc::now().timestamp() + 3600,
+            revoked: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    #[tokio::test]
+    async fn cached_authentication_does_not_block_other_workspaces_or_lose_its_lease() {
+        let metadata = Arc::new(MetadataGate {
+            pause: AtomicBool::new(true),
+            paused: Notify::new(),
+            resume: Notify::new(),
+        });
+        let pool = Arc::new(ManagedWorkspaces::new(metadata.clone(), REGION, None, 2).unwrap());
+        for id in [A, B] {
+            let repository = Repository::open(metadata.clone(), REGION, id, false, None)
+                .await
+                .unwrap();
+            let entry = Arc::new(ManagedWorkspace {
+                workspace: Arc::new(Workspace::new_managed(repository)),
+                product: None,
+            });
+            pool.state
+                .lock()
+                .await
+                .entries
+                .insert(id.into(), Cached { entry, used: 0 });
+        }
+        let stalled = tokio::spawn({
+            let pool = pool.clone();
+            async move { pool.acquire(A, &credential(A)).await }
+        });
+        metadata.paused.notified().await;
+        let other = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            pool.acquire(B, &credential(B)),
+        )
+        .await
+        .expect("unrelated Workspace authentication was serialized")
+        .unwrap();
+        assert_eq!(other.workspace().repository().workspace_id(), B);
+        assert_eq!(
+            pool.acquire_cleanup(A).await.err().unwrap().code,
+            "WORKSPACE_POOL_BUSY"
+        );
+        metadata.resume.notify_one();
+        assert!(stalled.await.unwrap().is_ok());
     }
 }

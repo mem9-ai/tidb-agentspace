@@ -13,6 +13,9 @@ grants. Existing records need no backfill for this ID index. Updates of one reso
 inflate the entire Workspace. Independent point updates can run concurrently, while a shared
 read/write gate still excludes them during legacy snapshot transactions; the remaining legacy
 paths therefore continue to cause Workspace-wide contention.
+For cached regional Workspaces, authentication waits outside the shared pool mutex while a
+lease prevents eviction and cleanup. Cache misses and close/cleanup operations still hold that
+mutex across metadata I/O, so cold-tenant churn is not yet independently scalable.
 Workspace Key management, settings and event lists load the Key/event collections and only the
 resource IDs needed to validate grants or filter events. Event append scans at most the retained
 event collection and commits the new event with retention cleanup. These collections are not
