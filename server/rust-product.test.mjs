@@ -1244,12 +1244,22 @@ test(
       return until(() => connect(`http://127.0.0.1:${bind}`));
     }
     let request = await start();
-    const create = (kind, name, key) =>
-      request(base + '/resources', {
-        method: 'POST',
-        headers: { 'Idempotency-Key': key },
-        body: { kind, name, region: kind === 'filesystem' ? 'aws-ap-southeast-1' : 'automatic' },
-      });
+    const create = async (kind, name, key) => {
+      const deadline = Date.now() + 10_000;
+      let result;
+      do {
+        result = await request(base + '/resources', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': key },
+          body: { kind, name, region: kind === 'filesystem' ? 'aws-ap-southeast-1' : 'automatic' },
+        });
+        if (result.status !== 503 || result.body.error?.code !== 'RESOURCE_INDEX_MIGRATING') {
+          return result;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } while (Date.now() < deadline);
+      return result;
+    };
     const pg = await create('postgresql', 'known-postgres', 'pg');
     assert.equal(pg.status, 201);
     assert.equal(pg.body.data.status, 'active');
