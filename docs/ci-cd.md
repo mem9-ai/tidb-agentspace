@@ -42,7 +42,8 @@ mark completed draft PRs ready and merge task-scoped changes without another con
 or a separate human approval after all of the following are true:
 
 - The diff has been reviewed for behavior, scope, compatibility, and credentials.
-- `Quality` and any other CI checks pass on the latest PR head.
+- `Quality`, Browser smoke, and all applicable CI checks pass on the latest PR head. A skipped
+  Rust/S3 job is acceptable only for the narrowly classified UI-only PR path described below.
 - The PR has no merge conflict, and any enforced GitHub requirements are satisfied.
 - Contributor attribution is preserved.
 
@@ -55,9 +56,14 @@ sync the local checkout with `main`.
 ## Single automatic gate and delivery consumers
 
 [ADR 0027](decisions/0027-single-ci-evidence.md) assigns automatic checks to CI once per
-candidate. Quality, Rust/S3 and Browser smoke remain required; no broad Rust path-skipping
-policy is introduced. Main CI runs use independent SHA groups so later pushes do not cancel
-evidence awaited by delivery. Only superseded PR/merge-queue candidates cancel.
+candidate. For PR merge candidates only, an allowlist of UI `.tsx`/`.css` files and their
+specified browser tests and experience guidance may skip the Rust/S3 job. At least one UI file
+must change; a backend, contract, dependency, workflow, other test or unrecognized file requires
+the full job. The classifier runs the policy from the tested base, compares both sides of renames,
+and falls back to full checks when the merge or policy cannot be verified. Quality, Browser smoke
+and security checks remain applicable. Main pushes, merge queues and manual runs always execute
+Rust/S3. Main CI runs use independent SHA groups so later pushes do not cancel evidence awaited by
+delivery. Only superseded PR/merge-queue candidates cancel.
 
 Dev CD no longer triggers on PRs or repeats quality/native commands. Its read-only verify
 job runs `scripts/require-ci.mjs full "$SOURCE_SHA"`, then the existing protected dev job

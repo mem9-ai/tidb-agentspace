@@ -1,6 +1,6 @@
 # ADR 0027: One automatic CI gate with exact-commit consumers
 
-- Status: accepted owner direction, GH-37 (2026-10-30).
+- Status: accepted owner direction, GH-37 (2026-10-30); PR-only UI fast path updated 2026-10-31.
 - Scope: validation and automatic delivery orchestration; product APIs and deployment targets
   are unchanged. This supersedes the duplicated CD validation described in ADR 0026's guides.
 
@@ -11,9 +11,12 @@ publication repeated the normal gate again. On the GH-35 candidate, ordinary CI 
 CD repeated validation took 177s, and native image verification took 26s. Jobs overlap;
 these times must not be added as an end-to-end measurement.
 
-CI owns one Quality job, the complete Rust/S3 job, Browser smoke using the Quality artifact,
-and parallel credential-free native image validation when PR image inputs change. Keep
-all normal/native checks; broad path-based omission of Rust validation is not introduced.
+CI owns one Quality job, Rust/S3 validation, Browser smoke using the Quality artifact,
+and parallel credential-free native image validation when PR image inputs change. The owner
+accepts a narrow PR-only UI fast path: the merge candidate's files must be exclusively
+allowlisted UI files and their specified tests/guidance, with at least one UI file. The trusted
+base policy classifies the candidate and defaults to full Rust/S3 checks on uncertainty. Main,
+merge-queue and manual CI still run the complete native gate. See [CI/CD](../ci-cd.md).
 
 Dev CD no longer has a PR trigger or repeats tests. Its unprivileged verification job checks
 trusted main CI evidence for the exact source SHA before the existing protected image-update

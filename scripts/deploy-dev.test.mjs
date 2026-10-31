@@ -96,6 +96,15 @@ test('automatic checks execute once and releases require exact-commit native evi
   assert.ok(!JSON.stringify(workflow.jobs.verify).includes('secrets.'));
   assert.equal(ci.jobs.quality.steps.filter((step) => step.run === 'npm run check').length, 1);
   assert.equal(ci.jobs.browser.needs, 'quality');
+  assert.equal(ci.jobs.metadata.needs, 'scope');
+  assert.equal(
+    ci.jobs.metadata.if,
+    "${{ always() && (github.event_name != 'pull_request' || needs.scope.outputs.ui_only != 'true') }}",
+  );
+  const scope = ci.jobs.scope.steps.find((step) => step.id === 'scope');
+  assert.equal(scope.if, "github.event_name == 'pull_request' && github.base_ref == 'main'");
+  assert.match(scope.run, /git show HEAD\^1:scripts\/ci-ui-scope\.mjs/);
+  assert.match(scope.run, /ui_only=false/);
   for (const command of [
     'npm run backend:fmt',
     'npm run backend:build -- --timings',
