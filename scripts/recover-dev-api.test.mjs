@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { parse } from 'yaml';
 import { recover } from './recover-dev-api.mjs';
 
 const image = `registry.example/api@sha256:${'a'.repeat(64)}`;
@@ -53,4 +55,14 @@ test('rollback reports an unhealthy public API', async () => {
     recover(options, f.kubectl, async () => ({ ok: false })),
     /health remains unavailable/,
   );
+});
+
+test('incident workflow uses the immutable digest confirmed by deployment without ECR read privileges', () => {
+  const workflow = parse(readFileSync('.github/workflows/recover-dev-api.yml', 'utf8'));
+  assert.ok(
+    workflow.jobs.recover.env.FAILED_IMAGE.endsWith(
+      '@sha256:4cf10b1618ae25b8e4e9772ae3755cb67bf5c2d3409d100049f1fdb7a9291dbe',
+    ),
+  );
+  assert.ok(!workflow.jobs.recover.steps.some((step) => step.run?.includes('describe-images')));
 });

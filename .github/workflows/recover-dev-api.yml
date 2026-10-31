@@ -55,7 +55,8 @@ jobs:
       DEPLOY_NAMESPACE: ${{ secrets.DEV_DEPLOY_NAMESPACE }}
       K8S_DEPLOYMENT: ${{ secrets.DEV_API_DEPLOYMENT }}
       K8S_CONTAINER: ${{ secrets.DEV_API_CONTAINER || secrets.DEV_API_DEPLOYMENT }}
-      FAILED_SOURCE_SHA: 7654e103bff16bca50347356fc5f8c8e05093693
+      # Confirmed by deploy run 41183520154; immutable and specific to this incident.
+      FAILED_IMAGE: ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}@sha256:4cf10b1618ae25b8e4e9772ae3755cb67bf5c2d3409d100049f1fdb7a9291dbe
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -80,12 +81,6 @@ jobs:
         with:
           role-to-assume: ${{ env.AWS_ASSUME_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      - name: Resolve the failed immutable image
-        run: |
-          set -euo pipefail
-          digest="$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids "imageTag=sha-$FAILED_SOURCE_SHA" --query 'imageDetails[0].imageDigest' --output text)"
-          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
-          printf 'FAILED_IMAGE=%s/%s@%s\n' "$ECR_REGISTRY" "$ECR_REPOSITORY" "$digest" >> "$GITHUB_ENV"
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
       - name: Restore previous deployment and verify public health
