@@ -45,6 +45,13 @@ The [GH-58](https://github.com/mem9-ai/tidb.ai/issues/58) audit applies
 behavioral coverage. The following mapping records concrete assertions rather than inferring
 completeness from a route being called once.
 
+The evaluated branch also incorporates the independently delivered personal-account isolation
+at `7654e103bff16bca50347356fc5f8c8e05093693`. Its native SSO cases exercise two accounts and
+a Guest, same-account relogin, legacy Workspace denial, regional continuity without Global
+and revoked-cookie replay. They remain part of the full backend gate; see
+[ADR 0030](decisions/0030-personal-account-isolation.md). No live retirement operation is
+part of this coverage audit.
+
 | Area                         | Existing evidence at the baseline                                                                                                                          | Added regression evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Authentication and isolation | Native Workspace/Key tests cover missing/expired/revoked keys, basic resource grants, origin policy, Workspace separation and retained digests.            | [Authorization cases](../server/test-support/product-api-authorization-cases.mjs) exercise 17 protected query/catalog/file/analysis/import/export operations with missing, invalid, expired, revoked, action-denied and resource-denied credentials, asserting zero provider calls. Two actual Workspaces deliberately share resource IDs and file paths. Discovery/usage remain filtered; private DuckDB storage is not a grant target; selected sources independently require read/analyze grants. |
