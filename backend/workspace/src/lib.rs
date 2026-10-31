@@ -267,7 +267,7 @@ impl Workspace {
             });
         }
         // Reject unauthorized callers before loading requested resource records. The
-        // transaction revalidates the credential while holding the legacy write gate.
+        // transaction revalidates the credential and fences concurrent changes.
         let caller = self.authenticate(&credential).await?;
         let owner_only = matches!(
             operation,
