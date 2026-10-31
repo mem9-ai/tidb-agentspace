@@ -1,6 +1,6 @@
 # Native Studio deployment and local sign-in testing
 
-Status: GH-13 implementation; live rollout and real-account login require separate observed evidence. The contract is [NAT-01–06](../specs/gh-13/spec.md), originally accepted at `b6bf3645547ee2f172fc93b6249a966fb3f19079`. The owner's 2026-10-30 clarification limits NAT-04 dev CD to image updates; runtime configuration and recovery remain operator-owned.
+Status: GH-13 implementation; live rollout and real-account login require separate observed evidence. The contract is [NAT-01–06](../specs/gh-13/spec.md), originally accepted at `b6bf3645547ee2f172fc93b6249a966fb3f19079`. The owner’s 2026-10-31 direction adds readiness and bounded image recovery; see [ADR 0032](decisions/0032-writer-safe-dev-release.md). Runtime configuration remains operator-owned.
 
 Rust is the only product API runtime. Node builds the Console and runs operator tools and native test fixtures; it is absent from the deployed API image. The existing hosted Node image/JSON/vault path is retired. The owner permits discarding its data. Fresh native metadata uses the existing S3 bucket with a new unique prefix and new independent Global/Region encryption keys and service tokens. No old data or upstream credentials are imported, and no shared bucket is deleted.
 
@@ -76,7 +76,7 @@ For native service startup, mount the prepared private files at `/run/workspace`
 
 The runtime profile uses one replica/Recreate, bounded scratch space, non-root UID/GID 1000, read-only root, no service account token/capabilities and `/api/health` readiness with loopback Host. Its container must invoke the image's native entrypoint, without the previous Node command override. CD does not require the former Pod-template annotation `workspace.tidb.ai/runtime: rust-v1` and leaves existing annotations, probes and configuration untouched.
 
-Main-only CD builds once, pushes an immutable digest and runs `kubectl set image` against the existing Deployment/container. It does not wait for health, automatically roll back, create infrastructure, delete data, change credentials or run initialization. A successful run confirms only the image update. Operators verify readiness, an authorized read, an unauthorized denial, public `/studio` routing and real-account login before reporting the hosted product live.
+Main-only CD builds once and pushes an immutable digest. It checks the existing single-writer Deployment and public baseline, makes a resourceVersion-guarded image-only update, waits for readiness, and verifies public health, auth configuration and unauthenticated denial. A protected explicit compatibility policy may authorize bounded recovery after a confirmed failed rollout; an explicit `recover` dispatch provides guarded operator recovery. See [ADR 0032](decisions/0032-writer-safe-dev-release.md). CD does not create infrastructure, delete data, change credentials or initialize storage. Readiness checks do not prove a real-account login or provider functionality; verify those separately.
 
 ### Deployment operator handoff
 

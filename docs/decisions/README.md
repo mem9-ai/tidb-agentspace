@@ -58,6 +58,7 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0028: Guest expiry retention](0028-guest-expiry-retention.md) — regional Guest expiry and retention boundaries; partially superseded by ADR 0029.
 - [0029: Guest logout and provider cleanup](0029-guest-logout-cleanup.md) — authenticated Guest termination, scoped provider attempts, and pending reconciliation.
 - [0030: Personal TiDB Account isolation](0030-personal-account-isolation.md) — account-scoped regional access and explicit retirement of the shared Workspace.
+- [0032: Writer-safe dev release](0032-writer-safe-dev-release.md) — bounded health checks and explicitly compatible, fenced image recovery for the single-writer profile.
 
 ## Proposed decisions
 
