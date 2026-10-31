@@ -48,10 +48,16 @@ test('regional credentials go only to the pinned Region origin and API prefix', 
     apiPathPrefix: '/gateway',
   };
   const requests = [];
-  const client = createRegionClient(endpoint, [endpoint.apiOrigin], 'region-secret', async (r) => {
-    requests.push(r);
-    return Response.json({ data: [] });
-  });
+  const client = createRegionClient(
+    endpoint,
+    [endpoint.apiOrigin],
+    'ws_a',
+    'region-secret',
+    async (r) => {
+      requests.push(r);
+      return Response.json({ data: [] });
+    },
+  );
   await client.GET('/workspaces/{workspaceId}/resources', {
     params: { path: { workspaceId: 'ws_a' } },
   });
@@ -59,6 +65,18 @@ test('regional credentials go only to the pinned Region origin and API prefix', 
   assert.equal(requests[0].headers.get('authorization'), 'Bearer region-secret');
   assert.equal(requests[0].credentials, 'omit');
   assert.equal(requests[0].redirect, 'error');
+  await assert.rejects(
+    () =>
+      client.GET('/workspaces/{workspaceId}/resources', {
+        params: { path: { workspaceId: 'ws_b' } },
+      }),
+    /outside the Region API/,
+  );
+  await assert.rejects(() => client.GET('/workspaces'), /outside the Region API/);
+  assert.equal(requests.length, 1);
+  assert.throws(() =>
+    createRegionClient(endpoint, [endpoint.apiOrigin], '../other', 'region-secret'),
+  );
   for (const value of [
     { ...endpoint, apiOrigin: 'https://attacker.example' },
     { ...endpoint, apiOrigin: 'https://region.example/redirect' },
@@ -87,8 +105,11 @@ test('a regional response cannot redirect credentials to another origin', async 
   const client = createRegionClient(
     { regionId: 'region:test', apiOrigin, apiPathPrefix: '' },
     [apiOrigin],
+    'workspace-a',
     'secret',
   );
-  await assert.rejects(() => client.GET('/workspaces'));
+  await assert.rejects(() =>
+    client.GET('/workspaces/{workspaceId}', { params: { path: { workspaceId: 'workspace-a' } } }),
+  );
   assert.equal(leaked, false);
 });

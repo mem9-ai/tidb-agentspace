@@ -56,16 +56,22 @@ export function validateRegionEndpoint(
 export function createRegionClient(
   endpoint: RegionEndpoint,
   allowedOrigins: readonly string[],
+  workspaceId: string,
   credential: string,
   fetcher: typeof fetch = fetch,
 ) {
   const target = validateRegionEndpoint(endpoint, allowedOrigins);
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(workspaceId)) throw new Error('Invalid Workspace identity.');
   if (!credential || /[\r\n]/.test(credential)) throw new Error('Invalid regional credential.');
   const apiPath = target.apiPathPrefix + '/api/v1';
+  const workspacePath = `${apiPath}/workspaces/${encodeURIComponent(workspaceId)}`;
   const regionalFetch: typeof fetch = async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
-    if (url.origin !== target.apiOrigin || !url.pathname.startsWith(apiPath + '/'))
+    if (
+      url.origin !== target.apiOrigin ||
+      (url.pathname !== workspacePath && !url.pathname.startsWith(workspacePath + '/'))
+    )
       throw new Error('Request outside the Region API.');
     const headers = new Headers(request.headers);
     headers.set('Authorization', `Bearer ${credential}`);
