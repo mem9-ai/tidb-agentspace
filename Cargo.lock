@@ -5079,7 +5079,6 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "hex",
- "percent-encoding",
  "regex",
  "reqwest",
  "serde",

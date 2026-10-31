@@ -52,6 +52,7 @@ pub struct Request<'a> {
     pub if_match: Option<&'a str>,
     pub if_none_match: Option<&'a str>,
     pub binary_upload: bool,
+    pub table_name: Option<String>,
 }
 pub enum Reply {
     Json(Value),
@@ -223,6 +224,7 @@ impl Product {
             if_match,
             if_none_match,
             binary_upload,
+            table_name,
         } = request;
         let deleting = method == "DELETE" && route.starts_with("/resources/");
         let _exclusive = if deleting {
@@ -480,18 +482,17 @@ Ok((r,true))}).await?;
                         .setup_attempt_request(&credential, method, &parts, query, idem, &input)
                         .await;
                 } else if method == "GET" && parts.len() >= 3 && parts[0] == "resources" {
-                    let (action, name) = match parts.as_slice() {
-                        [_, _, "tables"] => ("tables", None),
-                        [_, _, "tables", name] => ("table", Some(*name)),
-                        [_, _, "tables", name, "rows"] => ("table/rows", Some(*name)),
+                    let action = match parts.as_slice() {
+                        [_, _, "tables"] => "tables",
+                        [_, _, "tables", _] => "table",
+                        [_, _, "tables", _, "rows"] => "table/rows",
                         _ => return Err(err(404, "NOT_FOUND")),
                     };
-                    let name = name.map(decode_table_name).transpose()?;
                     let (_, r) = self
                         .context(&credential, "queries:read", Some((parts[1], None)))
                         .await?;
                     Reply::Json(
-                        self.browse(&credential, &r, action, name.as_deref())
+                        self.browse(&credential, &r, action, table_name.as_deref())
                             .await?,
                     )
                 } else {
@@ -666,29 +667,6 @@ fn fingerprint(bytes: &[u8]) -> Result<String> {
     let v: Ordered = serde_json::from_slice(bytes).map_err(|_| err(400, "INVALID_JSON"))?;
     Ok(hex::encode(Sha256::digest(v.0.as_bytes())))
 }
-
-fn decode_table_name(segment: &str) -> Result<String> {
-    let bytes = segment.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' {
-            if i + 2 >= bytes.len()
-                || !bytes[i + 1].is_ascii_hexdigit()
-                || !bytes[i + 2].is_ascii_hexdigit()
-            {
-                return Err(err(400, "INVALID_TABLE_NAME"));
-            }
-            i += 3;
-        } else {
-            i += 1;
-        }
-    }
-    percent_encoding::percent_decode_str(segment)
-        .decode_utf8()
-        .map(|s| s.into_owned())
-        .map_err(|_| err(400, "INVALID_TABLE_NAME"))
-}
-
 #[cfg(test)]
 mod execute_config_tests {
     use super::*;

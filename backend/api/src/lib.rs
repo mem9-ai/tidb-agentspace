@@ -748,6 +748,15 @@ async fn dispatch(
                         app.workspace.authenticate(&credential).await?;
                         return Err(reject(404, "NOT_FOUND"));
                     }
+                    let table_name = if method == Method::GET
+                        && matches!(
+                            parts.as_slice(),
+                            ["resources", _, "tables", _] | ["resources", _, "tables", _, "rows"]
+                        ) {
+                        Some(decode_table_name(parts[3])?)
+                    } else {
+                        None
+                    };
                     let binary_upload = method == Method::POST
                         && route == "/database-import-preparations"
                         && headers.get("content-type").and_then(|v| v.to_str().ok())
@@ -805,7 +814,7 @@ async fn dispatch(
                     let if_none_match = precondition("if-none-match")?;
                     let condition = headers.get("idempotency-key").and_then(|v| v.to_str().ok());
                     let (status, reply) = tokio::select! {
-                        result=product.handle(workspace_product::Request {credential:credential.clone(),actor,method:method.as_str(),route,query:&query,input,raw:&bytes,condition,if_match,if_none_match,binary_upload})=>result?,
+                        result=product.handle(workspace_product::Request {credential:credential.clone(),actor,method:method.as_str(),route,query:&query,input,raw:&bytes,condition,if_match,if_none_match,binary_upload,table_name})=>result?,
                         _=cancellation.cancelled()=>return Err(reject(499,if route.contains("analys")||route.contains("tabular-preview"){"ANALYSIS_CANCELED"}else{"SQL_CANCELED"})),
                     };
                     credential_for_response(&app, &headers, &credential).await?;
@@ -932,6 +941,29 @@ async fn credential_for_response(
     app.workspace.authenticate(input).await?;
     Ok(())
 }
+
+fn decode_table_name(segment: &str) -> std::result::Result<String, ServiceError> {
+    let bytes = segment.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            if i + 2 >= bytes.len()
+                || !bytes[i + 1].is_ascii_hexdigit()
+                || !bytes[i + 2].is_ascii_hexdigit()
+            {
+                return Err(reject(400, "INVALID_TABLE_NAME"));
+            }
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    percent_encoding::percent_decode_str(segment)
+        .decode_utf8()
+        .map(|s| s.into_owned())
+        .map_err(|_| reject(400, "INVALID_TABLE_NAME"))
+}
+
 fn product_response(
     status: u16,
     reply: workspace_product::Reply,
