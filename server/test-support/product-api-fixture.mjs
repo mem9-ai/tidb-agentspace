@@ -1,0 +1,242 @@
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { createWriteStream } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { metaFixture, port, until } from './meta-fixture.mjs';
+import { seedRecords, workspaceScope } from './record-fixture.mjs';
+import { providerFixture, nativeSecret } from './provider-fixture.mjs';
+import { workspaceFixture } from './workspace-fixture.mjs';
+
+// Two actual Workspace APIs share a Meta authority. Resource IDs and paths deliberately
+// collide, so isolation cannot pass merely because an unrelated ID was not found.
+export async function productApiFixture(t, transport, onSql) {
+  const meta = await metaFixture();
+  let provider, region;
+  const children = [];
+  t.after(async () => {
+    for (const child of children.toReversed()) await meta.stop(child);
+    if (provider) await provider.close();
+    await meta.close();
+  });
+  provider = await providerFixture({ onSql, requireFileAuth: true });
+  region = await meta.service('api-coverage');
+  const states = ['ws_agentlab', 'ws_other'].map((id) => {
+    const state = workspaceFixture();
+    state.workspace.id = id;
+    state.keys = ['expired-coverage-key', 'revoked-coverage-key'].map((token, index) => ({
+      id: `unavailable-key-${index}`,
+      name: token,
+      prefix: 'synthetic',
+      digest: createHash('sha256').update(token).digest('hex'),
+      scopes: ['resources:read', 'files:read', 'files:write', 'files:analyze', 'queries:execute'],
+      resourceIds: ['*'],
+      expiresAt: index === 0 ? '2000-01-01T00:00:00.000Z' : '2099-01-01T00:00:00.000Z',
+      revokedAt: index === 1 ? state.workspace.createdAt : null,
+    }));
+    state.files = [
+      {
+        id: 'same-file-id',
+        resourceId: 'fs_shared',
+        path: '/identity.txt',
+        type: 'file',
+        content: id,
+      },
+    ];
+    for (const [resourceId, kind, upstream] of [
+      ['fs_live', 'filesystem', 'drive9-anonymous'],
+      ['db_live', 'mysql', 'tidb-cloud-zero'],
+      ['db_pg', 'postgresql', 'db9-anonymous'],
+      ['db_duck', 'duckdb', 'duckdb-drive9'],
+    ])
+      state.resources.push({
+        id: resourceId,
+        kind,
+        provider: upstream,
+        name: resourceId.replaceAll('_', '-'),
+        status: 'active',
+        region: kind === 'filesystem' ? 'aws-ap-southeast-1' : 'automatic',
+        createdAt: state.workspace.createdAt,
+      });
+    return state;
+  });
+  for (const state of states) {
+    const connection = (kind) => ({
+      kind,
+      region: 'automatic',
+      host: kind === 'mysql' ? 'unit.fixture.tidbcloud.com' : 'pg.db9.io',
+      port: kind === 'mysql' ? 4000 : 5432,
+      user: kind === 'mysql' ? 'w_original' : 'tenant.wabcdef123456',
+      password: nativeSecret,
+      database: kind === 'mysql' ? 'workspace' : 'postgres',
+    });
+    await seedRecords(region.client, region.server.authorityId, state, {
+      drive9: {
+        bindings: {
+          fs_live: { state: 'bound', apiKey: nativeSecret, tenantId: state.workspace.id },
+        },
+      },
+      zero: {
+        bindings: {
+          db_live: {
+            state: 'ready',
+            instanceId: state.workspace.id,
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            connection: connection('mysql'),
+          },
+        },
+      },
+      duckdb: { bindings: { db_duck: { state: 'ready', storageId: 'hidden-storage' } } },
+      db9: {
+        bindings: {
+          db_pg: {
+            state: 'ready',
+            instanceId: state.workspace.id,
+            connection: connection('postgresql'),
+          },
+        },
+      },
+    });
+  }
+  if (transport === 'inProcess') await region.stop();
+  const origins = [];
+  for (let index = 0; index < states.length; index++)
+    origins.push(`http://127.0.0.1:${await port()}`);
+  const cookies = [];
+  let writerRecovery = [],
+    metadataRecovery;
+  async function start() {
+    const metadataServices = [];
+    if (transport === 'inProcess') {
+      const configFile = resolve(meta.directory, 'embedded-meta.json');
+      await writeFile(configFile, JSON.stringify(region.server), { mode: 0o600 });
+      metadataServices.push({ kind: 'metadata', configFile, recoverOwner: metadataRecovery });
+    }
+    for (const [index, state] of states.entries()) {
+      const configFile = resolve(meta.directory, `workspace-${index}.json`);
+      await writeFile(
+        configFile,
+        JSON.stringify({
+          bind: new URL(origins[index]).host,
+          workspaceId: state.workspace.id,
+          authorityId: region.server.authorityId,
+          recoverWriterOwner: writerRecovery[index],
+          insecureLoopback: true,
+          consoleOrigins: ['http://127.0.0.1:5173'],
+          metadata:
+            transport === 'remote' || index > 0
+              ? { transport: 'remote', client: region.clientConfig }
+              : { transport, authorityId: region.server.authorityId },
+          product: {
+            providers: {
+              filesProvider: 'drive9-anonymous',
+              mysqlProvider: 'tidb-cloud-zero',
+              postgresProvider: 'db9-anonymous',
+              testMode: true,
+              drive9Endpoint: provider.origin,
+              zeroEndpoint: provider.origin + '/zero',
+              db9Endpoint: provider.origin + '/customer',
+              sqlFixture: provider.origin + '/sql',
+            },
+          },
+        }),
+        { mode: 0o600 },
+      );
+      const services = [
+        ...(index === 0 ? metadataServices : []),
+        { kind: 'workspace', configFile },
+      ];
+      const plan = resolve(meta.directory, `plan-${index}.json`);
+      await writeFile(plan, JSON.stringify({ format: 1, services }), { mode: 0o600 });
+      const log = createWriteStream(resolve(meta.directory, 'api-coverage.log'), {
+        flags: 'a',
+        mode: 0o600,
+      });
+      const child = spawn(
+        resolve('meta-service/target/debug/workspace-backend'),
+        ['serve', '--config', plan],
+        { stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      child.stdout.pipe(log);
+      child.stderr.pipe(log);
+      child.once('close', () => log.end());
+      children.push(child);
+      await until(async () => {
+        const response = await fetch(origins[index] + '/api/health', {
+          signal: AbortSignal.timeout(1000),
+        });
+        await response.body?.cancel();
+        assert.equal(response.status, 200);
+      });
+    }
+  }
+  await start();
+  async function request(route, options = {}, workspace = 0) {
+    const { method = 'GET', body, raw, headers = {} } = options;
+    const origin = origins[workspace];
+    const auth = {};
+    if (Object.hasOwn(options, 'token')) {
+      if (options.token !== null) auth.Authorization = `Bearer ${options.token}`;
+    } else {
+      if (!cookies[workspace]) {
+        const response = await fetch(origin + '/api/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        assert.equal(response.status, 200);
+        cookies[workspace] = response.headers.get('set-cookie').split(';')[0];
+        await response.body?.cancel();
+      }
+      auth.Cookie = cookies[workspace];
+    }
+    const path = route.startsWith('/api/')
+      ? route
+      : `/api/v1/workspaces/${states[workspace].workspace.id}${route}`;
+    const response = await fetch(origin + path, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...auth, ...headers },
+      ...(raw !== undefined
+        ? { body: raw }
+        : body !== undefined
+          ? { body: JSON.stringify(body) }
+          : {}),
+    });
+    const value = response.headers.get('content-type')?.includes('application/json')
+      ? await response.json()
+      : Buffer.from(await response.arrayBuffer());
+    return { status: response.status, body: value, headers: response.headers };
+  }
+  return {
+    provider,
+    request,
+    async restart({ crash = false } = {}) {
+      writerRecovery = [];
+      metadataRecovery = undefined;
+      if (crash) {
+        // Recovery names only the writers that this isolated fixture is about to stop.
+        // It never uses initialization or an unconditional ownership/storage reset.
+        for (const state of states) {
+          const result = await region.client.call({
+            op: 'get',
+            scope: workspaceScope(region.server.authorityId, state.workspace.id),
+            keys: ['system/writer'],
+          });
+          writerRecovery.push(result.records['system/writer'].value.ownerId);
+        }
+        if (transport === 'inProcess') metadataRecovery = (await region.client.health()).ownerId;
+      }
+      for (const child of children.toReversed())
+        await meta.stop(child, crash ? 'SIGKILL' : 'SIGTERM');
+      children.length = 0;
+      cookies.length = 0;
+      if (transport === 'remote') {
+        region.client.close();
+        await region.stop();
+        region = await meta.service('reopened', { previous: region });
+      }
+      await start();
+    },
+  };
+}

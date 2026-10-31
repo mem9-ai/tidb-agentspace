@@ -4,7 +4,11 @@ import { createHash } from 'node:crypto';
 
 export const nativeSecret = 'private-native-token-not-for-public-output';
 
-export async function providerFixture({ isolatedTenants = false } = {}) {
+export async function providerFixture({
+  isolatedTenants = false,
+  onSql,
+  requireFileAuth = false,
+} = {}) {
   const files = new Map();
   let statements = [];
   let creates = 0;
@@ -24,7 +28,6 @@ export async function providerFixture({ isolatedTenants = false } = {}) {
   };
   reset();
   const sql = (binding, statement) => {
-    statements.push(statement);
     if (/FROM pg_roles/i.test(statement))
       return {
         columns: ['rolsuper', 'rolcreatedb', 'rolcreaterole'],
@@ -124,6 +127,12 @@ export async function providerFixture({ isolatedTenants = false } = {}) {
       res.end(value === undefined ? undefined : JSON.stringify(value));
     };
     try {
+      if (
+        requireFileAuth &&
+        (url.pathname === '/v1/status' || url.pathname.startsWith('/v1/fs')) &&
+        req.headers.authorization !== `Bearer ${nativeSecret}`
+      )
+        return respond(403, {});
       if (url.pathname === '/zero') {
         nativeCreates.zero++;
         if (lost) return req.socket.destroy();
@@ -179,6 +188,12 @@ export async function providerFixture({ isolatedTenants = false } = {}) {
         let chunks = [];
         for await (const c of req) chunks.push(c);
         const input = JSON.parse(Buffer.concat(chunks));
+        statements.push(input.sql);
+        if (onSql) {
+          const result = await onSql(input);
+          if (result?.disconnect) return req.socket.destroy();
+          if (result) return respond(result.status ?? 200, result.body);
+        }
         return respond(200, sql(input.binding, input.sql));
       }
       if (url.pathname === '/v1/status')
