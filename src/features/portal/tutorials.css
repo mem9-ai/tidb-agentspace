@@ -1,0 +1,53 @@
+.data-tutorials {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-bottom: 32px;
+  align-items: start;
+}
+.tutorial-resume {
+  margin-block: 24px;
+}
+.tutorial-resume-card {
+  min-width: 0;
+}
+.tutorial-resume-card h3 {
+  margin-block: 12px 8px;
+}
+.tutorial-resume .data-tutorials {
+  margin-bottom: 12px;
+}
+.data-tutorial {
+  min-width: 0;
+  scroll-margin-top: 100px;
+}
+.data-tutorial h2 {
+  margin: 16px 0 8px;
+}
+.data-tutorial h3 {
+  margin: 0;
+}
+.tutorial-artifact {
+  overflow-wrap: anywhere;
+}
+.tutorial-code {
+  margin-top: 12px;
+  min-width: 0;
+}
+.tutorial-code summary {
+  cursor: pointer;
+  padding-block: 12px;
+  color: var(--muted);
+}
+.tutorial-code .code-example {
+  margin-top: 8px;
+  min-width: 0;
+}
+.data-tutorial .workspace-results {
+  min-width: 0;
+}
+@media (max-width: 1000px) {
+  .data-tutorials {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

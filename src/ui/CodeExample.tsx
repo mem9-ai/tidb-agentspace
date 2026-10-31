@@ -12,13 +12,17 @@ export function CodeExample({
   label?: string;
 }) {
   const language =
-    label === 'JSON'
-      ? 'json'
-      : label === 'JAVASCRIPT'
-        ? 'javascript'
-        : label === 'PYTHON'
-          ? 'python'
-          : 'bash';
+    label === 'SQL'
+      ? 'sql'
+      : label === 'CSV'
+        ? undefined
+        : label === 'JSON'
+          ? 'json'
+          : label === 'JAVASCRIPT'
+            ? 'javascript'
+            : label === 'PYTHON'
+              ? 'python'
+              : 'bash';
   return (
     <div className="code-example">
       <Group justify="space-between" gap={12} mb={8}>

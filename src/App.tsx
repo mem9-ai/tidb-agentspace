@@ -88,12 +88,19 @@ import {
   IconShieldTick as ShieldCheck,
   IconTerminal as Terminal,
   IconGitBranch01 as Workflow,
+  IconHelpCircle as CircleHelp,
 } from '@tidbcloud/uikit/icons';
 import type { IconProps } from '@tidbcloud/uikit/icons';
 import { ResourceAccessPicker } from './features/keys/ResourceAccessPicker';
 import { WorkspaceLayout } from './ui/WorkspaceLayout';
 import { DatabaseWorkspace } from './features/databases/DatabaseWorkspace';
-import { databaseEditorHash, parseWorkspaceRoute } from './features/navigation/workspace-route';
+import {
+  databaseEditorHash,
+  parseWorkspaceRoute,
+  tutorialHash,
+} from './features/navigation/workspace-route';
+import { DataTutorials } from './features/portal/DataTutorials';
+import { TutorialResume } from './features/portal/TutorialResume';
 import type { Route, WorkspaceRoute } from './features/navigation/workspace-route';
 
 import {
@@ -112,6 +119,7 @@ const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string 
   databases: { label: 'Databases', icon: Database, group: 'Workspace' },
   files: { label: 'File Systems', icon: Folder, group: 'Workspace' },
   connect: { label: 'Connect an agent', icon: Workflow, group: 'Build' },
+  tutorials: { label: 'Tutorials', icon: CircleHelp, group: 'Build' },
   keys: { label: 'API keys', icon: KeyRound, group: 'Build' },
   api: { label: 'API explorer', icon: Terminal, group: 'Build' },
   monitoring: { label: 'Monitoring', icon: Activity, group: 'Manage' },
@@ -224,6 +232,7 @@ function App() {
     [creationTarget, setCreationTarget] = useState<ResourceCreationTarget>('resource'),
     [sso, setSso] = useState<SsoAuthConfig>({ enabled: false }),
     [connection, setConnection] = useState<Resource | null>(null);
+  const [tutorialCreation, setTutorialCreation] = useState(false);
   const route = routeLocation.page;
   const selectedResourceId =
     routeLocation.databaseId ??
@@ -324,6 +333,7 @@ function App() {
     notify,
     copy,
     onCreate: (target: ResourceCreationTarget = 'resource') => {
+      setTutorialCreation(false);
       setCreationTarget(target);
       setModal('resource');
     },
@@ -410,6 +420,32 @@ function App() {
           {route === 'databases' && <Databases {...shared} routeLocation={routeLocation} />}
           {route === 'files' && <Files key={routeLocation.fileLink || 'files'} {...shared} />}
           {route === 'connect' && <Connect {...shared} onNewKey={() => setModal('key')} />}
+          {route === 'tutorials' && (
+            <>
+              <PageHeading
+                title="Tutorials"
+                description="Load the included sample data, run a query, and check your first result."
+                actions={
+                  <Button component="a" href="#connect">
+                    Connect an agent
+                  </Button>
+                }
+              />
+              <DataTutorials
+                key={data.workspace.id}
+                data={data}
+                resourceId={routeLocation.tutorialResourceId}
+                kind={routeLocation.tutorialKind}
+                refresh={refresh}
+                copy={copy}
+                onCreate={(kind) => {
+                  setTutorialCreation(true);
+                  setCreationTarget(kind === 'filesystem' ? 'filesystem' : 'database');
+                  setModal('resource');
+                }}
+              />
+            </>
+          )}
           {route === 'keys' && <Keys {...shared} onNewKey={() => setModal('key')} />}
           {route === 'api' && <ApiExplorer {...shared} />}
           {route === 'monitoring' && <Monitoring {...shared} />}
@@ -461,7 +497,18 @@ function App() {
         </Notification>
       )}
       {modal === 'resource' && (
-        <CreateResourceDialog {...shared} target={creationTarget} onClose={() => setModal(null)} />
+        <CreateResourceDialog
+          {...shared}
+          target={creationTarget}
+          onClose={() => setModal(null)}
+          onCreated={
+            tutorialCreation
+              ? (resource) => {
+                  location.hash = tutorialHash(resource.id);
+                }
+              : undefined
+          }
+        />
       )}
       {modal === 'key' && <CreateKey {...shared} onClose={() => setModal(null)} />}
       {modal === 'search' && (
@@ -516,6 +563,7 @@ function Overview({ data, onCreate, onConnect, copy, isGuest }: Shared) {
           ) : undefined
         }
       />
+      <TutorialResume data={data} />
       {(!dbs.length || !fs.length) && (
         <WorkspaceFirstSteps
           onCreate={onCreate}
@@ -1085,6 +1133,12 @@ function FileWorkspace({
         }}
         onUpload={() => upload.current?.click()}
         onBack={() => requestPreviewChange(() => go('files'))}
+        onTutorial={() => {
+          if (selectedSystem)
+            requestPreviewChange(() => {
+              location.hash = tutorialHash(selectedSystem.id);
+            });
+        }}
         onSelect={(nextSystem) =>
           requestPreviewChange(() => {
             location.hash = fileSystemHash(nextSystem);
