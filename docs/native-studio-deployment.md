@@ -124,7 +124,5 @@ A previously deployed private API configuration used `product.compute`, while th
 canonical runtime accepts only `product.execute`. Rename that field in both `api.json` and
 `api-bootstrap.json` before starting a canonical-only image; preserve its value and every other
 Secret entry. The protected recovery workflow's explicit `repair-config` operation reads only
-referenced Secrets, requires exactly one matching API configuration Secret, applies a
-resourceVersion-guarded patch through stdin, restarts the same immutable deployment image,
-and checks public health. If the Secret update or rollout result is uncertain, inspect before
+referenced Secrets, requires exactly one matching API configuration Secret and uses resourceVersion-guarded changes through stdin. For an immutable Secret it creates a new copy, switches only the matching Deployment volume and retains the original; for a mutable Secret it patches the two configuration keys. It preserves the deployment image and checks public health. If the Secret update or rollout result is uncertain, inspect before
 retrying. The operation does not change Workspace or provider data.

@@ -1,10 +1,17 @@
 import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const dns = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const digestImage = /^[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[a-f0-9]{64}$/;
+const secretName = (value) =>
+  typeof value === 'string' &&
+  value.length <= 253 &&
+  value
+    .split('.')
+    .every((part) => part.length <= 63 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(part));
 
 // The callback keeps the Secret solely in memory. Only its two API configuration keys may
 // change; all other keys, values, metadata and the current resourceVersion are preserved.
@@ -35,7 +42,7 @@ export async function migrate(
   const names = [
     ...new Set((pod.volumes || []).map((volume) => volume.secret?.secretName).filter(Boolean)),
   ];
-  if (names.some((name) => !dns.test(name))) throw new Error('Invalid Secret reference.');
+  if (names.some((name) => !secretName(name))) throw new Error('Invalid Secret reference.');
   const candidates = [];
   for (const name of names) {
     const secret = JSON.parse(kubectl(['get', 'secret', name, '-n', namespace, '-o', 'json']));
@@ -44,11 +51,7 @@ export async function migrate(
   if (candidates.length !== 1)
     throw new Error('Expected exactly one referenced API configuration Secret.');
   const secret = candidates[0];
-  if (
-    secret.immutable ||
-    !secret.metadata?.resourceVersion ||
-    !dns.test(secret.metadata?.name ?? '')
-  )
+  if (!secret.metadata?.resourceVersion || !secretName(secret.metadata?.name))
     throw new Error('API configuration Secret cannot be safely updated.');
   let changes = 0;
   for (const key of ['api.json', 'api-bootstrap.json']) {
@@ -72,7 +75,49 @@ export async function migrate(
       changes += 1;
     }
   }
-  if (changes) {
+  let updatedVolume = false;
+  let replacementName;
+  if (changes && secret.immutable === true) {
+    if (!source.metadata?.resourceVersion)
+      throw new Error('Deployment resourceVersion is required.');
+    const newName = `${secret.metadata.name}-execute-${randomBytes(6).toString('hex')}`;
+    if (!secretName(newName)) throw new Error('Cannot construct a safe replacement Secret name.');
+    // Immutable Secrets cannot be patched. Create a fresh copy and switch only the
+    // matching Deployment volume, keeping the original intact for operator recovery.
+    const replacement = {
+      apiVersion: 'v1',
+      kind: 'Secret',
+      metadata: { name: newName, namespace },
+      type: secret.type || 'Opaque',
+      immutable: true,
+      data: secret.data,
+    };
+    kubectl(['create', '-f', '-', '-n', namespace, '-o', 'name'], JSON.stringify(replacement));
+    const volumes = pod.volumes.map((volume) =>
+      volume.secret?.secretName === secret.metadata.name
+        ? { ...volume, secret: { ...volume.secret, secretName: newName } }
+        : volume,
+    );
+    const patch = {
+      metadata: { resourceVersion: source.metadata.resourceVersion },
+      spec: { template: { spec: { volumes } } },
+    };
+    kubectl(
+      [
+        'patch',
+        target,
+        '-n',
+        namespace,
+        '--type=strategic',
+        '--patch-file=/dev/stdin',
+        '-o',
+        'name',
+      ],
+      JSON.stringify(patch),
+    );
+    updatedVolume = true;
+    replacementName = newName;
+  } else if (changes) {
     // A merge patch with resourceVersion provides an optimistic-concurrency precondition.
     // Secret bytes travel only via stdin; never place them in arguments, logs or a file.
     const patch = {
@@ -97,7 +142,7 @@ export async function migrate(
       JSON.stringify(patch),
     );
   }
-  kubectl(['rollout', 'restart', target, '-n', namespace]);
+  if (changes && !updatedVolume) kubectl(['rollout', 'restart', target, '-n', namespace]);
   kubectl(['rollout', 'status', target, '-n', namespace, '--timeout=300s']);
   const after = JSON.parse(kubectl(['get', target, '-n', namespace, '-o', 'json']));
   if (
@@ -105,6 +150,18 @@ export async function migrate(
     selected.image
   )
     throw new Error('The deployment image changed during configuration repair.');
+  if (updatedVolume) {
+    const finalVolumes = after.spec?.template?.spec?.volumes || [];
+    for (const original of pod.volumes.filter(
+      (volume) => volume.secret?.secretName === secret.metadata.name,
+    )) {
+      if (
+        finalVolumes.find((volume) => volume.name === original.name)?.secret?.secretName !==
+        replacementName
+      )
+        throw new Error('The replacement Secret volume was not confirmed.');
+    }
+  }
   for (let attempt = 0; attempt < 12; attempt += 1) {
     try {
       const health = await request('https://drive9.ai/studio/api/health', {
