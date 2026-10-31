@@ -24,24 +24,73 @@ struct StrictHeader {
 /// Claims are an immutable permission ceiling, not proof of current authorization.
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct AccessClaims {
-    pub iss: String,
-    pub aud: String,
-    pub sub: String,
-    pub jti: String,
-    pub iat: i64,
-    pub nbf: i64,
-    pub exp: i64,
-    pub environment: String,
-    pub workspace_id: String,
-    pub region_id: Option<String>,
-    pub key_id: String,
-    pub key_version: u64,
-    pub policy_generation: u64,
-    pub grant_ref: String,
-    pub scopes: Vec<String>,
-    pub family_id: Option<String>,
-    pub family_epoch: Option<u64>,
+struct AccessClaims {
+    iss: String,
+    aud: String,
+    sub: String,
+    jti: String,
+    iat: i64,
+    nbf: i64,
+    exp: i64,
+    environment: String,
+    workspace_id: String,
+    region_id: Option<String>,
+    key_id: String,
+    key_version: u64,
+    policy_generation: u64,
+    grant_ref: String,
+    scopes: Vec<String>,
+    family_id: Option<String>,
+    family_epoch: Option<u64>,
+}
+
+/// A cryptographically verified bearer, not an authorization decision. It cannot be
+/// deserialized or constructed by a transport caller. Recheck regional policy, grant,
+/// family/deny state and clock at every documented effect boundary.
+pub struct VerifiedAccess {
+    claims: AccessClaims,
+}
+
+impl VerifiedAccess {
+    pub fn workspace_id(&self) -> &str {
+        &self.claims.workspace_id
+    }
+    pub fn region_id(&self) -> Option<&str> {
+        self.claims.region_id.as_deref()
+    }
+    pub fn principal_id(&self) -> &str {
+        &self.claims.sub
+    }
+    pub fn key_id(&self) -> &str {
+        &self.claims.key_id
+    }
+    pub fn key_version(&self) -> u64 {
+        self.claims.key_version
+    }
+    pub fn policy_generation(&self) -> u64 {
+        self.claims.policy_generation
+    }
+    pub fn grant_ref(&self) -> &str {
+        &self.claims.grant_ref
+    }
+    pub fn scopes(&self) -> &[String] {
+        &self.claims.scopes
+    }
+    pub fn token_id(&self) -> &str {
+        &self.claims.jti
+    }
+    pub fn expires_at(&self) -> i64 {
+        self.claims.exp
+    }
+    pub fn not_before(&self) -> i64 {
+        self.claims.nbf
+    }
+    pub fn family_id(&self) -> Option<&str> {
+        self.claims.family_id.as_deref()
+    }
+    pub fn family_epoch(&self) -> Option<u64> {
+        self.claims.family_epoch
+    }
 }
 
 /// Explicitly configured trust for exactly one issuer, audience and token type.
@@ -138,7 +187,7 @@ impl AccessVerifier {
 
     /// Validates locally with a caller-supplied trusted regional clock. No policy-age lease is
     /// applied. The caller must enforce a durable anti-rollback time floor before invoking this.
-    pub fn verify(&self, token: &str, now: i64) -> Result<AccessClaims> {
+    pub fn verify(&self, token: &str, now: i64) -> Result<VerifiedAccess> {
         if token.len() > MAX_TOKEN_BYTES || now <= 0 {
             return Err(denied());
         }
@@ -200,7 +249,7 @@ impl AccessVerifier {
         {
             return Err(denied());
         }
-        Ok(claims)
+        Ok(VerifiedAccess { claims })
     }
 }
 
@@ -267,7 +316,7 @@ mod tests {
         let verifier = verifier();
         let good = token(&claims(), "key-1", "workspace-region-access+jwt");
         assert_eq!(
-            verifier.verify(&good, 1000).unwrap().workspace_id,
+            verifier.verify(&good, 1000).unwrap().workspace_id(),
             "ws_agentlab"
         );
         assert!(verifier.verify(&good, 999).is_err());
