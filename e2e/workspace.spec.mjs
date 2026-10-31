@@ -28,14 +28,14 @@ test('Guest sign-in opens the Workspace when the server enables it', async ({
   await page.goto('/');
   const guest = page.getByRole('button', { name: 'Continue as Guest' });
   await expect(guest).toBeEnabled();
-  await expect(
-    page.getByText(
-      'Guest access ends 24 hours after creation. Your workspace becomes inaccessible, but cloud resources may remain.',
-    ),
-  ).toBeVisible();
+  await expect(guest.getByText('Workspace access expires after 24 hours')).toBeVisible();
+  await expect(page.getByText('Cloud resources may remain after access ends.')).toBeVisible();
+  await expect(guest).toHaveAccessibleDescription(
+    'Workspace access expires after 24 hours Cloud resources may remain after access ends.',
+  );
   if (process.env.GUEST_SIGNIN_SCREENSHOT)
     await page.screenshot({ path: process.env.GUEST_SIGNIN_SCREENSHOT });
-  await guest.click();
+  await guest.getByText('Workspace access expires after 24 hours').click();
   await expect(page.getByRole('combobox', { name: 'Color theme', exact: true })).toBeVisible();
   await page.goto('/#settings');
   await expect(page.getByText('Guest session', { exact: true })).toBeVisible();
