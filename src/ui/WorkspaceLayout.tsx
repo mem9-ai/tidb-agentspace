@@ -29,6 +29,7 @@ type Props = {
   workspaceName: string;
   liveFiles?: boolean;
   liveDatabases?: boolean;
+  isHostedSession?: boolean;
   profileName: string;
   active: string;
   databaseId?: string;
@@ -46,6 +47,7 @@ export function WorkspaceLayout({
   workspaceName,
   liveFiles = false,
   liveDatabases = false,
+  isHostedSession = false,
   profileName,
   active,
   databaseId,
@@ -73,7 +75,11 @@ export function WorkspaceLayout({
         Personal workspace
       </Button>
       <Text size="sm" c="carbon.7" mt={8}>
-        {liveFiles || liveDatabases ? 'Prototype · Live resources' : 'Free plan · Local demo'}
+        {liveFiles || liveDatabases
+          ? 'Prototype · Live resources'
+          : isHostedSession
+            ? 'No resources yet'
+            : 'Free plan · Local demo'}
       </Text>
       <nav aria-label="Main navigation">
         {['Workspace', 'Build', 'Manage'].map((group) => (
@@ -180,7 +186,11 @@ export function WorkspaceLayout({
               <IconSearchLg size={20} />
             </ActionIcon>
             <Badge visibleFrom="md" color="carbon">
-              {liveFiles || liveDatabases ? 'Live resources' : 'Local demo'}
+              {liveFiles || liveDatabases
+                ? 'Live resources'
+                : isHostedSession
+                  ? 'No resources yet'
+                  : 'Local demo'}
             </Badge>
             <ActionIcon
               visibleFrom="md"
@@ -223,13 +233,15 @@ export function WorkspaceLayout({
           {children}
         </div>
         <footer className="footer">
-          <Text size="sm">Local Workspace gateway</Text>
+          <Text size="sm">{isHostedSession ? 'Workspace API' : 'Local Workspace gateway'}</Text>
           <Text size="sm">
             {liveDatabases
               ? 'Live databases · Cloud usage is not measured'
               : liveFiles
                 ? 'Drive9 files are live · Databases & telemetry are simulated'
-                : 'Product prototype · Cloud resources & telemetry are simulated'}
+                : isHostedSession
+                  ? 'Create a resource to get started'
+                  : 'Product prototype · Cloud resources & telemetry are simulated'}
           </Text>
           <Anchor
             size="sm"

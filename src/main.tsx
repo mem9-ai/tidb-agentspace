@@ -7,6 +7,15 @@ import './styles.css';
 import { Alert, Button } from '@tidbcloud/uikit';
 import { configureApi } from './api/client';
 
+// Some hosted gateways preserve the redeemed OAuth callback query on the landing URL.
+// It is not needed by the Console after the server callback completes.
+const landing = new URL(window.location.href);
+if (landing.searchParams.has('code') && landing.searchParams.has('state')) {
+  landing.searchParams.delete('code');
+  landing.searchParams.delete('state');
+  window.history.replaceState(window.history.state, '', landing);
+}
+
 const root = createRoot(document.getElementById('root')!);
 async function start() {
   try {

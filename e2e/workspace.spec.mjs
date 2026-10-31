@@ -113,6 +113,31 @@ test('Guest sign-out is not offered until the backend supports cleanup', async (
   await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toHaveCount(0);
 });
 
+test('an empty personal account workspace is described accurately', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  workspace.signInAsAccount();
+  await page.goto('/?code=redeemed-fixture&state=fixture-state&view=keep#settings');
+  await expect(page).toHaveURL(/\?view=keep#settings$/);
+  await expect(
+    page.getByText('Signed in with your TiDB Account. This is your personal workspace.'),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Admitted accounts have owner access.', { exact: false }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText('Product prototype · Cloud resources & telemetry are simulated'),
+  ).toHaveCount(0);
+  await expect(page.getByText('Create a resource to get started')).toBeVisible();
+  if (process.env.PERSONAL_SETTINGS_SCREENSHOT) {
+    await page.getByText('TiDB Account session', { exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: `${process.env.PERSONAL_SETTINGS_SCREENSHOT}-${testInfo.project.name}.png`,
+    });
+  }
+});
+
 async function openFileSystemsFromSidebar(page) {
   const mobileNavigation = page.getByRole('button', { name: 'Open navigation', exact: true });
   if (await mobileNavigation.isVisible()) await mobileNavigation.click();

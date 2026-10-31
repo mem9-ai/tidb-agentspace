@@ -57,6 +57,7 @@ export const test = base.extend({
     let guestEnabled = false;
     let guestCleanupEnabled = false;
     let signedInAsGuest = false;
+    let signedInAsAccount = false;
     let rejectGuestLogout = false;
     page.on('pageerror', (error) => unexpected.push(error.message));
     await context.route('**/*', async (route) => {
@@ -73,7 +74,7 @@ export const test = base.extend({
       const reply = (json, status = 200) => route.fulfill({ status, json });
       if (url.pathname === '/api/auth/config')
         return reply(
-          signInRequired || signedInAsGuest
+          signInRequired || signedInAsGuest || signedInAsAccount
             ? {
                 enabled: true,
                 loginPath: '/api/auth/tidbcloud/login',
@@ -81,6 +82,7 @@ export const test = base.extend({
                 guestEnabled,
                 guestCleanupEnabled,
                 ...(signedInAsGuest ? { sessionKind: 'guest' } : {}),
+                ...(signedInAsAccount ? { sessionKind: 'account' } : {}),
               }
             : { enabled: false },
         );
@@ -160,6 +162,9 @@ export const test = base.extend({
     await use({
       state,
       requests,
+      signInAsAccount() {
+        signedInAsAccount = true;
+      },
       requireSignIn(options = {}) {
         signInRequired = true;
         guestEnabled = options.guestEnabled === true;
