@@ -647,10 +647,122 @@ test(
       200,
     );
     assert.notEqual((await exchange()).status, 201);
+    await assert.rejects(client.renew());
     assert.notEqual(
       (
         await f.request(resources, {
           headers: { Authorization: `Bearer ${issued.body.accessToken}` },
+        })
+      ).status,
+      200,
+    );
+  },
+);
+
+test(
+  'hosted Guest Key expires with its Workspace and logout denies Global and Region access',
+  { skip: !enabled, timeout: 120000 },
+  async (t) => {
+    const f = await fixture(t, {}, 'globalApi', true);
+    const enter = async () => {
+      const response = await f.request('/studio/api/auth/guest', { method: 'POST' });
+      assert.equal(response.status, 200, JSON.stringify(response.body));
+      return {
+        workspace: response.body.workspaceId,
+        cookie: response.headers['set-cookie'].find((v) => v.startsWith('aw_guest=')).split(';')[0],
+      };
+    };
+    const guest = await enter();
+    const other = await enter();
+    const global = `/studio/api/global/api/v1/workspaces/${guest.workspace}`;
+    const listing = await f.request(`${global}/keys`, { cookie: guest.cookie });
+    assert.equal(listing.status, 200, JSON.stringify(listing.body));
+    assert.deepEqual(listing.body.data, []);
+    assert.equal((await f.request(`${global}/keys`, { cookie: other.cookie })).status, 404);
+    const resources = `/studio/api/v1/workspaces/${guest.workspace}/resources`;
+    const filesystem = await f.request(resources, {
+      method: 'POST',
+      cookie: guest.cookie,
+      headers: { 'Idempotency-Key': randomUUID() },
+      body: { kind: 'filesystem', name: 'guest-api-test', region: 'aws-ap-southeast-1' },
+    });
+    assert.equal(filesystem.status, 201, JSON.stringify(filesystem.body));
+    const filesystemId = filesystem.body.data.id;
+    const before = Math.floor(Date.now() / 1000);
+    const created = await f.request(`${global}/keys`, {
+      method: 'POST',
+      cookie: guest.cookie,
+      headers: { 'Idempotency-Key': randomUUID() },
+      body: {
+        name: 'guest-agent',
+        scopes: ['resources:read', 'files:read', 'files:write'],
+        resourceIds: [filesystemId],
+        expiresAt: before + 30 * 86400,
+      },
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.ok(created.body.data.expiresAt <= before + 86400);
+    assert.ok(created.body.data.expiresAt > before);
+    const issue = () =>
+      f.request('/studio/api/v1/token-issuances', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${created.body.secret}` },
+        body: { audience: 'region' },
+      });
+    const globalToken = await f.request('/studio/api/v1/token-issuances', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${created.body.secret}` },
+      body: { audience: 'global' },
+    });
+    assert.equal(globalToken.status, 201, JSON.stringify(globalToken.body));
+    const issued = await issue();
+    assert.equal(issued.status, 201, JSON.stringify(issued.body));
+    const token = issued.body.accessToken;
+    const files = `/studio/api/v1/workspaces/${guest.workspace}/files`;
+    const content = {
+      resourceId: filesystemId,
+      path: '/agent.txt',
+      type: 'file',
+      content: 'guest test',
+    };
+    const put = () =>
+      f.request(files, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body: content,
+      });
+    assert.equal((await put()).status, 200);
+    const read = () =>
+      f.request(`${files}?resourceId=${filesystemId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    const beforeLogout = await read();
+    assert.equal(beforeLogout.status, 200, JSON.stringify(beforeLogout.body));
+    assert.ok(
+      beforeLogout.body.data.some(
+        (file) => file.path === '/agent.txt' && file.content === 'guest test',
+      ),
+    );
+    assert.equal(
+      (await f.request('/studio/api/auth/guest/logout', { method: 'POST', cookie: guest.cookie }))
+        .status,
+      200,
+    );
+    assert.notEqual((await issue()).status, 201);
+    assert.notEqual(
+      (
+        await f.request(`/studio/api/v1/workspaces/${guest.workspace}/regions`, {
+          headers: { Authorization: `Bearer ${globalToken.body.accessToken}` },
+        })
+      ).status,
+      200,
+    );
+    assert.notEqual((await read()).status, 200);
+    assert.notEqual((await put()).status, 200);
+    assert.equal(
+      (
+        await f.request(`/studio/api/global/api/v1/workspaces/${other.workspace}/keys`, {
+          cookie: other.cookie,
         })
       ).status,
       200,

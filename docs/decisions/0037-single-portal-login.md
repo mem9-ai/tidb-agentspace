@@ -23,12 +23,15 @@ Independent Global deployments may retain their separately configured verified O
 this change does not infer cross-domain trust or introduce a session-exchange endpoint.
 Revisit the Portal auth routing when deploying its public login separately.
 
-For the explicitly enabled single-process HTTP loopback Guest development profile, Global can
-authenticate the existing Guest browser session through the co-located Region and only for its
-exact Workspace. Global checks the Region's Guest policy when issuing or checking Global tokens;
-Guest Keys expire no later than the Guest Workspace and stop working after logout. This local
-exception does not apply to hosted HTTPS or independent Global deployments. The Region never
-calls Global for this check, and existing regional access does not require Global availability.
+For an explicitly enabled Guest profile on a shared Global/Region listener, including hosted HTTPS,
+Global can authenticate the existing Region Guest browser session in-process and only for its
+exact Workspace. It rechecks the durable Region Guest policy for Global token use and Key exchange.
+Guest Keys default to at most 24 hours and never outlive the Guest Workspace. Logout durably denies
+the Region Guest policy before success, denying subsequent Key exchange and regional Token
+reads, writes and refresh. Operations admitted before logout follow the existing drain policy.
+Independent Global deployments cannot use this in-process session bridge;
+they need an independently authenticated handoff. Region never calls Global for these checks, and
+existing regional access does not require Global availability.
 
 Native acceptance verifies one callback, replay denial, two-authority/cross-Workspace denial,
 Key creation and policy delivery, Region Token issuance, and durable logout of both sessions.

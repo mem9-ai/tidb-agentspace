@@ -2502,7 +2502,7 @@ function CreateKey({
         name,
         scopes,
         resourceIds,
-        expiresInDays: expires,
+        expiresInDays: isGuest ? 1 : expires,
       });
       setSecret(result.secret);
       await refresh();
@@ -2639,7 +2639,10 @@ function CreateKey({
             </div>
           </Fieldset>
           {isGuest ? (
-            <Text component="p">This key expires when your Guest workspace expires.</Text>
+            <Text component="p">
+              This key expires within 24 hours, when you sign out, or when your Guest workspace
+              expires.
+            </Text>
           ) : (
             <NativeSelect
               label="Expiration"
