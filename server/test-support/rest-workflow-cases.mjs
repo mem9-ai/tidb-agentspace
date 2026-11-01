@@ -233,7 +233,7 @@ export async function restWorkflowCases(t, transport) {
       201,
     );
     assert.equal((await f.revokeKey(restricted.data.id)).status, 202);
-    await request(follow(review), { token: restricted.secret }, 401, 'INVALID_KEY');
+    await request(follow(review), { token: restricted.secret }, 401, 'INVALID_CREDENTIAL');
   });
 
   await t.test(
