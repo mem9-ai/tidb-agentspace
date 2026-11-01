@@ -8,5 +8,6 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
   },
+  worker: { format: 'iife', rollupOptions: { output: { inlineDynamicImports: true } } },
   build: { outDir: 'dist/console' },
 });

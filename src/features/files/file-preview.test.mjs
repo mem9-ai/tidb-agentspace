@@ -3,15 +3,18 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { fileFormat, formatJson, previewCsv, prepareFilePreview } from './file-preview.ts';
-import { MarkdownPreview } from './MarkdownPreview.ts';
+import { limitMermaidDiagrams, MarkdownPreview } from './MarkdownPreview.ts';
 
-test('file preview selects text formats case-insensitively and treats active formats as code', () => {
+test('file preview selects formats case-insensitively and treats SVG as code', () => {
   assert.equal(fileFormat('/docs/README.MD').kind, 'markdown');
   assert.equal(fileFormat('/context.markdown').kind, 'markdown');
+  assert.equal(fileFormat('/diagram.MMD').kind, 'mermaid');
+  assert.equal(fileFormat('/diagram.mermaid').kind, 'mermaid');
   assert.equal(fileFormat('/data.json').kind, 'json');
   assert.equal(fileFormat('/data.CSV').kind, 'csv');
   assert.equal(fileFormat('/script.py').language, 'python');
-  assert.equal(fileFormat('/page.html').kind, 'code');
+  assert.equal(fileFormat('/page.HTML').kind, 'html');
+  assert.equal(fileFormat('/page.htm').kind, 'html');
   assert.equal(fileFormat('/image.svg').kind, 'code');
   assert.equal(fileFormat('/LICENSE').kind, 'text');
 });
@@ -57,6 +60,7 @@ test('preview checks UTF-8 bytes before parsing or rendering, including exact si
   const text = ('a'.repeat(1023) + '\n').repeat(128);
   assert.equal(prepareFilePreview('/large.txt', text).kind, 'text');
   assert.match(prepareFilePreview('/large.md', text + 'a').reason, /128 KiB/);
+  assert.match(prepareFilePreview('/large.html', text + 'a').reason, /128 KiB/);
   assert.match(prepareFilePreview('/invalid.json', text + '{').reason, /128 KiB/);
   const unicode = ('é'.repeat(511) + 'a\n').repeat(128);
   assert.equal(new TextEncoder().encode(unicode).length, 128 * 1024);
@@ -132,4 +136,18 @@ test('Markdown cannot execute raw HTML or unsafe URLs, and does not fetch embedd
     html,
     /href="https:\/\/example.com\/docs" target="_blank" rel="noopener noreferrer"/,
   );
+});
+
+test('Markdown bounds the number of Mermaid diagrams without losing source', () => {
+  const nodes = Array.from({ length: 9 }, (_, index) => ({
+    type: 'code',
+    lang: index === 0 ? 'MERMAID' : 'mermaid',
+    value: `graph ${index}`,
+  }));
+  limitMermaidDiagrams()({ type: 'root', children: nodes });
+  assert.equal(nodes.filter((node) => node.lang === 'mermaid-over-limit').length, 1);
+  assert.equal(nodes[8].value, 'graph 8');
+  let deep = { type: 'code', lang: 'mermaid', value: 'graph LR' };
+  for (let index = 0; index < 10000; index++) deep = { type: 'blockquote', children: [deep] };
+  assert.doesNotThrow(() => limitMermaidDiagrams()({ type: 'root', children: [deep] }));
 });

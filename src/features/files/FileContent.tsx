@@ -1,8 +1,11 @@
-import { Component, useMemo, type ReactNode } from 'react';
+import { Component, lazy, Suspense, useMemo, type ReactNode } from 'react';
 import { Alert, Table, Text } from '@tidbcloud/uikit';
 import { CodeBlock } from '@tidbcloud/uikit/biz';
 import { MarkdownPreview } from './MarkdownPreview';
 import { prepareFilePreview } from './file-preview';
+
+const MermaidDiagram = lazy(() => import('./MermaidDiagram'));
+const HtmlPreview = lazy(() => import('./HtmlPreview'));
 
 function UnavailablePreview({ reason }: { reason: string }) {
   return (
@@ -47,6 +50,18 @@ export function FileContent({ path, content }: { path: string; content: string }
   if (!content)
     return <Text c="carbon.7">This file is empty. Choose Edit source to add content.</Text>;
   if (preview.kind === 'unavailable') return <UnavailablePreview reason={preview.reason} />;
+  if (preview.kind === 'html')
+    return (
+      <Suspense fallback={<Text>Loading HTML preview…</Text>}>
+        <HtmlPreview content={preview.content} />
+      </Suspense>
+    );
+  if (preview.kind === 'mermaid')
+    return (
+      <Suspense fallback={<Text>Loading diagram…</Text>}>
+        <MermaidDiagram source={content} />
+      </Suspense>
+    );
   if (preview.kind === 'markdown')
     return (
       <article className="file-markdown">

@@ -74,6 +74,14 @@
   overflow-wrap: anywhere;
   margin: 0;
 }
+.file-html-preview iframe {
+  display: block;
+  width: 100%;
+  height: 480px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+}
 .file-csv-scroll {
   overflow: auto;
 }
@@ -244,4 +252,36 @@
   height: auto;
   object-fit: contain;
   margin: 0 auto;
+}
+
+.mermaid-preview {
+  margin: 20px 0;
+  min-width: 0;
+}
+.mermaid-preview iframe {
+  display: block;
+  width: 100%;
+  border: 0;
+}
+.mermaid-preview details {
+  margin-top: 8px;
+  color: var(--muted);
+}
+.mermaid-preview summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+.mermaid-preview pre {
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mermaid-preview-error {
+  color: var(--ink);
+}
+
+.mermaid-scroll-hint {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 4px 0 0;
 }
