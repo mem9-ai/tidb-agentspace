@@ -166,8 +166,14 @@ export function CreateResourceDialog({
           onChange={(e) => setNameDraft({ value: e.target.value, automatic: false })}
           placeholder={`${kind}-…`}
         />
+        <TextInput
+          label="Workspace region"
+          readOnly
+          value={region(data.workspace.defaultRegionId)}
+          description="New resources are managed in this region."
+        />
         <NativeSelect
-          label="Region"
+          label="Provider data location"
           disabled={busy}
           description={
             <>

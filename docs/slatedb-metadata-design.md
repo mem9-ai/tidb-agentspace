@@ -6,7 +6,7 @@
 - Initial Meta implementation baseline: [141652e501c942128ccae617d088a2cdccf9f780](https://github.com/mem9-ai/tidb.ai/tree/141652e501c942128ccae617d088a2cdccf9f780), using SlateDB 0.17.0. Hosted Studio SSO has since been implemented under [ADR 0026](decisions/0026-native-hosted-studio.md); regional continuity grants and autonomous renewal remain future work.
 - Status: architecture reference for iteration. The foundations below reflect accepted owner direction; target domain schemas, control protocols and scale mechanisms require implementation as identified in [Implementation and iteration](#implementation-and-iteration).
 
-The metadata system records ownership, permissions, resource placement, lifecycle operations and private provider bindings. Each authority owns a Rust Meta Service and independent SlateDB storage. A successful mutation is recoverable from object storage without the original compute host, provided the object service, encryption roots and required bootstrap identity remain available.
+The metadata system records ownership, permissions, resource placement, lifecycle operations and private provider bindings. Each authority owns a Rust Meta Service and independent SlateDB storage. A successful mutation is recoverable from object storage without the original compute host, provided the object service, encryption roots and required bootstrap identity remain available. Authority-owned application and runtime metadata use the [System State boundary](decisions/0039-system-state-metadata.md); the filesystem security checkpoint migration is not yet implemented.
 
 Design records around domain entities and bounded consistency groups. Historical JSON shapes and compatibility imports do not constrain this model. This edition changes documentation; the running wire contract and storage format change only through subsequent implementation work.
 
@@ -98,6 +98,45 @@ SlateDB is an embedded ordered KV engine. The service uses its native storage an
 The pinned release supplies these primitives. Product backup workflows, CDC-based projections, automatic shard movement and read-replica authorization are separate integrations. An independently polling reader may lag and cannot be substituted for a fresh authorization read without proving the required freshness.
 
 Object storage latency is part of the durable-write path. Batching amortizes object requests; it does not remove the wait for acknowledged writes. Tune only after measuring the durability contract under the selected object service.
+
+### Choosing when to wait for durability
+
+`async` execution and asynchronous durability are different decisions. A Rust `.await`
+on SlateDB or Meta yields the executor while waiting; it does not require a blocking thread.
+The durability decision is whether the caller can proceed before the acknowledged state can
+survive process loss. SlateDB 0.17 returns a write handle after accepting a transaction;
+`await_durable()` waits for its recovery data to reach the configured object store. It does
+not mean that every write needs an individual `flush()`: concurrent writes can share a WAL
+flush, and only callers that need durability wait for their own handle.
+
+| Data or decision                                                                                      | Required behavior                                                                                                                                             | Why                                                                                                               |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Key creation/rotation/revocation, membership, grants and regional policy                              | Wait for durable commit before returning success, issuing a credential or acknowledging policy installation.                                                  | An acknowledged Key or revocation must survive restart; an old permission must not reappear.                      |
+| One-use tickets, proof/refresh replay markers, refresh rotation and renewal witnesses                 | Wait for durable commit before returning the credential or applying the effect.                                                                               | Losing a consumed marker or rotation can permit replay or lose the only valid credential.                         |
+| Security clock                                                                                        | Reserve a bounded time window durably before using it; check current time locally within that window.                                                         | Each check need not perform storage I/O, but restart must not make an expired credential valid again.             |
+| Workspace/resource metadata, ownership/fencing, operation receipts and pre-effect idempotency markers | Wait for the relevant atomic commit before confirming success or performing a non-idempotent external effect.                                                 | A crash must not lose an acknowledged resource, writer fence or evidence needed to reconcile an uncertain effect. |
+| Billing ledger, quota enforcement and required security audit                                         | Wait for the agreed durable ledger or audit acceptance point before making a decision that relies on it.                                                      | Approximate telemetry cannot be treated as a billing, quota or security authority.                                |
+| Debug metrics, traces, caches and explicitly approximate activity hints                               | May be buffered or written in the background if the caller and product contract accept loss, lag and bounded memory.                                          | These are useful observations; they do not grant access, decide quota or prove an acknowledged effect.            |
+| Derived search/list indexes or usage summaries                                                        | May be asynchronous only if the canonical data is already durable, staleness is visible, and rebuild plus a durable replay/watermark protocol is implemented. | A stale or lost projection must not hide authoritative state or authorize a mutation.                             |
+
+The current generic `MetaRequest::Commit` is **durable-only**: every successful response
+waits for the SlateDB handle, and its receipt and mutations share one transaction. No generic
+fire-and-forget or configurable weak acknowledgement is implemented. In particular, the
+existing `lastUsedAt` update is stored inside a Key record, and query counts and activity events
+participate in current transactions; none is automatically safe to make lossy. A future
+best-effort activity stream must use a separately classified record and must never rewrite the
+authoritative Key, advance an authorization version, or participate in quota/billing decisions.
+Its bounded buffering, crash loss window, shutdown behavior, overload behavior and freshness
+must be specified and tested before enabling it. A `202 Accepted` is not a durable acceptance
+unless its job or intent was itself durably recorded.
+
+The current snapshot transaction waits for the database-wide durable frontier at its starting
+sequence. Consequently a future unflushed best-effort write in the same SlateDB could still
+delay an unrelated authoritative read; key prefixes alone do not prove latency isolation.
+Introducing weaker writes therefore requires explicit read isolation, recovery and performance
+evidence, rather than just skipping `await_durable()`. Global and each Region retain their own
+independent Meta authority. The five-second clock reservation and restart tradeoff are defined
+in [ADR 0039](decisions/0039-system-state-metadata.md).
 
 ## Storage layout and identity
 

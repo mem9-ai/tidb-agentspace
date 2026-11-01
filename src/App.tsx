@@ -1,8 +1,8 @@
 import { ApiDocumentation } from './features/api/ApiDocumentation';
+import { WorkspaceApiError } from './api/transport';
 import {
   apiBaseUrl,
   base,
-  signInGlobal,
   workspaceApi,
   type Data,
   type Resource,
@@ -231,6 +231,7 @@ function App() {
   const [data, setData] = useState<PortalData | null>(null),
     [routeLocation, setRouteLocation] = useState<WorkspaceRoute>(currentRoute),
     [error, setError] = useState(''),
+    [needsSignIn, setNeedsSignIn] = useState(false),
     [guestLoading, setGuestLoading] = useState(false),
     [guestError, setGuestError] = useState(''),
     [confirmGuestSignOut, setConfirmGuestSignOut] = useState(false),
@@ -360,6 +361,7 @@ function App() {
   const start = useCallback(async () => {
     try {
       setError('');
+      setNeedsSignIn(false);
       const auth = await workspaceApi.authConfig();
       setSso(auth);
       if (!auth.enabled) await workspaceApi.startSession();
@@ -367,6 +369,7 @@ function App() {
       await refresh();
     } catch (e) {
       setError((e as Error).message);
+      setNeedsSignIn(e instanceof WorkspaceApiError && e.status === 401);
     }
   }, [refresh]);
   async function startGuest() {
@@ -410,14 +413,19 @@ function App() {
       notify('Clipboard unavailable. Select and copy the text.');
     }
   }
-  function finishSignOut() {
-    if (sso.logoutPath) window.location.href = apiBaseUrl + sso.logoutPath;
+  async function finishSignOut() {
+    try {
+      if (await workspaceApi.endDistributedSession()) window.location.reload();
+      else if (sso.logoutPath) window.location.href = apiBaseUrl + sso.logoutPath;
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Unable to sign out.');
+    }
   }
   function requestSignOut() {
     if (sso.sessionKind === 'guest') {
       setGuestSignOutError('');
       setConfirmGuestSignOut(true);
-    } else finishSignOut();
+    } else void finishSignOut();
   }
   async function finishGuestSignOut() {
     setGuestSignOutBusy(true);
@@ -451,7 +459,7 @@ function App() {
       <Button
         variant="default"
         onClick={() => {
-          window.location.href = apiBaseUrl + sso.loginPath;
+          window.location.href = sso.loginUrl || apiBaseUrl + sso.loginPath;
         }}
       >
         {sso.label || 'Continue with TiDB Account'}
@@ -461,7 +469,7 @@ function App() {
     return (
       <div className="loading-screen">
         <div className="brand-mark">T</div>
-        {error && sso.enabled ? (
+        {error && sso.enabled && needsSignIn ? (
           // SSO is enabled and no session is active yet: prompt sign-in (no anonymous demo).
           <>
             <Heading level={2}>Sign in to your workspace</Heading>
@@ -474,7 +482,7 @@ function App() {
                 guestError={guestError}
                 onGuestLogin={() => void startGuest()}
                 onTiDBLogin={() => {
-                  window.location.href = apiBaseUrl + sso.loginPath;
+                  window.location.href = sso.loginUrl || apiBaseUrl + sso.loginPath;
                 }}
               />
             )}
@@ -1683,15 +1691,19 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
   });
   const [pageBusy, setPageBusy] = useState(false);
   const [pageError, setPageError] = useState('');
+  const [keysLoaded, setKeysLoaded] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   useEffect(() => {
     let active = true;
     setPageBusy(true);
+    setPageError('');
     void workspaceApi
       .keysPage()
       .then((page) => {
         if (active) {
           setPageError('');
           setKeyWindow({ keys: page.data, next: page.nextCursor, earlier: false });
+          setKeysLoaded(true);
         }
       })
       .catch((cause) => {
@@ -1704,7 +1716,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
     return () => {
       active = false;
     };
-  }, [data.keys, data.keysNextCursor]);
+  }, [data.keys, data.keysNextCursor, loadAttempt]);
   async function retryPolicy(id: string) {
     setBusy(true);
     setPageError('');
@@ -1771,7 +1783,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
         title="API keys"
         description="Scoped access for every agent, application, and workflow."
         actions={
-          keyWindow.keys.length || keyWindow.next || keyWindow.earlier ? (
+          keysLoaded && (keyWindow.keys.length || keyWindow.next || keyWindow.earlier) ? (
             <Button
               variant="filled"
               leftSection={React.createElement(Plus, { size: 18 })}
@@ -1784,22 +1796,37 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
       />
       <Alert className="notice" color="peacock" icon={<ShieldCheck size={18} />}>
         <span>
-          Create Keys at Global and exchange them for scoped Tokens. Region accepts Tokens for
-          database and file operations. Provider credentials stay private.
+          Create an API key to give an agent or application scoped access to your workspace.
+          Provider credentials stay private.
         </span>
       </Alert>
       <div className="section-title">
         <Heading level={2}>
           Workspace keys{' '}
-          <span>
-            {active.length}
-            {keyWindow.next || keyWindow.earlier ? '+' : ''} active
-          </span>
+          {keysLoaded && (
+            <span>
+              {active.length}
+              {keyWindow.next || keyWindow.earlier ? '+' : ''} active
+            </span>
+          )}
         </Heading>
         <Badge>Workspace scoped</Badge>
       </div>
       <Paper className="panel table-panel" withBorder>
-        {keyWindow.keys.length ? (
+        {!keysLoaded && pageError ? (
+          <Empty
+            icon={KeyRound}
+            title="Unable to load API keys"
+            description="Please try again. If the problem continues, contact support."
+            action={
+              <Button onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try again</Button>
+            }
+          />
+        ) : !keysLoaded ? (
+          <Group justify="center" my="xl">
+            <Loader aria-label="Loading API keys" />
+          </Group>
+        ) : keyWindow.keys.length ? (
           <Table>
             <Table.Thead>
               <Table.Tr>
@@ -1900,18 +1927,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
             }
           />
         )}
-        {pageError && (
-          <Alert color="red">
-            {pageError}
-            <Button
-              onClick={() =>
-                void signInGlobal().catch((cause) => setPageError(String(cause.message)))
-              }
-            >
-              Sign in
-            </Button>
-          </Alert>
-        )}
+        {keysLoaded && pageError && <Alert color="red">{pageError}</Alert>}
         {(keyWindow.next || keyWindow.earlier) && (
           <Group justify="center" my="md">
             {keyWindow.earlier && (
@@ -2379,6 +2395,12 @@ function WorkspaceSettings({
                 </ActionIcon>
               }
             />
+            <TextInput
+              label="Default region"
+              readOnly
+              value={region(data.workspace.defaultRegionId)}
+              description="New resources are managed in this region."
+            />
           </div>
         </Paper>
         <Paper className="panel settings-panel" withBorder>
@@ -2449,6 +2471,7 @@ function WorkspaceSettings({
 }
 function CreateKey({
   data,
+  isGuest,
   refresh,
   notify,
   copy,
@@ -2615,18 +2638,22 @@ function CreateKey({
               ))}
             </div>
           </Fieldset>
-          <NativeSelect
-            label="Expiration"
-            value={expires}
-            onChange={(e) => {
-              const days = Number(e.target.value);
-              if (days === 7 || days === 30 || days === 90) setExpires(days);
-            }}
-          >
-            <option value={7}>7 days</option>
-            <option value={30}>30 days</option>
-            <option value={90}>90 days</option>
-          </NativeSelect>
+          {isGuest ? (
+            <Text component="p">This key expires when your Guest workspace expires.</Text>
+          ) : (
+            <NativeSelect
+              label="Expiration"
+              value={expires}
+              onChange={(e) => {
+                const days = Number(e.target.value);
+                if (days === 7 || days === 30 || days === 90) setExpires(days);
+              }}
+            >
+              <option value={7}>7 days</option>
+              <option value={30}>30 days</option>
+              <option value={90}>90 days</option>
+            </NativeSelect>
+          )}
           {error && (
             <Alert className="inline-error" color="red">
               {error}

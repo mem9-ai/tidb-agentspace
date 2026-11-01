@@ -178,8 +178,10 @@ fn decode_registration(records: &Value) -> Result<Registration> {
         || value(records, "personal-organization")?
             != &json!({"id":registration.organization_id,"ownerId":registration.user_id})
         || !["pending", "ready"].contains(&workspace["state"].as_str().unwrap_or_default())
-        || workspace
+        || (workspace
             != &json!({"id":registration.workspace_id,"organizationId":registration.organization_id,"regionId":registration.region_id,"state":workspace["state"]})
+            && workspace
+                != &json!({"id":registration.workspace_id,"organizationId":registration.organization_id,"regionId":registration.region_id,"defaultRegionId":registration.region_id,"state":workspace["state"]}))
         || value(records, "owner-membership")?
             != &json!({"userId":registration.user_id,"workspaceId":registration.workspace_id,"role":"owner","generation":1})
     {
@@ -375,6 +377,7 @@ impl Directory {
                 .ok_or_else(|| error(503, "IDENTITY_RECORD_CORRUPT"))?;
             let mut updated = workspace["value"].clone();
             updated["state"] = json!("ready");
+            updated["defaultRegionId"] = json!(registration.region_id);
             let result = self.metadata.execute(MetaRequest::Commit {
                 scope: scope.clone(), guard: None, mutation_id: mutation_id.into(),
                 changes: vec![json!({"key":"personal-workspace","expectedVersion":version,"value":updated})],
@@ -439,7 +442,7 @@ impl Directory {
             ),
             (
                 "personal-workspace",
-                json!({"id":registration.workspace_id,"organizationId":registration.organization_id,"regionId":registration.region_id,"state":"pending"}),
+                json!({"id":registration.workspace_id,"organizationId":registration.organization_id,"regionId":registration.region_id,"defaultRegionId":registration.region_id,"state":"pending"}),
             ),
             (
                 "owner-membership",
@@ -589,7 +592,7 @@ impl Directory {
             ),
             (
                 "personal-workspace",
-                json!({"id":registration.workspace_id,"organizationId":registration.organization_id,"regionId":registration.region_id,"state":"pending"}),
+                json!({"id":registration.workspace_id,"organizationId":registration.organization_id,"regionId":registration.region_id,"defaultRegionId":registration.region_id,"state":"pending"}),
             ),
             (
                 "owner-membership",

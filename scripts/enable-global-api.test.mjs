@@ -41,7 +41,6 @@ test('Global cutover prepares independent identities while retaining all active 
     sourcePlan: resolve(root, 'plan.json'),
     directory: resolve(root, 'prepared'),
     mountDirectory: '/run/workspace/prepared',
-    clockDirectory: '/var/lib/workspace/security',
   };
   const result = await prepareGlobalCutover(args);
   assert.equal(result.globalBase, 'http://127.0.0.1:4318/api/global');
@@ -53,6 +52,9 @@ test('Global cutover prepares independent identities while retaining all active 
   assert.equal(global.sharedListener, true);
   assert.equal(global.localWorkspace.workspaceId, api.workspaceId);
   assert.equal(next.security.globalIssuer, result.globalBase);
+  assert.equal(next.security.metadataSecurityState, true);
+  assert.equal(global.metadataSecurityState, true);
+  assert.equal(next.security.clockDirectory, undefined);
   assert.notEqual(
     await readFile(resolve(args.directory, 'security/global-signing.pub'), 'utf8'),
     await readFile(resolve(args.directory, 'security/region-signing.pub'), 'utf8'),

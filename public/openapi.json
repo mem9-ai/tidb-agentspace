@@ -8,21 +8,16 @@
   "servers": [
     { "url": "/api/v1", "description": "Standalone Workspace API; resolve against the API origin" }
   ],
-  "tags": [{ "name": "Workspace" }, { "name": "Owner" }],
+  "tags": [{ "name": "Workspace" }],
   "paths": {
     "/workspaces": {
       "get": {
         "operationId": "listWorkspaces",
         "summary": "List available workspaces",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "resources:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "responses": {
           "200": {
             "description": "Success",
@@ -139,14 +134,9 @@
         "operationId": "getWorkspace",
         "summary": "Describe a workspace",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "resources:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "responses": {
           "200": {
             "description": "Success",
@@ -267,594 +257,14 @@
         }
       ]
     },
-    "/workspaces/{workspaceId}/bootstrap": {
-      "get": {
-        "operationId": "getBootstrap",
-        "summary": "Load the local owner Console state",
-        "tags": ["Owner"],
-        "description": "Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Region access Tokens cannot perform this Owner operation.",
-        "x-required-scope": null,
-        "security": [{ "localOwner": [] }, { "accountOwner": [] }, { "guestOwner": [] }],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Bootstrap" } }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, expired, or revoked credential",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "403": {
-            "description": "Insufficient permission",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "404": {
-            "description": "Resource or endpoint not found",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "405": {
-            "description": "Resource lifecycle operation unsupported by provider",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "409": {
-            "description": "Conflict or free-tier limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "410": {
-            "description": "Temporary database expired",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "412": {
-            "description": "Version precondition failed without a write",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "413": {
-            "description": "Content too large",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "415": {
-            "description": "Unsupported content type",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "422": {
-            "description": "SQL syntax, result limit, or unsupported demo query",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "429": {
-            "description": "Provider quota or rate limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "502": {
-            "description": "Provider unavailable or invalid response",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "503": {
-            "description": "Provider binding needs operator recovery",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "504": {
-            "description": "SQL timeout; a write outcome may be unknown",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          }
-        }
-      },
-      "parameters": [
-        {
-          "name": "workspaceId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[A-Za-z0-9_.:-]+$"
-          },
-          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
-        }
-      ]
-    },
-    "/workspaces/{workspaceId}/tutorials": {
-      "get": {
-        "operationId": "listTutorials",
-        "summary": "List durable Workspace tutorial progress in resource-ID order",
-        "tags": ["Owner"],
-        "description": "Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Region access Tokens cannot perform this Owner operation. Each resource has one current bookmark, retained across sessions and API restarts in encrypted Workspace metadata. This owner-reported progress is a navigation hint, not saved results or proof of data availability. No provider or sample-data I/O occurs.",
-        "x-required-scope": null,
-        "security": [{ "localOwner": [] }, { "accountOwner": [] }, { "guestOwner": [] }],
-        "parameters": [
-          {
-            "name": "cursor",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128,
-              "pattern": "^[A-Za-z0-9_-]+$"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 100 }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["data", "nextCursor"],
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "maxItems": 100,
-                      "items": { "$ref": "#/components/schemas/Tutorial" }
-                    },
-                    "nextCursor": { "type": ["string", "null"] }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, expired, or revoked credential",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "403": {
-            "description": "Insufficient permission",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "404": {
-            "description": "Resource or endpoint not found",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "405": {
-            "description": "Resource lifecycle operation unsupported by provider",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "409": {
-            "description": "Conflict or free-tier limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "410": {
-            "description": "Temporary database expired",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "412": {
-            "description": "Version precondition failed without a write",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "413": {
-            "description": "Content too large",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "415": {
-            "description": "Unsupported content type",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "422": {
-            "description": "SQL syntax, result limit, or unsupported demo query",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "429": {
-            "description": "Provider quota or rate limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "502": {
-            "description": "Provider unavailable or invalid response",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "503": {
-            "description": "Provider binding needs operator recovery",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "504": {
-            "description": "SQL timeout; a write outcome may be unknown",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          }
-        }
-      },
-      "parameters": [
-        {
-          "name": "workspaceId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[A-Za-z0-9_.:-]+$"
-          },
-          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
-        }
-      ]
-    },
-    "/workspaces/{workspaceId}/tutorials/{resourceId}": {
-      "parameters": [
-        {
-          "name": "workspaceId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[A-Za-z0-9_.:-]+$"
-          },
-          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
-        },
-        { "name": "resourceId", "in": "path", "required": true, "schema": { "type": "string" } }
-      ],
-      "get": {
-        "operationId": "getTutorial",
-        "summary": "Read a tutorial bookmark without querying or writing sample data",
-        "tags": ["Owner"],
-        "description": "Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Region access Tokens cannot perform this Owner operation.",
-        "x-required-scope": null,
-        "security": [{ "localOwner": [] }, { "accountOwner": [] }, { "guestOwner": [] }],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["data"],
-                  "properties": { "data": { "$ref": "#/components/schemas/Tutorial" } }
-                }
-              }
-            },
-            "headers": {
-              "ETag": {
-                "schema": { "type": "string" },
-                "description": "Strong opaque tutorial version; equals data.version."
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, expired, or revoked credential",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "403": {
-            "description": "Insufficient permission",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "404": {
-            "description": "Resource or endpoint not found",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "405": {
-            "description": "Resource lifecycle operation unsupported by provider",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "409": {
-            "description": "Conflict or free-tier limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "410": {
-            "description": "Temporary database expired",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "412": {
-            "description": "Version precondition failed without a write",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "413": {
-            "description": "Content too large",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "415": {
-            "description": "Unsupported content type",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "422": {
-            "description": "SQL syntax, result limit, or unsupported demo query",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "429": {
-            "description": "Provider quota or rate limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "502": {
-            "description": "Provider unavailable or invalid response",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "503": {
-            "description": "Provider binding needs operator recovery",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "504": {
-            "description": "SQL timeout; a write outcome may be unknown",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          }
-        }
-      },
-      "put": {
-        "operationId": "replaceTutorial",
-        "summary": "Create or conditionally replace Workspace tutorial progress",
-        "tags": ["Owner"],
-        "description": "Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Region access Tokens cannot perform this Owner operation. One version precondition is mandatory (428 when absent). Creates return 201; replacements return 200. Failed or unknown acknowledgements must be inspected before proceeding. Save attempted before sample writes; saving progress never creates or executes sample data. A new sampleId explicitly replaces the bookmark while keeping previous data intact.",
-        "x-required-scope": null,
-        "security": [{ "localOwner": [] }, { "accountOwner": [] }, { "guestOwner": [] }],
-        "parameters": [
-          {
-            "name": "If-Match",
-            "in": "header",
-            "schema": { "type": "string" },
-            "description": "Existing tutorial version, including quotes. Required for replacement; stale/missing records return 412 without changes. Mutually exclusive with If-None-Match."
-          },
-          {
-            "name": "If-None-Match",
-            "in": "header",
-            "schema": { "const": "*" },
-            "description": "Required for create-only progress migration/creation. An existing record returns 412 without changes. Mutually exclusive with If-Match."
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": { "schema": { "$ref": "#/components/schemas/TutorialInput" } }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["data"],
-                  "properties": { "data": { "$ref": "#/components/schemas/Tutorial" } }
-                }
-              }
-            },
-            "headers": {
-              "ETag": {
-                "schema": { "type": "string" },
-                "description": "Strong opaque tutorial version; equals data.version."
-              }
-            }
-          },
-          "201": {
-            "description": "Tutorial created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["data"],
-                  "properties": { "data": { "$ref": "#/components/schemas/Tutorial" } }
-                }
-              }
-            },
-            "headers": {
-              "Location": {
-                "schema": { "type": "string" },
-                "description": "URI of this tutorial bookmark."
-              },
-              "ETag": {
-                "schema": { "type": "string" },
-                "description": "Strong opaque tutorial version; equals data.version."
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, expired, or revoked credential",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "403": {
-            "description": "Insufficient permission",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "404": {
-            "description": "Resource or endpoint not found",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "405": {
-            "description": "Resource lifecycle operation unsupported by provider",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "409": {
-            "description": "Conflict or free-tier limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "410": {
-            "description": "Temporary database expired",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "412": {
-            "description": "Version precondition failed without a write",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "413": {
-            "description": "Content too large",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "415": {
-            "description": "Unsupported content type",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "422": {
-            "description": "SQL syntax, result limit, or unsupported demo query",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "428": {
-            "description": "A version precondition is required",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "429": {
-            "description": "Provider quota or rate limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "502": {
-            "description": "Provider unavailable or invalid response",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "503": {
-            "description": "Provider binding needs operator recovery",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "504": {
-            "description": "SQL timeout; a write outcome may be unknown",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          }
-        }
-      }
-    },
     "/workspaces/{workspaceId}/resources": {
       "get": {
         "operationId": "listResources",
         "summary": "Discover databases and file systems",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "resources:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "parameters": [
           {
             "name": "limit",
@@ -985,14 +395,9 @@
         "operationId": "createResource",
         "summary": "Create a resource using the configured provider",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "resources:write",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "parameters": [
           {
             "name": "Idempotency-Key",
@@ -1011,10 +416,14 @@
                 "properties": {
                   "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,39}$" },
                   "kind": { "enum": ["mysql", "postgresql", "duckdb", "filesystem"] },
+                  "regionId": {
+                    "type": "string",
+                    "description": "Optional Workspace Region; must match the current Region. Omit to use the default."
+                  },
                   "region": {
                     "type": "string",
                     "enum": ["aws-us-east-1", "aws-us-west-2", "automatic", "aws-ap-southeast-1"],
-                    "description": "Choose a region supported by the resource kind in capabilities. Zero MySQL uses automatic provider assignment. The first supported region is the Console default."
+                    "description": "Provider data location supported by the resource kind. This is separate from regionId. Zero MySQL uses automatic provider assignment."
                   }
                 }
               }
@@ -1154,14 +563,9 @@
         "operationId": "tabularFilePreview",
         "summary": "Read a fixed bounded CSV/Parquet schema and sample",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Fixed CSV/Parquet schema/sample only: accepts resourceId/path, no custom SQL or engine settings. Requires files:read, not files:analyze. Whole version-verified snapshot up to 16 MiB, 15 seconds and shared two-worker budget; at most 20 rows, 50 columns, 128 KiB. CSV types are inferred and totalRows unknown; Parquet count is metadata. No automatic retry. Download unsupported or over-budget files.",
+        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Fixed CSV/Parquet schema/sample only: accepts resourceId/path, no custom SQL or engine settings. Requires files:read, not files:analyze. Whole version-verified snapshot up to 16 MiB, 15 seconds and shared two-worker budget; at most 20 rows, 50 columns, 128 KiB. CSV types are inferred and totalRows unknown; Parquet count is metadata. No automatic retry. Download unsupported or over-budget files.",
         "x-required-scope": "files:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "parameters": [
           { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
           { "name": "path", "in": "query", "required": true, "schema": { "type": "string" } }
@@ -1345,14 +749,9 @@
         "operationId": "fileAnalysisCapabilities",
         "summary": "Discover read-only analysis for a selected file",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "files:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "parameters": [
           { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
           { "name": "path", "in": "query", "required": true, "schema": { "type": "string" } }
@@ -1558,14 +957,9 @@
         "operationId": "analyzeFile",
         "summary": "Run bounded read-only DuckDB SQL or Just Bash on one selected file",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Also requires files:read. Discover engines from capabilities: CSV supports DuckDB SQL over table file or Just Bash over its raw UTF-8 text. Bash exposes the selected absolute Workspace path; discover input.path, input.workingDirectory and compatibility aliases on its engine option. Paths refer only to the virtual selected-file snapshot. Parquet supports only DuckDB, and other recognized text only Just Bash. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.",
+        "description": "Required Region access Token scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Also requires files:read. Discover engines from capabilities: CSV supports DuckDB SQL over table file or Just Bash over its raw UTF-8 text. Bash exposes the selected absolute Workspace path; discover input.path, input.workingDirectory and compatibility aliases on its engine option. Paths refer only to the virtual selected-file snapshot. Parquet supports only DuckDB, and other recognized text only Just Bash. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.",
         "x-required-scope": "files:analyze",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -1770,14 +1164,9 @@
         "operationId": "listFiles",
         "summary": "List files (Drive9 metadata only; local files include UTF-8 contents)",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "files:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "parameters": [
           { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
           {
@@ -1911,14 +1300,9 @@
         "operationId": "writeFile",
         "summary": "Create or replace a UTF-8 file or directory",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: files:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: files:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "files:write",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -2080,14 +1464,9 @@
         "operationId": "deleteFile",
         "summary": "Delete a file or empty directory identified by its URI",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: files:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: files:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "files:write",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "parameters": [
           { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
           { "name": "path", "in": "query", "required": true, "schema": { "type": "string" } }
@@ -2217,14 +1596,9 @@
         "operationId": "downloadFile",
         "summary": "Download original bytes or request a bounded file preview (Drive9)",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "files:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "parameters": [
           { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
           { "name": "path", "in": "query", "required": true, "schema": { "type": "string" } },
@@ -2305,14 +1679,9 @@
         "operationId": "uploadFile",
         "summary": "Upload original bytes to Drive9 (gateway maximum 1 MiB)",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: files:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: files:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "files:write",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "parameters": [
           { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
           { "name": "path", "in": "query", "required": true, "schema": { "type": "string" } },
@@ -2474,14 +1843,9 @@
         "operationId": "createResourceSetupAttempt",
         "summary": "Create a durable setup attempt on the saved target",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Journaled before I/O; executes inline without a queue. Same caller/resource/idempotency key replays without effects. A different key explicitly requests a new attempt using saved bindings and supported reconciliation/idempotent setup only. Missing bindings cannot provision a replacement. succeeded/failed/outcome-unknown describe the attempt, not HTTP resource creation. GET never executes setup; existing credentials are retained.",
+        "description": "Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Journaled before I/O; executes inline without a queue. Same caller/resource/idempotency key replays without effects. A different key explicitly requests a new attempt using saved bindings and supported reconciliation/idempotent setup only. Missing bindings cannot provision a replacement. succeeded/failed/outcome-unknown describe the attempt, not HTTP resource creation. GET never executes setup; existing credentials are retained.",
         "x-required-scope": "resources:write",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "parameters": [
           {
             "name": "Idempotency-Key",
@@ -2606,14 +1970,9 @@
         "operationId": "listResourceSetupAttempts",
         "summary": "List retained setup attempts by opaque ID",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: resources:read or resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: resources:read or resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "resources:read or resources:write",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "parameters": [
           { "name": "cursor", "in": "query", "schema": { "type": "string", "format": "uuid" } },
           {
@@ -2761,14 +2120,9 @@
         "operationId": "getResourceSetupAttempt",
         "summary": "Observe a setup attempt without provider calls or retry",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: resources:read or resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: resources:read or resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "resources:read or resources:write",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "responses": {
           "200": {
             "description": "Success",
@@ -2895,14 +2249,9 @@
         "operationId": "listDatabaseTables",
         "summary": "List up to 500 tables and views in the selected database, ordered by name; truncated means more exist",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "queries:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "responses": {
           "200": {
             "description": "Success",
@@ -3023,14 +2372,9 @@
         "operationId": "getDatabaseTable",
         "summary": "Read columns and ordered index parts for an exact table name; includes a SELECT for the editor",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "queries:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "parameters": [
           {
             "name": "tableName",
@@ -3160,14 +2504,9 @@
         "operationId": "getDatabaseTableRows",
         "summary": "Read up to 100 unordered rows, bounded by 1 MiB and 15 seconds per statement; not pagination or a full export",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "queries:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "parameters": [
           {
             "name": "tableName",
@@ -3281,14 +2620,9 @@
         "operationId": "createDatabaseImportPreparation",
         "summary": "Create a private destination-bound import review",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: queries:execute on destination; Workspace inputs also require source files:read/analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
+        "description": "Required Region access Token scope: queries:execute on destination; Workspace inputs also require source files:read/analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
         "x-required-scope": "queries:execute on destination; Workspace inputs also require source files:read/analyze",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "parameters": [
           {
             "name": "resourceId",
@@ -3455,14 +2789,9 @@
         "operationId": "createDatabaseImport",
         "summary": "Confirm reviewed server rows and create a new database table",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: queries:execute on destination; Workspace files additionally require source files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
+        "description": "Required Region access Token scope: queries:execute on destination; Workspace files additionally require source files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
         "x-required-scope": "queries:execute on destination; Workspace files additionally require source files:read and files:analyze",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -3590,14 +2919,9 @@
         "operationId": "createFileExportPreparation",
         "summary": "Parse an original file or Bash stream for explicit schema review",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Also requires files:read and the source File System grant. Fixed CSV/Parquet/text-line parsing, no scripts. Up to 16 MiB original or 1 MiB output text, 1000 rows/100 columns/1 MiB parsed data and 15 seconds, shared worker admission. Returns 20 sample rows and suggested field types with an actor-bound five-minute preparation. Parsing writes nothing. CSV keeps leading zeros and distinguishes quoted empty strings from NULL. Text lines are explicit one-column records.",
+        "description": "Required Region access Token scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Also requires files:read and the source File System grant. Fixed CSV/Parquet/text-line parsing, no scripts. Up to 16 MiB original or 1 MiB output text, 1000 rows/100 columns/1 MiB parsed data and 15 seconds, shared worker admission. Returns 20 sample rows and suggested field types with an actor-bound five-minute preparation. Parsing writes nothing. CSV keeps leading zeros and distinguishes quoted empty strings from NULL. Text lines are explicit one-column records.",
         "x-required-scope": "files:analyze",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -3731,14 +3055,9 @@
         "operationId": "exportFileContent",
         "summary": "Copy original bytes, export Bash text or commit a confirmed database import",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Original copies require read access; Bash output requires read plus analyze. File targets require files:write and a target grant. Database commits require the exact actor preparation, confirmed=true, reviewed fields, source read/analyze and target queries:execute/grant. Original versions must match; single-use writes, no append/overwrite/retry. Output text is client-supplied authorization context, not attested command lineage. Only file-exports and file-export-preparations permit an 8 MiB JSON envelope for at most 1 MiB output text. Original downloads retain /files/content (local files use /files).",
+        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Original copies require read access; Bash output requires read plus analyze. File targets require files:write and a target grant. Database commits require the exact actor preparation, confirmed=true, reviewed fields, source read/analyze and target queries:execute/grant. Original versions must match; single-use writes, no append/overwrite/retry. Output text is client-supplied authorization context, not attested command lineage. Only file-exports and file-export-preparations permit an 8 MiB JSON envelope for at most 1 MiB output text. Original downloads retain /files/content (local files use /files).",
         "x-required-scope": "files:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -3864,14 +3183,9 @@
         "operationId": "exportResult",
         "summary": "Export a supplied result snapshot without rerunning its source query",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: Source database: queries:read (also implied by queries:execute); source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.",
+        "description": "Required Region access Token scope: Source database: queries:read (also implied by queries:execute); source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.",
         "x-required-scope": "Source database: queries:read (also implied by queries:execute); source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -4007,12 +3321,7 @@
         "tags": ["Workspace"],
         "description": "Requires queries:read (implied by queries:execute) and the database grant. Writes additionally require queries:execute. Read-only mode is enforced for read-only Keys even when readOnly=false. The constrained read-only subset permits at most 1024 lexer tokens and 32 nested delimiters; unsupported syntax/functions fail closed.",
         "x-required-scope": "queries:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -4179,14 +3488,9 @@
         "operationId": "getUsage",
         "summary": "Get local usage; live trial usage and allowances are unmeasured",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: usage:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: usage:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "usage:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "parameters": [
           {
             "name": "limit",
@@ -4329,14 +3633,9 @@
         "operationId": "listEvents",
         "summary": "List the latest 200 successful local mutation events",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "resources:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "responses": {
           "200": {
             "description": "Success",
@@ -4459,353 +3758,14 @@
         }
       ]
     },
-    "/workspaces/{workspaceId}/settings": {
-      "patch": {
-        "operationId": "updateSettings",
-        "summary": "Update local workspace and profile",
-        "tags": ["Owner"],
-        "description": "Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Region access Tokens cannot perform this Owner operation.",
-        "x-required-scope": null,
-        "security": [{ "localOwner": [] }, { "accountOwner": [] }, { "guestOwner": [] }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["workspaceName", "name"],
-                "properties": {
-                  "workspaceName": { "type": "string", "minLength": 2, "maxLength": 50 },
-                  "name": { "type": "string", "minLength": 1, "maxLength": 50 },
-                  "description": { "type": "string", "maxLength": 200 }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": { "type": "object", "properties": { "saved": { "type": "boolean" } } }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, expired, or revoked credential",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "403": {
-            "description": "Insufficient permission",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "404": {
-            "description": "Resource or endpoint not found",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "405": {
-            "description": "Resource lifecycle operation unsupported by provider",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "409": {
-            "description": "Conflict or free-tier limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "410": {
-            "description": "Temporary database expired",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "412": {
-            "description": "Version precondition failed without a write",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "413": {
-            "description": "Content too large",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "415": {
-            "description": "Unsupported content type",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "422": {
-            "description": "SQL syntax, result limit, or unsupported demo query",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "429": {
-            "description": "Provider quota or rate limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "502": {
-            "description": "Provider unavailable or invalid response",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "503": {
-            "description": "Provider binding needs operator recovery",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "504": {
-            "description": "SQL timeout; a write outcome may be unknown",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          }
-        }
-      },
-      "parameters": [
-        {
-          "name": "workspaceId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[A-Za-z0-9_.:-]+$"
-          },
-          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
-        }
-      ]
-    },
-    "/api/health": {
-      "servers": [{ "url": "/" }],
-      "get": {
-        "operationId": "getHealth",
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["status", "mode", "filesProvider"],
-                  "properties": {
-                    "status": { "const": "ok" },
-                    "mode": {
-                      "enum": ["demo", "hybrid"],
-                      "description": "Configured provider mode, not a count or a health check of provisioned resources."
-                    },
-                    "filesProvider": { "type": "string" }
-                  }
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Configured metadata authority is unavailable; no fallback state is seeded",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          }
-        }
-      }
-    },
-    "/api/session": {
-      "servers": [{ "url": "/" }],
-      "post": {
-        "operationId": "createLocalSession",
-        "summary": "Create a loopback-only demo owner session",
-        "tags": ["Workspace"],
-        "description": "Explicit loopback guest mode only; disabled when TiDB Account SSO is configured. Requires a real loopback peer. Sets an HttpOnly SameSite=Strict cookie scoped to the configured public path.",
-        "x-required-scope": null,
-        "security": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": { "schema": { "type": "object", "required": [], "properties": {} } }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["workspaceId", "mode"],
-                  "properties": { "workspaceId": { "type": "string" }, "mode": { "const": "demo" } }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, expired, or revoked credential",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "403": {
-            "description": "Insufficient permission",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "404": {
-            "description": "Resource or endpoint not found",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "405": {
-            "description": "Resource lifecycle operation unsupported by provider",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "409": {
-            "description": "Conflict or free-tier limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "410": {
-            "description": "Temporary database expired",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "412": {
-            "description": "Version precondition failed without a write",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "413": {
-            "description": "Content too large",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "415": {
-            "description": "Unsupported content type",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "422": {
-            "description": "SQL syntax, result limit, or unsupported demo query",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "429": {
-            "description": "Provider quota or rate limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "502": {
-            "description": "Provider unavailable or invalid response",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "503": {
-            "description": "Provider binding needs operator recovery",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "504": {
-            "description": "SQL timeout; a write outcome may be unknown",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          }
-        }
-      }
-    },
-    "/api/auth/config": {
-      "servers": [{ "url": "/" }],
-      "get": {
-        "operationId": "getAuthConfig",
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["enabled"],
-                  "properties": {
-                    "enabled": { "type": "boolean" },
-                    "globalApi": {
-                      "type": "object",
-                      "required": ["apiOrigin", "apiPathPrefix"],
-                      "properties": {
-                        "apiOrigin": { "type": "string", "format": "uri" },
-                        "apiPathPrefix": { "type": "string" }
-                      }
-                    },
-                    "regionId": { "type": "string" },
-                    "guestEnabled": { "type": "boolean" },
-                    "guestCleanupEnabled": { "type": "boolean" },
-                    "sessionKind": { "type": "string", "enum": ["account", "guest"] },
-                    "provider": { "const": "tidbcloud" },
-                    "label": { "type": "string" },
-                    "loginPath": { "type": "string" },
-                    "logoutPath": { "type": "string" }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/workspaces/{workspaceId}/files/metadata": {
       "get": {
         "operationId": "getFileMetadata",
         "summary": "Read file identity and an opaque conditional-write version",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "files:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "parameters": [
           { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
           { "name": "path", "in": "query", "required": true, "schema": { "type": "string" } }
@@ -4961,14 +3921,9 @@
         "operationId": "getAgentContext",
         "summary": "Discover the current caller and effective Workspace permissions",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: authenticated caller; no additional action scope. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Bootstrap with the regional Workspace API URL (including workspaceId) and one Key. No Global lookup or bearer-only scan across Workspaces. No other Key or upstream credentials are returned; effective grants do not override resource/provider availability. queries:execute implies queries:read. Owner session expiry remains governed by its authentication profile.",
+        "description": "Required Region access Token scope: authenticated caller; no additional action scope. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Bootstrap with the regional Workspace API URL (including workspaceId) and one Key. No Global lookup or bearer-only scan across Workspaces. No other Key or upstream credentials are returned; effective grants do not override resource/provider availability. queries:execute implies queries:read. Owner session expiry remains governed by its authentication profile.",
         "x-required-scope": null,
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "responses": {
           "200": {
             "description": "Success",
@@ -5169,14 +4124,9 @@
         "operationId": "getResource",
         "summary": "Read one resource, its permitted actions and lifecycle status",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "resources:read",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "responses": {
           "200": {
             "description": "Success",
@@ -5286,14 +4236,9 @@
         "operationId": "deleteResource",
         "summary": "Request removal and retain an observable deletion tombstone",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Local removal completes synchronously (200). Drive9/DuckDB and db9 may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; db9 requires operator reconciliation. Zero returns 405 unchanged. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.",
+        "description": "Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Local removal completes synchronously (200). Drive9/DuckDB and db9 may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; db9 requires operator reconciliation. Zero returns 405 unchanged. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.",
         "x-required-scope": "resources:write",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "responses": {
           "200": {
             "description": "Success",
@@ -5424,153 +4369,6 @@
         }
       }
     },
-    "/api/auth/guest": {
-      "servers": [{ "url": "/" }],
-      "post": {
-        "operationId": "startGuestSession",
-        "security": [],
-        "description": "Start or resume a Guest session from a trusted origin. A new session sets a secure, HttpOnly, SameSite=Strict cookie with an absolute expiry.",
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["workspaceId"],
-                  "properties": { "workspaceId": { "type": "string" } }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Guest sign-in is disabled",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "default": {
-            "description": "Guest sign-in unavailable or denied",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          }
-        }
-      }
-    },
-    "/api/auth/guest/logout": {
-      "servers": [{ "url": "/" }],
-      "post": {
-        "operationId": "logoutGuestSession",
-        "security": [{ "guestOwner": [] }],
-        "description": "End an authenticated Guest Workspace session and durably schedule resource cleanup. Provider deletion can be asynchronous, unsupported or require reconciliation; acceptance is not proof of deletion.",
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["loggedOut", "cleanup"],
-                  "properties": {
-                    "loggedOut": { "type": "boolean" },
-                    "cleanup": { "const": "scheduled" }
-                  }
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Guest logout or cleanup scheduling unavailable",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          }
-        }
-      }
-    },
-    "/api/auth/tidbcloud/login": {
-      "servers": [{ "url": "/" }],
-      "get": {
-        "operationId": "startTidbLogin",
-        "security": [],
-        "description": "Browser redirect to the configured provider using code + S256 PKCE. Server retains a single-use ten-minute flow.",
-        "responses": {
-          "302": {
-            "description": "Redirect to provider or configured same-origin Console; sets HttpOnly flow/session cookies."
-          },
-          "default": {
-            "description": "Sign-in unavailable, invalid or unauthorized",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          }
-        }
-      }
-    },
-    "/api/auth/tidbcloud/callback": {
-      "servers": [{ "url": "/" }],
-      "get": {
-        "operationId": "completeTidbLogin",
-        "security": [],
-        "description": "Registered Portal callback; verifies signature, issuer, audience and nonce with single-use, cookie-bound state. Managed hosts establish a Workspace-bound aw_account continuity grant. When Global shares the Portal listener, this same verified callback also issues a distinct eight-hour aw_global_owner session after Global Directory membership checks. No second provider login/callback is needed. Explicit local/legacy profiles issue an eight-hour aw_session.",
-        "responses": {
-          "302": {
-            "description": "Redirect to provider or configured same-origin Console; sets HttpOnly flow/session cookies."
-          },
-          "default": {
-            "description": "Sign-in unavailable, invalid or unauthorized",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          }
-        }
-      }
-    },
-    "/api/auth/tidbcloud/logout": {
-      "servers": [{ "url": "/" }],
-      "post": {
-        "operationId": "logoutTidbSession",
-        "security": [],
-        "description": "Revoke the TiDB Account session and attached Guest cookie. Bundled Portal deployments also revoke the attached Global Owner session and clear both cookies. Guest-only sessions must use POST /api/auth/guest/logout to schedule cleanup.",
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["loggedOut"],
-                  "properties": { "loggedOut": { "type": "boolean" } }
-                }
-              }
-            }
-          }
-        }
-      },
-      "get": {
-        "operationId": "logoutTidbSessionAndRedirect",
-        "security": [],
-        "description": "Revoke the TiDB Account session and attached Guest cookie, then redirect. Guest-only sessions must use POST /api/auth/guest/logout.",
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["loggedOut"],
-                  "properties": { "loggedOut": { "type": "boolean" } }
-                }
-              }
-            }
-          },
-          "302": {
-            "description": "Session revoked and browser redirected to the configured Console."
-          }
-        }
-      }
-    },
     "/workspaces/{workspaceId}/database-import-preparations/{preparationId}": {
       "parameters": [
         {
@@ -5596,14 +4394,9 @@
         "operationId": "getDatabaseImportPreparation",
         "summary": "Read the current actor review without parsing or provider I/O",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: queries:execute on destination; source files:read/analyze when present. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: queries:execute on destination; source files:read/analyze when present. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "queries:execute on destination; source files:read/analyze when present",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "responses": {
           "200": {
             "description": "Success",
@@ -5707,14 +4500,9 @@
         "operationId": "deleteDatabaseImportPreparation",
         "summary": "Cancel an unconsumed review",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: queries:execute on destination; source files:read/analyze when present. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: queries:execute on destination; source files:read/analyze when present. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "queries:execute on destination; source files:read/analyze when present",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "responses": {
           "204": {
             "description": "Review cancelled; no response body. Already consumed reviews return 409."
@@ -5837,14 +4625,9 @@
         "operationId": "getFileExportPreparation",
         "summary": "Read the current actor review without parsing or provider I/O",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "files:read and files:analyze",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "responses": {
           "200": {
             "description": "Success",
@@ -5948,14 +4731,9 @@
         "operationId": "deleteFileExportPreparation",
         "summary": "Cancel an unconsumed review",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.",
+        "description": "Required Region access Token scope: files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
         "x-required-scope": "files:read and files:analyze",
-        "security": [
-          { "regionalAccess": [] },
-          { "localOwner": [] },
-          { "accountOwner": [] },
-          { "guestOwner": [] }
-        ],
+        "security": [{ "regionalAccess": [] }],
         "responses": {
           "204": {
             "description": "Review cancelled; no response body. Already consumed reviews return 409."
@@ -6274,24 +5052,6 @@
   },
   "components": {
     "securitySchemes": {
-      "localOwner": {
-        "type": "apiKey",
-        "in": "cookie",
-        "name": "aw_session",
-        "description": "Eight-hour, process-local Owner session for explicit local/legacy profiles, created by that profile's verified SSO callback or POST /api/session (loopback only). HttpOnly; Secure for HTTPS; logout revokes it. Managed account and regional Guest hosts use their separate credentials below."
-      },
-      "accountOwner": {
-        "type": "apiKey",
-        "in": "cookie",
-        "name": "aw_account",
-        "description": "Opaque, Workspace-bound regional Owner continuity grant issued after verified TiDB Account sign-in. Host-only, HttpOnly, SameSite=Strict and Secure on HTTPS. Browser-session cookie with no absolute server expiry; logout or regional policy denial revokes access. Existing grants survive Region restart and Global outage. Not a Workspace Key and never inferred from a Workspace URL."
-      },
-      "guestOwner": {
-        "type": "apiKey",
-        "in": "cookie",
-        "name": "aw_guest",
-        "description": "Opaque regional Guest Owner session issued by POST /api/auth/guest when enabled. Host-only, HttpOnly, Secure, SameSite=Strict, Workspace-bound and subject to its absolute Guest expiry. Guest logout revokes access and schedules scoped cleanup. Never grants access to an account or another Guest Workspace."
-      },
       "regionalAccess": {
         "type": "http",
         "scheme": "bearer",
@@ -6308,12 +5068,19 @@
     "schemas": {
       "Resource": {
         "type": "object",
-        "required": ["id", "name", "kind", "region", "status", "createdAt"],
+        "required": ["id", "name", "kind", "region", "regionId", "status", "createdAt"],
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
           "kind": { "enum": ["mysql", "postgresql", "duckdb", "filesystem"] },
-          "region": { "type": "string" },
+          "region": {
+            "type": "string",
+            "description": "Provider-assigned data location; may be automatic and is distinct from the Workspace Region."
+          },
+          "regionId": {
+            "type": "string",
+            "description": "Region control plane owning this resource. Legacy records are interpreted in their existing Region."
+          },
           "status": {
             "enum": [
               "active",
@@ -6964,12 +5731,16 @@
       },
       "Workspace": {
         "type": "object",
-        "required": ["id", "name", "description", "plan", "createdAt"],
+        "required": ["id", "name", "description", "plan", "defaultRegionId", "createdAt"],
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
           "description": { "type": "string" },
           "plan": { "type": "string" },
+          "defaultRegionId": {
+            "type": "string",
+            "description": "Default Region for new resources. Currently only this Region is available."
+          },
           "createdAt": { "type": "string", "format": "date-time" }
         }
       },

@@ -24,6 +24,9 @@ apply judgment to this product's users and tasks.
 - Own the complete experience: first use, a useful result, a clear next action and returning
   to continue. Creation alone does not complete a tutorial. A polished screen does not
   compensate for a dead end, lost progress or an unexplained failure.
+- Treat an unavailable list as unknown, not empty: do not show a zero count or creation prompt
+  before a successful load. Offer an actionable retry, and avoid exposing deployment settings or
+  suggesting another sign-in when it cannot resolve the problem.
 - Exercise product judgment before delivery. Fix obvious confusing names, redundant controls,
   inconsistent interactions and incomplete paths within the task's scope without waiting for
   the owner to point them out. Review both new and returning user experiences with realistic

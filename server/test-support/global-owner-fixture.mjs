@@ -51,6 +51,16 @@ export async function globalOwnerFixture(
     initializeClock: true,
     localWorkspace: { workspaceId, regionId: region.server.authorityId },
     regions: [{ regionId: region.server.authorityId, apiOrigin: regionOrigin, apiPathPrefix: '' }],
+    regionConnection: {
+      bind: control,
+      ...certificates.server,
+      allowedRegions: [
+        {
+          regionId: region.server.authorityId,
+          certificateFile: certificates.client.certificateFile,
+        },
+      ],
+    },
     regionControls: [
       {
         regionId: region.server.authorityId,
@@ -77,9 +87,10 @@ export async function globalOwnerFixture(
       ...certificates.server,
       globalClientCertificates: [certificates.client.certificateFile],
     },
+    regionConnection: { origin: `https://${control}`, tls: certificates.client },
   };
   let cookie;
-  async function request(route, { method = 'GET', body, headers = {}, token } = {}) {
+  async function request(route, { method = 'GET', body, headers = {}, token, pathProfile } = {}) {
     if (!cookie && !token) {
       const session = await fetch(origin + '/api/session', {
         method: 'POST',
@@ -89,7 +100,13 @@ export async function globalOwnerFixture(
       cookie = session.headers.get('set-cookie').split(';')[0];
       await session.body.cancel();
     }
-    const r = await fetch(origin + `/api/v1/workspaces/${workspaceId}` + route, {
+    const api =
+      pathProfile === 'portal'
+        ? '/api/portal/v1'
+        : pathProfile === 'agent' || token
+          ? '/api/v1'
+          : '/api/portal/v1';
+    const r = await fetch(origin + `${api}/workspaces/${workspaceId}` + route, {
       method,
       headers: {
         Origin: regionOrigin,
@@ -105,6 +122,13 @@ export async function globalOwnerFixture(
   const versions = new Map();
   return {
     security,
+    controlProbe: {
+      address: control,
+      tls: certificates.client,
+      regionId: region.server.authorityId,
+      apiOrigin: regionOrigin,
+    },
+    request,
     service: { kind: 'global', configFile },
     origin,
     async restart() {

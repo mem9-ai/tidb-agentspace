@@ -6,7 +6,10 @@ import { nativeProductFixture } from './test-support/native-product-fixture.mjs'
 import { assertSessionContract } from './test-support/assert-session-contract.mjs';
 
 const contract = JSON.parse(
-  await readFile(new URL('../public/openapi.json', import.meta.url), 'utf8'),
+  await readFile(
+    new URL('../tools/api-contract/portal-regional-openapi.json', import.meta.url),
+    'utf8',
+  ),
 );
 const ajv = new Ajv2020({ strict: false, validateFormats: false, allErrors: true });
 
@@ -330,6 +333,7 @@ test(
             'revokeRegionalRefreshFamily',
             'getRegionalTokenIssuance',
             'revokeRegionalAccessToken',
+            'exchangePortalRegionSession', // Covered by the isolated distributed SSO fixture.
             'uploadFile',
             'downloadFile',
             'startGuestSession', // Success is covered by guest_http_probe.

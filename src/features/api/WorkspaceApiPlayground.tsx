@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Alert, Badge, Button, Group, NativeSelect, Paper, Text } from '@tidbcloud/uikit';
-import { apiBaseUrl, workspaceApi, type Data } from '../../api/client';
+import { workspaceApi, type Data } from '../../api/client';
 import { Heading } from '../../ui/WorkspaceHeading';
 import { CodeExample } from '../../ui/CodeExample';
 
@@ -48,10 +48,7 @@ export function WorkspaceApiPlayground({
       <Heading level={2}>Try a read from your Workspace</Heading>
       <Group>
         <Badge>Workspace owner session</Badge>
-        <Text>
-          These read controls use your signed-in Console session. Agents use the Region access
-          Tokens shown above.
-        </Text>
+        <Text>These read controls use your signed-in Console session.</Text>
       </Group>
       <Group align="end">
         <NativeSelect
@@ -69,11 +66,6 @@ export function WorkspaceApiPlayground({
           Send request
         </Button>
       </Group>
-      <code>
-        {apiBaseUrl}/api/v1/workspaces/{data.workspace.id}
-        {endpoint}
-        {endpoint === '/files' ? '?resourceId=' + encodeURIComponent(filesystem?.id || '') : ''}
-      </code>
       {error && <Alert color="red">{error}</Alert>}
       {result ? (
         <CodeExample label="JSON" value={result} copy={copy} />

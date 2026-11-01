@@ -5,6 +5,8 @@ import test from 'node:test';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { connect as tlsConnect } from 'node:tls';
+import { once } from 'node:events';
 import { writeFile, readFile } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { resolve } from 'node:path';
@@ -19,25 +21,34 @@ import { productApiFixture } from './test-support/product-api-fixture.mjs';
 const contract = JSON.parse(
   await readFile(new URL('../public/openapi.json', import.meta.url), 'utf8'),
 );
+const portalContract = JSON.parse(
+  await readFile(
+    new URL('../tools/api-contract/portal-regional-openapi.json', import.meta.url),
+    'utf8',
+  ),
+);
 const ajv = new Ajv2020({ strict: false, validateFormats: false, allErrors: true });
-const operations = Object.entries(contract.paths).flatMap(([path, entry]) => {
-  const root = entry.servers?.[0].url || contract.servers[0].url;
-  const full = root.replace(/\/$/, '') + path;
-  return Object.entries(entry)
-    .filter(([method]) => ['get', 'post', 'put', 'patch', 'delete'].includes(method))
-    .map(([method, op]) => ({
-      method: method.toUpperCase(),
-      pattern: new RegExp('^' + full.replace(/\{[^}]+\}/g, '[^/]+') + '$'),
-      op,
-    }));
-});
+const operations = [contract, portalContract].flatMap((document) =>
+  Object.entries(document.paths).flatMap(([path, entry]) => {
+    const root = entry.servers?.[0].url || document.servers[0].url;
+    const full = root.replace(/\/$/, '') + path;
+    return Object.entries(entry)
+      .filter(([method]) => ['get', 'post', 'put', 'patch', 'delete'].includes(method))
+      .map(([method, op]) => ({
+        method: method.toUpperCase(),
+        pattern: new RegExp('^' + full.replace(/\{[^}]+\}/g, '[^/]+') + '$'),
+        op,
+        document,
+      }));
+  }),
+);
 function validateResponse(path, method, status, body) {
   const entry = operations.find((e) => e.method === method && e.pattern.test(path.split('?')[0]));
   const schema = (entry?.op.responses[status] || entry?.op.responses.default)?.content?.[
     'application/json'
   ]?.schema;
   if (!schema) return;
-  const validate = ajv.compile({ ...schema, components: contract.components });
+  const validate = ajv.compile({ ...schema, components: entry.document.components });
   assert.ok(validate(body), `${method} ${path}: ${ajv.errorsText(validate.errors)}`);
 }
 const base = '/api/v1/workspaces/ws_agentlab';
@@ -269,6 +280,159 @@ test(
   },
 );
 test(
+  'Region registration rejects a trusted certificate claiming another Region or endpoint',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const { address, tls, regionId, apiOrigin } = fixture.controlProbe;
+    const port = Number(address.split(':').at(-1));
+    const credentials = {
+      ca: await readFile(tls.caFile),
+      cert: await readFile(tls.certificateFile),
+      key: await readFile(tls.privateKeyFile),
+    };
+    const unauthenticated = tlsConnect({
+      host: '127.0.0.1',
+      port,
+      servername: 'localhost',
+      ca: credentials.ca,
+    });
+    unauthenticated.on('error', () => {});
+    await new Promise((resolve, reject) => {
+      unauthenticated.once('close', resolve);
+      unauthenticated.setTimeout(3000, () => {
+        unauthenticated.destroy();
+        reject(new Error('Unauthenticated control connection remained open'));
+      });
+    });
+    for (const [claimedRegion, claimedOrigin] of [
+      ['region:forged', apiOrigin],
+      [regionId, 'https://untrusted.example'],
+    ]) {
+      const socket = tlsConnect({
+        host: '127.0.0.1',
+        port,
+        servername: 'localhost',
+        ...credentials,
+      });
+      await once(socket, 'secureConnect');
+      let received = '';
+      socket.on('data', (chunk) => {
+        received += chunk;
+      });
+      const closed = once(socket, 'close');
+      socket.write(
+        JSON.stringify({
+          type: 'register',
+          region_id: claimedRegion,
+          api_origin: claimedOrigin,
+          api_path_prefix: '',
+          instance_id: crypto.randomUUID(),
+        }) + '\n',
+      );
+      await Promise.race([
+        closed,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Invalid registration was not closed')), 3000),
+        ),
+      ]);
+      assert.equal(received, '');
+    }
+    const key = await fixture.issueKey({
+      name: 'still-connected',
+      scopes: ['resources:read'],
+      resourceIds: ['*'],
+      expiresInDays: 7,
+    });
+    assert.equal(key.status, 201, JSON.stringify(key.body));
+    assert.equal((await fixture.request('/resources', { token: key.body.secret })).status, 200);
+  },
+);
+test(
+  'Portal session and Agent Token share resource operations without sharing authentication',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const portalPath = `/api/portal/v1/workspaces/${fixture.endpoints.workspaceId}/resources`;
+    const session = await fixture.request(portalPath);
+    assert.equal(session.status, 200, JSON.stringify(session.body));
+    assert.equal(
+      (await fixture.request(`/api/v1/workspaces/${fixture.endpoints.workspaceId}/resources`))
+        .status,
+      401,
+    );
+    assert.equal((await fixture.request(portalPath, { token: null })).status, 401);
+    const key = await fixture.issueKey({
+      name: 'agent-reader',
+      scopes: ['resources:read'],
+      resourceIds: ['*'],
+      expiresInDays: 7,
+    });
+    assert.equal(key.status, 201, JSON.stringify(key.body));
+    const agent = await fixture.request('/resources', { token: key.body.secret });
+    assert.equal(agent.status, 200);
+    assert.deepEqual(agent.body.data, session.body.data);
+    assert.equal((await fixture.request(portalPath, { token: key.body.secret })).status, 401);
+    assert.equal((await fixture.globalRequest('/keys', { pathProfile: 'agent' })).status, 401);
+    assert.equal(
+      (await fixture.globalRequest('/keys', { pathProfile: 'portal', token: key.body.secret }))
+        .status,
+      401,
+    );
+    assert.equal((await fixture.globalRequest('/keys', { pathProfile: 'portal' })).status, 200);
+  },
+);
+test(
+  'legacy resource placement and credentials survive regional metadata migration and restart',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const regionId = fixture.endpoints.regionId;
+    const storedBefore = await fixture.storedResource('db_live');
+    const bindingBefore = await fixture.binding('zero', 'db_live');
+    assert.equal(storedBefore.regionId, undefined);
+    const bootstrap = await fixture.request('/bootstrap');
+    assert.equal(bootstrap.body.workspace.defaultRegionId, regionId);
+    validateResponse(new URL(bootstrap.url).pathname, 'GET', bootstrap.status, bootstrap.body);
+    const original = bootstrap.body.resources.find((resource) => resource.id === 'db_live');
+    assert.equal(original.regionId, regionId);
+    assert.equal(original.region, 'automatic');
+    const detail = await fixture.request('/resources/fs_live');
+    validateResponse(new URL(detail.url).pathname, 'GET', detail.status, detail.body);
+    assert.equal(detail.body.data.regionId, regionId);
+    assert.equal(detail.body.data.region, 'aws-ap-southeast-1');
+    const key = await fixture.issueKey({
+      name: 'migration-reader',
+      scopes: ['queries:execute', 'files:read'],
+      resourceIds: ['db_live', 'fs_live'],
+      expiresInDays: 7,
+    });
+    assert.equal(key.status, 201, JSON.stringify(key.body));
+    const read = () =>
+      fixture.request('/queries', {
+        method: 'POST',
+        token: key.body.secret,
+        body: { resourceId: 'db_live', sql: 'SELECT 1' },
+      });
+    assert.equal((await read()).status, 200);
+    assert.equal(
+      (await fixture.request('/files?resourceId=fs_live', { token: key.body.secret })).status,
+      200,
+    );
+    await fixture.restart();
+    assert.equal((await read()).status, 200);
+    assert.equal(
+      (await fixture.request('/files?resourceId=fs_live', { token: key.body.secret })).status,
+      200,
+    );
+    const after = await fixture.request('/resources/db_live');
+    assert.equal(after.body.data.id, original.id);
+    assert.equal(after.body.data.regionId, regionId);
+    assert.equal(after.body.data.region, original.region);
+    assert.deepEqual(await fixture.binding('zero', 'db_live'), bindingBefore);
+  },
+);
+test(
   'concurrent Key authentication preserves access and revocation',
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
   async (t) => {
@@ -351,7 +515,7 @@ test(
     await fixture.request('/resources?limit=1'); // establish the owner session before seeding
     await fixture.seedResources(4100);
     assert.equal((await fixture.request('/api/health')).status, 200);
-    assert.equal((await fixture.request('/api/v1/workspaces')).status, 200);
+    assert.equal((await fixture.request('/api/portal/v1/workspaces')).status, 200);
     const bootstrap = await fixture.request('/bootstrap');
     assert.equal(bootstrap.status, 200, JSON.stringify(bootstrap.body));
     assert.ok(bootstrap.body.resources.length <= 100);
@@ -1414,7 +1578,7 @@ test(
 );
 
 test(
-  'Console API examples execute through Global and Region in cURL, JavaScript and Python',
+  'Console downloadable client connects through one API endpoint and reads from Region',
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
   async (t) => {
     const { apiExampleCases } = await import('./test-support/api-example-cases.mjs');

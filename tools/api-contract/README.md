@@ -5,7 +5,10 @@ describe its public shapes and fixed limits. They contain no provider, persisten
 authorization or execution implementation. Native response tests check the generated schema
 against the Rust API; runtime capability discovery remains authoritative for availability.
 
-`generate-client.mjs` produces `src/api/schema.d.ts` from `public/openapi.json`. Use
+`generate-client.mjs` produces the shared Portal client types from the generated internal
+`portal-regional-openapi.json` and `portal-global-openapi.json`. Public `openapi.json` and
+`global-openapi.json` describe Agent operations; Portal session and Key administration
+operations are kept in the separate Portal contracts. Use
 `npm run api:generate` and `npm run api:check`; do not edit generated outputs manually.
 
 The native import fixture `server/test-support/fixtures/import.parquet` is a fixed DuckDB

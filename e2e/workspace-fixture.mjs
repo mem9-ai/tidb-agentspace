@@ -1,7 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 const globalContract = JSON.parse(
-  await readFile(new URL('../public/global-openapi.json', import.meta.url), 'utf8'),
+  await readFile(new URL('../public/agent-entry-openapi.json', import.meta.url), 'utf8'),
 );
 const regionalContract = JSON.parse(
   await readFile(new URL('../public/openapi.json', import.meta.url), 'utf8'),
@@ -16,7 +16,13 @@ export const sampleResources = [
     kind: 'filesystem',
     region: 'aws-ap-southeast-1',
   },
-].map((resource) => ({ ...resource, provider: 'local', status: 'active', createdAt }));
+].map((resource) => ({
+  ...resource,
+  regionId: 'region:local',
+  provider: 'local',
+  status: 'active',
+  createdAt,
+}));
 const content = '# Fixture file\n\nRendered Markdown for **agents**.\n';
 
 function bootstrap() {
@@ -25,6 +31,7 @@ function bootstrap() {
       id: 'ws_personal_fixture',
       name: 'My Workspace',
       description: '',
+      defaultRegionId: 'region:local',
       plan: 'Free',
       createdAt,
     },
@@ -79,8 +86,7 @@ export const test = base.extend({
         return route.abort();
       }
       if (url.pathname === '/openapi.json') return route.fulfill({ json: regionalContract });
-      if (url.pathname === '/api/global/openapi.json')
-        return route.fulfill({ json: globalContract });
+      if (url.pathname === '/api/openapi.json') return route.fulfill({ json: globalContract });
       if (!url.pathname.startsWith('/api/')) return route.continue();
       const method = request.method();
       const body = request.postDataJSON();
@@ -97,7 +103,9 @@ export const test = base.extend({
         return reply(
           signInRequired || signedInAsGuest || signedInAsAccount
             ? {
-                globalApi: { apiOrigin: url.origin, apiPathPrefix: '/api/global' },
+                ...(!state.globalApiUnavailable && {
+                  globalApi: { apiOrigin: url.origin, apiPathPrefix: '/api/global' },
+                }),
                 regionId: 'region:fixture',
                 enabled: true,
                 loginPath: '/api/auth/tidbcloud/login',
@@ -109,7 +117,9 @@ export const test = base.extend({
               }
             : {
                 enabled: false,
-                globalApi: { apiOrigin: url.origin, apiPathPrefix: '/api/global' },
+                ...(!state.globalApiUnavailable && {
+                  globalApi: { apiOrigin: url.origin, apiPathPrefix: '/api/global' },
+                }),
                 regionId: 'region:fixture',
               },
         );
@@ -129,12 +139,13 @@ export const test = base.extend({
       }
       if (url.pathname === '/api/auth/tidbcloud/login') return reply({ fixture: 'login' });
       if (url.pathname === '/api/session') return reply({ ok: true });
-      if (url.pathname === '/api/v1/workspaces' && method === 'GET')
+      if (url.pathname === '/api/portal/v1/workspaces' && method === 'GET')
         return signInRequired
           ? reply({ error: { code: 'UNAUTHENTICATED', message: 'Sign in' } }, 401)
           : reply({ data: [state.workspace] });
       const path = url.pathname
         .replace('/api/global', '')
+        .replace('/api/portal/v1/', '/api/v1/')
         .replace(`/api/v1/workspaces/${state.workspace.id}`, '');
       if (path === '/bootstrap') {
         return reply({
@@ -172,6 +183,7 @@ export const test = base.extend({
         }
         const resource = {
           ...body,
+          regionId: state.workspace.defaultRegionId,
           id: `fixture_${body.kind}_${state.resources.length}`,
           status: 'active',
           provider: 'local',

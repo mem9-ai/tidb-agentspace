@@ -23,6 +23,13 @@ Independent Global deployments may retain their separately configured verified O
 this change does not infer cross-domain trust or introduce a session-exchange endpoint.
 Revisit the Portal auth routing when deploying its public login separately.
 
+For the explicitly enabled single-process HTTP loopback Guest development profile, Global can
+authenticate the existing Guest browser session through the co-located Region and only for its
+exact Workspace. Global checks the Region's Guest policy when issuing or checking Global tokens;
+Guest Keys expire no later than the Guest Workspace and stop working after logout. This local
+exception does not apply to hosted HTTPS or independent Global deployments. The Region never
+calls Global for this check, and existing regional access does not require Global availability.
+
 Native acceptance verifies one callback, replay denial, two-authority/cross-Workspace denial,
 Key creation and policy delivery, Region Token issuance, and durable logout of both sessions.
 Real cloud Portal/provider verification is separate evidence and is never inferred from fixtures.

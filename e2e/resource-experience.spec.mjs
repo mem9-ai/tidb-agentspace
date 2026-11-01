@@ -296,7 +296,7 @@ test('resource pages distinguish unloaded collections and resolve deep links', a
   expect(workspace.requests).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        path: `/api/v1/workspaces/${workspace.state.workspace.id}/resources`,
+        path: `/api/portal/v1/workspaces/${workspace.state.workspace.id}/resources`,
         query: expect.objectContaining({ cursor: 'page-two', limit: '100' }),
       }),
     ]),
@@ -588,7 +588,7 @@ test('Quick Start creates a database and reaches a first query result', async ({
   expect(workspace.requests).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        path: `/api/v1/workspaces/${workspace.state.workspace.id}/queries`,
+        path: `/api/portal/v1/workspaces/${workspace.state.workspace.id}/queries`,
         method: 'POST',
         body: expect.objectContaining({ resourceId: 'fixture_mysql_0' }),
       }),

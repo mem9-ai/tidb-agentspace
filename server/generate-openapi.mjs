@@ -14,12 +14,21 @@ const regionSchema = {
 const schemas = {
   Resource: {
     type: 'object',
-    required: ['id', 'name', 'kind', 'region', 'status', 'createdAt'],
+    required: ['id', 'name', 'kind', 'region', 'regionId', 'status', 'createdAt'],
     properties: {
       id: { type: 'string' },
       name: { type: 'string' },
       kind: { enum: ['mysql', 'postgresql', 'duckdb', 'filesystem'] },
-      region: { type: 'string' },
+      region: {
+        type: 'string',
+        description:
+          'Provider-assigned data location; may be automatic and is distinct from the Workspace Region.',
+      },
+      regionId: {
+        type: 'string',
+        description:
+          'Region control plane owning this resource. Legacy records are interpreted in their existing Region.',
+      },
       status: {
         enum: ['active', 'provisioning', 'failed', 'suspended', 'deleting', 'deleted', 'expired'],
       },
@@ -198,6 +207,10 @@ Object.assign(schemas, {
     name: str,
     description: str,
     plan: str,
+    defaultRegionId: {
+      type: 'string',
+      description: 'Default Region for new resources. Currently only this Region is available.',
+    },
     createdAt: { type: 'string', format: 'date-time' },
   }),
   Profile: object({ name: str, email: str, role: str }),
@@ -488,10 +501,15 @@ const paths = {
           properties: {
             name: { type: 'string', pattern: '^[a-z][a-z0-9-]{2,39}$' },
             kind: { enum: ['mysql', 'postgresql', 'duckdb', 'filesystem'] },
+            regionId: {
+              type: 'string',
+              description:
+                'Optional Workspace Region; must match the current Region. Omit to use the default.',
+            },
             region: {
               ...regionSchema,
               description:
-                'Choose a region supported by the resource kind in capabilities. Zero MySQL uses automatic provider assignment. The first supported region is the Console default.',
+                'Provider data location supported by the resource kind. This is separate from regionId. Zero MySQL uses automatic provider assignment.',
             },
           },
         },
@@ -1229,6 +1247,28 @@ paths['/api/session'] = {
       'Explicit loopback guest mode only; disabled when TiDB Account SSO is configured. Requires a real loopback peer. Sets an HttpOnly SameSite=Strict cookie scoped to the configured public path.',
   },
 };
+paths['/api/portal/auth/session-exchanges'] = {
+  servers: [{ url: '/' }],
+  post: {
+    operationId: 'exchangePortalRegionSession',
+    security: [],
+    description:
+      'Redeem one Global-issued, Region-bound, short-lived ticket exactly once to establish a Region Portal session.',
+    parameters: [
+      { name: 'Origin', in: 'header', required: true, schema: { type: 'string', format: 'uri' } },
+    ],
+    requestBody: {
+      required: true,
+      content: { 'application/json': { schema: object({ ticket: str }) } },
+    },
+    responses: {
+      200: response(object({ workspaceId: str })),
+      400: response(ref('Error')),
+      401: response(ref('Error')),
+      403: response(ref('Error')),
+    },
+  },
+};
 paths['/api/auth/config'] = {
   servers: [{ url: '/' }],
   get: {
@@ -1580,6 +1620,36 @@ const spec = {
   },
 };
 extendRegionalSecurityContract(spec);
+const portalSpec = structuredClone(spec);
+portalSpec.info.title = 'Workspace Portal API';
+portalSpec.servers[0] = { url: '/api/portal/v1', description: 'Session-authenticated Portal API' };
+for (const [path, entry] of Object.entries(spec.paths)) {
+  if (path.startsWith('/api/')) {
+    delete spec.paths[path];
+    continue;
+  }
+  for (const [method, operation] of Object.entries(entry)) {
+    if (!operation || typeof operation !== 'object' || !operation.operationId) continue;
+    if (operation.tags?.includes('Owner')) {
+      delete entry[method];
+      continue;
+    }
+    if (Array.isArray(operation.security))
+      operation.security = operation.security.filter(
+        (requirement) =>
+          !['localOwner', 'accountOwner', 'guestOwner'].some((key) => key in requirement),
+      );
+    if (typeof operation.description === 'string')
+      operation.description = operation.description.replace(
+        ' An authenticated Workspace Owner session under the enabled profile may also call this endpoint.',
+        '',
+      );
+  }
+  if (!Object.values(entry).some((operation) => operation?.operationId)) delete spec.paths[path];
+}
+for (const name of ['localOwner', 'accountOwner', 'guestOwner'])
+  delete spec.components.securitySchemes[name];
+spec.tags = spec.tags.filter((tag) => tag.name !== 'Owner');
 const target = new URL('../public/openapi.json', import.meta.url);
 const rendered = await format(JSON.stringify(spec), {
   ...(await resolveConfig(fileURLToPath(target))),
@@ -1592,8 +1662,63 @@ if (process.argv.includes('--check')) {
   } else console.log('Generated OpenAPI contract is current.');
 } else await writeFile(target, rendered);
 
+const portalTarget = new URL('../tools/api-contract/portal-regional-openapi.json', import.meta.url);
+const portalRendered = await format(JSON.stringify(portalSpec), {
+  ...(await resolveConfig(fileURLToPath(portalTarget))),
+  parser: 'json',
+});
+if (process.argv.includes('--check')) {
+  if ((await readFile(portalTarget, 'utf8')) !== portalRendered) {
+    console.error('Portal API contract drifted. Run npm run api:generate.');
+    process.exitCode = 1;
+  }
+} else await writeFile(portalTarget, portalRendered);
+
+const fullGlobalSpec = globalSecurityContract();
+const portalGlobalSpec = structuredClone(fullGlobalSpec);
+for (const [path, entry] of Object.entries(portalGlobalSpec.paths)) {
+  if (!path.startsWith('/api/v1/workspaces/')) continue;
+  for (const [method, operation] of Object.entries(entry)) {
+    if (!operation?.security?.some((requirement) => 'globalOwner' in requirement)) continue;
+    const portalPath = path.replace('/api/v1/', '/api/portal/v1/');
+    portalGlobalSpec.paths[portalPath] ??= {};
+    portalGlobalSpec.paths[portalPath][method] = operation;
+    delete entry[method];
+  }
+  if (!Object.values(entry).some((operation) => operation?.operationId))
+    delete portalGlobalSpec.paths[path];
+}
+const globalSpec = structuredClone(fullGlobalSpec);
+for (const [path, entry] of Object.entries(globalSpec.paths)) {
+  if (path.startsWith('/api/auth/') || path === '/api/session') {
+    delete globalSpec.paths[path];
+    continue;
+  }
+  for (const [method, operation] of Object.entries(entry)) {
+    if (!operation || typeof operation !== 'object' || !operation.operationId) continue;
+    if (operation.security?.some((requirement) => 'globalOwner' in requirement))
+      delete entry[method];
+  }
+  if (!Object.values(entry).some((operation) => operation?.operationId))
+    delete globalSpec.paths[path];
+}
+delete globalSpec.components.securitySchemes.globalOwner;
+const portalGlobalTarget = new URL(
+  '../tools/api-contract/portal-global-openapi.json',
+  import.meta.url,
+);
+const portalGlobalRendered = await format(JSON.stringify(portalGlobalSpec), {
+  ...(await resolveConfig(fileURLToPath(portalGlobalTarget))),
+  parser: 'json',
+});
+if (process.argv.includes('--check')) {
+  if ((await readFile(portalGlobalTarget, 'utf8')) !== portalGlobalRendered) {
+    console.error('Portal Global contract drifted. Run npm run api:generate.');
+    process.exitCode = 1;
+  }
+} else await writeFile(portalGlobalTarget, portalGlobalRendered);
 const globalTarget = new URL('../public/global-openapi.json', import.meta.url);
-const globalRendered = await format(JSON.stringify(globalSecurityContract()), {
+const globalRendered = await format(JSON.stringify(globalSpec), {
   ...(await resolveConfig(fileURLToPath(globalTarget))),
   parser: 'json',
 });
@@ -1603,3 +1728,27 @@ if (process.argv.includes('--check')) {
     process.exitCode = 1;
   }
 } else await writeFile(globalTarget, globalRendered);
+// The single public entry publishes only operations served at that entry. Region operations
+// remain in the regional contract and are reached after authenticated discovery.
+const entrySpec = structuredClone(globalSpec);
+entrySpec.servers = [{ url: '/api' }];
+entrySpec.paths = Object.fromEntries(
+  [
+    '/api/v1/token-issuances',
+    '/api/v1/workspaces/{workspaceId}/region-route',
+    '/api/v1/workspaces/{workspaceId}/regions',
+  ].map((path) => [path.slice('/api'.length), globalSpec.paths[path]]),
+);
+entrySpec.paths['/v1/workspaces/{workspaceId}/issuances/{issuanceId}'] =
+  globalSpec.paths['/api/v1/workspaces/{workspaceId}/token-issuances/{issuanceId}'];
+const entryTarget = new URL('../public/agent-entry-openapi.json', import.meta.url);
+const entryRendered = await format(JSON.stringify(entrySpec), {
+  ...(await resolveConfig(fileURLToPath(entryTarget))),
+  parser: 'json',
+});
+if (process.argv.includes('--check')) {
+  if ((await readFile(entryTarget, 'utf8')) !== entryRendered) {
+    console.error('Agent entry OpenAPI contract drifted. Run npm run api:generate.');
+    process.exitCode = 1;
+  }
+} else await writeFile(entryTarget, entryRendered);

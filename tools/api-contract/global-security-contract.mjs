@@ -70,6 +70,15 @@ export function globalSecurityContract() {
       ),
     ),
   );
+  schemas.DiscoveredToken = object({ ...schemas.Token.properties, workspaceId: string });
+  schemas.DiscoveredRegionAccessToken = object({
+    ...schemas.RegionAccessToken.properties,
+    workspaceId: string,
+  });
+  schemas.DiscoveredRegionToken = object({
+    ...schemas.RegionToken.properties,
+    workspaceId: string,
+  });
   const response = (schema, description = 'Successful response') => ({
     description,
     headers: { 'Cache-Control': { schema: { const: 'no-store' } } },
@@ -136,11 +145,24 @@ export function globalSecurityContract() {
       regionalContinuity: { enum: ['pending', 'eligible', 'unavailable'] },
     }),
   });
+  add(
+    '/regional-session-tickets',
+    'post',
+    'createPortalRegionSessionTicket',
+    owner,
+    201,
+    object({ ticket: string, region: ref('Region'), expiresIn: { const: 60 } }),
+    {
+      parameters: [workspace, origin],
+      description:
+        'Create a short-lived one-use user-session exchange ticket for the Workspace Region. A verified Portal Owner session is required.',
+    },
+  );
   add('/key-policy-deliveries', 'post', 'createGlobalKeyPolicyDelivery', owner, 201, delivery, {
     parameters: [workspace, mutation, origin],
     requestBody: request(object({ keyId: string, keyVersion: number })),
     description:
-      'Explicit bounded application attempt for the current Key version, including revoked Keys. Replays reconcile the same immutable command. No background retry or data proxy is implied.',
+      'Explicit bounded application attempt for the current Key version, including revoked Keys. Replays reconcile the same immutable command. The Region connection profile also reconciles durable pending changes after reconnection.',
   });
   add(
     '/key-policy-deliveries/{deliveryId}',
@@ -315,6 +337,52 @@ export function globalSecurityContract() {
   const mounted = Object.fromEntries(
     Object.entries(paths).map(([path, value]) => [base + path, value]),
   );
+  mounted['/api/v1/token-issuances'] = {
+    post: {
+      operationId: 'createDiscoveredTokenIssuance',
+      summary: 'Exchange a Workspace Key without configuring a Workspace or Region',
+      security: key,
+      description:
+        'The Key identifies its Workspace. Use audience global or region; region selects the Key-granted Region. Legacy Keys without a Workspace hint continue to use the Workspace-scoped issuance endpoint. Never forward the Workspace Key to a Region.',
+      requestBody: request(
+        object(
+          { audience: { enum: ['global', 'region'] }, scopes: array, clientThumbprint: string },
+          ['audience'],
+        ),
+      ),
+      responses: {
+        201: response({
+          oneOf: [
+            ref('DiscoveredToken'),
+            ref('DiscoveredRegionAccessToken'),
+            ref('DiscoveredRegionToken'),
+          ],
+        }),
+        default: response(ref('Error')),
+      },
+    },
+  };
+  mounted[`${base}/region-route`] = {
+    get: {
+      operationId: 'getGlobalRegionRoute',
+      summary: 'Discover the Region through a bodyless redirect',
+      security: token,
+      parameters: [workspace],
+      description:
+        'Send only a Global access Token. Inspect the redirect without automatic credential forwarding; validate the HTTPS target against authenticated Global discovery before using the Region Token. Do not send SQL or file content to this endpoint.',
+      responses: {
+        307: {
+          description: 'Region API base URL. No data request has been sent to Global.',
+          headers: {
+            Location: { required: true, schema: { type: 'string', format: 'uri' } },
+            'X-Region-Id': { required: true, schema: string },
+            'Cache-Control': { schema: { const: 'no-store' } },
+          },
+        },
+        default: response(ref('Error')),
+      },
+    },
+  };
   mounted['/api/health'] = {
     get: {
       operationId: 'getGlobalHealth',
@@ -372,7 +440,13 @@ export function globalSecurityContract() {
       description:
         'Bundled hosted deployments redirect to the existing Portal login; its single verified callback establishes both separate sessions. Independently configured Global OIDC deployments begin their own registered flow.',
       parameters: [
-        { name: 'workspaceId', in: 'query', required: true, schema: string },
+        {
+          name: 'workspaceId',
+          in: 'query',
+          required: false,
+          schema: string,
+          description: 'Optional for first login when one Region is configured and registered.',
+        },
         {
           name: 'returnTo',
           in: 'query',

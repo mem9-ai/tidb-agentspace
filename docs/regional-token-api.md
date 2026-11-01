@@ -23,11 +23,10 @@ only already owned regional Workspaces; it never initializes a tenant from a req
 - `regionalSignerId`, `regionalSigningKeyFile`, `regionalPublicKeyFile`: independent regional
   Ed25519 DER signer and hexadecimal public verification key. Startup checks the pair and rejects
   sharing the Global verification key.
-- `clockDirectory`, `initializeClock`: independently durable, private host checkpoint described
-  in [Global setup](global-public-api.md). Deliberate first initialization only; disable before
-  restarting. The directory also retains per-Key policy floors, protecting service admission
-  against an older S3 policy snapshot. Use a writable persistent private volume, not a container
-  scratch directory or read-only Secret projection; retain it across restart and recovery.
+- `metadataSecurityState`, `initializeClock`: select Region-local Meta for the time floor,
+  per-Key policy floor and renewal witnesses. Initialize deliberately once and disable
+  initialization before restarting. See [ADR 0039](decisions/0039-system-state-metadata.md) for
+  whole-store rollback and the remaining file-backed legacy mode.
 - `accessTokenTtl`: 1–900 seconds, default 900. Every token is additionally bounded by actual
   installed Key, grant and family expiry.
 - `control`: a separate private TLS listener with `bind`, `certificateFile`, `privateKeyFile`,
@@ -41,16 +40,16 @@ HTTP client, token introspection, key-discovery callback or Global refresh requi
 
 ## Policy and data admission
 
-Global persists exact policy intent and initiates signed mTLS delivery. Region validates the
+Global persists exact policy intent and delivers it over the Region-initiated mTLS connection. Region validates the
 signature, environment, audience, Workspace and concrete public resource grants. Immutable
 content-addressed grants and narrowed token ceilings are committed with the Key version floor.
 The current implementation serializes activation against local request authorization leases;
 `applied` is returned only after old leases drain, Meta durability succeeds and the independent
-host policy checkpoint is persisted. The historical internal `stored` acknowledgement remains
+policy checkpoint is persisted. The historical internal `stored` acknowledgement remains
 separate and does not satisfy public token issuance.
 
 A data request verifies the exact local JWT issuer/audience and current Key, immutable grant,
-family epoch, token denial and host policy/time checkpoints. Scoped credentials remain
+family epoch, token denial and regional policy/time checkpoints. Scoped credentials remain
 non-Owner throughout existing domain/provider operations and are rechecked at their effect
 boundaries. Policies, family changes and denial drain local request leases before acknowledgement.
 Request leases use 64 bounded Workspace-hash lanes: applying one Workspace's policy drains its
@@ -119,7 +118,8 @@ Same-secret expiry renewal advances the Key floor and immediately denies old acc
 An existing proof-bound family can cross versions only through a complete signed renewal chain.
 Global records its observation after the renewal is durable; Region records its independent
 installation witness after the policy commit is durable. Both observations must precede the old
-expiry. Region retains these witnesses beside the independently protected policy/time checkpoints.
+expiry. Region retains these witnesses with its policy/time checkpoints in Region Meta. Restoring
+the whole Meta store can restore all of them together; see ADR 0039 for that tradeoff.
 A new expiry alone, a missing version, late application, rotation or revocation cannot authorize
 rebind. Rebind atomically consumes the old generation/proof, increments the family security epoch,
 retains its original grant ceiling and returns a new refresh credential for the current version.

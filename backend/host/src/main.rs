@@ -122,6 +122,14 @@ async fn main() -> Result<()> {
             match workspace_api::global_api::GlobalServer::open(config, port).await {
                 Ok(server) => {
                     global_started = true;
+                    if let Some((hub, config, catalog)) = server.region_connection() {
+                        let receiver = api_receiver.clone();
+                        api_tasks.push(tokio::spawn(async move {
+                            if workspace_api::region_connection::serve(hub, config, catalog, stopped(receiver)).await.is_err() {
+                                eprintln!("Global Region control connection unavailable; inspect private configuration.");
+                            }
+                        }));
+                    }
                     if shared {
                         shared_globals.insert(bind, server);
                         continue;
@@ -212,6 +220,7 @@ async fn main() -> Result<()> {
                             signup.clone(),
                             region.clone(),
                             config.public_origins.clone(),
+                            config.insecure_loopback,
                         )?
                     } else {
                         GuestEntry::disabled(region.clone())
@@ -228,7 +237,11 @@ async fn main() -> Result<()> {
                                     port.clone(),
                                     &authority,
                                     &config.public_path,
-                                    config.sso.as_ref().is_some_and(|s| s.secure()),
+                                    config.sso.as_ref().is_some_and(|s| s.secure())
+                                        || config
+                                            .public_origins
+                                            .iter()
+                                            .any(|origin| origin.starts_with("https://")),
                                 )
                                 .await?,
                             ),
@@ -439,7 +452,7 @@ async fn initialize(plan: plan::Plan) -> Result<()> {
                 }
             };
             let repository = workspace_domain::Repository::open(
-                port,
+                port.clone(),
                 &config.authority_id,
                 &config.workspace_id,
                 true,
@@ -450,17 +463,44 @@ async fn initialize(plan: plan::Plan) -> Result<()> {
             workspace.health().await?;
             workspace.close().await?;
             if let Some(security) = &config.security {
-                workspace_api::initialize_security_checkpoint(
-                    &security.clock_directory,
-                    security.initialize_clock,
-                )?;
+                if security.metadata_security_state {
+                    workspace_api::initialize_meta_security_checkpoint(
+                        port,
+                        &config.authority_id,
+                        security.initialize_clock,
+                    )
+                    .await?;
+                } else {
+                    workspace_api::initialize_security_checkpoint(
+                        &security.clock_directory,
+                        security.initialize_clock,
+                    )
+                    .await?;
+                }
             }
         }
         for config in plan.globals {
-            workspace_api::initialize_security_checkpoint(
-                &config.clock_directory,
-                config.initialize_clock,
-            )?;
+            if config.metadata_security_state {
+                let MetaBinding::InProcess { authority_id } = &config.metadata else {
+                    bail!("Hosted bootstrap requires explicit in-process authority ownership");
+                };
+                let port = metadata
+                    .get(authority_id)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("Missing native metadata"))?;
+                workspace_api::initialize_meta_security_checkpoint(
+                    port,
+                    authority_id,
+                    config.initialize_clock,
+                )
+                .await?;
+            } else {
+                workspace_api::initialize_security_checkpoint(
+                    &config.clock_directory,
+                    config.initialize_clock,
+                )
+                .await?;
+            }
         }
         Ok(())
     }

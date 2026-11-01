@@ -56,6 +56,7 @@ async function connect(origin) {
   const cookie = session.headers.get('set-cookie').split(';')[0];
   assert.match(session.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
   return async (path, { method = 'GET', body, token, headers = {} } = {}) => {
+    if (!token) path = path.replace('/api/v1/workspaces', '/api/portal/v1/workspaces');
     const options = {
       method,
       headers: {

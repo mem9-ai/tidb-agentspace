@@ -9,3 +9,4 @@ package-lock.json
 *.tsbuildinfo
 playwright-report/
 test-results/
+src/generated/workspace-agent.mjs

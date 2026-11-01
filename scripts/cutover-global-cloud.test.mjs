@@ -152,7 +152,7 @@ test('inspection reads only referenced configuration and reports no identities o
     assert.ok(!JSON.stringify(report).includes(value));
 });
 
-test('cloud preparation isolates roots and credentials, retains one callback and initializes persistent clocks before steady startup', async () => {
+test('cloud preparation isolates roots and credentials, retains one callback and initializes Meta security state', async () => {
   const f = fixture();
   const before = JSON.stringify(f.secret);
   const prepared = await prepareCutover(readTarget(options, f.kubectl), options);
@@ -166,6 +166,8 @@ test('cloud preparation isolates roots and credentials, retains one callback and
   assert.equal(global.sharedListener, true);
   assert.equal(global.initializeClock, false);
   assert.equal(api.security.initializeClock, false);
+  assert.equal(global.metadataSecurityState, true);
+  assert.equal(api.security.metadataSecurityState, true);
   assert.equal(decode(data['global-api-bootstrap.json']).initializeClock, true);
   assert.equal(decode(data['api-bootstrap.json']).security.initializeClock, true);
   for (const name of ['global', 'region']) {
@@ -187,7 +189,8 @@ test('cloud preparation isolates roots and credentials, retains one callback and
     f.source.spec.template.spec.containers[0].readinessProbe,
   );
   assert.equal(pod.volumes[0].secret.items, undefined);
-  assert.equal(pod.volumes.at(-1).persistentVolumeClaim.claimName, prepared.name);
+  assert.equal(prepared.pvc, undefined);
+  assert.ok(!pod.volumes.some((volume) => volume.name === 'global-security'));
   assert.equal(prepared.job.spec.template.spec.containers[0].readinessProbe, undefined);
   assert.deepEqual(prepared.job.spec.template.spec.containers[0].args, [
     'initialize',
@@ -205,17 +208,13 @@ test('cloud preparation isolates roots and credentials, retains one callback and
   assert.equal(f.calls.filter((c) => c.args[0] !== 'get').length, 0);
 });
 
-test('storage class selection is explicit and SSO environment whitespace matches native loading', async () => {
+test('SSO environment whitespace matches native loading without requiring a storage class', async () => {
   const f = fixture();
   const target = readTarget(options, f.kubectl);
   target.environment.TIDB_SSO_CLIENT_ID += '\n';
-  const prepared = await prepareCutover(target, { ...options, storageClassName: 'gp3' });
-  assert.equal(prepared.pvc.spec.storageClassName, 'gp3');
+  const prepared = await prepareCutover(target, options);
+  assert.equal(prepared.pvc, undefined);
   assert.equal(decode(prepared.secret.data['api.json']).sso.clientId, 'public-client');
-  await assert.rejects(
-    prepareCutover(target, { ...options, storageClassName: '../unsafe' }),
-    /Invalid storage/,
-  );
 });
 
 test('bootstrap polling stops on failure and does not wait for an impossible success', async () => {
@@ -250,7 +249,7 @@ test('failed bootstrap never switches the live Deployment or deletes storage', a
     ),
     /Native bootstrap not confirmed/,
   );
-  assert.equal(f.calls.filter((c) => c.args[0] === 'create').length, 3);
+  assert.equal(f.calls.filter((c) => c.args[0] === 'create').length, 2);
   assert.ok(!f.calls.some((c) => ['patch', 'replace', 'delete', 'rollout'].includes(c.args[0])));
 });
 
@@ -260,7 +259,7 @@ test('cutover verifies bootstrap before guarded switch and public auth denials',
   assert.equal(report.globalEnabled, true);
   assert.deepEqual(
     f.calls.filter((c) => c.args[0] !== 'get').map((c) => c.args[0]),
-    ['create', 'create', 'create', 'patch', 'rollout'],
+    ['create', 'create', 'patch', 'rollout'],
   );
   const patch = f.calls.find((c) => c.args[0] === 'patch');
   assert.equal(patch.input, undefined);
@@ -277,7 +276,7 @@ test('unsafe targets, repeated resets and concurrent Deployment changes fail clo
   const f = fixture();
   const target = readTarget(options, f.kubectl);
   target.api.security = {};
-  await assert.rejects(prepareCutover(target, options), /already configured/);
+  await assert.rejects(prepareCutover(target, options), /Incomplete Global configuration/);
   let gets = 0;
   await assert.rejects(
     cutover(
@@ -299,6 +298,38 @@ test('unsafe targets, repeated resets and concurrent Deployment changes fail clo
     verifyGlobal(async () => Response.json({})),
     /verification failed/,
   );
+});
+
+test('authorized fresh reset replaces an existing Global profile and unmounts only its legacy security PVC', async () => {
+  const f = fixture();
+  const target = readTarget(options, f.kubectl);
+  target.api.security = { clockDirectory: '/var/lib/workspace-security/checkpoints/region' };
+  target.api.globalEntry = { apiOrigin: 'https://drive9.ai', apiPathPrefix: '/studio/api/global' };
+  target.plan.services.push({ kind: 'global', configFile: '/run/workspace/global-api.json' });
+  target.pod.volumes.push({
+    name: 'global-security',
+    persistentVolumeClaim: { claimName: 'old-clock' },
+  });
+  target.runtime.volumeMounts.push({
+    name: 'global-security',
+    mountPath: '/var/lib/workspace-security',
+  });
+  const prepared = await prepareCutover(target, options);
+  const pod = prepared.patch.spec.template.spec;
+  assert.ok(!pod.volumes.some((volume) => volume.name === 'global-security'));
+  assert.ok(!pod.containers[0].volumeMounts.some((mount) => mount.name === 'global-security'));
+  assert.ok(pod.volumes.some((volume) => volume.name === 'private'));
+  assert.equal(decode(prepared.secret.data['api.json']).security.metadataSecurityState, true);
+  assert.equal(
+    decode(prepared.secret.data['deployment.json']).services.filter(
+      (role) => role.kind === 'global',
+    ).length,
+    1,
+  );
+  assert.ok(!f.calls.some((call) => call.args[0] === 'delete'));
+  target.runtime.volumeMounts.find((mount) => mount.name === 'global-security').mountPath =
+    '/other';
+  await assert.rejects(prepareCutover(target, options), /Unexpected legacy security volume/);
 });
 
 test('status-only Deployment updates retain a fresh guarded write and private patch files', async () => {
@@ -323,17 +354,15 @@ async function recoveryFixture() {
     ...prepared.job,
     status: { succeeded: 1, conditions: [{ type: 'Complete', status: 'True' }] },
   };
-  const pvc = { ...prepared.pvc, status: { phase: 'Bound' } };
   const candidates = [job];
   const kubectl = (args, input) => {
     if (args[0] === 'get') {
       if (args[1] === 'jobs') return JSON.stringify({ items: candidates });
       if (args[2] === prepared.name && args[1] === 'secret') return JSON.stringify(prepared.secret);
-      if (args[2] === prepared.name && args[1] === 'pvc') return JSON.stringify(pvc);
     }
     return f.kubectl(args, input);
   };
-  return { ...f, prepared, job, pvc, candidates, kubectl };
+  return { ...f, prepared, job, candidates, kubectl };
 }
 
 test('completed candidate activation reuses its configuration and clocks without creating or initializing', async () => {
@@ -344,14 +373,14 @@ test('completed candidate activation reuses its configuration and clocks without
     f.calls.filter((c) => c.args[0] !== 'get').map((c) => c.args[0]),
     ['patch', 'rollout'],
   );
-  assert.equal(
-    f.calls.find((c) => c.patch).patch.spec.template.spec.volumes.at(-1).persistentVolumeClaim
-      .claimName,
-    f.prepared.name,
+  assert.ok(
+    !f.calls
+      .find((c) => c.patch)
+      .patch.spec.template.spec.volumes.some((volume) => volume.name === 'global-security'),
   );
 });
 
-test('recovery rejects incomplete/ambiguous candidates, mutable config, unbound clocks and runtime/SSO/storage drift', async () => {
+test('recovery rejects incomplete/ambiguous candidates, mutable config and runtime/SSO/storage drift', async () => {
   const cases = [
     (f) => {
       f.job.status.conditions = [];
@@ -363,7 +392,9 @@ test('recovery rejects incomplete/ambiguous candidates, mutable config, unbound 
       f.prepared.secret.immutable = false;
     },
     (f) => {
-      f.pvc.status.phase = 'Pending';
+      const api = decode(f.prepared.secret.data['api.json']);
+      api.security.metadataSecurityState = false;
+      f.prepared.secret.data['api.json'] = encode(api);
     },
     (f) => {
       f.job.spec.template.spec.containers[0].image = 'unreviewed';

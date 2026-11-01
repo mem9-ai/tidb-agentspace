@@ -54,6 +54,10 @@ consumes generated API types and selects its API origin at runtime. This impleme
 is documented in [independent delivery](docs/independent-delivery.md) and
 [ADR 0005](docs/decisions/0005-independent-console-and-api.md).
 
+For the agent single-entry flow, see [ADR 0040](docs/decisions/0040-single-global-entry.md):
+new Keys identify their Workspace to Global, which supplies a bodyless redirect to Region.
+The client validates the route and sends data directly; older Keys keep scoped issuance.
+
 ## First reading route
 
 | Order | Read                                                                                                                                    | Understand                                                                                 |

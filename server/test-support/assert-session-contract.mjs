@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const contract = JSON.parse(
-  await readFile(new URL('../../public/openapi.json', import.meta.url), 'utf8'),
+  await readFile(
+    new URL('../../tools/api-contract/portal-regional-openapi.json', import.meta.url),
+    'utf8',
+  ),
 );
 const ownerOnly = new Set(['getBootstrap', 'listKeys', 'createKey', 'revokeKey', 'updateSettings']);
 

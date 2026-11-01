@@ -12,7 +12,6 @@ import { setTimeout as delay } from 'node:timers/promises';
 const label = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64');
 const decode = (value) => JSON.parse(Buffer.from(value, 'base64').toString('utf8'));
-const checkpointMount = '/var/lib/workspace-security';
 class CutoverValidationError extends Error {}
 
 // Resolve only the selected runtime's explicit references. Never enumerate unrelated Secrets.
@@ -116,23 +115,19 @@ function hostedSso(api, env) {
 
 // This reset is explicit: new roots and credentials, never delete a bucket or old Secret.
 // Bootstrap completes and releases ownership before the existing Deployment is changed.
-export async function prepareCutover(
-  target,
-  { namespace, deployment, container, storageClassName },
-) {
-  if (storageClassName && !label.test(storageClassName))
-    throw new Error('Invalid storage class name.');
-  const { api, plan, secret, pod, runtime, environment } = target;
-  if (api.security || api.globalEntry || plan.services.some((s) => s.kind === 'global'))
-    throw new Error('Global already configured; do not rotate identities or reset storage again.');
+export async function prepareCutover(target, { namespace, deployment, container }) {
+  const { api, plan, secret, pod, environment } = target;
+  const existingGlobal = plan.services.filter((s) => s.kind === 'global');
+  const secured = Boolean(api.security && api.globalEntry && existingGlobal.length === 1);
+  if ((api.security || api.globalEntry || existingGlobal.length) && !secured)
+    throw new Error('Incomplete Global configuration; inspect before resetting.');
   if (
-    plan.services.length !== 3 ||
+    plan.services.length !== (secured ? 4 : 3) ||
     plan.services.filter((s) => s.kind === 'workspace').length !== 1 ||
     plan.services.filter((s) => s.kind === 'metadata').length !== 2 ||
     api.publicPath !== '/studio' ||
     api.publicOrigins?.[0] !== 'https://drive9.ai' ||
     api.metadata?.transport !== 'inProcess' ||
-    runtime.volumeMounts.some((m) => m.mountPath.startsWith(checkpointMount)) ||
     (pod.securityContext?.fsGroup !== undefined && pod.securityContext.fsGroup !== 1000)
   )
     throw new Error('Unsupported cloud composition; inspect without modifying it.');
@@ -166,7 +161,6 @@ export async function prepareCutover(
       directory: resolve(temporary, 'security'),
       mountDirectory: mount,
       api: { ...api, sso: hostedSso(api, environment), initializeWorkspace: false },
-      clockDirectory: `${checkpointMount}/checkpoints`,
     });
     // CA signing key and CSRs are not runtime credentials and never enter the cluster.
     for (const file of await readdir(resolve(temporary, 'security'))) {
@@ -182,10 +176,12 @@ export async function prepareCutover(
     data['global-api.json'] = encode(profile.global);
     data['global-api-bootstrap.json'] = encode({ ...profile.global, initializeClock: true });
     const services = [
-      ...plan.services.map((s) => {
-        const { initialize: _initialize, recoverOwner: _owner, ...steady } = s;
-        return steady;
-      }),
+      ...plan.services
+        .filter((s) => s.kind !== 'global')
+        .map((s) => {
+          const { initialize: _initialize, recoverOwner: _owner, ...steady } = s;
+          return steady;
+        }),
       { kind: 'global', configFile: `${mount}/global-api.json` },
     ];
     data['deployment.json'] = encode({ format: 1, services });
@@ -213,16 +209,6 @@ export async function prepareCutover(
       immutable: true,
       type: 'Opaque',
       data,
-    },
-    pvc: {
-      apiVersion: 'v1',
-      kind: 'PersistentVolumeClaim',
-      metadata: { name, namespace },
-      spec: {
-        ...(storageClassName ? { storageClassName } : {}),
-        accessModes: ['ReadWriteOnce'],
-        resources: { requests: { storage: '1Gi' } },
-      },
     },
     job: {
       apiVersion: 'batch/v1',
@@ -298,13 +284,30 @@ export function configureHealthProbes(pod, container, api) {
 // Derive both Pod compositions from the serving target; keep the image, providers and probes.
 function candidatePods(target, container, name) {
   const newPod = structuredClone(target.pod);
+  const legacy = newPod.volumes.find((v) => v.name === 'global-security');
+  if (legacy) {
+    const mounts = newPod.containers.find((c) => c.name === container)?.volumeMounts || [];
+    if (
+      !legacy.persistentVolumeClaim ||
+      mounts.filter((m) => m.name === 'global-security').length !== 1 ||
+      !mounts.some(
+        (m) => m.name === 'global-security' && m.mountPath === '/var/lib/workspace-security',
+      ) ||
+      (newPod.initContainers || []).some((c) =>
+        (c.volumeMounts || []).some((m) => m.name === 'global-security'),
+      )
+    )
+      throw new CutoverValidationError(
+        'Unexpected legacy security volume; inspect without modifying it.',
+      );
+    newPod.volumes = newPod.volumes.filter((v) => v.name !== 'global-security');
+    newPod.containers.find((c) => c.name === container).volumeMounts = mounts.filter(
+      (m) => m.name !== 'global-security',
+    );
+  }
   const projection = newPod.volumes.find((v) => v.name === target.volume.name);
   projection.secret = { ...projection.secret, secretName: name };
   delete projection.secret.items; // The private-copy init container needs every new identity file.
-  newPod.volumes.push({ name: 'global-security', persistentVolumeClaim: { claimName: name } });
-  newPod.securityContext = { ...newPod.securityContext, fsGroup: 1000 };
-  const next = newPod.containers.find((c) => c.name === container);
-  next.volumeMounts.push({ name: 'global-security', mountPath: checkpointMount });
   configureHealthProbes(newPod, container, target.api);
   const bootstrap = structuredClone(newPod);
   bootstrap.restartPolicy = 'Never';
@@ -323,10 +326,12 @@ const complete = (job) =>
 
 // A completed initializer may be activated after a transport failure, never initialized again.
 export function recoverPrepared(target, { namespace, deployment, container }, kubectl) {
-  if (target.api.security || target.api.globalEntry)
-    throw new CutoverValidationError(
-      'Global already configured; do not activate another installation.',
-    );
+  const oldGlobals = target.plan.services.filter((s) => s.kind === 'global');
+  if (
+    (target.api.security || target.api.globalEntry || oldGlobals.length) &&
+    !(target.api.security && target.api.globalEntry && oldGlobals.length === 1)
+  )
+    throw new CutoverValidationError('Incomplete Global configuration; inspect before recovery.');
   const get = (kind, name) =>
     JSON.parse(kubectl(['get', kind, ...(name ? [name] : []), '-n', namespace, '-o', 'json']));
   const prefix = deployment.slice(0, 32) + '-global-';
@@ -340,23 +345,22 @@ export function recoverPrepared(target, { namespace, deployment, container }, ku
     throw new CutoverValidationError('Expected exactly one completed cutover candidate.');
   const job = jobs[0],
     name = job.metadata.name;
-  const secret = get('secret', name),
-    pvc = get('pvc', name);
-  if (secret.immutable !== true || pvc.status?.phase !== 'Bound')
-    throw new CutoverValidationError(
-      'Candidate configuration must be immutable and checkpoint volume bound.',
-    );
+  const secret = get('secret', name);
+  if (secret.immutable !== true)
+    throw new CutoverValidationError('Candidate configuration must be immutable.');
   const { newPod, bootstrap } = candidatePods(target, container, name);
   if (!isDeepStrictEqual(job.spec?.template?.spec, bootstrap))
     throw new CutoverValidationError('Serving runtime changed since candidate initialization.');
   const api = decode(secret.data['api.json']);
   const { security, globalEntry, ...originalApi } = api;
+  const { security: _oldSecurity, globalEntry: _oldEntry, ...priorApi } = target.api;
   if (
     !security ||
     !globalEntry ||
     security.initializeClock !== false ||
+    security.metadataSecurityState !== true ||
     !isDeepStrictEqual(originalApi, {
-      ...target.api,
+      ...priorApi,
       sso: hostedSso(target.api, target.environment),
       initializeWorkspace: false,
     })
@@ -365,15 +369,16 @@ export function recoverPrepared(target, { namespace, deployment, container }, ku
       'Candidate API or SSO configuration does not match the serving target.',
     );
   const plan = decode(secret.data['deployment.json']);
-  const services = target.plan.services.map(
-    ({ initialize: _init, recoverOwner: _owner, ...role }) => role,
-  );
+  const services = target.plan.services
+    .filter((s) => s.kind !== 'global')
+    .map(({ initialize: _init, recoverOwner: _owner, ...role }) => role);
   if (
     !isDeepStrictEqual(plan, {
       format: 1,
       services: [...services, { kind: 'global', configFile: '/run/workspace/global-api.json' }],
     }) ||
-    decode(secret.data['global-api.json']).initializeClock !== false
+    decode(secret.data['global-api.json']).initializeClock !== false ||
+    decode(secret.data['global-api.json']).metadataSecurityState !== true
   )
     throw new CutoverValidationError('Unexpected candidate steady deployment plan.');
   let installation;
@@ -533,14 +538,13 @@ export async function cutover(options, kubectl, request = fetch, report = () => 
     );
   } else if (options.operation === 'activate-prepared') {
     prepared = recoverPrepared(target, options, kubectl);
-    report('Verified completed candidate. Reusing initialized roots and persistent checkpoints.');
+    report('Verified completed candidate. Reusing initialized roots and Meta security state.');
   } else {
     prepared = await prepareCutover(target, options);
     const create = (object) =>
       kubectl(['create', '-f', '-', '-n', namespace, '-o', 'name'], JSON.stringify(object));
     create(prepared.secret);
-    create(prepared.pvc);
-    report('Private configuration and checkpoint PVC created. Starting one-time native bootstrap.');
+    report('Private configuration created. Starting one-time native bootstrap.');
     create(prepared.job);
     try {
       await waitForBootstrap(prepared.name, namespace, kubectl);
@@ -558,7 +562,7 @@ export async function cutover(options, kubectl, request = fetch, report = () => 
   await verifyGlobal(request);
   return {
     globalEnabled: true,
-    checkpointPersistent: true,
+    securityState: 'meta',
     bootstrapComplete: true,
     priorConfigurationRetained: true,
   };
@@ -572,7 +576,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         deployment: process.env.K8S_DEPLOYMENT,
         container: process.env.K8S_CONTAINER,
         operation: process.env.CUTOVER_OPERATION,
-        storageClassName: process.env.CUTOVER_STORAGE_CLASS || undefined,
       },
       (args, input) =>
         execFileSync('kubectl', ['--request-timeout=30s', ...args], {

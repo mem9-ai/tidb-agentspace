@@ -46,7 +46,8 @@ export function FileWorkspaceHeader({
             {resource && (
               <>
                 <Text>{live ? 'Live · Anonymous trial' : 'Local demo'}</Text>
-                <Text>Region: {regionLabel(resource.region)}</Text>
+                <Text>Workspace region: {regionLabel(resource.regionId)}</Text>
+                <Text>Provider data location: {regionLabel(resource.region)}</Text>
                 <Text>Status: {resource.status}</Text>
                 <Text>
                   {fileCount} files · {sizeLabel}

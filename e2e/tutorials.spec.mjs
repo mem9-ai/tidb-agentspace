@@ -11,7 +11,10 @@ async function tutorialApi(
   const handler = async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    const path = url.pathname.replace(`/api/v1/workspaces/${workspace.state.workspace.id}`, '');
+    const path = url.pathname.replace(
+      `/api/portal/v1/workspaces/${workspace.state.workspace.id}`,
+      '',
+    );
     const method = request.method();
     const reply = (body, status = 200) => route.fulfill({ json: body, status });
     if (path === '/database-import-preparations' && method === 'POST') {

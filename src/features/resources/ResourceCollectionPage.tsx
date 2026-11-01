@@ -93,7 +93,7 @@ export function ResourceCollectionPage({
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Name</Table.Th>
-                  <Table.Th>Region</Table.Th>
+                  <Table.Th>Provider location</Table.Th>
                   <Table.Th>Status</Table.Th>
                   <Table.Th>Service</Table.Th>
                   <Table.Th>Actions</Table.Th>

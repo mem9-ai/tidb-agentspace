@@ -153,6 +153,17 @@ impl Sessions {
         Ok(policy)
     }
 
+    /// An authority-local check for Global's explicitly enabled loopback Guest profile.
+    /// No credential is returned; a denied or expired Guest never authorizes issuance.
+    pub async fn local_guest_expiry(&self, workspace: &str) -> Result<Option<i64>> {
+        let policy = self.policy(workspace).await?;
+        match policy.identity {
+            OwnerIdentity::Guest { expires_at, .. } if expires_at > now()? => Ok(Some(expires_at)),
+            OwnerIdentity::Guest { .. } => Err(error(401, "SESSION_UNAUTHORIZED")),
+            OwnerIdentity::Oidc { .. } => Ok(None),
+        }
+    }
+
     fn matches(policy: &Policy, user_id: &str, generation: u64, current: i64) -> Result<()> {
         let expired = matches!(&policy.identity, OwnerIdentity::Guest { expires_at, .. } if current >= *expires_at);
         if policy.user_id != user_id || policy.generation != generation || policy.denied || expired

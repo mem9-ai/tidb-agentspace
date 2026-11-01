@@ -1,6 +1,24 @@
 import { readFile } from 'node:fs/promises';
 import { test, expect } from './workspace-fixture.mjs';
 
+test('workspace shows its default region separately from provider data locations', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  workspace.addResources();
+  await workspace.open('#settings');
+  await expect(page.getByLabel('Default region')).toHaveValue('Local');
+  await workspace.open('#databases');
+  await page.getByRole('button', { name: /create database/i }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByLabel('Workspace region')).toHaveValue('Local');
+  await expect(dialog.getByLabel('Provider data location')).toBeVisible();
+  if (process.env.REGION_VISUAL_DIR)
+    await page.screenshot({
+      path: `${process.env.REGION_VISUAL_DIR}/${testInfo.project.name}.png`,
+    });
+});
+
 test('cloud sign-in offers TiDB Account and clearly marks Guest access unavailable', async ({
   page,
   workspace,
@@ -55,9 +73,23 @@ test('Guest sign-in opens the Workspace when the server enables it', async ({
   expect(workspace.requests).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ path: '/api/auth/guest', method: 'POST' }),
-      expect.objectContaining({ path: '/api/v1/workspaces', method: 'GET' }),
+      expect.objectContaining({ path: '/api/portal/v1/workspaces', method: 'GET' }),
     ]),
   );
+});
+
+test('Guest API key creation explains the Workspace expiry', async ({ page, workspace }) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  workspace.addResources();
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  await workspace.open('#keys');
+  await page.getByRole('button', { name: 'Create API key', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
+  await expect(
+    dialog.getByText('This key expires when your Guest workspace expires.'),
+  ).toBeVisible();
+  await expect(dialog.getByRole('combobox', { name: 'Expiration' })).toHaveCount(0);
 });
 
 test('Guest can cancel or confirm sign-out from the workspace navigation', async ({
@@ -211,9 +243,9 @@ test('contextual creation fills the matching name, restores focus and keeps read
   await workspace.open();
   expect(workspace.requests).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ path: '/api/v1/workspaces', method: 'GET' }),
+      expect.objectContaining({ path: '/api/portal/v1/workspaces', method: 'GET' }),
       expect.objectContaining({
-        path: `/api/v1/workspaces/${workspace.state.workspace.id}/bootstrap`,
+        path: `/api/portal/v1/workspaces/${workspace.state.workspace.id}/bootstrap`,
         method: 'GET',
       }),
     ]),
@@ -273,6 +305,26 @@ test('automatic type changes preserve manual names; a conflict requires an expli
   await expect(page).toHaveURL(/#files\?resourceId=fixture_filesystem_1$/);
   expect(creates()).toHaveLength(2);
   expect(creates()[1].body).toMatchObject({ kind: 'filesystem', region: 'aws-ap-southeast-1' });
+});
+
+test('unavailable API keys show a recoverable error instead of an empty list or sign-in', async ({
+  page,
+  workspace,
+}) => {
+  workspace.state.globalApiUnavailable = true;
+  await workspace.open('#keys');
+  await expect(page.getByRole('heading', { name: 'Unable to load API keys' })).toBeVisible();
+  await expect(page.getByText('0 active')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Create API key' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Sign in' })).toHaveCount(0);
+  await expect(page.getByText('Global API is not configured', { exact: false })).toHaveCount(0);
+  if (process.env.API_KEYS_ERROR_SCREENSHOT)
+    await page.screenshot({ path: process.env.API_KEYS_ERROR_SCREENSHOT });
+
+  workspace.state.globalApiUnavailable = false;
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect(page.getByRole('button', { name: 'Create API key' })).toBeVisible();
+  await expect(page.getByText('0 active')).toBeVisible();
 });
 
 test('Key creation sends explicit resource/action grants and reveals its synthetic secret once', async ({

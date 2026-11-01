@@ -222,7 +222,7 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
     }
     const path = route.startsWith('/api/')
       ? route
-      : `/api/v1/workspaces/${states[workspace].workspace.id}${route}`;
+      : `${Object.hasOwn(options, 'token') ? '/api/v1' : '/api/portal/v1'}/workspaces/${states[workspace].workspace.id}${route}`;
     const response = await fetch(origin + path, {
       method,
       headers: { 'Content-Type': 'application/json', Origin: origin, ...auth, ...headers },
@@ -239,12 +239,30 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
   }
   return {
     provider,
+    controlProbe: globals[0].controlProbe,
+    globalRequest: globals[0].request,
     request,
     endpoints: {
       global: globals[0].origin,
       region: origins[0],
       workspaceId: states[0].workspace.id,
       regionId: region.server.authorityId,
+    },
+    async storedResource(id) {
+      const scope = workspaceScope(region.server.authorityId, states[0].workspace.id);
+      const key = `state/resources/${id}`;
+      const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
+      const guard = { ownerId: writer.records['system/writer'].value.ownerId };
+      const result = await region.client.call({ op: 'get', scope, guard, keys: [key] });
+      return result.records[key]?.value.record;
+    },
+    async binding(providerName, id) {
+      const scope = workspaceScope(region.server.authorityId, states[0].workspace.id);
+      const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
+      const guard = { ownerId: writer.records['system/writer'].value.ownerId };
+      const keys = [`bindings/${providerName}/${id}`, `credentials/${providerName}/${id}`];
+      const result = await region.client.call({ op: 'get', scope, guard, keys });
+      return keys.map((key) => result.records[key]?.value);
     },
     issueKey: (input, workspace = 0) => globals[workspace].issueKey(input),
     revokeKey: (id, workspace = 0) => globals[workspace].revokeKey(id),

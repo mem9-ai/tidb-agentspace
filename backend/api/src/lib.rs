@@ -8,6 +8,8 @@ mod http_policy;
 pub mod managed_workspaces;
 pub mod policy_command;
 pub mod policy_transport;
+pub mod portal_ticket;
+pub mod region_connection;
 pub mod region_security;
 pub mod regional_account;
 pub mod regional_guest;
@@ -243,7 +245,8 @@ pub struct GuestRuntime {
     pub cleanup_slots: Arc<Semaphore>,
 }
 pub struct WorkspaceServer {
-    global_mount: Option<(String, Router)>,
+    global_mount: Option<(String, Router, Router)>,
+    global_reconciler: Option<global_api::RegionReconciler>,
     pub workspace: Arc<Workspace>,
     listener: TcpListener,
     app: App,
@@ -333,6 +336,7 @@ impl WorkspaceServer {
             .map(Arc::new);
         Ok(Self {
             global_mount: None,
+            global_reconciler: None,
             workspace: workspace.clone(),
             listener,
             app: App {
@@ -351,7 +355,18 @@ impl WorkspaceServer {
             },
         })
     }
-    pub fn with_global(mut self, global: global_api::GlobalServer) -> Self {
+    pub fn with_global(mut self, mut global: global_api::GlobalServer) -> Self {
+        if self.app.config.insecure_loopback
+            && let Some(runtime) = &self.app.guest_runtime
+            && runtime.guest_enabled
+        {
+            global = global.with_local_guests(
+                &self.app.config.authority_id,
+                runtime.region.clone(),
+                self.app.config.bind,
+                &self.app.config.public_origins,
+            );
+        }
         if self.app.sso.is_some() && self.app.guest_runtime.is_some() {
             self.app.portal_sessions = global.portal_sessions(&self.app.config.public_path);
         }
@@ -359,17 +374,28 @@ impl WorkspaceServer {
             api_origin: global.origin().into(),
             api_path_prefix: global.mount_path().into(),
         });
-        self.global_mount = Some((global.mount_path().into(), global.router()));
+        self.global_reconciler = global.reconciler();
+        self.global_mount = Some((
+            global.mount_path().into(),
+            global.router(),
+            global.agent_entry_router(&self.app.config.public_path),
+        ));
         self
     }
     pub async fn serve(
         self,
         stop: impl std::future::Future<Output = ()> + Send + 'static,
     ) -> Result<()> {
+        let connection = self
+            .app
+            .security
+            .as_ref()
+            .and_then(|r| r.region_connection());
         let control = self
             .app
             .security
             .as_ref()
+            .filter(|_| connection.is_none())
             .map(|r| r.control())
             .transpose()?;
         let gateway_prefix = self.app.config.public_path.clone();
@@ -377,9 +403,10 @@ impl WorkspaceServer {
             .fallback(any(handle))
             .layer(middleware::from_fn_with_state(self.app.clone(), policy))
             .with_state(self.app);
-        let router = if let Some((path, global)) = self.global_mount {
+        let router = if let Some((path, global, entry)) = self.global_mount {
             // Gateways may preserve the public path or remove the Region prefix. Both
             // mounts share the same Global authority, public issuer and cookie paths.
+            let router = router.merge(entry);
             let router = router.nest_service(&path, global.clone());
             match path.strip_prefix(&gateway_prefix) {
                 Some(relative)
@@ -402,6 +429,22 @@ impl WorkspaceServer {
         let task = control.map(|server| {
             tokio::spawn(async move { server.serve(control_stop.cancelled_owned()).await })
         });
+        let connection_stop = cancellation.clone();
+        let connection_task = connection.map(|connection| {
+            tokio::spawn(async move {
+                crate::region_connection::connect(
+                    connection.config,
+                    connection.descriptor,
+                    connection.installer,
+                    connection.initializer,
+                    connection_stop,
+                )
+                .await
+            })
+        });
+        let reconcile_task = self
+            .global_reconciler
+            .map(|reconciler| tokio::spawn(reconciler.run(cancellation.clone())));
         let result = axum::serve(
             self.listener,
             router.into_make_service_with_connect_info::<SocketAddr>(),
@@ -411,6 +454,12 @@ impl WorkspaceServer {
         cancellation.cancel();
         if let Some(task) = task {
             task.await??;
+        }
+        if let Some(task) = connection_task {
+            task.await??;
+        }
+        if let Some(task) = reconcile_task {
+            task.await?;
         }
         result?;
         Ok(())
@@ -673,7 +722,7 @@ async fn dispatch(
     request: Request,
     cancellation: tokio_util::sync::CancellationToken,
 ) -> std::result::Result<Response, ServiceError> {
-    let path = request
+    let mut path = request
         .uri()
         .path()
         .strip_prefix(&format!("{}/", app.config.public_path))
@@ -681,6 +730,20 @@ async fn dispatch(
         .unwrap_or_else(|| request.uri().path().to_owned());
     let method = request.method().clone();
     let headers = request.headers().clone();
+    let portal_request = path.starts_with("/api/portal/v1/");
+    // The browser-facing interface has its own authentication boundary. The actual
+    // domain operation is shared with the Agent API, not reimplemented in the Portal.
+    if let Some(tail) = path.strip_prefix("/api/portal/v1/") {
+        if headers.contains_key("authorization") {
+            return Err(reject(401, "PORTAL_SESSION_REQUIRED"));
+        }
+        path = format!("/api/v1/{tail}");
+    } else if path == "/api/portal/v1/workspaces" {
+        if headers.contains_key("authorization") {
+            return Err(reject(401, "PORTAL_SESSION_REQUIRED"));
+        }
+        path = "/api/v1/workspaces".into();
+    }
     if path == "/openapi.json" && method == Method::GET && app.product.is_some() {
         return Ok((
             [("Content-Type", "application/json")],
@@ -694,6 +757,61 @@ async fn dispatch(
             .query_pairs()
             .into_owned()
             .collect();
+    if path == "/api/portal/auth/session-exchanges" && method == Method::POST {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Exchange {
+            ticket: String,
+        }
+        let origin = headers
+            .get("origin")
+            .and_then(|value| value.to_str().ok())
+            .ok_or_else(|| reject(403, "ORIGIN_DENIED"))?;
+        if !app
+            .config
+            .public_origins
+            .iter()
+            .chain(&app.config.console_origins)
+            .any(|allowed| allowed == origin)
+        {
+            return Err(reject(403, "ORIGIN_DENIED"));
+        }
+        if headers.contains_key("authorization") {
+            return Err(reject(401, "PORTAL_SESSION_REQUIRED"));
+        }
+        let security = app
+            .security
+            .as_ref()
+            .ok_or_else(|| reject(404, "NOT_FOUND"))?;
+        let runtime = app
+            .guest_runtime
+            .as_ref()
+            .ok_or_else(|| reject(404, "NOT_FOUND"))?;
+        let bytes = tokio::time::timeout(
+            Duration::from_secs(10),
+            to_bytes(request.into_body(), 16 * 1024),
+        )
+        .await
+        .map_err(|_| reject(408, "BODY_TIMEOUT"))?
+        .map_err(|_| reject(413, "BODY_TOO_LARGE"))?;
+        let input: Exchange =
+            serde_json::from_slice(&bytes).map_err(|_| reject(400, "INVALID_REQUEST"))?;
+        let claims = security.consume_portal_ticket(&input.ticket).await?;
+        let cookie = runtime
+            .account
+            .establish(
+                &claims.workspace_id,
+                &claims.identity_issuer,
+                &claims.identity_subject,
+            )
+            .await?;
+        let mut response = Json(json!({"workspaceId":claims.workspace_id})).into_response();
+        response.headers_mut().append("Set-Cookie", cookie);
+        response
+            .headers_mut()
+            .insert("Cache-Control", HeaderValue::from_static("no-store"));
+        return Ok(response);
+    }
     if path.starts_with("/api/auth/") {
         return Ok(auth_route(
             &app,
@@ -729,6 +847,12 @@ async fn dispatch(
             .await?
             .ok_or_else(|| reject(404, "NOT_FOUND"));
     }
+    if !portal_request
+        && (path == "/api/v1/workspaces" || path.starts_with("/api/v1/workspaces/"))
+        && !headers.contains_key("authorization")
+    {
+        return Err(reject(401, "AGENT_TOKEN_REQUIRED"));
+    }
     // An authenticated regional cookie selects exactly one managed Workspace.
     // A valid TiDB Account session takes precedence when both cookies exist.
     let legacy_account_session = if let Some(token) = cookie(&headers, "aw_session") {
@@ -763,7 +887,7 @@ async fn dispatch(
             .and_then(|v| v.strip_prefix("Bearer "))
             .filter(|v| v.split('.').count() == 3)
     {
-        Some(security.workspace_for_token(token)?)
+        Some(security.workspace_for_token(token).await?)
     } else {
         None
     };
@@ -1721,7 +1845,10 @@ async fn auth_route(
 }
 
 /// Deliberate one-time bootstrap without opening an HTTP or control listener.
-pub fn initialize_security_checkpoint(directory: &Path, initialize: bool) -> anyhow::Result<()> {
+pub async fn initialize_security_checkpoint(
+    directory: &Path,
+    initialize: bool,
+) -> anyhow::Result<()> {
     if initialize {
         use std::os::unix::fs::DirBuilderExt;
         let parent = directory
@@ -1733,6 +1860,16 @@ pub fn initialize_security_checkpoint(directory: &Path, initialize: bool) -> any
             .create(parent)?;
     }
     let clock = security_clock::Clock::open(directory, initialize)?;
-    clock.now()?;
+    clock.now().await?;
+    Ok(())
+}
+
+pub async fn initialize_meta_security_checkpoint(
+    metadata: Arc<dyn Metadata>,
+    authority: &str,
+    initialize: bool,
+) -> anyhow::Result<()> {
+    let clock = security_clock::Clock::open_meta(metadata, authority, initialize).await?;
+    clock.now().await?;
     Ok(())
 }

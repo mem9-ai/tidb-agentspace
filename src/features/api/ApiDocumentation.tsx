@@ -1,22 +1,11 @@
 import { useEffect, useState } from 'react';
-import {
-  Alert,
-  Anchor,
-  Badge,
-  Button,
-  Group,
-  NativeSelect,
-  Paper,
-  Text,
-  TextInput,
-} from '@tidbcloud/uikit';
+import { Alert, Anchor, Badge, Button, Group, Paper, Text, TextInput } from '@tidbcloud/uikit';
 import { WorkspacePageHeader } from '../../ui/WorkspacePageHeader';
 import { Heading } from '../../ui/WorkspaceHeading';
 import { CodeExample } from '../../ui/CodeExample';
-import { ChoiceTabs } from '../../ui/ChoiceTabs';
 import { apiBaseUrl, globalApiSettings, type Data } from '../../api/client';
 import { agentInstructions } from '../../api/agent-instructions';
-import { apiExamples } from './api-examples';
+import agentClientUrl from '../../generated/workspace-agent.mjs?url';
 import { WorkspaceApiPlayground } from './WorkspaceApiPlayground';
 import './api-documentation.css';
 
@@ -74,11 +63,13 @@ export function ApiDocumentation({
   connect?: boolean;
   onNewKey?: () => void;
 }) {
-  const [settings, setSettings] = useState<{ baseUrl: string; regionId: string }>(),
+  const [settings, setSettings] = useState<{
+      baseUrl: string;
+      endpoint: string;
+      regionId: string;
+    }>(),
     [error, setError] = useState('');
-  const [tab, setTab] = useState('cURL'),
-    [authority, setAuthority] = useState('Region'),
-    [search, setSearch] = useState(''),
+  const [search, setSearch] = useState(''),
     [operations, setOperations] = useState<Operation[]>([]),
     [selected, setSelected] = useState('');
   useEffect(() => {
@@ -94,19 +85,20 @@ export function ApiDocumentation({
       active = false;
     };
   }, []);
-  const root = authority === 'Global' ? settings?.baseUrl : apiBaseUrl;
   useEffect(() => {
     let active = true;
     setOperations([]);
     setSelected('');
-    if (root)
-      void fetch(root + '/openapi.json', { redirect: 'error' })
-        .then(async (r) => {
-          if (!r.ok) throw new Error('Unable to load API reference.');
-          return r.json() as Promise<unknown>;
-        })
-        .then((v) => {
-          if (active) setOperations(catalog(v));
+    if (settings?.endpoint)
+      void Promise.all(
+        [settings.endpoint, apiBaseUrl].map(async (root) => {
+          const response = await fetch(root + '/openapi.json', { redirect: 'error' });
+          if (!response.ok) throw new Error('Unable to load API reference.');
+          return response.json() as Promise<unknown>;
+        }),
+      )
+        .then((schemas) => {
+          if (active) setOperations(schemas.flatMap(catalog));
         })
         .catch((e) => {
           if (active) setError(String(e.message));
@@ -114,15 +106,9 @@ export function ApiDocumentation({
     return () => {
       active = false;
     };
-  }, [root]);
-  const examples = apiExamples(
-    settings?.baseUrl || 'GLOBAL_API_URL',
-    apiBaseUrl,
-    data.workspace.id,
-    settings?.regionId || '',
-    data.resources.find((r) => r.kind !== 'filesystem')?.id,
-    data.resources.find((r) => r.kind === 'filesystem')?.id,
-  );
+  }, [settings?.endpoint]);
+  const setup = `export WORKSPACE_ENDPOINT='${settings?.endpoint || 'YOUR_API_ENDPOINT'}'\n# Set WORKSPACE_API_KEY to your API key.`;
+  const example = `import { connectWorkspace } from './workspace-agent.mjs';\n\nconst workspace = await connectWorkspace({\n  endpoint: process.env.WORKSPACE_ENDPOINT,\n  apiKey: process.env.WORKSPACE_API_KEY,\n});\n\nconsole.log(await workspace.listResources());`;
   const filtered = operations.filter((o) =>
     search
       .toLowerCase()
@@ -132,10 +118,7 @@ export function ApiDocumentation({
   const operation = filtered.find((o) => o.method + ' ' + o.path === selected) || filtered[0];
   function downloadInstructions() {
     const url = URL.createObjectURL(
-      new Blob(
-        [agentInstructions(data.workspace.id, apiBaseUrl, settings?.baseUrl, settings?.regionId)],
-        { type: 'text/markdown' },
-      ),
+      new Blob([agentInstructions(settings?.endpoint)], { type: 'text/markdown' }),
     );
     const link = document.createElement('a');
     link.href = url;
@@ -147,7 +130,7 @@ export function ApiDocumentation({
     <>
       <WorkspacePageHeader
         title={connect ? 'Connect an agent' : 'API documentation'}
-        description="Create a Global Key, exchange it for a Token, then work directly with your Region."
+        description="Use one endpoint and a scoped API key to connect your agent."
         actions={
           onNewKey ? (
             <Button variant="filled" onClick={onNewKey}>
@@ -158,101 +141,40 @@ export function ApiDocumentation({
       />
       {error && <Alert color="yellow">{error}</Alert>}
       <Paper className="panel api-guide" p={24} withBorder>
-        <Heading level={2}>One Key. Two API endpoints.</Heading>
+        <Heading level={2}>API endpoint</Heading>
         <Text>
-          Global manages Keys, policy and discovery. Region handles databases, files, analysis,
-          imports and exports. Data requests go directly to Region.
+          Use this endpoint with a <Anchor href="#keys">Workspace API key</Anchor> to connect your
+          agent or application.
         </Text>
-        <div className="api-addresses">
-          <div>
-            <Badge>Global</Badge>
-            <code>{settings?.baseUrl || 'Not configured'}</code>
-            {settings && (
-              <Anchor href={settings.baseUrl + '/openapi.json'} target="_blank" rel="noreferrer">
-                Global OpenAPI
-              </Anchor>
-            )}
-          </div>
-          <div>
-            <Badge>Region</Badge>
-            <code>{apiBaseUrl}</code>
-            <Anchor href={apiBaseUrl + '/openapi.json'} target="_blank" rel="noreferrer">
-              Region OpenAPI
-            </Anchor>
-          </div>
-        </div>
+        <Group>
+          <code>{settings?.endpoint || 'Not available'}</code>
+          {settings && <Button onClick={() => copy(settings.endpoint)}>Copy endpoint</Button>}
+        </Group>
       </Paper>
       <Paper className="panel api-guide" p={24} withBorder>
-        <Heading level={2}>Start with a scoped Token</Heading>
+        <Heading level={2}>Connect your agent</Heading>
         <Text>
-          1. Create a Key in <Anchor href="#keys">API keys</Anchor>. Choose resources and actions.
-          Save its one-time secret in your secret manager.
+          Create an API key, then give your agent the endpoint and the key. Keep the key in an
+          environment variable or secret manager.
         </Text>
-        <Text>2. Set these endpoint variables. The cURL examples use curl and jq.</Text>
-        <CodeExample label="SHELL" value={examples.setup} copy={copy} />
-        <Text>
-          3. Exchange the Key at Global and call Region. Access Tokens last at most 15 minutes and
-          never outlive their parent Key.
-        </Text>
-        <ChoiceTabs value={tab} onChange={setTab} options={['cURL', 'JavaScript', 'Python']}>
-          <CodeExample
-            label={tab.toUpperCase()}
-            value={
-              tab === 'Python'
-                ? examples.python
-                : tab === 'JavaScript'
-                  ? examples.javascript
-                  : examples.exchange
-            }
-            copy={copy}
-          />
-        </ChoiceTabs>
-        <Alert color="peacock">
-          Use a Global-audience Token for Global discovery; use a Region-audience Token for Region
-          data. A raw Key is accepted only by Global Token issuance.
-        </Alert>
-        <Heading level={3}>Long-running agents</Heading>
-        <Text>
-          Use the repository’s <code>connectAgentWorkspace</code> client with an Ed25519 proof key
-          and application secret storage. It enrolls a client-bound refresh family and renews
-          directly at Region, including during a Global outage. It never falls back to routing data
-          through Global. Received revocations and actual Key expiry still apply.
-        </Text>
-        <Button onClick={downloadInstructions}>Download WORKSPACE.md</Button>
+        <Group>
+          <Button variant="filled" onClick={() => copy(agentInstructions(settings?.endpoint))}>
+            Copy agent instructions
+          </Button>
+          <Button onClick={downloadInstructions}>Download agent instructions</Button>
+        </Group>
       </Paper>
       <Paper className="panel api-guide" p={24} withBorder>
-        <Heading level={2}>Read a database</Heading>
-        <CodeExample value={examples.sql} copy={copy} />
+        <Heading level={2}>Use JavaScript</Heading>
         <Text>
-          Check <code>GET /context</code> for effective permissions and limits. Follow{' '}
-          <code>nextCursor</code> when listing resources. SQL writes require{' '}
-          <code>queries:execute</code>; never automatically retry an uncertain write.
+          Download the client into your project, then set the endpoint and API key in your
+          environment. Requires Node.js 24 or later.
         </Text>
-      </Paper>
-      <Paper className="panel api-guide" p={24} withBorder>
-        <Heading level={2}>Create and safely update a file</Heading>
-        <CodeExample value={examples.files} copy={copy} />
-        <Text>
-          A stale version returns 412 without writing. Use a new path after a create-only conflict;
-          re-read and review before an update. Analysis requires both read and analyze grants.
-        </Text>
-      </Paper>
-      <Paper className="panel api-guide" p={24} withBorder>
-        <Heading level={2}>Review and import a file</Heading>
-        <CodeExample value={examples.imports} copy={copy} />
-        <Text>
-          Inspect the sample and field mapping before confirmation. Preparations expire after five
-          minutes and are unavailable after restart. Imports create new tables; an unknown outcome
-          requires inspection before another attempt.
-        </Text>
-      </Paper>
-      <Paper className="panel api-guide" p={24} withBorder>
-        <Heading level={2}>Export a query result</Heading>
-        <CodeExample value={examples.exports} copy={copy} />
-        <Text>
-          Download exports return JSON containing the file content. Copies to a File System or a new
-          table check destination permissions separately.
-        </Text>
+        <Anchor href={agentClientUrl} download="workspace-agent.mjs">
+          Download JavaScript client
+        </Anchor>
+        <CodeExample label="SHELL" value={setup} copy={copy} />
+        <CodeExample label="JAVASCRIPT" value={example} copy={copy} />
       </Paper>
       {!connect && <WorkspaceApiPlayground data={data} copy={copy} />}
       {!connect && (
@@ -260,23 +182,15 @@ export function ApiDocumentation({
           <Heading level={2}>API reference</Heading>
           <Text>
             Every documented operation is listed below, with its authentication, parameters, request
-            and response schemas. Owner operations use an Owner session; agent Tokens do not acquire
-            Owner privileges.
+            and response schemas. The Portal uses its own signed-in session for account and Key
+            management.
           </Text>
-          <Group grow>
-            <NativeSelect
-              label="API authority"
-              value={authority}
-              onChange={(e) => setAuthority(e.target.value)}
-              data={['Region', 'Global']}
-            />
-            <TextInput
-              label="Find an operation"
-              placeholder="files, queries, import…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </Group>
+          <TextInput
+            label="Find an operation"
+            placeholder="files, queries, import…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
           <div className="api-reference">
             <div className="api-operation-list">
               {filtered.map((o) => (

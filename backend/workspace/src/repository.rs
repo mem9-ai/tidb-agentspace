@@ -23,6 +23,24 @@ fn error(code: &str) -> ServiceError {
 fn version(record: &Value) -> Value {
     record.get("version").cloned().unwrap_or(Value::Null)
 }
+// Old records belong to the regional Meta authority that already owns them. This is
+// independent of their provider's geographic location, stored in `region`.
+fn regional_resource(mut resource: Value, authority: &str) -> Result<Value> {
+    if resource.is_null() {
+        return Ok(resource);
+    }
+    let object = resource
+        .as_object_mut()
+        .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+    match object.get("regionId") {
+        None => {
+            object.insert("regionId".into(), json!(authority));
+        }
+        Some(value) if value == authority => {}
+        _ => return Err(error("META_RESOURCE_REGION_MISMATCH")),
+    }
+    Ok(resource)
+}
 type Records = BTreeMap<String, Value>;
 #[derive(Clone, Copy)]
 enum KeyLoad<'a> {
@@ -109,12 +127,17 @@ impl Repository {
             let core=result.get("state/workspace").await?;
             if core.is_null() {
                 if !initialize {return Err(error("META_WORKSPACE_MISSING"));}
-                let state=json!({"workspace":{"id":workspace,"name":"My Workspace","description":"","plan":"Free","createdAt":chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis,true)},"profile":{"name":"Local developer","email":"","role":"Local developer"},"resources":[],"keys":[],"files":[],"events":[],"idempotency":{},"resourceQueryCounts":{},"queryCount":0});
+                let state=json!({"workspace":{"id":workspace,"name":"My Workspace","description":"","plan":"Free","defaultRegionId":authority,"createdAt":chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis,true)},"profile":{"name":"Local developer","email":"","role":"Local developer"},"resources":[],"keys":[],"files":[],"events":[],"idempotency":{},"resourceQueryCounts":{},"queryCount":0});
                 let records=flatten(&state,&Records::new())?;
                 let mut changes = records.into_iter().map(|(key,value)|json!({"key":key,"expectedVersion":null,"value":value})).collect::<Vec<_>>();
                 changes.push(workspace_contracts::initial_resource_index());
                 result.commit(changes).await?;
             } else if core["value"]["id"]!=workspace {return Err(error("META_WORKSPACE_MISMATCH"));}
+            else if core["value"]["defaultRegionId"].is_null() {
+                let mut value = core["value"].clone();
+                value["defaultRegionId"] = json!(authority);
+                result.commit(vec![json!({"key":"state/workspace","expectedVersion":version(&core),"value":value})]).await?;
+            } else if core["value"]["defaultRegionId"] != authority { return Err(error("META_WORKSPACE_REGION_MISMATCH")); }
             Ok(())
         }.await;
         if let Err(e) = initialized {
@@ -283,7 +306,7 @@ impl Repository {
     }
     pub async fn read(&self) -> Result<Value> {
         let _lock = self.queue.write().await;
-        inflate(&self.records("state/").await?)
+        inflate(&self.records("state/").await?, self.authority_id())
     }
     pub async fn transaction<T>(
         &self,
@@ -636,14 +659,27 @@ impl Repository {
 
     async fn apply_transaction<T>(
         &self,
-        previous: Records,
+        mut previous: Records,
         apply: impl FnOnce(&mut Value) -> Result<(T, bool)> + Send,
         fence_reads: bool,
     ) -> Result<T> {
-        let mut state = inflate(&previous)?;
+        // Missing Region IDs in legacy records are a read projection, not unrelated
+        // resource updates. Keep their original versions for conditional writes.
+        for (key, prior) in &mut previous {
+            if key.starts_with("state/resources/") {
+                let record = &mut prior["value"]["record"];
+                *record = regional_resource(std::mem::take(record), self.authority_id())?;
+            }
+        }
+        let mut state = inflate(&previous, self.authority_id())?;
         let (result, dirty) = apply(&mut state)?;
         if !dirty {
             return Ok(result);
+        }
+        if let Some(resources) = state["resources"].as_array_mut() {
+            for resource in resources {
+                *resource = regional_resource(std::mem::take(resource), self.authority_id())?;
+            }
         }
         let next = flatten(&state, &previous)?;
         let new_events = state["events"]
@@ -738,7 +774,7 @@ impl Repository {
             }
         }
         // Digest indexes are committed with their canonical Key; authorization is a point lookup.
-        let old_keys = inflate(&previous)?["keys"]
+        let old_keys = inflate(&previous, self.authority_id())?["keys"]
             .as_array()
             .cloned()
             .unwrap_or_default();
@@ -828,7 +864,10 @@ impl Repository {
         Ok(())
     }
     pub async fn resource(&self, id: &str) -> Result<Value> {
-        Ok(self.get(&format!("state/resources/{id}")).await?["value"]["record"].clone())
+        regional_resource(
+            self.get(&format!("state/resources/{id}")).await?["value"]["record"].clone(),
+            self.authority_id(),
+        )
     }
 
     /// Keep the legacy event retention and ordering without loading unrelated resources.
@@ -875,7 +914,7 @@ impl Repository {
             if resource["id"] != *id {
                 return Err(error("META_RECORD_CORRUPT"));
             }
-            resources.push(resource.clone());
+            resources.push(regional_resource(resource.clone(), self.authority_id())?);
         }
         Ok(resources)
     }
@@ -958,6 +997,7 @@ impl Repository {
             if value["record"]["id"] != id {
                 return Err(ServiceError::new(404, "NOT_FOUND"));
             }
+            value["record"] = regional_resource(value["record"].clone(), self.authority_id())?;
             let result = apply(&mut value["record"])?;
             if value == stored["value"] {
                 return Ok(result);
@@ -1007,7 +1047,7 @@ impl Repository {
             if entry["key"] != format!("state/resources/{id}") {
                 return Err(error("META_RECORD_CORRUPT"));
             }
-            resources.push(value);
+            resources.push(regional_resource(value, self.authority_id())?);
         }
         Ok((resources, page["nextCursor"].as_str().map(str::to_owned)))
     }
@@ -1251,7 +1291,7 @@ impl Repository {
         Ok(())
     }
 }
-fn inflate(records: &Records) -> Result<Value> {
+fn inflate(records: &Records, authority: &str) -> Result<Value> {
     let mut state = json!({"resources":[],"keys":[],"files":[],"events":[],"idempotency":{},"resourceQueryCounts":{}});
     for (key, envelope) in records {
         let path = key
@@ -1286,6 +1326,9 @@ fn inflate(records: &Records) -> Result<Value> {
         }
         for v in values {
             *v = v["record"].clone();
+            if name == "resources" {
+                *v = regional_resource(v.clone(), authority)?;
+            }
         }
     }
     if !state["workspace"].is_object() || !state["profile"].is_object() {
@@ -1370,6 +1413,23 @@ mod concurrency_tests {
     use super::*;
     use tokio::sync::Notify;
     use workspace_contracts::Call;
+
+    #[test]
+    fn legacy_resource_placement_preserves_provider_location_and_rejects_conflicts() {
+        let legacy = json!({"id":"db_old","region":"aws-us-west-2"});
+        let placed = regional_resource(legacy, "region:local").unwrap();
+        assert_eq!(placed["region"], "aws-us-west-2");
+        assert_eq!(placed["regionId"], "region:local");
+        assert_eq!(
+            regional_resource(
+                json!({"id":"db_bad","regionId":"region:other"}),
+                "region:local"
+            )
+            .unwrap_err()
+            .code,
+            "META_RESOURCE_REGION_MISMATCH"
+        );
+    }
 
     struct MetadataGate {
         values: std::sync::Mutex<Records>,
@@ -1506,6 +1566,54 @@ mod concurrency_tests {
                     _ => panic!("unexpected request"),
                 }
             })
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_region_projection_does_not_rewrite_unrelated_resources() {
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new([
+                ("state/workspace".into(), json!({"version":"v1","value":{"id":"test"}})),
+                ("state/profile".into(), json!({"version":"v1","value":{"name":"before"}})),
+                ("state/resources/a".into(), json!({"version":"v1","value":{"position":1,"record":{"id":"a","kind":"filesystem"}}})),
+                ("state/resources/b".into(), json!({"version":"v1","value":{"position":2,"record":{"id":"b","kind":"mysql"}}})),
+                ("indexes/resource-v1/schema".into(), json!({"version":"v1","value":{"format":1,"phase":"ready"}})),
+            ].into_iter().collect()),
+            paused: Notify::new(), resume: Notify::new(), first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false), fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false), forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        repository
+            .transaction(|state| {
+                assert_eq!(state["resources"][0]["regionId"], "region:test");
+                state["profile"]["name"] = json!("after");
+                Ok(((), true))
+            })
+            .await
+            .unwrap();
+        let stored = metadata.values.lock().unwrap();
+        assert_eq!(stored["state/profile"]["value"]["name"], "after");
+        for key in ["state/resources/a", "state/resources/b"] {
+            assert_eq!(stored[key]["version"], "v1");
+            assert!(stored[key]["value"]["record"].get("regionId").is_none());
         }
     }
 
