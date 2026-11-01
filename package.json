@@ -52,6 +52,7 @@
     "@tidbcloud/codemirror-extension-themes": "0.0.6",
     "@tidbcloud/tisqleditor-react": "0.0.6",
     "@tidbcloud/uikit": "2.9.1",
+    "mermaid": "12.2.0",
     "openapi-fetch": "0.17.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",

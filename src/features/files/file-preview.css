@@ -245,3 +245,29 @@
   object-fit: contain;
   margin: 0 auto;
 }
+
+.mermaid-preview {
+  margin: 20px 0;
+  min-width: 0;
+}
+.mermaid-preview iframe {
+  display: block;
+  width: 100%;
+  border: 0;
+}
+.mermaid-preview details {
+  margin-top: 8px;
+  color: var(--muted);
+}
+.mermaid-preview summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+.mermaid-preview pre {
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mermaid-preview-error {
+  color: var(--ink);
+}
