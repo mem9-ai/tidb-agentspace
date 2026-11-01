@@ -108,6 +108,11 @@ follow its task-specific references before implementation. Keep detailed rules c
 
 ## Validation and handoff
 
+- Before running checks, select and explain the affected verification scope using
+  [verification scope and delivery time](docs/standards/openapi-verification.md#choose-verification-scope-and-control-delivery-time).
+  Identify required and inapplicable checks, reusable evidence and CI/CD cost. Avoid unrelated
+  suites and redundant runs; preserve assertions and existing protection until reviewed gate
+  changes are implemented.
 - Run `npm run check` before declaring a change ready. It checks the runtime, repository
   policy, formatting, lint, generated API contract, tests, types, and production build.
 - For Rust backend/module/transport changes, also run `npm run backend:check` (workspace

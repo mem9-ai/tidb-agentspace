@@ -39,6 +39,18 @@ GitHub CI is running; branch protection, deployment environments, and hosting ar
 configured. At initial setup, GitHub reported that branch protection for this private
 repository requires a plan upgrade. Do not change repository visibility to work around it.
 
+## Verification scope and waiting time
+
+Accepted owner direction, 2026-11-01: select checks from the changed inputs and material risks;
+do not default every change to full regression. Record required/inapplicable checks, reusable
+passing evidence and the PR/main/deploy critical path following
+[verification scope](standards/openapi-verification.md#choose-verification-scope-and-control-delivery-time).
+CI/CD time is part of delivery cost. Optimize redundant builds/runs, cache safe unchanged
+inputs and parallelize isolated work while preserving all required behavior assertions and
+trusted provenance. Current automatic scope rules and exact-commit consumers below remain
+implemented requirements; finer operator/documentation scope and cross-commit evidence reuse
+require a reviewed automation change and must not be claimed as already available.
+
 ## Current early-iteration merge policy
 
 The project owner has authorized rapid iteration during the prototype phase. Agents may
