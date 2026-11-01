@@ -4,7 +4,6 @@ import {
   ActionIcon,
   Anchor,
   AppShell,
-  Badge,
   Breadcrumbs,
   Button,
   Drawer,
@@ -13,14 +12,7 @@ import {
   Stack,
   Text,
 } from '@tidbcloud/uikit';
-import {
-  IconBookOpen01,
-  IconChevronRight,
-  IconHelpCircle,
-  IconLogOut01,
-  IconMenu01,
-  IconSearchLg,
-} from '@tidbcloud/uikit/icons';
+import { IconChevronRight, IconLogOut01, IconMenu01, IconSearchLg } from '@tidbcloud/uikit/icons';
 import type { IconProps } from '@tidbcloud/uikit/icons';
 import { ThemePicker } from '../features/theme/ThemePicker';
 
@@ -74,13 +66,11 @@ export function WorkspaceLayout({
       <Button fullWidth variant="default" onClick={() => navigate('settings')}>
         Personal workspace
       </Button>
-      <Text size="sm" c="carbon.7" mt={8}>
-        {liveFiles || liveDatabases
-          ? 'Prototype · Live resources'
-          : isHostedSession
-            ? 'No resources yet'
-            : 'Free plan · Local demo'}
-      </Text>
+      {!isHostedSession && !liveFiles && !liveDatabases && (
+        <Text size="sm" c="carbon.7" mt={8}>
+          Free plan · Local demo
+        </Text>
+      )}
       <nav aria-label="Main navigation">
         {['Workspace', 'Build', 'Manage'].map((group) => (
           <Stack key={group} gap={6} mt={24}>
@@ -105,14 +95,6 @@ export function WorkspaceLayout({
         ))}
       </nav>
       <div className="sidebar-bottom">
-        <NavLink
-          component="a"
-          href="https://docs.pingcap.com/tidbcloud/"
-          target="_blank"
-          rel="noreferrer"
-          label="Documentation"
-          leftSection={<IconBookOpen01 size={20} />}
-        />
         <NavLink
           component="a"
           href="#settings"
@@ -143,10 +125,15 @@ export function WorkspaceLayout({
     >
       <AppShell.Header>
         <div className="workspace-header">
-          <Anchor href="#overview" className="brand" underline="never">
+          <Anchor
+            href="#overview"
+            className="brand"
+            underline="never"
+            aria-label="TiDB Agent Workspace"
+          >
             <span className="brand-mark">TiDB</span>
             <Text span fw={600}>
-              Workspace
+              Agent Workspace
             </Text>
           </Anchor>
           <ActionIcon hiddenFrom="sm" aria-label="Open navigation" onClick={() => setOpened(true)}>
@@ -185,22 +172,6 @@ export function WorkspaceLayout({
             <ActionIcon visibleFrom="sm" aria-label="Search workspace" onClick={onSearch}>
               <IconSearchLg size={20} />
             </ActionIcon>
-            <Badge visibleFrom="md" color="carbon">
-              {liveFiles || liveDatabases
-                ? 'Live resources'
-                : isHostedSession
-                  ? 'No resources yet'
-                  : 'Local demo'}
-            </Badge>
-            <ActionIcon
-              visibleFrom="md"
-              aria-label="Open documentation"
-              onClick={() =>
-                window.open('https://docs.pingcap.com/tidbcloud/', '_blank', 'noopener')
-              }
-            >
-              <IconHelpCircle size={20} />
-            </ActionIcon>
           </Group>
         </div>
       </AppShell.Header>
@@ -211,7 +182,7 @@ export function WorkspaceLayout({
         closeButtonProps={{ 'aria-label': 'Close navigation', size: 44 }}
         opened={opened}
         onClose={() => setOpened(false)}
-        title="Workspace"
+        title="TiDB Agent Workspace"
         size={300}
       >
         {sidebar}
@@ -233,24 +204,26 @@ export function WorkspaceLayout({
           {children}
         </div>
         <footer className="footer">
-          <Text size="sm">{isHostedSession ? 'Workspace API' : 'Local Workspace gateway'}</Text>
+          <Text size="sm">
+            Powered by{' '}
+            <Anchor
+              size="sm"
+              href="https://www.pingcap.com/tidb/cloud/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              TiDB Cloud
+            </Anchor>
+          </Text>
           <Text size="sm">
             {liveDatabases
-              ? 'Live databases · Cloud usage is not measured'
+              ? 'Cloud usage is not measured'
               : liveFiles
-                ? 'Drive9 files are live · Databases & telemetry are simulated'
+                ? 'File storage is connected · Databases and telemetry are simulated'
                 : isHostedSession
                   ? 'Create a resource to get started'
-                  : 'Product prototype · Cloud resources & telemetry are simulated'}
+                  : 'Local demo · Cloud resources and telemetry are simulated'}
           </Text>
-          <Anchor
-            size="sm"
-            href="https://docs.pingcap.com/tidbcloud/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Documentation
-          </Anchor>
         </footer>
       </AppShell.Main>
     </AppShell>
