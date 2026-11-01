@@ -16,7 +16,7 @@ function bootstrap() {
   return {
     workspace: {
       id: 'ws_personal_fixture',
-      name: 'Browser fixture',
+      name: 'My Workspace',
       description: '',
       plan: 'Free',
       createdAt,
@@ -61,6 +61,8 @@ export const test = base.extend({
     let signedInAsGuest = false;
     let signedInAsAccount = false;
     let rejectGuestLogout = false;
+    const resourcePages = new Map();
+    const keyPages = new Map();
     page.on('pageerror', (error) => unexpected.push(error.message));
     const handler = async (route) => {
       const request = route.request();
@@ -72,7 +74,12 @@ export const test = base.extend({
       if (!url.pathname.startsWith('/api/')) return route.continue();
       const method = request.method();
       const body = request.postDataJSON();
-      requests.push({ path: url.pathname, method, body });
+      requests.push({
+        path: url.pathname,
+        method,
+        body,
+        query: Object.fromEntries(url.searchParams),
+      });
       const reply = (json, status = 200) => route.fulfill({ status, json });
       if (url.pathname === '/api/auth/config')
         return reply(
@@ -109,7 +116,12 @@ export const test = base.extend({
           ? reply({ error: { code: 'UNAUTHENTICATED', message: 'Sign in' } }, 401)
           : reply({ data: [state.workspace] });
       const path = url.pathname.replace(`/api/v1/workspaces/${state.workspace.id}`, '');
-      if (path === '/bootstrap') return reply(state);
+      if (path === '/bootstrap') {
+        return reply({
+          ...state,
+          files: [],
+        });
+      }
       if (path === '/tutorials' && method === 'GET')
         return reply({
           data: [...tutorials.values()].sort((a, b) => a.resourceId.localeCompare(b.resourceId)),
@@ -148,7 +160,53 @@ export const test = base.extend({
         state.resources.push(resource);
         return reply({ data: resource, mode: 'demo' }, 201);
       }
-      if (path === '/resources') return reply({ data: state.resources, mode: 'demo' });
+      if (path === '/resources') {
+        const cursor = url.searchParams.get('cursor');
+        if (cursor && resourcePages.has(cursor)) return reply(resourcePages.get(cursor));
+        return reply({ data: state.resources, capabilities: state.capabilities, nextCursor: null });
+      }
+      if (path === '/usage')
+        return reply({
+          data: state.usage,
+          mode: 'demo',
+          queryCount: state.queryCount,
+          queryCountScope: 'workspace',
+          nextCursor: null,
+        });
+      if (path === '/files' && method === 'GET') {
+        const resourceId = url.searchParams.get('resourceId');
+        const folder = url.searchParams.get('path');
+        const offset = Number(url.searchParams.get('cursor') || 0);
+        const matching = state.files.filter(
+          (file) =>
+            file.resourceId === resourceId &&
+            (!folder || (file.path.slice(0, file.path.lastIndexOf('/')) || '/') === folder),
+        );
+        return reply({
+          data: matching.slice(offset, offset + 32),
+          nextCursor: offset + 32 < matching.length ? String(offset + 32) : null,
+        });
+      }
+      if (path === '/files/content' && method === 'GET') {
+        const file = state.files.find(
+          (item) =>
+            item.resourceId === url.searchParams.get('resourceId') &&
+            item.path === url.searchParams.get('path'),
+        );
+        return file
+          ? reply({ content: file.content || '', size: Buffer.byteLength(file.content || '') })
+          : reply({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404);
+      }
+      if (method === 'GET' && /^\/resources\/[^/]+$/.test(path)) {
+        const id = decodeURIComponent(path.slice('/resources/'.length));
+        const resource = [
+          ...state.resources,
+          ...[...resourcePages.values()].flatMap((entry) => entry.data),
+        ].find((item) => item.id === id);
+        return resource
+          ? reply({ data: resource })
+          : reply({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404);
+      }
       if (path === '/queries' && method === 'POST')
         return reply({
           columns: ['event'],
@@ -158,6 +216,10 @@ export const test = base.extend({
           durationMs: 1,
         });
       if (/\/tables$/.test(path)) return reply({ data: [], mode: 'demo', truncated: false });
+      if (path === '/keys' && method === 'GET') {
+        const cursor = url.searchParams.get('cursor');
+        return reply((cursor && keyPages.get(cursor)) || { data: state.keys, nextCursor: null });
+      }
       if (path === '/keys' && method === 'POST') {
         const key = {
           ...body,
@@ -188,6 +250,12 @@ export const test = base.extend({
     await use({
       state,
       requests,
+      setResourcePage(cursor, data, nextCursor = null) {
+        resourcePages.set(cursor, { data, nextCursor, capabilities: state.capabilities });
+      },
+      setKeyPage(cursor, data, nextCursor = null) {
+        keyPages.set(cursor, { data, nextCursor });
+      },
       tutorials,
       async connectContext(otherContext) {
         otherContext.on('page', (otherPage) =>

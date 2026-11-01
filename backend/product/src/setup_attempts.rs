@@ -65,7 +65,9 @@ impl Product {
         if ![ZERO, DB9, DUCKDB].contains(&r["provider"].as_str().unwrap_or("")) {
             return Err(err(400, "UNSUPPORTED_PROVIDER"));
         }
-        let _admission = self.setup_admission.lock().await;
+        let _admission = self.setup_admission[resource_locks::stripe(id)]
+            .lock()
+            .await;
         // Admission may have waited behind another setup. Revocation must precede journaling.
         let p = self.workspace.authenticate(credential).await?;
         p.scope("resources:write")?;

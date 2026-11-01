@@ -810,32 +810,26 @@ impl PolicyInstaller for Runtime {
                 return Err(error(403, "WORKSPACE_DENIED"));
             }
             let grant = grant.ok_or_else(|| error(400, "GRANT_REQUIRED"))?;
-            let owned = grant.resource_ids.clone();
-            self.workspace
-                .repository()
-                .transaction(move |state| {
-                    for id in &owned {
-                        if id == "*" {
-                            continue;
-                        }
-                        if !state["resources"].as_array().is_some_and(|r| {
-                            r.iter().any(|r| {
-                                r["id"] == *id
-                                    && matches!(
-                                        r["kind"].as_str(),
-                                        Some("mysql" | "duckdb" | "filesystem")
-                                    )
-                                    || r["id"] == *id
-                                        && r["kind"] == "postgresql"
-                                        && r["provider"] == "db9-anonymous"
-                            })
-                        }) {
-                            return Err(error(403, "RESOURCE_ACCESS_DENIED"));
-                        }
-                    }
-                    Ok(((), false))
+            // Authorize only the explicitly selected records; policy application must not
+            // inflate unrelated resources in a large Workspace.
+            let ids = grant
+                .resource_ids
+                .iter()
+                .filter(|id| id.as_str() != "*")
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            let resources = self.workspace.repository().resources_by_id(&ids).await?;
+            if resources.len() != ids.len()
+                || resources.iter().any(|resource| {
+                    !matches!(
+                        resource["kind"].as_str(),
+                        Some("mysql" | "duckdb" | "filesystem")
+                    ) && !(resource["kind"] == "postgresql"
+                        && resource["provider"] == "db9-anonymous")
                 })
-                .await?;
+            {
+                return Err(error(403, "RESOURCE_ACCESS_DENIED"));
+            }
             let mut receipt = self
                 .control_verifier
                 .apply(command, self.clock.now()?, &self.policies)

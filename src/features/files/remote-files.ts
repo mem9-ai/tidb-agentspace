@@ -7,7 +7,9 @@ export function useRemoteFiles(resourceId: string, path: string, enabled: boolea
     resourceId: string;
     path: string;
     files: WorkspaceFile[];
-  }>({ resourceId: '', path: '', files: [] });
+    nextCursor: string | null;
+    earlier: boolean;
+  }>({ resourceId: '', path: '', files: [], nextCursor: null, earlier: false });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
@@ -19,7 +21,14 @@ export function useRemoteFiles(resourceId: string, path: string, enabled: boolea
     workspaceApi
       .listFiles(resourceId, path, controller.signal)
       .then((result) => {
-        if (!controller.signal.aborted) setListing({ resourceId, path, files: result.data });
+        if (!controller.signal.aborted)
+          setListing({
+            resourceId,
+            path,
+            files: result.data,
+            nextCursor: result.nextCursor,
+            earlier: false,
+          });
       })
       .catch((cause: unknown) => {
         if (!controller.signal.aborted)
@@ -30,10 +39,45 @@ export function useRemoteFiles(resourceId: string, path: string, enabled: boolea
       });
     return () => controller.abort();
   }, [resourceId, path, enabled, revision]);
+  async function loadMore() {
+    const cursor = listing.nextCursor;
+    if (!cursor || loading) return;
+    setLoading(true);
+    setError('');
+    try {
+      const result = await workspaceApi.listFiles(resourceId, path, undefined, cursor);
+      setListing((current) => {
+        if (
+          current.resourceId !== resourceId ||
+          current.path !== path ||
+          current.nextCursor !== cursor
+        )
+          return current;
+        const merged = new Map(current.files.map((file) => [file.id, file]));
+        for (const file of result.data) merged.set(file.id, file);
+        const files = [...merged.values()];
+        return {
+          resourceId,
+          path,
+          files: files.slice(-200),
+          nextCursor: result.nextCursor,
+          earlier: current.earlier || files.length > 200,
+        };
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to load files.');
+    } finally {
+      setLoading(false);
+    }
+  }
   return {
     files: listing.resourceId === resourceId && listing.path === path ? listing.files : [],
     loading,
     error,
+    nextCursor:
+      listing.resourceId === resourceId && listing.path === path ? listing.nextCursor : null,
+    earlier: listing.resourceId === resourceId && listing.path === path && listing.earlier,
+    loadMore,
     refresh: () => setRevision((n) => n + 1),
   };
 }

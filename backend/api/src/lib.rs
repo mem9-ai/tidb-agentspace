@@ -361,6 +361,9 @@ fn error(error: ServiceError) -> Response {
         "SSO_STATE_INVALID" | "SSO_STATE_MISMATCH" => "Start TiDB Account sign-in again.",
         "SSO_UNAVAILABLE" => "TiDB Account sign-in is unavailable.",
         "SSO_RATE_LIMITED" => "Too many sign-in attempts. Try again shortly.",
+        "RESOURCE_INDEX_MIGRATING" => {
+            "Workspace resources are being indexed. No resource was created; try again shortly."
+        }
         "NOT_FOUND" => "Workspace or endpoint not found.",
         "INVALID_IMPORT" => "Choose a database, a CSV/Parquet source and explicit parsing options.",
         "IMPORT_TARGET_MISMATCH" => {
@@ -835,7 +838,14 @@ async fn dispatch(
     } else {
         match (method.as_str(), route) {
             ("GET", "") if path == prefix => Operation::GetWorkspace,
-            ("GET", "/keys") => Operation::ListKeys,
+            ("GET", "/keys") => Operation::ListKeys {
+                cursor: query.get("cursor").cloned(),
+                limit: query.get("limit").map_or(Ok(100), |value| {
+                    value
+                        .parse::<usize>()
+                        .map_err(|_| reject(400, "INVALID_PAGE_LIMIT"))
+                })?,
+            },
             ("POST", "/keys") => Operation::CreateKey(body()?),
             ("PATCH", "/settings") => Operation::UpdateSettings(body()?),
             ("GET", "/events") => Operation::ListEvents,

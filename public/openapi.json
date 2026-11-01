@@ -858,6 +858,20 @@
           { "guestOwner": [] },
           { "regionalAccess": [] }
         ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 512, "default": 100 },
+            "description": "Page size, default 100; evaluated before authorization and visibility filtering, so a page may be empty."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": { "type": "string", "maxLength": 1024 },
+            "description": "Opaque cursor from the previous page. Each page is independently authorized; concurrent changes can affect results. Pages contain stored state without refreshing providers."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success",
@@ -865,13 +879,14 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["data", "capabilities"],
+                  "required": ["data", "capabilities", "nextCursor"],
                   "properties": {
                     "data": {
                       "type": "array",
                       "items": { "$ref": "#/components/schemas/Resource" }
                     },
-                    "capabilities": { "$ref": "#/components/schemas/Capabilities" }
+                    "capabilities": { "$ref": "#/components/schemas/Capabilities" },
+                    "nextCursor": { "type": ["string", "null"] }
                   }
                 }
               }
@@ -1110,7 +1125,7 @@
             }
           },
           "503": {
-            "description": "Provider binding needs operator recovery",
+            "description": "A provider needs recovery, or RESOURCE_INDEX_MIGRATING means existing Workspace resources are being indexed in the background. That response creates no resource; retry the same request later.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
             }
@@ -1777,7 +1792,19 @@
             "name": "path",
             "in": "query",
             "schema": { "type": "string" },
-            "description": "Directory to list. Drive9 defaults to root; omit for all local files."
+            "description": "Directory to list; defaults to the root for both providers."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 32, "default": 32 },
+            "description": "Local File System page size; Drive9 listing is provider-defined."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": { "type": "string", "maxLength": 64 },
+            "description": "Continuation cursor from the previous local directory page."
           }
         ],
         "responses": {
@@ -1787,9 +1814,10 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["data"],
+                  "required": ["data", "nextCursor"],
                   "properties": {
-                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/File" } }
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/File" } },
+                    "nextCursor": { "type": ["string", "null"] }
                   }
                 }
               }
@@ -4174,6 +4202,14 @@
           { "guestOwner": [] },
           { "regionalAccess": [] }
         ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 512, "default": 100 }
+          },
+          { "name": "cursor", "in": "query", "schema": { "type": "string", "maxLength": 1024 } }
+        ],
         "responses": {
           "200": {
             "description": "Success",
@@ -4181,11 +4217,16 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["data", "mode", "queryCount"],
+                  "required": ["data", "mode", "queryCount", "queryCountScope", "nextCursor"],
                   "properties": {
                     "data": { "type": "array", "items": { "$ref": "#/components/schemas/Usage" } },
                     "mode": { "const": "demo" },
-                    "queryCount": { "type": "integer" }
+                    "queryCount": { "type": "integer" },
+                    "queryCountScope": {
+                      "enum": ["workspace", "page"],
+                      "description": "Workspace total for wildcard access; this page only for resource-scoped Keys."
+                    },
+                    "nextCursor": { "type": ["string", "null"] }
                   }
                 }
               }
@@ -4442,6 +4483,14 @@
         "description": "Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Workspace API keys cannot perform this operation.",
         "x-required-scope": null,
         "security": [{ "localOwner": [] }, { "accountOwner": [] }, { "guestOwner": [] }],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 512, "default": 100 }
+          },
+          { "name": "cursor", "in": "query", "schema": { "type": "string", "maxLength": 1024 } }
+        ],
         "responses": {
           "200": {
             "description": "Success",
@@ -4449,9 +4498,10 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": ["data"],
+                  "required": ["data", "nextCursor"],
                   "properties": {
-                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Key" } }
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Key" } },
+                    "nextCursor": { "type": ["string", "null"] }
                   }
                 }
               }
@@ -4999,7 +5049,10 @@
                   "required": ["status", "mode", "filesProvider"],
                   "properties": {
                     "status": { "const": "ok" },
-                    "mode": { "enum": ["demo", "hybrid"] },
+                    "mode": {
+                      "enum": ["demo", "hybrid"],
+                      "description": "Configured provider mode, not a count or a health check of provisioned resources."
+                    },
                     "filesProvider": { "type": "string" }
                   }
                 }
@@ -7457,8 +7510,16 @@
           "workspace": { "$ref": "#/components/schemas/Workspace" },
           "profile": { "$ref": "#/components/schemas/Profile" },
           "resources": { "type": "array", "items": { "$ref": "#/components/schemas/Resource" } },
+          "resourceNextCursor": {
+            "type": ["string", "null"],
+            "description": "Continuation for the bounded initial resource page; counts are for loaded resources."
+          },
           "files": { "type": "array", "items": { "$ref": "#/components/schemas/File" } },
           "keys": { "type": "array", "items": { "$ref": "#/components/schemas/Key" } },
+          "keysNextCursor": {
+            "type": ["string", "null"],
+            "description": "Continuation for the bounded initial Key page."
+          },
           "events": { "type": "array", "items": { "$ref": "#/components/schemas/Event" } },
           "usage": { "type": "array", "items": { "$ref": "#/components/schemas/Usage" } },
           "queryCount": { "type": "integer" },

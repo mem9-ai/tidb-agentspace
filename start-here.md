@@ -9,7 +9,7 @@ This guide explains the project and routes to authoritative documents. Detailed 
 in [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), and the linked standards.
 Explicit user instructions and higher-priority tool requirements still apply.
 For product and UI work, apply [product experience](docs/standards/product-experience.md):
-consistent shared interactions and minimum complete paths to useful value.
+consumer product clarity and care, consistent shared interactions and minimum complete paths to useful value.
 
 ## What we are building
 
@@ -85,6 +85,7 @@ within the task's scope. A proposed architecture does not establish a runtime ca
 ## Read for your task
 
 For metadata architecture, start with [SlateDB Metadata Architecture Version 1](docs/slatedb-metadata-design.md) and the [current scale assessment](docs/scale-assessment.md).
+For the sparse-activity sharding proposal and the current pagination slice, see [ADR 0035](docs/decisions/0035-sparse-scale-metadata.md).
 It covers independent Global/Region authorities, clean entity/group/index modeling, native
 transactions, object durability, credentials, recovery and the scale/iteration plan. Historical
 storage shapes do not constrain the target model. Its status table separates implementation

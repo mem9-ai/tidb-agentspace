@@ -251,12 +251,7 @@ function TutorialSteps({
           setNotice('Sample saved. The workspace summary could not refresh; continue with step 3.'),
         );
       } else if (action === 'verify' && files) {
-        const content =
-          resource.provider === 'drive9-anonymous'
-            ? (await workspaceApi.previewFile({ resourceId: resource.id, path })).content
-            : (await workspaceApi.listFiles(resource.id, '/')).data.find(
-                (file) => file.path === path,
-              )?.content;
+        const content = (await workspaceApi.previewFile({ resourceId: resource.id, path })).content;
         if (content !== ordersCsv)
           throw new Error(
             'The saved file does not match this tutorial sample. Open the File System to inspect it.',

@@ -245,18 +245,41 @@ Object.assign(schemas, {
       ['mysql', 'postgresql', 'duckdb', 'filesystem'].map((kind) => [kind, ref('Capability')]),
     ),
   ),
-  Bootstrap: object({
-    workspace: ref('Workspace'),
-    profile: ref('Profile'),
-    resources: { type: 'array', items: ref('Resource') },
-    files: { type: 'array', items: ref('File') },
-    keys: { type: 'array', items: ref('Key') },
-    events: { type: 'array', items: ref('Event') },
-    usage: { type: 'array', items: ref('Usage') },
-    queryCount: { type: 'integer' },
-    capabilities: ref('Capabilities'),
-    mode: { enum: ['demo', 'hybrid'] },
-  }),
+  Bootstrap: object(
+    {
+      workspace: ref('Workspace'),
+      profile: ref('Profile'),
+      resources: { type: 'array', items: ref('Resource') },
+      resourceNextCursor: {
+        type: ['string', 'null'],
+        description:
+          'Continuation for the bounded initial resource page; counts are for loaded resources.',
+      },
+      files: { type: 'array', items: ref('File') },
+      keys: { type: 'array', items: ref('Key') },
+      keysNextCursor: {
+        type: ['string', 'null'],
+        description: 'Continuation for the bounded initial Key page.',
+      },
+      events: { type: 'array', items: ref('Event') },
+      usage: { type: 'array', items: ref('Usage') },
+      queryCount: { type: 'integer' },
+      capabilities: ref('Capabilities'),
+      mode: { enum: ['demo', 'hybrid'] },
+    },
+    [
+      'workspace',
+      'profile',
+      'resources',
+      'files',
+      'keys',
+      'events',
+      'usage',
+      'queryCount',
+      'capabilities',
+      'mode',
+    ],
+  ),
 });
 const response = (schema, description = 'Success') => ({
   description,
@@ -419,10 +442,30 @@ const paths = {
   },
   [ws + '/resources']: {
     get: operation('listResources', 'Discover databases and file systems', 'resources:read', {
-      output: object({
-        data: { type: 'array', items: ref('Resource') },
-        capabilities: ref('Capabilities'),
-      }),
+      parameters: [
+        {
+          name: 'limit',
+          in: 'query',
+          schema: { type: 'integer', minimum: 1, maximum: 512, default: 100 },
+          description:
+            'Page size, default 100; evaluated before authorization and visibility filtering, so a page may be empty.',
+        },
+        {
+          name: 'cursor',
+          in: 'query',
+          schema: { type: 'string', maxLength: 1024 },
+          description:
+            'Opaque cursor from the previous page. Each page is independently authorized; concurrent changes can affect results. Pages contain stored state without refreshing providers.',
+        },
+      ],
+      output: object(
+        {
+          data: { type: 'array', items: ref('Resource') },
+          capabilities: ref('Capabilities'),
+          nextCursor: { type: ['string', 'null'] },
+        },
+        ['data', 'capabilities', 'nextCursor'],
+      ),
     }),
     post: operation(
       'createResource',
@@ -644,10 +687,25 @@ const paths = {
             name: 'path',
             in: 'query',
             schema: str,
-            description: 'Directory to list. Drive9 defaults to root; omit for all local files.',
+            description: 'Directory to list; defaults to the root for both providers.',
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 32, default: 32 },
+            description: 'Local File System page size; Drive9 listing is provider-defined.',
+          },
+          {
+            name: 'cursor',
+            in: 'query',
+            schema: { type: 'string', maxLength: 64 },
+            description: 'Continuation cursor from the previous local directory page.',
           },
         ],
-        output: array(ref('File')),
+        output: object(
+          { data: { type: 'array', items: ref('File') }, nextCursor: { type: ['string', 'null'] } },
+          ['data', 'nextCursor'],
+        ),
       },
     ),
     put: operation('writeFile', 'Create or replace a UTF-8 file or directory', 'files:write', {
@@ -1009,10 +1067,24 @@ const paths = {
       'Get local usage; live trial usage and allowances are unmeasured',
       'usage:read',
       {
+        parameters: [
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 512, default: 100 },
+          },
+          { name: 'cursor', in: 'query', schema: { type: 'string', maxLength: 1024 } },
+        ],
         output: object({
           data: { type: 'array', items: ref('Usage') },
           mode: { const: 'demo' },
           queryCount: { type: 'integer' },
+          queryCountScope: {
+            enum: ['workspace', 'page'],
+            description:
+              'Workspace total for wildcard access; this page only for resource-scoped Keys.',
+          },
+          nextCursor: { type: ['string', 'null'] },
         }),
       },
     ),
@@ -1030,7 +1102,18 @@ const paths = {
   [ws + '/keys']: {
     get: operation('listKeys', 'List key metadata without secrets', null, {
       owner: true,
-      output: array(ref('Key')),
+      parameters: [
+        {
+          name: 'limit',
+          in: 'query',
+          schema: { type: 'integer', minimum: 1, maximum: 512, default: 100 },
+        },
+        { name: 'cursor', in: 'query', schema: { type: 'string', maxLength: 1024 } },
+      ],
+      output: object({
+        data: { type: 'array', items: ref('Key') },
+        nextCursor: { type: ['string', 'null'] },
+      }),
     }),
     post: operation('createKey', 'Create an expiring scoped local API key', null, {
       owner: true,
@@ -1113,7 +1196,15 @@ paths['/api/health'] = {
         'Configured metadata authority is unavailable; no fallback state is seeded',
       ),
       200: response(
-        object({ status: { const: 'ok' }, mode: { enum: ['demo', 'hybrid'] }, filesProvider: str }),
+        object({
+          status: { const: 'ok' },
+          mode: {
+            enum: ['demo', 'hybrid'],
+            description:
+              'Configured provider mode, not a count or a health check of provisioned resources.',
+          },
+          filesProvider: str,
+        }),
       ),
     },
   },
@@ -1186,6 +1277,8 @@ paths[ws + '/queries'].post.description =
 paths[ws + '/resources'].post.responses[201].headers = {
   Location: { schema: str, description: 'URI of the created resource.' },
 };
+paths[ws + '/resources'].post.responses[503].description =
+  'A provider needs recovery, or RESOURCE_INDEX_MIGRATING means existing Workspace resources are being indexed in the background. That response creates no resource; retry the same request later.';
 const versionConditions = [
   {
     name: 'If-Match',

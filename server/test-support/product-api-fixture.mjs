@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { metaFixture, port, until } from './meta-fixture.mjs';
 import { seedRecords, workspaceScope } from './record-fixture.mjs';
 import { providerFixture, nativeSecret } from './provider-fixture.mjs';
@@ -231,6 +231,116 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
     provider,
     request,
     startIndependentGlobalMeta: () => meta.service('global'),
+    async seedResources(count, onProgress = () => {}) {
+      const scope = workspaceScope(region.server.authorityId, states[0].workspace.id);
+      const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
+      const guard = { ownerId: writer.records['system/writer'].value.ownerId };
+      for (let offset = 0; offset < count; offset += 1000) {
+        const changes = Array.from({ length: Math.min(1000, count - offset) }, (_, index) => {
+          const n = offset + index;
+          const id = `db_scale_${String(n).padStart(8, '0')}`;
+          return {
+            key: `state/resources/${id}`,
+            expectedVersion: null,
+            value: {
+              position: n + 100,
+              record: {
+                id,
+                name: `scale-${n}`,
+                kind: 'mysql',
+                region: 'automatic',
+                provider: 'local',
+                status: 'active',
+                createdAt: states[0].workspace.createdAt,
+              },
+            },
+          };
+        });
+        await region.client.call({ op: 'commit', scope, guard, mutationId: randomUUID(), changes });
+        onProgress(Math.min(offset + changes.length, count));
+      }
+    },
+    async seedKeys(count) {
+      const scope = workspaceScope(region.server.authorityId, states[0].workspace.id);
+      const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
+      const guard = { ownerId: writer.records['system/writer'].value.ownerId };
+      for (let offset = 0; offset < count; offset += 1000) {
+        const changes = Array.from({ length: Math.min(1000, count - offset) }, (_, index) => {
+          const id = `key_scale_${String(offset + index).padStart(8, '0')}`;
+          return {
+            key: `state/keys/${id}`,
+            expectedVersion: null,
+            value: {
+              position: offset + index + 100,
+              record: {
+                id,
+                name: id,
+                digest: createHash('sha256').update(id).digest('hex'),
+                scopes: ['resources:read'],
+                resourceIds: ['*'],
+                expiresAt: '2099-01-01T00:00:00.000Z',
+                revokedAt: null,
+              },
+            },
+          };
+        });
+        await region.client.call({ op: 'commit', scope, guard, mutationId: randomUUID(), changes });
+      }
+    },
+    async seedFiles(count, resourceId) {
+      const scope = workspaceScope(region.server.authorityId, states[0].workspace.id);
+      const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
+      const guard = { ownerId: writer.records['system/writer'].value.ownerId };
+      for (let offset = 0; offset < count; offset += 1000) {
+        const changes = Array.from({ length: Math.min(1000, count - offset) }, (_, index) => {
+          const n = offset + index;
+          const id = `file_scale_${String(n).padStart(8, '0')}`;
+          return {
+            key: `state/files/${id}`,
+            expectedVersion: null,
+            value: {
+              position: n + 100,
+              record: {
+                id,
+                resourceId: resourceId || `fs_cold_${n}`,
+                path: resourceId ? `/synthetic-${String(n).padStart(8, '0')}.txt` : '/cold.txt',
+                type: 'file',
+                content: 'synthetic',
+              },
+            },
+          };
+        });
+        await region.client.call({ op: 'commit', scope, guard, mutationId: randomUUID(), changes });
+      }
+    },
+    async seedLocalFileSystem(id) {
+      const scope = workspaceScope(region.server.authorityId, states[0].workspace.id);
+      const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
+      await region.client.call({
+        op: 'commit',
+        scope,
+        guard: { ownerId: writer.records['system/writer'].value.ownerId },
+        mutationId: randomUUID(),
+        changes: [
+          {
+            key: `state/resources/${id}`,
+            expectedVersion: null,
+            value: {
+              position: 50,
+              record: {
+                id,
+                name: id,
+                kind: 'filesystem',
+                region: 'aws-us-east-1',
+                provider: 'local',
+                status: 'active',
+                createdAt: states[0].workspace.createdAt,
+              },
+            },
+          },
+        ],
+      });
+    },
     async records(keys, workspace = 0) {
       const scope = workspaceScope(region.server.authorityId, states[workspace].workspace.id);
       const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
@@ -241,6 +351,20 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
         keys,
       });
       return response.records;
+    },
+    async events(workspace = 0) {
+      const scope = workspaceScope(region.server.authorityId, states[workspace].workspace.id);
+      const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
+      return (
+        await region.client.call({
+          op: 'list',
+          scope,
+          guard: { ownerId: writer.records['system/writer'].value.ownerId },
+          prefix: 'state/events/',
+          after: null,
+          limit: 512,
+        })
+      ).records.map((entry) => entry.value.record);
     },
     async restart({ crash = false } = {}) {
       writerRecovery = [];

@@ -18,6 +18,7 @@ import { FileWorkspaceHeader } from './features/files/FileWorkspaceHeader';
 import { FileUploadStatus } from './features/files/FileUploadStatus';
 import { useFileUpload } from './features/files/use-file-upload';
 import { ResourceCollectionPage } from './features/resources/ResourceCollectionPage';
+import { resourceWindow } from './features/resources/resource-window';
 import {
   resourceWorkspaceHref,
   resourceServiceLabel,
@@ -114,6 +115,7 @@ import {
 
 const FilePreviewPanel = lazy(() => import('./features/files/FilePreviewPanel'));
 type WorkspaceIcon = React.ComponentType<IconProps>;
+type PortalData = Data & { resourceWindowTruncated?: boolean };
 
 type Kind = Resource['kind'];
 const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string }> = {
@@ -221,7 +223,7 @@ function Sparkline({ large = false, range = '24h' }: { large?: boolean; range?: 
   );
 }
 function App() {
-  const [data, setData] = useState<Data | null>(null),
+  const [data, setData] = useState<PortalData | null>(null),
     [routeLocation, setRouteLocation] = useState<WorkspaceRoute>(currentRoute),
     [error, setError] = useState(''),
     [guestLoading, setGuestLoading] = useState(false),
@@ -234,11 +236,21 @@ function App() {
     [creationTarget, setCreationTarget] = useState<ResourceCreationTarget>('resource'),
     [sso, setSso] = useState<SsoAuthConfig>({ enabled: false }),
     [connection, setConnection] = useState<Resource | null>(null);
+  const [resourcePageBusy, setResourcePageBusy] = useState(false);
+  const [resourcePageError, setResourcePageError] = useState('');
+  const [resourceLookupFailure, setResourceLookupFailure] = useState('');
+  const [resolvedResourceKey, setResolvedResourceKey] = useState('');
   const [tutorialCreation, setTutorialCreation] = useState(false);
   const route = routeLocation.page;
   const selectedResourceId =
     routeLocation.databaseId ??
     parseFileSystemLocation('#' + (routeLocation.fileLink || 'files'))?.resourceId;
+  const selectedResourceIdRef = useRef(selectedResourceId);
+  selectedResourceIdRef.current = selectedResourceId;
+  const lookupKey = data && selectedResourceId ? `${data.workspace.id}:${selectedResourceId}` : '';
+  const selectedLoaded = Boolean(
+    data?.resources.some((resource) => resource.id === selectedResourceId),
+  );
   const resourceName = data?.resources.find(
     (resource) =>
       resource.id === selectedResourceId &&
@@ -251,8 +263,92 @@ function App() {
     toastTimer.current = setTimeout(() => setToast(''), 3500);
   }
   const refresh = useCallback(async () => {
-    setData(await workspaceApi.bootstrap());
+    const refreshed = await workspaceApi.bootstrap();
+    setData((current) => {
+      const selectedId = selectedResourceIdRef.current;
+      const relevantFiles = refreshed.files.filter((file) => file.resourceId === selectedId);
+      const selected = current?.resources.find((resource) => resource.id === selectedId);
+      if (
+        current?.workspace.id === refreshed.workspace.id &&
+        selected &&
+        !refreshed.resources.some((resource) => resource.id === selected.id)
+      ) {
+        return {
+          ...refreshed,
+          resources: [...refreshed.resources, selected],
+          files: current.files.filter((file) => file.resourceId === selected.id),
+          resourceWindowTruncated: false,
+        };
+      }
+      return { ...refreshed, files: relevantFiles };
+    });
+    setResourcePageError('');
+    setResourceLookupFailure('');
+    setResolvedResourceKey('');
   }, []);
+  const loadMoreResources = useCallback(async () => {
+    const cursor = data?.resourceNextCursor;
+    if (!cursor || resourcePageBusy) return;
+    setResourcePageBusy(true);
+    setResourcePageError('');
+    try {
+      const [page, usage] = await Promise.all([
+        workspaceApi.resourcesPage(cursor),
+        workspaceApi.usagePage(cursor),
+      ]);
+      setData((current) => {
+        if (!current || current.resourceNextCursor !== cursor) return current;
+        const window = resourceWindow(current.resources, page.data, selectedResourceIdRef.current);
+        const usageByResource = new Map(current.usage.map((item) => [item.resourceId, item]));
+        const pageIds = new Set(page.data.map((resource) => resource.id));
+        for (const item of usage.data)
+          if (pageIds.has(item.resourceId)) usageByResource.set(item.resourceId, item);
+        const retainedIds = new Set(window.resources.map((resource) => resource.id));
+        return {
+          ...current,
+          resources: window.resources,
+          usage: [...usageByResource.values()].filter((item) => retainedIds.has(item.resourceId)),
+          resourceNextCursor: page.nextCursor ?? null,
+          resourceWindowTruncated: Boolean(current.resourceWindowTruncated || window.dropped),
+        };
+      });
+    } catch (cause) {
+      setResourcePageError(cause instanceof Error ? cause.message : 'Unable to load resources.');
+    } finally {
+      setResourcePageBusy(false);
+    }
+  }, [data?.resourceNextCursor, resourcePageBusy]);
+  useEffect(() => {
+    if (
+      !lookupKey ||
+      !selectedResourceId ||
+      resolvedResourceKey === lookupKey ||
+      resourceLookupFailure === lookupKey
+    )
+      return;
+    const controller = new AbortController();
+    workspaceApi
+      .resource(selectedResourceId, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        setData((current) => {
+          if (!current || `${current.workspace.id}:${selectedResourceId}` !== lookupKey)
+            return current;
+          const window = resourceWindow(current.resources, [result.data], selectedResourceId);
+          return {
+            ...current,
+            resources: window.resources,
+            files: [],
+            resourceWindowTruncated: Boolean(current.resourceWindowTruncated || window.dropped),
+          };
+        });
+        setResolvedResourceKey(lookupKey);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setResourceLookupFailure(lookupKey);
+      });
+    return () => controller.abort();
+  }, [lookupKey, selectedResourceId, resolvedResourceKey, resourceLookupFailure]);
   // Boot the workspace. When SSO is enabled the anonymous demo session is disabled, so we never
   // auto-start one: we only try to use an existing (SSO) session and, failing that, show the
   // sign-in screen. When SSO is unconfigured, the local demo session starts as before.
@@ -341,6 +437,9 @@ function App() {
     },
     onConnect: (r: Resource) => setConnection(r),
     isGuest: sso.sessionKind === 'guest',
+    loadMoreResources,
+    resourcePageBusy,
+    resourcePageError,
   };
   const ssoButton =
     sso.enabled && sso.loginPath ? (
@@ -423,8 +522,18 @@ function App() {
       >
         <div key={route}>
           {route === 'overview' && <Overview {...shared} />}
-          {route === 'databases' && <Databases {...shared} routeLocation={routeLocation} />}
-          {route === 'files' && <Files key={routeLocation.fileLink || 'files'} {...shared} />}
+          {(route === 'databases' || route === 'files') &&
+          lookupKey &&
+          (!selectedLoaded || route === 'files') &&
+          resolvedResourceKey !== lookupKey &&
+          resourceLookupFailure !== lookupKey ? (
+            <Text role="status">Loading resource…</Text>
+          ) : (
+            <>
+              {route === 'databases' && <Databases {...shared} routeLocation={routeLocation} />}
+              {route === 'files' && <Files key={routeLocation.fileLink || 'files'} {...shared} />}
+            </>
+          )}
           {route === 'connect' && <Connect {...shared} onNewKey={() => setModal('key')} />}
           {route === 'tutorials' && (
             <>
@@ -527,30 +636,45 @@ function App() {
   );
 }
 type Shared = {
-  data: Data;
+  data: PortalData;
   refresh: () => Promise<void>;
   notify: (s: string) => void;
   copy: (s: string) => void;
   onCreate: (target?: ResourceCreationTarget) => void;
   onConnect: (r: Resource) => void;
   isGuest: boolean;
+  loadMoreResources: () => Promise<void>;
+  resourcePageBusy: boolean;
+  resourcePageError: string;
 };
-function Overview({ data, onCreate, onConnect, copy, isGuest }: Shared) {
+function Overview({
+  data,
+  onCreate,
+  onConnect,
+  copy,
+  isGuest,
+  loadMoreResources,
+  resourcePageBusy,
+  resourcePageError,
+  refresh,
+}: Shared) {
   const [range, setRange] = useState('24h');
   const dbs = data.resources.filter((r) => r.kind !== 'filesystem'),
-    fs = data.resources.filter((r) => r.kind === 'filesystem');
+    fs = data.resources.filter((r) => r.kind === 'filesystem'),
+    hasResources =
+      data.resources.length > 0 || Boolean(data.resourceNextCursor || data.resourceWindowTruncated);
   return (
     <>
       <PageHeading
         eyebrow="YOUR WORKSPACE"
-        title={data.resources.length ? data.workspace.name : 'Start with your data'}
+        title={hasResources ? data.workspace.name : 'Start with your data'}
         description={
-          data.resources.length
+          hasResources
             ? 'Your data, files, and agents. All in one place.'
             : 'Create a database for SQL or a File System for files. Connect your agent when you are ready.'
         }
         actions={
-          data.resources.length ? (
+          hasResources ? (
             <>
               <Button
                 leftSection={React.createElement(Workflow, { size: 18 })}
@@ -570,7 +694,28 @@ function Overview({ data, onCreate, onConnect, copy, isGuest }: Shared) {
         }
       />
       <TutorialResume data={data} />
-      {(!dbs.length || !fs.length) && (
+      {(data.resourceNextCursor || data.resourceWindowTruncated) && (
+        <Alert color="peacock" mb="md">
+          <Text>
+            Showing {data.resources.length} loaded resources.
+            {data.resourceWindowTruncated &&
+              ' Earlier resources are hidden to keep this page responsive.'}
+            {data.resourceNextCursor && ' More resources are available.'}
+          </Text>
+          {resourcePageError && <Text c="red">{resourcePageError}</Text>}
+          <Group mt="sm">
+            {data.resourceWindowTruncated && (
+              <Button onClick={() => void refresh()}>Back to first resources</Button>
+            )}
+            {data.resourceNextCursor && (
+              <Button loading={resourcePageBusy} onClick={() => void loadMoreResources()}>
+                Load more resources
+              </Button>
+            )}
+          </Group>
+        </Alert>
+      )}
+      {!data.resourceNextCursor && !data.resourceWindowTruncated && (!dbs.length || !fs.length) && (
         <WorkspaceFirstSteps
           onCreate={onCreate}
           showDatabase={!dbs.length}
@@ -582,7 +727,11 @@ function Overview({ data, onCreate, onConnect, copy, isGuest }: Shared) {
         <>
           <div className="section-title">
             <Heading level={2}>
-              Your resources <span>{data.resources.length}</span>
+              Your resources{' '}
+              <span>
+                {data.resources.length}
+                {data.resourceNextCursor || data.resourceWindowTruncated ? '+' : ''}
+              </span>
             </Heading>
           </div>
           <section className="resource-grid">
@@ -629,7 +778,9 @@ function Overview({ data, onCreate, onConnect, copy, isGuest }: Shared) {
                       </Anchor>
                     ) : (
                       <Text component="p" className="resource-name" c="carbon.7">
-                        No resources yet
+                        {data.resourceNextCursor || data.resourceWindowTruncated
+                          ? 'No loaded resources'
+                          : 'No resources yet'}
                       </Text>
                     )}
                     <div className="resource-card-bottom">
@@ -859,6 +1010,12 @@ function Databases({ routeLocation, ...shared }: Shared & { routeLocation: Works
       onCreate={() => onCreate('database')}
       onConnect={onConnect}
       isGuest={isGuest}
+      hasMore={Boolean(data.resourceNextCursor)}
+      hasEarlier={Boolean(data.resourceWindowTruncated)}
+      loadingMore={shared.resourcePageBusy}
+      pageError={shared.resourcePageError}
+      onLoadMore={shared.loadMoreResources}
+      onRestart={shared.refresh}
     />
   );
 }
@@ -912,6 +1069,12 @@ function Files(shared: Shared) {
         onCreate={() => shared.onCreate('filesystem')}
         onConnect={shared.onConnect}
         isGuest={shared.isGuest}
+        hasMore={Boolean(shared.data.resourceNextCursor)}
+        hasEarlier={Boolean(shared.data.resourceWindowTruncated)}
+        loadingMore={shared.resourcePageBusy}
+        pageError={shared.resourcePageError}
+        onLoadMore={shared.loadMoreResources}
+        onRestart={shared.refresh}
       />
     );
   const resource = systems.find((system) => system.id === context.resourceId);
@@ -950,17 +1113,14 @@ function FileWorkspace({
     initialResource && initialLocation
       ? data.files.find(
           (f) => f.resourceId === initialResource.id && f.path === initialLocation.path,
-        ) ||
-        (initialResource.provider === 'drive9-anonymous'
-          ? {
-              id: `${initialResource.id}:${initialLocation.path}`,
-              resourceId: initialResource.id,
-              path: initialLocation.path,
-              type: 'file' as const,
-              size: 0,
-              updatedAt: null,
-            }
-          : null)
+        ) || {
+          id: `${initialResource.id}:${initialLocation.path}`,
+          resourceId: initialResource.id,
+          path: initialLocation.path,
+          type: 'file' as const,
+          size: 0,
+          updatedAt: null,
+        }
       : null;
   const restoreFile = useRef(initialFile);
   const [previewView, setPreviewView] = useState<FileView>(initialLocation?.view || 'preview');
@@ -982,7 +1142,8 @@ function FileWorkspace({
     [deleting, setDeleting] = useState<WorkspaceFile | null>(null);
   const selectedSystem = systems.find((r) => r.id === system);
   const remote = selectedSystem?.provider === 'drive9-anonymous';
-  const listing = useRemoteFiles(system, path, remote);
+  const localUsage = data.usage.find((item) => item.resourceId === system);
+  const listing = useRemoteFiles(system, path, Boolean(system));
   const [browserCollapsed, setBrowserCollapsed] = useState(false);
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -1019,7 +1180,7 @@ function FileWorkspace({
     else action();
   }
   const upload = useRef<HTMLInputElement>(null);
-  const files = remote ? listing.files : data.files.filter((f) => f.resourceId === system);
+  const files = listing.files;
   const fileUpload = useFileUpload({
     resource: selectedSystem,
     directory: path,
@@ -1041,8 +1202,9 @@ function FileWorkspace({
       setContent(file.content || '');
       setError('');
       setUnavailableReason('');
-      setPreviewLoading(remote);
-      if (!remote) return;
+      const needsPreview = remote || file.content === undefined;
+      setPreviewLoading(needsPreview);
+      if (!needsPreview) return;
       try {
         const result = await workspaceApi.previewFile(file, controller.signal);
         if (controller.signal.aborted) return;
@@ -1132,8 +1294,18 @@ function FileWorkspace({
         resource={selectedSystem}
         resources={systems}
         busy={busy || analysisBusy}
-        fileCount={files.filter((file) => file.type === 'file').length}
-        sizeLabel={`${bytes(files.reduce((total, file) => total + fileSize(file), 0))}${remote ? ' in folder' : ' / 2 GiB'}`}
+        fileCount={
+          remote
+            ? files.filter((file) => file.type === 'file').length
+            : (localUsage?.fileCount ?? files.filter((file) => file.type === 'file').length)
+        }
+        sizeLabel={
+          remote
+            ? `${bytes(files.reduce((total, file) => total + fileSize(file), 0))} in folder`
+            : localUsage?.storageBytes != null
+              ? `${bytes(localUsage.storageBytes)} / 2 GiB`
+              : `${bytes(files.reduce((total, file) => total + fileSize(file), 0))} loaded`
+        }
         onConnect={() => {
           if (selectedSystem) onConnect(selectedSystem);
         }}
@@ -1209,7 +1381,18 @@ function FileWorkspace({
           onToggle={() => setBrowserCollapsed((value) => !value)}
           footer={
             <>
-              <span>{children.length} items</span>
+              <span>
+                {children.length} {listing.nextCursor || listing.earlier ? 'loaded ' : ''}items
+              </span>
+              {(listing.nextCursor || listing.earlier) && (
+                <span>Filter applies to loaded files.</span>
+              )}
+              {listing.earlier && <Button onClick={listing.refresh}>Back to first files</Button>}
+              {listing.nextCursor && (
+                <Button loading={listing.loading} onClick={() => void listing.loadMore()}>
+                  Load more files
+                </Button>
+              )}
               <span>
                 {remote
                   ? `Stored in Singapore · Upload up to ${bytes(selectedSystem?.uploadLimitBytes || 0)}`
@@ -1218,7 +1401,7 @@ function FileWorkspace({
             </>
           }
         >
-          {listing.loading && remote && (
+          {listing.loading && (
             <Text p={24}>
               <Loader size="sm" /> Loading files…
             </Text>
@@ -1513,7 +1696,42 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
   const [revoke, setRevoke] = useState<ApiKey | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
-  const active = data.keys.filter((k) => !k.revokedAt && Date.parse(k.expiresAt) > Date.now());
+  const [keyWindow, setKeyWindow] = useState({
+    keys: data.keys,
+    next: data.keysNextCursor ?? null,
+    earlier: false,
+  });
+  const [pageBusy, setPageBusy] = useState(false);
+  const [pageError, setPageError] = useState('');
+  useEffect(() => {
+    setKeyWindow({ keys: data.keys, next: data.keysNextCursor ?? null, earlier: false });
+    setPageError('');
+  }, [data.keys, data.keysNextCursor]);
+  async function loadKeys() {
+    if (!keyWindow.next || pageBusy) return;
+    const cursor = keyWindow.next;
+    setPageBusy(true);
+    setPageError('');
+    try {
+      const page = await workspaceApi.keysPage(cursor);
+      setKeyWindow((current) => {
+        if (current.next !== cursor) return current;
+        const merged = new Map(current.keys.map((key) => [key.id, key]));
+        for (const key of page.data) merged.set(key.id, key);
+        const keys = [...merged.values()];
+        return {
+          keys: keys.slice(-200),
+          next: page.nextCursor,
+          earlier: current.earlier || keys.length > 200,
+        };
+      });
+    } catch (cause) {
+      setPageError(cause instanceof Error ? cause.message : 'Unable to load keys.');
+    } finally {
+      setPageBusy(false);
+    }
+  }
+  const active = keyWindow.keys.filter((k) => !k.revokedAt && Date.parse(k.expiresAt) > Date.now());
   async function doRevoke() {
     if (!revoke) return;
     setBusy(true);
@@ -1534,7 +1752,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
         title="API keys"
         description="Scoped access for every agent, application, and workflow."
         actions={
-          data.keys.length ? (
+          keyWindow.keys.length || keyWindow.next || keyWindow.earlier ? (
             <Button
               variant="filled"
               leftSection={React.createElement(Plus, { size: 18 })}
@@ -1553,12 +1771,16 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
       </Alert>
       <div className="section-title">
         <Heading level={2}>
-          Workspace keys <span>{active.length} active</span>
+          Workspace keys{' '}
+          <span>
+            {active.length}
+            {keyWindow.next || keyWindow.earlier ? '+' : ''} active
+          </span>
         </Heading>
         <Badge>Workspace scoped</Badge>
       </div>
       <Paper className="panel table-panel" withBorder>
-        {data.keys.length ? (
+        {keyWindow.keys.length ? (
           <Table>
             <Table.Thead>
               <Table.Tr>
@@ -1572,7 +1794,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {data.keys.map((k) => (
+              {keyWindow.keys.map((k) => (
                 <Table.Tr key={k.id}>
                   <Table.Td>
                     <div className="key-name">
@@ -1649,6 +1871,29 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
               </Button>
             }
           />
+        )}
+        {pageError && <Alert color="red">{pageError}</Alert>}
+        {(keyWindow.next || keyWindow.earlier) && (
+          <Group justify="center" my="md">
+            {keyWindow.earlier && (
+              <Button
+                onClick={() =>
+                  setKeyWindow({
+                    keys: data.keys,
+                    next: data.keysNextCursor ?? null,
+                    earlier: false,
+                  })
+                }
+              >
+                Back to first keys
+              </Button>
+            )}
+            {keyWindow.next && (
+              <Button loading={pageBusy} onClick={() => void loadKeys()}>
+                Load more keys
+              </Button>
+            )}
+          </Group>
         )}
       </Paper>
       <div className="two-column">
@@ -1855,7 +2100,10 @@ function Monitoring({ data }: Shared) {
               {[
                 {
                   name: 'Active resources',
-                  value: data.resources.length,
+                  value:
+                    data.resourceNextCursor || data.resourceWindowTruncated
+                      ? `${data.resources.length}+`
+                      : data.resources.length,
                   unit: 'resources',
                   icon: Database,
                 },
@@ -2047,14 +2295,6 @@ function Billing({ data }: Shared) {
       </Paper>
       <div className="section-title">
         <Heading level={2}>Resource allowances</Heading>
-        <a
-          className="text-link"
-          href="https://docs.pingcap.com/tidbcloud/select-cluster-tier/"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Current cloud limits <ArrowUpRight size={14} />
-        </a>
       </div>
       <Paper className="panel table-panel" withBorder>
         <Table>
@@ -2134,14 +2374,6 @@ function Billing({ data }: Shared) {
             TiDB Cloud account-bound allowances are separate from the anonymous trial. The file
             browser shows the current upload limit.
           </Text>
-          <a
-            className="text-link"
-            href="https://docs.pingcap.com/tidbcloud-filesystem/manage-filesystem-limits/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            File System limits <ArrowUpRight size={13} />
-          </a>
         </Paper>
         <Paper className="panel info-panel" withBorder>
           <ShieldCheck size={22} />
@@ -2296,7 +2528,16 @@ function WorkspaceSettings({
     </>
   );
 }
-function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose: () => void }) {
+function CreateKey({
+  data,
+  refresh,
+  notify,
+  copy,
+  onClose,
+  loadMoreResources,
+  resourcePageBusy,
+  resourcePageError,
+}: Shared & { onClose: () => void }) {
   const [name, setName] = useState(''),
     [scopes, setScopes] = useState<CreateKeyInput['scopes']>([
       'resources:read',
@@ -2308,6 +2549,8 @@ function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose:
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [secret, setSecret] = useState('');
+  const visibleResourceIds = new Set(data.resources.map((resource) => resource.id));
+  const hiddenSelections = resourceIds.filter((id) => id !== '*' && !visibleResourceIds.has(id));
   async function create(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -2382,6 +2625,41 @@ function CreateKey({ data, refresh, notify, copy, onClose }: Shared & { onClose:
                 setScopes((current) => current.filter((scope) => scope !== 'resources:write'));
             }}
           />
+          {hiddenSelections.length > 0 && (
+            <Group mt="sm">
+              <Text size="sm">
+                {hiddenSelections.length} selected resources are outside the loaded window.
+              </Text>
+              <Button
+                type="button"
+                onClick={() =>
+                  setResourceIds((ids) => ids.filter((id) => visibleResourceIds.has(id)))
+                }
+              >
+                Clear hidden selections
+              </Button>
+            </Group>
+          )}
+          {(data.resourceNextCursor || data.resourceWindowTruncated) && (
+            <Group mt="sm">
+              {data.resourceWindowTruncated && (
+                <Button type="button" onClick={() => void refresh()}>
+                  Back to first resources
+                </Button>
+              )}
+              {data.resourceNextCursor && (
+                <Button
+                  type="button"
+                  loading={resourcePageBusy}
+                  onClick={() => void loadMoreResources()}
+                >
+                  Load more resources
+                </Button>
+              )}
+              <Text size="sm">Newly loaded resources are not selected automatically.</Text>
+            </Group>
+          )}
+          {resourcePageError && <Alert color="red">{resourcePageError}</Alert>}
           <Fieldset legend="Allowed actions">
             <div className="scope-picker">
               {allScopes.map((s) => (

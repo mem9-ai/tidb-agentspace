@@ -42,6 +42,429 @@ function validateResponse(path, method, status, body) {
 const base = '/api/v1/workspaces/ws_agentlab';
 const secret = 'retained-public-workspace-key';
 const privateWrite = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
+test(
+  'independent local File Systems can commit concurrent writes without losing events',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    await fixture.seedLocalFileSystem('fs_second');
+    const write = (resourceId) =>
+      fixture.request('/files', {
+        method: 'PUT',
+        body: { resourceId, path: '/parallel.txt', type: 'file', content: resourceId },
+      });
+    const responses = await Promise.all([write('fs_shared'), write('fs_second')]);
+    assert.deepEqual(
+      responses.map((response) => response.status),
+      [200, 200],
+      JSON.stringify(responses),
+    );
+    for (const resourceId of ['fs_shared', 'fs_second']) {
+      const files = await fixture.request(`/files?resourceId=${resourceId}`);
+      assert.equal(
+        files.body.data.find((file) => file.path === '/parallel.txt').content,
+        resourceId,
+      );
+    }
+    const events = await fixture.events();
+    assert.equal(events.filter((event) => event.resource === '/parallel.txt').length, 2);
+  },
+);
+test(
+  'local File System deletion clears indexed files in bounded batches',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    await fixture.seedFiles(64, 'fs_shared');
+    for (const [path, type, content] of [
+      ['/nested', 'directory', ''],
+      ['/nested/item.txt', 'file', 'item'],
+    ]) {
+      const result = await fixture.request('/files', {
+        method: 'PUT',
+        body: { resourceId: 'fs_shared', path, type, content },
+      });
+      assert.equal(result.status, 200, JSON.stringify(result.body));
+    }
+    const deleted = await fixture.request('/resources/fs_shared', { method: 'DELETE' });
+    assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
+    assert.equal(deleted.body.data.status, 'deleted');
+    const records = await fixture.records([
+      'state/files/file_scale_00000000',
+      'state/files/file_scale_00000063',
+    ]);
+    assert.equal(records['state/files/file_scale_00000000'], null);
+    assert.equal(records['state/files/file_scale_00000063'], null);
+    assert.equal((await fixture.request('/files?resourceId=fs_shared')).status, 409);
+  },
+);
+test(
+  'concurrent local file writes preserve directory and version checks',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const put = (path, type, content, headers = {}) =>
+      fixture.request('/files', {
+        method: 'PUT',
+        headers,
+        body: { resourceId: 'fs_shared', path, type, content },
+      });
+    assert.equal((await put('/race', 'directory', '')).status, 200);
+    const [child, remove] = await Promise.all([
+      put('/race/child.txt', 'file', 'child'),
+      fixture.request('/files/entry?resourceId=fs_shared&path=%2Frace', { method: 'DELETE' }),
+    ]);
+    assert.ok(
+      !(child.status === 200 && remove.status === 200),
+      JSON.stringify([child.body, remove.body]),
+    );
+    if (child.status === 200) assert.equal(remove.body.error.code, 'DIRECTORY_NOT_EMPTY');
+    if (remove.status === 200) assert.equal(child.body.error.code, 'PARENT_MISSING');
+    assert.equal((await put('/compare.txt', 'file', 'before')).status, 200);
+    const metadata = await fixture.request(
+      '/files/metadata?resourceId=fs_shared&path=%2Fcompare.txt',
+    );
+    assert.equal(metadata.status, 200);
+    const headers = { 'If-Match': metadata.body.data.version };
+    const writes = await Promise.all([
+      put('/compare.txt', 'file', 'one', headers),
+      put('/compare.txt', 'file', 'two', headers),
+    ]);
+    assert.deepEqual(writes.map((result) => result.status).sort(), [200, 412]);
+  },
+);
+test(
+  'a local File System with 10000 files supports bounded pages and point operations',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    await fixture.seedFiles(10000, 'fs_shared');
+    const bootstrap = await fixture.request('/bootstrap');
+    assert.equal(bootstrap.status, 200, JSON.stringify(bootstrap.body));
+    assert.deepEqual(bootstrap.body.files, []);
+    assert.equal(
+      bootstrap.body.usage.find((item) => item.resourceId === 'fs_shared').fileCount,
+      10001,
+    );
+    const first = await fixture.request('/files?resourceId=fs_shared&limit=16');
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    assert.equal(first.body.data.length, 16);
+    assert.ok(first.body.nextCursor);
+    const second = await fixture.request(
+      `/files?resourceId=fs_shared&limit=16&cursor=${first.body.nextCursor}`,
+    );
+    assert.equal(second.status, 200, JSON.stringify(second.body));
+    assert.equal(second.body.data.length, 16);
+    assert.ok(
+      first.body.data.every((file) => !second.body.data.some((other) => other.id === file.id)),
+    );
+    const path = '/synthetic-00009999.txt';
+    const metadata = await fixture.request(
+      `/files/metadata?resourceId=fs_shared&path=${encodeURIComponent(path)}`,
+    );
+    assert.equal(metadata.status, 200, JSON.stringify(metadata.body));
+    const write = await fixture.request('/files', {
+      method: 'PUT',
+      body: { resourceId: 'fs_shared', path, type: 'file', content: 'updated' },
+    });
+    assert.equal(write.status, 200, JSON.stringify(write.body));
+    const preview = await fixture.request(
+      `/files/content?resourceId=fs_shared&path=${encodeURIComponent(path)}&preview=1`,
+    );
+    assert.equal(preview.status, 200, JSON.stringify(preview.body));
+    assert.equal(preview.body.content, 'updated');
+    const usage = await fixture.request('/usage');
+    assert.equal(usage.body.data.find((item) => item.resourceId === 'fs_shared').fileCount, 10001);
+  },
+);
+test(
+  'local file operations read only their File System after resumable index migration',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    await fixture.seedFiles(4100);
+    const bootstrap = await fixture.request('/bootstrap');
+    assert.equal(bootstrap.status, 200, JSON.stringify(bootstrap.body));
+    assert.deepEqual(bootstrap.body.files, []);
+    assert.equal(bootstrap.body.usage.find((item) => item.resourceId === 'fs_shared').fileCount, 1);
+    const initial = await fixture.request('/files?resourceId=fs_shared');
+    assert.deepEqual(
+      initial.body.data.map((file) => file.path),
+      ['/identity.txt'],
+    );
+    const write = await fixture.request('/files', {
+      method: 'PUT',
+      body: { resourceId: 'fs_shared', path: '/added.txt', type: 'file', content: 'ok' },
+    });
+    assert.equal(write.status, 200, JSON.stringify(write.body));
+    const again = await fixture.request('/files?resourceId=fs_shared');
+    assert.deepEqual(again.body.data.map((file) => file.path).sort(), [
+      '/added.txt',
+      '/identity.txt',
+    ]);
+    await fixture.restart({ crash: false });
+    const recovered = await fixture.request('/files?resourceId=fs_shared');
+    assert.deepEqual(recovered.body.data.map((file) => file.path).sort(), [
+      '/added.txt',
+      '/identity.txt',
+    ]);
+  },
+);
+test(
+  'resource actions do not enumerate unrelated Keys',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const key = await fixture.request('/keys', {
+      method: 'POST',
+      body: {
+        name: 'scale-reader',
+        scopes: ['queries:execute'],
+        resourceIds: ['db_memory'],
+        expiresInDays: 7,
+      },
+    });
+    assert.equal(key.status, 201, JSON.stringify(key.body));
+    await fixture.seedKeys(4100);
+    const page = await fixture.request('/keys?limit=50');
+    assert.equal(page.status, 200, JSON.stringify(page.body));
+    assert.equal(page.body.data.length, 50);
+    assert.ok(page.body.nextCursor);
+    const second = await fixture.request(`/keys?limit=50&cursor=${page.body.nextCursor}`);
+    assert.equal(second.status, 200, JSON.stringify(second.body));
+    assert.ok(
+      second.body.data.every((entry) => !page.body.data.some((prior) => prior.id === entry.id)),
+    );
+    assert.ok(second.body.data.every((entry) => !Object.hasOwn(entry, 'digest')));
+    const extra = await fixture.request('/keys', {
+      method: 'POST',
+      body: {
+        name: 'scale-second',
+        scopes: ['resources:read'],
+        resourceIds: ['*'],
+        expiresInDays: 7,
+      },
+    });
+    assert.equal(extra.status, 201, JSON.stringify(extra.body));
+    assert.equal(
+      (await fixture.request(`/keys/${extra.body.data.id}`, { method: 'DELETE' })).status,
+      200,
+    );
+    const bootstrap = await fixture.request('/bootstrap');
+    assert.equal(bootstrap.status, 200, JSON.stringify(bootstrap.body));
+    assert.equal(bootstrap.body.keys.length, 100);
+    assert.ok(bootstrap.body.keysNextCursor);
+    const query = await fixture.request('/queries', {
+      method: 'POST',
+      token: key.body.secret,
+      body: { resourceId: 'db_memory', sql: 'SELECT 1' },
+    });
+    assert.equal(query.status, 200, JSON.stringify(query.body));
+  },
+);
+test(
+  'concurrent Key authentication preserves access and revocation',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const created = await fixture.request('/keys', {
+      method: 'POST',
+      body: {
+        name: 'concurrent-reader',
+        scopes: ['resources:read'],
+        resourceIds: ['*'],
+        expiresInDays: 7,
+      },
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const token = created.body.secret;
+    const responses = await Promise.all(
+      Array.from({ length: 4 }, () => fixture.request('/context', { token })),
+    );
+    assert.ok(
+      responses.every((response) => response.status === 200),
+      JSON.stringify(responses),
+    );
+    assert.equal(
+      (await fixture.request(`/keys/${created.body.data.id}`, { method: 'DELETE' })).status,
+      200,
+    );
+    assert.equal((await fixture.request('/context', { token })).status, 401);
+  },
+);
+test(
+  'concurrent resource creation preserves idempotency without a Workspace writer lock',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const create = () =>
+      fixture.request('/resources', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'concurrent-same' },
+        body: { kind: 'mysql', name: 'concurrent-same', region: 'automatic' },
+      });
+    const results = await Promise.all([create(), create()]);
+    assert.deepEqual(
+      results.map((item) => item.status),
+      [201, 201],
+      JSON.stringify(results),
+    );
+    assert.equal(results[0].body.data.id, results[1].body.data.id);
+  },
+);
+test(
+  'resource indexes backfill existing records and preserve name, quota and idempotency rules',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    await fixture.request('/resources?limit=1');
+    const create = (name, key) =>
+      fixture.request('/resources', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': key },
+        body: { kind: 'mysql', name, region: 'automatic' },
+      });
+    const existing = await create('fixture-mysql', 'existing');
+    assert.equal(existing.status, 409);
+    assert.equal(existing.body.error.code, 'NAME_EXISTS');
+    const concurrent = await Promise.all([
+      create('indexed-race', 'race-a'),
+      create('indexed-race', 'race-b'),
+    ]);
+    assert.deepEqual(concurrent.map((result) => result.status).sort(), [201, 409]);
+    const winner = concurrent.find((result) => result.status === 201);
+    const winnerKey = concurrent[0].status === 201 ? 'race-a' : 'race-b';
+    assert.equal((await create('indexed-race', winnerKey)).body.data.id, winner.body.data.id);
+    assert.equal((await create('changed-name', winnerKey)).body.error.code, 'IDEMPOTENCY_CONFLICT');
+    assert.equal((await create('indexed-two', 'two')).status, 201);
+    assert.equal((await create('indexed-three', 'three')).status, 201);
+    assert.equal((await create('indexed-limit', 'limit')).body.error.code, 'FREE_TIER_LIMIT');
+    assert.equal((await fixture.request('/resources/db_memory', { method: 'DELETE' })).status, 200);
+    assert.equal((await create('fixture-mysql', 'reused')).status, 201);
+  },
+);
+test(
+  'bounded resource pages work beyond the legacy Workspace view limit',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    await fixture.request('/resources?limit=1'); // establish the owner session before seeding
+    await fixture.seedResources(4100);
+    assert.equal((await fixture.request('/api/health')).status, 200);
+    assert.equal((await fixture.request('/api/v1/workspaces')).status, 200);
+    const bootstrap = await fixture.request('/bootstrap');
+    assert.equal(bootstrap.status, 200, JSON.stringify(bootstrap.body));
+    assert.ok(bootstrap.body.resources.length <= 100);
+    assert.ok(bootstrap.body.resourceNextCursor);
+    const query = await fixture.request('/queries', {
+      method: 'POST',
+      body: { resourceId: 'db_scale_00000000', sql: 'SELECT 1' },
+    });
+    assert.equal(query.status, 200, JSON.stringify(query.body));
+    const usage = await fixture.request('/usage?limit=10');
+    assert.equal(usage.status, 200, JSON.stringify(usage.body));
+    assert.ok(usage.body.data.length <= 10);
+    assert.ok(usage.body.nextCursor);
+    const localFile = await fixture.request('/files', {
+      method: 'PUT',
+      body: { resourceId: 'fs_shared', path: '/local-scale.txt', type: 'file', content: 'ok' },
+    });
+    assert.equal(localFile.status, 200, JSON.stringify(localFile.body));
+    const details = await Promise.all(
+      ['db_live', 'db_pg'].map((id) => fixture.request(`/resources/${id}`)),
+    );
+    assert.ok(details.every((response) => response.status === 200));
+    const write = await fixture.request('/files', {
+      method: 'PUT',
+      body: { resourceId: 'fs_live', path: '/large-workspace.txt', type: 'file', content: 'ok' },
+    });
+    assert.equal(write.status, 200, JSON.stringify(write.body));
+    assert.ok(
+      (await fixture.events()).some(
+        (event) => event.action === 'file.saved' && event.resource === '/large-workspace.txt',
+      ),
+    );
+    const key = await fixture.request('/keys', {
+      method: 'POST',
+      body: {
+        name: 'scale-key',
+        scopes: ['resources:read'],
+        resourceIds: ['db_scale_00000000'],
+        expiresInDays: 7,
+      },
+    });
+    assert.equal(key.status, 201, JSON.stringify(key.body));
+    const allowed = await fixture.request('/resources?limit=1', { token: key.body.secret });
+    assert.deepEqual(
+      allowed.body.data.map((resource) => resource.id),
+      ['db_scale_00000000'],
+    );
+    assert.equal((await fixture.request('/keys')).status, 200);
+    assert.equal((await fixture.request('/events')).status, 200);
+    assert.equal(
+      (
+        await fixture.request('/settings', {
+          method: 'PATCH',
+          body: { workspaceName: 'Scale workspace', name: 'Developer' },
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await fixture.request(`/keys/${key.body.data.id}`, { method: 'DELETE' })).status,
+      200,
+    );
+    assert.equal(
+      (await fixture.request('/resources?limit=1', { token: key.body.secret })).status,
+      401,
+    );
+    let cursor;
+    let count = 0;
+    do {
+      const query = new URLSearchParams({ limit: '512' });
+      if (cursor) query.set('cursor', cursor);
+      const page = await fixture.request(`/resources?${query}`);
+      assert.equal(page.status, 200, JSON.stringify(page.body));
+      assert.ok(page.body.data.length <= 512);
+      count += page.body.data.filter((resource) => resource.id.startsWith('db_scale_')).length;
+      cursor = page.body.nextCursor;
+    } while (cursor);
+    assert.equal(count, 4100);
+    const createIndexed = () =>
+      fixture.request('/resources', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'large-backfill' },
+        body: { kind: 'postgresql', name: 'large-backfill', region: 'automatic' },
+      });
+    let indexedCreate = await createIndexed();
+    assert.equal(indexedCreate.status, 503, JSON.stringify(indexedCreate.body));
+    assert.equal(indexedCreate.body.error.code, 'RESOURCE_INDEX_MIGRATING');
+    assert.equal((await fixture.request('/resources?limit=1')).status, 200);
+    const deadline = Date.now() + 120_000;
+    while (indexedCreate.body.error?.code === 'RESOURCE_INDEX_MIGRATING' && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      indexedCreate = await createIndexed();
+    }
+    assert.equal(indexedCreate.status, 201, JSON.stringify(indexedCreate.body));
+    const duplicate = await fixture.request('/resources', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'large-duplicate' },
+      body: { kind: 'postgresql', name: 'scale-1', region: 'automatic' },
+    });
+    assert.equal(duplicate.body.error.code, 'NAME_EXISTS');
+    const deleted = await fixture.request('/resources/db_scale_00000000', { method: 'DELETE' });
+    assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
+    assert.equal(deleted.body.data.status, 'deleted');
+    assert.equal(
+      (await fixture.request('/resources/db_scale_00000000')).body.data.status,
+      'deleted',
+    );
+    const defaultPage = await fixture.request('/resources');
+    assert.equal(defaultPage.status, 200);
+    assert.ok(defaultPage.body.data.length <= 100);
+    assert.ok(defaultPage.body.nextCursor);
+  },
+);
 for (const transport of ['remote', 'inProcess']) {
   test(
     `Workspace tutorial progress through ${transport} metadata`,
@@ -191,6 +614,17 @@ async function scenarios(request, provider) {
   assert.equal(JSON.stringify(boot.body).includes(nativeSecret), false);
   const resources = await run(base + '/resources', { token: secret });
   assert.equal(resources.body.data.length, 6);
+  const paged = [];
+  let cursor;
+  do {
+    const query = new URLSearchParams({ limit: '2' });
+    if (cursor) query.set('cursor', cursor);
+    const page = (await run(`${base}/resources?${query}`)).body;
+    assert.ok(page.data.length <= 2);
+    paged.push(...page.data.map((resource) => resource.id));
+    cursor = page.nextCursor;
+  } while (cursor);
+  assert.deepEqual(paged, resources.body.data.map((resource) => resource.id).sort());
   await run(base + '/queries', {
     method: 'POST',
     token: secret,
@@ -787,6 +1221,13 @@ for (const transport of ['remote', 'inProcess']) {
         throw error;
       }
       assert.equal(provider.creates, 0);
+      // Bootstrap and list use stored records; an explicit detail read refreshes provider data.
+      const fileSystemDetail = await request(base + '/resources/fs_live');
+      assert.equal(fileSystemDetail.status, 200);
+      assert.equal(fileSystemDetail.body.data.uploadLimitBytes, 1048576);
+      const databaseDetail = await request(base + '/resources/db_live');
+      assert.equal(databaseDetail.status, 200);
+      assert.equal(databaseDetail.body.data.expiresAt, raw[2].bindings.db_live.expiresAt);
       const schema = await fetch(`http://127.0.0.1:${bind}/openapi.json`);
       assert.equal(schema.status, 200);
       assert.deepEqual(await schema.json(), JSON.parse(await readFile('public/openapi.json')));
@@ -877,12 +1318,22 @@ test(
       return until(() => connect(`http://127.0.0.1:${bind}`));
     }
     let request = await start();
-    const create = (kind, name, key) =>
-      request(base + '/resources', {
-        method: 'POST',
-        headers: { 'Idempotency-Key': key },
-        body: { kind, name, region: kind === 'filesystem' ? 'aws-ap-southeast-1' : 'automatic' },
-      });
+    const create = async (kind, name, key) => {
+      const deadline = Date.now() + 10_000;
+      let result;
+      do {
+        result = await request(base + '/resources', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': key },
+          body: { kind, name, region: kind === 'filesystem' ? 'aws-ap-southeast-1' : 'automatic' },
+        });
+        if (result.status !== 503 || result.body.error?.code !== 'RESOURCE_INDEX_MIGRATING') {
+          return result;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } while (Date.now() < deadline);
+      return result;
+    };
     const pg = await create('postgresql', 'known-postgres', 'pg');
     assert.equal(pg.status, 201);
     assert.equal(pg.body.data.status, 'active');

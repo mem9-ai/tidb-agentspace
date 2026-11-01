@@ -50,6 +50,43 @@ export async function agentRestCases(t, transport) {
     headers,
   });
 
+  await t.test('resource pages remain bounded and enforce grants on every request', async () => {
+    const selected = await key(['resources:read'], ['db_live', 'fs_shared']);
+    let cursor;
+    const ids = [];
+    do {
+      const query = new URLSearchParams({ limit: '1' });
+      if (cursor) query.set('cursor', cursor);
+      const page = (await request(`/resources?${query}`, { token: selected.secret })).body;
+      assert.ok(page.data.length <= 1);
+      ids.push(...page.data.map((resource) => resource.id));
+      cursor = page.nextCursor;
+    } while (cursor);
+    assert.deepEqual(ids, ['db_live', 'fs_shared']);
+    assert.equal(
+      (await f.request('/resources?limit=1', { token: selected.secret }, 1)).status,
+      401,
+    );
+    await request('/resources?limit=0', { token: selected.secret }, 400, 'INVALID_PAGE_LIMIT');
+    await request('/resources?limit=513', { token: selected.secret }, 400, 'INVALID_PAGE_LIMIT');
+    await request('/resources?cursor=!!!', { token: selected.secret }, 400, 'INVALID_PAGE_CURSOR');
+    const forbidden = Buffer.from('db_pg').toString('base64url');
+    await request(
+      `/resources?cursor=${forbidden}`,
+      { token: selected.secret },
+      400,
+      'INVALID_PAGE_CURSOR',
+    );
+    const first = (await request('/resources?limit=1', { token: selected.secret })).body;
+    await request(`/keys/${selected.data.id}`, { method: 'DELETE' });
+    await request(
+      `/resources?cursor=${first.nextCursor}`,
+      { token: selected.secret },
+      401,
+      'INVALID_KEY',
+    );
+  });
+
   await t.test(
     'context discovers only the authenticated principal without widening grants',
     async () => {
@@ -404,6 +441,13 @@ export async function agentRestCases(t, transport) {
       await pending;
       const deleting = request('/resources/fs_live', { method: 'DELETE', token: full.secret }, 202);
       try {
+        const unrelated = await Promise.race([
+          request('/resources/db_memory', { method: 'DELETE' }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('unrelated resource deletion was blocked')), 5000),
+          ),
+        ]);
+        assert.equal(unrelated.status, 200);
         assert.equal(
           await Promise.race([
             deleting.then(() => false),

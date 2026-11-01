@@ -1,34 +1,11 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { Alert, Button, Group, Loader, NativeSelect, Text, TextInput } from '@tidbcloud/uikit';
-import { workspaceApi, type Resource } from '../../api/client';
+import { useResourcePages } from '../resources/use-resource-pages';
 export type DestinationKind = 'download' | 'filesystem' | 'database';
 const liveProviders = ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'];
 export function useExportDestination(kind: DestinationKind, resourceId: string) {
-  const [resources, setResources] = useState<Resource[]>([]),
-    [loading, setLoading] = useState(false),
-    [loadError, setLoadError] = useState(''),
-    [revision, setRevision] = useState(0);
-  useEffect(() => {
-    if (kind === 'download') return;
-    let current = true;
-    setLoading(true);
-    setLoadError('');
-    workspaceApi
-      .resources()
-      .then((value) => {
-        if (current) setResources(value.data);
-      })
-      .catch((cause: unknown) => {
-        if (current)
-          setLoadError(cause instanceof Error ? cause.message : 'Unable to load destinations.');
-      })
-      .finally(() => {
-        if (current) setLoading(false);
-      });
-    return () => {
-      current = false;
-    };
-  }, [kind, revision]);
+  const pages = useResourcePages(kind !== 'download', resourceId);
+  const { resources, loading } = pages;
   const targets = resources.filter(
     (resource) =>
       resource.status === 'active' &&
@@ -40,8 +17,11 @@ export function useExportDestination(kind: DestinationKind, resourceId: string) 
     targets,
     destination: targets.find((resource) => resource.id === resourceId),
     loading,
-    loadError,
-    retry: () => setRevision((value) => value + 1),
+    loadError: pages.error,
+    retry: pages.retry,
+    nextCursor: pages.nextCursor,
+    hasEarlier: pages.hasEarlier,
+    loadMore: pages.loadMore,
   };
 }
 export function ExportDestinationFields({
@@ -112,7 +92,9 @@ export function ExportDestinationFields({
                   value: '',
                   label: state.targets.length
                     ? 'Choose a destination'
-                    : 'No available destinations',
+                    : state.nextCursor || state.hasEarlier
+                      ? 'No destinations in loaded resources'
+                      : 'No available destinations',
                 },
                 ...state.targets.map((resource) => ({
                   value: resource.id,
@@ -120,6 +102,21 @@ export function ExportDestinationFields({
                 })),
               ]}
             />
+          )}
+          {state.nextCursor && (
+            <Button
+              type="button"
+              disabled={busy}
+              loading={state.loading}
+              onClick={() => void state.loadMore()}
+            >
+              Load more resources
+            </Button>
+          )}
+          {state.hasEarlier && (
+            <Button type="button" disabled={busy} onClick={state.retry}>
+              Back to first resources
+            </Button>
           )}
           {kind === 'filesystem' ? (
             <TextInput

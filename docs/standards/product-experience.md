@@ -7,6 +7,35 @@
 - Current evidence and proposals: [experience audit](../product-experience-audit.md).
   Component APIs, theme and readability remain owned by the [TiUI standard](tiui-design-system.md).
 
+## Consumer product quality
+
+**Accepted owner direction (GH-96, 2026-11-01):** design this developer and agent Workspace
+with the care of an excellent consumer product. Steve Jobs and Elon Musk are design
+references: learn from focus, craftsmanship and questioning unnecessary complexity, then
+apply judgment to this product's users and tasks.
+
+- Define the useful outcome before choosing screens or exposing capabilities. Users should
+  understand what they can do and why it matters without an explanation from the builder.
+- Question each requirement, choice, label and step. Remove what does not serve the user's
+  task before polishing what remains; preserve the explicit decisions and safeguards below.
+- Treat naming, copy, defaults, examples, spacing and visual hierarchy as part of the product.
+  Use natural language and realistic sample content. Keep technical terms when they help a
+  developer act correctly, and make optional implementation details secondary.
+- Own the complete experience: first use, a useful result, a clear next action and returning
+  to continue. Creation alone does not complete a tutorial. A polished screen does not
+  compensate for a dead end, lost progress or an unexplained failure.
+- Exercise product judgment before delivery. Fix obvious confusing names, redundant controls,
+  inconsistent interactions and incomplete paths within the task's scope without waiting for
+  the owner to point them out. Review both new and returning user experiences with realistic
+  data. Passing automated checks does not establish clarity or product quality.
+
+These are accepted design and review expectations, not a claim that a product-wide redesign
+or automatic quality judgment is implemented. Revisit details when observed user behavior
+shows that a default or simplification makes a task harder. Reference material:
+[Steve Jobs, speeches to Apple employees and at Macworld, in _Make Something Wonderful_](https://book.stevejobsarchive.com/),
+and [Elon Musk on questioning requirements and deleting steps before optimizing, 44:08–46:14](https://lexfridman.com/elon-musk-and-neuralink-team-transcript/).
+The Workspace rules above are the project's application of these ideas.
+
 ## Design from the useful outcome
 
 Start with what a person or agent wants to accomplish: query data, work with a file, or
@@ -35,6 +64,23 @@ information remain explicit. Never auto-run customer SQL, auto-provision a resou
 a Key or discard work to save a click. Backend authorization remains authoritative.
 
 ## One interaction language
+
+**Product identity and attribution (owner correction, GH-92, 2026-11-01):** use **TiDB Agent
+Workspace** for the Console brand and document title. Do not label the entire Workspace
+**Live resources** or use TiDB Cloud documentation as Workspace help. Remove the unrelated
+help/Documentation and Cloud quota-documentation links; keep actual limits and resource-specific
+provider/demo/expiry information explicit. Use one quiet footer **Powered by TiDB Cloud** link
+to the [TiDB Cloud product page](https://www.pingcap.com/tidb/cloud/). Verify desktop branding,
+mobile navigation, footer destination and the absence of the removed entry points in both
+themes and viewport sizes. Revisit when Workspace-specific documentation is available.
+Customer-facing previews and screenshots use natural Workspace names such as **My Workspace**;
+keep fixture/harness terminology in internal identifiers, not the displayed Workspace name.
+
+The shared-shell browser case verifies the removed destinations, external attribution target,
+brand return and mobile navigation. Reviewed evidence: [desktop dark header](../screenshots/branding/header-desktop-dark.png),
+[desktop light footer](../screenshots/branding/footer-desktop-light.png),
+[narrow light navigation](../screenshots/branding/navigation-narrow-light.png), and
+[narrow dark footer](../screenshots/branding/footer-narrow-dark.png), at 1280×800 and 390×844.
 
 **Executable, resumable tutorials (owner correction 2026-10-31):** database and File System
 tutorials continue beyond creation with prepared sample data, an explicit query/analysis,

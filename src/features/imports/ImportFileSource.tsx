@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Alert,
   Button,
@@ -10,8 +10,9 @@ import {
   TextInput,
 } from '@tidbcloud/uikit';
 import { IconFile01, IconFolder } from '@tidbcloud/uikit/icons';
-import { workspaceApi, type Resource, type WorkspaceFile } from '../../api/client';
+import { useRemoteFiles } from '../files/remote-files';
 import { WorkspaceBrowserItem } from '../../ui/WorkspaceBrowserItem';
+import { useResourcePages } from '../resources/use-resource-pages';
 
 export function ImportFileSource({
   resourceId,
@@ -24,54 +25,13 @@ export function ImportFileSource({
   busy: boolean;
   onChange: (resourceId: string, path: string) => void;
 }) {
-  const [systems, setSystems] = useState<Resource[]>([]);
-  const [files, setFiles] = useState<WorkspaceFile[]>([]);
+  const resourcePages = useResourcePages(true, resourceId);
+  const systems = resourcePages.resources.filter(
+    (r) => r.kind === 'filesystem' && r.status === 'active',
+  );
   const [folder, setFolder] = useState('/');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [revision, setRevision] = useState(0);
-  useEffect(() => {
-    let current = true;
-    workspaceApi
-      .resources()
-      .then((value) => {
-        if (current)
-          setSystems(value.data.filter((r) => r.kind === 'filesystem' && r.status === 'active'));
-      })
-      .catch(() => {
-        if (current) setError('Unable to load File Systems. Try again.');
-      });
-    return () => {
-      current = false;
-    };
-  }, [revision]);
-  useEffect(() => {
-    if (!resourceId) {
-      setFiles([]);
-      return;
-    }
-    const controller = new AbortController();
-    setLoading(true);
-    setError('');
-    workspaceApi
-      .listFiles(resourceId, folder, controller.signal)
-      .then((value) => {
-        if (!controller.signal.aborted)
-          setFiles(
-            value.data.filter(
-              (file) => (file.path.slice(0, file.path.lastIndexOf('/')) || '/') === folder,
-            ),
-          );
-      })
-      .catch((cause) => {
-        if (!controller.signal.aborted)
-          setError(cause instanceof Error ? cause.message : 'Unable to list files.');
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [resourceId, folder, revision]);
+  const listing = useRemoteFiles(resourceId, folder, Boolean(resourceId));
+  const { files, error, loading } = listing;
   return (
     <Stack gap="md">
       <NativeSelect
@@ -81,7 +41,13 @@ export function ImportFileSource({
         data={[
           {
             value: '',
-            label: systems.length ? 'Choose a File System' : 'No available File Systems',
+            label: systems.length
+              ? 'Choose a File System'
+              : resourcePages.loading
+                ? 'Loading File Systems…'
+                : resourcePages.nextCursor || resourcePages.hasEarlier
+                  ? 'No File Systems in loaded resources'
+                  : 'No available File Systems',
           },
           ...systems.map((r) => ({ value: r.id, label: r.name })),
         ]}
@@ -90,13 +56,36 @@ export function ImportFileSource({
           onChange(e.currentTarget.value, '');
         }}
       />
+      {resourcePages.error && (
+        <Alert color="red">
+          <Text>{resourcePages.error}</Text>
+          <Button mt="sm" disabled={busy} onClick={resourcePages.retry}>
+            Try again
+          </Button>
+        </Alert>
+      )}
+      {resourcePages.nextCursor && (
+        <Button
+          type="button"
+          disabled={busy}
+          loading={resourcePages.loading}
+          onClick={() => void resourcePages.loadMore()}
+        >
+          Load more resources
+        </Button>
+      )}
+      {resourcePages.hasEarlier && (
+        <Button type="button" disabled={busy} onClick={resourcePages.retry}>
+          Back to first resources
+        </Button>
+      )}
       {resourceId && (
         <>
           <Group justify="space-between">
             <Text c="dimmed" style={{ overflowWrap: 'anywhere' }}>
               {folder}
             </Text>
-            <Button disabled={busy || loading} onClick={() => setRevision((v) => v + 1)}>
+            <Button disabled={busy || loading} onClick={listing.refresh}>
               Refresh files
             </Button>
           </Group>
@@ -135,6 +124,16 @@ export function ImportFileSource({
                   />
                 ))}
                 {!files.length && !error && <Text c="dimmed">No files in this folder.</Text>}
+                {listing.earlier && (
+                  <Button disabled={busy} onClick={listing.refresh}>
+                    Back to first files
+                  </Button>
+                )}
+                {listing.nextCursor && (
+                  <Button disabled={busy} loading={loading} onClick={() => void listing.loadMore()}>
+                    Load more files
+                  </Button>
+                )}
               </Stack>
             </ScrollArea.Autosize>
           )}
@@ -150,7 +149,7 @@ export function ImportFileSource({
       {error && (
         <Alert color="red">
           {error}
-          <Button ml="sm" disabled={busy} onClick={() => setRevision((v) => v + 1)}>
+          <Button ml="sm" disabled={busy} onClick={listing.refresh}>
             Try again
           </Button>
         </Alert>
