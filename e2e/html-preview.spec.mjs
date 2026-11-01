@@ -30,6 +30,46 @@ test('HTML opens as a styled page while keeping its source editable', async ({
   await expect(frame.getByRole('heading', { name: 'Welcome to the workspace' })).toBeVisible();
 });
 
+test('HTML without explicit colors follows the workspace theme', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  workspace.addResources();
+  const content = '<!doctype html><html><body><h1>Page without custom colors</h1></body></html>';
+  workspace.state.files.push({
+    id: 'plain',
+    resourceId: 'fs_fixture',
+    path: '/plain.html',
+    type: 'file',
+    content,
+    size: Buffer.byteLength(content),
+    updatedAt: null,
+  });
+  await workspace.open('#files?resourceId=fs_fixture');
+  await page.getByRole('button', { name: /^plain\.html/ }).click();
+  const frame = page.frameLocator('iframe[title="HTML preview"]');
+  await expect(frame.getByRole('heading', { name: 'Page without custom colors' })).toBeVisible();
+  const html = frame.locator('html');
+  const colors = () =>
+    html.evaluate((element) => ({
+      background: getComputedStyle(element).backgroundColor,
+      color: getComputedStyle(element).color,
+      scheme: getComputedStyle(element).colorScheme,
+    }));
+  const initial = await colors();
+  expect(initial.scheme).toBe(testInfo.project.metadata.theme);
+  const channels = initial.background.match(/\d+/g).slice(0, 3).map(Number);
+  const brightness = channels.reduce((sum, value) => sum + value, 0) / 3;
+  if (testInfo.project.metadata.theme === 'dark') expect(brightness).toBeLessThan(80);
+  else expect(brightness).toBeGreaterThan(200);
+  await page.screenshot({ path: testInfo.outputPath('html-themed-preview.png') });
+  await page
+    .getByRole('combobox', { name: 'Color theme' })
+    .selectOption(testInfo.project.metadata.theme === 'dark' ? 'light' : 'dark');
+  await expect.poll(colors).not.toEqual(initial);
+  await expect(frame.getByRole('heading', { name: 'Page without custom colors' })).toBeVisible();
+});
+
 test('HTML preview blocks scripts, navigation, external assets and oversized files', async ({
   page,
   workspace,

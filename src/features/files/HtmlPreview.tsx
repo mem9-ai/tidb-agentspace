@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Text } from '@tidbcloud/uikit';
+import { Text, useComputedColorScheme, useMantineTheme } from '@tidbcloud/uikit';
 import { parse, serialize, type DefaultTreeAdapterTypes } from 'parse5';
 
 const blockedTags = new Set([
@@ -21,7 +21,12 @@ const blockedTags = new Set([
 ]);
 const blockedAttributes = new Set(['href', 'action', 'formaction', 'ping', 'srcset']);
 
-function previewDocument(content: string) {
+function previewDocument(
+  content: string,
+  theme: 'light' | 'dark',
+  background: string,
+  text: string,
+) {
   // parse5 never creates browser DOM nodes, so parsing cannot initiate resource requests.
   const tree = parse(content);
   const pending: DefaultTreeAdapterTypes.ParentNode[] = [tree];
@@ -42,14 +47,21 @@ function previewDocument(content: string) {
     "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; form-action 'none'; base-uri 'none'";
   return serialize(tree).replace(
     '<head>',
-    `<head><meta http-equiv="Content-Security-Policy" content="${policy}">`,
+    `<head><meta http-equiv="Content-Security-Policy" content="${policy}"><style>html { color-scheme: ${theme}; background: ${background}; color: ${text}; }</style>`,
   );
 }
 
 // HTML is untrusted file content. Sanitize navigation as well as active markup: the
 // sandbox and CSP provide independent isolation and prevent external resource requests.
 export default function HtmlPreview({ content }: { content: string }) {
-  const document = useMemo(() => previewDocument(content), [content]);
+  const theme = useComputedColorScheme('light');
+  const palette = useMantineTheme();
+  const background = palette.colors.carbon[0];
+  const text = palette.colors.carbon[8];
+  const document = useMemo(
+    () => previewDocument(content, theme, background, text),
+    [content, theme, background, text],
+  );
 
   return (
     <div className="file-html-preview">

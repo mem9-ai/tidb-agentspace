@@ -408,7 +408,7 @@ domain differences. See the [cross-page audit](../product-experience-audit.md).
   Treat content as untrusted: no raw HTML execution, unsafe links, or automatic remote image
   fetches. Add new formats only when the storage contract supports them. Verify both themes,
   desktop/narrow layouts, keyboard/focus, rendering boundaries, and save/discard flows; revisit
-  this policy when adding binary or streaming storage. Mermaid diagrams follow the same untrusted-content rule: use an isolated, network-restricted renderer, bounded input and diagram count, and retain accessible source and error fallbacks. HTML previews are explicitly static and isolated; parsing untrusted HTML must not initiate host-page requests. See [verification](../file-preview-verification.md).
+  this policy when adding binary or streaming storage. Mermaid diagrams follow the same untrusted-content rule: use an isolated, network-restricted renderer, bounded input and diagram count, and retain accessible source and error fallbacks. HTML previews are explicitly static and isolated; parsing untrusted HTML must not initiate host-page requests. Default HTML colors follow the Workspace theme while authored page colors take precedence. Interactive HTML remains unimplemented until it has an execution and resource isolation boundary. See [verification](../file-preview-verification.md).
 - **Preview fallback (accepted and implemented, owner correction 2026-10-27):** preflight
   file size, text shape, and supported type before parsing or highlighting. Preview budgets
   are independent of storage/upload limits. If a budget is exceeded or content cannot be

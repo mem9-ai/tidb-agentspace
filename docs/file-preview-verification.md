@@ -131,6 +131,12 @@ external resources, and nested frames are disabled. This is not an interactive w
 pages that depend on JavaScript or remote assets may be incomplete. Existing text preview limits
 (128 KiB, 2,000 lines, and 10,000 characters per line) apply before parsing.
 
+When an HTML document does not provide its own page colors, its default background and text
+follow the current Workspace theme. The document's explicit colors take precedence, so an
+authored light page remains light in a dark Workspace. Theme changes update an open preview.
+See the synthetic [dark desktop](screenshots/html-preview/theme-desktop-dark.png) and
+[light narrow](screenshots/html-preview/theme-narrow-light.png) views.
+
 The client parses the untrusted document with parse5 without creating browser DOM nodes, removes
 active and navigational content, and renders the result in a scriptless, opaque-origin sandbox
 with a restrictive CSP. These protections are complementary: do not parse untrusted HTML in
@@ -139,3 +145,23 @@ boundary. Browser assertions exercise styling, source editing, CSP-blocked exter
 scripts and navigation, size fallback, and light/dark desktop and narrow layouts. The
 [desktop dark](screenshots/html-preview/desktop-dark.png) and
 [narrow light](screenshots/html-preview/narrow-light.png) views use synthetic local fixtures.
+
+### Interactive HTML isolation research
+
+Status: requested, **not implemented**. The static boundary above remains in force. A Chromium
+experiment on 2026-11-02 showed that a script-enabled opaque iframe with `default-src 'none'`
+and `connect-src 'none'` can still navigate itself to an external URL carrying its document's
+contents. An outer sandbox with `frame-src 'none'` blocked that navigation in the experiment,
+but a five-second busy loop in the nested frame also delayed the host page for about five seconds.
+That makes the outer frame insufficient as a resource or availability boundary. Chromium alone
+does not establish behavior in Firefox or WebKit. The
+[HTML sandbox model](https://html.spec.whatwg.org/multipage/browsers.html#sandboxing) and
+[CSP inheritance model](https://w3c.github.io/webappsec-csp/#csp-inheriting-to-avoid-bypasses)
+explain the relevant browser mechanisms; neither supplies execution quotas.
+
+One possible direction is an ephemeral, separately isolated browser with no network egress,
+bounded CPU, memory and session lifetime, and a carefully scoped input/display channel. This is
+a proposal, not an implemented or accepted architecture. Before enabling untrusted JavaScript,
+verify navigation and network denial, credential and tenant isolation, process/resource limits,
+cleanup, and compatibility with the intended interactive pages. Do not represent iframe sandboxing
+alone as a complete execution boundary.
