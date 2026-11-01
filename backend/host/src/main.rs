@@ -89,6 +89,38 @@ async fn main() -> Result<()> {
             ),
         }
     }
+    let mut global_started = false;
+    for config in plan.globals {
+        let port: Option<Arc<dyn Metadata>> = match &config.metadata {
+            MetaBinding::InProcess { authority_id } => metadata
+                .get(authority_id)
+                .cloned()
+                .map(|v| v as Arc<dyn Metadata>),
+            MetaBinding::Remote { client } => RemoteMetadata::connect(client.clone())
+                .await
+                .ok()
+                .map(|v| Arc::new(v) as Arc<dyn Metadata>),
+        };
+        if let Some(port) = port {
+            match workspace_api::global_api::GlobalServer::open(config, port).await {
+                Ok(server) => {
+                    global_started = true;
+                    let receiver = api_receiver.clone();
+                    api_tasks.push(tokio::spawn(async move {
+                        if server.serve(stopped(receiver)).await.is_err() {
+                            eprintln!(
+                                "Global public API listener unavailable; other roles continue."
+                            );
+                        }
+                    }));
+                    println!("Rust Global public API started.");
+                }
+                Err(_) => eprintln!(
+                    "Global public API could not start; inspect private configuration and checkpoint ownership."
+                ),
+            }
+        }
+    }
     for config in plan.workspaces {
         let authority = config.authority_id.clone();
         let port: Option<Arc<dyn Metadata>> = match &config.metadata {
@@ -229,7 +261,7 @@ async fn main() -> Result<()> {
             eprintln!("Regional dependency unavailable for {authority}; no fallback selected.");
         }
     }
-    if metadata.is_empty() && workspaces.is_empty() {
+    if metadata.is_empty() && workspaces.is_empty() && !global_started {
         bail!("No configured service could start");
     }
     shutdown_signal().await;

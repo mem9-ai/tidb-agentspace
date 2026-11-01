@@ -11,6 +11,7 @@ import { promisify } from 'node:util';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
 import { metadataCertificates } from './test-support/meta-tls.mjs';
+import { globalApiCases } from './test-support/global-api-cases.mjs';
 
 const exec = promisify(execFile);
 const enabled = process.env.WORKSPACE_META_TEST === '1';
@@ -635,6 +636,7 @@ test(
     await assert.rejects(exec(identityProbe, [globalConfig, '--status', issuer, 'bob']));
     badSignature = false;
     const bob = await login();
+    await globalApiCases(t, fixture, global, alice, bob, ownerFile, settings);
     assert.notEqual(alice.userId, bob.userId);
     assert.notEqual(alice.organizationId, bob.organizationId);
     assert.notEqual(alice.workspaceId, bob.workspaceId);

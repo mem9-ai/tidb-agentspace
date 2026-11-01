@@ -29,6 +29,10 @@ enum Role {
         #[serde(rename = "configFile")]
         config_file: PathBuf,
     },
+    Global {
+        #[serde(rename = "configFile")]
+        config_file: PathBuf,
+    },
 }
 pub struct MetadataPlan {
     pub config: MetaConfig,
@@ -38,6 +42,7 @@ pub struct MetadataPlan {
 pub struct Plan {
     pub metadata: Vec<MetadataPlan>,
     pub workspaces: Vec<workspace_api::Config>,
+    pub globals: Vec<workspace_api::global_api::Config>,
 }
 impl Plan {
     pub fn load(path: &Path) -> Result<Self> {
@@ -52,6 +57,7 @@ impl Plan {
         let mut result = Self {
             metadata: Vec::new(),
             workspaces: Vec::new(),
+            globals: Vec::new(),
         };
         let mut authorities = BTreeSet::new();
         let mut installations = BTreeSet::new();
@@ -62,6 +68,16 @@ impl Plan {
         let mut workspace_authorities = BTreeSet::new();
         for service in deployment.services {
             match service {
+                Role::Global { config_file } => {
+                    if !config_file.is_absolute() {
+                        bail!("Use absolute private configuration references");
+                    }
+                    let config = workspace_api::global_api::Config::load(&config_file)?;
+                    if !binds.insert(config.bind) || !result.globals.is_empty() {
+                        bail!("Global listener is duplicated");
+                    }
+                    result.globals.push(config);
+                }
                 Role::Metadata {
                     config_file,
                     initialize,
@@ -130,6 +146,13 @@ impl Plan {
                 && !authorities.contains(authority_id)
             {
                 bail!("An in-process dependency must be explicitly hosted");
+            }
+        }
+        for config in &result.globals {
+            if let workspace_api::MetaBinding::InProcess { authority_id } = &config.metadata
+                && !authorities.contains(authority_id)
+            {
+                bail!("An in-process Global dependency must be explicitly hosted");
             }
         }
         Ok(result)

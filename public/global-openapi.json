@@ -1,0 +1,819 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Workspace Global Public API",
+    "version": "0.1.0",
+    "description": "Independent Global management authority. Key and Global Token issuance are available. Region policy application and regional refresh endpoints are not yet exposed by this service. All expiry values use Unix seconds. Credentials must never be logged or stored in URLs."
+  },
+  "servers": [{ "url": "/" }],
+  "paths": {
+    "/api/v1/workspaces/{workspaceId}/keys": {
+      "get": {
+        "operationId": "listGlobalKeys",
+        "security": [{ "globalOwner": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" }
+          },
+          { "name": "cursor", "in": "query", "schema": { "type": "string" } },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Key" } },
+                    "nextCursor": { "type": ["string", "null"] }
+                  },
+                  "required": ["data", "nextCursor"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured denial or unknown outcome; no credential is echoed.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createGlobalKey",
+        "security": [{ "globalOwner": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" },
+            "description": "Operation identity. A repeated secret-producing operation never returns another secret. Resolve uncertain outcomes; do not blindly repeat."
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "format": "uri" },
+            "description": "Must equal the configured Global public origin for Owner mutations."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Key" },
+                    "secret": { "type": "string" },
+                    "grants": { "$ref": "#/components/schemas/Grants" }
+                  },
+                  "required": ["data", "secret", "grants"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured denial or unknown outcome; no credential is echoed.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "scopes": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "minItems": 1,
+                    "maxItems": 8
+                  },
+                  "resourceIds": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "minItems": 1,
+                    "maxItems": 1024
+                  },
+                  "expiresAt": { "type": "integer", "minimum": 1 }
+                },
+                "required": ["scopes", "resourceIds", "expiresAt"]
+              }
+            }
+          }
+        },
+        "description": "Owner only. Unix-second expiry. Store the returned secret securely; it cannot be retrieved or returned again."
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/keys/{keyId}": {
+      "get": {
+        "operationId": "getGlobalKey",
+        "security": [{ "globalOwner": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" }
+          },
+          { "name": "keyId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Key" },
+                    "grants": { "$ref": "#/components/schemas/Grants" }
+                  },
+                  "required": ["data", "grants"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured denial or unknown outcome; no credential is echoed.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "renewGlobalKey",
+        "security": [{ "globalOwner": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" }
+          },
+          { "name": "keyId", "in": "path", "required": true, "schema": { "type": "string" } },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" },
+            "description": "Operation identity. A repeated secret-producing operation never returns another secret. Resolve uncertain outcomes; do not blindly repeat."
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Quoted current Key version ETag."
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "format": "uri" },
+            "description": "Must equal the configured Global public origin for Owner mutations."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Key" },
+                    "regionalStatus": { "const": "pending" }
+                  },
+                  "required": ["data", "regionalStatus"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured denial or unknown outcome; no credential is echoed.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": { "expiresAt": { "type": "integer", "minimum": 1 } },
+                "required": ["expiresAt"]
+              }
+            }
+          }
+        },
+        "description": "Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application remains pending in the current public service."
+      },
+      "delete": {
+        "operationId": "revokeGlobalKey",
+        "security": [{ "globalOwner": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" }
+          },
+          { "name": "keyId", "in": "path", "required": true, "schema": { "type": "string" } },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" },
+            "description": "Operation identity. A repeated secret-producing operation never returns another secret. Resolve uncertain outcomes; do not blindly repeat."
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Quoted current Key version ETag."
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "format": "uri" },
+            "description": "Must equal the configured Global public origin for Owner mutations."
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": { "type": "string" },
+                    "regionalStatus": { "const": "pending" }
+                  },
+                  "required": ["id", "regionalStatus"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured denial or unknown outcome; no credential is echoed.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/keys/{keyId}/versions": {
+      "post": {
+        "operationId": "rotateGlobalKey",
+        "security": [{ "globalOwner": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" }
+          },
+          { "name": "keyId", "in": "path", "required": true, "schema": { "type": "string" } },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" },
+            "description": "Operation identity. A repeated secret-producing operation never returns another secret. Resolve uncertain outcomes; do not blindly repeat."
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Quoted current Key version ETag."
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "format": "uri" },
+            "description": "Must equal the configured Global public origin for Owner mutations."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/Key" },
+                    "secret": { "type": "string" },
+                    "regionalStatus": { "const": "pending" }
+                  },
+                  "required": ["data", "secret", "regionalStatus"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured denial or unknown outcome; no credential is echoed.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/keys/{keyId}/versions/{version}": {
+      "get": {
+        "operationId": "getGlobalKeyVersion",
+        "security": [{ "globalOwner": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" }
+          },
+          { "name": "keyId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "version", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": { "data": { "$ref": "#/components/schemas/Key" } },
+                  "required": ["data"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured denial or unknown outcome; no credential is echoed.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/key-revocations/{revocationId}": {
+      "get": {
+        "operationId": "getGlobalKeyRevocation",
+        "security": [{ "globalOwner": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" }
+          },
+          { "name": "revocationId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": { "type": "string" },
+                        "keyId": { "type": "string" },
+                        "keyVersion": { "type": "integer", "minimum": 1 },
+                        "regionalStatus": { "const": "pending" }
+                      },
+                      "required": ["id", "keyId", "keyVersion", "regionalStatus"]
+                    }
+                  },
+                  "required": ["data"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured denial or unknown outcome; no credential is echoed.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/token-issuances": {
+      "post": {
+        "operationId": "createGlobalTokenIssuance",
+        "security": [{ "workspaceKey": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Token" } }
+            }
+          },
+          "default": {
+            "description": "Structured denial or unknown outcome; no credential is echoed.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "audience": { "const": "global" },
+                  "scopes": { "type": "array", "items": { "type": "string" } }
+                },
+                "required": ["audience"]
+              }
+            }
+          }
+        },
+        "description": "Exchange the Workspace Key at Global only. Region audience requests return 409 REGION_POLICY_NOT_APPLIED until the matching Region policy is applied; regional token issuance is not shipped in this profile."
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/token-issuances/{issuanceId}": {
+      "get": {
+        "operationId": "getGlobalTokenIssuance",
+        "security": [{ "globalAccess": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" }
+          },
+          { "name": "issuanceId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": { "data": { "$ref": "#/components/schemas/Issuance" } },
+                  "required": ["data"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured denial or unknown outcome; no credential is echoed.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/regions": {
+      "get": {
+        "operationId": "listAuthorizedRegions",
+        "security": [{ "globalAccess": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Region" } },
+                    "nextCursor": { "type": "null" }
+                  },
+                  "required": ["data", "nextCursor"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured denial or unknown outcome; no credential is echoed.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        },
+        "description": "Requires resources:read on a current Global Token. Only the Key-granted Region is returned. Data requests go directly to Region."
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "getGlobalHealth",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": { "status": { "const": "ok" }, "authority": { "const": "global" } },
+                  "required": ["status", "authority"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/tidbcloud/login": {
+      "get": {
+        "operationId": "startGlobalOwnerLogin",
+        "security": [],
+        "parameters": [
+          { "name": "workspaceId", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "303": {
+            "description": "Redirect to the trusted configured identity provider; opaque host-only flow cookie."
+          },
+          "default": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/tidbcloud/callback": {
+      "get": {
+        "operationId": "completeGlobalOwnerLogin",
+        "security": [],
+        "parameters": [
+          { "name": "code", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "state", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "workspaceId": { "type": "string" },
+                    "regionId": { "type": "string" },
+                    "expiresAt": { "type": "integer", "minimum": 1 }
+                  },
+                  "required": ["workspaceId", "regionId", "expiresAt"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        },
+        "description": "Verified one-use OIDC+PKCE callback. Requires the browser-bound flow cookie; issues an eight-hour, durable, host-only HttpOnly Owner cookie after checking Global Directory membership."
+      }
+    },
+    "/api/auth/tidbcloud/logout": {
+      "post": {
+        "operationId": "revokeGlobalOwnerSession",
+        "security": [{ "globalOwner": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "format": "uri" },
+            "description": "Must equal the configured Global public origin for Owner mutations."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Durably revoked the Global Owner session and cleared the host-only cookie."
+          },
+          "default": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "requestId": { "type": "string" }
+            },
+            "required": ["code", "message", "requestId"]
+          }
+        },
+        "required": ["error"]
+      },
+      "Key": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workspaceId": { "type": "string" },
+          "keyId": { "type": "string", "format": "uuid" },
+          "principalId": { "type": "string" },
+          "keyVersion": { "type": "integer", "minimum": 1 },
+          "grantRef": { "type": "string" },
+          "expiresAt": { "type": "integer", "minimum": 1 },
+          "revoked": { "type": "boolean" }
+        },
+        "required": [
+          "workspaceId",
+          "keyId",
+          "principalId",
+          "keyVersion",
+          "grantRef",
+          "expiresAt",
+          "revoked"
+        ]
+      },
+      "Grants": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scopes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "maxItems": 8
+          },
+          "resourceIds": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "maxItems": 1024
+          },
+          "regionId": { "type": "string" }
+        },
+        "required": ["scopes", "resourceIds", "regionId"]
+      },
+      "Region": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "regionId": { "type": "string" },
+          "apiOrigin": { "type": "string", "format": "uri" },
+          "apiPathPrefix": { "type": "string" }
+        },
+        "required": ["regionId", "apiOrigin", "apiPathPrefix"]
+      },
+      "Issuance": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "keyId": { "type": "string" },
+          "principalId": { "type": "string" },
+          "expiresAt": { "type": "integer", "minimum": 1 },
+          "audience": { "const": "global" },
+          "status": { "const": "issued" }
+        },
+        "required": ["id", "keyId", "principalId", "expiresAt", "audience", "status"]
+      },
+      "Token": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "accessToken": { "type": "string" },
+          "tokenType": { "const": "Bearer" },
+          "expiresAt": { "type": "integer", "minimum": 1 },
+          "scopes": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["id", "accessToken", "tokenType", "expiresAt", "scopes"]
+      }
+    },
+    "securitySchemes": {
+      "globalOwner": { "type": "apiKey", "in": "cookie", "name": "aw_global_owner" },
+      "globalAccess": { "type": "http", "scheme": "bearer", "bearerFormat": "Global JWT" },
+      "workspaceKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Workspace Key is sent only to Global token issuance, never forwarded to Region."
+      }
+    }
+  }
+}
