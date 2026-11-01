@@ -16,7 +16,7 @@ function bootstrap() {
   return {
     workspace: {
       id: 'ws_personal_fixture',
-      name: 'Browser fixture',
+      name: 'My Workspace',
       description: '',
       plan: 'Free',
       createdAt,

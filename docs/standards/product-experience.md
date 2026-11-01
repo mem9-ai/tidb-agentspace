@@ -44,6 +44,8 @@ provider/demo/expiry information explicit. Use one quiet footer **Powered by TiD
 to the [TiDB Cloud product page](https://www.pingcap.com/tidb/cloud/). Verify desktop branding,
 mobile navigation, footer destination and the absence of the removed entry points in both
 themes and viewport sizes. Revisit when Workspace-specific documentation is available.
+Customer-facing previews and screenshots use natural Workspace names such as **My Workspace**;
+keep fixture/harness terminology in internal identifiers, not the displayed Workspace name.
 
 The shared-shell browser case verifies the removed destinations, external attribution target,
 brand return and mobile navigation. Reviewed evidence: [desktop dark header](../screenshots/branding/header-desktop-dark.png),
