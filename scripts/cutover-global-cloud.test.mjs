@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
-import { cutover, prepareCutover, readTarget, verifyGlobal } from './cutover-global-cloud.mjs';
+import {
+  cutover,
+  prepareCutover,
+  readTarget,
+  verifyGlobal,
+  waitForBootstrap,
+} from './cutover-global-cloud.mjs';
 
 const options = {
   namespace: 'dev',
@@ -101,6 +107,11 @@ function fixture() {
   const kubectl = (args, input) => {
     calls.push({ args, input });
     if (args[0] === 'get') {
+      if (['jobs', 'pods', 'events', 'storageclasses', 'csidrivers'].includes(args[1]))
+        return JSON.stringify({ items: [] });
+      if (args[1] === 'pvc') return JSON.stringify({ items: [] });
+      if (args[1] === 'job')
+        return JSON.stringify({ status: { conditions: [{ type: 'Complete', status: 'True' }] } });
       if (args[1] === 'deployment' || args[1] === 'deployment/workspace')
         return JSON.stringify(source);
       if (args[2] === 'original') return JSON.stringify(secret);
@@ -184,18 +195,50 @@ test('cloud preparation isolates roots and credentials, retains one callback and
   assert.equal(f.calls.filter((c) => c.args[0] !== 'get').length, 0);
 });
 
+test('storage class selection is explicit and SSO environment whitespace matches native loading', async () => {
+  const f = fixture();
+  const target = readTarget(options, f.kubectl);
+  target.environment.TIDB_SSO_CLIENT_ID += '\n';
+  const prepared = await prepareCutover(target, { ...options, storageClassName: 'gp3' });
+  assert.equal(prepared.pvc.spec.storageClassName, 'gp3');
+  assert.equal(decode(prepared.secret.data['api.json']).sso.clientId, 'public-client');
+  await assert.rejects(
+    prepareCutover(target, { ...options, storageClassName: '../unsafe' }),
+    /Invalid storage/,
+  );
+});
+
+test('bootstrap polling stops on failure and does not wait for an impossible success', async () => {
+  let polls = 0;
+  let pauses = 0;
+  await assert.rejects(
+    waitForBootstrap(
+      'job',
+      'dev',
+      () => JSON.stringify({ status: ++polls === 1 ? { active: 1 } : { failed: 1 } }),
+      async () => {
+        pauses++;
+      },
+    ),
+    /bootstrap failed/,
+  );
+  assert.equal(polls, 2);
+  assert.equal(pauses, 1);
+});
+
 test('failed bootstrap never switches the live Deployment or deletes storage', async () => {
   const f = fixture();
   await assert.rejects(
     cutover(
       options,
       (args, input) => {
-        if (args[0] === 'wait') throw new Error('Initialization failed');
+        if (args[0] === 'get' && args[1] === 'job')
+          return JSON.stringify({ status: { failed: 1 } });
         return f.kubectl(args, input);
       },
       healthy,
     ),
-    /Initialization failed/,
+    /Native bootstrap not confirmed/,
   );
   assert.equal(f.calls.filter((c) => c.args[0] === 'create').length, 3);
   assert.ok(!f.calls.some((c) => ['patch', 'replace', 'delete', 'rollout'].includes(c.args[0])));
@@ -207,7 +250,7 @@ test('cutover verifies bootstrap before guarded switch and public auth denials',
   assert.equal(report.globalEnabled, true);
   assert.deepEqual(
     f.calls.filter((c) => c.args[0] !== 'get').map((c) => c.args[0]),
-    ['create', 'create', 'create', 'wait', 'patch', 'rollout'],
+    ['create', 'create', 'create', 'patch', 'rollout'],
   );
   const patch = f.calls.find((c) => c.args[0] === 'patch');
   assert.ok(patch.args.includes('--patch-file=/dev/stdin'));

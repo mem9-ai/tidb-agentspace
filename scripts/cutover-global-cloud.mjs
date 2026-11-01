@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { globalApiProfile } from './global-api-profile.mjs';
+import { inspectCutover } from './cutover-diagnostics.mjs';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const label = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64');
@@ -77,6 +79,8 @@ export function readTarget({ namespace, deployment, container }, kubectl) {
 }
 
 function hostedSso(api, env) {
+  // Match the native loader when a Secret value ends with a newline.
+  env = Object.fromEntries(Object.entries(env).map(([key, value]) => [key, value.trim()]));
   if (api.sso) return api.sso;
   const csv = (name) =>
     (env[name] || '')
@@ -110,7 +114,12 @@ function hostedSso(api, env) {
 
 // This reset is explicit: new roots and credentials, never delete a bucket or old Secret.
 // Bootstrap completes and releases ownership before the existing Deployment is changed.
-export async function prepareCutover(target, { namespace, deployment, container }) {
+export async function prepareCutover(
+  target,
+  { namespace, deployment, container, storageClassName },
+) {
+  if (storageClassName && !label.test(storageClassName))
+    throw new Error('Invalid storage class name.');
   const { api, plan, secret, volume, pod, runtime, environment } = target;
   if (api.security || api.globalEntry || plan.services.some((s) => s.kind === 'global'))
     throw new Error('Global already configured; do not rotate identities or reset storage again.');
@@ -221,7 +230,11 @@ export async function prepareCutover(target, { namespace, deployment, container 
       apiVersion: 'v1',
       kind: 'PersistentVolumeClaim',
       metadata: { name, namespace },
-      spec: { accessModes: ['ReadWriteOnce'], resources: { requests: { storage: '1Gi' } } },
+      spec: {
+        ...(storageClassName ? { storageClassName } : {}),
+        accessModes: ['ReadWriteOnce'],
+        resources: { requests: { storage: '1Gi' } },
+      },
     },
     job: {
       apiVersion: 'batch/v1',
@@ -262,6 +275,21 @@ export async function verifyGlobal(request = fetch) {
   }
 }
 
+export async function waitForBootstrap(name, namespace, kubectl, pause = delay, now = Date.now) {
+  const deadline = now() + 330_000;
+  while (now() < deadline) {
+    const job = JSON.parse(kubectl(['get', 'job', name, '-n', namespace, '-o', 'json']));
+    if (job.status?.conditions?.some((c) => c.type === 'Complete' && c.status === 'True')) return;
+    if (
+      job.status?.failed ||
+      job.status?.conditions?.some((c) => c.type === 'Failed' && c.status === 'True')
+    )
+      throw new Error('Native bootstrap failed.');
+    await pause(2000);
+  }
+  throw new Error('Native bootstrap status remained uncertain.');
+}
+
 export async function cutover(options, kubectl, request = fetch, report = () => {}) {
   const target = readTarget(options, kubectl);
   if (options.operation === 'inspect') {
@@ -279,6 +307,7 @@ export async function cutover(options, kubectl, request = fetch, report = () => 
         memory: v.emptyDir?.medium === 'Memory',
       })),
       ssoConfigured: !!(target.api.sso || target.environment.TIDB_SSO_CLIENT_ID),
+      bootstrap: inspectCutover(options, kubectl),
     };
   }
   if (options.operation !== 'reset-and-enable-global')
@@ -292,14 +321,12 @@ export async function cutover(options, kubectl, request = fetch, report = () => 
   report('Private configuration and checkpoint PVC created. Starting one-time native bootstrap.');
   create(prepared.job);
   // A failed/uncertain bootstrap never changes the running Deployment or retries an initialization.
-  kubectl([
-    'wait',
-    `job/${prepared.name}`,
-    '-n',
-    namespace,
-    '--for=condition=complete',
-    '--timeout=330s',
-  ]);
+  try {
+    await waitForBootstrap(prepared.name, namespace, kubectl);
+  } catch {
+    report(JSON.stringify(inspectCutover(options, kubectl)));
+    throw new Error('Native bootstrap not confirmed; no Deployment configuration was changed.');
+  }
   report(
     'Native bootstrap completed and released ownership. Checking the Deployment precondition.',
   );
@@ -340,6 +367,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         deployment: process.env.K8S_DEPLOYMENT,
         container: process.env.K8S_CONTAINER,
         operation: process.env.CUTOVER_OPERATION,
+        storageClassName: process.env.CUTOVER_STORAGE_CLASS || undefined,
       },
       (args, input) =>
         execFileSync('kubectl', ['--request-timeout=30s', ...args], {
