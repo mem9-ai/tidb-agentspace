@@ -1,4 +1,4 @@
-# ADR 0042: Portal, Agent and Region control boundaries
+# ADR 0043: Portal, Agent and Region control boundaries
 
 - Status: accepted direction; implementation in progress.
 - Date: 2026-11-01.
@@ -153,4 +153,4 @@ as a solution for very large traffic. Control trust and certificate rotation are
 operations; automatic certificate issuance and rotation are not implemented. Fresh installations
 can keep the security clock, policy floor and renewal witnesses in authority-local Meta without a
 security volume. Existing file-backed installations still need migration or an explicit reset;
-see ADR 0039 for time-reservation behavior and its failure boundary.
+see ADR 0040 for time-reservation behavior and its failure boundary.

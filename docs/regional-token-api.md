@@ -25,7 +25,7 @@ only already owned regional Workspaces; it never initializes a tenant from a req
   sharing the Global verification key.
 - `metadataSecurityState`, `initializeClock`: select Region-local Meta for the time floor,
   per-Key policy floor and renewal witnesses. Initialize deliberately once and disable
-  initialization before restarting. See [ADR 0039](decisions/0039-system-state-metadata.md) for
+  initialization before restarting. See [ADR 0040](decisions/0040-system-state-metadata.md) for
   whole-store rollback and the remaining file-backed legacy mode.
 - `accessTokenTtl`: 1–900 seconds, default 900. Every token is additionally bounded by actual
   installed Key, grant and family expiry.
@@ -119,7 +119,7 @@ An existing proof-bound family can cross versions only through a complete signed
 Global records its observation after the renewal is durable; Region records its independent
 installation witness after the policy commit is durable. Both observations must precede the old
 expiry. Region retains these witnesses with its policy/time checkpoints in Region Meta. Restoring
-the whole Meta store can restore all of them together; see ADR 0039 for that tradeoff.
+the whole Meta store can restore all of them together; see ADR 0040 for that tradeoff.
 A new expiry alone, a missing version, late application, rotation or revocation cannot authorize
 rebind. Rebind atomically consumes the old generation/proof, increments the family security epoch,
 retains its original grant ceiling and returns a new refresh credential for the current version.

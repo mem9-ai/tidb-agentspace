@@ -6,7 +6,7 @@
 - Initial Meta implementation baseline: [141652e501c942128ccae617d088a2cdccf9f780](https://github.com/mem9-ai/tidb.ai/tree/141652e501c942128ccae617d088a2cdccf9f780), using SlateDB 0.17.0. Hosted Studio SSO has since been implemented under [ADR 0026](decisions/0026-native-hosted-studio.md); regional continuity grants and autonomous renewal remain future work.
 - Status: architecture reference for iteration. The foundations below reflect accepted owner direction; target domain schemas, control protocols and scale mechanisms require implementation as identified in [Implementation and iteration](#implementation-and-iteration).
 
-The metadata system records ownership, permissions, resource placement, lifecycle operations and private provider bindings. Each authority owns a Rust Meta Service and independent SlateDB storage. A successful mutation is recoverable from object storage without the original compute host, provided the object service, encryption roots and required bootstrap identity remain available. Authority-owned application and runtime metadata use the [System State boundary](decisions/0039-system-state-metadata.md); the filesystem security checkpoint migration is not yet implemented.
+The metadata system records ownership, permissions, resource placement, lifecycle operations and private provider bindings. Each authority owns a Rust Meta Service and independent SlateDB storage. A successful mutation is recoverable from object storage without the original compute host, provided the object service, encryption roots and required bootstrap identity remain available. Authority-owned application and runtime metadata use the [System State boundary](decisions/0040-system-state-metadata.md); fresh installations store security checkpoints in Meta.
 
 Design records around domain entities and bounded consistency groups. Historical JSON shapes and compatibility imports do not constrain this model. This edition changes documentation; the running wire contract and storage format change only through subsequent implementation work.
 
@@ -136,7 +136,7 @@ delay an unrelated authoritative read; key prefixes alone do not prove latency i
 Introducing weaker writes therefore requires explicit read isolation, recovery and performance
 evidence, rather than just skipping `await_durable()`. Global and each Region retain their own
 independent Meta authority. The five-second clock reservation and restart tradeoff are defined
-in [ADR 0039](decisions/0039-system-state-metadata.md).
+in [ADR 0040](decisions/0040-system-state-metadata.md).
 
 ## Storage layout and identity
 

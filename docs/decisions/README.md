@@ -70,10 +70,10 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0032: Writer-safe dev release](0032-writer-safe-dev-release.md) — bounded health checks and explicitly compatible, fenced image recovery for the single-writer profile.
 
 - [0038: Bounded raster image previews](0038-bounded-image-preview.md) — authorized, size-limited image preview with signature checks and an export fallback.
-- [0039: Authority-local System State](0039-system-state-metadata.md) — system-owned metadata in each existing Meta authority; security checkpoint migration remains pending.
-- [0040: One Global endpoint for agents](0040-single-global-entry.md) — Key-based discovery, bodyless redirect and direct regional requests.
-- [0041: Global Workspaces and regional resources](0041-workspace-resource-regions.md) — one default Region per Workspace initially, independently recorded resource placement, and non-destructive legacy interpretation.
-- [0042: Portal, Agent and Region control boundaries](0042-portal-agent-region-control.md) — separate browser, Agent and service interfaces; Region-initiated authenticated control.
+- [0040: Authority-local System State](0040-system-state-metadata.md) — system-owned metadata in each existing Meta authority; security checkpoints use Meta in fresh installations.
+- [0041: One Global endpoint for agents](0041-single-global-entry.md) — Key-based discovery, bodyless redirect and direct regional requests.
+- [0042: Global Workspaces and regional resources](0042-workspace-resource-regions.md) — one default Region per Workspace initially, independently recorded resource placement, and non-destructive legacy interpretation.
+- [0043: Portal, Agent and Region control boundaries](0043-portal-agent-region-control.md) — separate browser, Agent and service interfaces; Region-initiated authenticated control.
 
 ## Proposed decisions
 

@@ -1,4 +1,4 @@
-# ADR 0039: Authority-local System State
+# ADR 0040: Authority-local System State
 
 - Status: Meta-backed security state implemented; targeted local verification passed.
 - Date: 2026-11-01.

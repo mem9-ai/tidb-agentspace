@@ -1,4 +1,4 @@
-# ADR 0041: Global Workspaces and regional resources
+# ADR 0042: Global Workspaces and regional resources
 
 - Status: accepted; single-Region implementation.
 - Date: 2026-11-01.
@@ -10,7 +10,7 @@ identifies the control plane for new resources. Each resource records its owning
 The current release admits only the Workspace's existing Region; an explicitly different
 `regionId` on creation is rejected. This does not implement multi-Region routing or a way to
 change the default. An agent still configures only the Global endpoint and its Key; direct
-Region requests and locally renewed sessions follow ADR 0040.
+Region requests and locally renewed sessions follow ADR 0041.
 
 The existing resource `region` is the provider data location, which can be `automatic` or a
 provider-specific location. It is not the control-plane `regionId` and does not establish a

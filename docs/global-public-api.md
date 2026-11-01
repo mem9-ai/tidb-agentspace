@@ -50,7 +50,7 @@ and authenticated TLS configuration. Never bind Global to Region Meta.
 Set `initializeClock` true only during deliberate initialization of a new authority, then set
 it to false before restart. `metadataSecurityState:true` stores the clock in Global System State;
 missing state and backward host time fail closed. The bounded time reservation and the effects
-of restoring the entire Meta store are described in [ADR 0039](decisions/0039-system-state-metadata.md).
+of restoring the entire Meta store are described in [ADR 0040](decisions/0040-system-state-metadata.md).
 Older explicitly configured installations can continue to use their private `clockDirectory`
 until migrated or replaced by an authorized fresh installation.
 
@@ -62,7 +62,7 @@ credential caching and serves its own contract at `/openapi.json`.
 ## Owner login and Key operations
 
 Agents can start with the Global base and a new Workspace Key using the
-[single-entry flow](decisions/0040-single-global-entry.md). Global authenticates the
+[single-entry flow](decisions/0041-single-global-entry.md). Global authenticates the
 Key's untrusted Workspace hint and returns a bodyless 307 to the granted Region for a
 Global-token-authorized route request. The client checks the destination before sending a
 Region credential. Older Keys remain valid for the Workspace-scoped issuance flow below.

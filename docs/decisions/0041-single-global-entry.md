@@ -1,4 +1,4 @@
-# ADR 0040: One Global endpoint for agent connections
+# ADR 0041: One Global endpoint for agent connections
 
 - Status: implemented for newly issued Keys; older Keys retain Workspace-scoped issuance.
 - Date: 2026-11-01.
