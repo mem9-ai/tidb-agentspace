@@ -1431,7 +1431,7 @@ for (const route of ['login', 'callback']) {
       description:
         route === 'login'
           ? 'Browser redirect to the configured provider using code + S256 PKCE. Server retains a single-use ten-minute flow.'
-          : 'Registered server callback; verifies signature, issuer, audience and nonce with single-use, cookie-bound state. Managed hosts establish a Workspace-bound aw_account continuity grant with no absolute server expiry; explicit local/legacy profiles require their configured owner grants and issue an eight-hour aw_session.',
+          : 'Registered Portal callback; verifies signature, issuer, audience and nonce with single-use, cookie-bound state. Managed hosts establish a Workspace-bound aw_account continuity grant. When Global shares the Portal listener, this same verified callback also issues a distinct eight-hour aw_global_owner session after Global Directory membership checks. No second provider login/callback is needed. Explicit local/legacy profiles issue an eight-hour aw_session.',
       responses: {
         302: {
           description:
@@ -1448,7 +1448,7 @@ paths['/api/auth/tidbcloud/logout'] = {
     operationId: 'logoutTidbSession',
     security: [],
     description:
-      'Revoke the TiDB Account session and attached Guest cookie. Guest-only sessions must use POST /api/auth/guest/logout to schedule cleanup.',
+      'Revoke the TiDB Account session and attached Guest cookie. Bundled Portal deployments also revoke the attached Global Owner session and clear both cookies. Guest-only sessions must use POST /api/auth/guest/logout to schedule cleanup.',
     responses: { 200: response(object({ loggedOut: { type: 'boolean' } })) },
   },
   get: {

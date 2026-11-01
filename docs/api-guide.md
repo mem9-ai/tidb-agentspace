@@ -23,6 +23,11 @@ raw Keys and rejects retired direct Keys. Regional `/keys` endpoints are removed
 Key management uses `/api/v1/workspaces/{workspaceId}/keys` at **Global**. Provider/native
 credentials remain private. API keys cannot administer other Keys or acquire Owner privileges.
 Hosted Owner sign-in uses the configured OIDC client and ready Global Directory membership.
+On the bundled cloud deployment, sign in to Portal once. Its existing TiDB Account callback
+establishes separate Global management and Region browser sessions; creating a Key does not
+require a second sign-in or another registered callback. Logout revokes both attached sessions.
+The Global Owner session expires after eight hours; another interactive sign-in is then required
+for Key management. Region Tokens remain independent of browser cookies.
 A Guest Workspace is not a Global Owner account. Explicit local development profiles can use
 `POST Global /api/session` only from a real loopback peer with a trusted Origin; hosted deployments reject this mode.
 

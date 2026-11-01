@@ -43,7 +43,9 @@ through documented OpenAPI without Portal automation. Pure presentation/browser 
 are the UI-only exception; authentication and permission boundaries still apply.
 
 [Global public API implementation](docs/global-public-api.md) documents the independently
-runnable Global role, its generated contract and client. The [regional Token flow](docs/regional-token-api.md)
+runnable Global role, its generated contract and client. The bundled cloud profile uses
+[one Portal sign-in](docs/decisions/0037-single-portal-login.md) with separate Global/Region
+sessions and the existing registered callback. The [regional Token flow](docs/regional-token-api.md)
 connects policy delivery, managed Workspace authorization and local renewal across Global outages;
 retired direct regional Keys are discarded under [ADR 0036](docs/decisions/0036-global-keys-only.md), while resource and provider credentials remain intact. The [API guide](docs/api-guide.md) covers the customer flow and copyable examples.
 

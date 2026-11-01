@@ -3,7 +3,7 @@ use super::*;
 use crate::{Credential, principal};
 use std::collections::{BTreeMap, BTreeSet};
 
-const SCHEMA: &str = "indexes/resource-v1/schema";
+const SCHEMA: &str = workspace_contracts::RESOURCE_INDEX_SCHEMA;
 
 fn digest(value: &str) -> String {
     hex::encode(Sha256::digest(value.as_bytes()))

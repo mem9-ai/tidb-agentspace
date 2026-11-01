@@ -247,6 +247,68 @@ pub struct GlobalServer {
     listener: Option<TcpListener>,
     app: Arc<App>,
 }
+
+/// Global authority used exclusively by the bundled Portal's verified OIDC callback.
+/// Regional data authentication never uses this port and no Region HTTP callback exists.
+#[derive(Clone)]
+pub(crate) struct PortalSessions {
+    app: Arc<App>,
+    cookie_path: String,
+}
+impl PortalSessions {
+    fn cookie(&self, secret: &str, age: u32) -> workspace_contracts::Result<header::HeaderValue> {
+        let secure = if self.app.config.public_origin.starts_with("https:") {
+            " Secure;"
+        } else {
+            ""
+        };
+        let mut value = header::HeaderValue::from_str(&format!(
+            "aw_global_owner={secret}; HttpOnly; SameSite=Strict;{secure} Path={}/; Max-Age={age}",
+            self.cookie_path
+        ))
+        .map_err(|_| err(503, "SESSION_UNAVAILABLE"))?;
+        value.set_sensitive(true);
+        Ok(value)
+    }
+    pub(crate) async fn establish(
+        &self,
+        login: &sso::VerifiedLogin,
+        workspace: &str,
+    ) -> workspace_contracts::Result<header::HeaderValue> {
+        self.app.clock.now()?;
+        let (issuer, subject) = login.identity();
+        let issued = self
+            .app
+            .owners
+            .issue(
+                VerifiedIdentity { issuer, subject },
+                workspace,
+                &Uuid::new_v4().to_string(),
+            )
+            .await?;
+        self.cookie(&issued.secret, 28800)
+    }
+    pub(crate) async fn revoke(
+        &self,
+        headers: &HeaderMap,
+        workspace: Option<&str>,
+    ) -> workspace_contracts::Result<()> {
+        if let (Some(workspace), Some(secret)) = (workspace, cookie(headers, "aw_global_owner"))
+            && let Err(e) = self
+                .app
+                .owners
+                .revoke(workspace, secret, &Uuid::new_v4().to_string())
+                .await
+            && e.status != 401
+        {
+            return Err(e);
+        }
+        Ok(())
+    }
+    pub(crate) fn clear(&self) -> workspace_contracts::Result<header::HeaderValue> {
+        self.cookie("", 0)
+    }
+}
 fn err(status: u16, code: &str) -> ServiceError {
     ServiceError::new(status, code)
 }
@@ -321,6 +383,19 @@ fn etag(mut r: Response, v: u64) -> Response {
     r
 }
 impl GlobalServer {
+    pub(crate) fn portal_sessions(&self, path: &str) -> Option<PortalSessions> {
+        (self.app.config.shared_listener
+            && self.app.config.local_workspace.is_none()
+            && self
+                .app
+                .config
+                .public_path
+                .starts_with(&format!("{path}/api/")))
+        .then(|| PortalSessions {
+            app: self.app.clone(),
+            cookie_path: path.into(),
+        })
+    }
     pub async fn open(config: Config, metadata: Arc<dyn Metadata>) -> Result<Self> {
         config.validate()?;
         let key = private_file(&config.signing_key_file)?;
@@ -490,6 +565,17 @@ fn hex_bytes(s: &str) -> Result<[u8; 32]> {
     Ok(key)
 }
 impl App {
+    fn owner_cookie_path(&self) -> &str {
+        if self.config.shared_listener && self.config.local_workspace.is_none() {
+            self.config
+                .public_path
+                .rsplit_once("/api/")
+                .map(|(path, _)| path)
+                .unwrap_or(&self.config.public_path)
+        } else {
+            &self.config.public_path
+        }
+    }
     fn allowed_origin(&self, origin: &str) -> bool {
         origin == self.config.public_origin
             || self
@@ -1453,6 +1539,26 @@ async fn auth(
     query: &BTreeMap<String, String>,
     peer: Option<SocketAddr>,
 ) -> workspace_contracts::Result<Response> {
+    // Bundled Portal login owns one existing callback. Global may redirect the browser
+    // there; it must not start another OIDC flow with another redirect URI.
+    if app.config.shared_listener && app.config.local_workspace.is_none() && app.sso.is_none() {
+        let portal = app
+            .config
+            .public_path
+            .rsplit_once("/api/")
+            .map(|(prefix, _)| prefix)
+            .ok_or_else(|| err(503, "SSO_UNAVAILABLE"))?;
+        if path == "/api/auth/tidbcloud/login" && *method == Method::GET {
+            let mut response = StatusCode::SEE_OTHER.into_response();
+            response.headers_mut().insert(
+                header::LOCATION,
+                format!("{portal}/api/auth/tidbcloud/login")
+                    .parse()
+                    .map_err(|_| err(503, "SSO_UNAVAILABLE"))?,
+            );
+            return Ok(response);
+        }
+    }
     if path == "/api/auth/tidbcloud/logout" && *method == Method::POST {
         let workspace = query
             .get("workspaceId")
@@ -1483,7 +1589,7 @@ async fn auth(
             header::SET_COOKIE,
             format!(
                 "aw_global_owner=; HttpOnly; SameSite=Strict;{secure} Path={}/; Max-Age=0",
-                app.config.public_path
+                app.owner_cookie_path()
             )
             .parse()
             .map_err(|_| err(503, "SESSION_UNAVAILABLE"))?,
@@ -1587,7 +1693,8 @@ async fn auth(
             header::SET_COOKIE,
             format!(
                 "aw_global_owner={}; HttpOnly; SameSite=Strict;{secure} Path={}/; Max-Age=28800",
-                session.secret, app.config.public_path
+                session.secret,
+                app.owner_cookie_path()
             )
             .parse()
             .map_err(|_| err(503, "SESSION_UNAVAILABLE"))?,

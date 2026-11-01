@@ -108,6 +108,7 @@ for (const name of names.filter((file) => /\.ya?ml$/.test(file))) {
       'dev-cd.yml',
       'console-publish.yml',
       'guest-enable.yml',
+      'global-configure.yml',
       'retire-legacy-workspace.yml',
       'recover-dev-api.yml',
     ].includes(name) &&

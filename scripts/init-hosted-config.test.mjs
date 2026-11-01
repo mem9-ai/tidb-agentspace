@@ -33,11 +33,7 @@ test('fresh hosted plans isolate S3 roots and keys, use native SSO and refuse ov
   const publicGlobal = JSON.parse(await readFile(resolve(directory, 'global-api.json')));
   assert.equal(publicGlobal.sharedListener, true);
   assert.equal(publicGlobal.publicPath, '/studio/api/global');
-  assert.equal(
-    publicGlobal.sso.redirectUri,
-    input.publicOrigin + '/studio/api/global/api/auth/tidbcloud/callback',
-  );
-  assert.deepEqual(publicGlobal.sso.ownerSubjects, []);
+  assert.equal(publicGlobal.sso, undefined, 'bundled Portal retains one OIDC callback');
   assert.equal(publicGlobal.localWorkspace, undefined);
   assert.equal(api.security.globalIssuer, input.publicOrigin + '/studio/api/global');
   assert.equal(api.security.initializeClock, false);

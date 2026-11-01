@@ -61,7 +61,18 @@ credential caching and serves its own contract at `/openapi.json`.
 
 ## Owner login and Key operations
 
-Configure `sso` using the existing verified OIDC+PKCE profile, with an exact Global-origin
+The bundled cloud profile uses the existing Portal OIDC+PKCE callback at
+`/studio/api/auth/tidbcloud/callback`. After verifying it and completing Global onboarding,
+the Portal auth application issues separate Global and Region cookies in the same response.
+Global verifies ready Directory membership before issuing its eight-hour session. Its
+HttpOnly, Secure, SameSite=Strict, host-only cookie uses the Portal path so Portal logout can
+revoke and clear both sessions. Regional cookies never authenticate Global and Global cookies
+never authenticate regional data. This in-process auth composition runs only during Portal
+login/logout; data and Token refresh do not call Global. The profile omits Global `sso`, and
+Global login redirects to the existing Portal sign-in. No second callback registration is needed.
+
+For an independently deployed Global that owns its own interactive login, configure `sso`
+using the verified OIDC+PKCE profile, with an exact Global-origin
 `/api/auth/tidbcloud/callback`. Shared-owner allowlists are rejected. Start login through
 `GET /api/auth/tidbcloud/login?workspaceId=...`. A successful callback issues a durable,
 Workspace-bound, host-only, HttpOnly eight-hour `aw_global_owner` cookie only after checking

@@ -155,9 +155,10 @@ an internal TLS 1.3 mTLS control listener in the same deployment. Global mounts 
 `/studio/api/global` on Region’s existing listener; the existing API gateway path forwards
 it without routing data through Global. Global/Region Meta and signing identities stay
 independent. Clock checkpoints need persistent writable storage under `/var/lib/workspace/security`.
-Register both exact OIDC callbacks, including `/studio/api/global/api/auth/tidbcloud/callback`,
-with the identity provider before enabling the profile. Global uses Directory membership,
-not regional legacy owner allowlists.
+Keep the existing registered Portal callback `/studio/api/auth/tidbcloud/callback`.
+One verified login issues separate Global management and Region browser sessions; the
+bundled profile does not configure a second Global OIDC callback. Global checks Directory
+membership and never accepts a regional cookie as its credential. Portal logout revokes both.
 
 For an existing private plan with one Region and a Global Meta role, prepare a new private
 configuration (arguments are absolute paths; the source plan is never overwritten):
@@ -175,6 +176,23 @@ are initialized deliberately on first start; subsequently set `initializeClock:f
 prepared API configs. Back up the private identities/checkpoints; rotate control certificates
 before their one-year expiry. Cloud runs one service; local native tests own independent
 Global outage/Region renewal evidence. No cloud failure test is required.
+
+For the explicitly authorized fresh cloud cutover, the protected, main-only **Configure
+Global on dev** workflow first supports `inspect` without mutation. Its
+`reset-and-enable-global` operation creates a new immutable configuration Secret, fresh
+independent Global/Region Meta roots and encryption keys in the existing configured bucket,
+new signing/control identities, and a private checkpoint PVC. A bounded Job runs the reviewed
+native initializer once and releases storage ownership before a resourceVersion-guarded
+Deployment switch. The serving image, public route, existing Portal SSO callback and provider
+configuration are retained. Steady plans always use `initializeClock:false`; Pod restarts
+reuse the persistent checkpoints. A failed/uncertain initializer never switches the Deployment
+or retries initialization. Inspect the Job privately before recovery; never print Secret data
+or raw credential-bearing configuration/logs. Prior configuration and storage remain retained
+for operator recovery; this workflow never deletes a bucket, unrelated resource, or old Secret.
+This reset needs explicit operator authorization and is not part of ordinary image CD.
+Fresh empty Workspaces atomically initialize their empty resource index with their core
+records, so the first create does not wait on a background backfill. Existing Workspaces
+retain resumable index migration; no existing resource set is marked ready without indexing.
 
 The Token profile preserves the existing GET `/api/health` probe with a loopback Host only
 when the socket peer is actually local. The same Host cannot access data or create an Owner

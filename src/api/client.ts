@@ -393,7 +393,7 @@ async function ownerGlobalClient() {
           params: { header: { Origin: window.location.origin } },
         }),
       );
-    else throw new Error('Sign in at Global to manage keys.');
+    else throw new Error('Sign in to manage API keys.');
   }
   return client;
 }

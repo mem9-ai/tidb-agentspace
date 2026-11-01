@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::{fmt, future::Future, pin::Pin};
+
+pub const RESOURCE_INDEX_SCHEMA: &str = "indexes/resource-v1/schema";
+
+/// Commit only atomically with a brand-new, empty Workspace. Existing Workspaces must
+/// retain their resumable backfill and may never be marked ready by this initializer.
+pub fn initial_resource_index() -> Value {
+    json!({"key":RESOURCE_INDEX_SCHEMA,"expectedVersion":null,"value":{"format":1,"phase":"ready","after":null,"position":0}})
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

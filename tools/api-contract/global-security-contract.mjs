@@ -369,6 +369,8 @@ export function globalSecurityContract() {
     get: {
       operationId: 'startGlobalOwnerLogin',
       security: [],
+      description:
+        'Bundled hosted deployments redirect to the existing Portal login; its single verified callback establishes both separate sessions. Independently configured Global OIDC deployments begin their own registered flow.',
       parameters: [
         { name: 'workspaceId', in: 'query', required: true, schema: string },
         {
@@ -381,7 +383,7 @@ export function globalSecurityContract() {
       responses: {
         303: {
           description:
-            'Redirect to the trusted configured identity provider; opaque host-only flow cookie.',
+            'Redirect to the existing Portal sign-in or the explicitly configured identity provider.',
         },
         default: response(ref('Error')),
       },
@@ -403,7 +405,7 @@ export function globalSecurityContract() {
         default: response(ref('Error')),
       },
       description:
-        'Verified one-use OIDC+PKCE callback. Requires the browser-bound flow cookie; issues an eight-hour, durable, host-only HttpOnly Owner cookie after checking Global Directory membership.',
+        'For independently configured Global OIDC only: verified one-use PKCE callback with browser-bound state and Global Directory membership. Bundled Portal deployments use their existing Portal callback instead and do not register or enable this second callback.',
     },
   };
   mounted['/api/auth/tidbcloud/logout'] = {

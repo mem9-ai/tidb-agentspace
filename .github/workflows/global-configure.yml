@@ -1,0 +1,86 @@
+name: Configure Global on dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Inspect configuration or explicitly reset this installation and enable Global
+        required: true
+        default: inspect
+        type: choice
+        options: [inspect, reset-and-enable-global]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-cd-deploy-target
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Require same-commit full CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: node scripts/require-ci.mjs full "$SOURCE_SHA"
+
+  configure:
+    if: github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: dev
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_ASSUME_ARN: ${{ secrets.AWS_ASSUME_ARN }}
+      EKS_CLUSTER: ${{ secrets.DEV_EKS_CLUSTER }}
+      DEPLOY_NAMESPACE: ${{ secrets.DEV_DEPLOY_NAMESPACE }}
+      K8S_DEPLOYMENT: ${{ secrets.DEV_API_DEPLOYMENT }}
+      K8S_CONTAINER: ${{ secrets.DEV_API_CONTAINER || secrets.DEV_API_DEPLOYMENT }}
+      CUTOVER_OPERATION: ${{ inputs.operation }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Install verified kubectl
+        env:
+          KUBECTL_VERSION: v1.35.8
+          BIN_DIR: ${{ runner.temp }}/bin
+        run: |
+          set -euo pipefail
+          mkdir -p "$BIN_DIR"
+          curl -fsSLO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256" -o kubectl.sha256
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+          install -m 0755 kubectl "$BIN_DIR/kubectl"
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+      - uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
+        with:
+          role-to-assume: ${{ env.AWS_ASSUME_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
+      - name: Configure the single-service Global and Region deployment
+        run: node scripts/cutover-global-cloud.mjs

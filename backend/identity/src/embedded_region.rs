@@ -227,6 +227,7 @@ impl EmbeddedRegion {
                 json!({"key":"state/profile","expectedVersion":null,"value":{"name":"Developer","email":"","role":"Owner"}}),
                 json!({"key":"state/queryCount","expectedVersion":null,"value":0}),
                 json!({"key":"ownership/onboarding","expectedVersion":null,"value":owner}),
+                workspace_contracts::initial_resource_index(),
             ];
             match self
                 .commit(

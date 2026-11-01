@@ -7,6 +7,9 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Accepted decisions
 
+- [0037: Single Portal sign-in](0037-single-portal-login.md) — one existing OIDC callback,
+  distinct Global/Region sessions and joint logout for the bundled cloud deployment.
+
 - [0033: Workspace-owned tutorial progress](0033-workspace-tutorial-progress.md) — durable
   bookmarks, conditional Owner writes, safe browser migration and cross-browser resume.
 

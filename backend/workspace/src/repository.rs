@@ -111,7 +111,9 @@ impl Repository {
                 if !initialize {return Err(error("META_WORKSPACE_MISSING"));}
                 let state=json!({"workspace":{"id":workspace,"name":"My Workspace","description":"","plan":"Free","createdAt":chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis,true)},"profile":{"name":"Local developer","email":"","role":"Local developer"},"resources":[],"keys":[],"files":[],"events":[],"idempotency":{},"resourceQueryCounts":{},"queryCount":0});
                 let records=flatten(&state,&Records::new())?;
-                result.commit(records.into_iter().map(|(key,value)|json!({"key":key,"expectedVersion":null,"value":value})).collect()).await?;
+                let mut changes = records.into_iter().map(|(key,value)|json!({"key":key,"expectedVersion":null,"value":value})).collect::<Vec<_>>();
+                changes.push(workspace_contracts::initial_resource_index());
+                result.commit(changes).await?;
             } else if core["value"]["id"]!=workspace {return Err(error("META_WORKSPACE_MISMATCH"));}
             Ok(())
         }.await;
