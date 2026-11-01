@@ -271,3 +271,9 @@
 .mermaid-preview-error {
   color: var(--ink);
 }
+
+.mermaid-scroll-hint {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 4px 0 0;
+}

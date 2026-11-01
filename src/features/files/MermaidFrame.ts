@@ -61,9 +61,20 @@ window.addEventListener('message', async (event: MessageEvent<unknown>) => {
           node.removeAttribute(attribute.name);
       }
     });
+    const diagram = template.content.querySelector('svg');
+    const width = diagram?.viewBox.baseVal.width;
+    if (diagram && width && Number.isFinite(width)) {
+      diagram.style.setProperty('max-width', 'none', 'important');
+      diagram.style.width = `${Math.min(10000, Math.ceil(width))}px`;
+    }
     document.body.replaceChildren(template.content);
     document.addEventListener('click', (event) => event.preventDefault(), true);
-    const report = () => reply({ type: 'mermaid-height', height: document.body.scrollHeight });
+    const report = () =>
+      reply({
+        type: 'mermaid-height',
+        height: document.body.scrollHeight,
+        overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+      });
     new ResizeObserver(report).observe(document.body);
     report();
     reply({ type: 'mermaid-ready' });

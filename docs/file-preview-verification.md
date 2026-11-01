@@ -104,7 +104,8 @@ This compressed-byte limit is not a decoded pixel or frame budget; revisit with 
 ## Mermaid diagrams
 
 Markdown Mermaid fences and standalone `.mmd`/`.mermaid` files render inside the existing
-file preview. Graphs follow the active light or dark TiUI palette; source stays available
+file preview. Graphs follow the active light or dark TiUI palette and scroll horizontally when
+needed to preserve readable labels; source stays available
 through **View diagram source**, and ordinary file editing and Export remain unchanged.
 Invalid, over-budget, or unsupported embedded-image diagrams explain the fallback.
 

@@ -11,6 +11,7 @@ export default function MermaidDiagram({ source }: { source: string }) {
   const channel = useRef(crypto.randomUUID());
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [height, setHeight] = useState(200);
+  const [overflow, setOverflow] = useState(false);
   const tooLarge = new TextEncoder().encode(source).length > maxDiagramBytes;
   const hasImageNode =
     !tooLarge &&
@@ -44,8 +45,11 @@ export default function MermaidDiagram({ source }: { source: string }) {
         'height' in message &&
         typeof message.height === 'number' &&
         Number.isFinite(message.height)
-      )
+      ) {
         setHeight(Math.min(1200, Math.max(120, message.height)));
+        if ('overflow' in message && typeof message.overflow === 'boolean')
+          setOverflow(message.overflow);
+      }
     };
     window.addEventListener('message', handleMessage);
     handshake();
@@ -73,6 +77,9 @@ export default function MermaidDiagram({ source }: { source: string }) {
           onLoad={handshake}
           style={{ height }}
         />
+      )}
+      {status === 'ready' && overflow && (
+        <p className="mermaid-scroll-hint">Scroll horizontally to see the full diagram.</p>
       )}
       {status === 'loading' && !tooLarge && !hasImageNode && (
         <p role="status">Rendering diagram…</p>

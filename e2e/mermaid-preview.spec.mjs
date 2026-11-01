@@ -58,6 +58,23 @@ test('Markdown Mermaid diagrams render safely and preserve normal file reading',
       (Math.min(textLuminance, nodeLuminance) + 0.05),
   ).toBeGreaterThan(4.5);
   await expect(frame.getByText('Workspace', { exact: true })).toBeVisible();
+  const labelHeight = await frame
+    .getByText('Agent', { exact: true })
+    .evaluate((element) => element.getBoundingClientRect().height);
+  expect(labelHeight).toBeGreaterThanOrEqual(16);
+  if (testInfo.project.name.startsWith('narrow')) {
+    await expect(
+      page.getByText('Scroll horizontally to see the full diagram.').first(),
+    ).toBeVisible();
+    const scroller = frame.locator('html');
+    await scroller.evaluate((element) => {
+      element.scrollLeft = 50;
+    });
+    await expect.poll(() => scroller.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+    await scroller.evaluate((element) => {
+      element.scrollLeft = 0;
+    });
+  }
   await expect(page.locator('pre code.language-sql')).toContainText('SELECT 1');
   if (testInfo.project.name === 'desktop-light') {
     const before = await frame
