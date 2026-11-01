@@ -41,6 +41,12 @@ test(
     assert.equal(info.binarySha256, packaged.binarySha256);
     assert.equal(info.duckdb.version, '2.0.0');
     assert.equal(info.duckdb.linkage, 'static');
+    for (const contract of ['openapi.json', 'global-openapi.json']) {
+      assert.deepEqual(
+        JSON.parse(await readFile(resolve(directory, 'unpack/api', contract), 'utf8')),
+        JSON.parse(await readFile(resolve(root, 'public', contract), 'utf8')),
+      );
+    }
     assert.deepEqual(
       JSON.parse(execFileSync(binary, ['runtime-info'], { encoding: 'utf8' })).duckdb,
       info.duckdb,

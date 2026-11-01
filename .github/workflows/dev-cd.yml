@@ -23,6 +23,7 @@ on:
       - 'scripts/duckdb-runtime.json'
       - 'scripts/prepare-duckdb.mjs'
       - 'public/openapi.json'
+      - 'public/global-openapi.json'
       - 'scripts/deploy-dev*'
       - 'package.json'
       - 'package-lock.json'
