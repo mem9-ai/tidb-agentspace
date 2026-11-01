@@ -87,9 +87,20 @@ test('Guest API key creation explains the Workspace expiry', async ({ page, work
   await page.getByRole('button', { name: 'Create API key', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
   await expect(
-    dialog.getByText('This key expires when your Guest workspace expires.'),
+    dialog.getByText(
+      'This key expires within 24 hours, when you sign out, or when your Guest workspace expires.',
+    ),
   ).toBeVisible();
   await expect(dialog.getByRole('combobox', { name: 'Expiration' })).toHaveCount(0);
+  await dialog.getByLabel('Key name').fill('guest-agent');
+  const start = Math.floor(Date.now() / 1000);
+  await dialog.getByRole('button', { name: 'Create key', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Your key is ready' })).toBeVisible();
+  const creation = workspace.requests.findLast(
+    (request) => request.method === 'POST' && request.path.endsWith('/keys'),
+  );
+  expect(creation.body.expiresAt).toBeGreaterThanOrEqual(start + 86400);
+  expect(creation.body.expiresAt).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 86400);
 });
 
 test('Guest can cancel or confirm sign-out from the workspace navigation', async ({

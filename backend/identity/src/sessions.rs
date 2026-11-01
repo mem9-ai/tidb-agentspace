@@ -153,7 +153,7 @@ impl Sessions {
         Ok(policy)
     }
 
-    /// An authority-local check for Global's explicitly enabled loopback Guest profile.
+    /// An authority-local check for Global's explicitly enabled co-located Guest profile.
     /// No credential is returned; a denied or expired Guest never authorizes issuance.
     pub async fn local_guest_expiry(&self, workspace: &str) -> Result<Option<i64>> {
         let policy = self.policy(workspace).await?;

@@ -26,7 +26,7 @@ export type CreateKeyInput = {
   name: string;
   scopes: string[];
   resourceIds: string[];
-  expiresInDays: 7 | 30 | 90;
+  expiresInDays: 1 | 7 | 30 | 90;
 };
 export type FileAnalysisResult =
   operations['analyzeFile']['responses'][200]['content']['application/json'];

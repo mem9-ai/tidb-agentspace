@@ -453,9 +453,9 @@ impl GlobalServer {
         }
         self
     }
-    /// Explicit single-process development profile; hosted and independent Global never use
-    /// a Region browser credential as a Global Owner credential.
-    pub(crate) fn with_local_guests(
+    /// Share the authenticated Guest session only within the explicitly co-located listener.
+    /// Independent Global services never accept a Region browser credential.
+    pub(crate) fn with_colocated_guests(
         mut self,
         region: &str,
         sessions: Arc<crate::regional_guest::RegionalGuest>,
@@ -465,8 +465,6 @@ impl GlobalServer {
         let config = &self.app.config;
         if config.shared_listener
             && config.bind == regional_bind
-            && config.bind.ip().is_loopback()
-            && config.public_origin.starts_with("http://127.0.0.1:")
             && public_origins.contains(&config.public_origin)
             && config.regions.iter().any(|r| r.region_id == region)
             && let Some(app) = Arc::get_mut(&mut self.app)
