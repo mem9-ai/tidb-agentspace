@@ -20,6 +20,7 @@ if (enabled) {
   // independent of whether probe binaries are already linked on this machine.
   before(
     async () => {
+      await exec('cargo', ['build', '--locked', '-p', 'workspace-backend'], { timeout: 180000 });
       await exec(
         'cargo',
         [
@@ -636,7 +637,8 @@ test(
     await assert.rejects(exec(identityProbe, [globalConfig, '--status', issuer, 'bob']));
     badSignature = false;
     const bob = await login();
-    await globalApiCases(t, fixture, global, alice, bob, ownerFile, settings);
+    global = await globalApiCases(t, fixture, global, alice, bob, ownerFile, settings, region);
+    await writeFile(globalConfig, JSON.stringify(global.clientConfig), { mode: 0o600 });
     assert.notEqual(alice.userId, bob.userId);
     assert.notEqual(alice.organizationId, bob.organizationId);
     assert.notEqual(alice.workspaceId, bob.workspaceId);

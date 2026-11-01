@@ -36,7 +36,7 @@ export function globalSecurityContract() {
       keyId: string,
       principalId: string,
       expiresAt: number,
-      audience: { const: 'global' },
+      audience: string,
       status: { const: 'issued' },
     }),
     Token: object({
@@ -47,6 +47,20 @@ export function globalSecurityContract() {
       scopes: array,
     }),
   };
+  schemas.RegionToken = object({
+    id: string,
+    accessToken: string,
+    tokenType: { const: 'Bearer' },
+    expiresAt: number,
+    scopes: array,
+    keyId: string,
+    principalId: string,
+    keyVersion: number,
+    region: ref('Region'),
+    enrollmentTicket: string,
+    enrollmentExpiresAt: number,
+    nonce: string,
+  });
   const response = (schema, description = 'Successful response') => ({
     description,
     headers: { 'Cache-Control': { schema: { const: 'no-store' } } },
@@ -102,7 +116,11 @@ export function globalSecurityContract() {
       ...extra,
     };
   };
-  const keyData = object({ data: ref('Key'), grants: ref('Grants') });
+  const keyData = object({
+    data: ref('Key'),
+    grants: ref('Grants'),
+    regionalStatus: { enum: ['pending', 'applied'] },
+  });
   add(
     '/keys',
     'get',
@@ -131,7 +149,12 @@ export function globalSecurityContract() {
     'createGlobalKey',
     owner,
     201,
-    object({ data: ref('Key'), secret: string, grants: ref('Grants') }),
+    object({
+      data: ref('Key'),
+      secret: string,
+      grants: ref('Grants'),
+      regionalStatus: { enum: ['pending', 'applied'] },
+    }),
     {
       parameters: [workspace, mutation, origin],
       requestBody: request(
@@ -154,12 +177,12 @@ export function globalSecurityContract() {
     'renewGlobalKey',
     owner,
     200,
-    object({ data: ref('Key'), regionalStatus: { const: 'pending' } }),
+    object({ data: ref('Key'), regionalStatus: { enum: ['pending', 'applied'] } }),
     {
       parameters: [workspace, parameter('keyId'), mutation, condition, origin],
       requestBody: request(object({ expiresAt: number })),
       description:
-        'Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application remains pending in the current public service.',
+        'Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application is reported separately; an unreachable Region remains pending.',
     },
   );
   add(
@@ -168,7 +191,7 @@ export function globalSecurityContract() {
     'revokeGlobalKey',
     owner,
     202,
-    object({ id: string, regionalStatus: { const: 'pending' } }),
+    object({ id: string, regionalStatus: { enum: ['pending', 'applied'] } }),
     { parameters: [workspace, parameter('keyId'), mutation, condition, origin] },
   );
   add(
@@ -177,7 +200,7 @@ export function globalSecurityContract() {
     'rotateGlobalKey',
     owner,
     201,
-    object({ data: ref('Key'), secret: string, regionalStatus: { const: 'pending' } }),
+    object({ data: ref('Key'), secret: string, regionalStatus: { enum: ['pending', 'applied'] } }),
     { parameters: [workspace, parameter('keyId'), mutation, condition, origin] },
   );
   add(
@@ -200,16 +223,26 @@ export function globalSecurityContract() {
         id: string,
         keyId: string,
         keyVersion: number,
-        regionalStatus: { const: 'pending' },
+        regionalStatus: { enum: ['pending', 'applied'] },
       }),
     }),
     { parameters: [workspace, parameter('revocationId')] },
   );
-  add('/token-issuances', 'post', 'createGlobalTokenIssuance', key, 201, ref('Token'), {
-    requestBody: request(object({ audience: { const: 'global' }, scopes: array }, ['audience'])),
-    description:
-      'Exchange the Workspace Key at Global only. Region audience requests return 409 REGION_POLICY_NOT_APPLIED until the matching Region policy is applied; regional token issuance is not shipped in this profile.',
-  });
+  add(
+    '/token-issuances',
+    'post',
+    'createGlobalTokenIssuance',
+    key,
+    201,
+    { oneOf: [ref('Token'), ref('RegionToken')] },
+    {
+      requestBody: request(
+        object({ audience: string, scopes: array, clientThumbprint: string }, ['audience']),
+      ),
+      description:
+        'Exchange the Workspace Key at Global only. Region audience requests require an Ed25519 client JWK thumbprint and matching applied regional policy. The response includes a client-bound enrollment ticket for direct regional refresh enrollment.',
+    },
+  );
   add(
     '/token-issuances/{issuanceId}',
     'get',
@@ -296,7 +329,7 @@ export function globalSecurityContract() {
       title: 'Workspace Global Public API',
       version: '0.1.0',
       description:
-        'Independent Global management authority. Key and Global Token issuance are available. Region policy application and regional refresh endpoints are not yet exposed by this service. All expiry values use Unix seconds. Credentials must never be logged or stored in URLs.',
+        'Independent Global management authority. Key and Global Token issuance are available. Regional data and refresh endpoints are served by Region directly. All expiry values use Unix seconds. Credentials must never be logged or stored in URLs.',
     },
     servers: [{ url: '/' }],
     paths: mounted,

@@ -14,7 +14,10 @@ pub fn validate(config: &Config) -> Result<()> {
         "Invalid public path"
     );
     for origin in &config.public_origins {
-        let url = crate::sso::endpoint(origin, false)?;
+        let url = crate::sso::endpoint(
+            origin,
+            config.insecure_loopback && config.security.is_some(),
+        )?;
         ensure!(
             url.origin().ascii_serialization() == *origin,
             "Public origins must be exact HTTPS origins"
@@ -31,7 +34,12 @@ pub fn validate(config: &Config) -> Result<()> {
     if let Some(sso) = &config.sso {
         sso.validate(&config.public_path, config.insecure_loopback)?;
     }
-    if !config.insecure_loopback || !config.public_origins.is_empty() {
+    if config.security.is_some() {
+        ensure!(
+            !config.public_origins.is_empty(),
+            "Regional Token hosting requires a trusted public origin"
+        );
+    } else if !config.insecure_loopback || !config.public_origins.is_empty() {
         let sso = config
             .sso
             .as_ref()
@@ -74,6 +82,12 @@ pub fn allowed(
             })
         })
     });
+    if config.security.is_some()
+        && !public
+        && !(config.insecure_loopback && host == config.bind.to_string())
+    {
+        return Err(reject(403, "HOST_DENIED"));
+    }
     if !local && !public {
         return Err(reject(403, "LOCAL_ONLY"));
     }

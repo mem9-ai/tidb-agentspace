@@ -36,6 +36,9 @@ struct Claims {
     exp: i64,
     jti: String,
     policy: KeyPolicy,
+    grant: Option<workspace_identity::regional_grants::Grant>,
+    #[serde(default)]
+    ceilings: Vec<workspace_identity::regional_grants::Grant>,
 }
 
 pub struct PolicyTrust {
@@ -121,6 +124,39 @@ impl PolicyCommandSigner {
     /// A retry may issue a fresh short-lived envelope for the same immutable command ID.
     /// Durable command receipts and conflict checks remain the Region's responsibility.
     pub fn sign(&self, policy: &KeyPolicy, command_id: &str, now: i64) -> Result<String> {
+        self.sign_granted(policy, command_id, now, None)
+    }
+    pub fn sign_granted(
+        &self,
+        policy: &KeyPolicy,
+        command_id: &str,
+        now: i64,
+        grant: Option<&workspace_identity::regional_grants::Grant>,
+    ) -> Result<String> {
+        self.sign_full(policy, command_id, now, grant, &[])
+    }
+    pub fn sign_full(
+        &self,
+        policy: &KeyPolicy,
+        command_id: &str,
+        now: i64,
+        grant: Option<&workspace_identity::regional_grants::Grant>,
+        ceilings: &[workspace_identity::regional_grants::Grant],
+    ) -> Result<String> {
+        if ceilings.len() > 1 || !ceilings.is_empty() && grant.is_none() {
+            return Err(ServiceError::new(400, "INVALID_CEILINGS"));
+        }
+        for ceiling in ceilings {
+            ceiling.validate()?;
+            if !ceiling.subset_of(grant.expect("checked grant")) {
+                return Err(ServiceError::new(403, "CEILING_DENIED"));
+            }
+        }
+        if let Some(grant) = grant
+            && (grant.reference()? != policy.grant_ref || grant.region_id != policy.region_id)
+        {
+            return Err(ServiceError::new(400, "GRANT_POLICY_MISMATCH"));
+        }
         let valid_jti = Uuid::parse_str(command_id).is_ok_and(|id| id.to_string() == command_id);
         let valid_key =
             Uuid::parse_str(&policy.key_id).is_ok_and(|id| id.to_string() == policy.key_id);
@@ -149,6 +185,8 @@ impl PolicyCommandSigner {
             exp: expires,
             jti: command_id.into(),
             policy: policy.clone(),
+            grant: grant.cloned(),
+            ceilings: ceilings.to_vec(),
         };
         let mut header = JwtHeader::new(Algorithm::EdDSA);
         header.typ = Some(COMMAND_TYPE.into());
@@ -232,6 +270,18 @@ impl PolicyCommandVerifier {
         Ok(claims)
     }
 
+    pub(crate) fn inspect(
+        &self,
+        command: &str,
+        now: i64,
+    ) -> Result<(
+        KeyPolicy,
+        Option<workspace_identity::regional_grants::Grant>,
+    )> {
+        let claims = self.verify(command, now)?;
+        Ok((claims.policy, claims.grant))
+    }
+
     /// The calling transport must first authenticate Global and its exact deployment identity,
     /// and bind any outer route's Workspace and Region to this signed command. A signed
     /// command alone is not authorization to expose this method publicly.
@@ -242,7 +292,14 @@ impl PolicyCommandVerifier {
         policies: &KeyPolicies,
     ) -> Result<PolicyReceipt> {
         let claims = self.verify(command, now)?;
-        policies.install(&claims.policy, &claims.jti).await?;
+        policies
+            .install_full(
+                &claims.policy,
+                &claims.jti,
+                claims.grant.as_ref(),
+                &claims.ceilings,
+            )
+            .await?;
         Ok(PolicyReceipt {
             command_id: claims.jti,
             workspace_id: claims.policy.workspace_id,

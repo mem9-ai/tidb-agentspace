@@ -27,11 +27,11 @@ it does not recreate resources, recover plaintext or rotate customer credentials
 ## Status and verification
 
 The [independent Global role](../global-public-api.md) now exposes Owner login, Key lifecycle,
-Global Token issuance and authorized Region discovery. Regional Token issuance, policy
-application, local refresh and legacy-Key migration are not yet integrated.
+Global Token issuance and authorized Region discovery. The [regional security profile](../regional-token-api.md) integrates signed policy application,
+Region Token issuance/local refresh, typed data authorization and an origin-bound agent client.
+Same-secret Key-version rebind and fenced legacy-Key migration remain incomplete.
 
 The running prototype has regional Key authorization and limited region-local account sessions.
-The Region token issuance/renewal, policy distribution and migration described here remain
-implementation work. `SEC-01` through `SEC-09` in the detailed design are required
+The remaining continuity transitions and migration described here remain implementation work. `SEC-01` through `SEC-09` in the detailed design are required
 native API evidence; separate implementation changes must update OpenAPI and client contracts.
 No deployment or live credential operation follows from this decision.

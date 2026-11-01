@@ -170,6 +170,12 @@ fn digest_string(value: &str) -> bool {
 }
 
 impl TicketSigner {
+    pub fn from_pkcs8(config: TicketSigningConfig, der: &[u8]) -> Result<Self> {
+        use ed25519_dalek::pkcs8::DecodePrivateKey;
+        let key = SigningKey::from_pkcs8_der(der)
+            .map_err(|_| ServiceError::new(503, "TICKET_SIGNER_INVALID"))?;
+        Self::new(config, &key.to_bytes())
+    }
     pub fn new(config: TicketSigningConfig, seed: &[u8; 32]) -> Result<Self> {
         if config.issuer.is_empty()
             || config.issuer.len() > 512

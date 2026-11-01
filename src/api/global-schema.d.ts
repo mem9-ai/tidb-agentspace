@@ -29,7 +29,7 @@ export interface paths {
     delete: operations['revokeGlobalKey'];
     options?: never;
     head?: never;
-    /** @description Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application remains pending in the current public service. */
+    /** @description Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application is reported separately; an unreachable Region remains pending. */
     patch: operations['renewGlobalKey'];
     trace?: never;
   };
@@ -90,7 +90,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** @description Exchange the Workspace Key at Global only. Region audience requests return 409 REGION_POLICY_NOT_APPLIED until the matching Region policy is applied; regional token issuance is not shipped in this profile. */
+    /** @description Exchange the Workspace Key at Global only. Region audience requests require an Ed25519 client JWK thumbprint and matching applied regional policy. The response includes a client-bound enrollment ticket for direct regional refresh enrollment. */
     post: operations['createGlobalTokenIssuance'];
     delete?: never;
     options?: never;
@@ -233,8 +233,7 @@ export interface components {
       keyId: string;
       principalId: string;
       expiresAt: number;
-      /** @constant */
-      audience: 'global';
+      audience: string;
       /** @constant */
       status: 'issued';
     };
@@ -245,6 +244,21 @@ export interface components {
       tokenType: 'Bearer';
       expiresAt: number;
       scopes: string[];
+    };
+    RegionToken: {
+      id: string;
+      accessToken: string;
+      /** @constant */
+      tokenType: 'Bearer';
+      expiresAt: number;
+      scopes: string[];
+      keyId: string;
+      principalId: string;
+      keyVersion: number;
+      region: components['schemas']['Region'];
+      enrollmentTicket: string;
+      enrollmentExpiresAt: number;
+      nonce: string;
     };
   };
   responses: never;
@@ -329,6 +343,8 @@ export interface operations {
             data: components['schemas']['Key'];
             secret: string;
             grants: components['schemas']['Grants'];
+            /** @enum {unknown} */
+            regionalStatus: 'pending' | 'applied';
           };
         };
       };
@@ -366,6 +382,8 @@ export interface operations {
           'application/json': {
             data: components['schemas']['Key'];
             grants: components['schemas']['Grants'];
+            /** @enum {unknown} */
+            regionalStatus: 'pending' | 'applied';
           };
         };
       };
@@ -409,8 +427,8 @@ export interface operations {
         content: {
           'application/json': {
             id: string;
-            /** @constant */
-            regionalStatus: 'pending';
+            /** @enum {unknown} */
+            regionalStatus: 'pending' | 'applied';
           };
         };
       };
@@ -460,8 +478,8 @@ export interface operations {
         content: {
           'application/json': {
             data: components['schemas']['Key'];
-            /** @constant */
-            regionalStatus: 'pending';
+            /** @enum {unknown} */
+            regionalStatus: 'pending' | 'applied';
           };
         };
       };
@@ -506,8 +524,8 @@ export interface operations {
           'application/json': {
             data: components['schemas']['Key'];
             secret: string;
-            /** @constant */
-            regionalStatus: 'pending';
+            /** @enum {unknown} */
+            regionalStatus: 'pending' | 'applied';
           };
         };
       };
@@ -584,8 +602,8 @@ export interface operations {
               id: string;
               keyId: string;
               keyVersion: number;
-              /** @constant */
-              regionalStatus: 'pending';
+              /** @enum {unknown} */
+              regionalStatus: 'pending' | 'applied';
             };
           };
         };
@@ -614,9 +632,9 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': {
-          /** @constant */
-          audience: 'global';
+          audience: string;
           scopes?: string[];
+          clientThumbprint?: string;
         };
       };
     };
@@ -628,7 +646,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['Token'];
+          'application/json': components['schemas']['Token'] | components['schemas']['RegionToken'];
         };
       };
       /** @description Structured denial or unknown outcome; no credential is echoed. */

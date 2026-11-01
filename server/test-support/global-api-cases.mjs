@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { port, until } from './meta-fixture.mjs';
 import Ajv2020 from 'ajv/dist/2020.js';
+import { regionSecurityCases } from './region-security-cases.mjs';
 import {
   createGlobalApiClient,
   exchangeGlobalKey,
@@ -17,7 +18,16 @@ const contract = JSON.parse(
 const ajv = new Ajv2020({ strict: false, validateFormats: false });
 
 // Uses an Owner session issued by the real verified OIDC fixture, not a local-owner bypass.
-export async function globalApiCases(t, fixture, metadata, alice, bob, ownerFile, ssoSettings) {
+export async function globalApiCases(
+  t,
+  fixture,
+  metadata,
+  alice,
+  bob,
+  ownerFile,
+  ssoSettings,
+  regionMetadata,
+) {
   const listen = await port();
   const origin = `http://127.0.0.1:${listen}`;
   const configFile = resolve(fixture.directory, 'global-api.json');
@@ -310,5 +320,43 @@ export async function globalApiCases(t, fixture, metadata, alice, bob, ownerFile
     ).status,
     401,
   );
+  let metadataOwner;
+  const preserved = await regionSecurityCases(t, fixture, regionMetadata, alice.workspaceId, {
+    origin,
+    publicFile,
+    request,
+    configure: async (regionOrigin, controlOrigin, tls) => {
+      await stop();
+      config.regions[0].apiOrigin = regionOrigin;
+      config.regionControls = [
+        { regionId: regionMetadata.server.authorityId, origin: controlOrigin, tls },
+      ];
+      await writeFile(configFile, JSON.stringify(config), { mode: 0o600 });
+      await start();
+    },
+    crash: async () => {
+      child.kill('SIGKILL');
+      await exited;
+      assert.equal(child.signalCode, 'SIGKILL');
+      metadataOwner = (await metadata.client.health()).ownerId;
+      await metadata.stop('SIGKILL');
+      metadata.client.close();
+    },
+  });
+  metadata = await fixture.service('restored-global', {
+    previous: metadata,
+    recoverOwner: metadataOwner,
+  });
+  config.metadata.client = metadata.clientConfig;
+  await writeFile(configFile, JSON.stringify(config), { mode: 0o600 });
+  await start();
+  const recovered = await request('/token-issuances', {
+    method: 'POST',
+    token: preserved.secret,
+    body: { audience: 'global' },
+  });
+  assert.equal(recovered.status, 201);
+  assert.equal((await request('/keys/' + preserved.keyId)).body.data.grantRef, preserved.grantRef);
   await stop();
+  return metadata;
 }

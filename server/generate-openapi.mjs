@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { extendRegionalSecurityContract } from '../tools/api-contract/regional-security-contract.mjs';
 import { globalSecurityContract } from '../tools/api-contract/global-security-contract.mjs';
 import { format, resolveConfig } from 'prettier';
 import { analysisLimits } from '../tools/api-contract/analysis-limits.mjs';
@@ -1475,6 +1476,7 @@ const spec = {
     schemas,
   },
 };
+extendRegionalSecurityContract(spec);
 const target = new URL('../public/openapi.json', import.meta.url);
 const rendered = await format(JSON.stringify(spec), {
   ...(await resolveConfig(fileURLToPath(target))),

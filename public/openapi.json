@@ -21,7 +21,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "responses": {
           "200": {
@@ -145,7 +146,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "responses": {
           "200": {
@@ -853,7 +855,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "responses": {
           "200": {
@@ -976,7 +979,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "parameters": [
           {
@@ -1145,7 +1149,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "parameters": [
           { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
@@ -1336,7 +1341,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "parameters": [
           { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
@@ -1549,7 +1555,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "requestBody": {
           "required": true,
@@ -1761,7 +1768,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "parameters": [
           { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
@@ -1889,7 +1897,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "requestBody": {
           "required": true,
@@ -2058,7 +2067,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "parameters": [
           { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
@@ -2195,7 +2205,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "parameters": [
           { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
@@ -2273,7 +2284,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "parameters": [
           { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
@@ -2442,7 +2454,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "parameters": [
           {
@@ -2574,7 +2587,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "parameters": [
           { "name": "cursor", "in": "query", "schema": { "type": "string", "format": "uuid" } },
@@ -2729,7 +2743,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "responses": {
           "200": {
@@ -2863,7 +2878,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "responses": {
           "200": {
@@ -2991,7 +3007,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "parameters": [
           {
@@ -3128,7 +3145,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "parameters": [
           {
@@ -3249,7 +3267,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "parameters": [
           {
@@ -3423,7 +3442,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "requestBody": {
           "required": true,
@@ -3558,7 +3578,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "requestBody": {
           "required": true,
@@ -3699,7 +3720,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "requestBody": {
           "required": true,
@@ -3832,7 +3854,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "requestBody": {
           "required": true,
@@ -3973,7 +3996,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "requestBody": {
           "required": true,
@@ -4147,7 +4171,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "responses": {
           "200": {
@@ -4284,7 +4309,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "responses": {
           "200": {
@@ -5151,7 +5177,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "parameters": [
           { "name": "resourceId", "in": "query", "required": true, "schema": { "type": "string" } },
@@ -5314,7 +5341,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "responses": {
           "200": {
@@ -5522,7 +5550,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "responses": {
           "200": {
@@ -5639,7 +5668,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "responses": {
           "200": {
@@ -5949,7 +5979,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "responses": {
           "200": {
@@ -6060,7 +6091,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "responses": {
           "204": {
@@ -6190,7 +6222,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "responses": {
           "200": {
@@ -6301,7 +6334,8 @@
           { "workspaceKey": [] },
           { "localOwner": [] },
           { "accountOwner": [] },
-          { "guestOwner": [] }
+          { "guestOwner": [] },
+          { "regionalAccess": [] }
         ],
         "responses": {
           "204": {
@@ -6399,6 +6433,218 @@
           }
         }
       }
+    },
+    "/workspaces/{workspaceId}/refresh-families": {
+      "post": {
+        "operationId": "enrollRegionalRefreshFamily",
+        "tags": ["Region security"],
+        "security": [],
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "string" } },
+          {
+            "name": "DPoP",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Ed25519 proof bound to POST, exact configured URI, server nonce, client thumbprint and fresh unique jti."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful regional response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RegionalEnrollment" }
+              }
+            }
+          },
+          "default": {
+            "description": "Successful regional response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        },
+        "description": "Available on a Region listener configured with the regional security profile. Direct regional operation; no Global callback. Uncertain credential-producing outcomes are not automatically retried.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["ticket"],
+                "properties": { "ticket": { "type": "string" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/token-issuances": {
+      "post": {
+        "operationId": "issueRegionalToken",
+        "tags": ["Region security"],
+        "security": [{ "regionalRefresh": [] }],
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "string" } },
+          {
+            "name": "DPoP",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Ed25519 proof bound to POST, exact configured URI, server nonce, client thumbprint and fresh unique jti."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful regional response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/RegionalToken" } }
+            }
+          },
+          "default": {
+            "description": "Successful regional response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        },
+        "description": "Available on a Region listener configured with the regional security profile. Direct regional operation; no Global callback. Uncertain credential-producing outcomes are not automatically retried.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["keyId"],
+                "properties": { "keyId": { "type": "string" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/refresh-families/{familyId}": {
+      "get": {
+        "operationId": "getRegionalRefreshFamily",
+        "tags": ["Region security"],
+        "security": [{ "regionalAccess": [] }],
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "familyId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful regional response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["data"],
+                  "properties": { "data": { "$ref": "#/components/schemas/RegionalFamily" } }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Successful regional response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        },
+        "description": "Available on a Region listener configured with the regional security profile. Direct regional operation; no Global callback. Uncertain credential-producing outcomes are not automatically retried."
+      },
+      "delete": {
+        "operationId": "revokeRegionalRefreshFamily",
+        "tags": ["Region security"],
+        "security": [{ "regionalAccess": [] }],
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "familyId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": {
+            "description": "Durably denied and local in-flight authorization leases fenced."
+          },
+          "default": {
+            "description": "Successful regional response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        },
+        "description": "Available on a Region listener configured with the regional security profile. Direct regional operation; no Global callback. Uncertain credential-producing outcomes are not automatically retried."
+      }
+    },
+    "/workspaces/{workspaceId}/token-issuances/{issuanceId}": {
+      "get": {
+        "operationId": "getRegionalTokenIssuance",
+        "tags": ["Region security"],
+        "security": [{ "regionalAccess": [] }],
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "issuanceId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful regional response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["data"],
+                  "properties": { "data": { "$ref": "#/components/schemas/RegionalIssuance" } }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Successful regional response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        },
+        "description": "Available on a Region listener configured with the regional security profile. Direct regional operation; no Global callback. Uncertain credential-producing outcomes are not automatically retried."
+      }
+    },
+    "/workspaces/{workspaceId}/access-tokens/{tokenId}": {
+      "delete": {
+        "operationId": "revokeRegionalAccessToken",
+        "tags": ["Region security"],
+        "security": [{ "regionalAccess": [] }],
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "tokenId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": {
+            "description": "Durably denied and local in-flight authorization leases fenced."
+          },
+          "default": {
+            "description": "Successful regional response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        },
+        "description": "Locally deny the authenticated access token itself until its original expiry. An arbitrary ID is not authorization."
+      }
     }
   },
   "components": {
@@ -6425,6 +6671,18 @@
         "in": "cookie",
         "name": "aw_guest",
         "description": "Opaque regional Guest Owner session issued by POST /api/auth/guest when enabled. Host-only, HttpOnly, Secure, SameSite=Strict, Workspace-bound and subject to its absolute Guest expiry. Guest logout revokes access and schedules scoped cleanup. Never grants access to an account or another Guest Workspace."
+      },
+      "regionalAccess": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Region JWT",
+        "description": "Audience-bound regional access. Checked against Region-local Key, grant, family, denial and policy checkpoints; never introspected at Global."
+      },
+      "regionalRefresh": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "Refresh <credential>, bound to the enrolled client key and rotating nonce. Requires DPoP proof. Never sent to Global."
       }
     },
     "schemas": {
@@ -7245,6 +7503,81 @@
             "description": "Strong opaque ETag, including quotes. Send unchanged in If-Match."
           },
           "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "RegionalEnrollment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["keyId", "familyId", "refreshCredential", "nonce", "expiresAt"],
+        "properties": {
+          "keyId": { "type": "string" },
+          "familyId": { "type": "string" },
+          "refreshCredential": { "type": "string" },
+          "nonce": { "type": "string" },
+          "expiresAt": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "RegionalToken": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "accessToken",
+          "tokenType",
+          "expiresAt",
+          "refreshCredential",
+          "refreshExpiresAt",
+          "nonce",
+          "familyId",
+          "keyId",
+          "scopes"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "accessToken": { "type": "string" },
+          "tokenType": { "const": "Bearer" },
+          "expiresAt": { "type": "integer", "minimum": 1 },
+          "refreshCredential": { "type": "string" },
+          "refreshExpiresAt": { "type": "integer", "minimum": 1 },
+          "nonce": { "type": "string" },
+          "familyId": { "type": "string" },
+          "keyId": { "type": "string" },
+          "scopes": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "RegionalFamily": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "keyId",
+          "keyVersion",
+          "generation",
+          "securityEpoch",
+          "expiresAt",
+          "revoked"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "keyId": { "type": "string" },
+          "keyVersion": { "type": "integer", "minimum": 1 },
+          "generation": { "type": "integer", "minimum": 1 },
+          "securityEpoch": { "type": "integer", "minimum": 1 },
+          "expiresAt": { "type": "integer", "minimum": 1 },
+          "revoked": { "type": "boolean" }
+        }
+      },
+      "RegionalIssuance": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "keyId", "familyId", "principalId", "expiresAt", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "keyId": { "type": "string" },
+          "familyId": { "type": "string" },
+          "principalId": { "type": "string" },
+          "expiresAt": { "type": "integer", "minimum": 1 },
+          "status": { "const": "issued" }
         }
       }
     }

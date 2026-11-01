@@ -132,6 +132,11 @@ impl Plan {
                     {
                         bail!("Workspace authority or listener is duplicated");
                     }
+                    if let Some(security) = &config.security
+                        && !binds.insert(security.control.bind)
+                    {
+                        bail!("Region control listener is duplicated");
+                    }
                     result.workspaces.push(config);
                 }
             }

@@ -17,6 +17,16 @@ pub enum Credential {
         revoked: std::sync::Arc<std::sync::atomic::AtomicBool>,
     },
     Bearer(String),
+    Scoped(std::sync::Arc<dyn ScopedAuthorization>),
+}
+/// Implemented only by the trusted regional authenticator. A request keeps its policy read
+/// lease alive; control activation/revocation drains such leases before acknowledging apply.
+pub trait ScopedAuthorization: Send + Sync {
+    fn workspace_id(&self) -> &str;
+    fn snapshot(&self) -> Result<Principal>;
+    fn check(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Principal>> + Send + '_>>;
 }
 impl Credential {
     pub fn revoke(&self) {
@@ -127,6 +137,15 @@ impl Principal {
     }
 }
 pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
+    if let Credential::Scoped(authorization) = credential {
+        let principal = authorization.snapshot()?;
+        if principal.owner
+            || state["workspace"]["id"].as_str() != Some(authorization.workspace_id())
+        {
+            return Err(reject(401, "INVALID_CREDENTIAL"));
+        }
+        return Ok(principal);
+    }
     if let Credential::Bearer(token) = credential {
         let digest = hex::encode(Sha256::digest(token.as_bytes()));
         let key = state["keys"]
@@ -193,7 +212,7 @@ impl Workspace {
                     policy_generation: Some(value),
                     ..
                 } if id == &owner && *value == generation => {}
-                Credential::Bearer(_) => {}
+                Credential::Bearer(_) | Credential::Scoped(_) => {}
                 _ => return Err(reject(401, "UNAUTHENTICATED")),
             }
         }
@@ -207,6 +226,14 @@ impl Workspace {
                 credential,
             ),
             Credential::Bearer(token) => self.repository.authenticate_key(token).await,
+            Credential::Scoped(authorization) => {
+                let principal = authorization.check().await?;
+                if principal.owner || authorization.workspace_id() != self.repository.workspace_id()
+                {
+                    return Err(reject(401, "INVALID_CREDENTIAL"));
+                }
+                Ok(principal)
+            }
         }
     }
     pub fn repository(&self) -> std::sync::Arc<Repository> {
@@ -233,6 +260,9 @@ impl Workspace {
     }
     pub async fn call(&self, credential: Credential, operation: Operation) -> Result<Response> {
         self.authorize_managed(&credential).await?;
+        if matches!(credential, Credential::Scoped(_)) {
+            self.authenticate(&credential).await?;
+        }
         self.repository
             .transaction(move |state| execute_operation(state, credential, operation))
             .await
@@ -247,8 +277,8 @@ fn execute_operation(
     let owner = owner_principal.owner;
     let mut dirty = false;
     let mut actor = owner_principal.actor;
-    let mut scopes = vec!["*".to_owned()];
-    let mut resources = vec!["*".to_owned()];
+    let mut scopes = owner_principal.scopes;
+    let mut resources = owner_principal.resource_ids;
     if let Credential::Bearer(token) = credential {
         let digest = hex::encode(Sha256::digest(token.as_bytes()));
         let keys = state["keys"]
@@ -431,6 +461,61 @@ fn filtered_events(state: &Value, owner: bool, resources: &[String]) -> Vec<Valu
 #[cfg(test)]
 mod tests {
     use super::*;
+    struct ScopedFixture {
+        owner: bool,
+    }
+    impl ScopedAuthorization for ScopedFixture {
+        fn workspace_id(&self) -> &str {
+            "ws_scoped"
+        }
+        fn snapshot(&self) -> Result<Principal> {
+            Ok(Principal {
+                owner: self.owner,
+                id: "principal".into(),
+                actor: "Scoped agent".into(),
+                scopes: vec!["files:read".into()],
+                resource_ids: vec!["fs1".into()],
+                expires_at: None,
+            })
+        }
+        fn check(
+            &self,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Principal>> + Send + '_>>
+        {
+            Box::pin(async { self.snapshot() })
+        }
+    }
+    #[test]
+    fn scoped_authorization_cannot_become_owner_or_default_to_wildcard_grants() {
+        let credential = Credential::Scoped(std::sync::Arc::new(ScopedFixture { owner: false }));
+        let mut state = json!({"workspace":{"id":"ws_scoped"}});
+        let principal = principal(&state, &credential).unwrap();
+        assert!(!principal.owner);
+        assert!(principal.has("fs1"));
+        assert!(!principal.has("other"));
+        assert_eq!(
+            execute_operation(&mut state, credential.clone(), Operation::ListKeys)
+                .err()
+                .unwrap()
+                .code,
+            "OWNER_REQUIRED"
+        );
+        assert_eq!(
+            execute_operation(&mut state, credential.clone(), Operation::GetWorkspace)
+                .err()
+                .unwrap()
+                .code,
+            "INSUFFICIENT_SCOPE"
+        );
+        assert!(super::principal(&json!({"workspace":{"id":"another"}}), &credential).is_err());
+        assert!(
+            super::principal(
+                &state,
+                &Credential::Scoped(std::sync::Arc::new(ScopedFixture { owner: true }))
+            )
+            .is_err()
+        );
+    }
     #[test]
     fn corrupt_expiry_and_revocation_fail_closed() {
         for expiry in [

@@ -73,6 +73,10 @@ fn validate(policy: &KeyPolicy, authority: &str) -> Result<()> {
 }
 
 impl KeyPolicies {
+    pub(crate) fn metadata_port(&self) -> &Arc<dyn Metadata> {
+        &self.metadata
+    }
+
     pub async fn open(metadata: Arc<dyn Metadata>, authority: &str) -> Result<Self> {
         let health = metadata.health().await?;
         if !valid_region(authority)
@@ -130,9 +134,48 @@ impl KeyPolicies {
         Ok(Some((policy, version.clone())))
     }
 
+    pub async fn current(&self, workspace: &str, key: &str) -> Result<KeyPolicy> {
+        self.read(&self.scope(workspace, key)?)
+            .await?
+            .map(|(policy, _)| policy)
+            .ok_or_else(|| error(401, "INVALID_CREDENTIAL"))
+    }
+
     /// Install only after authenticating Global and validating the signed command and placement.
     /// A missing generation cannot be skipped; a revoked Key cannot be reactivated.
     pub async fn install(&self, policy: &KeyPolicy, command_id: &str) -> Result<()> {
+        self.install_granted(policy, command_id, None).await
+    }
+
+    pub async fn install_granted(
+        &self,
+        policy: &KeyPolicy,
+        command_id: &str,
+        grant: Option<&crate::regional_grants::Grant>,
+    ) -> Result<()> {
+        self.install_full(policy, command_id, grant, &[]).await
+    }
+    pub async fn install_full(
+        &self,
+        policy: &KeyPolicy,
+        command_id: &str,
+        grant: Option<&crate::regional_grants::Grant>,
+        ceilings: &[crate::regional_grants::Grant],
+    ) -> Result<()> {
+        if ceilings.len() > 1 || !ceilings.is_empty() && grant.is_none() {
+            return Err(error(400, "INVALID_CEILINGS"));
+        }
+        for ceiling in ceilings {
+            ceiling.validate()?;
+            if !ceiling.subset_of(grant.expect("checked grant")) {
+                return Err(error(403, "CEILING_DENIED"));
+            }
+        }
+        if let Some(grant) = grant
+            && (grant.reference()? != policy.grant_ref || grant.region_id != policy.region_id)
+        {
+            return Err(error(400, "GRANT_POLICY_MISMATCH"));
+        }
         validate(policy, &self.authority)?;
         if !uuid(command_id) {
             return Err(error(400, "INVALID_COMMAND"));
@@ -140,7 +183,15 @@ impl KeyPolicies {
         let scope = self.scope(&policy.workspace_id, &policy.key_id)?;
         let command_key = format!("commands/{command_id}");
         let fingerprint = hex::encode(Sha256::digest(
-            serde_json::to_vec(policy).map_err(|_| error(503, "KEY_POLICY_CORRUPT"))?,
+            if !ceilings.is_empty() {
+                serde_json::to_vec(&json!([policy, grant, ceilings]))
+            } else {
+                match grant {
+                    Some(grant) => serde_json::to_vec(&json!([policy, grant])),
+                    None => serde_json::to_vec(policy),
+                }
+            }
+            .map_err(|_| error(503, "KEY_POLICY_CORRUPT"))?,
         ));
         for _ in 0..8 {
             let commands = self
@@ -165,6 +216,7 @@ impl KeyPolicies {
             let expected = match prior {
                 None if policy.policy_generation == 1 && policy.key_version == 1 => Value::Null,
                 None => return Err(error(409, "KEY_POLICY_GAP")),
+                Some((old, version)) if &old == policy => version,
                 Some((old, version)) => {
                     if old.principal_id != policy.principal_id || (old.revoked && !policy.revoked) {
                         return Err(error(409, "KEY_POLICY_OWNER_OR_REVOKE_MISMATCH"));
@@ -177,16 +229,37 @@ impl KeyPolicies {
                     version
                 }
             };
+            let mut changes = vec![
+                json!({"key":"policy","expectedVersion":expected,"value":policy}),
+                json!({"key":command_key,"expectedVersion":null,"value":{"fingerprint":fingerprint}}),
+            ];
+            let mut snapshots = std::collections::BTreeMap::new();
+            for value in grant.into_iter().chain(ceilings.iter()) {
+                snapshots.insert(value.reference()?, value);
+            }
+            for (reference, grant) in snapshots {
+                let path = format!("grants/{reference}");
+                let prior = self
+                    .metadata
+                    .execute(MetaRequest::Get {
+                        scope: scope.clone(),
+                        guard: None,
+                        keys: vec![path.clone()],
+                    })
+                    .await?;
+                let record = &prior["records"][&path];
+                if !record.is_null() && record["value"] != json!(grant) {
+                    return Err(error(409, "GRANT_IMMUTABLE_CONFLICT"));
+                }
+                changes.push(json!({"key":path,"expectedVersion":record.get("version").cloned().unwrap_or(Value::Null),"value":grant}));
+            }
             let result = self
                 .metadata
                 .execute(MetaRequest::Commit {
                     scope: scope.clone(),
                     guard: None,
                     mutation_id: command_id.into(),
-                    changes: vec![
-                        json!({"key":"policy","expectedVersion":expected,"value":policy}),
-                        json!({"key":command_key,"expectedVersion":null,"value":{"fingerprint":fingerprint}}),
-                    ],
+                    changes,
                 })
                 .await;
             match result {

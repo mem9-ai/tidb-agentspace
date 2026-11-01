@@ -23,8 +23,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
+    future::Future,
     net::SocketAddr,
     path::{Path, PathBuf},
+    pin::Pin,
     sync::Arc,
     time::Duration,
 };
@@ -42,7 +44,8 @@ pub trait TrustedRegionalClock: Send + Sync {
     fn now(&self) -> workspace_contracts::Result<i64>;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ServerTls {
     pub bind: SocketAddr,
     pub certificate_file: PathBuf,
@@ -106,12 +109,23 @@ fn certificates(path: &Path) -> Result<Vec<CertificateDer<'static>>> {
     Ok(values)
 }
 
+/// A Region application boundary drains local request leases, validates concrete ownership,
+/// stores the signed policy and its security checkpoint before acknowledging application.
+pub trait PolicyInstaller: Send + Sync {
+    fn apply<'a>(
+        &'a self,
+        command: &'a str,
+        now: i64,
+    ) -> Pin<Box<dyn Future<Output = workspace_contracts::Result<PolicyReceipt>> + Send + 'a>>;
+}
+
 #[derive(Clone)]
 struct StateData {
     verifier: Arc<PolicyCommandVerifier>,
     policies: Arc<KeyPolicies>,
     clock: Arc<dyn TrustedRegionalClock>,
     capacity: Arc<Semaphore>,
+    installer: Option<Arc<dyn PolicyInstaller>>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -146,17 +160,23 @@ async fn receive(
     };
     let result = match state.clock.now() {
         Ok(now) => {
-            state
-                .verifier
-                .apply(&body.command, now, &state.policies)
-                .await
+            if let Some(installer) = &state.installer {
+                installer.apply(&body.command, now).await
+            } else {
+                state
+                    .verifier
+                    .apply(&body.command, now, &state.policies)
+                    .await
+            }
         }
         Err(e) => Err(e),
     };
     match result {
         Ok(receipt) => (
             StatusCode::ACCEPTED,
-            Json(serde_json::json!({"status":"stored","receipt":receipt})),
+            Json(
+                serde_json::json!({"status":if state.installer.is_some(){"applied"}else{"stored"},"receipt":receipt}),
+            ),
         ),
         Err(e) => {
             let (status, code) = match e.status {
@@ -228,8 +248,14 @@ impl PolicyControlServer {
                 policies,
                 clock,
                 capacity: Arc::new(Semaphore::new(8)),
+                installer: None,
             },
         })
+    }
+
+    pub fn with_installer(mut self, installer: Arc<dyn PolicyInstaller>) -> Self {
+        self.state.installer = Some(installer);
+        self
     }
 
     pub async fn serve(
@@ -258,7 +284,8 @@ impl PolicyControlServer {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClientTls {
     pub ca_file: PathBuf,
     pub certificate_file: PathBuf,
@@ -329,6 +356,21 @@ impl PolicyControlClient {
         command: &str,
         expected: &PolicyReceipt,
     ) -> workspace_contracts::Result<PolicyReceipt> {
+        self.send(command, expected, "stored").await
+    }
+    pub async fn apply(
+        &self,
+        command: &str,
+        expected: &PolicyReceipt,
+    ) -> workspace_contracts::Result<PolicyReceipt> {
+        self.send(command, expected, "applied").await
+    }
+    async fn send(
+        &self,
+        command: &str,
+        expected: &PolicyReceipt,
+        status: &str,
+    ) -> workspace_contracts::Result<PolicyReceipt> {
         if command.is_empty() || command.len() > 16 * 1024 || expected.region_id != self.region_id {
             return Err(ServiceError::new(400, "INVALID_POLICY_COMMAND"));
         }
@@ -353,7 +395,7 @@ impl PolicyControlClient {
             bytes.extend_from_slice(&chunk);
         }
         let value: StoredResponse = serde_json::from_slice(&bytes).map_err(|_| uncertain())?;
-        if value.status != "stored" || &value.receipt != expected {
+        if value.status != status || &value.receipt != expected {
             return Err(uncertain());
         }
         Ok(value.receipt)

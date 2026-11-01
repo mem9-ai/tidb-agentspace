@@ -60,6 +60,8 @@ pub struct Config {
     pub initialize_clock: bool,
     pub regions: Vec<RegionDescriptor>,
     pub sso: Option<sso::Config>,
+    #[serde(default)]
+    pub region_controls: Vec<RegionControlConfig>,
 }
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
@@ -135,13 +137,29 @@ impl Config {
         Ok(())
     }
 }
-#[derive(Clone, Serialize, Deserialize)]
+use crate::{
+    policy_command::{PolicyCommandSigner, PolicyReceipt, PolicySignerConfig},
+    policy_transport::{ClientTls, PolicyControlClient},
+};
+use workspace_identity::regional_grants::Grant;
+use workspace_identity::{
+    enrollment_ticket::{TicketIssuance, TicketSigner, TicketSigningConfig},
+    regional_key_policy::KeyPolicy,
+};
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Grant {
-    scopes: Vec<String>,
-    resource_ids: Vec<String>,
-    region_id: String,
+pub struct RegionControlConfig {
+    pub region_id: String,
+    pub origin: String,
+    pub tls: ClientTls,
 }
+struct RegionIssuer {
+    control: PolicyControlClient,
+    policies: PolicyCommandSigner,
+    access: AccessSigner,
+    tickets: TicketSigner,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateKey {
@@ -154,6 +172,7 @@ struct CreateKey {
 struct TokenInput {
     audience: String,
     scopes: Option<Vec<String>>,
+    client_thumbprint: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -171,6 +190,7 @@ struct App {
     sso: Option<sso::Runtime>,
     flows: Mutex<BTreeMap<String, (String, Instant)>>,
     capacity: Semaphore,
+    regional: BTreeMap<String, RegionIssuer>,
 }
 pub struct GlobalServer {
     listener: TcpListener,
@@ -295,6 +315,59 @@ impl GlobalServer {
             now,
         )?;
         verifier.verify(&probe.token, now)?;
+        let mut regional = BTreeMap::new();
+        for control in &config.region_controls {
+            ensure!(
+                config
+                    .regions
+                    .iter()
+                    .any(|r| r.region_id == control.region_id)
+                    && !regional.contains_key(&control.region_id),
+                "Invalid Region control selection"
+            );
+            regional.insert(
+                control.region_id.clone(),
+                RegionIssuer {
+                    control: PolicyControlClient::new(
+                        &control.origin,
+                        &control.region_id,
+                        control.tls.clone(),
+                    )?,
+                    policies: PolicyCommandSigner::new(
+                        PolicySignerConfig {
+                            issuer: config.public_origin.clone(),
+                            audience: format!("{}/control", control.region_id),
+                            environment: config.environment.clone(),
+                            region_id: control.region_id.clone(),
+                            key_id: config.signer_id.clone(),
+                        },
+                        &key,
+                    )?,
+                    access: AccessSigner::new(
+                        SigningConfig {
+                            issuer: config.public_origin.clone(),
+                            audience: format!("{}/audience", control.region_id),
+                            environment: config.environment.clone(),
+                            region: Some(control.region_id.clone()),
+                            key_id: config.signer_id.clone(),
+                            max_lifetime: 900,
+                            issuer_kind: IssuerKind::Global,
+                        },
+                        &key,
+                    )?,
+                    tickets: TicketSigner::from_pkcs8(
+                        TicketSigningConfig {
+                            issuer: config.public_origin.clone(),
+                            audience: format!("{}/enrollment", control.region_id),
+                            environment: config.environment.clone(),
+                            region_id: control.region_id.clone(),
+                            key_id: config.signer_id.clone(),
+                        },
+                        &key,
+                    )?,
+                },
+            );
+        }
         let clock = Clock::open(&config.clock_directory, config.initialize_clock)?;
         clock.now()?;
         let owners = OwnerSessions::open(metadata.clone()).await?;
@@ -314,6 +387,7 @@ impl GlobalServer {
                 sso,
                 flows: Mutex::new(BTreeMap::new()),
                 capacity: Semaphore::new(16),
+                regional,
             }),
         })
     }
@@ -345,6 +419,86 @@ fn hex_bytes(s: &str) -> Result<[u8; 32]> {
     Ok(key)
 }
 impl App {
+    async fn deliver(
+        &self,
+        view: &KeyView,
+        ceiling: Option<&Grant>,
+    ) -> workspace_contracts::Result<()> {
+        let grant = self.grant(view).await?;
+        let region = self
+            .regional
+            .get(&grant.region_id)
+            .ok_or_else(|| err(409, "REGION_POLICY_NOT_APPLIED"))?;
+        if view.key_version > 1024 {
+            return Err(err(409, "POLICY_HISTORY_REQUIRES_RECONCILIATION"));
+        }
+        for version in 1..=view.key_version {
+            let marker = format!("policy-applied/{}/{version}", view.key_id);
+            if version < view.key_version && self.get(&view.workspace_id, &marker).await?.is_some()
+            {
+                continue;
+            }
+            let key = self
+                .keys
+                .key_version(&view.workspace_id, &view.key_id, version)
+                .await?;
+            let snapshot = self.grant(&key).await?;
+            if snapshot.region_id != grant.region_id {
+                return Err(err(409, "REGION_POLICY_MISMATCH"));
+            }
+            let policy = KeyPolicy {
+                workspace_id: key.workspace_id.clone(),
+                region_id: snapshot.region_id.clone(),
+                key_id: key.key_id.clone(),
+                principal_id: key.principal_id.clone(),
+                key_version: key.key_version,
+                policy_generation: key.key_version,
+                grant_ref: key.grant_ref.clone(),
+                expires_at: key.expires_at,
+                revoked: key.revoked,
+            };
+            let ceilings = if version == view.key_version {
+                ceiling.into_iter().cloned().collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
+            let value = json!({"policy":policy,"grant":snapshot,"ceilings":ceilings});
+            let fingerprint = Sha256::digest(
+                serde_json::to_vec(&value).map_err(|_| err(503, "POLICY_UNAVAILABLE"))?,
+            );
+            let command_id =
+                Uuid::from_bytes(fingerprint[..16].try_into().expect("SHA256 prefix")).to_string();
+            self.immutable(
+                &view.workspace_id,
+                &format!("policy-deliveries/{command_id}"),
+                value,
+            )
+            .await?;
+            let command = region.policies.sign_full(
+                &policy,
+                &command_id,
+                self.clock.now()?,
+                Some(&snapshot),
+                &ceilings,
+            )?;
+            let receipt = PolicyReceipt {
+                command_id,
+                workspace_id: key.workspace_id,
+                region_id: snapshot.region_id,
+                key_id: key.key_id,
+                key_version: version,
+                policy_generation: version,
+            };
+            region.control.apply(&command, &receipt).await?;
+            self.immutable(
+                &view.workspace_id,
+                &marker,
+                json!({"keyVersion":version,"regionId":grant.region_id}),
+            )
+            .await?;
+        }
+        Ok(())
+    }
     fn scope(&self, workspace: &str) -> Scope {
         Scope {
             authority_id: "global".into(),
@@ -591,12 +745,76 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
         let input: TokenInput = parse(&h, &bytes)?;
         let view = app.keys.authenticate(workspace, bearer(&h)?).await?;
         let grant = app.grant(&view).await?;
-        if input.audience != "global" {
-            return Err(err(409, "REGION_POLICY_NOT_APPLIED"));
-        }
         let scopes = input.scopes.unwrap_or(grant.scopes.clone());
-        if scopes.is_empty() || scopes.iter().any(|s| !grant.scopes.contains(s)) {
+        if scopes.is_empty() || scopes.iter().any(|s| !grant.permits_action(s)) {
             return Err(err(403, "SCOPE_NOT_GRANTED"));
+        }
+        if input.audience != "global" {
+            if input.audience != grant.region_id {
+                return Err(err(403, "REGION_NOT_GRANTED"));
+            }
+            let issuer = app
+                .regional
+                .get(&grant.region_id)
+                .ok_or_else(|| err(409, "REGION_POLICY_NOT_APPLIED"))?;
+            let thumbprint = input
+                .client_thumbprint
+                .as_deref()
+                .ok_or_else(|| err(400, "CLIENT_BINDING_REQUIRED"))?;
+            let mut ceiling = grant.clone();
+            ceiling.scopes = scopes.clone();
+            ceiling.scopes.sort();
+            ceiling.scopes.dedup();
+            ceiling.validate()?;
+            app.deliver(&view, Some(&ceiling)).await?;
+            let ceiling_ref = ceiling.reference()?;
+            let now = app.clock.now()?;
+            let ticket = issuer.tickets.sign(
+                &TicketIssuance {
+                    workspace_id: workspace,
+                    key_id: &view.key_id,
+                    key_version: view.key_version,
+                    policy_generation: view.key_version,
+                    principal_id: &view.principal_id,
+                    grant_ref: &view.grant_ref,
+                    ceiling_ref: &ceiling_ref,
+                    client_thumbprint: thumbprint,
+                    key_expires_at: view.expires_at,
+                },
+                now,
+            )?;
+            let token = issuer.access.sign(
+                &Issuance {
+                    workspace_id: workspace,
+                    principal_id: &view.principal_id,
+                    key_id: &view.key_id,
+                    key_version: view.key_version,
+                    policy_generation: view.key_version,
+                    grant_ref: &ceiling_ref,
+                    scopes: &ceiling.scopes,
+                    key_expires_at: view.expires_at,
+                    grant_expires_at: view.expires_at,
+                    family: None,
+                },
+                now,
+            )?;
+            app.immutable(workspace,&format!("issuances/{}",token.token_id),json!({"id":token.token_id,"keyId":view.key_id,"principalId":view.principal_id,"expiresAt":token.expires_at,"audience":input.audience,"status":"issued"})).await?;
+            if app.keys.key(workspace, &view.key_id).await? != view
+                || app.clock.now()? >= token.expires_at
+            {
+                return Err(err(409, "ISSUANCE_OUTCOME_UNKNOWN"));
+            }
+            let descriptor = app
+                .config
+                .regions
+                .iter()
+                .find(|r| r.region_id == grant.region_id)
+                .ok_or_else(|| err(503, "REGION_UNAVAILABLE"))?;
+            return Ok(json_response(
+                StatusCode::CREATED,
+                json!({"id":token.token_id,"accessToken":token.token,"tokenType":"Bearer","expiresAt":token.expires_at,"scopes":ceiling.scopes,"keyId":view.key_id,"principalId":view.principal_id,"keyVersion":view.key_version,"region":descriptor,"enrollmentTicket":ticket.ticket,"enrollmentExpiresAt":ticket.expires_at,"nonce":ticket.nonce}),
+                Some(format!("token-issuances/{}", token.token_id)),
+            ));
         }
         let token = app.signer.sign(
             &Issuance {
@@ -677,12 +895,7 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
                 region_id: owner.assignment().region_id.clone(),
             };
             let value = serde_json::to_value(&grant).map_err(|_| err(503, "GRANT_UNAVAILABLE"))?;
-            let grant_ref = format!(
-                "grant-{:x}",
-                Sha256::digest(
-                    serde_json::to_vec(&value).map_err(|_| err(503, "GRANT_UNAVAILABLE"))?
-                )
-            );
+            let grant_ref = grant.reference()?;
             app.immutable(workspace, &format!("grants/{grant_ref}"), value)
                 .await?;
             let principal_id = format!(
@@ -701,10 +914,15 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
                     &mutation(&h)?,
                 )
                 .await?;
+            let status = if app.deliver(&key.view, None).await.is_ok() {
+                "applied"
+            } else {
+                "pending"
+            };
             Ok(etag(
                 json_response(
                     StatusCode::CREATED,
-                    json!({"data":key.view,"secret":key.secret,"grants":grant}),
+                    json!({"data":key.view,"secret":key.secret,"grants":grant,"regionalStatus":status}),
                     Some(format!("keys/{}", key.view.key_id)),
                 ),
                 key.view.key_version,
@@ -724,8 +942,24 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
         ("GET", ["keys", key]) => {
             let key = app.keys.key(workspace, key).await?;
             let grant = app.grant(&key).await?;
+            let status = if app
+                .get(
+                    workspace,
+                    &format!("policy-applied/{}/{}", key.key_id, key.key_version),
+                )
+                .await?
+                .is_some()
+            {
+                "applied"
+            } else {
+                "pending"
+            };
             Ok(etag(
-                json_response(StatusCode::OK, json!({"data":key,"grants":grant}), None),
+                json_response(
+                    StatusCode::OK,
+                    json!({"data":key,"grants":grant,"regionalStatus":status}),
+                    None,
+                ),
                 key.key_version,
             ))
         }
@@ -756,10 +990,15 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
                         &operation,
                     )
                     .await?;
+                let status = if app.deliver(&key, None).await.is_ok() {
+                    "applied"
+                } else {
+                    "pending"
+                };
                 return Ok(etag(
                     json_response(
                         StatusCode::OK,
-                        json!({"data":key,"regionalStatus":"pending"}),
+                        json!({"data":key,"regionalStatus":status}),
                         None,
                     ),
                     key.key_version,
@@ -771,9 +1010,14 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
                     .revoke(workspace, key, old.key_version, &operation)
                     .await?;
                 app.immutable(workspace,&format!("revocations/{operation}"),json!({"id":operation,"keyId":key.key_id,"keyVersion":key.key_version,"regionalStatus":"pending"})).await?;
+                let status = if app.deliver(&key, None).await.is_ok() {
+                    "applied"
+                } else {
+                    "pending"
+                };
                 return Ok(json_response(
                     StatusCode::ACCEPTED,
-                    json!({"id":operation,"regionalStatus":"pending"}),
+                    json!({"id":operation,"regionalStatus":status}),
                     Some(format!("../key-revocations/{operation}")),
                 ));
             }
@@ -781,20 +1025,40 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
                 .keys
                 .rotate(workspace, key, old.key_version, &operation)
                 .await?;
+            let status = if app.deliver(&issued.view, None).await.is_ok() {
+                "applied"
+            } else {
+                "pending"
+            };
             Ok(etag(
                 json_response(
                     StatusCode::CREATED,
-                    json!({"data":issued.view,"secret":issued.secret,"regionalStatus":"pending"}),
+                    json!({"data":issued.view,"secret":issued.secret,"regionalStatus":status}),
                     Some(format!("versions/{}", issued.view.key_version)),
                 ),
                 issued.view.key_version,
             ))
         }
         ("GET", ["key-revocations", operation]) => {
-            let v = app
+            let mut v = app
                 .get(workspace, &format!("revocations/{operation}"))
                 .await?
                 .ok_or_else(|| err(404, "NOT_FOUND"))?;
+            let key = v["keyId"]
+                .as_str()
+                .ok_or_else(|| err(503, "REVOCATION_CORRUPT"))?;
+            let version = v["keyVersion"]
+                .as_u64()
+                .ok_or_else(|| err(503, "REVOCATION_CORRUPT"))?;
+            v["regionalStatus"] = json!(if app
+                .get(workspace, &format!("policy-applied/{key}/{version}"))
+                .await?
+                .is_some()
+            {
+                "applied"
+            } else {
+                "pending"
+            });
             Ok(json_response(StatusCode::OK, json!({"data":v}), None))
         }
         _ => Err(err(404, "NOT_FOUND")),

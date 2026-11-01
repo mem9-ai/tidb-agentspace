@@ -337,6 +337,14 @@ test(
       .filter(
         (id) =>
           ![
+            // Success/schema coverage is exercised by the actual security-profile listener
+            // in region-security-cases.mjs, including native data calls and Global API loss.
+            'enrollRegionalRefreshFamily',
+            'issueRegionalToken',
+            'getRegionalRefreshFamily',
+            'revokeRegionalRefreshFamily',
+            'getRegionalTokenIssuance',
+            'revokeRegionalAccessToken',
             'uploadFile',
             'downloadFile',
             'startGuestSession', // Success is covered by guest_http_probe.

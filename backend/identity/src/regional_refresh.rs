@@ -669,6 +669,62 @@ impl RefreshFamilies {
         Err(error(503, "REFRESH_CONFLICT_UNRESOLVED"))
     }
 
+    pub async fn family_status(&self, binding: FamilyBinding<'_>) -> Result<Value> {
+        self.check_family(FamilyBinding {
+            workspace: binding.workspace,
+            key_id: binding.key_id,
+            family_id: binding.family_id,
+            epoch: binding.epoch,
+            key_version: binding.key_version,
+            ceiling_ref: binding.ceiling_ref,
+            now: binding.now,
+        })
+        .await?;
+        let scope = self.policies.scope(binding.workspace, binding.key_id)?;
+        let (family, _) = self
+            .family(&scope, binding.family_id)
+            .await?
+            .ok_or_else(denied)?;
+        Ok(
+            json!({"id":family.family_id,"keyId":family.key_id,"keyVersion":family.key_version,"generation":family.generation,"securityEpoch":family.security_epoch,"expiresAt":family.expires_at,"revoked":family.revoked}),
+        )
+    }
+    /// Requires an already locally verified token belonging to this exact family. The host
+    /// drains request leases before calling, so return means old family tokens are fenced.
+    pub async fn revoke_family(&self, binding: FamilyBinding<'_>) -> Result<()> {
+        self.check_family(FamilyBinding {
+            workspace: binding.workspace,
+            key_id: binding.key_id,
+            family_id: binding.family_id,
+            epoch: binding.epoch,
+            key_version: binding.key_version,
+            ceiling_ref: binding.ceiling_ref,
+            now: binding.now,
+        })
+        .await?;
+        let scope = self.policies.scope(binding.workspace, binding.key_id)?;
+        let (policy, version) = self.policies.read(&scope).await?.ok_or_else(denied)?;
+        let (mut family, family_version) = self
+            .family(&scope, binding.family_id)
+            .await?
+            .ok_or_else(denied)?;
+        if !Self::policy_matches(&policy, &family, self.clock.now()?)
+            || family.security_epoch != binding.epoch
+        {
+            return Err(denied());
+        }
+        family.revoked = true;
+        family.security_epoch = family
+            .security_epoch
+            .checked_add(1)
+            .ok_or_else(|| error(503, "REFRESH_VERSION_EXHAUSTED"))?;
+        self.metadata.execute(MetaRequest::Commit{scope,guard:None,mutation_id:Uuid::new_v4().to_string(),changes:vec![
+            json!({"key":"policy","expectedVersion":version,"value":policy}),
+            json!({"key":format!("families/{}",binding.family_id),"expectedVersion":family_version,"value":family}),
+        ]}).await?;
+        Ok(())
+    }
+
     /// Validate the local family epoch of an already signature-verified access token. This
     /// is only one admission check; the caller still enforces token ceiling and resource grants.
     pub async fn check_family(&self, binding: FamilyBinding<'_>) -> Result<()> {

@@ -7,6 +7,7 @@ mod http_policy;
 pub mod managed_workspaces;
 pub mod policy_command;
 pub mod policy_transport;
+pub mod region_security;
 pub mod regional_account;
 pub mod regional_guest;
 mod security_clock;
@@ -79,6 +80,8 @@ pub struct Config {
     pub product: Option<workspace_product::Config>,
     #[serde(default)]
     pub guest: Option<GuestConfig>,
+    #[serde(default)]
+    pub security: Option<region_security::Config>,
 }
 fn guest_environment(value: &str) -> Result<Option<GuestConfig>> {
     match value {
@@ -95,7 +98,7 @@ impl Config {
     pub fn load(path: &Path) -> Result<Self> {
         let mut result: Self = serde_json::from_slice(&private_file(path)?)
             .map_err(|_| anyhow::anyhow!("Invalid private Workspace configuration"))?;
-        if result.sso.is_none() {
+        if result.sso.is_none() && result.security.is_none() {
             result.sso = sso::Config::environment()?;
         }
         if let Ok(value) = std::env::var("WORKSPACE_GUEST_ENABLED") {
@@ -152,6 +155,18 @@ impl Config {
         if let Some(product) = &self.product {
             product.validate()?;
         }
+        if let Some(security) = &self.security {
+            anyhow::ensure!(
+                security.control.bind != self.bind,
+                "Control and public API listeners must differ"
+            );
+            anyhow::ensure!(
+                self.public_origins.contains(&security.public_origin)
+                    || self.insecure_loopback
+                        && security.public_origin == format!("http://{}", self.bind),
+                "Region security origin must match the trusted public API"
+            );
+        }
         Ok(())
     }
 }
@@ -171,6 +186,7 @@ struct App {
     guest_runtime: Option<Arc<GuestRuntime>>,
     current_guest: Option<regional_guest::AuthorizedGuest>,
     current_account: Option<regional_account::AuthorizedAccount>,
+    security: Option<Arc<region_security::Runtime>>,
 }
 
 /// Explicit co-located integration. Separate services require authenticated control transport;
@@ -218,6 +234,7 @@ impl WorkspaceServer {
             config.initialize_workspace = true;
             config.recover_writer_owner = None;
         }
+        let metadata_port_for_security = metadata.clone();
         let repository = Repository::open(
             metadata,
             &config.authority_id,
@@ -235,6 +252,25 @@ impl WorkspaceServer {
                     return Err(e.into());
                 }
             }
+        } else {
+            None
+        };
+        anyhow::ensure!(
+            config.security.is_none() || guest_runtime.is_none(),
+            "The regional Token profile currently requires an explicit Workspace listener"
+        );
+        let security = if let Some(settings) = config.security.clone() {
+            Some(
+                region_security::Runtime::open(
+                    settings,
+                    workspace.clone(),
+                    metadata_port_for_security,
+                    &config.authority_id,
+                    &config.public_path,
+                    config.insecure_loopback,
+                )
+                .await?,
+            )
         } else {
             None
         };
@@ -257,6 +293,7 @@ impl WorkspaceServer {
                 guest_runtime,
                 current_guest: None,
                 current_account: None,
+                security,
             },
         })
     }
@@ -264,22 +301,58 @@ impl WorkspaceServer {
         self,
         stop: impl std::future::Future<Output = ()> + Send + 'static,
     ) -> Result<()> {
+        let control = self
+            .app
+            .security
+            .as_ref()
+            .map(|r| r.control())
+            .transpose()?;
         let router = Router::new()
             .fallback(any(handle))
             .layer(middleware::from_fn_with_state(self.app.clone(), policy))
             .with_state(self.app);
-        axum::serve(
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        let stop_signal = cancellation.clone();
+        tokio::spawn(async move {
+            stop.await;
+            stop_signal.cancel();
+        });
+        let control_stop = cancellation.clone();
+        let task = control.map(|server| {
+            tokio::spawn(async move { server.serve(control_stop.cancelled_owned()).await })
+        });
+        let result = axum::serve(
             self.listener,
             router.into_make_service_with_connect_info::<SocketAddr>(),
         )
-        .with_graceful_shutdown(stop)
-        .await?;
+        .with_graceful_shutdown(cancellation.clone().cancelled_owned())
+        .await;
+        cancellation.cancel();
+        if let Some(task) = task {
+            task.await??;
+        }
+        result?;
         Ok(())
     }
 }
 fn error(error: ServiceError) -> Response {
     let message = match error.code.as_str() {
         "UNAUTHENTICATED" => "Sign in or provide a scoped Workspace Key.",
+        "REGION_POLICY_NOT_APPLIED" => {
+            "The Region has not confirmed this Key's permissions. Inspect the Key status before requesting a Region Token again."
+        }
+        "CLIENT_BINDING_REQUIRED" | "CLIENT_PROOF_REQUIRED" => {
+            "Provide the enrolled client's public-key binding and request proof."
+        }
+        "REFRESH_OUTCOME_UNKNOWN" | "ISSUANCE_OUTCOME_UNKNOWN" => {
+            "Credential issuance may have completed. Inspect its status or reauthenticate; do not repeat the request automatically."
+        }
+        "CLOCK_ROLLBACK"
+        | "TRUSTED_CLOCK_UNAVAILABLE"
+        | "POLICY_ROLLBACK"
+        | "POLICY_CHECKPOINT_UNAVAILABLE" => {
+            "The regional security checkpoint needs operator recovery."
+        }
         "INVALID_KEY" => "API key is invalid, expired, or revoked.",
         "OWNER_REQUIRED" => "This action requires the workspace owner session.",
         "SSO_REQUIRED" => "Sign in with your TiDB Account.",
@@ -371,7 +444,25 @@ async fn policy(State(app): State<App>, mut request: Request, next: Next) -> Res
         .get("origin")
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
-    let policy_result = http_policy::allowed(&app.config, headers, request.method());
+    let bearer_request = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("Bearer "));
+    let mut policy_result = http_policy::allowed(&app.config, headers, request.method());
+    if app.security.is_some()
+        && [
+            "authorization",
+            "origin",
+            "host",
+            "cookie",
+            "content-type",
+            "dpop",
+        ]
+        .iter()
+        .any(|name| headers.get_all(*name).iter().count() > 1)
+    {
+        policy_result = Err(reject(400, "DUPLICATE_HEADER"));
+    }
     let allowed = policy_result.is_ok();
     let mut response = if let Err(e) = policy_result {
         error(e)
@@ -399,6 +490,7 @@ async fn policy(State(app): State<App>, mut request: Request, next: Next) -> Res
                         "if-match",
                     ]
                     .contains(&v.as_str())
+                        && !(v == "dpop" && app.security.is_some())
                 })
         {
             error(reject(403, "PREFLIGHT_DENIED"))
@@ -410,9 +502,11 @@ async fn policy(State(app): State<App>, mut request: Request, next: Next) -> Res
             );
             response.headers_mut().insert(
                 "Access-Control-Allow-Headers",
-                HeaderValue::from_static(
-                    "content-type, authorization, idempotency-key, if-none-match, if-match",
-                ),
+                HeaderValue::from_static(if app.security.is_some() {
+                    "content-type, authorization, idempotency-key, if-none-match, if-match, dpop"
+                } else {
+                    "content-type, authorization, idempotency-key, if-none-match, if-match"
+                }),
             );
             response
         }
@@ -425,6 +519,11 @@ async fn policy(State(app): State<App>, mut request: Request, next: Next) -> Res
             Err(_) => error(reject(429, "API_BUSY")),
         }
     };
+    if app.security.is_some() && response.status() == StatusCode::UNAUTHORIZED && bearer_request {
+        response
+            .headers_mut()
+            .insert("WWW-Authenticate", HeaderValue::from_static("Bearer"));
+    }
     let output = response.headers_mut();
     output.insert("Vary", HeaderValue::from_static("Origin"));
     output.insert("Cache-Control", HeaderValue::from_static("no-store"));
@@ -602,7 +701,10 @@ async fn dispatch(
     if path != "/api/health"
         && path != "/api/session"
         && (app.guest_runtime.is_some() && guest_lease.is_none()
-            || app.sso.is_some() && !app.config.insecure_loopback && app.guest_runtime.is_none())
+            || app.sso.is_some()
+                && !app.config.insecure_loopback
+                && app.guest_runtime.is_none()
+                && app.security.is_none())
     {
         return Err(reject(401, "UNAUTHENTICATED"));
     }
@@ -717,8 +819,17 @@ async fn dispatch(
         );
         return Ok(response);
     }
-    let credential = credential(&app, &headers).await?;
     let route = path.strip_prefix(&prefix).unwrap_or_default();
+    if let Some(security) = &app.security
+        && let Some(mut response) = security.route(route, &method, &headers, &bytes).await?
+    {
+        response.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store"),
+        );
+        return Ok(response);
+    }
+    let credential = credential(&app, &headers).await?;
     let operation = if path == "/api/v1/workspaces" && method == Method::GET {
         Operation::ListWorkspaces
     } else {
@@ -908,6 +1019,11 @@ async fn credential(
             .and_then(|s| s.strip_prefix("Bearer "))
             .filter(|s| !s.is_empty() && !s.chars().any(char::is_whitespace))
             .ok_or_else(|| reject(401, "INVALID_KEY"))?;
+        if let Some(security) = &app.security
+            && token.split('.').count() == 3
+        {
+            return security.authenticate(&app.config.workspace_id, token).await;
+        }
         return Ok(Credential::Bearer(token.to_owned()));
     }
     if let Some(runtime) = &app.guest_runtime
@@ -950,7 +1066,9 @@ async fn credential_for_response(
     headers: &HeaderMap,
     input: &Credential,
 ) -> std::result::Result<(), ServiceError> {
-    credential(app, headers).await?;
+    if !matches!(input, Credential::Scoped(_)) {
+        credential(app, headers).await?;
+    }
     app.workspace.authenticate(input).await?;
     Ok(())
 }

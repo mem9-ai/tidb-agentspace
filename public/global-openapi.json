@@ -3,7 +3,7 @@
   "info": {
     "title": "Workspace Global Public API",
     "version": "0.1.0",
-    "description": "Independent Global management authority. Key and Global Token issuance are available. Region policy application and regional refresh endpoints are not yet exposed by this service. All expiry values use Unix seconds. Credentials must never be logged or stored in URLs."
+    "description": "Independent Global management authority. Key and Global Token issuance are available. Regional data and refresh endpoints are served by Region directly. All expiry values use Unix seconds. Credentials must never be logged or stored in URLs."
   },
   "servers": [{ "url": "/" }],
   "paths": {
@@ -89,9 +89,10 @@
                   "properties": {
                     "data": { "$ref": "#/components/schemas/Key" },
                     "secret": { "type": "string" },
-                    "grants": { "$ref": "#/components/schemas/Grants" }
+                    "grants": { "$ref": "#/components/schemas/Grants" },
+                    "regionalStatus": { "enum": ["pending", "applied"] }
                   },
-                  "required": ["data", "secret", "grants"]
+                  "required": ["data", "secret", "grants", "regionalStatus"]
                 }
               }
             }
@@ -158,9 +159,10 @@
                   "additionalProperties": false,
                   "properties": {
                     "data": { "$ref": "#/components/schemas/Key" },
-                    "grants": { "$ref": "#/components/schemas/Grants" }
+                    "grants": { "$ref": "#/components/schemas/Grants" },
+                    "regionalStatus": { "enum": ["pending", "applied"] }
                   },
-                  "required": ["data", "grants"]
+                  "required": ["data", "grants", "regionalStatus"]
                 }
               }
             }
@@ -218,7 +220,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "data": { "$ref": "#/components/schemas/Key" },
-                    "regionalStatus": { "const": "pending" }
+                    "regionalStatus": { "enum": ["pending", "applied"] }
                   },
                   "required": ["data", "regionalStatus"]
                 }
@@ -246,7 +248,7 @@
             }
           }
         },
-        "description": "Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application remains pending in the current public service."
+        "description": "Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application is reported separately; an unreachable Region remains pending."
       },
       "delete": {
         "operationId": "revokeGlobalKey",
@@ -292,7 +294,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "id": { "type": "string" },
-                    "regionalStatus": { "const": "pending" }
+                    "regionalStatus": { "enum": ["pending", "applied"] }
                   },
                   "required": ["id", "regionalStatus"]
                 }
@@ -355,7 +357,7 @@
                   "properties": {
                     "data": { "$ref": "#/components/schemas/Key" },
                     "secret": { "type": "string" },
-                    "regionalStatus": { "const": "pending" }
+                    "regionalStatus": { "enum": ["pending", "applied"] }
                   },
                   "required": ["data", "secret", "regionalStatus"]
                 }
@@ -441,7 +443,7 @@
                         "id": { "type": "string" },
                         "keyId": { "type": "string" },
                         "keyVersion": { "type": "integer", "minimum": 1 },
-                        "regionalStatus": { "const": "pending" }
+                        "regionalStatus": { "enum": ["pending", "applied"] }
                       },
                       "required": ["id", "keyId", "keyVersion", "regionalStatus"]
                     }
@@ -478,7 +480,14 @@
             "description": "Successful response",
             "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
             "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Token" } }
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/Token" },
+                    { "$ref": "#/components/schemas/RegionToken" }
+                  ]
+                }
+              }
             }
           },
           "default": {
@@ -497,15 +506,16 @@
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                  "audience": { "const": "global" },
-                  "scopes": { "type": "array", "items": { "type": "string" } }
+                  "audience": { "type": "string" },
+                  "scopes": { "type": "array", "items": { "type": "string" } },
+                  "clientThumbprint": { "type": "string" }
                 },
                 "required": ["audience"]
               }
             }
           }
         },
-        "description": "Exchange the Workspace Key at Global only. Region audience requests return 409 REGION_POLICY_NOT_APPLIED until the matching Region policy is applied; regional token issuance is not shipped in this profile."
+        "description": "Exchange the Workspace Key at Global only. Region audience requests require an Ed25519 client JWK thumbprint and matching applied regional policy. The response includes a client-bound enrollment ticket for direct regional refresh enrollment."
       }
     },
     "/api/v1/workspaces/{workspaceId}/token-issuances/{issuanceId}": {
@@ -788,7 +798,7 @@
           "keyId": { "type": "string" },
           "principalId": { "type": "string" },
           "expiresAt": { "type": "integer", "minimum": 1 },
-          "audience": { "const": "global" },
+          "audience": { "type": "string" },
           "status": { "const": "issued" }
         },
         "required": ["id", "keyId", "principalId", "expiresAt", "audience", "status"]
@@ -804,6 +814,38 @@
           "scopes": { "type": "array", "items": { "type": "string" } }
         },
         "required": ["id", "accessToken", "tokenType", "expiresAt", "scopes"]
+      },
+      "RegionToken": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "accessToken": { "type": "string" },
+          "tokenType": { "const": "Bearer" },
+          "expiresAt": { "type": "integer", "minimum": 1 },
+          "scopes": { "type": "array", "items": { "type": "string" } },
+          "keyId": { "type": "string" },
+          "principalId": { "type": "string" },
+          "keyVersion": { "type": "integer", "minimum": 1 },
+          "region": { "$ref": "#/components/schemas/Region" },
+          "enrollmentTicket": { "type": "string" },
+          "enrollmentExpiresAt": { "type": "integer", "minimum": 1 },
+          "nonce": { "type": "string" }
+        },
+        "required": [
+          "id",
+          "accessToken",
+          "tokenType",
+          "expiresAt",
+          "scopes",
+          "keyId",
+          "principalId",
+          "keyVersion",
+          "region",
+          "enrollmentTicket",
+          "enrollmentExpiresAt",
+          "nonce"
+        ]
       }
     },
     "securitySchemes": {
