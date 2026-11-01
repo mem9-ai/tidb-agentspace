@@ -150,11 +150,19 @@ export async function globalOwnerFixture(
       if (created.status !== 201) return created;
       const key = created.body.data;
       versions.set(key.keyId, key.keyVersion);
-      const token = await request('/token-issuances', {
-        method: 'POST',
-        token: created.body.secret,
-        body: { audience: region.server.authorityId },
-      });
+      // Delivery can report an uncertain outcome while the Region reconnects. No token is
+      // signed before that error; retry only that specific response with the same Key.
+      let token;
+      const deadline = Date.now() + 15_000;
+      do {
+        token = await request('/token-issuances', {
+          method: 'POST',
+          token: created.body.secret,
+          body: { audience: region.server.authorityId },
+        });
+        if (token.status !== 503 || token.body.error?.code !== 'POLICY_DELIVERY_UNKNOWN') break;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      } while (Date.now() < deadline);
       if (token.status !== 201) return token;
       return {
         ...created,

@@ -635,7 +635,7 @@ test('populated collections share metadata, exact-resource entry, connection and
     const table = page.getByRole('table', { name: collection.table, exact: true });
     await expect(table.getByRole('columnheader')).toHaveText([
       'Name',
-      'Region',
+      'Provider location',
       'Status',
       'Service',
       'Actions',

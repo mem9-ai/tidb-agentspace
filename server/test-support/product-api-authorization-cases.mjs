@@ -136,7 +136,7 @@ export async function authorizationCases(
             path,
             { ...options, token: denied },
             401,
-            denied === null ? 'UNAUTHENTICATED' : 'INVALID_CREDENTIAL',
+            denied === null ? 'AGENT_TOKEN_REQUIRED' : 'INVALID_CREDENTIAL',
           );
       }
       await request(

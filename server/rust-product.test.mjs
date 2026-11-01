@@ -725,7 +725,8 @@ async function connect(origin) {
   assert.equal(session.status, 200);
   const cookie = session.headers.get('set-cookie').split(';')[0];
   return async (path, { method = 'GET', body, token, headers = {}, binary = false } = {}) => {
-    const r = await fetch(origin + path, {
+    const actualPath = token ? path : path.replace(/^\/api\/v1\//, '/api/portal/v1/');
+    const r = await fetch(origin + actualPath, {
       method,
       headers: {
         'Content-Type': 'application/json',
@@ -737,7 +738,7 @@ async function connect(origin) {
     });
     const responseBody =
       binary && method === 'GET' ? Buffer.from(await r.arrayBuffer()) : await r.json();
-    if (!binary) validateResponse(path, method, r.status, responseBody);
+    if (!binary) validateResponse(actualPath, method, r.status, responseBody);
     return {
       status: r.status,
       body: responseBody,
@@ -1444,6 +1445,7 @@ for (const transport of ['remote', 'inProcess']) {
         final.resources,
         state.resources.map((resource) => ({
           ...resource,
+          ...(resource.id !== 'db_duck' ? { regionId: 'region:complete' } : {}),
           ...(resource.id === 'fs_live' ? { uploadLimitBytes: 1048576 } : {}),
           ...(resource.id === 'db_live' ? { expiresAt: raw[2].bindings.db_live.expiresAt } : {}),
         })),

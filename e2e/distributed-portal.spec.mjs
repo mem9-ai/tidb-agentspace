@@ -50,6 +50,8 @@ test('distributed Portal exchanges a verified login for a regional session and s
   await expect(page.getByText('mysql-fixture', { exact: true })).toBeVisible();
   expect(issued).toBe(2);
   expect(exchanged).toBe(2);
+  const openNavigation = page.getByRole('button', { name: 'Open navigation' });
+  if (await openNavigation.isVisible()) await openNavigation.click();
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Sign in to your workspace' })).toBeVisible();
   expect(signedOut).toBe(2);

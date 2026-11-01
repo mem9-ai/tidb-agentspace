@@ -47,7 +47,7 @@ export async function tutorialCases(t, transport) {
   assert.match(first.body.data.version, /^"tutorial-[a-f0-9]{32}"$/);
   assert.equal(
     new URL(first.headers.get('location'), first.url).pathname,
-    '/api/v1/workspaces/ws_agentlab/tutorials/db_memory',
+    '/api/portal/v1/workspaces/ws_agentlab/tutorials/db_memory',
   );
   assert.equal(first.body.data.resourceId, 'db_memory');
   assert.equal(first.body.data.sampleId, input.sampleId);
@@ -96,7 +96,7 @@ export async function tutorialCases(t, transport) {
   );
   assert.equal(last.nextCursor, null);
   await request('/tutorials/db_memory', {}, 404, undefined, 1);
-  await request('/api/v1/workspaces/ws_other/tutorials', {}, 404);
+  await request('/api/portal/v1/workspaces/ws_other/tutorials', {}, 404);
   await request(
     '/tutorials/db_memory',
     { ...create, body: { sampleId: 'c'.repeat(32), state: 'ready' } },

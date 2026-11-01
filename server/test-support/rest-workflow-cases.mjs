@@ -114,7 +114,21 @@ export async function restWorkflowCases(t, transport) {
       assert.deepEqual((await request(location, { token })).body, uploaded.body);
       assert.equal(f.provider.calls, before);
       await request(location, { token: reader.secret }, 404, 'PREPARATION_NOT_FOUND');
-      const cross = await f.request(location.replace('ws_agentlab', 'ws_other'), {}, 1);
+      const otherKey = await f.issueKey(
+        {
+          name: 'other-workspace-reader',
+          scopes: ['resources:read'],
+          resourceIds: ['*'],
+          expiresInDays: 7,
+        },
+        1,
+      );
+      assert.equal(otherKey.status, 201);
+      const cross = await f.request(
+        location.replace('ws_agentlab', 'ws_other'),
+        { token: otherKey.body.secret },
+        1,
+      );
       assert.equal(cross.status, 404);
       const wrongCollection = location.replace(
         'database-import-preparations',
