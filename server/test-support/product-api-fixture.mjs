@@ -230,6 +230,7 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
   return {
     provider,
     request,
+    startIndependentGlobalMeta: () => meta.service('global'),
     async records(keys, workspace = 0) {
       const scope = workspaceScope(region.server.authorityId, states[workspace].workspace.id);
       const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });

@@ -14,6 +14,7 @@ import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
 import { seedRecords, readState, readBinding } from './test-support/record-fixture.mjs';
 import { agentRestCases } from './test-support/agent-rest-cases.mjs';
 import { productApiCases } from './test-support/product-api-cases.mjs';
+import { productApiFixture } from './test-support/product-api-fixture.mjs';
 const contract = JSON.parse(
   await readFile(new URL('../public/openapi.json', import.meta.url), 'utf8'),
 );
@@ -63,6 +64,80 @@ for (const transport of ['remote', 'inProcess']) {
     (t) => productApiCases(t, transport),
   );
 }
+
+test(
+  'Region data API and retained credentials survive an independent Global Meta process outage',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
+  async (t) => {
+    const saved = new Map();
+    const f = await productApiFixture(t, 'inProcess', async ({ binding, sql }) => {
+      assert.equal(binding.password, nativeSecret);
+      if (sql === 'INSERT INTO outage_test VALUES (7)') {
+        saved.set(binding.kind, 7);
+        return { body: { columns: [], rows: [], rowCount: 0, affectedRows: 1 } };
+      }
+      if (sql === 'SELECT value FROM outage_test')
+        return {
+          body: {
+            columns: ['value'],
+            rows: saved.has(binding.kind) ? [{ value: saved.get(binding.kind) }] : [],
+            rowCount: saved.has(binding.kind) ? 1 : 0,
+            affectedRows: 0,
+          },
+        };
+    });
+    const global = await f.startIndependentGlobalMeta();
+    const created = await f.request('/keys', {
+      method: 'POST',
+      body: {
+        name: 'local-outage-check',
+        scopes: ['queries:execute', 'files:read', 'files:write'],
+        resourceIds: ['db_live', 'fs_live'],
+        expiresInDays: 7,
+      },
+    });
+    assert.equal(created.status, 201);
+    const token = created.body.secret;
+    const query = (sql) =>
+      f.request('/queries', {
+        method: 'POST',
+        token,
+        body: { resourceId: 'db_live', sql },
+      });
+    const path =
+      '/files/content?' + new URLSearchParams({ resourceId: 'fs_live', path: '/outage.bin' });
+    assert.equal((await query('INSERT INTO outage_test VALUES (7)')).status, 200);
+    await global.stop('SIGKILL');
+    assert.equal(global.child.signalCode, 'SIGKILL');
+    assert.deepEqual((await query('SELECT value FROM outage_test')).body.rows, [{ value: 7 }]);
+    const upload = await f.request(path, {
+      method: 'PUT',
+      token,
+      raw: Buffer.from([0, 255, 42]),
+      headers: { 'Content-Type': 'application/octet-stream' },
+    });
+    assert.equal(upload.status, 200);
+    assert.deepEqual((await f.request(path, { token })).body, Buffer.from([0, 255, 42]));
+    await f.restart();
+    assert.deepEqual((await query('SELECT value FROM outage_test')).body.rows, [{ value: 7 }]);
+    assert.deepEqual((await f.request(path, { token })).body, Buffer.from([0, 255, 42]));
+    assert.equal((await query('INSERT INTO outage_test VALUES (7)')).status, 200);
+    assert.deepEqual((await query('SELECT value FROM outage_test')).body.rows, [{ value: 7 }]);
+    assert.equal(
+      (
+        await f.request(path, {
+          method: 'PUT',
+          token,
+          raw: Buffer.from('after restart'),
+          headers: { 'Content-Type': 'application/octet-stream' },
+        })
+      ).status,
+      200,
+    );
+    assert.deepEqual((await f.request(path, { token })).body, Buffer.from('after restart'));
+    assert.equal(global.child.signalCode, 'SIGKILL');
+  },
+);
 async function connect(origin) {
   const session = await fetch(origin + '/api/session', {
     method: 'POST',
