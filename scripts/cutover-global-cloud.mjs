@@ -242,6 +242,59 @@ export async function prepareCutover(
   };
 }
 
+export function probeSummary(runtime) {
+  return Object.fromEntries(
+    ['readinessProbe', 'livenessProbe', 'startupProbe']
+      .filter((kind) => runtime[kind])
+      .map((kind) => {
+        const probe = runtime[kind];
+        return [
+          kind,
+          {
+            kind: probe.httpGet ? 'http' : probe.exec ? 'exec' : probe.tcpSocket ? 'tcp' : 'other',
+            ...(probe.httpGet
+              ? {
+                  path: probe.httpGet.path,
+                  port: probe.httpGet.port,
+                  hostHeader:
+                    probe.httpGet.httpHeaders?.find((h) => h.name.toLowerCase() === 'host')
+                      ?.value || null,
+                  explicitTarget: !!probe.httpGet.host,
+                }
+              : {}),
+          },
+        ];
+      }),
+  );
+}
+
+export function configureHealthProbes(pod, container, api) {
+  const runtime = pod.containers.find((c) => c.name === container);
+  const host = new URL(api.publicOrigins[0]).host;
+  let count = 0;
+  for (const kind of ['readinessProbe', 'livenessProbe', 'startupProbe']) {
+    const http = runtime[kind]?.httpGet;
+    if (!http) continue;
+    if (
+      !['/api/health', `${api.publicPath}/api/health`].includes(http.path) ||
+      (http.scheme && http.scheme !== 'HTTP') ||
+      (http.host && !['127.0.0.1', 'localhost'].includes(http.host))
+    )
+      throw new CutoverValidationError(
+        'Unsupported HTTP health probe; inspect before changing it.',
+      );
+    // Kubelet connects to the Pod, not a public endpoint. The Host header selects the
+    // configured authority; it does not authenticate data or alter origin policy.
+    delete http.host;
+    http.httpHeaders = [
+      ...(http.httpHeaders || []).filter((h) => h.name.toLowerCase() !== 'host'),
+      { name: 'Host', value: host },
+    ];
+    count++;
+  }
+  return count;
+}
+
 // Derive both Pod compositions from the serving target; keep the image, providers and probes.
 function candidatePods(target, container, name) {
   const newPod = structuredClone(target.pod);
@@ -252,6 +305,7 @@ function candidatePods(target, container, name) {
   newPod.securityContext = { ...newPod.securityContext, fsGroup: 1000 };
   const next = newPod.containers.find((c) => c.name === container);
   next.volumeMounts.push({ name: 'global-security', mountPath: checkpointMount });
+  configureHealthProbes(newPod, container, target.api);
   const bootstrap = structuredClone(newPod);
   bootstrap.restartPolicy = 'Never';
   const init = bootstrap.containers[0];
@@ -438,6 +492,7 @@ export async function cutover(options, kubectl, request = fetch, report = () => 
   if (options.operation === 'inspect') {
     return {
       globalConfigured: !!target.api.security,
+      probes: probeSummary(target.runtime),
       privateMount: target.runtime.volumeMounts.map((m) => ({ path: m.mountPath, name: m.name })),
       initializationContainers: (target.pod.initContainers || []).map((c) => ({
         name: c.name,
@@ -453,11 +508,30 @@ export async function cutover(options, kubectl, request = fetch, report = () => 
       bootstrap: inspectCutover(options, kubectl),
     };
   }
-  if (!['reset-and-enable-global', 'activate-prepared'].includes(options.operation))
+  if (
+    !['reset-and-enable-global', 'activate-prepared', 'repair-probes'].includes(options.operation)
+  )
     throw new Error('Explicit cutover operation required.');
   const { namespace, deployment } = options;
   let prepared;
-  if (options.operation === 'activate-prepared') {
+  if (options.operation === 'repair-probes') {
+    if (
+      !target.api.security ||
+      !target.api.globalEntry ||
+      !target.plan.services.some((s) => s.kind === 'global')
+    )
+      throw new CutoverValidationError(
+        'Probe recovery requires the already configured Global profile.',
+      );
+    report(JSON.stringify({ priorProbes: probeSummary(target.runtime) }));
+    const pod = structuredClone(target.pod);
+    if (!configureHealthProbes(pod, options.container, target.api))
+      throw new CutoverValidationError('No supported HTTP health probes found.');
+    prepared = { patch: { spec: { template: { spec: pod } } } };
+    report(
+      'Configured HTTP health probes for the public authority. Storage and identities unchanged.',
+    );
+  } else if (options.operation === 'activate-prepared') {
     prepared = recoverPrepared(target, options, kubectl);
     report('Verified completed candidate. Reusing initialized roots and persistent checkpoints.');
   } else {

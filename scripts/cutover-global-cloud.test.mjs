@@ -4,6 +4,8 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { parse } from 'yaml';
 import {
   cutover,
+  configureHealthProbes,
+  probeSummary,
   prepareCutover,
   readTarget,
   recoverPrepared,
@@ -383,6 +385,94 @@ test('recovery rejects incomplete/ambiguous candidates, mutable config, unbound 
     assert.throws(() => recoverPrepared(readTarget(options, f.kubectl), options, f.kubectl));
     assert.ok(!f.calls.some((c) => c.args[0] === 'patch' || c.args[0] === 'create'));
   }
+});
+
+test('HTTP health probes connect to the Pod with the configured public Host and preserve timings', () => {
+  const f = fixture(),
+    pod = structuredClone(f.source.spec.template.spec);
+  pod.containers[0].readinessProbe = {
+    httpGet: {
+      path: '/api/health',
+      port: 4318,
+      httpHeaders: [
+        { name: 'host', value: '127.0.0.1:4318' },
+        { name: 'X-Other', value: 'private-header' },
+      ],
+    },
+    periodSeconds: 7,
+    timeoutSeconds: 3,
+    failureThreshold: 4,
+  };
+  pod.containers[0].livenessProbe = {
+    httpGet: { path: '/studio/api/health', port: 4318, host: 'localhost' },
+    initialDelaySeconds: 30,
+  };
+  const before = structuredClone(pod);
+  assert.equal(
+    configureHealthProbes(pod, 'api', {
+      publicOrigins: ['https://drive9.ai'],
+      publicPath: '/studio',
+    }),
+    2,
+  );
+  assert.deepEqual(pod.containers[0].readinessProbe, {
+    ...before.containers[0].readinessProbe,
+    httpGet: {
+      ...before.containers[0].readinessProbe.httpGet,
+      httpHeaders: [
+        { name: 'X-Other', value: 'private-header' },
+        { name: 'Host', value: 'drive9.ai' },
+      ],
+    },
+  });
+  assert.equal(pod.containers[0].livenessProbe.httpGet.host, undefined);
+  assert.equal(pod.containers[0].livenessProbe.initialDelaySeconds, 30);
+  assert.ok(!JSON.stringify(probeSummary(pod.containers[0])).includes('private-header'));
+});
+
+test('active Global probe recovery preserves metadata, credentials, runtime and checkpoints without initialization', async () => {
+  const f = await recoveryFixture();
+  f.source.spec.template.spec = structuredClone(f.prepared.patch.spec.template.spec);
+  f.source.spec.template.spec.containers[0].readinessProbe = {
+    httpGet: {
+      path: '/api/health',
+      port: 4318,
+      httpHeaders: [{ name: 'Host', value: 'localhost:4318' }],
+    },
+    periodSeconds: 5,
+  };
+  const prior = structuredClone(f.source.spec.template.spec);
+  const result = await cutover({ ...options, operation: 'repair-probes' }, f.kubectl, healthy);
+  assert.equal(result.globalEnabled, true);
+  assert.deepEqual(
+    f.calls.filter((c) => c.args[0] !== 'get').map((c) => c.args[0]),
+    ['patch', 'rollout'],
+  );
+  const patched = f.calls.find((c) => c.patch).patch.spec.template.spec;
+  const expected = structuredClone(prior);
+  expected.containers[0].readinessProbe.httpGet.httpHeaders = [
+    { name: 'Host', value: 'drive9.ai' },
+  ];
+  assert.deepEqual(patched, expected);
+});
+
+test('probe repair rejects non-Global profiles and unrelated HTTP targets without mutating', async () => {
+  const f = fixture();
+  await assert.rejects(
+    cutover({ ...options, operation: 'repair-probes' }, f.kubectl, healthy),
+    /already configured/,
+  );
+  const target = readTarget(options, f.kubectl);
+  for (const httpGet of [
+    { path: '/data', port: 4318 },
+    { path: '/api/health', port: 4318, host: 'unrelated.example' },
+    { path: '/api/health', port: 4318, scheme: 'HTTPS' },
+  ]) {
+    const pod = structuredClone(target.pod);
+    pod.containers[0].readinessProbe = { httpGet };
+    assert.throws(() => configureHealthProbes(pod, 'api', target.api), /Unsupported HTTP/);
+  }
+  assert.ok(!f.calls.some((c) => c.args[0] === 'patch'));
 });
 
 test('cloud cutover requires protected main-only same-commit CI and serializes against deployment', () => {

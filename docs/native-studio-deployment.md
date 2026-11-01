@@ -74,7 +74,7 @@ The Docker image is native Linux amd64, the currently verified Linux static Duck
 
 For native service startup, mount the prepared private files at `/run/workspace` with owner-only permissions readable by UID 1000. Kubernetes Secret projection can be copied by a non-root init container into a memory-backed volume with `umask 077`/mode 0600; a group-readable Secret projection itself does not satisfy native private-file checks. Run the explicit initializer before starting the steady plan. These are operator-owned runtime requirements, not preconditions checked by CD. Preserve a private copy of the old Pod template only for operator recovery; never roll a Node image back against native configuration.
 
-The runtime profile uses one replica/Recreate, bounded scratch space, non-root UID/GID 1000, read-only root, no service account token/capabilities and `/api/health` readiness with loopback Host. Its container must invoke the image's native entrypoint, without the previous Node command override. CD does not require the former Pod-template annotation `workspace.tidb.ai/runtime: rust-v1` and leaves existing annotations, probes and configuration untouched.
+The runtime profile uses one replica/Recreate, bounded scratch space, non-root UID/GID 1000, read-only root, no service account token/capabilities and `/api/health` readiness. Token profiles require the configured public Host for node-originated HTTP probes; a loopback Host is accepted only from an actual loopback peer. Its container must invoke the image's native entrypoint, without the previous Node command override. CD does not require the former Pod-template annotation `workspace.tidb.ai/runtime: rust-v1` and leaves existing annotations, probes and configuration untouched.
 
 The cloud profile remains a single co-located deployment. Local and CI fault tests use isolated
 processes to examine Global and Region failure boundaries; they do not establish Pod-level
@@ -208,6 +208,15 @@ until bootstrap succeeds.
 Fresh empty Workspaces atomically initialize their empty resource index with their core
 records, so the first create does not wait on a background backfill. Existing Workspaces
 retain resumable index migration; no existing resource set is marked ready without indexing.
+
+Kubelet HTTP probes come from the node, not the application's loopback peer. Configure their
+`Host` header with the API's explicit public host (for this installation, `drive9.ai`) while
+leaving the connection target at the Pod IP. The cutover profile applies this to existing HTTP
+health probes without changing thresholds or timings. For a previously activated Token profile,
+`repair-probes` updates only these probes under the normal Deployment guard, then verifies
+readiness and both public APIs. It retains all Meta roots, identities and checkpoints. A
+loopback Host from a non-loopback peer remains denied; do not weaken data Host/origin policy
+or accept an authorization error as a successful health check.
 
 The Token profile preserves the existing GET `/api/health` probe with a loopback Host only
 when the socket peer is actually local. The same Host cannot access data or create an Owner
