@@ -9,7 +9,7 @@ This guide explains the project and routes to authoritative documents. Detailed 
 in [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), and the linked standards.
 Explicit user instructions and higher-priority tool requirements still apply.
 For product and UI work, apply [product experience](docs/standards/product-experience.md):
-consistent shared interactions and minimum complete paths to useful value.
+consumer product clarity and care, consistent shared interactions and minimum complete paths to useful value.
 
 ## What we are building
 
