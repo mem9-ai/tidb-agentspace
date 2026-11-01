@@ -22,6 +22,10 @@
   confirmed failed rollout; `recover` also supports guarded operator-initiated recovery.
   See [ADR 0032](decisions/0032-writer-safe-dev-release.md) for fail-closed conditions and
   the remaining single-writer availability limit. Runtime configuration remains operator-owned.
+- `.github/workflows/global-configure.yml`: explicit main-only, same-commit full-CI consumer
+  in the protected dev environment, serialized with image deployment. It inspects only referenced
+  configuration or performs an explicitly authorized fresh Global/Region configuration cutover.
+  See [native deployment](native-studio-deployment.md). Ordinary image CD does not reset storage.
 - Exact npm dependency versions, a committed lockfile, fixed Node/npm versions, editor
   settings, Prettier, ESLint, strict TypeScript, and a generated-contract drift check.
 - `scripts/check-repo.mjs` checks instruction entry points, required standards and their

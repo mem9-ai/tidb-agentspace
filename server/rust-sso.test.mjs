@@ -3,7 +3,7 @@ import test from 'node:test';
 import http from 'node:http';
 import { execFile, spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
+import { writeFile, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
@@ -185,6 +185,25 @@ async function fixture(t, overrides = {}, managed = false) {
       await writeFile(metaFile, JSON.stringify(server), { mode: 0o600 });
       services.push({ kind: 'metadata', configFile: metaFile });
     }
+  }
+  if (managed === 'globalApi') {
+    const { globalApiProfile } = await import('../scripts/global-api-profile.mjs');
+    const clockDirectory = resolve(metadata.directory, 'portal-clocks');
+    await mkdir(clockDirectory, { mode: 0o700 });
+    const profile = await globalApiProfile({
+      directory: resolve(metadata.directory, 'portal-security'),
+      mountDirectory: resolve(metadata.directory, 'portal-security'),
+      api: config,
+      clockDirectory,
+      initializeClock: true,
+    });
+    const controlPort = await port();
+    profile.api.security.control.bind = `127.0.0.1:${controlPort}`;
+    profile.global.regionControls[0].origin = `https://127.0.0.1:${controlPort}`;
+    Object.assign(config, profile.api);
+    const globalFile = resolve(metadata.directory, 'global-api.json');
+    await writeFile(globalFile, JSON.stringify(profile.global), { mode: 0o600 });
+    services.push({ kind: 'global', configFile: globalFile });
   }
   await writeFile(file, JSON.stringify(config), { mode: 0o600 });
   services.push({ kind: 'workspace', configFile: file });
@@ -464,6 +483,84 @@ test(
       });
       if (i === 24) assert.equal(r.status, 429);
     }
+  },
+);
+
+test(
+  'one Portal SSO callback establishes isolated Global and Region sessions and logout revokes both',
+  { skip: !enabled, timeout: 120000 },
+  async (t) => {
+    const f = await fixture(t, {}, 'globalApi');
+    const global = '/studio/api/global';
+    const login = await f.request(global + '/api/auth/tidbcloud/login?workspaceId=ignored');
+    assert.equal(login.status, 303);
+    assert.equal(login.headers.location, '/studio/api/auth/tidbcloud/login');
+    assert.equal(login.headers['set-cookie'], undefined, 'no second OIDC flow');
+    const pending = await f.flow();
+    assert.equal(
+      new URL(pending.response.headers.location).searchParams.get('redirect_uri'),
+      'https://studio.example.test/studio/api/auth/tidbcloud/callback',
+    );
+    const signedIn = await f.callback(pending);
+    assert.equal(signedIn.status, 302, JSON.stringify(signedIn.body));
+    const cookies = signedIn.headers['set-cookie'];
+    const account = cookies.find((c) => c.startsWith('aw_account=')).split(';')[0];
+    const ownerHeader = cookies.find((c) => c.startsWith('aw_global_owner='));
+    assert.ok(
+      ownerHeader.includes('HttpOnly') &&
+        ownerHeader.includes('Secure') &&
+        ownerHeader.includes('SameSite=Strict'),
+    );
+    assert.ok(ownerHeader.includes('Path=/studio/;'));
+    const owner = ownerHeader.split(';')[0];
+    const workspace = (await f.request('/api/v1/workspaces', { cookie: account })).body.data[0].id;
+    const session = `${global}/api/auth/session?workspaceId=${workspace}`;
+    assert.equal((await f.request(session, { cookie: owner })).status, 200);
+    assert.equal((await f.request(session, { cookie: account })).status, 401);
+    assert.equal(
+      (await f.request(`/api/v1/workspaces/${workspace}`, { cookie: owner })).status,
+      401,
+    );
+    assert.equal(
+      (
+        await f.request(`${global}/api/auth/session?workspaceId=another-workspace`, {
+          cookie: owner,
+        })
+      ).status,
+      401,
+    );
+    assert.equal((await f.callback(pending)).status, 400, 'single-use callback');
+    const created = await f.request(`${global}/api/v1/workspaces/${workspace}/keys`, {
+      method: 'POST',
+      cookie: owner,
+      headers: { 'Idempotency-Key': randomUUID() },
+      body: {
+        name: 'Research agent',
+        scopes: ['resources:read'],
+        resourceIds: ['*'],
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+      },
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.equal(created.body.regionalStatus, 'applied');
+    const token = await f.request(`${global}/api/v1/workspaces/${workspace}/token-issuances`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${created.body.secret}`, 'Idempotency-Key': randomUUID() },
+      body: { audience: f.config.authorityId },
+    });
+    assert.equal(token.status, 201, JSON.stringify(token.body));
+    const loggedOut = await f.request('/studio/api/auth/tidbcloud/logout', {
+      method: 'POST',
+      cookie: `${account}; ${owner}`,
+    });
+    assert.equal(loggedOut.status, 200, JSON.stringify(loggedOut.body));
+    assert.ok(
+      loggedOut.headers['set-cookie'].some(
+        (c) => c.startsWith('aw_global_owner=;') && c.includes('Path=/studio/;'),
+      ),
+    );
+    assert.equal((await f.request(session, { cookie: owner })).status, 401);
+    assert.equal((await f.request('/api/v1/workspaces', { cookie: account })).status, 401);
   },
 );
 

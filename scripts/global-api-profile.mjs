@@ -117,17 +117,8 @@ export async function globalApiProfile({
         },
       },
     ],
-    ...(api.sso
-      ? {
-          sso: {
-            ...api.sso,
-            ownerSubjects: [],
-            ownerEmailRules: [],
-            allowedOrgs: [],
-            redirectUri: globalBase + '/api/auth/tidbcloud/callback',
-          },
-        }
-      : { localWorkspace: { workspaceId: api.workspaceId, regionId: authority } }),
+    // Hosted Portal uses its existing verified callback for both sessions.
+    ...(!api.sso ? { localWorkspace: { workspaceId: api.workspaceId, regionId: authority } } : {}),
   };
   const security = {
     publicOrigin,

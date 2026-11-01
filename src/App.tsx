@@ -904,7 +904,7 @@ function Overview({
                 <Terminal size={17} />
               </div>
               <Text className="section-description" component="p">
-                Let your agent discover its resources through one API.
+                Exchange your Workspace Key at Global, then use its Region Token.
               </Text>
               <Code
                 copy={copy}
@@ -913,7 +913,7 @@ function Overview({
                   'curl ' +
                   apiBaseUrl +
                   base +
-                  '/resources \\\n  -H "Authorization: Bearer $WORKSPACE_API_KEY"'
+                  '/resources \\\n  -H "Authorization: Bearer $REGION_ACCESS_TOKEN"'
                 }
               />
               <div className="quickstart-footer">
@@ -1902,7 +1902,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
                 void signInGlobal().catch((cause) => setPageError(String(cause.message)))
               }
             >
-              Sign in at Global
+              Sign in
             </Button>
           </Alert>
         )}
@@ -2660,7 +2660,7 @@ function Connection({
   const payload = JSON.stringify({ resourceId: r.id, sql: 'SELECT 1 AS connected;' });
   const shell = [
     `curl '${endpoint}'`,
-    '  -H "Authorization: Bearer $WORKSPACE_API_KEY"',
+    '  -H "Authorization: Bearer $REGION_ACCESS_TOKEN"',
     ...(isFileSystem ? [] : ["  -H 'Content-Type: application/json'", `  -d '${payload}'`]),
   ].join(' \\' + '\n');
   const javascript = [
@@ -2669,7 +2669,7 @@ function Connection({
     '  {',
     `    method: "${isFileSystem ? 'GET' : 'POST'}",`,
     '    headers: {',
-    '      Authorization: `Bearer ${process.env.WORKSPACE_API_KEY}`,',
+    '      Authorization: `Bearer ${process.env.REGION_ACCESS_TOKEN}`,',
     '      "Content-Type": "application/json"',
     `    }${isFileSystem ? '' : ','}`,
     ...(isFileSystem ? [] : [`    body: JSON.stringify(${payload})`]),
@@ -2683,7 +2683,7 @@ function Connection({
     'request = urllib.request.Request(',
     `    "${endpoint}",`,
     '    headers={',
-    '        "Authorization": "Bearer " + os.environ["WORKSPACE_API_KEY"],',
+    '        "Authorization": "Bearer " + os.environ["REGION_ACCESS_TOKEN"],',
     '        "Content-Type": "application/json"',
     `    }${isFileSystem ? '' : ','}`,
     ...(isFileSystem ? [] : [`    data=json.dumps(${payload}).encode()`]),
@@ -2695,14 +2695,19 @@ function Connection({
     <Modal
       wide
       title={`Connect to ${r.name}`}
-      description={`${kindLabel[r.kind]} · One Workspace Key`}
+      description={`${kindLabel[r.kind]} · Scoped API access`}
       onClose={onClose}
     >
       <Alert className="notice" color="peacock" icon={<KeyRound size={17} />}>
         <span>
-          Use a Workspace Key with access to <strong>{r.name}</strong> and{' '}
+          Exchange a Workspace Key with access to <strong>{r.name}</strong> and{' '}
           <code>{isFileSystem ? 'files:read' : 'queries:execute'}</code>. The same key can access
-          your other permitted resources.
+          your other permitted resources. Send the returned Region Token as{' '}
+          <code>REGION_ACCESS_TOKEN</code>. See the{' '}
+          <a href="#api" onClick={onClose}>
+            API documentation
+          </a>{' '}
+          for Token exchange examples.
         </span>
       </Alert>
       <ChoiceTabs value={tab} onChange={setTab} options={['REST API', 'JavaScript', 'Python']}>

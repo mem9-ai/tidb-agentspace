@@ -805,7 +805,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** @description Registered server callback; verifies signature, issuer, audience and nonce with single-use, cookie-bound state. Managed hosts establish a Workspace-bound aw_account continuity grant with no absolute server expiry; explicit local/legacy profiles require their configured owner grants and issue an eight-hour aw_session. */
+    /** @description Registered Portal callback; verifies signature, issuer, audience and nonce with single-use, cookie-bound state. Managed hosts establish a Workspace-bound aw_account continuity grant. When Global shares the Portal listener, this same verified callback also issues a distinct eight-hour aw_global_owner session after Global Directory membership checks. No second provider login/callback is needed. Explicit local/legacy profiles issue an eight-hour aw_session. */
     get: operations['completeTidbLogin'];
     put?: never;
     post?: never;
@@ -825,7 +825,7 @@ export interface paths {
     /** @description Revoke the TiDB Account session and attached Guest cookie, then redirect. Guest-only sessions must use POST /api/auth/guest/logout. */
     get: operations['logoutTidbSessionAndRedirect'];
     put?: never;
-    /** @description Revoke the TiDB Account session and attached Guest cookie. Guest-only sessions must use POST /api/auth/guest/logout to schedule cleanup. */
+    /** @description Revoke the TiDB Account session and attached Guest cookie. Bundled Portal deployments also revoke the attached Global Owner session and clear both cookies. Guest-only sessions must use POST /api/auth/guest/logout to schedule cleanup. */
     post: operations['logoutTidbSession'];
     delete?: never;
     options?: never;

@@ -69,6 +69,10 @@ fn parse(value: &str) -> Result<(&str, &str)> {
     Ok((workspace, secret))
 }
 impl RegionalAccount {
+    // A hint only: Global authenticates its own credential before revoking anything.
+    pub(crate) fn workspace_hint(headers: &HeaderMap) -> Result<&str> {
+        Ok(parse(cookie(headers)?)?.0)
+    }
     async fn flag(&self, workspace: &str, secret: &str) -> (String, Arc<AtomicBool>) {
         let key = format!(
             "{:x}",

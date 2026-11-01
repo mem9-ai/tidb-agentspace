@@ -226,6 +226,7 @@ struct App {
     current_account: Option<regional_account::AuthorizedAccount>,
     security: Option<Arc<region_security::Runtime>>,
     token_credential: Option<Credential>,
+    portal_sessions: Option<global_api::PortalSessions>,
 }
 
 /// Explicit co-located integration. Separate services require authenticated control transport;
@@ -346,10 +347,14 @@ impl WorkspaceServer {
                 current_account: None,
                 security,
                 token_credential: None,
+                portal_sessions: None,
             },
         })
     }
     pub fn with_global(mut self, global: global_api::GlobalServer) -> Self {
+        if self.app.sso.is_some() && self.app.guest_runtime.is_some() {
+            self.app.portal_sessions = global.portal_sessions(&self.app.config.public_path);
+        }
         self.app.config.global_entry = Some(GlobalEntry {
             api_origin: global.origin().into(),
             api_path_prefix: global.mount_path().into(),
@@ -1538,6 +1543,26 @@ async fn auth_route(
         if let Some(value) = guest_cookie {
             response.headers_mut().append("Set-Cookie", value);
         }
+        if let Some(global) = &app.portal_sessions {
+            let workspace = regional_account::RegionalAccount::workspace_hint(headers).ok();
+            let revoked = global.revoke(headers, workspace).await;
+            if let Err(e) = revoked {
+                let cookies = response
+                    .headers()
+                    .get_all("Set-Cookie")
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                response = error(e);
+                for value in cookies {
+                    response.headers_mut().append("Set-Cookie", value);
+                }
+            }
+            match global.clear() {
+                Ok(value) => response.headers_mut().append("Set-Cookie", value),
+                Err(e) => return error(e),
+            };
+        }
         return response;
     }
     let Some(sso) = &app.sso else {
@@ -1576,10 +1601,34 @@ async fn auth_route(
                         None => Err(reject(503, "ACCOUNT_ONBOARDING_UNAVAILABLE")),
                         Some(onboarding) => match onboarding.personal(issuer, subject).await {
                             Ok(registration) => {
-                                runtime
+                                let regional_cookie = runtime
                                     .account
                                     .establish(&registration.workspace_id, issuer, subject)
-                                    .await
+                                    .await;
+                                match regional_cookie {
+                                    Err(e) => Err(e),
+                                    Ok(regional) => {
+                                        let global = match &app.portal_sessions {
+                                            Some(global) => {
+                                                let old_workspace = regional_account::RegionalAccount::workspace_hint(headers).ok();
+                                                if let Err(e) =
+                                                    global.revoke(headers, old_workspace).await
+                                                {
+                                                    return error(e);
+                                                }
+                                                match global
+                                                    .establish(&login, &registration.workspace_id)
+                                                    .await
+                                                {
+                                                    Ok(cookie) => Some(cookie),
+                                                    Err(e) => return error(e),
+                                                }
+                                            }
+                                            None => None,
+                                        };
+                                        Ok((regional, global))
+                                    }
+                                }
                             }
                             Err(e) => Err(e),
                         },
@@ -1587,7 +1636,7 @@ async fn auth_route(
                 }
             };
             let mut response = match result {
-                Ok(account_cookie) => {
+                Ok((account_cookie, global_cookie)) => {
                     if regional_account::RegionalAccount::has_cookie(headers)
                         && let Err(e) = runtime.account.revoke(headers).await
                         && e.status != 401
@@ -1597,6 +1646,9 @@ async fn auth_route(
                     }
                     let mut response = redirect(&sso.config.post_login(&app.config.public_path));
                     response.headers_mut().append("Set-Cookie", account_cookie);
+                    if let Some(cookie) = global_cookie {
+                        response.headers_mut().append("Set-Cookie", cookie);
+                    }
                     response
                 }
                 Err(e) => error(e),
