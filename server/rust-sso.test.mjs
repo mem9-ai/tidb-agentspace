@@ -536,7 +536,7 @@ test(
       headers: { 'Idempotency-Key': randomUUID() },
       body: {
         name: 'Research agent',
-        scopes: ['resources:read'],
+        scopes: ['resources:read', 'resources:write'],
         resourceIds: ['*'],
         expiresAt: Math.floor(Date.now() / 1000) + 3600,
       },
@@ -549,6 +549,12 @@ test(
       body: { audience: f.config.authorityId },
     });
     assert.equal(token.status, 201, JSON.stringify(token.body));
+    const firstResource = await f.request(`/api/v1/workspaces/${workspace}/resources`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token.body.accessToken}` },
+      body: { kind: 'filesystem', name: 'Research files', region: 'aws-ap-southeast-1' },
+    });
+    assert.equal(firstResource.status, 201, JSON.stringify(firstResource.body));
     const loggedOut = await f.request('/studio/api/auth/tidbcloud/logout', {
       method: 'POST',
       cookie: `${account}; ${owner}`,

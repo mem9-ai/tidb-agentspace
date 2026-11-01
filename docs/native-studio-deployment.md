@@ -190,6 +190,9 @@ or retries initialization. Inspect the Job privately before recovery; never prin
 or raw credential-bearing configuration/logs. Prior configuration and storage remain retained
 for operator recovery; this workflow never deletes a bucket, unrelated resource, or old Secret.
 This reset needs explicit operator authorization and is not part of ordinary image CD.
+Fresh empty Workspaces atomically initialize their empty resource index with their core
+records, so the first create does not wait on a background backfill. Existing Workspaces
+retain resumable index migration; no existing resource set is marked ready without indexing.
 
 The Token profile preserves the existing GET `/api/health` probe with a loopback Host only
 when the socket peer is actually local. The same Host cannot access data or create an Owner
