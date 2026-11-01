@@ -19,10 +19,10 @@ The local text-only provider is unchanged. Upload and download limits are unchan
 
 ## Consequences and verification
 
-The additive response field is documented in OpenAPI. Older clients can continue to use
-existing text and download paths, but clients expecting every non-text file to produce an
-`unavailableReason` should tolerate the new image variant. Deploy the API before the new
-Console to provide image previews; an older API continues to report images unavailable.
+The additive response field is documented in OpenAPI. Image responses include an unavailable
+reason for older clients, while image-aware clients prefer the image when present. An older
+Console therefore retains its download fallback if the API deploys first; a newer Console
+retains the unavailable fallback if the API deploys later. Both updates are needed to preview.
 No permission, storage, or credential migration is required. Rollback restores download-only
 image behavior. Test authorized access, signature validation, the exact byte boundary and
 metadata preflight, and the Console's rendered and fallback states in supported themes and

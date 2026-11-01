@@ -788,7 +788,11 @@ test('image preview displays bounded images and explains unavailable files', asy
     const path = url.searchParams.get('path');
     if (path === '/photo.png')
       return route.fulfill({
-        json: { size: imageBytes.length, image: { mimeType: 'image/png', base64: pixel } },
+        json: {
+          size: imageBytes.length,
+          image: { mimeType: 'image/png', base64: pixel },
+          unavailableReason: 'This image cannot be displayed by this version.',
+        },
       });
     if (path === '/large.jpg')
       return route.fulfill({

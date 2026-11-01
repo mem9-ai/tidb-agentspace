@@ -267,7 +267,7 @@ impl Product {
                         return Ok((
                             200,
                             Reply::Json(
-                                json!({"size":bytes.len(),"image":{"mimeType":mime,"base64":STANDARD.encode(&bytes)}}),
+                                json!({"size":bytes.len(),"image":{"mimeType":mime,"base64":STANDARD.encode(&bytes)},"unavailableReason":"This image cannot be displayed by this version. Download it to open in another application."}),
                             ),
                         ));
                     }

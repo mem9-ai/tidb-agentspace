@@ -1221,7 +1221,7 @@ function FileWorkspace({
         if (controller.signal.aborted) return;
         setEditing({ ...file, content: result.content, size: result.size });
         setContent(result.content || '');
-        setUnavailableReason(result.unavailableReason || '');
+        setUnavailableReason(result.image ? '' : result.unavailableReason || '');
         setPreviewImage(result.image || null);
       } catch (cause) {
         if (!controller.signal.aborted)

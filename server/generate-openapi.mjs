@@ -759,7 +759,7 @@ const paths = {
               in: 'query',
               schema: { enum: ['1'] },
               description:
-                'Returns text content, a base64 image, or an unavailableReason. Text is limited to 128 KiB and PNG, JPEG, GIF, and WebP to 1 MiB.',
+                'Returns text content, a base64 image, or an unavailableReason. Images include a fallback reason for older clients; prefer image when present. Text is limited to 128 KiB and PNG, JPEG, GIF, and WebP to 1 MiB.',
             },
           ],
         },

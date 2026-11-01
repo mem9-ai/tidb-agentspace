@@ -58,6 +58,7 @@ test(
     const exact = await fixture.request(url('/limit.png'));
     assert.equal(exact.status, 200);
     assert.equal(exact.body.size, atLimit.length);
+    assert.match(exact.body.unavailableReason, /this version/);
     assert.deepEqual(Buffer.from(exact.body.image.base64, 'base64'), atLimit);
     const readsBeforeLarge = fixture.provider.fileReads;
     const tooLarge = await fixture.request(url('/too-large.png'));
