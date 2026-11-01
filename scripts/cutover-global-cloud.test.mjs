@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { parse } from 'yaml';
 import {
   cutover,
   prepareCutover,
   readTarget,
+  recoverPrepared,
   verifyGlobal,
   waitForBootstrap,
 } from './cutover-global-cloud.mjs';
@@ -21,7 +22,7 @@ const decode = (v) => JSON.parse(Buffer.from(v, 'base64').toString());
 function fixture() {
   const image = 'registry.example/api@sha256:' + 'a'.repeat(64);
   const source = {
-    metadata: { resourceVersion: '7' },
+    metadata: { uid: 'target-uid', resourceVersion: '7' },
     spec: {
       replicas: 1,
       strategy: { type: 'Recreate' },
@@ -105,7 +106,14 @@ function fixture() {
   const secret = { metadata: { name: 'original' }, immutable: true, data };
   const calls = [];
   const kubectl = (args, input) => {
-    calls.push({ args, input });
+    const call = { args, input };
+    if (args[0] === 'patch') {
+      const path = args.find((a) => a.startsWith('--patch-file=')).slice('--patch-file='.length);
+      assert.equal(statSync(path).mode & 0o777, 0o600);
+      call.patch = JSON.parse(readFileSync(path, 'utf8'));
+      call.patchPath = path;
+    }
+    calls.push(call);
     if (args[0] === 'get') {
       if (['jobs', 'pods', 'events', 'storageclasses', 'csidrivers'].includes(args[1]))
         return JSON.stringify({ items: [] });
@@ -253,8 +261,10 @@ test('cutover verifies bootstrap before guarded switch and public auth denials',
     ['create', 'create', 'create', 'patch', 'rollout'],
   );
   const patch = f.calls.find((c) => c.args[0] === 'patch');
-  assert.ok(patch.args.includes('--patch-file=/dev/stdin'));
-  assert.equal(JSON.parse(patch.input).metadata.resourceVersion, '7');
+  assert.equal(patch.input, undefined);
+  assert.equal(patch.patch.metadata.resourceVersion, '7');
+  assert.ok(!existsSync(patch.patchPath));
+  assert.ok(!patch.args.some((arg) => arg.includes('private-subject')));
 });
 
 test('unsafe targets, repeated resets and concurrent Deployment changes fail closed', async () => {
@@ -274,7 +284,7 @@ test('unsafe targets, repeated resets and concurrent Deployment changes fail clo
         if (args[0] === 'get' && args[1].startsWith('deployment')) {
           gets++;
           if (gets === 2)
-            return JSON.stringify({ ...f.source, metadata: { resourceVersion: '8' } });
+            return JSON.stringify({ ...f.source, spec: { ...f.source.spec, replicas: 2 } });
         }
         return f.kubectl(args, input);
       },
@@ -287,6 +297,92 @@ test('unsafe targets, repeated resets and concurrent Deployment changes fail clo
     verifyGlobal(async () => Response.json({})),
     /verification failed/,
   );
+});
+
+test('status-only Deployment updates retain a fresh guarded write and private patch files', async () => {
+  const f = fixture();
+  const kubectl = (args, input) => {
+    if (args[0] === 'get' && args[1] === 'deployment/workspace')
+      return JSON.stringify({
+        ...f.source,
+        metadata: { ...f.source.metadata, resourceVersion: '9' },
+        status: { availableReplicas: 1 },
+      });
+    return f.kubectl(args, input);
+  };
+  await cutover(options, kubectl, healthy);
+  assert.equal(f.calls.find((call) => call.patch).patch.metadata.resourceVersion, '9');
+});
+
+async function recoveryFixture() {
+  const f = fixture();
+  const prepared = await prepareCutover(readTarget(options, f.kubectl), options);
+  const job = {
+    ...prepared.job,
+    status: { succeeded: 1, conditions: [{ type: 'Complete', status: 'True' }] },
+  };
+  const pvc = { ...prepared.pvc, status: { phase: 'Bound' } };
+  const candidates = [job];
+  const kubectl = (args, input) => {
+    if (args[0] === 'get') {
+      if (args[1] === 'jobs') return JSON.stringify({ items: candidates });
+      if (args[2] === prepared.name && args[1] === 'secret') return JSON.stringify(prepared.secret);
+      if (args[2] === prepared.name && args[1] === 'pvc') return JSON.stringify(pvc);
+    }
+    return f.kubectl(args, input);
+  };
+  return { ...f, prepared, job, pvc, candidates, kubectl };
+}
+
+test('completed candidate activation reuses its configuration and clocks without creating or initializing', async () => {
+  const f = await recoveryFixture();
+  const result = await cutover({ ...options, operation: 'activate-prepared' }, f.kubectl, healthy);
+  assert.equal(result.globalEnabled, true);
+  assert.deepEqual(
+    f.calls.filter((c) => c.args[0] !== 'get').map((c) => c.args[0]),
+    ['patch', 'rollout'],
+  );
+  assert.equal(
+    f.calls.find((c) => c.patch).patch.spec.template.spec.volumes.at(-1).persistentVolumeClaim
+      .claimName,
+    f.prepared.name,
+  );
+});
+
+test('recovery rejects incomplete/ambiguous candidates, mutable config, unbound clocks and runtime/SSO/storage drift', async () => {
+  const cases = [
+    (f) => {
+      f.job.status.conditions = [];
+    },
+    (f) => {
+      f.candidates.push(structuredClone(f.job));
+    },
+    (f) => {
+      f.prepared.secret.immutable = false;
+    },
+    (f) => {
+      f.pvc.status.phase = 'Pending';
+    },
+    (f) => {
+      f.job.spec.template.spec.containers[0].image = 'unreviewed';
+    },
+    (f) => {
+      const api = decode(f.prepared.secret.data['api.json']);
+      api.sso.clientId = 'different';
+      f.prepared.secret.data['api.json'] = encode(api);
+    },
+    (f) => {
+      const meta = decode(f.prepared.secret.data['region.json']);
+      meta.s3.bucket = 'unrelated';
+      f.prepared.secret.data['region.json'] = encode(meta);
+    },
+  ];
+  for (const mutate of cases) {
+    const f = await recoveryFixture();
+    mutate(f);
+    assert.throws(() => recoverPrepared(readTarget(options, f.kubectl), options, f.kubectl));
+    assert.ok(!f.calls.some((c) => c.args[0] === 'patch' || c.args[0] === 'create'));
+  }
 });
 
 test('cloud cutover requires protected main-only same-commit CI and serializes against deployment', () => {

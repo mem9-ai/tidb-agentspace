@@ -183,7 +183,9 @@ Global on dev** workflow first supports `inspect` without mutation. Its
 independent Global/Region Meta roots and encryption keys in the existing configured bucket,
 new signing/control identities, and a private checkpoint PVC. A bounded Job runs the reviewed
 native initializer once and releases storage ownership before a resourceVersion-guarded
-Deployment switch. The serving image, public route, existing Portal SSO callback and provider
+Deployment switch. The guard rejects identity or spec changes; status-only updates use a fresh
+resourceVersion. Private patch files are mode 0600 and removed after the update; do not pass
+`--patch-file=/dev/stdin` from a Node child process, whose stdin may be a socket. The serving image, public route, existing Portal SSO callback and provider
 configuration are retained. Steady plans always use `initializeClock:false`; Pod restarts
 reuse the persistent checkpoints. A failed/uncertain initializer never switches the Deployment
 or retries initialization. Inspect the Job privately before recovery; never print Secret data
@@ -197,7 +199,12 @@ If the cluster has no default storage class, explicitly select an existing class
 workflow's `storage_class` input; the operator does not install a driver or change cluster defaults.
 After diagnosing and correcting a failed candidate, a fresh candidate uses new isolated roots,
 keys and volume. Never rerun initialization against a partially initialized candidate or activate
-an unconfirmed Job. The current serving Deployment remains untouched until bootstrap succeeds.
+an unconfirmed Job. When initialization succeeded but activation failed, use `activate-prepared`
+instead of another reset. It requires exactly one completed candidate, an immutable configuration,
+a bound checkpoint volume, unchanged runtime/SSO/provider settings, and the expected isolated
+Meta roots. It creates no objects and never runs the initializer again. Ambiguous candidates or
+a changed runtime require operator inspection. The current serving Deployment remains untouched
+until bootstrap succeeds.
 Fresh empty Workspaces atomically initialize their empty resource index with their core
 records, so the first create does not wait on a background backfill. Existing Workspaces
 retain resumable index migration; no existing resource set is marked ready without indexing.

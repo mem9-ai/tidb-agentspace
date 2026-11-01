@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { isDeepStrictEqual } from 'node:util';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +13,7 @@ const label = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64');
 const decode = (value) => JSON.parse(Buffer.from(value, 'base64').toString('utf8'));
 const checkpointMount = '/var/lib/workspace-security';
+class CutoverValidationError extends Error {}
 
 // Resolve only the selected runtime's explicit references. Never enumerate unrelated Secrets.
 export function readTarget({ namespace, deployment, container }, kubectl) {
@@ -120,7 +122,7 @@ export async function prepareCutover(
 ) {
   if (storageClassName && !label.test(storageClassName))
     throw new Error('Invalid storage class name.');
-  const { api, plan, secret, volume, pod, runtime, environment } = target;
+  const { api, plan, secret, pod, runtime, environment } = target;
   if (api.security || api.globalEntry || plan.services.some((s) => s.kind === 'global'))
     throw new Error('Global already configured; do not rotate identities or reset storage again.');
   if (
@@ -201,21 +203,7 @@ export async function prepareCutover(
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
-  const newPod = structuredClone(pod);
-  const projection = newPod.volumes.find((v) => v.name === volume.name);
-  projection.secret = { ...projection.secret, secretName: name };
-  delete projection.secret.items; // The private-copy init container needs every new identity file.
-  newPod.volumes.push({ name: 'global-security', persistentVolumeClaim: { claimName: name } });
-  newPod.securityContext = { ...newPod.securityContext, fsGroup: 1000 };
-  const next = newPod.containers.find((c) => c.name === container);
-  next.volumeMounts.push({ name: 'global-security', mountPath: checkpointMount });
-  const bootstrap = structuredClone(newPod);
-  bootstrap.restartPolicy = 'Never';
-  const init = bootstrap.containers[0];
-  init.command = ['workspace-backend'];
-  init.args = ['initialize', '--config', `${mount}/bootstrap.json`];
-  for (const key of ['readinessProbe', 'livenessProbe', 'startupProbe', 'ports', 'lifecycle'])
-    delete init[key];
+  const { newPod, bootstrap } = candidatePods(target, container, name);
   return {
     name,
     secret: {
@@ -252,6 +240,161 @@ export async function prepareCutover(
       },
     },
   };
+}
+
+// Derive both Pod compositions from the serving target; keep the image, providers and probes.
+function candidatePods(target, container, name) {
+  const newPod = structuredClone(target.pod);
+  const projection = newPod.volumes.find((v) => v.name === target.volume.name);
+  projection.secret = { ...projection.secret, secretName: name };
+  delete projection.secret.items; // The private-copy init container needs every new identity file.
+  newPod.volumes.push({ name: 'global-security', persistentVolumeClaim: { claimName: name } });
+  newPod.securityContext = { ...newPod.securityContext, fsGroup: 1000 };
+  const next = newPod.containers.find((c) => c.name === container);
+  next.volumeMounts.push({ name: 'global-security', mountPath: checkpointMount });
+  const bootstrap = structuredClone(newPod);
+  bootstrap.restartPolicy = 'Never';
+  const init = bootstrap.containers[0];
+  init.command = ['workspace-backend'];
+  init.args = ['initialize', '--config', '/run/workspace/bootstrap.json'];
+  for (const key of ['readinessProbe', 'livenessProbe', 'startupProbe', 'ports', 'lifecycle'])
+    delete init[key];
+  return { newPod, bootstrap };
+}
+
+const complete = (job) =>
+  job.status?.conditions?.some((c) => c.type === 'Complete' && c.status === 'True') &&
+  !job.status?.active &&
+  !job.status?.failed;
+
+// A completed initializer may be activated after a transport failure, never initialized again.
+export function recoverPrepared(target, { namespace, deployment, container }, kubectl) {
+  if (target.api.security || target.api.globalEntry)
+    throw new CutoverValidationError(
+      'Global already configured; do not activate another installation.',
+    );
+  const get = (kind, name) =>
+    JSON.parse(kubectl(['get', kind, ...(name ? [name] : []), '-n', namespace, '-o', 'json']));
+  const prefix = deployment.slice(0, 32) + '-global-';
+  const jobs = get('jobs').items.filter(
+    (job) =>
+      job.metadata?.name?.startsWith(prefix) &&
+      /^[a-f0-9]{8}-[a-f0-9]{3}$/.test(job.metadata.name.slice(prefix.length)) &&
+      complete(job),
+  );
+  if (jobs.length !== 1)
+    throw new CutoverValidationError('Expected exactly one completed cutover candidate.');
+  const job = jobs[0],
+    name = job.metadata.name;
+  const secret = get('secret', name),
+    pvc = get('pvc', name);
+  if (secret.immutable !== true || pvc.status?.phase !== 'Bound')
+    throw new CutoverValidationError(
+      'Candidate configuration must be immutable and checkpoint volume bound.',
+    );
+  const { newPod, bootstrap } = candidatePods(target, container, name);
+  if (!isDeepStrictEqual(job.spec?.template?.spec, bootstrap))
+    throw new CutoverValidationError('Serving runtime changed since candidate initialization.');
+  const api = decode(secret.data['api.json']);
+  const { security, globalEntry, ...originalApi } = api;
+  if (
+    !security ||
+    !globalEntry ||
+    security.initializeClock !== false ||
+    !isDeepStrictEqual(originalApi, {
+      ...target.api,
+      sso: hostedSso(target.api, target.environment),
+      initializeWorkspace: false,
+    })
+  )
+    throw new CutoverValidationError(
+      'Candidate API or SSO configuration does not match the serving target.',
+    );
+  const plan = decode(secret.data['deployment.json']);
+  const services = target.plan.services.map(
+    ({ initialize: _init, recoverOwner: _owner, ...role }) => role,
+  );
+  if (
+    !isDeepStrictEqual(plan, {
+      format: 1,
+      services: [...services, { kind: 'global', configFile: '/run/workspace/global-api.json' }],
+    }) ||
+    decode(secret.data['global-api.json']).initializeClock !== false
+  )
+    throw new CutoverValidationError('Unexpected candidate steady deployment plan.');
+  let installation;
+  for (const role of services.filter((s) => s.kind === 'metadata')) {
+    const file = basename(role.configFile),
+      prior = decode(target.secret.data[file]);
+    const next = decode(secret.data[file]);
+    const id = next.installationId?.slice(prior.authorityId.replaceAll(':', '-').length + 1);
+    if (
+      !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(id || '') ||
+      !name.endsWith(id.slice(0, 12)) ||
+      (installation && installation !== id)
+    )
+      throw new CutoverValidationError('Unexpected candidate installation identity.');
+    installation = id;
+    if (
+      !isDeepStrictEqual(next, {
+        ...prior,
+        installationId: `${prior.authorityId.replaceAll(':', '-')}-${id}`,
+        encryptionKeyId: `${prior.authorityId.replaceAll(':', '-')}-${id}`,
+        s3: { ...prior.s3, prefix: `${prior.s3.prefix}-global-${id}` },
+      })
+    )
+      throw new CutoverValidationError(
+        'Candidate metadata storage does not match the serving target.',
+      );
+  }
+  return {
+    name,
+    patch: {
+      spec: {
+        template: {
+          metadata: { annotations: { 'workspace.tidb.ai/global-cutover': installation } },
+          spec: newPod,
+        },
+      },
+    },
+  };
+}
+
+async function switchDeployment(target, prepared, { namespace, deployment }, kubectl) {
+  const current = JSON.parse(
+    kubectl(['get', `deployment/${deployment}`, '-n', namespace, '-o', 'json']),
+  );
+  // Status-only updates change resourceVersion too. Reject spec/identity changes, then guard
+  // the actual write with the latest resourceVersion to retain optimistic concurrency.
+  if (
+    current.metadata?.uid !== target.source.metadata.uid ||
+    !isDeepStrictEqual(current.spec, target.source.spec)
+  )
+    throw new CutoverValidationError(
+      'Deployment changed during bootstrap; inspect before switching configuration.',
+    );
+  const patch = {
+    ...prepared.patch,
+    metadata: { resourceVersion: current.metadata.resourceVersion },
+  };
+  const temporary = await mkdtemp(resolve(tmpdir(), 'workspace-patch-'));
+  try {
+    const path = resolve(temporary, 'patch.json');
+    await writeFile(path, JSON.stringify(patch), { mode: 0o600, flag: 'wx' });
+    // kubectl reopens --patch-file; a child-process stdin socket is not a portable file.
+    kubectl([
+      'patch',
+      `deployment/${deployment}`,
+      '-n',
+      namespace,
+      '--type=merge',
+      `--patch-file=${path}`,
+      '-o',
+      'name',
+    ]);
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
 }
 
 export async function verifyGlobal(request = fetch) {
@@ -310,44 +453,32 @@ export async function cutover(options, kubectl, request = fetch, report = () => 
       bootstrap: inspectCutover(options, kubectl),
     };
   }
-  if (options.operation !== 'reset-and-enable-global')
-    throw new Error('Explicit reset operation required.');
-  const prepared = await prepareCutover(target, options);
+  if (!['reset-and-enable-global', 'activate-prepared'].includes(options.operation))
+    throw new Error('Explicit cutover operation required.');
   const { namespace, deployment } = options;
-  const create = (object) =>
-    kubectl(['create', '-f', '-', '-n', namespace, '-o', 'name'], JSON.stringify(object));
-  create(prepared.secret);
-  create(prepared.pvc);
-  report('Private configuration and checkpoint PVC created. Starting one-time native bootstrap.');
-  create(prepared.job);
-  // A failed/uncertain bootstrap never changes the running Deployment or retries an initialization.
-  try {
-    await waitForBootstrap(prepared.name, namespace, kubectl);
-  } catch {
-    report(JSON.stringify(inspectCutover(options, kubectl)));
-    throw new Error('Native bootstrap not confirmed; no Deployment configuration was changed.');
+  let prepared;
+  if (options.operation === 'activate-prepared') {
+    prepared = recoverPrepared(target, options, kubectl);
+    report('Verified completed candidate. Reusing initialized roots and persistent checkpoints.');
+  } else {
+    prepared = await prepareCutover(target, options);
+    const create = (object) =>
+      kubectl(['create', '-f', '-', '-n', namespace, '-o', 'name'], JSON.stringify(object));
+    create(prepared.secret);
+    create(prepared.pvc);
+    report('Private configuration and checkpoint PVC created. Starting one-time native bootstrap.');
+    create(prepared.job);
+    try {
+      await waitForBootstrap(prepared.name, namespace, kubectl);
+    } catch {
+      report(JSON.stringify(inspectCutover(options, kubectl)));
+      throw new Error('Native bootstrap not confirmed; no Deployment configuration was changed.');
+    }
+    report(
+      'Native bootstrap completed and released ownership. Checking the Deployment precondition.',
+    );
   }
-  report(
-    'Native bootstrap completed and released ownership. Checking the Deployment precondition.',
-  );
-  const current = JSON.parse(
-    kubectl(['get', `deployment/${deployment}`, '-n', namespace, '-o', 'json']),
-  );
-  if (current.metadata?.resourceVersion !== target.source.metadata.resourceVersion)
-    throw new Error('Deployment changed during bootstrap; inspect before switching configuration.');
-  kubectl(
-    [
-      'patch',
-      `deployment/${deployment}`,
-      '-n',
-      namespace,
-      '--type=merge',
-      '--patch-file=/dev/stdin',
-      '-o',
-      'name',
-    ],
-    JSON.stringify(prepared.patch),
-  );
+  await switchDeployment(target, prepared, options, kubectl);
   report('Configuration switched. Waiting for readiness and public API verification.');
   kubectl(['rollout', 'status', `deployment/${deployment}`, '-n', namespace, '--timeout=300s']);
   await verifyGlobal(request);
@@ -380,7 +511,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       (message) => console.log(message),
     );
     console.log(JSON.stringify(report, null, 2));
-  } catch {
+  } catch (error) {
+    if (error instanceof CutoverValidationError) console.error(error.message);
     console.error(
       'Global cutover not confirmed. Inspect the protected target and bootstrap status; never repeat initialization or expose private configuration.',
     );
