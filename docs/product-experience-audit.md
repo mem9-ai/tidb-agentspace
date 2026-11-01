@@ -19,6 +19,62 @@ Minimalism removes redundant presentation, navigation and decisions. It does not
 permission choices, data parsing, live-write warnings, expiry or protection for valuable work.
 Both principles are shared project rules, not private memory for a particular coding tool.
 
+## Live review and repairs (GH-98, 2026-11-01)
+
+The owner requested a hands-on review of the deployed product, followed by implementation.
+Source baseline: `c6fd53e` on main. The following repairs implement the accepted
+[consumer product standard](standards/product-experience.md#consumer-product-quality);
+merged source and a verified live publication remain separate delivery states.
+
+| Reproduced experience problem                                                                                                                       | Repair in this revision                                                                                                                                                                                                                          |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Empty database tables offered only manual SQL creation; empty files had no direct sample action.                                                    | Both empty workspaces offer **Try sample data** for that exact resource. Existing creation/import/upload actions remain explicit.                                                                                                                |
+| A resource's Tutorial entry displayed both complete workflows. On a phone, File System entry could still lead with the database tutorial.           | Resource/category links show one focused workflow, with **All tutorials** to return to the shared page.                                                                                                                                          |
+| An in-flight sample save was described as an unconfirmed outcome, with the unrelated query action also showing activity.                            | Only the active step shows loading. Pending saves explain that work is in progress; uncertain-save recovery appears after the operation settles. No automatic replay was added.                                                                  |
+| Generated sample identifiers and combined name/type/status options dominated the tutorial.                                                          | **Sample location** exposes exact names and Copy on demand. Resource names lead the selector; type and status remain readable below it. Existing table/file identities are preserved.                                                            |
+| New files closed the dialog without opening an editor; file summary refresh could unmount the workspace and lose the current editor state.          | New files open directly in Edit source with keyboard focus. Existing loaded workspaces remain mounted during resource revalidation. Every operation still uses the authorized API.                                                               |
+| File creation left name/cancel/close controls available during a pending write, and refresh failure could turn an acknowledged save into a failure. | Creation locks its controls, respects existing file draft guards, and keeps an acknowledged save successful if refreshing the summary fails.                                                                                                     |
+| Hosted pages showed illustrative charts and local-only API instructions.                                                                            | Illustrative charts and their time filters are limited to explicit local demos. Hosted monitoring shows recorded counts/status, counts active resources accurately, and explains unavailable telemetry. API and billing copy matches hosted use. |
+| The System theme label was clipped on narrow screens.                                                                                               | Keep the supported theme control at its desktop width, preserving readable text rather than shrinking it.                                                                                                                                        |
+
+### Observed live paths
+
+- Existing MySQL: reopened its original tutorial, reran the regional totals, then opened the
+  exact sample table in SQL Editor and fetched all six rows.
+- New DuckDB **sales-demo** and PostgreSQL **notes-demo**: created each, loaded the included
+  six-order dataset, ran the tutorial query and returned through Overview. All three database
+  engines returned **AMER 90, APAC 240, EMEA 180**. An initial DuckDB resource-index migration
+  response explicitly created nothing; one later explicit retry succeeded.
+- Existing File System: its trial region was occupied, and creation correctly offered a link
+  to the existing resource. Reopened the original completed file tutorial without reseeding.
+- Independent **/sales-demo.csv**: created, edited, checked the Tutorial departure guard,
+  kept the draft, saved and previewed six rows. SQL returned the same regional totals;
+  Just Bash returned the complete CSV with Exit 0 and left the original unchanged.
+- Overview, Connect, Keys, API explorer, Monitoring, Usage & billing and Settings were
+  inspected. No credentials were created, existing customer data was not deleted, and the
+  dedicated demo resources/files remain available for continued exploration.
+
+### Verification approach and evidence
+
+Use semantic browser actions in batches for known flows and inspect results at meaningful
+checkpoints. Keep independent provider work in separate tabs; use the waiting time for
+implementation and local checks. Run focused assertions while diagnosing a change, then the
+complete portable matrix once stable. Screenshots assess visual quality; fixture assertions
+and live provider observations establish different boundaries.
+
+The browser matrix covers pending saves in both tutorials, exact-resource entry and return,
+file creation locking/focus/draft retention, acknowledged saves with failed summary refresh,
+hosted versus local-demo presentation, the owner API explorer, and the existing isolated-browser
+Workspace resume/no-duplicate-write cases. TiUI remains pinned at 2.9.1; no public API,
+authorization or provider adapter changes. The PR records final check results and live
+publication evidence; screenshots below use clearly labeled synthetic/local data.
+
+| State                  | Desktop Light                                                     | Desktop Dark                                                     | Narrow Light                                                     | Narrow Dark                                                     |
+| ---------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------- |
+| Focused tutorial       | [Image](screenshots/product-review/focused-desktop-light.png)     | [Image](screenshots/product-review/focused-desktop-dark.png)     | [Image](screenshots/product-review/focused-narrow-light.png)     | [Image](screenshots/product-review/focused-narrow-dark.png)     |
+| File editor after save | [Image](screenshots/product-review/file-editor-desktop-light.png) | [Image](screenshots/product-review/file-editor-desktop-dark.png) | [Image](screenshots/product-review/file-editor-narrow-light.png) | [Image](screenshots/product-review/file-editor-narrow-dark.png) |
+| Hosted monitoring      | [Image](screenshots/product-review/monitoring-desktop-light.png)  | [Image](screenshots/product-review/monitoring-desktop-dark.png)  | [Image](screenshots/product-review/monitoring-narrow-light.png)  | [Image](screenshots/product-review/monitoring-narrow-dark.png)  |
+
 ## Cross-page findings and decisions
 
 | Area                            | Baseline finding                                                                                                   | Result in this change                                                                                                                                                                                                                                                                                      |

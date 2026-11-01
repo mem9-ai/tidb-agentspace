@@ -104,6 +104,14 @@ portable automated software tests. Prefer failed job logs, DOM context and trace
 replaying the entire flow. Let CI run while completing independent review/documentation;
 poll at meaningful intervals, then verify the exact latest head before merging.
 
+The GH-98 live review pairs this with one risk-based manual pass across creation, useful
+results, return/re-entry and draft/error recovery. While independent provider calls run,
+continue review or implementation rather than polling the same loading screen. Use targeted
+browser cases to diagnose a repair, then the shared matrix for final regression. Inspect
+screenshots at the affected themes/viewports; do not replay the full manual tour after every
+edit. [Review evidence](../product-experience-audit.md#live-review-and-repairs-gh-98-2026-11-01)
+distinguishes live provider observations from synthetic browser coverage.
+
 References: [Playwright best practices](https://playwright.dev/docs/best-practices),
 [assertions](https://playwright.dev/docs/test-assertions),
 [trace viewer](https://playwright.dev/docs/trace-viewer).

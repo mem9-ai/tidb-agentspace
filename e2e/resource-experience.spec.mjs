@@ -21,6 +21,139 @@ const collections = [
   },
 ];
 
+test('new files open for editing, lock creation, protect drafts and survive summary refresh failure', async ({
+  page,
+  context,
+  workspace,
+}, testInfo) => {
+  workspace.addResources();
+  workspace.state.resources[1].name = 'demo-files';
+  workspace.state.profile.name = 'Developer';
+  let release;
+  const pending = new Promise((resolve) => {
+    release = resolve;
+  });
+  const writes = [];
+  let failSummary = false;
+  await context.route('**/api/**', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith('/bootstrap') && request.method() === 'GET' && failSummary) {
+      failSummary = false;
+      return route.fulfill({
+        status: 503,
+        json: { error: { code: 'UNAVAILABLE', message: 'Summary temporarily unavailable.' } },
+      });
+    }
+    if (!path.endsWith('/files') || request.method() !== 'PUT') return route.fallback();
+    const body = request.postDataJSON();
+    writes.push(body);
+    if (writes.length === 1) await pending;
+    else failSummary = true;
+    const saved = {
+      ...body,
+      id: 'created-notes',
+      size: Buffer.byteLength(body.content || ''),
+      updatedAt: '2026-11-01T00:00:00Z',
+    };
+    workspace.state.files = [
+      ...workspace.state.files.filter((file) => file.path !== body.path),
+      saved,
+    ];
+    return route.fulfill({ json: { data: saved } });
+  });
+  try {
+    await workspace.open('#files?resourceId=fs_fixture');
+    await page.getByRole('button', { name: 'Create file or folder', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'New file', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Create a file', exact: true });
+    await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('notes.md');
+    await dialog.getByRole('button', { name: 'Create file', exact: true }).click();
+    await expect.poll(() => writes.length).toBe(1);
+    await expect(dialog.getByRole('textbox', { name: 'Name', exact: true })).toBeDisabled();
+    await expect(dialog.getByRole('button', { name: 'Close dialog', exact: true })).toBeDisabled();
+    await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled();
+    release();
+    const source = page.getByRole('textbox', { name: 'File content', exact: true });
+    await expect(source).toBeVisible();
+    await expect(source).toBeFocused();
+    await expect(page).toHaveURL(/path=%2Fnotes.md&view=preview/);
+    await source.fill('# Sales notes\n\nKeep this draft.');
+    await page.getByRole('button', { name: 'Create file or folder', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'New file', exact: true }).click();
+    await expect(
+      page.getByRole('alert', { name: 'Keep your changes?', exact: true }),
+    ).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+    await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
+    await expect(source).toHaveValue('# Sales notes\n\nKeep this draft.');
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await expect(page.getByText('Unsaved changes', { exact: true })).toHaveCount(0);
+    await expect(source).toHaveValue('# Sales notes\n\nKeep this draft.');
+    await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
+    await expect(
+      page.getByText('Saved. Refresh the file list to see the update; do not repeat the save.', {
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(writes).toHaveLength(2);
+    expect(workspace.state.files.find((file) => file.path === '/notes.md').content).toBe(
+      '# Sales notes\n\nKeep this draft.',
+    );
+    if (process.env.EXPERIENCE_SCREENSHOTS)
+      await page.screenshot({
+        path: `${process.env.EXPERIENCE_SCREENSHOTS}/file-editor-${testInfo.project.name}.png`,
+        animations: 'disabled',
+      });
+    await page.getByRole('button', { name: 'Close file preview', exact: true }).click();
+    await page.getByRole('button', { name: /^notes\.md / }).click();
+    await expect(page.getByRole('heading', { name: 'Sales notes', exact: true })).toBeVisible();
+  } finally {
+    release();
+  }
+});
+
+test('live workspaces show recorded state without illustrative charts or local-only instructions', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  workspace.addResources();
+  workspace.state.resources[0].name = 'sales-demo';
+  workspace.state.resources[1].name = 'demo-files';
+  workspace.state.profile.name = 'Developer';
+  workspace.signInAsAccount();
+  workspace.state.mode = 'hybrid';
+  workspace.state.resources[0].provider = 'tidb-cloud-zero';
+  workspace.state.resources[0].status = 'expired';
+  await workspace.open('#overview');
+  await expect(page.getByRole('heading', { name: 'Workspace activity', exact: true })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole('img', { name: 'Illustrative request activity', exact: true }),
+  ).toHaveCount(0);
+  await page.goto('/#monitoring');
+  await expect(page.getByRole('heading', { name: 'Resource health', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('img', { name: 'Illustrative request activity', exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByRole('radio', { name: '24 hours', exact: true })).toHaveCount(0);
+  await expect(
+    page.locator('.metric-card').filter({ hasText: 'Active resources' }).locator('strong'),
+  ).toHaveText('1');
+  if (process.env.EXPERIENCE_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.EXPERIENCE_SCREENSHOTS}/monitoring-${testInfo.project.name}.png`,
+      animations: 'disabled',
+    });
+  await page.goto('/#connect');
+  await expect(page.getByText('REST API · Available locally', { exact: true })).toHaveCount(0);
+  await page.goto('/#api');
+  await page.getByRole('button', { name: 'Send request', exact: true }).click();
+  await expect(page.getByRole('main')).toContainText('sales-demo');
+  await expect(page.getByRole('main')).toContainText('Workspace owner session');
+});
+
 test('the shared shell identifies Agent Workspace and separates Cloud attribution from help', async ({
   page,
   workspace,
