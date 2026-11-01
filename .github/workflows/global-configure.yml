@@ -8,7 +8,7 @@ on:
         required: true
         default: inspect
         type: choice
-        options: [inspect, reset-and-enable-global, activate-prepared]
+        options: [inspect, reset-and-enable-global, activate-prepared, repair-probes]
       storage_class:
         description: Optional existing StorageClass reported by inspect; empty uses the cluster default
         type: string
