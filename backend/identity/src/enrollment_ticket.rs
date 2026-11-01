@@ -5,8 +5,8 @@
 //! Key and immutable grant ceiling, and retain replay evidence before returning a credential.
 //! Trust material and a rollback-protected clock are regional dependencies, not Global calls.
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use ed25519_dalek::{Signature, VerifyingKey};
-use serde::Deserialize;
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 use workspace_contracts::{Result, ServiceError};
@@ -14,7 +14,7 @@ use workspace_contracts::{Result, ServiceError};
 const TYPE: &str = "workspace-region-enrollment+jwt";
 const MAX_TICKET: usize = 16 * 1024;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Header {
     typ: String,
@@ -22,7 +22,7 @@ struct Header {
     kid: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Claims {
     iss: String,
@@ -55,6 +55,43 @@ pub struct TicketTrust {
 
 pub struct TicketVerifier {
     trust: TicketTrust,
+}
+
+/// Configuration is fixed per Region, environment and audience. The private seed must come
+/// from protected Global signer storage; it is never supplied by a customer.
+pub struct TicketSigningConfig {
+    pub issuer: String,
+    pub audience: String,
+    pub environment: String,
+    pub region_id: String,
+    pub key_id: String,
+}
+
+pub struct TicketSigner {
+    config: TicketSigningConfig,
+    key: SigningKey,
+}
+
+/// The caller must authorize the Key and prove the exact policy and grant generation are
+/// already applied in the Region before requesting a ticket. These fields are not proof.
+pub struct TicketIssuance<'a> {
+    pub workspace_id: &'a str,
+    pub key_id: &'a str,
+    pub key_version: u64,
+    pub policy_generation: u64,
+    pub principal_id: &'a str,
+    pub grant_ref: &'a str,
+    pub ceiling_ref: &'a str,
+    pub client_thumbprint: &'a str,
+    pub key_expires_at: i64,
+}
+
+/// Short-lived secret for one Region and client proof; never log or place in a URL.
+pub struct IssuedTicket {
+    pub ticket: String,
+    pub nonce: String,
+    pub ticket_id: String,
+    pub expires_at: i64,
 }
 
 /// This value can only be obtained after signature and binding verification. It does not
@@ -130,6 +167,99 @@ fn digest_string(value: &str) -> bool {
     URL_SAFE_NO_PAD
         .decode(value)
         .is_ok_and(|bytes| bytes.len() == 32 && URL_SAFE_NO_PAD.encode(bytes) == value)
+}
+
+impl TicketSigner {
+    pub fn new(config: TicketSigningConfig, seed: &[u8; 32]) -> Result<Self> {
+        if config.issuer.is_empty()
+            || config.issuer.len() > 512
+            || config.audience.is_empty()
+            || config.audience.len() > 512
+            || !id(&config.environment)
+            || !id(&config.region_id)
+            || !config.region_id.starts_with("region:")
+            || config.region_id.len() <= 7
+            || !id(&config.key_id)
+        {
+            return Err(ServiceError::new(503, "TICKET_SIGNER_INVALID"));
+        }
+        Ok(Self {
+            config,
+            key: SigningKey::from_bytes(seed),
+        })
+    }
+
+    /// No online Region lookup is made here. A caller must use trusted time and a durable,
+    /// current Region-applied receipt before invoking this signing primitive.
+    pub fn sign(&self, request: &TicketIssuance<'_>, now: i64) -> Result<IssuedTicket> {
+        let invalid = || ServiceError::new(400, "INVALID_TICKET_ISSUANCE");
+        if now <= 0
+            || !id(request.workspace_id)
+            || !uuid(request.key_id)
+            || request.key_version == 0
+            || request.policy_generation == 0
+            || !id(request.principal_id)
+            || !id(request.grant_ref)
+            || !id(request.ceiling_ref)
+            || !digest_string(request.client_thumbprint)
+        {
+            return Err(invalid());
+        }
+        let expires_at = now
+            .checked_add(300)
+            .ok_or_else(invalid)?
+            .min(request.key_expires_at);
+        if expires_at <= now {
+            return Err(invalid());
+        }
+        let mut nonce = [0; 32];
+        getrandom::fill(&mut nonce).map_err(|_| ServiceError::new(503, "RANDOM_UNAVAILABLE"))?;
+        let nonce = URL_SAFE_NO_PAD.encode(nonce);
+        let ticket_id = Uuid::new_v4().to_string();
+        let header = Header {
+            typ: TYPE.into(),
+            alg: "EdDSA".into(),
+            kid: self.config.key_id.clone(),
+        };
+        let claims = Claims {
+            iss: self.config.issuer.clone(),
+            aud: self.config.audience.clone(),
+            environment: self.config.environment.clone(),
+            iat: now,
+            nbf: now,
+            exp: expires_at,
+            jti: ticket_id.clone(),
+            workspace_id: request.workspace_id.into(),
+            region_id: self.config.region_id.clone(),
+            key_id: request.key_id.into(),
+            key_version: request.key_version,
+            policy_generation: request.policy_generation,
+            principal_id: request.principal_id.into(),
+            grant_ref: request.grant_ref.into(),
+            ceiling_ref: request.ceiling_ref.into(),
+            client_thumbprint: request.client_thumbprint.into(),
+            nonce: nonce.clone(),
+            key_expires_at: request.key_expires_at,
+        };
+        let header = serde_json::to_vec(&header).map_err(|_| invalid())?;
+        let payload = serde_json::to_vec(&claims).map_err(|_| invalid())?;
+        let message = format!(
+            "{}.{}",
+            URL_SAFE_NO_PAD.encode(header),
+            URL_SAFE_NO_PAD.encode(payload)
+        );
+        let signature = self.key.sign(message.as_bytes());
+        let ticket = format!("{message}.{}", URL_SAFE_NO_PAD.encode(signature.to_bytes()));
+        if ticket.len() > MAX_TICKET {
+            return Err(invalid());
+        }
+        Ok(IssuedTicket {
+            ticket,
+            nonce,
+            ticket_id,
+            expires_at,
+        })
+    }
 }
 
 impl TicketVerifier {
@@ -275,6 +405,50 @@ mod tests {
     }
     fn sign(header: &Value, claims: &Value) -> String {
         sign_raw(&header.to_string(), &claims.to_string())
+    }
+
+    #[test]
+    fn signed_enrollment_is_bound_to_region_client_and_key_lifetime() {
+        let private = URL_SAFE_NO_PAD.decode(PRIVATE).unwrap();
+        let seed: [u8; 32] = private[private.len() - 32..].try_into().unwrap();
+        let signer = TicketSigner::new(
+            TicketSigningConfig {
+                issuer: "https://global.example".into(),
+                audience: "region:a/enrollment".into(),
+                environment: "test".into(),
+                region_id: "region:a".into(),
+                key_id: "key-1".into(),
+            },
+            &seed,
+        )
+        .unwrap();
+        let mut input = TicketIssuance {
+            workspace_id: "ws_agentlab",
+            key_id: "00000000-0000-4000-8000-000000000002",
+            key_version: 1,
+            policy_generation: 1,
+            principal_id: "principal-1",
+            grant_ref: "grant-1",
+            ceiling_ref: "ceiling-1",
+            client_thumbprint: "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k",
+            key_expires_at: 1100,
+        };
+        let issued = signer.sign(&input, 1000).unwrap();
+        assert_eq!(issued.expires_at, 1100);
+        let verifier = TicketVerifier::new(trust()).unwrap();
+        let verified = verifier.verify(&issued.ticket, 1000).unwrap();
+        assert_eq!(verified.ticket_id(), issued.ticket_id);
+        assert_eq!(verified.nonce(), issued.nonce);
+        assert_eq!(verified.client_thumbprint(), input.client_thumbprint);
+        assert!(verifier.verify(&issued.ticket, 1100).is_err());
+        let another = signer.sign(&input, 1000).unwrap();
+        assert_ne!(issued.nonce, another.nonce);
+        assert_ne!(issued.ticket_id, another.ticket_id);
+        input.key_expires_at = 1000;
+        assert!(signer.sign(&input, 1000).is_err());
+        input.key_expires_at = 2000;
+        input.client_thumbprint = "unbound-client";
+        assert!(signer.sign(&input, 1000).is_err());
     }
 
     #[test]

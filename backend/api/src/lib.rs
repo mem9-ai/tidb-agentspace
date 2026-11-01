@@ -1,3 +1,4 @@
+pub mod access_signer;
 pub mod global_login;
 pub mod guest_cleanup;
 pub mod guest_entry;

@@ -11,7 +11,7 @@ use std::{
 use uuid::Uuid;
 use workspace_contracts::Result;
 use workspace_identity::{
-    enrollment_ticket::TicketTrust,
+    enrollment_ticket::{TicketIssuance, TicketSigner, TicketSigningConfig, TicketTrust},
     regional_key_policy::KeyPolicy,
     regional_refresh::{
         CeilingVerifier, FamilyBinding, IssuedRefresh, RefreshFamilies, RefreshRequest,
@@ -155,20 +155,37 @@ async fn main() -> anyhow::Result<()> {
     .await?;
     match args[2].as_str() {
         "enroll" => {
-            let nonce = URL_SAFE_NO_PAD.encode([9u8; 32]);
-            let ticket = signed(
-                &json!({"typ":"workspace-region-enrollment+jwt","alg":"EdDSA","kid":"key-1"}),
-                &json!({
-                    "iss":"https://global.example","aud":"region:other/enrollment","environment":"test","iat":1000,"nbf":1000,"exp":1300,"jti":Uuid::new_v4().to_string(),
-                    "workspaceId":policy.workspace_id,"regionId":policy.region_id,"keyId":policy.key_id,"keyVersion":policy.key_version,"policyGeneration":policy.policy_generation,
-                    "principalId":policy.principal_id,"grantRef":policy.grant_ref,"ceilingRef":"ceiling:fixture","clientThumbprint":THUMBPRINT,"nonce":nonce,"keyExpiresAt":policy.expires_at,
-                }),
+            let private = URL_SAFE_NO_PAD.decode(PRIVATE)?;
+            let seed: [u8; 32] = private[private.len() - 32..].try_into()?;
+            let signer = TicketSigner::new(
+                TicketSigningConfig {
+                    issuer: "https://global.example".into(),
+                    audience: "region:other/enrollment".into(),
+                    environment: "test".into(),
+                    region_id: "region:other".into(),
+                    key_id: "key-1".into(),
+                },
+                &seed,
             )?;
-            let proof = proof(ENROLL_URI, &nonce, now)?;
+            let ticket = signer.sign(
+                &TicketIssuance {
+                    workspace_id: &policy.workspace_id,
+                    key_id: &policy.key_id,
+                    key_version: policy.key_version,
+                    policy_generation: policy.policy_generation,
+                    principal_id: &policy.principal_id,
+                    grant_ref: &policy.grant_ref,
+                    ceiling_ref: "ceiling:fixture",
+                    client_thumbprint: THUMBPRINT,
+                    key_expires_at: policy.expires_at,
+                },
+                now,
+            )?;
+            let proof = proof(ENROLL_URI, &ticket.nonce, now)?;
             let issued = service
                 .enroll(
                     &policy.workspace_id,
-                    &ticket,
+                    &ticket.ticket,
                     &proof,
                     ENROLL_URI,
                     now,
