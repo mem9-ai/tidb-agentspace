@@ -12,8 +12,9 @@ OpenAPI directly. Each operation must declare its serving authority; publishing 
 through a Global catalog does not make Global a data proxy. Reuse validated known Region
 routes without a mandatory Global preflight, preserving regional autonomy during Global
 outage. The [regional API/auth contract](../../specs/gh-74/regional-api-auth.md#global-entry-and-operation-ownership)
-owns the detailed target boundary and migration/acceptance gates. The current generated
-contract remains the regional prototype surface; multi-origin discovery is not yet shipped.
+owns the detailed target boundary and migration/acceptance gates. The separate generated [Global contract](../../public/global-openapi.json) and regional contract
+now implement this boundary with the opt-in [regional Token profile](../regional-token-api.md).
+Default existing credentials retain their current regional authority.
 
 1. Give a business object a stable, tenant-scoped URI. Use plural collection nouns and opaque
    IDs: `/workspaces/{workspaceId}/resources/{resourceId}`. Put representations such as

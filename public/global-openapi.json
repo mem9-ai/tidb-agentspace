@@ -7,6 +7,151 @@
   },
   "servers": [{ "url": "/" }],
   "paths": {
+    "/api/v1/workspaces/{workspaceId}/key-policy-deliveries": {
+      "post": {
+        "operationId": "createGlobalKeyPolicyDelivery",
+        "security": [{ "globalOwner": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" },
+            "description": "Operation identity. A repeated secret-producing operation never returns another secret. Resolve uncertain outcomes; do not blindly repeat."
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "format": "uri" },
+            "description": "Must equal the configured Global public origin for Owner mutations."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": { "type": "string" },
+                        "keyId": { "type": "string" },
+                        "keyVersion": { "type": "integer", "minimum": 1 },
+                        "regionalStatus": { "enum": ["pending", "applied"] },
+                        "regionalContinuity": { "enum": ["pending", "eligible", "unavailable"] }
+                      },
+                      "required": [
+                        "id",
+                        "keyId",
+                        "keyVersion",
+                        "regionalStatus",
+                        "regionalContinuity"
+                      ]
+                    }
+                  },
+                  "required": ["data"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured denial or unknown outcome; no credential is echoed.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "keyId": { "type": "string" },
+                  "keyVersion": { "type": "integer", "minimum": 1 }
+                },
+                "required": ["keyId", "keyVersion"]
+              }
+            }
+          }
+        },
+        "description": "Explicit bounded application attempt for the current Key version, including revoked Keys. Replays reconcile the same immutable command. No background retry or data proxy is implied."
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/key-policy-deliveries/{deliveryId}": {
+      "get": {
+        "operationId": "getGlobalKeyPolicyDelivery",
+        "security": [{ "globalOwner": [] }],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$" }
+          },
+          { "name": "deliveryId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": { "type": "string" },
+                        "keyId": { "type": "string" },
+                        "keyVersion": { "type": "integer", "minimum": 1 },
+                        "regionalStatus": { "enum": ["pending", "applied"] },
+                        "regionalContinuity": { "enum": ["pending", "eligible", "unavailable"] }
+                      },
+                      "required": [
+                        "id",
+                        "keyId",
+                        "keyVersion",
+                        "regionalStatus",
+                        "regionalContinuity"
+                      ]
+                    }
+                  },
+                  "required": ["data"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Structured denial or unknown outcome; no credential is echoed.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        },
+        "description": "Observe durable application evidence without contacting Region or retrying effects."
+      }
+    },
     "/api/v1/workspaces/{workspaceId}/keys": {
       "get": {
         "operationId": "listGlobalKeys",
@@ -220,9 +365,10 @@
                   "additionalProperties": false,
                   "properties": {
                     "data": { "$ref": "#/components/schemas/Key" },
-                    "regionalStatus": { "enum": ["pending", "applied"] }
+                    "regionalStatus": { "enum": ["pending", "applied"] },
+                    "regionalContinuity": { "enum": ["pending", "eligible", "unavailable"] }
                   },
-                  "required": ["data", "regionalStatus"]
+                  "required": ["data", "regionalStatus", "regionalContinuity"]
                 }
               }
             }
@@ -248,7 +394,7 @@
             }
           }
         },
-        "description": "Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application is reported separately; an unreachable Region remains pending."
+        "description": "Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application is reported separately. Only an explicit same-secret renewal durably observed by both authorities before the previous expiry enables existing proof-bound families to cross versions. An unreachable Region remains pending; unavailable continuity requires fresh enrollment."
       },
       "delete": {
         "operationId": "revokeGlobalKey",

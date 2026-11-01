@@ -16,7 +16,7 @@ import { globalApiCases } from './test-support/global-api-cases.mjs';
 const exec = promisify(execFile);
 const enabled = process.env.WORKSPACE_META_TEST === '1';
 if (enabled) {
-  // Compilation has its own finite budget; keep the 120-second behavior deadline
+  // Compilation has its own finite budget; keep the behavior deadline
   // independent of whether probe binaries are already linked on this machine.
   before(
     async () => {
@@ -521,7 +521,8 @@ test(
 
 test(
   'verified OIDC login creates one isolated personal user and Workspace',
-  { skip: !enabled, timeout: 120_000 },
+  // Includes real old-Key-expiry waits, both Global process failures and regional restart.
+  { skip: !enabled, timeout: 180_000 },
   async (t) => {
     const fixture = await metaFixture();
     let provider;

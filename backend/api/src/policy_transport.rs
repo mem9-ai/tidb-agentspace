@@ -395,7 +395,14 @@ impl PolicyControlClient {
             bytes.extend_from_slice(&chunk);
         }
         let value: StoredResponse = serde_json::from_slice(&bytes).map_err(|_| uncertain())?;
-        if value.status != status || &value.receipt != expected {
+        let mut observed = value.receipt.clone();
+        observed.continuity = None;
+        let mut baseline = expected.clone();
+        baseline.continuity = None;
+        if value.status != status
+            || observed != baseline
+            || expected.continuity.is_some() && expected.continuity != value.receipt.continuity
+        {
             return Err(uncertain());
         }
         Ok(value.receipt)

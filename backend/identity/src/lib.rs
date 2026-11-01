@@ -13,6 +13,7 @@ pub mod regional;
 pub mod regional_grants;
 pub mod regional_key_policy;
 pub mod regional_refresh;
+pub mod renewal;
 pub mod scheduler;
 pub mod sessions;
 

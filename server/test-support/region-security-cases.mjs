@@ -246,8 +246,57 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   const creates = { ...provider.nativeCreates };
   const fileCreates = provider.creates;
   const credentialCount = credentials.size;
-  await global.configure(origin, `https://127.0.0.1:${controlPort}`, certificates.client);
   const globalRequest = global.request;
+  const pendingKey = await globalRequest('/keys', {
+    method: 'POST',
+    body: {
+      scopes: ['resources:read'],
+      resourceIds: resources,
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    },
+    headers: { 'Idempotency-Key': randomUUID() },
+  });
+  assert.equal(pendingKey.status, 201);
+  assert.equal(pendingKey.body.regionalStatus, 'pending');
+  const revokedPending = await globalRequest('/keys/' + pendingKey.body.data.keyId, {
+    method: 'DELETE',
+    headers: { 'Idempotency-Key': randomUUID(), 'If-Match': '"1"' },
+  });
+  assert.equal(revokedPending.status, 202);
+  assert.equal(revokedPending.body.regionalStatus, 'pending');
+  const deliveryId = randomUUID();
+  const deliver = () =>
+    globalRequest('/key-policy-deliveries', {
+      method: 'POST',
+      body: { keyId: pendingKey.body.data.keyId, keyVersion: 2 },
+      headers: { 'Idempotency-Key': deliveryId },
+    });
+  assert.equal((await deliver()).body.data.regionalStatus, 'pending');
+  assert.equal(
+    (await globalRequest('/key-policy-deliveries/' + deliveryId, { token: pendingKey.body.secret }))
+      .status,
+    403,
+  );
+  await global.configure(origin, `https://127.0.0.1:${controlPort}`, certificates.client);
+  assert.equal((await deliver()).body.data.regionalStatus, 'applied');
+  assert.equal(
+    (await globalRequest('/key-policy-deliveries/' + deliveryId)).body.data.regionalStatus,
+    'applied',
+  );
+  assert.equal(
+    (await globalRequest('/key-revocations/' + revokedPending.body.id)).body.data.regionalStatus,
+    'applied',
+  );
+  assert.equal(
+    (
+      await globalRequest('/token-issuances', {
+        method: 'POST',
+        token: pendingKey.body.secret,
+        body: { audience: 'global' },
+      })
+    ).status,
+    401,
+  );
   const created = await globalRequest('/keys', {
     method: 'POST',
     body: {
@@ -351,17 +400,86 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   token = await renew();
   await data('Bearer ' + token);
   assert.deepEqual([...covered].sort(), [...securityOperations].sort());
+  const shortExpiry = Math.floor(Date.now() / 1000) + 15;
+  const shortKey = async () => {
+    const result = await globalRequest('/keys', {
+      method: 'POST',
+      body: { scopes: ['resources:read'], resourceIds: resources, expiresAt: shortExpiry },
+      headers: { 'Idempotency-Key': randomUUID() },
+    });
+    assert.equal(result.status, 201, JSON.stringify(result.body));
+    const issued = await globalRequest('/token-issuances', {
+      method: 'POST',
+      token: result.body.secret,
+      body: { audience: metadata.server.authorityId, clientThumbprint: thumbprint },
+    });
+    assert.equal(issued.status, 201, JSON.stringify(issued.body));
+    const family = await request('/refresh-families', {
+      method: 'POST',
+      body: { ticket: issued.body.enrollmentTicket },
+      proof: await proof('/refresh-families', issued.body.nonce),
+    });
+    assert.equal(family.status, 201, JSON.stringify(family.body));
+    return { key: result.body, family: family.body };
+  };
+  const fixed = await shortKey();
+  const late = await shortKey();
+  const tryRefresh = async (item, clientProof = true) =>
+    request('/token-issuances', {
+      method: 'POST',
+      token: 'Refresh ' + item.family.refreshCredential,
+      proof: clientProof ? await proof('/token-issuances', item.family.nonce) : undefined,
+      body: { keyId: item.key.data.keyId },
+    });
+  assert.equal((await tryRefresh(late, false)).status, 401);
+  await global.setDelivery(false);
+  const undelivered = await globalRequest('/keys/' + late.key.data.keyId, {
+    method: 'PATCH',
+    body: { expiresAt: Math.floor(Date.now() / 1000) + 3600 },
+    headers: { 'Idempotency-Key': randomUUID(), 'If-Match': '"1"' },
+  });
+  assert.equal(undelivered.status, 200, JSON.stringify(undelivered.body));
+  assert.equal(undelivered.body.regionalStatus, 'pending');
+  await delay(Math.max(0, (shortExpiry + 1) * 1000 - Date.now()));
+  assert.equal((await tryRefresh(fixed)).status, 401, 'Actual Key expiry denies local refresh');
+  assert.equal((await tryRefresh(late)).status, 401, 'Undelivered renewal cannot be inferred');
+  await global.setDelivery(true);
+  const lateAttempt = await globalRequest('/key-policy-deliveries', {
+    method: 'POST',
+    body: { keyId: late.key.data.keyId, keyVersion: 2 },
+    headers: { 'Idempotency-Key': randomUUID() },
+  });
+  assert.equal(lateAttempt.status, 201, JSON.stringify(lateAttempt.body));
+  assert.equal(lateAttempt.body.data.regionalStatus, 'applied');
+  assert.equal(lateAttempt.body.data.regionalContinuity, 'unavailable');
+  assert.equal(
+    (await tryRefresh(late)).status,
+    401,
+    'Late delivery never reinstates the expired transition proof',
+  );
   let saved;
   let globalCalls = 0;
   let refreshCalls = 0;
   let globalDown = false;
+  const sdkExpiry = Math.floor(Date.now() / 1000) + 30;
+  const sdkKey = await globalRequest('/keys', {
+    method: 'POST',
+    body: {
+      scopes: ['resources:read', 'queries:execute', 'files:read', 'files:write'],
+      resourceIds: resources,
+      expiresAt: sdkExpiry,
+    },
+    headers: { 'Idempotency-Key': randomUUID() },
+  });
+  assert.equal(sdkKey.status, 201, JSON.stringify(sdkKey.body));
+  assert.equal(sdkKey.body.regionalStatus, 'applied');
   const sdkOptions = {
     globalOrigin: global.origin,
     trustedGlobalOrigins: [global.origin],
     trustedRegionOrigins: [origin],
     workspaceId: workspace,
     regionId: metadata.server.authorityId,
-    workspaceKey: created.body.secret,
+    workspaceKey: sdkKey.body.secret,
     proofKey: client,
     secrets: {
       load: async () => saved && structuredClone(saved),
@@ -380,6 +498,7 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
         if (target.pathname.endsWith('/token-issuances')) refreshCalls++;
         assert.equal(r.credentials, 'omit');
         assert.equal((r.headers.get('authorization') ?? '').includes(created.body.secret), false);
+        assert.equal((r.headers.get('authorization') ?? '').includes(sdkKey.body.secret), false);
       }
       return fetch(r);
     },
@@ -390,6 +509,7 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   assert.equal(refreshCalls - beforeConcurrentRefresh, 1);
   assert.equal(saved.state, 'ready');
   assert.equal(JSON.stringify(saved).includes(created.body.secret), false);
+  assert.equal(JSON.stringify(saved).includes(sdkKey.body.secret), false);
   const sdkData = async (connection) => {
     const result = await connection.client.POST('/workspaces/{workspaceId}/queries', {
       params: { path: { workspaceId: workspace } },
@@ -403,15 +523,25 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
     assert.equal(write.response.status, 200);
   };
   await sdkData(agent);
+  const extended = await globalRequest('/keys/' + sdkKey.body.data.keyId, {
+    method: 'PATCH',
+    body: { expiresAt: Math.floor(Date.now() / 1000) + 3600 },
+    headers: { 'Idempotency-Key': randomUUID(), 'If-Match': '"1"' },
+  });
+  assert.equal(extended.status, 200, JSON.stringify(extended.body));
+  assert.equal(extended.body.regionalStatus, 'applied');
+  assert.equal(extended.body.regionalContinuity, 'eligible');
+  assert.equal(extended.body.data.keyVersion, 2);
   const beforeOutageCalls = globalCalls;
   await global.crash();
   globalDown = true;
-  await delay(4000);
+  await delay(Math.max(4000, (sdkExpiry + 1) * 1000 - Date.now()));
   const expired = await request('/resources', { token: 'Bearer ' + token });
   assert.equal(expired.status, 401);
   token = await renew();
   await data('Bearer ' + token);
   await sdkData(agent);
+  assert.equal(saved.expiresAt, extended.body.data.expiresAt);
   assert.equal(globalCalls, beforeOutageCalls);
   await stop();
   config.security.initializeClock = false;
@@ -427,8 +557,8 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   assert.equal(credentials.size, credentialCount);
   await stop();
   return {
-    keyId: created.body.data.keyId,
-    secret: created.body.secret,
-    grantRef: created.body.data.grantRef,
+    keyId: sdkKey.body.data.keyId,
+    secret: sdkKey.body.secret,
+    grantRef: sdkKey.body.data.grantRef,
   };
 }

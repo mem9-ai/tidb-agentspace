@@ -321,6 +321,7 @@ export async function globalApiCases(
     401,
   );
   let metadataOwner;
+  let savedControls;
   const preserved = await regionSecurityCases(t, fixture, regionMetadata, alice.workspaceId, {
     origin,
     publicFile,
@@ -331,6 +332,16 @@ export async function globalApiCases(
       config.regionControls = [
         { regionId: regionMetadata.server.authorityId, origin: controlOrigin, tls },
       ];
+      await writeFile(configFile, JSON.stringify(config), { mode: 0o600 });
+      await start();
+    },
+    setDelivery: async (enabled) => {
+      await stop();
+      if (enabled) config.regionControls = savedControls;
+      else {
+        savedControls = config.regionControls;
+        config.regionControls = [];
+      }
       await writeFile(configFile, JSON.stringify(config), { mode: 0o600 });
       await start();
     },

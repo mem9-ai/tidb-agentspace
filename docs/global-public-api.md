@@ -4,7 +4,7 @@ Status: independent Global HTTP role implemented for Owner login, Key lifecycle,
 issuance and authorized Region discovery, plus signed regional policy delivery and Region-bound
 Token/enrollment issuance when the matching Region acknowledges application. See
 [regional Token integration](regional-token-api.md) for the required Region configuration and
-remaining migration/renewal release gates. The accepted
+existing-credential boundary. The accepted
 [security design](../specs/gh-84/openapi-security.md) remains the full delivery boundary.
 
 The Global role runs in the same `workspace-backend` binary as Region and Meta roles. A single
@@ -78,6 +78,15 @@ are stored in encrypted Global metadata. Owner revocation/renewal changes Global
 regional propagation reports applied or pending independently. An unavailable Region remains
 pending; a subsequent authorized regional issuance resumes delivery without changing the Key.
 
+Pending policy delivery has an explicit Owner recovery path. `POST /key-policy-deliveries`
+with `keyId`, the current `keyVersion`, Origin and Idempotency-Key creates a bounded application
+attempt, including for revoked Keys. Repeating the same attempt reconciles the same signed intent;
+`GET /key-policy-deliveries/{id}` only observes durable evidence. Responses distinguish
+`regionalStatus` (pending/applied) and `regionalContinuity` (pending/eligible/unavailable).
+A renewed Key enables existing families to cross versions only when both authorities observed the
+completed renewal before the previous expiry. A late applied policy permits fresh enrollment,
+but cannot reinstate an expired family transition proof. GET never retries policy effects.
+
 `POST /api/v1/workspaces/{workspaceId}/token-issuances` accepts a Workspace Key only in its
 Authorization header, and supports `audience: global` or the Key's exact granted Region ID. Region issuance requires
 an Ed25519 client public-key thumbprint and installed grant/ceiling snapshots; the response
@@ -102,8 +111,10 @@ Global Token discovery, generated-client calls, response-schema validation and G
 restart with the same Meta, keys and checkpoint. No Portal or cloud outage test is required.
 The additional regional integration fixture stops both independent Global API and Global Meta,
 then performs Region reads/writes, expiry-triggered local renewal and Region restart, including
-cached SDK reconnect without Global. Same-secret Key-version renewal after the old Key expiry
-and fenced legacy-Key migration remain release gates; the test does not establish full SEC-05.
+cached SDK reconnect without Global. The case now includes a same-secret Key renewal applied
+before the old expiry, cross-version local refresh after that expiry, and separate denial cases
+for fixed expiry, undelivered/late renewal and missing proof. Existing Keys retain their current
+regional authority; automatic fenced legacy-Key cutover is not enabled.
 
 With a configured `regionControls` entry, Global signs and durably records exact policy/ceiling
 intent before initiating TLS 1.3 mTLS to the Region control origin. Each entry contains

@@ -1,7 +1,7 @@
 //! Single-writer Region security integration. No Global client or callback exists here.
 use crate::{
     access_signer::{AccessSigner, Family, Issuance, SigningConfig},
-    policy_command::{PolicyCommandVerifier, PolicyReceipt, PolicyTrust},
+    policy_command::{ContinuityStatus, PolicyCommandVerifier, PolicyReceipt, PolicyTrust},
     policy_transport::{PolicyControlServer, PolicyInstaller, ServerTls},
     security_clock::Clock,
     signed_access::{AccessTrust, AccessVerifier, IssuerKind, VerifiedAccess},
@@ -82,6 +82,135 @@ impl crate::policy_transport::TrustedRegionalClock for Clock {
         self.now()
     }
 }
+fn renewal_witness_path(
+    directory: &Path,
+    region: &str,
+    workspace: &str,
+    key: &str,
+    version: u64,
+) -> PathBuf {
+    directory.join(format!(
+        "renewal-{:x}-{version}",
+        Sha256::digest(format!("{region}\0{workspace}\0{key}"))
+    ))
+}
+fn renewal_digest(
+    policy: &KeyPolicy,
+    proof: &workspace_identity::renewal::SameKeyRenewal,
+) -> Result<String> {
+    Ok(format!(
+        "{:x}",
+        Sha256::digest(
+            serde_json::to_vec(&json!([policy, proof]))
+                .map_err(|_| error(503, "RENEWAL_CORRUPT"))?
+        )
+    ))
+}
+fn witness_valid(
+    directory: &Path,
+    policy: &KeyPolicy,
+    proof: &workspace_identity::renewal::SameKeyRenewal,
+) -> Result<bool> {
+    let path = renewal_witness_path(
+        directory,
+        &policy.region_id,
+        &policy.workspace_id,
+        &policy.key_id,
+        policy.key_version,
+    );
+    if !path.exists() {
+        return Ok(false);
+    }
+    let value: Value = serde_json::from_slice(
+        &private_file(&path).map_err(|_| error(503, "RENEWAL_WITNESS_UNAVAILABLE"))?,
+    )
+    .map_err(|_| error(503, "RENEWAL_WITNESS_CORRUPT"))?;
+    if value["digest"] != renewal_digest(policy, proof)?
+        || value["observedAt"]
+            .as_i64()
+            .is_none_or(|t| t <= 0 || t >= proof.from_expires_at)
+    {
+        return Err(error(503, "RENEWAL_WITNESS_CORRUPT"));
+    }
+    Ok(true)
+}
+struct InstalledRenewals {
+    metadata: Arc<dyn Metadata>,
+    directory: PathBuf,
+    region: String,
+}
+impl workspace_identity::regional_refresh::ContinuityVerifier for InstalledRenewals {
+    fn check<'a>(
+        &'a self,
+        workspace: &'a str,
+        key: &'a str,
+        from_version: u64,
+        from_expiry: i64,
+        principal: &'a str,
+        current: &'a KeyPolicy,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let denied = || error(401, "REAUTHENTICATION_REQUIRED");
+            if from_version >= current.key_version
+                || current.key_version - from_version > 1024
+                || current.workspace_id != workspace
+                || current.key_id != key
+                || current.principal_id != principal
+                || current.region_id != self.region
+                || current.revoked
+            {
+                return Err(denied());
+            }
+            let mut expiry = from_expiry;
+            let mut previous: Option<KeyPolicy> = None;
+            for version in (from_version + 1)..=current.key_version {
+                let path = format!("renewals/{version}");
+                let scope = Scope {
+                    authority_id: self.region.clone(),
+                    owner_kind: "workspace".into(),
+                    owner_id: workspace.into(),
+                    family: "regional-key-policy".into(),
+                    partition_id: key.into(),
+                };
+                let result = self
+                    .metadata
+                    .execute(MetaRequest::Get {
+                        scope,
+                        guard: None,
+                        keys: vec![path.clone()],
+                    })
+                    .await?;
+                let value = &result["records"][&path]["value"];
+                let prior: KeyPolicy =
+                    serde_json::from_value(value["prior"].clone()).map_err(|_| denied())?;
+                let next: KeyPolicy =
+                    serde_json::from_value(value["policy"].clone()).map_err(|_| denied())?;
+                let proof: workspace_identity::renewal::SameKeyRenewal =
+                    serde_json::from_value(value["proof"].clone()).map_err(|_| denied())?;
+                proof.validate(&prior, &next).map_err(|_| denied())?;
+                if prior.key_version != version - 1
+                    || prior.expires_at != expiry
+                    || prior.principal_id != principal
+                    || next.grant_ref != current.grant_ref
+                    || next.workspace_id != workspace
+                    || next.region_id != self.region
+                    || next.key_id != key
+                    || previous.as_ref().is_some_and(|p| p != &prior)
+                    || !witness_valid(&self.directory, &next, &proof)?
+                {
+                    return Err(denied());
+                }
+                expiry = next.expires_at;
+                previous = Some(next);
+            }
+            if previous.as_ref() != Some(current) {
+                return Err(denied());
+            }
+            Ok(())
+        })
+    }
+}
+
 pub struct Runtime {
     config: Config,
     workspace: Arc<Workspace>,
@@ -208,6 +337,11 @@ impl Runtime {
             clock.clone(),
         )
         .await?;
+        let families = families.with_continuity(Arc::new(InstalledRenewals {
+            metadata: metadata.clone(),
+            directory: config.clock_directory.clone(),
+            region: region.into(),
+        }));
         let control_verifier = Arc::new(PolicyCommandVerifier::new(PolicyTrust {
             issuer: config.global_issuer.clone(),
             audience: format!("{region}/control"),
@@ -263,6 +397,46 @@ impl Runtime {
         Ok(
             json!({"environment":self.config.environment,"regionId":self.region,"workspaceId":policy.workspace_id,"keyId":policy.key_id,"generation":policy.policy_generation,"digest":format!("{:x}",Sha256::digest(serde_json::to_vec(policy).map_err(|_|error(503,"POLICY_CORRUPT"))?))}),
         )
+    }
+    fn witness(
+        &self,
+        policy: &KeyPolicy,
+        proof: &workspace_identity::renewal::SameKeyRenewal,
+    ) -> Result<ContinuityStatus> {
+        if witness_valid(&self.config.clock_directory, policy, proof)? {
+            return Ok(ContinuityStatus::Eligible);
+        }
+        // This time is sampled only after the policy Meta commit is durably acknowledged.
+        // The observation proves installation before the deadline even if witness persistence
+        // completes later. A crash before persistence never manufactures a new observation.
+        let observed = self.clock.now()?;
+        if observed >= proof.from_expires_at {
+            return Ok(ContinuityStatus::Unavailable);
+        }
+        let value = json!({"observedAt":observed,"digest":renewal_digest(policy,proof)?});
+        let path = renewal_witness_path(
+            &self.config.clock_directory,
+            &policy.region_id,
+            &policy.workspace_id,
+            &policy.key_id,
+            policy.key_version,
+        );
+        let tmp = path.with_extension(Uuid::new_v4().to_string());
+        let failed = || error(503, "RENEWAL_WITNESS_UNAVAILABLE");
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&tmp)
+            .map_err(|_| failed())?;
+        file.write_all(&serde_json::to_vec(&value).map_err(|_| failed())?)
+            .map_err(|_| failed())?;
+        file.sync_all().map_err(|_| failed())?;
+        fs::rename(tmp, path).map_err(|_| failed())?;
+        File::open(&self.config.clock_directory)
+            .and_then(|f| f.sync_all())
+            .map_err(|_| failed())?;
+        Ok(ContinuityStatus::Eligible)
     }
     fn check_floor(&self, policy: &KeyPolicy) -> Result<()> {
         let bytes = private_file(&self.floor_path(policy))
@@ -662,7 +836,7 @@ impl PolicyInstaller for Runtime {
                     Ok(((), false))
                 })
                 .await?;
-            let receipt = self
+            let mut receipt = self
                 .control_verifier
                 .apply(command, self.clock.now()?, &self.policies)
                 .await?;
@@ -674,7 +848,127 @@ impl PolicyInstaller for Runtime {
                 return Err(error(409, "POLICY_SUPERSEDED"));
             }
             self.checkpoint(&current)?;
+            if let Some(proof) = self.control_verifier.renewal(command, self.clock.now()?)? {
+                receipt.continuity = Some(self.witness(&current, &proof)?);
+            }
             Ok(receipt)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use workspace_contracts::Call;
+    use workspace_identity::{regional_refresh::ContinuityVerifier, renewal::SameKeyRenewal};
+    struct Records(BTreeMap<String, Value>);
+    impl Metadata for Records {
+        fn health(&self) -> Call<'_> {
+            Box::pin(async { Ok(json!({})) })
+        }
+        fn execute(&self, request: MetaRequest) -> Call<'_> {
+            Box::pin(async move {
+                let MetaRequest::Get { keys, .. } = request else {
+                    panic!("unexpected mutation")
+                };
+                let values: serde_json::Map<String, Value> = keys
+                    .into_iter()
+                    .map(|key| {
+                        let value = self
+                            .0
+                            .get(&key)
+                            .map(|v| json!({"value":v}))
+                            .unwrap_or(Value::Null);
+                        (key, value)
+                    })
+                    .collect();
+                Ok(json!({"records":values}))
+            })
+        }
+    }
+    #[tokio::test]
+    async fn renewal_requires_complete_signed_chain_and_pre_expiry_installation_witness() {
+        let directory = std::env::temp_dir().join(format!("renewal-test-{}", Uuid::new_v4()));
+        fs::create_dir(&directory).unwrap();
+        let prior = KeyPolicy {
+            workspace_id: "ws_test".into(),
+            region_id: "region:a".into(),
+            key_id: Uuid::new_v4().to_string(),
+            principal_id: "principal".into(),
+            key_version: 1,
+            policy_generation: 1,
+            grant_ref: "grant".into(),
+            expires_at: 2000,
+            revoked: false,
+        };
+        let mut next = prior.clone();
+        next.key_version = 2;
+        next.policy_generation = 2;
+        next.expires_at = 4000;
+        let proof = SameKeyRenewal {
+            from_version: 1,
+            from_expires_at: 2000,
+            global_observed_at: 1900,
+        };
+        let verify = |record: Value| InstalledRenewals {
+            metadata: Arc::new(Records(BTreeMap::from([("renewals/2".into(), record)]))),
+            directory: directory.clone(),
+            region: "region:a".into(),
+        };
+        let record = json!({"prior":prior,"policy":next,"proof":proof});
+        let checker = verify(record.clone());
+        let check = |checker: InstalledRenewals, policy: KeyPolicy| async move {
+            checker
+                .check("ws_test", &policy.key_id, 1, 2000, "principal", &policy)
+                .await
+        };
+        assert!(
+            check(checker, next.clone()).await.is_err(),
+            "S3 records alone cannot establish timely installation"
+        );
+        let path = renewal_witness_path(&directory, "region:a", "ws_test", &next.key_id, 2);
+        let write = |observed: i64| {
+            let mut f = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&path)
+                .unwrap();
+            f.write_all(
+                json!({"observedAt":observed,"digest":renewal_digest(&next,&proof).unwrap()})
+                    .to_string()
+                    .as_bytes(),
+            )
+            .unwrap();
+        };
+        write(2000);
+        assert!(
+            check(verify(record.clone()), next.clone()).await.is_err(),
+            "Late application cannot extend continuity"
+        );
+        write(1999);
+        assert!(check(verify(record.clone()), next.clone()).await.is_ok());
+        assert!(
+            check(verify(record.clone()), next.clone()).await.is_ok(),
+            "Fresh verifier after restart uses same independent witness"
+        );
+        for changed in [
+            json!({"prior":prior,"policy":next}),
+            json!({"prior":prior,"policy":next,"proof":{"fromVersion":1,"fromExpiresAt":2000,"globalObservedAt":2000}}),
+        ] {
+            assert!(check(verify(changed), next.clone()).await.is_err());
+        }
+        let mut rotation = next.clone();
+        rotation.expires_at = 2000;
+        assert!(check(verify(record.clone()), rotation).await.is_err());
+        let mut changed_grant = next.clone();
+        changed_grant.grant_ref = "other".into();
+        assert!(check(verify(record.clone()), changed_grant).await.is_err());
+        let mut gap = next.clone();
+        gap.key_version = 3;
+        gap.policy_generation = 3;
+        assert!(check(verify(record), gap).await.is_err());
+        fs::remove_dir_all(directory).unwrap();
     }
 }

@@ -5,7 +5,7 @@
 //! enforce authorization before data effects. In particular, no Global callback is performed.
 //! Production use requires a durable anti-rollback checkpoint, immutable local grant ceilings,
 //! serving-node fences, history retention/cleanup, and a verified lost-response protocol.
-//! Same-secret Key renewal transitions are not implemented by this module.
+//! Cross-version renewal requires an explicit local continuity verifier; without one it fails closed.
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -41,6 +41,27 @@ pub trait CeilingVerifier: Send + Sync {
         grant: &'a str,
         ceiling: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
+}
+
+/// Verifies a complete locally installed same-secret chain and independent pre-expiry
+/// installation witnesses. It must not contact Global or infer continuity from a new expiry.
+pub trait ContinuityVerifier: Send + Sync {
+    fn check<'a>(
+        &'a self,
+        workspace: &'a str,
+        key: &'a str,
+        from_version: u64,
+        from_expiry: i64,
+        principal: &'a str,
+        current: &'a KeyPolicy,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
+}
+struct Rebinding {
+    scope: Scope,
+    policy: KeyPolicy,
+    policy_version: Value,
+    family: Family,
+    family_version: Value,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -118,6 +139,7 @@ pub struct RefreshFamilies {
     tickets: TicketVerifier,
     ceilings: Arc<dyn CeilingVerifier>,
     clock: Arc<dyn RegionalClock>,
+    continuity: Option<Arc<dyn ContinuityVerifier>>,
     authority: String,
 }
 
@@ -240,8 +262,14 @@ impl RefreshFamilies {
             tickets: TicketVerifier::new(trust)?,
             ceilings,
             clock,
+            continuity: None,
             authority: authority.into(),
         })
+    }
+
+    pub fn with_continuity(mut self, verifier: Arc<dyn ContinuityVerifier>) -> Self {
+        self.continuity = Some(verifier);
+        self
     }
 
     async fn record(&self, scope: &Scope, key: &str) -> Result<Option<(Value, Value)>> {
@@ -502,7 +530,26 @@ impl RefreshFamilies {
             let (mut family, family_version) =
                 self.family(&scope, family_id).await?.ok_or_else(denied)?;
             if !Self::policy_matches(&policy, &family, now) {
-                return Err(denied());
+                return self
+                    .rebind(
+                        Rebinding {
+                            scope,
+                            policy,
+                            policy_version,
+                            family,
+                            family_version,
+                        },
+                        RefreshRequest {
+                            workspace,
+                            key_id,
+                            credential,
+                            proof,
+                            target_uri,
+                            now,
+                            allow_loopback_http,
+                        },
+                    )
+                    .await;
             }
             if generation > family.generation {
                 return Err(denied());
@@ -667,6 +714,123 @@ impl RefreshFamilies {
             });
         }
         Err(error(503, "REFRESH_CONFLICT_UNRESOLVED"))
+    }
+
+    async fn rebind(&self, state: Rebinding, request: RefreshRequest<'_>) -> Result<IssuedRefresh> {
+        let Rebinding {
+            scope,
+            policy,
+            policy_version,
+            mut family,
+            family_version,
+        } = state;
+        let (family_id, generation) = parse(request.credential)?;
+        if policy.revoked
+            || policy.expires_at <= request.now
+            || family.revoked
+            || family.generation != generation
+            || family.family_id != family_id
+            || policy.key_version <= family.key_version
+            || policy.policy_generation <= family.policy_generation
+            || policy.principal_id != family.principal_id
+            || policy.workspace_id != family.workspace_id
+            || policy.region_id != family.region_id
+            || policy.key_id != family.key_id
+            || !bool::from(
+                family
+                    .verifier
+                    .as_bytes()
+                    .ct_eq(hash(request.credential).as_bytes()),
+            )
+        {
+            return Err(denied());
+        }
+        let proof = dpop::verify(
+            request.proof,
+            &ProofContext {
+                method: "POST",
+                target_uri: request.target_uri,
+                expected_thumbprint: Some(&family.client_thumbprint),
+                expected_nonce: &family.nonce,
+                access_token: None,
+                now: request.now,
+                allow_loopback_http: request.allow_loopback_http,
+            },
+        )
+        .map_err(|_| denied())?;
+        self.continuity
+            .as_ref()
+            .ok_or_else(denied)?
+            .check(
+                &family.workspace_id,
+                &family.key_id,
+                family.key_version,
+                family.expires_at,
+                &family.principal_id,
+                &policy,
+            )
+            .await?;
+        let generation = family
+            .generation
+            .checked_add(1)
+            .filter(|v| *v <= 9_007_199_254_740_991)
+            .ok_or_else(|| error(503, "REFRESH_VERSION_EXHAUSTED"))?;
+        let credential = secret(family_id, generation)?;
+        let nonce = nonce()?;
+        let mut history = History {
+            generation: family.generation,
+            verifier: family.verifier.clone(),
+            nonce: family.nonce.clone(),
+            rotated_at: request.now,
+        };
+        family.key_version = policy.key_version;
+        family.policy_generation = policy.policy_generation;
+        family.grant_ref = policy.grant_ref.clone();
+        family.expires_at = policy.expires_at;
+        family.generation = generation;
+        family.security_epoch = family
+            .security_epoch
+            .checked_add(1)
+            .filter(|v| *v <= 9_007_199_254_740_991)
+            .ok_or_else(|| error(503, "REFRESH_VERSION_EXHAUSTED"))?;
+        family.verifier = hash(&credential);
+        family.nonce = nonce.clone();
+        self.ceiling(&family).await?;
+        let proof_key = format!("proofs/{family_id}/{}", hash(proof.proof_id()));
+        if self.record(&scope, &proof_key).await?.is_some() {
+            return Err(error(409, "DPOP_REPLAY"));
+        }
+        let commit_time = self.fresh(request.now, proof.issued_at(), policy.expires_at)?;
+        history.rotated_at = commit_time;
+        let result=self.metadata.execute(MetaRequest::Commit{scope:scope.clone(),guard:None,mutation_id:mutation(b"rebind\0",family_id,proof.proof_id()),changes:vec![
+            json!({"key":"policy","expectedVersion":policy_version,"value":policy}),
+            json!({"key":format!("families/{family_id}"),"expectedVersion":family_version,"value":family}),
+            json!({"key":format!("history/{family_id}/{}",history.generation),"expectedVersion":null,"value":history}),
+            json!({"key":proof_key,"expectedVersion":null,"value":{"consumedAt":commit_time}}),
+        ]}).await;
+        match result {
+            Ok(_) => {}
+            Err(e) if e.code == "META_COMMIT_UNKNOWN" => {}
+            Err(e) if e.code == "META_CONFLICT" => return Err(conflict()),
+            Err(e) => return Err(e),
+        }
+        let current = self.family(&scope, family_id).await?;
+        if !current.is_some_and(|(r, _)| {
+            !r.revoked && bool::from(r.verifier.as_bytes().ct_eq(family.verifier.as_bytes()))
+        }) {
+            return Err(conflict());
+        }
+        self.fresh(commit_time, proof.issued_at(), family.expires_at)
+            .map_err(|_| conflict())?;
+        Ok(IssuedRefresh {
+            secret: credential,
+            nonce,
+            family_id: family_id.into(),
+            generation,
+            security_epoch: family.security_epoch,
+            expires_at: family.expires_at,
+            ceiling_ref: family.ceiling_ref,
+        })
     }
 
     pub async fn family_status(&self, binding: FamilyBinding<'_>) -> Result<Value> {

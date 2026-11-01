@@ -4,8 +4,9 @@ Status: opt-in native Region integration with Global policy delivery, client-bou
 families, local issuance/rotation/revocation and direct data authorization. The supported
 single-writer profile attaches to an explicit Workspace listener. Managed multi-Workspace
 Guest/SSO listeners cannot currently enable this profile; default listeners remain unchanged.
-Legacy direct-Key records are retained. Fenced legacy-Key migration and same-secret Key-version
-renewal across the old Key expiry remain incomplete security-design release gates.
+Legacy direct-Key records and their authority are retained; enabling this profile does not import,
+rotate or replace them. Same-secret Key renewal is integrated across the previous version's
+expiry. Automatic legacy-Key authority cutover remains a separate migration gate.
 
 ## Serving profile
 
@@ -19,7 +20,8 @@ Add `security` to the existing regional Workspace API configuration. It includes
 - `clockDirectory`, `initializeClock`: independently durable, private host checkpoint described
   in [Global setup](global-public-api.md). Deliberate first initialization only; disable before
   restarting. The directory also retains per-Key policy floors, protecting service admission
-  against an older S3 policy snapshot. Retain it across process restart and operator recovery.
+  against an older S3 policy snapshot. Use a writable persistent private volume, not a container
+  scratch directory or read-only Secret projection; retain it across restart and recovery.
 - `accessTokenTtl`: 1–900 seconds, default 900. Every token is additionally bounded by actual
   installed Key, grant and family expiry.
 - `control`: a separate private TLS listener with `bind`, `certificateFile`, `privateKeyFile`,
@@ -101,9 +103,25 @@ checks its original Key. Existing regional Key, resource IDs, provider creation 
 captured upstream credentials are checked for parity. SQL/files upstreams are isolated fixture
 servers; these cases do not establish real cloud provider compatibility.
 
-Current renewal only continues within the last installed Key version and hard expiry.
-Renewing/rotating a Global Key advances the regional floor and denies old-version families;
-proof-bound same-secret family rebind is not integrated yet. Do not claim complete SEC-05 or
-zero-loss Global legacy-Key cutover until those separate state transitions and failure cases
-are implemented and tested. No live credential migration or cloud outage test is authorized
-by this document.
+Same-secret expiry renewal advances the Key floor and immediately denies old access tokens.
+An existing proof-bound family can cross versions only through a complete signed renewal chain.
+Global records its observation after the renewal is durable; Region records its independent
+installation witness after the policy commit is durable. Both observations must precede the old
+expiry. Region retains these witnesses beside the independently protected policy/time checkpoints.
+A new expiry alone, a missing version, late application, rotation or revocation cannot authorize
+rebind. Rebind atomically consumes the old generation/proof, increments the family security epoch,
+retains its original grant ceiling and returns a new refresh credential for the current version.
+Lost replies keep the same unknown-outcome protocol as ordinary refresh.
+
+The native outage case extends an enrolled Key, stops Global API and Global Meta, waits beyond
+both the previous Key expiry and the local access-token expiry, then exercises local cross-version
+renewal and SQL/file writes/readback. It restarts Region and resumes the same saved client without
+Global or the Workspace Key. Separate cases reject actual fixed-Key expiry, a renewal not delivered
+to Region, delivery after the old expiry, and missing client proof. This supplies the SEC-05
+flow with a real advancing clock; it does not establish multi-node availability or live provider
+compatibility. Existing Key authentication and provider credential/resource parity remain checked.
+
+No automatic Global authority cutover or replacement of existing Keys occurs. The fenced legacy
+migration and versioned keyed-index mechanics in the accepted design are not enabled by this
+profile, and are not claimed by this evidence. No live credential migration or cloud outage test
+is performed.

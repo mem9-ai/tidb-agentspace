@@ -162,6 +162,17 @@ impl KeyPolicies {
         grant: Option<&crate::regional_grants::Grant>,
         ceilings: &[crate::regional_grants::Grant],
     ) -> Result<()> {
+        self.install_transition(policy, command_id, grant, ceilings, None)
+            .await
+    }
+    pub async fn install_transition(
+        &self,
+        policy: &KeyPolicy,
+        command_id: &str,
+        grant: Option<&crate::regional_grants::Grant>,
+        ceilings: &[crate::regional_grants::Grant],
+        renewal: Option<&crate::renewal::SameKeyRenewal>,
+    ) -> Result<()> {
         if ceilings.len() > 1 || !ceilings.is_empty() && grant.is_none() {
             return Err(error(400, "INVALID_CEILINGS"));
         }
@@ -183,7 +194,9 @@ impl KeyPolicies {
         let scope = self.scope(&policy.workspace_id, &policy.key_id)?;
         let command_key = format!("commands/{command_id}");
         let fingerprint = hex::encode(Sha256::digest(
-            if !ceilings.is_empty() {
+            if renewal.is_some() {
+                serde_json::to_vec(&json!([policy, grant, ceilings, renewal]))
+            } else if !ceilings.is_empty() {
                 serde_json::to_vec(&json!([policy, grant, ceilings]))
             } else {
                 match grant {
@@ -213,6 +226,7 @@ impl KeyPolicies {
                 };
             }
             let prior = self.read(&scope).await?;
+            let previous = prior.as_ref().map(|(p, _)| p.clone());
             let expected = match prior {
                 None if policy.policy_generation == 1 && policy.key_version == 1 => Value::Null,
                 None => return Err(error(409, "KEY_POLICY_GAP")),
@@ -252,6 +266,54 @@ impl KeyPolicies {
                     return Err(error(409, "GRANT_IMMUTABLE_CONFLICT"));
                 }
                 changes.push(json!({"key":path,"expectedVersion":record.get("version").cloned().unwrap_or(Value::Null),"value":grant}));
+            }
+            let mut snapshots =
+                std::collections::BTreeMap::from([(policy.key_version, policy.clone())]);
+            if let Some(prior) = &previous {
+                snapshots.insert(prior.key_version, prior.clone());
+            }
+            let transition = if let Some(renewal) = renewal {
+                let from = if let Some(old) = snapshots.get(&renewal.from_version) {
+                    old.clone()
+                } else {
+                    let key = format!("versions/{}", renewal.from_version);
+                    let result = self
+                        .metadata
+                        .execute(MetaRequest::Get {
+                            scope: scope.clone(),
+                            guard: None,
+                            keys: vec![key.clone()],
+                        })
+                        .await?;
+                    serde_json::from_value(result["records"][&key]["value"].clone())
+                        .map_err(|_| error(409, "RENEWAL_HISTORY_UNAVAILABLE"))?
+                };
+                renewal.validate(&from, policy)?;
+                Some(json!({"prior":from,"policy":policy,"proof":renewal}))
+            } else {
+                None
+            };
+            let mut immutable = snapshots
+                .into_iter()
+                .map(|(version, value)| (format!("versions/{version}"), json!(value)))
+                .collect::<Vec<_>>();
+            if let Some(value) = transition {
+                immutable.push((format!("renewals/{}", policy.key_version), value));
+            }
+            for (key, value) in immutable {
+                let result = self
+                    .metadata
+                    .execute(MetaRequest::Get {
+                        scope: scope.clone(),
+                        guard: None,
+                        keys: vec![key.clone()],
+                    })
+                    .await?;
+                let old = &result["records"][&key];
+                if !old.is_null() && old["value"] != value {
+                    return Err(error(409, "POLICY_HISTORY_CONFLICT"));
+                }
+                changes.push(json!({"key":key,"expectedVersion":old.get("version").cloned().unwrap_or(Value::Null),"value":value}));
             }
             let result = self
                 .metadata

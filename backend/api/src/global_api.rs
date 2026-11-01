@@ -423,7 +423,7 @@ impl App {
         &self,
         view: &KeyView,
         ceiling: Option<&Grant>,
-    ) -> workspace_contracts::Result<()> {
+    ) -> workspace_contracts::Result<PolicyReceipt> {
         let grant = self.grant(view).await?;
         let region = self
             .regional
@@ -432,6 +432,7 @@ impl App {
         if view.key_version > 1024 {
             return Err(err(409, "POLICY_HISTORY_REQUIRES_RECONCILIATION"));
         }
+        let mut final_receipt = None;
         for version in 1..=view.key_version {
             let marker = format!("policy-applied/{}/{version}", view.key_id);
             if version < view.key_version && self.get(&view.workspace_id, &marker).await?.is_some()
@@ -462,7 +463,17 @@ impl App {
             } else {
                 Vec::new()
             };
-            let value = json!({"policy":policy,"grant":snapshot,"ceilings":ceilings});
+            let renewal: Option<workspace_identity::renewal::SameKeyRenewal> = self
+                .get(
+                    &view.workspace_id,
+                    &format!("same-key-renewals/{}/{version}", view.key_id),
+                )
+                .await?
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|_| err(503, "RENEWAL_CORRUPT"))?;
+            let value =
+                json!({"policy":policy,"grant":snapshot,"ceilings":ceilings,"renewal":renewal});
             let fingerprint = Sha256::digest(
                 serde_json::to_vec(&value).map_err(|_| err(503, "POLICY_UNAVAILABLE"))?,
             );
@@ -474,14 +485,16 @@ impl App {
                 value,
             )
             .await?;
-            let command = region.policies.sign_full(
+            let command = region.policies.sign_transition(
                 &policy,
                 &command_id,
                 self.clock.now()?,
                 Some(&snapshot),
                 &ceilings,
+                renewal.as_ref(),
             )?;
             let receipt = PolicyReceipt {
+                continuity: None,
                 command_id,
                 workspace_id: key.workspace_id,
                 region_id: snapshot.region_id,
@@ -489,7 +502,16 @@ impl App {
                 key_version: version,
                 policy_generation: version,
             };
-            region.control.apply(&command, &receipt).await?;
+            let receipt = region.control.apply(&command, &receipt).await?;
+            if let Some(continuity) = &receipt.continuity {
+                self.immutable(
+                    &view.workspace_id,
+                    &format!("renewal-applied/{}/{version}", view.key_id),
+                    json!(continuity),
+                )
+                .await?;
+            }
+            final_receipt = Some(receipt);
             self.immutable(
                 &view.workspace_id,
                 &marker,
@@ -497,7 +519,7 @@ impl App {
             )
             .await?;
         }
-        Ok(())
+        final_receipt.ok_or_else(|| err(409, "REGION_POLICY_NOT_APPLIED"))
     }
     fn scope(&self, workspace: &str) -> Scope {
         Scope {
@@ -669,6 +691,7 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
         header::COOKIE,
         header::CONTENT_TYPE,
         header::IF_MATCH,
+        header::HeaderName::from_static("idempotency-key"),
         header::HOST,
     ] {
         if h.get_all(name).iter().count() > 1 {
@@ -855,6 +878,78 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
     }
     let owner = app.owner(workspace, &h, &method).await?;
     match (method.as_str(), rest) {
+        ("POST", ["key-policy-deliveries"]) => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Delivery {
+                key_id: String,
+                key_version: u64,
+            }
+            let input: Delivery = parse(&h, &bytes)?;
+            let operation = mutation(&h)?;
+            let key = app.keys.key(workspace, &input.key_id).await?;
+            if key.key_version != input.key_version {
+                return Err(err(409, "KEY_VERSION_CONFLICT"));
+            }
+            let path = format!("policy-attempts/{operation}");
+            app.immutable(
+                workspace,
+                &path,
+                json!({"id":operation,"keyId":input.key_id,"keyVersion":input.key_version}),
+            )
+            .await?;
+            // An explicit attempt may reconcile the same immutable command. GET never performs I/O.
+            let delivered = app.deliver(&key, None).await;
+            let applied = delivered.is_ok();
+            let continuity = match delivered {
+                Ok(receipt) => match receipt.continuity {
+                    Some(crate::policy_command::ContinuityStatus::Eligible) => "eligible",
+                    _ => "unavailable",
+                },
+                Err(_) => "pending",
+            };
+            Ok(json_response(
+                StatusCode::CREATED,
+                json!({"data":{"id":operation,"keyId":input.key_id,"keyVersion":input.key_version,"regionalStatus":if applied{"applied"}else{"pending"},"regionalContinuity":continuity}}),
+                Some(format!("key-policy-deliveries/{operation}")),
+            ))
+        }
+        ("GET", ["key-policy-deliveries", operation]) => {
+            if Uuid::parse_str(operation).is_err() {
+                return Err(err(404, "NOT_FOUND"));
+            }
+            let mut value = app
+                .get(workspace, &format!("policy-attempts/{operation}"))
+                .await?
+                .ok_or_else(|| err(404, "NOT_FOUND"))?;
+            let key = value["keyId"]
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| err(503, "DELIVERY_RECORD_CORRUPT"))?;
+            let version = value["keyVersion"]
+                .as_u64()
+                .ok_or_else(|| err(503, "DELIVERY_RECORD_CORRUPT"))?;
+            value["regionalStatus"] = json!(if app
+                .get(workspace, &format!("policy-applied/{key}/{version}"))
+                .await?
+                .is_some()
+            {
+                "applied"
+            } else {
+                "pending"
+            });
+            value["regionalContinuity"] = app
+                .get(workspace, &format!("renewal-applied/{key}/{version}"))
+                .await?
+                .unwrap_or_else(|| {
+                    json!(if value["regionalStatus"] == "pending" {
+                        "pending"
+                    } else {
+                        "unavailable"
+                    })
+                });
+            Ok(json_response(StatusCode::OK, json!({"data":value}), None))
+        }
         ("POST", ["keys"]) => {
             let mut input: CreateKey = parse(&h, &bytes)?;
             input.scopes.sort();
@@ -990,15 +1085,37 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
                         &operation,
                     )
                     .await?;
-                let status = if app.deliver(&key, None).await.is_ok() {
+                let observed = app.clock.now()?;
+                if observed < old.expires_at {
+                    let proof = workspace_identity::renewal::SameKeyRenewal {
+                        from_version: old.key_version,
+                        from_expires_at: old.expires_at,
+                        global_observed_at: observed,
+                    };
+                    app.immutable(
+                        workspace,
+                        &format!("same-key-renewals/{}/{}", key.key_id, key.key_version),
+                        json!(proof),
+                    )
+                    .await?;
+                }
+                let delivered = app.deliver(&key, None).await;
+                let status = if delivered.is_ok() {
                     "applied"
                 } else {
                     "pending"
                 };
+                let continuity = match delivered {
+                    Ok(receipt) => match receipt.continuity {
+                        Some(crate::policy_command::ContinuityStatus::Eligible) => "eligible",
+                        _ => "unavailable",
+                    },
+                    Err(_) => "pending",
+                };
                 return Ok(etag(
                     json_response(
                         StatusCode::OK,
-                        json!({"data":key,"regionalStatus":status}),
+                        json!({"data":key,"regionalStatus":status,"regionalContinuity":continuity}),
                         None,
                     ),
                     key.key_version,

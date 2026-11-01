@@ -116,6 +116,34 @@ export function globalSecurityContract() {
       ...extra,
     };
   };
+  const delivery = object({
+    data: object({
+      id: string,
+      keyId: string,
+      keyVersion: number,
+      regionalStatus: { enum: ['pending', 'applied'] },
+      regionalContinuity: { enum: ['pending', 'eligible', 'unavailable'] },
+    }),
+  });
+  add('/key-policy-deliveries', 'post', 'createGlobalKeyPolicyDelivery', owner, 201, delivery, {
+    parameters: [workspace, mutation, origin],
+    requestBody: request(object({ keyId: string, keyVersion: number })),
+    description:
+      'Explicit bounded application attempt for the current Key version, including revoked Keys. Replays reconcile the same immutable command. No background retry or data proxy is implied.',
+  });
+  add(
+    '/key-policy-deliveries/{deliveryId}',
+    'get',
+    'getGlobalKeyPolicyDelivery',
+    owner,
+    200,
+    delivery,
+    {
+      parameters: [workspace, parameter('deliveryId')],
+      description:
+        'Observe durable application evidence without contacting Region or retrying effects.',
+    },
+  );
   const keyData = object({
     data: ref('Key'),
     grants: ref('Grants'),
@@ -177,12 +205,16 @@ export function globalSecurityContract() {
     'renewGlobalKey',
     owner,
     200,
-    object({ data: ref('Key'), regionalStatus: { enum: ['pending', 'applied'] } }),
+    object({
+      data: ref('Key'),
+      regionalStatus: { enum: ['pending', 'applied'] },
+      regionalContinuity: { enum: ['pending', 'eligible', 'unavailable'] },
+    }),
     {
       parameters: [workspace, parameter('keyId'), mutation, condition, origin],
       requestBody: request(object({ expiresAt: number })),
       description:
-        'Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application is reported separately; an unreachable Region remains pending.',
+        'Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application is reported separately. Only an explicit same-secret renewal durably observed by both authorities before the previous expiry enables existing proof-bound families to cross versions. An unreachable Region remains pending; unavailable continuity requires fresh enrollment.',
     },
   );
   add(

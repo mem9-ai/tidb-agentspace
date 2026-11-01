@@ -39,6 +39,7 @@ struct Claims {
     grant: Option<workspace_identity::regional_grants::Grant>,
     #[serde(default)]
     ceilings: Vec<workspace_identity::regional_grants::Grant>,
+    renewal: Option<workspace_identity::renewal::SameKeyRenewal>,
 }
 
 pub struct PolicyTrust {
@@ -58,12 +59,21 @@ pub struct PolicyCommandVerifier {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PolicyReceipt {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub continuity: Option<ContinuityStatus>,
     pub command_id: String,
     pub workspace_id: String,
     pub region_id: String,
     pub key_id: String,
     pub key_version: u64,
     pub policy_generation: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ContinuityStatus {
+    Eligible,
+    Unavailable,
 }
 
 pub struct PolicySignerConfig {
@@ -143,6 +153,17 @@ impl PolicyCommandSigner {
         grant: Option<&workspace_identity::regional_grants::Grant>,
         ceilings: &[workspace_identity::regional_grants::Grant],
     ) -> Result<String> {
+        self.sign_transition(policy, command_id, now, grant, ceilings, None)
+    }
+    pub fn sign_transition(
+        &self,
+        policy: &KeyPolicy,
+        command_id: &str,
+        now: i64,
+        grant: Option<&workspace_identity::regional_grants::Grant>,
+        ceilings: &[workspace_identity::regional_grants::Grant],
+        renewal: Option<&workspace_identity::renewal::SameKeyRenewal>,
+    ) -> Result<String> {
         if ceilings.len() > 1 || !ceilings.is_empty() && grant.is_none() {
             return Err(ServiceError::new(400, "INVALID_CEILINGS"));
         }
@@ -187,6 +208,7 @@ impl PolicyCommandSigner {
             policy: policy.clone(),
             grant: grant.cloned(),
             ceilings: ceilings.to_vec(),
+            renewal: renewal.cloned(),
         };
         let mut header = JwtHeader::new(Algorithm::EdDSA);
         header.typ = Some(COMMAND_TYPE.into());
@@ -282,6 +304,14 @@ impl PolicyCommandVerifier {
         Ok((claims.policy, claims.grant))
     }
 
+    pub(crate) fn renewal(
+        &self,
+        command: &str,
+        now: i64,
+    ) -> Result<Option<workspace_identity::renewal::SameKeyRenewal>> {
+        Ok(self.verify(command, now)?.renewal)
+    }
+
     /// The calling transport must first authenticate Global and its exact deployment identity,
     /// and bind any outer route's Workspace and Region to this signed command. A signed
     /// command alone is not authorization to expose this method publicly.
@@ -293,14 +323,16 @@ impl PolicyCommandVerifier {
     ) -> Result<PolicyReceipt> {
         let claims = self.verify(command, now)?;
         policies
-            .install_full(
+            .install_transition(
                 &claims.policy,
                 &claims.jti,
                 claims.grant.as_ref(),
                 &claims.ceilings,
+                claims.renewal.as_ref(),
             )
             .await?;
         Ok(PolicyReceipt {
+            continuity: None,
             command_id: claims.jti,
             workspace_id: claims.policy.workspace_id,
             region_id: claims.policy.region_id,

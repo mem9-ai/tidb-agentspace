@@ -1,4 +1,38 @@
 export interface paths {
+  '/api/v1/workspaces/{workspaceId}/key-policy-deliveries': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Explicit bounded application attempt for the current Key version, including revoked Keys. Replays reconcile the same immutable command. No background retry or data proxy is implied. */
+    post: operations['createGlobalKeyPolicyDelivery'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/workspaces/{workspaceId}/key-policy-deliveries/{deliveryId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Observe durable application evidence without contacting Region or retrying effects. */
+    get: operations['getGlobalKeyPolicyDelivery'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/workspaces/{workspaceId}/keys': {
     parameters: {
       query?: never;
@@ -29,7 +63,7 @@ export interface paths {
     delete: operations['revokeGlobalKey'];
     options?: never;
     head?: never;
-    /** @description Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application is reported separately; an unreachable Region remains pending. */
+    /** @description Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application is reported separately. Only an explicit same-secret renewal durably observed by both authorities before the previous expiry enables existing proof-bound families to cross versions. An unreachable Region remains pending; unavailable continuity requires fresh enrollment. */
     patch: operations['renewGlobalKey'];
     trace?: never;
   };
@@ -269,6 +303,105 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  createGlobalKeyPolicyDelivery: {
+    parameters: {
+      query?: never;
+      header: {
+        /** @description Operation identity. A repeated secret-producing operation never returns another secret. Resolve uncertain outcomes; do not blindly repeat. */
+        'Idempotency-Key': string;
+        /** @description Must equal the configured Global public origin for Owner mutations. */
+        Origin: string;
+      };
+      path: {
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          keyId: string;
+          keyVersion: number;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful response */
+      201: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            data: {
+              id: string;
+              keyId: string;
+              keyVersion: number;
+              /** @enum {unknown} */
+              regionalStatus: 'pending' | 'applied';
+              /** @enum {unknown} */
+              regionalContinuity: 'pending' | 'eligible' | 'unavailable';
+            };
+          };
+        };
+      };
+      /** @description Structured denial or unknown outcome; no credential is echoed. */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  getGlobalKeyPolicyDelivery: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceId: string;
+        deliveryId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      200: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            data: {
+              id: string;
+              keyId: string;
+              keyVersion: number;
+              /** @enum {unknown} */
+              regionalStatus: 'pending' | 'applied';
+              /** @enum {unknown} */
+              regionalContinuity: 'pending' | 'eligible' | 'unavailable';
+            };
+          };
+        };
+      };
+      /** @description Structured denial or unknown outcome; no credential is echoed. */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
   listGlobalKeys: {
     parameters: {
       query?: {
@@ -480,6 +613,8 @@ export interface operations {
             data: components['schemas']['Key'];
             /** @enum {unknown} */
             regionalStatus: 'pending' | 'applied';
+            /** @enum {unknown} */
+            regionalContinuity: 'pending' | 'eligible' | 'unavailable';
           };
         };
       };
