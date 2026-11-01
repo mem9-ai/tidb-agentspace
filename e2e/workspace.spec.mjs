@@ -298,8 +298,11 @@ test('Key creation sends explicit resource/action grants and reveals its synthet
     name: 'file-reader',
     scopes: ['resources:read', 'files:read'],
     resourceIds: ['fs_fixture'],
-    expiresInDays: 7,
+    expiresAt: expect.any(Number),
   });
+  const issued = workspace.requests.find((r) => r.path.endsWith('/keys') && r.method === 'POST');
+  expect(issued.path).toContain('/api/global/api/');
+  expect(issued.body.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000) + 6 * 86400);
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   await expect(secret).toHaveCount(0);
   await expect(page.getByRole('cell', { name: /^file-reader/ })).toBeVisible();

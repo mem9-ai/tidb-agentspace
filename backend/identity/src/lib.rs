@@ -7,7 +7,6 @@ pub mod embedded_region;
 pub mod enrollment_ticket;
 pub mod global_keys;
 pub mod global_owner_sessions;
-pub mod legacy_key_index;
 pub mod onboarding;
 pub mod regional;
 pub mod regional_grants;

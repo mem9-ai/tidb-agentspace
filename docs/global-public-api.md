@@ -4,7 +4,7 @@ Status: independent Global HTTP role implemented for Owner login, Key lifecycle,
 issuance and authorized Region discovery, plus signed regional policy delivery and Region-bound
 Token/enrollment issuance when the matching Region acknowledges application. See
 [regional Token integration](regional-token-api.md) for the required Region configuration and
-existing-credential boundary. The accepted
+Global-only Key boundary. The accepted
 [security design](../specs/gh-84/openapi-security.md) remains the full delivery boundary.
 
 The Global role runs in the same `workspace-backend` binary as Region and Meta roles. A single
@@ -71,7 +71,7 @@ supported; importing or adopting a legacy shared Workspace is not implemented by
 Logout durably revokes the session and clears its cookie.
 
 Key creation/list/detail, version rotation, expiry renewal and revocation are Owner-only.
-Mutations require the exact Global Origin and a UUID `Idempotency-Key`; changes also require
+Mutations require the Global Origin or an explicitly trusted Console Origin and a UUID `Idempotency-Key`; changes also require
 a quoted version `If-Match`. A one-time secret is never retrieved or returned on replay.
 Unknown outcomes must be reconciled without blind secret-producing retries. Exact grants
 are stored in encrypted Global metadata. Owner revocation/renewal changes Global state;
@@ -88,9 +88,7 @@ completed renewal before the previous expiry. A late applied policy permits fres
 but cannot reinstate an expired family transition proof. GET never retries policy effects.
 
 `POST /api/v1/workspaces/{workspaceId}/token-issuances` accepts a Workspace Key only in its
-Authorization header, and supports `audience: global` or the Key's exact granted Region ID. Region issuance requires
-an Ed25519 client public-key thumbprint and installed grant/ceiling snapshots; the response
-includes the Region-bound access token, trusted descriptor and one-use enrollment ticket.
+Authorization header, and supports `audience: global` or the Key's exact granted Region ID. Region issuance requires installed grant/ceiling snapshots. Without clientThumbprint it returns a short-lived Region access Token and descriptor. With an Ed25519 client public-key thumbprint it additionally returns a one-use enrollment ticket for proof-bound local renewal.
 Requested scopes must be a subset of the Key grant. The JWT lasts at most 15 minutes and never past the Key expiry;
 Key-version/state checks invalidate old Global Tokens after renewal, rotation or revocation.
 Issuance metadata never returns credentials. Region discovery requires `resources:read` and
@@ -99,8 +97,7 @@ is exported to Global by these operations.
 
 The origin-bound [Global client](../src/api/global-client.ts) exposes the generated API,
 Key exchange and Region discovery. It retains no credentials and rejects cross-origin requests
-and redirects. Existing regional callers and direct-Key records are unchanged; they have not
-been migrated or activated under the new authority.
+and redirects. Retired regional direct-Key records and digest indexes are discarded when their Workspace opens; raw Keys cannot authorize Region requests. [ADR 0036](decisions/0036-global-keys-only.md) supersedes the old preservation requirement.
 
 ## Native evidence
 
@@ -123,3 +120,17 @@ The Region pins the exact Global client certificate. Global never proxies data r
 The current prototype binds each Workspace grant to its Directory-assigned Region, has a 16 KiB signed
 control-message limit and bounds per-Key automatic history reconciliation to 1,024 versions;
 large grant/history reconciliation requires an explicit follow-up rather than an unbounded scan.
+
+## Console and shared listener
+
+See [the API guide](api-guide.md) for customer flows, examples, permissions and errors. Set
+`sharedListener:true` and a distinct `publicPath` (for example `/studio/api/global`) to mount
+Global on the matching Region listener. Set `consoleOrigins` explicitly when Console uses
+another origin. Cookie paths, issuer/DPoP target URLs and OpenAPI servers include this prefix.
+`returnTo` on Owner login accepts only explicitly trusted origins and is retained in the
+one-use login flow; callback then redirects to Console. Without it, callback returns JSON.
+
+For explicit local development only, `localWorkspace:{workspaceId,regionId}` enables
+`POST /api/session`; the listener/origin and actual peer must be loopback, with no SSO profile
+and a trusted Origin. It issues an encrypted, durable eight-hour Global Owner cookie, not a
+Workspace Key or hosted identity. Hosted configuration rejects this mode.

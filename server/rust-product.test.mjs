@@ -14,6 +14,7 @@ import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
 import { seedRecords, readState, readBinding } from './test-support/record-fixture.mjs';
 import { agentRestCases } from './test-support/agent-rest-cases.mjs';
 import { productApiCases } from './test-support/product-api-cases.mjs';
+import { globalOwnerFixture } from './test-support/global-owner-fixture.mjs';
 import { productApiFixture } from './test-support/product-api-fixture.mjs';
 const contract = JSON.parse(
   await readFile(new URL('../public/openapi.json', import.meta.url), 'utf8'),
@@ -211,49 +212,27 @@ test(
   },
 );
 test(
-  'resource actions do not enumerate unrelated Keys',
+  'retired regional Keys are discarded in bounded batches without losing resources or Global Tokens',
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
   async (t) => {
     const fixture = await productApiFixture(t, 'remote');
-    const key = await fixture.request('/keys', {
-      method: 'POST',
-      body: {
-        name: 'scale-reader',
-        scopes: ['queries:execute'],
-        resourceIds: ['db_memory'],
-        expiresInDays: 7,
-      },
+    const key = await fixture.issueKey({
+      name: 'retained-global-key',
+      scopes: ['queries:execute'],
+      resourceIds: ['db_memory'],
+      expiresInDays: 7,
     });
     assert.equal(key.status, 201, JSON.stringify(key.body));
     await fixture.seedKeys(4100);
-    const page = await fixture.request('/keys?limit=50');
-    assert.equal(page.status, 200, JSON.stringify(page.body));
-    assert.equal(page.body.data.length, 50);
-    assert.ok(page.body.nextCursor);
-    const second = await fixture.request(`/keys?limit=50&cursor=${page.body.nextCursor}`);
-    assert.equal(second.status, 200, JSON.stringify(second.body));
-    assert.ok(
-      second.body.data.every((entry) => !page.body.data.some((prior) => prior.id === entry.id)),
-    );
-    assert.ok(second.body.data.every((entry) => !Object.hasOwn(entry, 'digest')));
-    const extra = await fixture.request('/keys', {
-      method: 'POST',
-      body: {
-        name: 'scale-second',
-        scopes: ['resources:read'],
-        resourceIds: ['*'],
-        expiresInDays: 7,
-      },
-    });
-    assert.equal(extra.status, 201, JSON.stringify(extra.body));
-    assert.equal(
-      (await fixture.request(`/keys/${extra.body.data.id}`, { method: 'DELETE' })).status,
-      200,
-    );
+    await fixture.restart();
     const bootstrap = await fixture.request('/bootstrap');
     assert.equal(bootstrap.status, 200, JSON.stringify(bootstrap.body));
-    assert.equal(bootstrap.body.keys.length, 100);
-    assert.ok(bootstrap.body.keysNextCursor);
+    assert.equal(bootstrap.body.keys.length, 0);
+    assert.equal(
+      (await fixture.request('/resources', { token: 'key_scale_00000000' })).status,
+      401,
+    );
+    assert.equal((await fixture.request('/keys')).status, 404);
     const query = await fixture.request('/queries', {
       method: 'POST',
       token: key.body.secret,
@@ -267,14 +246,11 @@ test(
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
   async (t) => {
     const fixture = await productApiFixture(t, 'remote');
-    const created = await fixture.request('/keys', {
-      method: 'POST',
-      body: {
-        name: 'concurrent-reader',
-        scopes: ['resources:read'],
-        resourceIds: ['*'],
-        expiresInDays: 7,
-      },
+    const created = await fixture.issueKey({
+      name: 'concurrent-reader',
+      scopes: ['resources:read'],
+      resourceIds: ['*'],
+      expiresInDays: 7,
     });
     assert.equal(created.status, 201, JSON.stringify(created.body));
     const token = created.body.secret;
@@ -285,10 +261,7 @@ test(
       responses.every((response) => response.status === 200),
       JSON.stringify(responses),
     );
-    assert.equal(
-      (await fixture.request(`/keys/${created.body.data.id}`, { method: 'DELETE' })).status,
-      200,
-    );
+    assert.equal((await fixture.revokeKey(created.body.data.id)).status, 202);
     assert.equal((await fixture.request('/context', { token })).status, 401);
   },
 );
@@ -384,14 +357,11 @@ test(
         (event) => event.action === 'file.saved' && event.resource === '/large-workspace.txt',
       ),
     );
-    const key = await fixture.request('/keys', {
-      method: 'POST',
-      body: {
-        name: 'scale-key',
-        scopes: ['resources:read'],
-        resourceIds: ['db_scale_00000000'],
-        expiresInDays: 7,
-      },
+    const key = await fixture.issueKey({
+      name: 'scale-key',
+      scopes: ['resources:read'],
+      resourceIds: ['db_scale_00000000'],
+      expiresInDays: 7,
     });
     assert.equal(key.status, 201, JSON.stringify(key.body));
     const allowed = await fixture.request('/resources?limit=1', { token: key.body.secret });
@@ -399,7 +369,7 @@ test(
       allowed.body.data.map((resource) => resource.id),
       ['db_scale_00000000'],
     );
-    assert.equal((await fixture.request('/keys')).status, 200);
+    assert.equal((await fixture.request('/keys')).status, 404);
     assert.equal((await fixture.request('/events')).status, 200);
     assert.equal(
       (
@@ -410,10 +380,7 @@ test(
       ).status,
       200,
     );
-    assert.equal(
-      (await fixture.request(`/keys/${key.body.data.id}`, { method: 'DELETE' })).status,
-      200,
-    );
+    assert.equal((await fixture.revokeKey(key.body.data.id)).status, 202);
     assert.equal(
       (await fixture.request('/resources?limit=1', { token: key.body.secret })).status,
       401,
@@ -510,14 +477,11 @@ test(
         };
     });
     const global = await f.startIndependentGlobalMeta();
-    const created = await f.request('/keys', {
-      method: 'POST',
-      body: {
-        name: 'local-outage-check',
-        scopes: ['queries:execute', 'files:read', 'files:write'],
-        resourceIds: ['db_live', 'fs_live'],
-        expiresInDays: 7,
-      },
+    const created = await f.issueKey({
+      name: 'local-outage-check',
+      scopes: ['queries:execute', 'files:read', 'files:write'],
+      resourceIds: ['db_live', 'fs_live'],
+      expiresInDays: 7,
     });
     assert.equal(created.status, 201);
     const token = created.body.secret;
@@ -574,6 +538,7 @@ async function connect(origin) {
       method,
       headers: {
         'Content-Type': 'application/json',
+        Origin: origin,
         ...(token ? { Authorization: `Bearer ${token}` } : { Cookie: cookie }),
         ...headers,
       },
@@ -592,7 +557,23 @@ async function connect(origin) {
 function parquetImportInput() {
   return readFile(new URL('./test-support/fixtures/import.parquet', import.meta.url));
 }
-async function scenarios(request, provider) {
+async function scenarios(request, provider, global) {
+  const main = await global.issueKey({
+    name: 'full-contract',
+    scopes: [
+      'resources:read',
+      'resources:write',
+      'files:read',
+      'files:write',
+      'files:analyze',
+      'queries:execute',
+      'usage:read',
+    ],
+    resourceIds: ['*'],
+    expiresInDays: 7,
+  });
+  assert.equal(main.status, 201, JSON.stringify(main.body));
+  const secret = main.body.secret;
   async function run(
     path,
     options,
@@ -810,19 +791,12 @@ async function scenarios(request, provider) {
   );
   await run(base + '/file-exports', { method: 'POST', body: commit });
   await run(base + '/file-exports', { method: 'POST', body: commit }, 409);
-  const importKey = await run(
-    base + '/keys',
-    {
-      method: 'POST',
-      body: {
-        name: 'local-import-only',
-        scopes: ['queries:execute'],
-        resourceIds: ['db_live'],
-        expiresInDays: 7,
-      },
-    },
-    201,
-  );
+  const importKey = await global.issueKey({
+    name: 'local-import-only',
+    scopes: ['queries:execute'],
+    resourceIds: ['db_live'],
+    expiresInDays: 7,
+  });
   const rawPath =
     base +
     '/database-import-preparations?' +
@@ -998,19 +972,12 @@ async function scenarios(request, provider) {
   await run(base + '/files?resourceId=fs_live', { token: 'invalid' }, 401);
   await run('/api/v1/workspaces/other/resources', { token: secret }, 404);
   assert.equal(provider.calls, before);
-  const key = await run(
-    base + '/keys',
-    {
-      method: 'POST',
-      body: {
-        name: 'read-only',
-        scopes: ['files:read'],
-        resourceIds: ['fs_shared'],
-        expiresInDays: 7,
-      },
-    },
-    201,
-  );
+  const key = await global.issueKey({
+    name: 'read-only',
+    scopes: ['files:read'],
+    resourceIds: ['fs_shared'],
+    expiresInDays: 7,
+  });
   await run(
     base + '/file-analyses',
     {
@@ -1164,16 +1131,25 @@ for (const transport of ['remote', 'inProcess']) {
           ['drive9', 'zero', 'duckdb', 'db9'].map((name, i) => [name, raw[i + 1]]),
         ),
       );
-      await global.stop();
       if (transport === 'inProcess') await region.stop();
       const regionConfig = resolve(f.directory, 'embedded-region.json');
       await privateWrite(regionConfig, region.server);
       const bind = await port();
+      const globalPublic = await globalOwnerFixture(
+        f,
+        global,
+        region,
+        'ws_agentlab',
+        `http://127.0.0.1:${bind}`,
+        0,
+      );
       const config = resolve(f.directory, 'workspace-rust.json');
       await privateWrite(config, {
         bind: `127.0.0.1:${bind}`,
         workspaceId: 'ws_agentlab',
         authorityId: region.server.authorityId,
+        publicOrigins: [`http://127.0.0.1:${bind}`],
+        security: globalPublic.security,
         insecureLoopback: true,
         consoleOrigins: ['http://127.0.0.1:5173'],
         metadata:
@@ -1197,6 +1173,7 @@ for (const transport of ['remote', 'inProcess']) {
         services: [
           ...(transport === 'inProcess' ? [{ kind: 'metadata', configFile: regionConfig }] : []),
           { kind: 'workspace', configFile: config },
+          globalPublic.service,
         ],
       });
       const log = createWriteStream(resolve(f.directory, 'backend.log'), { mode: 0o600 });
@@ -1209,7 +1186,7 @@ for (const transport of ['remote', 'inProcess']) {
       child.stderr.pipe(log);
       const request = await until(() => connect(`http://127.0.0.1:${bind}`));
       try {
-        await scenarios(request, provider);
+        await scenarios(request, provider, globalPublic);
       } catch (error) {
         const output = await readFile(resolve(f.directory, 'backend.log'), 'utf8');
         for (const line of output
@@ -1257,8 +1234,7 @@ for (const transport of ['remote', 'inProcess']) {
           ...(resource.id === 'db_live' ? { expiresAt: raw[2].bindings.db_live.expiresAt } : {}),
         })),
       );
-      assert.deepEqual(final.keys[0].resourceIds, ['*']);
-      assert.equal(final.keys[0].digest, state.keys[0].digest);
+      assert.deepEqual(final.keys, []);
     },
   );
 }
@@ -1384,5 +1360,14 @@ test(
     const list = await request(base + '/resources');
     assert.equal(list.body.data.length, 5);
     assert.equal(JSON.stringify(list.body).includes(nativeSecret), false);
+  },
+);
+
+test(
+  'Console API examples execute through Global and Region in cURL, JavaScript and Python',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
+  async (t) => {
+    const { apiExampleCases } = await import('./test-support/api-example-cases.mjs');
+    await apiExampleCases(t);
   },
 );

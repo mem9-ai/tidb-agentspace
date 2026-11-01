@@ -45,7 +45,7 @@ are the UI-only exception; authentication and permission boundaries still apply.
 [Global public API implementation](docs/global-public-api.md) documents the independently
 runnable Global role, its generated contract and client. The [regional Token flow](docs/regional-token-api.md)
 connects policy delivery, managed Workspace authorization and local renewal across Global outages;
-existing credentials retain their original authority until a separate migration.
+retired direct regional Keys are discarded under [ADR 0036](docs/decisions/0036-global-keys-only.md), while resource and provider credentials remain intact. The [API guide](docs/api-guide.md) covers the customer flow and copyable examples.
 
 The Console and API build, run, and package independently in this repository. The Console
 consumes generated API types and selects its API origin at runtime. This implemented boundary

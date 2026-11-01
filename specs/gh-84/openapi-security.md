@@ -500,3 +500,11 @@ Choose the exact KMS, client proof method, cross-site browser profile, rotation 
 policy batching and regional shard placement only with explicit integration/security evidence.
 Arbitrary-duration service and instantaneous remote revocation are not both available during a
 partition; policy defaults must retain the owner-selected regional availability invariant.
+
+## Owner amendment: retire legacy customer Keys (2026-11-01)
+
+[ADR 0036](../../docs/decisions/0036-global-keys-only.md) supersedes section 9’s legacy
+customer-Key preservation/upgrade requirement. The owner permits discarding old direct regional
+Workspace Keys and starting with new Global Keys. Do not migrate verifiers or retain public
+regional Key endpoints. Preserve resources, files and provider/native credentials. The signed
+accepted baseline remains historical evidence; this explicit owner amendment governs cutover.

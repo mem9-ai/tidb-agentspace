@@ -73,7 +73,9 @@ impl Plan {
                         bail!("Use absolute private configuration references");
                     }
                     let config = workspace_api::global_api::Config::load(&config_file)?;
-                    if !binds.insert(config.bind) || !result.globals.is_empty() {
+                    if (!config.shared_listener && !binds.insert(config.bind))
+                        || !result.globals.is_empty()
+                    {
                         bail!("Global listener is duplicated");
                     }
                     result.globals.push(config);
@@ -154,6 +156,16 @@ impl Plan {
             }
         }
         for config in &result.globals {
+            if config.shared_listener
+                && !result.workspaces.iter().any(|region| {
+                    region.bind == config.bind
+                        && config
+                            .public_path
+                            .starts_with(&format!("{}/api/", region.public_path))
+                })
+            {
+                bail!("Shared Global must mount beneath its regional API gateway path");
+            }
             if let workspace_api::MetaBinding::InProcess { authority_id } = &config.metadata
                 && !authorities.contains(authority_id)
             {

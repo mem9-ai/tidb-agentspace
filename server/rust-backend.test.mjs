@@ -93,13 +93,13 @@ async function authorizationCases(request) {
     const r = await request(path, options);
     return r;
   };
-  assert.equal((await record(base, { token: originalToken })).status, 200);
-  assert.equal((await record(base, { token: unsupportedScopeToken })).status, 403);
+  assert.equal((await record(base, { token: originalToken })).status, 401);
+  assert.equal((await record(base, { token: unsupportedScopeToken })).status, 401);
   assert.equal((await record(base, { token: expiredToken })).status, 401);
   assert.equal((await record(base, { token: revokedToken })).status, 401);
   assert.equal((await record(base, { headers: { Cookie: '' } })).status, 401);
   assert.equal((await record(base, { token: 'not-an-original-key' })).status, 401);
-  assert.equal((await record(base + '/keys', { token: originalToken })).status, 403);
+  assert.equal((await record(base + '/keys', { token: originalToken })).status, 401);
   assert.equal((await record('/api/v1/workspaces/other', { token: originalToken })).status, 404);
   assert.equal(
     (await record(base, { headers: { Origin: 'https://untrusted.example' } })).status,
@@ -154,61 +154,18 @@ async function authorizationCases(request) {
   );
   const workspace = await record(base);
   assert.equal(workspace.body.data.name, 'Rust migration');
-  const input = {
-    name: 'Migrated scoped key',
-    scopes: ['resources:read', 'resources:read'],
-    resourceIds: ['db_memory', 'db_memory'],
-    expiresInDays: 7,
-  };
-  for (const change of [
-    { name: '中' },
-    { scopes: ['admin:*'] },
-    { expiresInDays: 1 },
-    { resourceIds: ['internal-duckdb-store'] },
-    { resourceIds: ['retired-pg'] },
-    { resourceIds: ['*', 'db_memory'] },
-    { resourceIds: [] },
-  ])
-    assert.equal(
-      (await record(base + '/keys', { method: 'POST', body: { ...input, ...change } })).status,
-      400,
-    );
-  const created = await record(base + '/keys', { method: 'POST', body: input });
-  assert.equal(created.status, 201);
-  assert.match(created.body.secret, /^aw_demo_[a-f0-9]{48}$/);
-  assert.equal(created.body.data.digest, undefined);
-  assert.deepEqual(created.body.data.resourceIds, ['db_memory']);
-  assert.deepEqual(created.body.data.scopes, ['resources:read']);
-  assert.equal((await record(base, { token: created.body.secret })).status, 200);
-  const events = await record(base + '/events', { token: originalToken });
-  assert.deepEqual(
-    events.body.data.map((e) => e.id),
-    ['visible-event'],
-  );
-  const ownerEvents = await record(base + '/events');
+  assert.equal((await record(base + '/keys', { method: 'POST', body: {} })).status, 404);
+  const events = await record(base + '/events');
+  assert.equal(events.status, 200);
   assert.equal(
-    ownerEvents.body.data.some((e) => e.id === 'retired-event'),
+    events.body.data.some((e) => e.id === 'retired-event'),
     false,
   );
-  assert.equal(
-    (await record(base + `/keys/${created.body.data.id}`, { method: 'DELETE' })).status,
-    200,
-  );
-  assert.equal(
-    (await record(base + `/keys/${created.body.data.id}`, { method: 'DELETE' })).status,
-    200,
-  );
-  assert.equal((await record(base, { token: created.body.secret })).status, 401);
-  const keys = await record(base + '/keys');
-  assert.equal(keys.body.data.length, 5);
-  assert.equal(JSON.stringify(keys.body).includes('digest'), false);
-  assert.equal(JSON.stringify(keys.body).includes(created.body.secret), false);
-  assert.equal(JSON.stringify(keys.body).includes(privateNativeToken), false);
 }
 
 for (const mode of ['inProcess', 'remote']) {
   test(
-    `record-backed Workspace/Key authorization through ${mode} metadata survives restart`,
+    `record-backed Owner authorization and retired Key cleanup through ${mode} metadata survive restart`,
     { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
     async (t) => {
       const fixture = await metaFixture();
@@ -317,8 +274,8 @@ for (const mode of ['inProcess', 'remote']) {
       api = await launch(fixture.directory, activeRoles);
       children.push(api);
       request = await until(() => connect(origin));
-      assert.equal((await request(base, { token: originalToken })).status, 200);
-      assert.equal((await request(base + '/keys', { token: originalToken })).status, 403);
+      assert.equal((await request(base, { token: originalToken })).status, 401);
+      assert.equal((await request(base + '/keys', { token: originalToken })).status, 401);
       await api.stop();
       const verifier =
         mode === 'inProcess'
@@ -327,7 +284,7 @@ for (const mode of ['inProcess', 'remote']) {
       try {
         const final = await readState(verifier.client, server.authorityId);
         assert.equal(final.workspace.name, 'Rust migration');
-        assert.equal(final.keys.length, 5);
+        assert.equal(final.keys.length, 0);
         assert.deepEqual(
           await readBinding(verifier.client, server.authorityId, 'drive9', 'orphan'),
           { apiKey: privateNativeToken },
@@ -441,7 +398,7 @@ test(
 );
 
 test(
-  'fresh Workspace initialization creates no sample resources and isolates new Keys across Workspaces',
+  'fresh Workspaces persist resources and reject retired regional Key endpoints',
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
   async (t) => {
     const f = await metaFixture();
@@ -482,40 +439,17 @@ test(
     });
     assert.equal(created.status, 201);
     const id = created.body.data.id;
-    const key = await request(base + '/keys', {
-      method: 'POST',
-      body: {
-        name: 'Fresh scoped key',
-        resourceIds: [id],
-        scopes: ['resources:read', 'files:read'],
-        expiresInDays: 7,
-      },
-    });
-    assert.equal(key.status, 201);
-    assert.equal((await request(base + '/resources', { token: key.body.secret })).status, 200);
+    assert.equal((await request(base + '/keys', { method: 'POST', body: {} })).status, 404);
     assert.equal(
-      (await other.request('/api/v1/workspaces/ws_another/resources', { token: key.body.secret }))
+      (await other.request('/api/v1/workspaces/ws_another/resources', { token: originalToken }))
         .status,
       401,
     );
-    assert.equal(
-      (await request('/api/v1/workspaces/ws_another/resources', { token: key.body.secret })).status,
-      404,
-    );
-    assert.equal((await request(base + '/keys', { token: key.body.secret })).status, 403);
     await api.stop();
     await privateWrite(path, { ...config, initializeWorkspace: false });
     const restarted = await launch(f.directory, [{ kind: 'workspace', configFile: path }]);
     children.push(restarted);
     const again = await until(() => connect('http://' + config.bind));
-    assert.equal(
-      (await again(base + '/resources', { token: key.body.secret })).body.data[0].id,
-      id,
-    );
-    assert.equal(
-      (await again(base + `/keys/${key.body.data.id}`, { method: 'DELETE' })).status,
-      200,
-    );
-    assert.equal((await again(base + '/resources', { token: key.body.secret })).status, 401);
+    assert.equal((await again(base + '/resources')).body.data[0].id, id);
   },
 );

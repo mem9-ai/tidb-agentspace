@@ -28,7 +28,12 @@ export function extendRegionalSecurityContract(spec) {
   for (const path of Object.values(spec.paths))
     for (const op of Object.values(path))
       if (op?.security?.some?.((entry) => 'workspaceKey' in entry))
-        op.security.push({ regionalAccess: [] });
+        op.security = op.security.map((entry) =>
+          'workspaceKey' in entry ? { regionalAccess: [] } : entry,
+        );
+  delete schemes.workspaceKey;
+  delete spec.paths[ws + '/keys'];
+  delete spec.paths[ws + '/keys/{keyId}'];
   Object.assign(spec.components.schemas, {
     RegionalEnrollment: object({
       keyId: str,

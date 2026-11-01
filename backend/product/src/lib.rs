@@ -269,7 +269,8 @@ impl Product {
                 }
                 let repository = self.workspace.repository();
                 let (page, next) = repository.resources_page(None, 100).await?;
-                let (keys, key_next) = repository.keys_page(None, 100).await?;
+                let keys: Vec<Value> = Vec::new();
+                let key_next: Option<String> = None;
                 let ids = page
                     .iter()
                     .map(|resource| text(resource, "id").map(str::to_owned))

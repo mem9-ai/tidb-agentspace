@@ -28,17 +28,11 @@ export async function restWorkflowCases(t, transport) {
     assert.equal(JSON.stringify(r.body).includes(nativeSecret), false);
     return r;
   };
-  const key = async (actions, grants = ['*']) =>
-    (
-      await request(
-        '/keys',
-        {
-          method: 'POST',
-          body: { name: 'workflow-key', scopes: actions, resourceIds: grants, expiresInDays: 7 },
-        },
-        201,
-      )
-    ).body;
+  const key = async (scopes, resourceIds = ['*']) => {
+    const r = await f.issueKey({ name: 'rest-workflow', scopes, resourceIds, expiresInDays: 7 });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    return r.body;
+  };
   const full = await key([
     'resources:read',
     'resources:write',
@@ -238,7 +232,7 @@ export async function restWorkflowCases(t, transport) {
       },
       201,
     );
-    await request(`/keys/${restricted.data.id}`, { method: 'DELETE' });
+    assert.equal((await f.revokeKey(restricted.data.id)).status, 202);
     await request(follow(review), { token: restricted.secret }, 401, 'INVALID_KEY');
   });
 

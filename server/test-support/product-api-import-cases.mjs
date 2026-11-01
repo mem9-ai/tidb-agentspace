@@ -192,22 +192,27 @@ export async function importCases(
       const revoked = await key('coverage-revoked-mid-import');
       const revokedReview = (await upload('db_live', revoked.secret)).body;
       faults.afterCreate = async () => {
-        await request(`/keys/${revoked.data.id}`, { method: 'DELETE' });
+        const revokedAtGlobal = await f.revokeKey(revoked.data.id);
+        assert.equal(revokedAtGlobal.status, 202);
+        assert.equal(revokedAtGlobal.body.regionalStatus, 'pending');
       };
       const sqlCount = provider.statements.length;
       await request(
         '/database-imports',
         { method: 'POST', token: revoked.secret, body: commit(revokedReview, 'revoked_import') },
-        502,
-        'EXPORT_INCOMPLETE',
+        200,
       );
       faults.afterCreate = undefined;
-      assert.equal(provider.statements.length, sqlCount + 1);
+      // The admitted HTTP operation drains before policy applies. No later admission may pass.
+      assert.equal(provider.statements.length, sqlCount + 2);
+      const applied = await f.deliver(revoked.data.id, 2);
+      assert.equal(applied.status, 201, JSON.stringify(applied.body));
+      assert.equal(applied.body.data.regionalStatus, 'applied');
       await request(
         '/queries',
         { method: 'POST', token: revoked.secret, body: { resourceId: 'db_live', sql: 'SELECT 1' } },
         401,
-        'INVALID_KEY',
+        'INVALID_CREDENTIAL',
       );
     },
   );

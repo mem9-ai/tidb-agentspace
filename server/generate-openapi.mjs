@@ -323,8 +323,8 @@ function operation(
     summary,
     tags: [owner ? 'Owner' : 'Workspace'],
     description: owner
-      ? 'Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Workspace API keys cannot perform this operation.'
-      : `Required workspace key scope: ${scope ?? 'authenticated caller; no additional action scope'}. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.`,
+      ? 'Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Region access Tokens cannot perform this Owner operation.'
+      : `Required Region access Token scope: ${scope ?? 'authenticated caller; no additional action scope'}. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.`,
     'x-required-scope': scope,
     security: owner ? ownerSessions : [{ workspaceKey: [] }, ...ownerSessions],
     ...(parameters.length ? { parameters } : {}),
@@ -1231,6 +1231,8 @@ paths['/api/auth/config'] = {
         object(
           {
             enabled: { type: 'boolean' },
+            globalApi: object({ apiOrigin: { type: 'string', format: 'uri' }, apiPathPrefix: str }),
+            regionId: str,
             guestEnabled: { type: 'boolean' },
             guestCleanupEnabled: { type: 'boolean' },
             sessionKind: { type: 'string', enum: ['account', 'guest'] },

@@ -2,12 +2,14 @@ import { createWorkspaceClient, resolveApiBaseUrl, responseData } from './transp
 import { createUploadFetch, type UploadProgress } from './upload-transport';
 import { firstWorkspaceId } from './workspace-selection';
 import type { components, operations } from './schema';
+import { createGlobalApiClient } from './global-client';
+import type { components as GlobalComponents } from './global-schema';
 
 export type Resource = components['schemas']['Resource'];
 export type Tutorial = components['schemas']['Tutorial'];
 export type TableList = components['schemas']['TableList'];
 export type TableDetail = components['schemas']['TableDetail'];
-export type ApiKey = components['schemas']['Key'];
+export type ApiKey = components['schemas']['Key'] & { regionalStatus?: 'pending' | 'applied' };
 export type Data = components['schemas']['Bootstrap'];
 export type WorkspaceFile = components['schemas']['File'];
 export type QueryResult =
@@ -15,7 +17,12 @@ export type QueryResult =
 type JsonBody<T extends { requestBody: { content: { 'application/json': unknown } } }> =
   T['requestBody']['content']['application/json'];
 export type QuerySource = NonNullable<JsonBody<operations['executeQuery']>['sources']>[number];
-export type CreateKeyInput = JsonBody<operations['createKey']>;
+export type CreateKeyInput = {
+  name: string;
+  scopes: string[];
+  resourceIds: string[];
+  expiresInDays: 7 | 30 | 90;
+};
 export type FileAnalysisResult =
   operations['analyzeFile']['responses'][200]['content']['application/json'];
 export type FileAnalysisInput = JsonBody<operations['analyzeFile']>;
@@ -34,6 +41,8 @@ export type DatabaseImportResult = components['schemas']['DatabaseImportResult']
 export type WriteFileInput = JsonBody<operations['writeFile']>;
 export type SsoAuthConfig = {
   enabled: boolean;
+  globalApi?: { apiOrigin: string; apiPathPrefix: string };
+  regionId?: string;
   guestEnabled?: boolean;
   guestCleanupEnabled?: boolean;
   sessionKind?: 'account' | 'guest';
@@ -64,6 +73,7 @@ export function configureApi(config: unknown) {
   client = createWorkspaceClient(apiBaseUrl);
   sessionClient = createWorkspaceClient(apiBaseUrl, fetch, '');
   clearWorkspace();
+  globalSettings = undefined;
 }
 
 export const workspaceApi = {
@@ -281,24 +291,145 @@ export const workspaceApi = {
         },
       ),
     ),
-  createKey: (body: CreateKeyInput) =>
-    responseData(client.POST('/workspaces/{workspaceId}/keys', { params, body })),
-  keysPage: (cursor?: string) =>
-    responseData(
-      client.GET('/workspaces/{workspaceId}/keys', {
-        params: { path: params.path, query: { limit: 100, cursor } },
+  createKey: async (body: CreateKeyInput) => {
+    const global = await ownerGlobalClient();
+    const result = await global.POST('/api/v1/workspaces/{workspaceId}/keys', {
+      params: {
+        path: { workspaceId },
+        header: { Origin: window.location.origin, 'Idempotency-Key': crypto.randomUUID() },
+      },
+      body: {
+        name: body.name,
+        scopes: body.scopes,
+        resourceIds: body.resourceIds,
+        expiresAt: Math.floor(Date.now() / 1000) + body.expiresInDays * 86400,
+      },
+    });
+    const value = await globalResult(result);
+    return { ...value, data: portalKey(value) };
+  },
+  keysPage: async (cursor?: string) => {
+    const global = await ownerGlobalClient();
+    const value = await globalResult(
+      await global.GET('/api/v1/workspaces/{workspaceId}/keys', {
+        params: { path: { workspaceId }, query: { limit: 100, ...(cursor ? { cursor } : {}) } },
       }),
-    ),
-  revokeKey: (keyId: string) =>
-    responseData(
-      client.DELETE('/workspaces/{workspaceId}/keys/{keyId}', {
+    );
+    return { data: value.data.map(portalKey), nextCursor: value.nextCursor };
+  },
+  revokeKey: async (keyId: string) => {
+    const global = await ownerGlobalClient();
+    const current = await globalResult(
+      await global.GET('/api/v1/workspaces/{workspaceId}/keys/{keyId}', {
         params: { path: { workspaceId, keyId } },
       }),
-    ),
+    );
+    return globalResult(
+      await global.DELETE('/api/v1/workspaces/{workspaceId}/keys/{keyId}', {
+        params: {
+          path: { workspaceId, keyId },
+          header: {
+            Origin: window.location.origin,
+            'If-Match': `"${current.data.keyVersion}"`,
+            'Idempotency-Key': crypto.randomUUID(),
+          },
+        },
+      }),
+    );
+  },
+  retryKeyPolicy: async (keyId: string) => {
+    const global = await ownerGlobalClient();
+    const current = await globalResult(
+      await global.GET('/api/v1/workspaces/{workspaceId}/keys/{keyId}', {
+        params: { path: { workspaceId, keyId } },
+      }),
+    );
+    return globalResult(
+      await global.POST('/api/v1/workspaces/{workspaceId}/key-policy-deliveries', {
+        params: {
+          path: { workspaceId },
+          header: { Origin: window.location.origin, 'Idempotency-Key': crypto.randomUUID() },
+        },
+        body: { keyId, keyVersion: current.data.keyVersion },
+      }),
+    );
+  },
   settings: (body: JsonBody<operations['updateSettings']>) =>
     responseData(client.PATCH('/workspaces/{workspaceId}/settings', { params, body })),
 };
 
 export function contentUrl(file: Pick<WorkspaceFile, 'resourceId' | 'path'>) {
   return apiBaseUrl + base + '/files/content?' + new URLSearchParams(file);
+}
+
+let globalSettings: SsoAuthConfig | undefined;
+export async function globalApiSettings() {
+  globalSettings ??= await workspaceApi.authConfig();
+  const descriptor = globalSettings.globalApi;
+  if (!descriptor)
+    throw new Error(
+      'Global API is not configured. Ask the service operator to enable Global Key management.',
+    );
+  const url = new URL(descriptor.apiOrigin);
+  if (
+    url.origin !== descriptor.apiOrigin ||
+    !/^\/(?:[A-Za-z0-9_-]+\/?)*$/.test(descriptor.apiPathPrefix || '/')
+  )
+    throw new Error('Invalid Global API configuration.');
+  return {
+    baseUrl: descriptor.apiOrigin + descriptor.apiPathPrefix,
+    regionId: globalSettings.regionId || '',
+  };
+}
+async function ownerGlobalClient() {
+  const { baseUrl } = await globalApiSettings();
+  const client = createGlobalApiClient(baseUrl, [new URL(baseUrl).origin], fetch, true);
+  const session = await client.GET('/api/auth/session', { params: { query: { workspaceId } } });
+  if (session.error) {
+    const config = await globalResult(await client.GET('/api/auth/config'));
+    if (config.mode === 'local')
+      await globalResult(
+        await client.POST('/api/session', {
+          params: { header: { Origin: window.location.origin } },
+        }),
+      );
+    else throw new Error('Sign in at Global to manage keys.');
+  }
+  return client;
+}
+export async function signInGlobal() {
+  const { baseUrl } = await globalApiSettings();
+  window.location.assign(
+    baseUrl +
+      '/api/auth/tidbcloud/login?' +
+      new URLSearchParams({ workspaceId, returnTo: window.location.href }),
+  );
+}
+async function globalResult<T>(result: {
+  data?: T;
+  error?: { error: { code: string; message: string } };
+}) {
+  if (result.error) throw new Error(result.error.error.message || result.error.error.code);
+  if (!result.data) throw new Error('Global returned no result.');
+  return result.data;
+}
+type GlobalKeySummary = {
+  data: GlobalComponents['schemas']['Key'];
+  grants: GlobalComponents['schemas']['Grants'];
+  regionalStatus: 'pending' | 'applied';
+};
+function portalKey(summary: GlobalKeySummary): ApiKey {
+  const { data: key, grants } = summary;
+  return {
+    id: key.keyId,
+    regionalStatus: summary.regionalStatus,
+    name: key.name,
+    prefix: 'awk_' + key.keyId,
+    scopes: grants.scopes,
+    resourceIds: grants.resourceIds,
+    createdAt: new Date(key.createdAt * 1000).toISOString(),
+    expiresAt: new Date(key.expiresAt * 1000).toISOString(),
+    lastUsedAt: null,
+    revokedAt: key.revoked ? new Date(key.createdAt * 1000).toISOString() : null,
+  };
 }

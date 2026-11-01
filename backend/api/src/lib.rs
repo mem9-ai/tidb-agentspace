@@ -1,5 +1,6 @@
 pub mod access_signer;
 pub mod global_api;
+mod global_local_sessions;
 pub mod global_login;
 pub mod guest_cleanup;
 pub mod guest_entry;
@@ -58,6 +59,12 @@ pub struct GuestConfig {
     pub workspace_limit: usize,
 }
 
+#[derive(Clone, Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GlobalEntry {
+    pub api_origin: String,
+    pub api_path_prefix: String,
+}
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
@@ -84,6 +91,7 @@ pub struct Config {
     pub security: Option<region_security::Config>,
     #[serde(default)]
     pub managed_workspace_limit: Option<usize>,
+    pub global_entry: Option<GlobalEntry>,
 }
 fn guest_environment(value: &str) -> Result<Option<GuestConfig>> {
     match value {
@@ -153,6 +161,29 @@ impl Config {
                 "Guest requires explicit co-located Global/Region authorities, SSO and trusted public origins"
             );
         }
+        if let Some(global) = &self.global_entry {
+            let origin = sso::endpoint(&global.api_origin, self.bind.ip().is_loopback())?;
+            anyhow::ensure!(
+                origin.origin().ascii_serialization() == global.api_origin
+                    && (global.api_path_prefix.is_empty()
+                        || global.api_path_prefix.starts_with('/')
+                            && global
+                                .api_path_prefix
+                                .split('/')
+                                .skip(1)
+                                .all(|p| !p.is_empty()
+                                    && p.bytes()
+                                        .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b)))),
+                "Invalid Global entry"
+            );
+            if let Some(security) = &self.security {
+                anyhow::ensure!(
+                    security.global_issuer
+                        == format!("{}{}", global.api_origin, global.api_path_prefix),
+                    "Global entry must match the pinned issuer"
+                );
+            }
+        }
         http_policy::validate(self)?;
         if let Some(product) = &self.product {
             product.validate()?;
@@ -211,6 +242,7 @@ pub struct GuestRuntime {
     pub cleanup_slots: Arc<Semaphore>,
 }
 pub struct WorkspaceServer {
+    global_mount: Option<(String, Router)>,
     pub workspace: Arc<Workspace>,
     listener: TcpListener,
     app: App,
@@ -257,6 +289,10 @@ impl WorkspaceServer {
             config.recover_writer_owner.as_deref(),
         )
         .await?;
+        if let Err(error) = repository.discard_regional_keys().await {
+            let _ = repository.close().await;
+            return Err(error.into());
+        }
         let workspace = Arc::new(Workspace::new(repository));
         let product = if let Some(config) = config.product.clone() {
             match workspace_product::Product::new(workspace.clone(), config).await {
@@ -295,6 +331,7 @@ impl WorkspaceServer {
             .transpose()?
             .map(Arc::new);
         Ok(Self {
+            global_mount: None,
             workspace: workspace.clone(),
             listener,
             app: App {
@@ -312,6 +349,14 @@ impl WorkspaceServer {
             },
         })
     }
+    pub fn with_global(mut self, global: global_api::GlobalServer) -> Self {
+        self.app.config.global_entry = Some(GlobalEntry {
+            api_origin: global.origin().into(),
+            api_path_prefix: global.mount_path().into(),
+        });
+        self.global_mount = Some((global.mount_path().into(), global.router()));
+        self
+    }
     pub async fn serve(
         self,
         stop: impl std::future::Future<Output = ()> + Send + 'static,
@@ -326,6 +371,11 @@ impl WorkspaceServer {
             .fallback(any(handle))
             .layer(middleware::from_fn_with_state(self.app.clone(), policy))
             .with_state(self.app);
+        let router = if let Some((path, global)) = self.global_mount {
+            router.nest_service(&path, global)
+        } else {
+            router
+        };
         let cancellation = tokio_util::sync::CancellationToken::new();
         let stop_signal = cancellation.clone();
         tokio::spawn(async move {
@@ -352,7 +402,10 @@ impl WorkspaceServer {
 }
 fn error(error: ServiceError) -> Response {
     let message = match error.code.as_str() {
-        "UNAUTHENTICATED" => "Sign in or provide a scoped Workspace Key.",
+        "UNAUTHENTICATED" => "Sign in or provide a scoped Region access Token.",
+        "EXCHANGE_KEY_AT_GLOBAL" => {
+            "Exchange your Workspace Key at Global for a Region Token. Raw Keys cannot access Region data."
+        }
         "REGION_POLICY_NOT_APPLIED" => {
             "The Region has not confirmed this Key's permissions. Inspect the Key status before requesting a Region Token again."
         }
@@ -902,24 +955,8 @@ async fn dispatch(
     } else {
         match (method.as_str(), route) {
             ("GET", "") if path == prefix => Operation::GetWorkspace,
-            ("GET", "/keys") => Operation::ListKeys {
-                cursor: query.get("cursor").cloned(),
-                limit: query.get("limit").map_or(Ok(100), |value| {
-                    value
-                        .parse::<usize>()
-                        .map_err(|_| reject(400, "INVALID_PAGE_LIMIT"))
-                })?,
-            },
-            ("POST", "/keys") => Operation::CreateKey(body()?),
             ("PATCH", "/settings") => Operation::UpdateSettings(body()?),
             ("GET", "/events") => Operation::ListEvents,
-            ("DELETE", path)
-                if path.starts_with("/keys/")
-                    && !path[6..].is_empty()
-                    && !path[6..].contains('/') =>
-            {
-                Operation::RevokeKey(path[6..].to_owned())
-            }
             _ => {
                 if let Some(product) = &app.product {
                     let parts = route
@@ -1101,7 +1138,14 @@ async fn credential(
         {
             return security.authenticate(&app.config.workspace_id, token).await;
         }
-        return Ok(Credential::Bearer(token.to_owned()));
+        return Err(reject(
+            401,
+            if token.starts_with("awk_") {
+                "EXCHANGE_KEY_AT_GLOBAL"
+            } else {
+                "INVALID_CREDENTIAL"
+            },
+        ));
     }
     if let Some(runtime) = &app.guest_runtime
         && app.current_account.is_some()
@@ -1307,6 +1351,10 @@ async fn auth_route(
         } else {
             json!({"enabled":false,"guestEnabled":false})
         };
+        if let Some(global) = &app.config.global_entry {
+            config["globalApi"] = json!(global);
+            config["regionId"] = json!(app.config.authority_id);
+        }
         if account {
             config["sessionKind"] = json!("account");
         } else if guest {
@@ -1594,4 +1642,21 @@ async fn auth_route(
         return response;
     }
     error(reject(404, "NOT_FOUND"))
+}
+
+/// Deliberate one-time bootstrap without opening an HTTP or control listener.
+pub fn initialize_security_checkpoint(directory: &Path, initialize: bool) -> anyhow::Result<()> {
+    if initialize {
+        use std::os::unix::fs::DirBuilderExt;
+        let parent = directory
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("Clock parent required"))?;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(parent)?;
+    }
+    let clock = security_clock::Clock::open(directory, initialize)?;
+    clock.now()?;
+    Ok(())
 }

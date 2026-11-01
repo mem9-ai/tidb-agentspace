@@ -7,6 +7,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { metaFixture, port, until } from './meta-fixture.mjs';
 import { seedRecords, workspaceScope } from './record-fixture.mjs';
 import { providerFixture, nativeSecret } from './provider-fixture.mjs';
+import { globalOwnerFixture } from './global-owner-fixture.mjs';
 import { workspaceFixture } from './workspace-fixture.mjs';
 
 // Two actual Workspace APIs share a Meta authority. Resource IDs and paths deliberately
@@ -122,6 +123,12 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
   const origins = [];
   for (let index = 0; index < states.length; index++)
     origins.push(`http://127.0.0.1:${await port()}`);
+  const globalMeta = await meta.service('global');
+  const globals = await Promise.all(
+    states.map((state, index) =>
+      globalOwnerFixture(meta, globalMeta, region, state.workspace.id, origins[index], index),
+    ),
+  );
   const cookies = [];
   let writerRecovery = [],
     metadataRecovery;
@@ -142,11 +149,13 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
           authorityId: region.server.authorityId,
           recoverWriterOwner: writerRecovery[index],
           insecureLoopback: true,
+          publicOrigins: [origins[index]],
           consoleOrigins: ['http://127.0.0.1:5173'],
           metadata:
             transport === 'remote' || index > 0
               ? { transport: 'remote', client: region.clientConfig }
               : { transport, authorityId: region.server.authorityId },
+          security: globals[index].security,
           product: {
             providers: {
               filesProvider: 'drive9-anonymous',
@@ -165,6 +174,7 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
       const services = [
         ...(index === 0 ? metadataServices : []),
         { kind: 'workspace', configFile },
+        globals[index].service,
       ];
       const plan = resolve(meta.directory, `plan-${index}.json`);
       await writeFile(plan, JSON.stringify({ format: 1, services }), { mode: 0o600 });
@@ -215,7 +225,7 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
       : `/api/v1/workspaces/${states[workspace].workspace.id}${route}`;
     const response = await fetch(origin + path, {
       method,
-      headers: { 'Content-Type': 'application/json', ...auth, ...headers },
+      headers: { 'Content-Type': 'application/json', Origin: origin, ...auth, ...headers },
       ...(raw !== undefined
         ? { body: raw }
         : body !== undefined
@@ -230,7 +240,17 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
   return {
     provider,
     request,
-    startIndependentGlobalMeta: () => meta.service('global'),
+    endpoints: {
+      global: globals[0].origin,
+      region: origins[0],
+      workspaceId: states[0].workspace.id,
+      regionId: region.server.authorityId,
+    },
+    issueKey: (input, workspace = 0) => globals[workspace].issueKey(input),
+    revokeKey: (id, workspace = 0) => globals[workspace].revokeKey(id),
+    listKeys: (workspace = 0) => globals[workspace].listKeys(),
+    deliver: (keyId, keyVersion) => globals[0].deliver(keyId, keyVersion),
+    startIndependentGlobalMeta: async () => globalMeta,
     async seedResources(count, onProgress = () => {}) {
       const scope = workspaceScope(region.server.authorityId, states[0].workspace.id);
       const writer = await region.client.call({ op: 'get', scope, keys: ['system/writer'] });
@@ -391,6 +411,7 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
         await region.stop();
         region = await meta.service('reopened', { previous: region });
       }
+      for (const global of globals) await global.restart();
       await start();
     },
   };

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 
-export async function authorizationCases(t, { request, key, token, resources, parsing, provider }) {
+export async function authorizationCases(
+  t,
+  { request, key, token, resources, parsing, provider, f },
+) {
   await t.test(
     'action/resource/credential denial matrix has no upstream reads or writes',
     async () => {
@@ -133,7 +136,7 @@ export async function authorizationCases(t, { request, key, token, resources, pa
             path,
             { ...options, token: denied },
             401,
-            denied === null ? 'UNAUTHENTICATED' : 'INVALID_KEY',
+            denied === null ? 'UNAUTHENTICATED' : 'INVALID_CREDENTIAL',
           );
       }
       await request(
@@ -181,16 +184,16 @@ export async function authorizationCases(t, { request, key, token, resources, pa
         'ws_other',
       );
       const before = provider.calls;
-      await request('/files?resourceId=fs_live', { token }, 401, 'INVALID_KEY', 1);
+      await request('/files?resourceId=fs_live', { token }, 401, 'INVALID_CREDENTIAL', 1);
       await request(
         '/api/v1/workspaces/ws_other/files?resourceId=fs_live',
         { token },
         404,
         'NOT_FOUND',
       );
-      await request('/keys', { token }, 403, 'OWNER_REQUIRED');
+      await request('/keys', { token }, 404, 'NOT_FOUND');
       assert.equal(provider.calls, before);
-      const listed = JSON.stringify((await request('/keys')).body);
+      const listed = JSON.stringify((await f.listKeys()).body);
       assert.equal(listed.includes(token), false);
       assert.equal(listed.includes('digest'), false);
     },
@@ -230,20 +233,15 @@ export async function authorizationCases(t, { request, key, token, resources, pa
         404,
         'NOT_FOUND',
       );
-      await request(
-        '/keys',
-        {
-          method: 'POST',
-          body: {
-            name: 'coverage-private-store',
-            resourceIds: ['hidden-storage'],
-            scopes: ['files:read'],
-            expiresInDays: 7,
-          },
-        },
-        400,
-        'INVALID_RESOURCE_GRANT',
-      );
+      // Global grants contain explicit IDs; Region validates resource ownership before I/O.
+      const privateGrant = await f.issueKey({
+        name: 'private-store',
+        resourceIds: ['hidden-storage'],
+        scopes: ['files:read'],
+        expiresInDays: 7,
+      });
+      assert.equal(privateGrant.status, 503);
+      assert.equal(privateGrant.body.error.code, 'POLICY_DELIVERY_UNKNOWN');
       assert.equal(provider.calls, before);
     },
   );

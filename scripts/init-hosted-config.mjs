@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, writeFile, readFile, lstat } from 'node:fs/promises';
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { globalApiProfile } from './global-api-profile.mjs';
 
 // One-time private configuration tooling, never part of the serving image.
 export async function initializeHostedConfig({ directory, mountDirectory, input }) {
@@ -62,7 +63,7 @@ export async function initializeHostedConfig({ directory, mountDirectory, input 
     });
     services.push({ kind: 'metadata', configFile: runtimePath(role + '.json') });
   }
-  const api = {
+  let api = {
     bind: '0.0.0.0:4318',
     workspaceId: input.workspaceId || 'ws_agentlab',
     authorityId: 'region:studio-dev',
@@ -85,21 +86,44 @@ export async function initializeHostedConfig({ directory, mountDirectory, input 
       },
     },
   };
+  const profile = await globalApiProfile({
+    directory: resolve(directory, 'security'),
+    mountDirectory: runtimePath('security'),
+    api,
+    initializeClock: true,
+    clockDirectory: input.clockDirectory || '/var/lib/workspace/security',
+  });
+  api = profile.api;
+  await save('global-api.json', { ...profile.global, initializeClock: false });
+  await save('global-api-bootstrap.json', profile.global);
   await save('api-bootstrap.json', api);
-  await save('api.json', { ...api, initializeWorkspace: false });
+  await save('api.json', {
+    ...api,
+    initializeWorkspace: false,
+    security: { ...api.security, initializeClock: false },
+  });
   services.push({ kind: 'workspace', configFile: runtimePath('api.json') });
+  services.push({ kind: 'global', configFile: runtimePath('global-api.json') });
   await save('deployment.json', { format: 1, services });
   await save('bootstrap.json', {
     format: 1,
     services: services.map((s) =>
       s.kind === 'metadata'
         ? { ...s, initialize: true }
-        : { ...s, configFile: runtimePath('api-bootstrap.json') },
+        : {
+            ...s,
+            configFile: runtimePath(
+              s.kind === 'global' ? 'global-api-bootstrap.json' : 'api-bootstrap.json',
+            ),
+          },
     ),
   });
   return {
     installation,
     files: [
+      'global-api.json',
+      'global-api-bootstrap.json',
+      'security/',
       'deployment.json',
       'bootstrap.json',
       'api-bootstrap.json',

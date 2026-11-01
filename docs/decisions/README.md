@@ -82,3 +82,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0031: Agent REST P0](0031-agent-rest-p0.md) — authenticated context, parsed read-only SQL, retained resource deletion status and atomic file preconditions.
 
 - [0032: REST workflow resources](0032-rest-workflow-resources.md) — addressable preparations, durable setup attempts and removal of historical command routes under GH-76.
+
+- [0036: Global-only Workspace Keys](0036-global-keys-only.md) — retire regional customer Keys, preserve resources/provider credentials, and expose the new Global/Region flow with complete examples.

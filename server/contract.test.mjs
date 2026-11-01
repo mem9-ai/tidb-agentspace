@@ -294,21 +294,6 @@ test(
     await request(workspace + '/bootstrap');
     await request(workspace + '/usage');
     await request(workspace + '/events');
-    await request(workspace + '/keys');
-    const created = await request(
-      workspace + '/keys',
-      'post',
-      {
-        name: 'contract-key',
-        scopes: ['resources:read'],
-        resourceIds: ['fs_shared'],
-        expiresInDays: 7,
-      },
-      { status: 201 },
-    );
-    await request(workspace + '/keys/{keyId}', 'delete', undefined, {
-      keyId: created.result.data.id,
-    });
     await request(workspace + '/settings', 'patch', {
       workspaceName: 'Contract workspace',
       name: 'Contract owner',

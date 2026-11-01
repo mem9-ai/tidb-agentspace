@@ -526,10 +526,18 @@ test(
       await writeFile(path, JSON.stringify(c), { mode: 0o600 });
     }
     const listen = await port();
-    for (const name of ['api', 'api-bootstrap']) {
+    for (const name of ['api', 'api-bootstrap', 'global-api', 'global-api-bootstrap']) {
       const path = resolve(directory, name + '.json');
       const c = JSON.parse(await readFile(path));
       c.bind = `127.0.0.1:${listen}`;
+      if (c.security) {
+        c.security.clockDirectory = resolve(directory, 'region-clock');
+        c.security.initializeClock = name.endsWith('bootstrap');
+        c.security.control.bind = `127.0.0.1:${await port()}`;
+      } else {
+        c.clockDirectory = resolve(directory, 'global-clock');
+        c.initializeClock = name.endsWith('bootstrap');
+      }
       await writeFile(path, JSON.stringify(c), { mode: 0o600 });
     }
     const binary = resolve('meta-service/target/debug/workspace-backend');
@@ -558,20 +566,35 @@ test(
     }
     const active = await run('serve', 'deployment.json', false);
     await until(async () => {
-      const r = await fetch(`http://127.0.0.1:${listen}/api/health`);
+      const r = await fetch(`http://127.0.0.1:${listen}/studio/api/health`, {
+        headers: { Host: 'studio.example.test' },
+      });
       assert.equal(r.status, 200, active.output());
     });
     const denied = await fetch(`http://127.0.0.1:${listen}/api/session`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Host: 'studio.example.test',
+        Origin: 'https://studio.example.test',
+      },
       body: '{}',
     });
     assert.equal(denied.status, 403);
     active.child.kill('SIGTERM');
     await active.exited;
+    for (const name of ['api', 'global-api']) {
+      const path = resolve(directory, name + '.json');
+      const c = JSON.parse(await readFile(path));
+      if (c.security) c.security.initializeClock = false;
+      else c.initializeClock = false;
+      await writeFile(path, JSON.stringify(c), { mode: 0o600 });
+    }
     const again = await run('serve', 'deployment.json', false);
     await until(async () => {
-      const r = await fetch(`http://127.0.0.1:${listen}/api/health`);
+      const r = await fetch(`http://127.0.0.1:${listen}/studio/api/health`, {
+        headers: { Host: 'studio.example.test' },
+      });
       assert.equal(r.status, 200, again.output());
     });
   },
@@ -838,40 +861,21 @@ test(
       cookie: bob.cookie,
     });
     assert.ok(!JSON.stringify(bobWorkspace.body).includes('Alice private workspace'));
-    const key = await request(`/api/v1/workspaces/${alice.workspace}/keys`, {
-      method: 'POST',
-      cookie: alice.cookie,
-      body: {
-        name: 'Alice key',
-        scopes: ['resources:read', 'queries:execute'],
-        resourceIds: ['*'],
-        expiresInDays: 7,
-      },
-    });
-    assert.equal(key.status, 201);
-    const fileKey = await request(`/api/v1/workspaces/${bob.workspace}/keys`, {
-      method: 'POST',
-      cookie: bob.cookie,
-      body: {
-        name: 'Bob file key',
-        scopes: ['files:read', 'files:write'],
-        resourceIds: [fileSystemId],
-        expiresInDays: 7,
-      },
-    });
-    assert.equal(fileKey.status, 201);
+    // Regional Owner cookies retain their own authority; Key management lives at Global.
     assert.equal(
       (
-        await request(`/api/v1/workspaces/${alice.workspace}/resources`, {
-          headers: { Authorization: `Bearer ${key.body.secret}` },
+        await request(`/api/v1/workspaces/${alice.workspace}/keys`, {
+          method: 'POST',
+          cookie: alice.cookie,
+          body: {},
         })
       ).status,
-      200,
+      404,
     );
     assert.equal(
       (
-        await request(`/api/v1/workspaces/${bob.workspace}/resources`, {
-          headers: { Authorization: `Bearer ${key.body.secret}` },
+        await request(`/api/v1/workspaces/${alice.workspace}/resources`, {
+          headers: { Authorization: 'Bearer retired-key' },
         })
       ).status,
       401,
@@ -892,7 +896,7 @@ test(
     for (const sql of ['INSERT INTO outage_test VALUES (42)', 'SELECT id FROM outage_test']) {
       const result = await request(sqlPath, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${key.body.secret}` },
+        cookie: alice.cookie,
         body: { resourceId: databaseId, sql },
       });
       assert.equal(result.status, 200, JSON.stringify(result.body));
@@ -904,7 +908,7 @@ test(
       `/api/v1/workspaces/${bob.workspace}/files/content?` +
       new URLSearchParams({ resourceId: fileSystemId, path: '/global-outage.bin' });
     const bytes = Buffer.from([0, 255, 17, 42]);
-    const fileAuth = { Authorization: `Bearer ${fileKey.body.secret}` };
+    const fileAuth = { Cookie: bob.cookie };
     assert.equal(
       (
         await request(filePath, {
@@ -918,10 +922,7 @@ test(
     const download = await request(filePath, { headers: fileAuth });
     assert.equal(download.status, 200);
     assert.deepEqual(download.body, bytes);
-    assert.equal(
-      (await request(filePath, { headers: { Authorization: `Bearer ${key.body.secret}` } })).status,
-      401,
-    );
+    assert.equal((await request(filePath, { cookie: alice.cookie })).status, 404);
     assert.equal(
       (await request(`/api/v1/workspaces/${alice.workspace}`, { cookie: alice.cookie })).status,
       200,

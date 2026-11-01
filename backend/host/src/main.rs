@@ -90,6 +90,21 @@ async fn main() -> Result<()> {
         }
     }
     let mut global_started = false;
+    let mut shared_globals = BTreeMap::new();
+    let global_entries = plan
+        .globals
+        .iter()
+        .filter(|g| g.shared_listener)
+        .map(|g| {
+            (
+                g.bind,
+                workspace_api::GlobalEntry {
+                    api_origin: g.public_origin.clone(),
+                    api_path_prefix: g.public_path.clone(),
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
     for config in plan.globals {
         let port: Option<Arc<dyn Metadata>> = match &config.metadata {
             MetaBinding::InProcess { authority_id } => metadata
@@ -102,9 +117,15 @@ async fn main() -> Result<()> {
                 .map(|v| Arc::new(v) as Arc<dyn Metadata>),
         };
         if let Some(port) = port {
+            let shared = config.shared_listener;
+            let bind = config.bind;
             match workspace_api::global_api::GlobalServer::open(config, port).await {
                 Ok(server) => {
                     global_started = true;
+                    if shared {
+                        shared_globals.insert(bind, server);
+                        continue;
+                    }
                     let receiver = api_receiver.clone();
                     api_tasks.push(tokio::spawn(async move {
                         if server.serve(stopped(receiver)).await.is_err() {
@@ -121,7 +142,10 @@ async fn main() -> Result<()> {
             }
         }
     }
-    for config in plan.workspaces {
+    for mut config in plan.workspaces {
+        if let Some(entry) = global_entries.get(&config.bind) {
+            config.global_entry = Some(entry.clone());
+        }
         let authority = config.authority_id.clone();
         let port: Option<Arc<dyn Metadata>> = match &config.metadata {
             MetaBinding::InProcess { authority_id } => metadata
@@ -244,6 +268,11 @@ async fn main() -> Result<()> {
             }
             match WorkspaceServer::open_with_guest(config, port, guest_runtime).await {
                 Ok(server) => {
+                    let server = if let Some(global) = shared_globals.remove(&bind) {
+                        server.with_global(global)
+                    } else {
+                        server
+                    };
                     if let Some(scheduler) = scheduler {
                         let receiver = api_receiver.clone();
                         cleanup_tasks.push(tokio::spawn(async move {
@@ -420,6 +449,18 @@ async fn initialize(plan: plan::Plan) -> Result<()> {
             let workspace = workspace_domain::Workspace::new(repository);
             workspace.health().await?;
             workspace.close().await?;
+            if let Some(security) = &config.security {
+                workspace_api::initialize_security_checkpoint(
+                    &security.clock_directory,
+                    security.initialize_clock,
+                )?;
+            }
+        }
+        for config in plan.globals {
+            workspace_api::initialize_security_checkpoint(
+                &config.clock_directory,
+                config.initialize_clock,
+            )?;
         }
         Ok(())
     }

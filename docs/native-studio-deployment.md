@@ -141,3 +141,38 @@ canonical runtime accepts only `product.execute`. Rename that field in both `api
 Secret entry. The protected recovery workflow's explicit `repair-config` operation reads only
 referenced Secrets, requires exactly one matching API configuration Secret and uses resourceVersion-guarded changes through stdin. For an immutable Secret it verifies and reuses a single matching prior replacement if present, otherwise creates a new copy, then switches only the matching Deployment volume and retains the original. Multiple or mismatching replacements require operator inspection. For a mutable Secret it replaces the object with a resourceVersion precondition, preserving its other entries. It preserves the deployment image and checks public health. If the Secret update or rollout result is uncertain, inspect before
 retrying. The operation does not change Workspace or provider data.
+
+## Enable the Global Key system without replacing Meta
+
+[ADR 0036](decisions/0036-global-keys-only.md) permits deleting retired customer Workspace
+Keys. Resource records, files, provider credentials, S3 roots and Meta encryption keys remain
+unchanged. The API removes the old regional Key endpoints and refuses direct raw Keys.
+Each opened Workspace deletes its obsolete Key rows/digest indexes in fenced batches;
+unopened Workspaces are still denied raw-Key access. Historical object versions remain
+subject to retention rather than deleting shared buckets.
+
+Fresh `init-hosted-config.mjs` plans now include Global public API, Region Token security and
+an internal TLS 1.3 mTLS control listener in the same deployment. Global mounts under
+`/studio/api/global` on Region’s existing listener; the existing API gateway path forwards
+it without routing data through Global. Global/Region Meta and signing identities stay
+independent. Clock checkpoints need persistent writable storage under `/var/lib/workspace/security`.
+Register both exact OIDC callbacks, including `/studio/api/global/api/auth/tidbcloud/callback`,
+with the identity provider before enabling the profile. Global uses Directory membership,
+not regional legacy owner allowlists.
+
+For an existing private plan with one Region and a Global Meta role, prepare a new private
+configuration (arguments are absolute paths; the source plan is never overwritten):
+
+```sh
+node scripts/enable-global-api.mjs /private/current/deployment.json \
+  /private/prepared /run/workspace/prepared /var/lib/workspace/security
+```
+
+Review/mount the generated plan and signing/control files, retain the existing Meta config
+mounts, and switch the configured deployment using the normal operator workflow. This tool
+does not restart or deploy services, initialize Meta, reset S3, or replace provider secrets.
+It refuses an already secured profile to avoid rotating identities accidentally. New clocks
+are initialized deliberately on first start; subsequently set `initializeClock:false` in both
+prepared API configs. Back up the private identities/checkpoints; rotate control certificates
+before their one-year expiry. Cloud runs one service; local native tests own independent
+Global outage/Region renewal evidence. No cloud failure test is required.

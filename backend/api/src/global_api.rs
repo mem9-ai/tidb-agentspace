@@ -34,7 +34,7 @@ use workspace_contracts::{MetaRequest, Metadata, Scope, ServiceError};
 use workspace_identity::{
     VerifiedIdentity,
     global_keys::{GlobalKeys, KeyView, NewKey},
-    global_owner_sessions::{OwnerSession, OwnerSessions},
+    global_owner_sessions::OwnerSessions,
 };
 use workspace_meta_client::private_file;
 
@@ -51,6 +51,13 @@ pub struct Config {
     pub bind: SocketAddr,
     pub metadata: MetaBinding,
     pub public_origin: String,
+    #[serde(default)]
+    pub public_path: String,
+    #[serde(default)]
+    pub shared_listener: bool,
+    #[serde(default)]
+    pub console_origins: Vec<String>,
+    pub local_workspace: Option<workspace_identity::RegionAssignment>,
     pub environment: String,
     pub signer_id: String,
     pub signing_key_file: PathBuf,
@@ -77,6 +84,39 @@ impl Config {
             url.origin().ascii_serialization() == self.public_origin,
             "Canonical Global origin required"
         );
+        ensure!(
+            self.public_path.is_empty()
+                || self.public_path.starts_with('/')
+                    && self.public_path.split('/').skip(1).all(|s| !s.is_empty()
+                        && s.bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))),
+            "Invalid Global API path"
+        );
+        ensure!(
+            !self.shared_listener || !self.public_path.is_empty(),
+            "Shared Global listener requires a distinct path"
+        );
+        for origin in &self.console_origins {
+            let parsed = sso::endpoint(origin, local)?;
+            ensure!(
+                parsed.origin().ascii_serialization() == *origin,
+                "Canonical Console origin required"
+            );
+        }
+        if let Some(workspace) = &self.local_workspace {
+            ensure!(
+                local
+                    && url.scheme() == "http"
+                    && matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"))
+                    && self.sso.is_none()
+                    && id(&workspace.workspace_id)
+                    && self
+                        .regions
+                        .iter()
+                        .any(|r| r.region_id == workspace.region_id),
+                "Local Global Owner mode is loopback-only"
+            );
+        }
         ensure!(
             id(&self.environment) && id(&self.signer_id),
             "Explicit signer/environment required"
@@ -119,7 +159,7 @@ impl Config {
             );
         }
         if let Some(sso) = &self.sso {
-            sso.validate("", local)?;
+            sso.validate(&self.public_path, local)?;
             ensure!(
                 reqwest::Url::parse(&sso.redirect_uri)?
                     .origin()
@@ -163,6 +203,8 @@ struct RegionIssuer {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateKey {
+    #[serde(default = "default_key_name")]
+    name: String,
     scopes: Vec<String>,
     resource_ids: Vec<String>,
     expires_at: i64,
@@ -179,6 +221,15 @@ struct TokenInput {
 struct Renewal {
     expires_at: i64,
 }
+struct LoginFlow {
+    workspace: String,
+    return_to: Option<String>,
+    expires: Instant,
+}
+struct AuthorizedOwner {
+    region_id: String,
+    principal_id: String,
+}
 struct App {
     config: Config,
     metadata: Arc<dyn Metadata>,
@@ -188,12 +239,12 @@ struct App {
     verifier: AccessVerifier,
     clock: Clock,
     sso: Option<sso::Runtime>,
-    flows: Mutex<BTreeMap<String, (String, Instant)>>,
+    flows: Mutex<BTreeMap<String, LoginFlow>>,
     capacity: Semaphore,
     regional: BTreeMap<String, RegionIssuer>,
 }
 pub struct GlobalServer {
-    listener: TcpListener,
+    listener: Option<TcpListener>,
     app: Arc<App>,
 }
 fn err(status: u16, code: &str) -> ServiceError {
@@ -277,7 +328,7 @@ impl GlobalServer {
         let public: [u8; 32] = hex_bytes(public.trim())?;
         let signer = AccessSigner::new(
             SigningConfig {
-                issuer: config.public_origin.clone(),
+                issuer: format!("{}{}", config.public_origin, config.public_path),
                 audience: "global".into(),
                 environment: config.environment.clone(),
                 region: None,
@@ -288,7 +339,7 @@ impl GlobalServer {
             &key,
         )?;
         let verifier = AccessVerifier::new(AccessTrust {
-            issuer: config.public_origin.clone(),
+            issuer: format!("{}{}", config.public_origin, config.public_path),
             audience: "global".into(),
             environment: config.environment.clone(),
             region: None,
@@ -335,7 +386,7 @@ impl GlobalServer {
                     )?,
                     policies: PolicyCommandSigner::new(
                         PolicySignerConfig {
-                            issuer: config.public_origin.clone(),
+                            issuer: format!("{}{}", config.public_origin, config.public_path),
                             audience: format!("{}/control", control.region_id),
                             environment: config.environment.clone(),
                             region_id: control.region_id.clone(),
@@ -345,7 +396,7 @@ impl GlobalServer {
                     )?,
                     access: AccessSigner::new(
                         SigningConfig {
-                            issuer: config.public_origin.clone(),
+                            issuer: format!("{}{}", config.public_origin, config.public_path),
                             audience: format!("{}/audience", control.region_id),
                             environment: config.environment.clone(),
                             region: Some(control.region_id.clone()),
@@ -357,7 +408,7 @@ impl GlobalServer {
                     )?,
                     tickets: TicketSigner::from_pkcs8(
                         TicketSigningConfig {
-                            issuer: config.public_origin.clone(),
+                            issuer: format!("{}{}", config.public_origin, config.public_path),
                             audience: format!("{}/enrollment", control.region_id),
                             environment: config.environment.clone(),
                             region_id: control.region_id.clone(),
@@ -373,7 +424,11 @@ impl GlobalServer {
         let owners = OwnerSessions::open(metadata.clone()).await?;
         let keys = GlobalKeys::open(metadata.clone()).await?;
         let sso = config.sso.clone().map(sso::Runtime::new).transpose()?;
-        let listener = TcpListener::bind(config.bind).await?;
+        let listener = if config.shared_listener {
+            None
+        } else {
+            Some(TcpListener::bind(config.bind).await?)
+        };
         Ok(Self {
             listener,
             app: Arc::new(App {
@@ -391,16 +446,32 @@ impl GlobalServer {
             }),
         })
     }
+    pub fn origin(&self) -> &str {
+        &self.app.config.public_origin
+    }
+    pub fn public_base(&self) -> String {
+        format!(
+            "{}{}",
+            self.app.config.public_origin, self.app.config.public_path
+        )
+    }
+    pub fn mount_path(&self) -> &str {
+        &self.app.config.public_path
+    }
+    pub fn router(&self) -> Router {
+        Router::new()
+            .fallback(any(receive))
+            .with_state(self.app.clone())
+    }
     pub async fn serve(
         self,
         stop: impl std::future::Future<Output = ()> + Send + 'static,
     ) -> Result<()> {
+        let router = self.router();
         axum::serve(
-            self.listener,
-            Router::new()
-                .fallback(any(receive))
-                .with_state(self.app)
-                .into_make_service_with_connect_info::<SocketAddr>(),
+            self.listener
+                .ok_or_else(|| anyhow::anyhow!("Global is mounted on a shared listener"))?,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
         )
         .with_graceful_shutdown(stop)
         .await?;
@@ -419,6 +490,14 @@ fn hex_bytes(s: &str) -> Result<[u8; 32]> {
     Ok(key)
 }
 impl App {
+    fn allowed_origin(&self, origin: &str) -> bool {
+        origin == self.config.public_origin
+            || self
+                .config
+                .console_origins
+                .iter()
+                .any(|value| value == origin)
+    }
     async fn deliver(
         &self,
         view: &KeyView,
@@ -594,19 +673,43 @@ impl App {
         workspace: &str,
         h: &HeaderMap,
         method: &Method,
-    ) -> workspace_contracts::Result<OwnerSession> {
+    ) -> workspace_contracts::Result<AuthorizedOwner> {
         if h.contains_key(header::AUTHORIZATION) {
             return Err(err(403, "OWNER_REQUIRED"));
         }
         if ![Method::GET, Method::HEAD].contains(method)
-            && h.get(header::ORIGIN).and_then(|v| v.to_str().ok())
-                != Some(&self.config.public_origin)
+            && !h
+                .get(header::ORIGIN)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|origin| self.allowed_origin(origin))
         {
             return Err(err(403, "ORIGIN_REQUIRED"));
         }
-        self.owners
-            .authenticate(workspace, cookie(h, "aw_global_owner").unwrap_or(""))
-            .await
+        let secret = cookie(h, "aw_global_owner").unwrap_or("");
+        if let Some(local) = &self.config.local_workspace
+            && local.workspace_id == workspace
+            && secret.starts_with("glo_")
+        {
+            crate::global_local_sessions::authenticate(
+                &self.metadata,
+                workspace,
+                secret,
+                self.clock.now()?,
+            )
+            .await?;
+            return Ok(AuthorizedOwner {
+                region_id: local.region_id.clone(),
+                principal_id: format!("local-{:x}", Sha256::digest(workspace)),
+            });
+        }
+        let owner = self.owners.authenticate(workspace, secret).await?;
+        Ok(AuthorizedOwner {
+            region_id: owner.assignment().region_id.clone(),
+            principal_id: format!(
+                "owner-{:x}",
+                Sha256::digest(format!("{}\0{}", owner.issuer(), owner.subject()))
+            ),
+        })
     }
     async fn token_key(
         &self,
@@ -637,6 +740,12 @@ impl App {
     }
 }
 async fn receive(State(app): State<Arc<App>>, request: Request) -> Response {
+    let console_origin = request
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .filter(|o| app.allowed_origin(o))
+        .map(str::to_owned);
     let bearer_request = request.headers().contains_key(header::AUTHORIZATION);
     let response = match app.capacity.try_acquire() {
         Ok(_permit) => {
@@ -653,6 +762,34 @@ async fn receive(State(app): State<Arc<App>>, request: Request) -> Response {
         header::CACHE_CONTROL,
         header::HeaderValue::from_static("no-store"),
     );
+    if let Some(origin) = console_origin {
+        if let Ok(value) = origin.parse() {
+            response
+                .headers_mut()
+                .insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, value);
+        }
+        response.headers_mut().insert(
+            header::ACCESS_CONTROL_ALLOW_CREDENTIALS,
+            header::HeaderValue::from_static("true"),
+        );
+        response.headers_mut().insert(
+            header::ACCESS_CONTROL_ALLOW_METHODS,
+            header::HeaderValue::from_static("GET, POST, PATCH, DELETE, OPTIONS"),
+        );
+        response.headers_mut().insert(
+            header::ACCESS_CONTROL_ALLOW_HEADERS,
+            header::HeaderValue::from_static(
+                "Authorization, Content-Type, If-Match, Idempotency-Key",
+            ),
+        );
+        response.headers_mut().insert(
+            header::ACCESS_CONTROL_EXPOSE_HEADERS,
+            header::HeaderValue::from_static("ETag, Location, X-Request-Id"),
+        );
+        response
+            .headers_mut()
+            .insert(header::VARY, header::HeaderValue::from_static("Origin"));
+    }
     if !response.headers().contains_key("X-Request-Id") {
         response.headers_mut().insert(
             "X-Request-Id",
@@ -675,7 +812,16 @@ async fn receive(State(app): State<Arc<App>>, request: Request) -> Response {
 async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Response> {
     let h = request.headers().clone();
     let method = request.method().clone();
-    let path = request.uri().path().to_owned();
+    let raw_path = request.uri().path();
+    let path = if !app.config.public_path.is_empty() {
+        raw_path
+            .strip_prefix(&app.config.public_path)
+            .filter(|s| s.starts_with('/'))
+            .unwrap_or(raw_path)
+    } else {
+        raw_path
+    }
+    .to_owned();
     let origin = reqwest::Url::parse(&app.config.public_origin)
         .map_err(|_| err(503, "GLOBAL_CONFIG_INVALID"))?;
     let host = match origin.port() {
@@ -699,17 +845,31 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
         }
     }
     if let Some(o) = h.get(header::ORIGIN)
-        && o.to_str().ok() != Some(&app.config.public_origin)
+        && !o
+            .to_str()
+            .ok()
+            .is_some_and(|origin| app.allowed_origin(origin))
     {
         return Err(err(403, "ORIGIN_DENIED"));
     }
+    if method == Method::OPTIONS && path.starts_with("/api/") {
+        if !h
+            .get(header::ORIGIN)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|o| app.allowed_origin(o))
+        {
+            return Err(err(403, "ORIGIN_DENIED"));
+        }
+        return Ok(StatusCode::NO_CONTENT.into_response());
+    }
     let now = app.clock.now()?;
     if path == "/openapi.json" && method == Method::GET {
-        return Ok((
-            [(header::CONTENT_TYPE, "application/json")],
-            include_str!("../../../public/global-openapi.json"),
-        )
-            .into_response());
+        let mut schema: Value =
+            serde_json::from_str(include_str!("../../../public/global-openapi.json"))
+                .map_err(|_| err(503, "CONTRACT_UNAVAILABLE"))?;
+        schema["servers"] =
+            json!([{"url":format!("{}{}",app.config.public_origin,app.config.public_path)}]);
+        return Ok(Json(schema).into_response());
     }
     let url = reqwest::Url::parse(&format!("http://localhost{}", request.uri()))
         .map_err(|_| err(400, "INVALID_PATH"))?;
@@ -724,6 +884,63 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
         return Ok(json_response(
             StatusCode::OK,
             json!({"status":"ok","authority":"global"}),
+            None,
+        ));
+    }
+    if path == "/api/session" && method == Method::POST {
+        let local = app
+            .config
+            .local_workspace
+            .as_ref()
+            .ok_or_else(|| err(404, "NOT_FOUND"))?;
+        let peer = request
+            .extensions()
+            .get::<ConnectInfo<SocketAddr>>()
+            .ok_or_else(|| err(403, "PEER_REQUIRED"))?;
+        if !peer.0.ip().is_loopback() {
+            return Err(err(403, "LOCAL_SESSION_REQUIRED"));
+        }
+        if !h
+            .get(header::ORIGIN)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|origin| app.allowed_origin(origin))
+        {
+            return Err(err(403, "ORIGIN_REQUIRED"));
+        }
+        let secret =
+            crate::global_local_sessions::issue(&app.metadata, &local.workspace_id, now).await?;
+        let mut response = json_response(
+            StatusCode::CREATED,
+            json!({"workspaceId":local.workspace_id,"regionId":local.region_id}),
+            None,
+        );
+        response.headers_mut().append(
+            header::SET_COOKIE,
+            format!(
+                "aw_global_owner={secret}; HttpOnly; SameSite=Strict; Path={}/; Max-Age=28800",
+                app.config.public_path
+            )
+            .parse()
+            .map_err(|_| err(503, "SESSION_UNAVAILABLE"))?,
+        );
+        return Ok(response);
+    }
+    if path == "/api/auth/config" && method == Method::GET {
+        return Ok(json_response(
+            StatusCode::OK,
+            json!({"mode":if app.config.local_workspace.is_some(){"local"}else{"oidc"},"loginPath":format!("{}/api/auth/tidbcloud/login",app.config.public_path),"localSessionPath":format!("{}/api/session",app.config.public_path)}),
+            None,
+        ));
+    }
+    if path == "/api/auth/session" && method == Method::GET {
+        let workspace = query
+            .get("workspaceId")
+            .filter(|v| id(v))
+            .ok_or_else(|| err(400, "WORKSPACE_REQUIRED"))?;
+        let owner = app.owner(workspace, &h, &method).await?;
+        return Ok(json_response(
+            StatusCode::OK,
+            json!({"workspaceId":workspace,"regionId":owner.region_id}),
             None,
         ));
     }
@@ -780,10 +997,7 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
                 .regional
                 .get(&grant.region_id)
                 .ok_or_else(|| err(409, "REGION_POLICY_NOT_APPLIED"))?;
-            let thumbprint = input
-                .client_thumbprint
-                .as_deref()
-                .ok_or_else(|| err(400, "CLIENT_BINDING_REQUIRED"))?;
+            let thumbprint = input.client_thumbprint.as_deref();
             let mut ceiling = grant.clone();
             ceiling.scopes = scopes.clone();
             ceiling.scopes.sort();
@@ -792,20 +1006,6 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
             app.deliver(&view, Some(&ceiling)).await?;
             let ceiling_ref = ceiling.reference()?;
             let now = app.clock.now()?;
-            let ticket = issuer.tickets.sign(
-                &TicketIssuance {
-                    workspace_id: workspace,
-                    key_id: &view.key_id,
-                    key_version: view.key_version,
-                    policy_generation: view.key_version,
-                    principal_id: &view.principal_id,
-                    grant_ref: &view.grant_ref,
-                    ceiling_ref: &ceiling_ref,
-                    client_thumbprint: thumbprint,
-                    key_expires_at: view.expires_at,
-                },
-                now,
-            )?;
             let token = issuer.access.sign(
                 &Issuance {
                     workspace_id: workspace,
@@ -833,9 +1033,29 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
                 .iter()
                 .find(|r| r.region_id == grant.region_id)
                 .ok_or_else(|| err(503, "REGION_UNAVAILABLE"))?;
+            let mut response = json!({"id":token.token_id,"accessToken":token.token,"tokenType":"Bearer","expiresAt":token.expires_at,"scopes":ceiling.scopes,"keyId":view.key_id,"principalId":view.principal_id,"keyVersion":view.key_version,"region":descriptor});
+            if let Some(thumbprint) = thumbprint {
+                let ticket = issuer.tickets.sign(
+                    &TicketIssuance {
+                        workspace_id: workspace,
+                        key_id: &view.key_id,
+                        key_version: view.key_version,
+                        policy_generation: view.key_version,
+                        principal_id: &view.principal_id,
+                        grant_ref: &view.grant_ref,
+                        ceiling_ref: &ceiling_ref,
+                        client_thumbprint: thumbprint,
+                        key_expires_at: view.expires_at,
+                    },
+                    now,
+                )?;
+                response["enrollmentTicket"] = json!(ticket.ticket);
+                response["enrollmentExpiresAt"] = json!(ticket.expires_at);
+                response["nonce"] = json!(ticket.nonce);
+            }
             return Ok(json_response(
                 StatusCode::CREATED,
-                json!({"id":token.token_id,"accessToken":token.token,"tokenType":"Bearer","expiresAt":token.expires_at,"scopes":ceiling.scopes,"keyId":view.key_id,"principalId":view.principal_id,"keyVersion":view.key_version,"region":descriptor,"enrollmentTicket":ticket.ticket,"enrollmentExpiresAt":ticket.expires_at,"nonce":ticket.nonce}),
+                response,
                 Some(format!("token-issuances/{}", token.token_id)),
             ));
         }
@@ -980,33 +1200,40 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
                 .config
                 .regions
                 .iter()
-                .any(|r| r.region_id == owner.assignment().region_id)
+                .any(|r| r.region_id == owner.region_id)
             {
                 return Err(err(409, "REGION_UNAVAILABLE"));
             }
             let grant = Grant {
                 scopes: input.scopes,
                 resource_ids: input.resource_ids,
-                region_id: owner.assignment().region_id.clone(),
+                region_id: owner.region_id.clone(),
             };
             let value = serde_json::to_value(&grant).map_err(|_| err(503, "GRANT_UNAVAILABLE"))?;
             let grant_ref = grant.reference()?;
             app.immutable(workspace, &format!("grants/{grant_ref}"), value)
                 .await?;
+            let mutation_id = mutation(&h)?;
+            // Each independently scoped Key is a distinct agent actor. Keep the identity
+            // deterministic for this Owner/Workspace/creation intent so replay stays fenced.
             let principal_id = format!(
-                "owner-{:x}",
-                Sha256::digest(format!("{}\0{}", owner.issuer(), owner.subject()))
+                "agent-{:x}",
+                Sha256::digest(format!(
+                    "{}\0{workspace}\0{mutation_id}",
+                    owner.principal_id
+                ))
             );
             let key = app
                 .keys
                 .create(
                     &NewKey {
+                        name: input.name,
                         workspace_id: workspace.into(),
                         principal_id,
                         grant_ref,
                         expires_at: input.expires_at,
                     },
-                    &mutation(&h)?,
+                    &mutation_id,
                 )
                 .await?;
             let status = if app.deliver(&key.view, None).await.is_ok() {
@@ -1032,7 +1259,44 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
                 .keys
                 .list(workspace, query.get("cursor").map(String::as_str), limit)
                 .await?;
-            Ok(json_response(StatusCode::OK, json!(page), None))
+            let keys = page
+                .data
+                .iter()
+                .flat_map(|k| {
+                    [
+                        format!("grants/{}", k.grant_ref),
+                        format!("policy-applied/{}/{}", k.key_id, k.key_version),
+                    ]
+                })
+                .collect();
+            let records = if page.data.is_empty() {
+                json!({"records":{}})
+            } else {
+                app.metadata
+                    .execute(MetaRequest::Get {
+                        scope: app.scope(workspace),
+                        guard: None,
+                        keys,
+                    })
+                    .await?
+            };
+            let mut data = Vec::with_capacity(page.data.len());
+            for key in &page.data {
+                let grant: Grant = serde_json::from_value(
+                    records["records"][format!("grants/{}", key.grant_ref)]["value"].clone(),
+                )
+                .map_err(|_| err(503, "GRANT_CORRUPT"))?;
+                grant.validate()?;
+                if grant.reference()? != key.grant_ref {
+                    return Err(err(503, "GRANT_CORRUPT"));
+                }
+                data.push(json!({"data":key,"grants":grant,"regionalStatus":if records["records"][format!("policy-applied/{}/{}",key.key_id,key.key_version)].is_null(){"pending"}else{"applied"}}));
+            }
+            Ok(json_response(
+                StatusCode::OK,
+                json!({"data":data,"nextCursor":page.next_cursor}),
+                None,
+            ))
         }
         ("GET", ["keys", key]) => {
             let key = app.keys.key(workspace, key).await?;
@@ -1195,13 +1459,20 @@ async fn auth(
             .filter(|s| id(s))
             .ok_or_else(|| err(400, "WORKSPACE_REQUIRED"))?;
         app.owner(workspace, h, method).await?;
-        app.owners
-            .revoke(
-                workspace,
-                cookie(h, "aw_global_owner").unwrap_or_default(),
-                &Uuid::new_v4().to_string(),
-            )
-            .await?;
+        let secret = cookie(h, "aw_global_owner").unwrap_or_default();
+        if secret.starts_with("glo_")
+            && app
+                .config
+                .local_workspace
+                .as_ref()
+                .is_some_and(|w| w.workspace_id == *workspace)
+        {
+            crate::global_local_sessions::revoke(&app.metadata, workspace, secret).await?;
+        } else {
+            app.owners
+                .revoke(workspace, secret, &Uuid::new_v4().to_string())
+                .await?;
+        }
         let secure = if app.config.public_origin.starts_with("https:") {
             " Secure;"
         } else {
@@ -1210,9 +1481,12 @@ async fn auth(
         let mut r = StatusCode::NO_CONTENT.into_response();
         r.headers_mut().append(
             header::SET_COOKIE,
-            format!("aw_global_owner=; HttpOnly; SameSite=Strict;{secure} Path=/; Max-Age=0")
-                .parse()
-                .map_err(|_| err(503, "SESSION_UNAVAILABLE"))?,
+            format!(
+                "aw_global_owner=; HttpOnly; SameSite=Strict;{secure} Path={}/; Max-Age=0",
+                app.config.public_path
+            )
+            .parse()
+            .map_err(|_| err(503, "SESSION_UNAVAILABLE"))?,
         );
         return Ok(r);
     }
@@ -1239,33 +1513,52 @@ async fn auth(
             )
             .await?;
         let mut flows = app.flows.lock().await;
-        flows.retain(|_, (_, expiry)| *expiry > Instant::now());
+        flows.retain(|_, flow| flow.expires > Instant::now());
         if flows.len() >= 1024 {
             return Err(err(429, "LOGIN_BUSY"));
         }
+        let return_to = query
+            .get("returnTo")
+            .map(|value| -> workspace_contracts::Result<String> {
+                let url = reqwest::Url::parse(value).map_err(|_| err(400, "INVALID_RETURN_URL"))?;
+                if value.len() > 2048
+                    || !url.username().is_empty()
+                    || url.password().is_some()
+                    || !app.allowed_origin(&url.origin().ascii_serialization())
+                {
+                    return Err(err(400, "INVALID_RETURN_URL"));
+                }
+                Ok(url.to_string())
+            })
+            .transpose()?;
         flows.insert(
             flow.clone(),
-            (workspace.into(), Instant::now() + Duration::from_secs(600)),
+            LoginFlow {
+                workspace: workspace.into(),
+                return_to,
+                expires: Instant::now() + Duration::from_secs(600),
+            },
         );
         let mut r = StatusCode::SEE_OTHER.into_response();
         r.headers_mut().insert(
             header::LOCATION,
             url.parse().map_err(|_| err(503, "SSO_UNAVAILABLE"))?,
         );
-        r.headers_mut().append(header::SET_COOKIE,format!("aw_global_flow={flow}; HttpOnly; SameSite=Lax;{secure} Path=/api/auth/tidbcloud; Max-Age=600").parse().map_err(|_|err(503,"SSO_UNAVAILABLE"))?);
+        r.headers_mut().append(header::SET_COOKIE,format!("aw_global_flow={flow}; HttpOnly; SameSite=Lax;{secure} Path={}/api/auth/tidbcloud; Max-Age=600",app.config.public_path).parse().map_err(|_|err(503,"SSO_UNAVAILABLE"))?);
         return Ok(r);
     }
     if path == "/api/auth/tidbcloud/callback" && *method == Method::GET {
         let flow = cookie(h, "aw_global_flow").ok_or_else(|| err(401, "SSO_STATE_INVALID"))?;
-        let (workspace, expiry) = app
+        let login_flow = app
             .flows
             .lock()
             .await
             .remove(flow)
             .ok_or_else(|| err(401, "SSO_STATE_INVALID"))?;
-        if expiry <= Instant::now() {
+        if login_flow.expires <= Instant::now() {
             return Err(err(401, "SSO_STATE_INVALID"));
         }
+        let workspace = login_flow.workspace;
         let login = sso.callback(flow, query).await?;
         let (issuer, subject) = login.identity();
         let session = app
@@ -1281,17 +1574,30 @@ async fn auth(
             json!({"workspaceId":workspace,"regionId":session.assignment.region_id,"expiresAt":session.expires_at}),
             None,
         );
+        if let Some(return_to) = login_flow.return_to {
+            *r.status_mut() = StatusCode::SEE_OTHER;
+            r.headers_mut().insert(
+                header::LOCATION,
+                return_to
+                    .parse()
+                    .map_err(|_| err(400, "INVALID_RETURN_URL"))?,
+            );
+        }
         r.headers_mut().append(
             header::SET_COOKIE,
             format!(
-                "aw_global_owner={}; HttpOnly; SameSite=Strict;{secure} Path=/; Max-Age=28800",
-                session.secret
+                "aw_global_owner={}; HttpOnly; SameSite=Strict;{secure} Path={}/; Max-Age=28800",
+                session.secret, app.config.public_path
             )
             .parse()
             .map_err(|_| err(503, "SESSION_UNAVAILABLE"))?,
         );
-        r.headers_mut().append(header::SET_COOKIE,format!("aw_global_flow=; HttpOnly; SameSite=Lax;{secure} Path=/api/auth/tidbcloud; Max-Age=0").parse().map_err(|_|err(503,"SESSION_UNAVAILABLE"))?);
+        r.headers_mut().append(header::SET_COOKIE,format!("aw_global_flow=; HttpOnly; SameSite=Lax;{secure} Path={}/api/auth/tidbcloud; Max-Age=0",app.config.public_path).parse().map_err(|_|err(503,"SESSION_UNAVAILABLE"))?);
         return Ok(r);
     }
     Err(err(404, "NOT_FOUND"))
+}
+
+fn default_key_name() -> String {
+    "Agent key".into()
 }
