@@ -1,8 +1,30 @@
 use super::*;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use reqwest::Method;
 use sha2::{Digest, Sha256};
 use workspace_providers::{bounded, fs_path};
 const LIMIT: usize = 16 * 1024 * 1024;
+const IMAGE_PREVIEW_LIMIT: usize = 1024 * 1024;
+
+fn image_preview_type(path: &str) -> Option<&'static str> {
+    match path.rsplit('.').next()?.to_ascii_lowercase().as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        _ => None,
+    }
+}
+
+fn matches_image_signature(mime: &str, bytes: &[u8]) -> bool {
+    match mime {
+        "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "image/jpeg" => bytes.starts_with(b"\xff\xd8\xff"),
+        "image/gif" => bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"),
+        "image/webp" => bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP"),
+        _ => false,
+    }
+}
 pub(super) struct FileRequest<'a> {
     pub method: &'a str,
     pub route: &'a str,
@@ -209,7 +231,16 @@ impl Product {
                             Reply::Json(json!({"size":size,"unavailableReason":reason})),
                         ))
                     };
-                    if size > 128 * 1024 {
+                    let image_type = image_preview_type(&path);
+                    let preview_limit = if image_type.is_some() {
+                        IMAGE_PREVIEW_LIMIT
+                    } else {
+                        128 * 1024
+                    };
+                    if size > preview_limit as u64 {
+                        if image_type.is_some() {
+                            return unavailable("This image exceeds the 1 MiB preview limit.");
+                        }
                         return unavailable(
                             "This file exceeds the 128 KiB preview limit. Download it to view locally.",
                         );
@@ -218,7 +249,7 @@ impl Product {
                         .providers
                         .file_request(Some(resource_id), &fs_path(&path), Method::GET, None, &[])
                         .await?;
-                    let bytes = match bounded(response, 128 * 1024).await {
+                    let bytes = match bounded(response, preview_limit).await {
                         Ok(v) => v,
                         Err(e) if e.code == "CONTENT_TOO_LARGE" => {
                             return unavailable(
@@ -227,6 +258,19 @@ impl Product {
                         }
                         Err(e) => return Err(e),
                     };
+                    if let Some(mime) = image_type {
+                        if !matches_image_signature(mime, &bytes) {
+                            return unavailable(
+                                "This image is invalid or does not match its file type.",
+                            );
+                        }
+                        return Ok((
+                            200,
+                            Reply::Json(
+                                json!({"size":bytes.len(),"image":{"mimeType":mime,"base64":STANDARD.encode(&bytes)},"unavailableReason":"This image cannot be displayed by this version. Download it to open in another application."}),
+                            ),
+                        ));
+                    }
                     if bytes.iter().any(|b| *b < 9 || (*b > 13 && *b < 32)) {
                         return unavailable(
                             "This binary file cannot be previewed. Download it to open in another application.",
@@ -758,4 +802,26 @@ fn provider_version(stat: &Value) -> Option<String> {
         "\"{}\"",
         hex::encode(Sha256::digest(format!("{identity}:{revision}").as_bytes()))
     ))
+}
+
+#[cfg(test)]
+mod image_preview_tests {
+    use super::{image_preview_type, matches_image_signature};
+
+    #[test]
+    fn image_extensions_and_signatures_must_agree() {
+        for (path, mime, bytes) in [
+            ("/photo.PNG", "image/png", &b"\x89PNG\r\n\x1a\nrest"[..]),
+            ("/photo.jpg", "image/jpeg", &b"\xff\xd8\xffrest"[..]),
+            ("/photo.jpeg", "image/jpeg", &b"\xff\xd8\xffrest"[..]),
+            ("/image.gif", "image/gif", &b"GIF89arest"[..]),
+            ("/image.webp", "image/webp", &b"RIFFxxxxWEBPrest"[..]),
+        ] {
+            assert_eq!(image_preview_type(path), Some(mime));
+            assert!(matches_image_signature(mime, bytes));
+            assert!(!matches_image_signature(mime, b"wrong bytes"));
+        }
+        assert_eq!(image_preview_type("/image.svg"), None);
+        assert!(!matches_image_signature("image/webp", b"RIFF"));
+    }
 }

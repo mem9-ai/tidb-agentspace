@@ -44,6 +44,33 @@ const base = '/api/v1/workspaces/ws_agentlab';
 const secret = 'retained-public-workspace-key';
 const privateWrite = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
 test(
+  'image preview enforces the size boundary before reading and validates image type',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const signature = Buffer.from('89504e470d0a1a0a', 'hex');
+    const atLimit = Buffer.alloc(1024 * 1024);
+    signature.copy(atLimit);
+    fixture.provider.setFile('/limit.png', atLimit);
+    fixture.provider.setFile('/too-large.png', Buffer.alloc(1024 * 1024 + 1));
+    fixture.provider.setFile('/wrong.png', Buffer.from('not an image'));
+    const url = (path) => `/files/content?resourceId=fs_live&path=${path}&preview=1`;
+    const exact = await fixture.request(url('/limit.png'));
+    assert.equal(exact.status, 200);
+    assert.equal(exact.body.size, atLimit.length);
+    assert.match(exact.body.unavailableReason, /this version/);
+    assert.deepEqual(Buffer.from(exact.body.image.base64, 'base64'), atLimit);
+    const readsBeforeLarge = fixture.provider.fileReads;
+    const tooLarge = await fixture.request(url('/too-large.png'));
+    assert.equal(fixture.provider.fileReads, readsBeforeLarge);
+    assert.equal(tooLarge.status, 200);
+    assert.match(tooLarge.body.unavailableReason, /1 MiB/);
+    assert.equal(tooLarge.body.image, undefined);
+    const invalid = await fixture.request(url('/wrong.png'));
+    assert.match(invalid.body.unavailableReason, /invalid/);
+  },
+);
+test(
   'independent local File Systems can commit concurrent writes without losing events',
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
   async (t) => {
@@ -685,6 +712,29 @@ async function scenarios(request, provider, global) {
     base + '/files/content?resourceId=fs_live&path=/upload.txt&preview=1',
   );
   assert.equal(nativePreview.body.content, 'uploaded text\n');
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/+ioAAAAASUVORK5CYII=',
+    'base64',
+  );
+  await run(base + '/files/content?resourceId=fs_live&path=/preview.png', {
+    method: 'PUT',
+    body: png,
+    binary: true,
+    headers: { 'Content-Type': 'application/octet-stream' },
+  });
+  const image = await run(base + '/files/content?resourceId=fs_live&path=/preview.png&preview=1');
+  assert.equal(image.body.size, png.length);
+  assert.equal(image.body.image.mimeType, 'image/png');
+  assert.deepEqual(Buffer.from(image.body.image.base64, 'base64'), png);
+  await run(base + '/files/content?resourceId=fs_live&path=/invalid.jpg', {
+    method: 'PUT',
+    body: Buffer.from('not a jpeg'),
+    binary: true,
+    headers: { 'Content-Type': 'application/octet-stream' },
+  });
+  const invalid = await run(base + '/files/content?resourceId=fs_live&path=/invalid.jpg&preview=1');
+  assert.match(invalid.body.unavailableReason, /invalid/);
+
   const download = await request(base + '/files/content?resourceId=fs_live&path=/binary.bin', {
     binary: true,
   });

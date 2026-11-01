@@ -748,7 +748,7 @@ const paths = {
     get: {
       ...operation(
         'downloadFile',
-        'Download original bytes or request a bounded text preview (Drive9)',
+        'Download original bytes or request a bounded file preview (Drive9)',
         'files:read',
         {
           parameters: [
@@ -759,7 +759,7 @@ const paths = {
               in: 'query',
               schema: { enum: ['1'] },
               description:
-                'Returns JSON content or an unavailableReason. Never reads files larger than 128 KiB for preview.',
+                'Returns text content, a base64 image, or an unavailableReason. Images include a fallback reason for older clients; prefer image when present. Text is limited to 128 KiB and PNG, JPEG, GIF, and WebP to 1 MiB.',
             },
           ],
         },
@@ -774,7 +774,15 @@ const paths = {
               schema: {
                 type: 'object',
                 required: ['size'],
-                properties: { content: str, size: { type: 'integer' }, unavailableReason: str },
+                properties: {
+                  content: str,
+                  size: { type: 'integer' },
+                  unavailableReason: str,
+                  image: object({
+                    mimeType: { enum: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] },
+                    base64: str,
+                  }),
+                },
               },
             },
           },

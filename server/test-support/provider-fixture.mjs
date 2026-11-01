@@ -12,6 +12,7 @@ export async function providerFixture({
   const files = new Map();
   const fileVersions = new Map();
   let fileIdentity = 0;
+  let fileReads = 0;
   let writeRace;
   let deleteLost = false;
   let fileStatus = 'active';
@@ -282,6 +283,7 @@ export async function providerFixture({
           fileVersions.delete(path);
           return respond(200, {});
         }
+        if (req.method === 'GET') fileReads++;
         const b = files.get(path);
         if (!b) return respond(404, {});
         const revision = '"' + createHash('sha256').update(b).digest('hex') + '"';
@@ -311,6 +313,9 @@ export async function providerFixture({
   return {
     origin,
     reset,
+    setFile(path, bytes) {
+      files.set(path, bytes);
+    },
     set versionsAvailable(value) {
       versionsAvailable = value;
     },
@@ -334,6 +339,9 @@ export async function providerFixture({
     },
     get deleted() {
       return [...deleted];
+    },
+    get fileReads() {
+      return fileReads;
     },
     get statements() {
       return statements;

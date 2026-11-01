@@ -63,15 +63,15 @@ that is a product guard, not a claim about the upstream account's allowance.
 - `GET /files/content?...` streams an attachment through the gateway with backpressure and
   byte-count validation. No token is put in a URL. Customer Bearer keys work for agents;
   browser downloads use the owner cookie.
-- Add `preview=1` for JSON containing bounded UTF-8 `content`, or `unavailableReason` with
-  `size`. Metadata is checked before downloading; preview reads never exceed 128 KiB even
-  if the file grows. Binary content has a download-only panel. Parsing/line/complexity budgets
-  in the existing renderer remain in force. Source editing is disabled when text was not loaded.
+- Add `preview=1` for bounded UTF-8 `content`, a supported raster `image`, or an
+  `unavailableReason` with `size`. [ADR 0038](0038-bounded-image-preview.md) specifies the
+  image response and 1 MiB bound; text reads remain limited to 128 KiB even if the file grows.
+  Parsing/line/complexity budgets remain in force. Source editing requires loaded text.
 
 The gateway upload maximum is the minimum of **1 MiB**, the provider's upload maximum, and
 its inline threshold. Missing limits disable writes rather than guess. This iteration uses
 simple inline file I/O; multipart uploads, object-store redirects, extent layouts, resumable
-transfers, image/PDF rendering, and native mounts are not implemented. Adapter requests reject
+transfers, PDF rendering, and native mounts are not implemented. Adapter requests reject
 redirects, preventing credentials from being forwarded to another destination. Revisit the
 adapter and threat model before adding those transports. Writes are never retried implicitly.
 
