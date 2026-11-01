@@ -190,6 +190,14 @@ or retries initialization. Inspect the Job privately before recovery; never prin
 or raw credential-bearing configuration/logs. Prior configuration and storage remain retained
 for operator recovery; this workflow never deletes a bucket, unrelated resource, or old Secret.
 This reset needs explicit operator authorization and is not part of ordinary image CD.
+Use `inspect` before recovery: it reports only this deployment's cutover Job/PVC/Pod status,
+available StorageClasses, and fixed startup/event categories. It never prints raw logs,
+events, environment values or configuration. A failed Job stops the switch immediately.
+If the cluster has no default storage class, explicitly select an existing class using the
+workflow's `storage_class` input; the operator does not install a driver or change cluster defaults.
+After diagnosing and correcting a failed candidate, a fresh candidate uses new isolated roots,
+keys and volume. Never rerun initialization against a partially initialized candidate or activate
+an unconfirmed Job. The current serving Deployment remains untouched until bootstrap succeeds.
 Fresh empty Workspaces atomically initialize their empty resource index with their core
 records, so the first create does not wait on a background backfill. Existing Workspaces
 retain resumable index migration; no existing resource set is marked ready without indexing.
