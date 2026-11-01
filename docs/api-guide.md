@@ -2,7 +2,8 @@
 
 The Console’s **API documentation** page uses your actual Global/Region endpoints and
 resource IDs. It includes copyable cURL (curl + jq), Node.js 24 and Python examples and a
-searchable reference for every generated operation. Both schemas are downloadable independently:
+searchable reference for every generated operation. Its read-only playground uses your
+Workspace Owner session to inspect current data; agent examples use Region Tokens. Both schemas are downloadable independently:
 [Global OpenAPI](../public/global-openapi.json), [Region OpenAPI](../public/openapi.json).
 Examples use environment variables; inject credentials from application secret storage.
 

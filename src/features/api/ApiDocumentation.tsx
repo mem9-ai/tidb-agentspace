@@ -17,6 +17,7 @@ import { ChoiceTabs } from '../../ui/ChoiceTabs';
 import { apiBaseUrl, globalApiSettings, type Data } from '../../api/client';
 import { agentInstructions } from '../../api/agent-instructions';
 import { apiExamples } from './api-examples';
+import { WorkspaceApiPlayground } from './WorkspaceApiPlayground';
 import './api-documentation.css';
 
 type Operation = {
@@ -253,6 +254,7 @@ export function ApiDocumentation({
           table check destination permissions separately.
         </Text>
       </Paper>
+      {!connect && <WorkspaceApiPlayground data={data} copy={copy} />}
       {!connect && (
         <Paper className="panel api-guide" p={24} withBorder>
           <Heading level={2}>API reference</Heading>
