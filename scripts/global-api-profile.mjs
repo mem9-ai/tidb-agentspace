@@ -9,7 +9,6 @@ export async function globalApiProfile({
   directory,
   mountDirectory,
   api,
-  clockDirectory = '/var/lib/workspace/security',
   initializeClock = false,
   globalMetadata = { transport: 'inProcess', authorityId: 'global' },
 }) {
@@ -101,11 +100,18 @@ export async function globalApiProfile({
     signerId: 'global-primary',
     signingKeyFile: runtime('global-signing.der'),
     verificationKeyFile: runtime('global-signing.pub'),
-    clockDirectory: resolve(clockDirectory, 'global'),
+    metadataSecurityState: true,
     initializeClock,
     regions: [
       { regionId: authority, apiOrigin: publicOrigin, apiPathPrefix: api.publicPath || '' },
     ],
+    regionConnection: {
+      bind: '127.0.0.1:7444',
+      certificateFile: runtime('control-server.crt'),
+      privateKeyFile: runtime('control-server.key'),
+      clientCaFile: runtime('control-ca.crt'),
+      allowedRegions: [{ regionId: authority, certificateFile: runtime('control-client.crt') }],
+    },
     regionControls: [
       {
         regionId: authority,
@@ -129,10 +135,18 @@ export async function globalApiProfile({
     regionalSignerId: 'region-primary',
     regionalSigningKeyFile: runtime('region-signing.der'),
     regionalPublicKeyFile: runtime('region-signing.pub'),
-    clockDirectory: resolve(clockDirectory, 'region'),
+    metadataSecurityState: true,
     initializeClock,
     accessTokenTtl: 900,
     control: controls,
+    regionConnection: {
+      origin: 'https://127.0.0.1:7444',
+      tls: {
+        caFile: runtime('control-ca.crt'),
+        certificateFile: runtime('control-client.crt'),
+        privateKeyFile: runtime('control-client.key'),
+      },
+    },
   };
   return {
     global,

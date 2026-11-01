@@ -150,13 +150,12 @@ impl Queue {
         if shard >= SHARDS {
             return Err(error(400, "INVALID_CLEANUP_SHARD"));
         }
-        Ok(Scope {
-            authority_id: self.authority.clone(),
-            owner_kind: "system".into(),
-            owner_id: "guest-cleanup".into(),
-            family: "guest-cleanup".into(),
-            partition_id: format!("shard-{shard:02}"),
-        })
+        Ok(Scope::system(
+            &self.authority,
+            "guest-cleanup",
+            "guest-cleanup",
+            &format!("shard-{shard:02}"),
+        ))
     }
 
     async fn stored_policy(&self, job: &Job) -> Result<Policy> {

@@ -1,4 +1,9 @@
-import { createWorkspaceClient, resolveApiBaseUrl, responseData } from './transport';
+import {
+  createWorkspaceClient,
+  resolveApiBaseUrl,
+  responseData,
+  WorkspaceApiError,
+} from './transport';
 import { createUploadFetch, type UploadProgress } from './upload-transport';
 import { firstWorkspaceId } from './workspace-selection';
 import type { components, operations } from './schema';
@@ -49,6 +54,7 @@ export type SsoAuthConfig = {
   provider?: string;
   label?: string;
   loginPath?: string;
+  loginUrl?: string;
   logoutPath?: string;
 };
 export type ResultExportInput = JsonBody<operations['exportResult']>;
@@ -59,8 +65,11 @@ export let base = '';
 let params = { path: { workspaceId } };
 export let apiBaseUrl = window.location.origin;
 export { apiBaseUrl as apiOrigin };
-let client = createWorkspaceClient(apiBaseUrl);
+const portalApiPath = '/api/portal/v1';
+let client = createWorkspaceClient(apiBaseUrl, fetch, portalApiPath);
 let sessionClient = createWorkspaceClient(apiBaseUrl, fetch, '');
+let distributedGlobalBase: string | undefined;
+const distributedHintKey = () => `workspace-portal:${distributedGlobalBase || ''}`;
 
 function clearWorkspace() {
   workspaceId = '';
@@ -70,7 +79,15 @@ function clearWorkspace() {
 
 export function configureApi(config: unknown) {
   apiBaseUrl = resolveApiBaseUrl(config, window.location.origin);
-  client = createWorkspaceClient(apiBaseUrl);
+  distributedGlobalBase =
+    config &&
+    typeof config === 'object' &&
+    'portalMode' in config &&
+    config.portalMode === 'distributed'
+      ? apiBaseUrl
+      : undefined;
+  if (distributedGlobalBase) apiBaseUrl = new URL(distributedGlobalBase).origin;
+  client = createWorkspaceClient(apiBaseUrl, fetch, portalApiPath);
   sessionClient = createWorkspaceClient(apiBaseUrl, fetch, '');
   clearWorkspace();
   globalSettings = undefined;
@@ -117,7 +134,7 @@ export const workspaceApi = {
     signal?: AbortSignal,
   ) =>
     responseData(
-      createWorkspaceClient(apiBaseUrl, createUploadFetch(onProgress)).POST(
+      createWorkspaceClient(apiBaseUrl, createUploadFetch(onProgress), portalApiPath).POST(
         '/workspaces/{workspaceId}/database-import-preparations',
         {
           params: {
@@ -173,17 +190,118 @@ export const workspaceApi = {
   endGuestSession: () => responseData(sessionClient.POST('/api/auth/guest/logout')),
   discoverWorkspace: async () => {
     clearWorkspace();
+    let selectedWorkspace: string | undefined;
+    if (distributedGlobalBase) {
+      const page = new URL(window.location.href);
+      const hint =
+        page.searchParams.get('portal_workspace') || localStorage.getItem(distributedHintKey());
+      if (!hint || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(hint))
+        throw new WorkspaceApiError('Sign in to your workspace.', 401, 'UNAUTHENTICATED');
+      const global = createGlobalApiClient(
+        distributedGlobalBase,
+        [new URL(distributedGlobalBase).origin],
+        fetch,
+        true,
+      );
+      const issued = await globalResult(
+        await global.POST('/api/portal/v1/workspaces/{workspaceId}/regional-session-tickets', {
+          params: { path: { workspaceId: hint }, header: { Origin: window.location.origin } },
+        }),
+      );
+      const region = new URL(issued.region.apiOrigin);
+      const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(region.hostname);
+      if (
+        region.origin !== issued.region.apiOrigin ||
+        region.username ||
+        region.password ||
+        region.search ||
+        region.hash ||
+        (region.protocol !== 'https:' && !(region.protocol === 'http:' && loopback)) ||
+        !/^(?:\/[A-Za-z0-9_-]+)*$/.test(issued.region.apiPathPrefix)
+      )
+        throw new Error('The Workspace Region address is invalid.');
+      const regionalBase = region.origin + issued.region.apiPathPrefix;
+      const exchange = await fetch(regionalBase + '/api/portal/auth/session-exchanges', {
+        method: 'POST',
+        credentials: 'include',
+        redirect: 'error',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticket: issued.ticket }),
+      });
+      if (!exchange.ok)
+        throw new WorkspaceApiError('Unable to establish the Workspace session.', exchange.status);
+      const established: unknown = await exchange.json();
+      if (
+        !established ||
+        typeof established !== 'object' ||
+        !('workspaceId' in established) ||
+        established.workspaceId !== hint
+      )
+        throw new Error('The Workspace session does not match.');
+      selectedWorkspace = hint;
+      apiBaseUrl = regionalBase;
+      client = createWorkspaceClient(apiBaseUrl, fetch, portalApiPath);
+      sessionClient = createWorkspaceClient(apiBaseUrl, fetch, '');
+      localStorage.setItem(distributedHintKey(), hint);
+      page.searchParams.delete('portal_workspace');
+      window.history.replaceState(window.history.state, '', page);
+      const globalUrl = new URL(distributedGlobalBase);
+      globalSettings = {
+        enabled: true,
+        regionId: issued.region.regionId,
+        globalApi: {
+          apiOrigin: globalUrl.origin,
+          apiPathPrefix: globalUrl.pathname === '/' ? '' : globalUrl.pathname,
+        },
+      };
+    }
     const id = firstWorkspaceId(await responseData(client.GET('/workspaces')));
+    if (selectedWorkspace && id !== selectedWorkspace)
+      throw new Error('The Workspace returned by the Region does not match.');
     workspaceId = id;
-    base = `/api/v1/workspaces/${encodeURIComponent(id)}`;
+    base = `${portalApiPath}/workspaces/${encodeURIComponent(id)}`;
     params = { path: { workspaceId: id } };
   },
   authConfig: async (): Promise<SsoAuthConfig> => {
+    if (distributedGlobalBase) {
+      const globalUrl = new URL(distributedGlobalBase);
+      const login = new URL(distributedGlobalBase + '/api/auth/tidbcloud/login');
+      login.searchParams.set('returnTo', window.location.href);
+      return {
+        enabled: true,
+        provider: 'tidbcloud',
+        label: 'Continue with TiDB Account',
+        guestEnabled: false,
+        loginPath: '/api/auth/tidbcloud/login',
+        loginUrl: login.toString(),
+        logoutPath: '/api/auth/tidbcloud/logout',
+        globalApi: {
+          apiOrigin: globalUrl.origin,
+          apiPathPrefix: globalUrl.pathname === '/' ? '' : globalUrl.pathname,
+        },
+      };
+    }
     const response = await fetch(apiBaseUrl + '/api/auth/config', { credentials: 'include' });
     if (!response.ok) return { enabled: false };
     return (await response.json()) as SsoAuthConfig;
   },
   bootstrap: () => responseData(client.GET('/workspaces/{workspaceId}/bootstrap', { params })),
+  endDistributedSession: async () => {
+    if (!distributedGlobalBase) return false;
+    const region = await fetch(apiBaseUrl + '/api/auth/tidbcloud/logout', {
+      method: 'POST',
+      credentials: 'include',
+      redirect: 'error',
+    });
+    const global = await fetch(
+      distributedGlobalBase + '/api/auth/tidbcloud/logout?' + new URLSearchParams({ workspaceId }),
+      { method: 'POST', credentials: 'include', redirect: 'error' },
+    );
+    if ((!region.ok && region.status !== 401) || (!global.ok && global.status !== 401))
+      throw new Error('Unable to complete sign-out. Please try again.');
+    localStorage.removeItem(distributedHintKey());
+    return true;
+  },
   resources: () => responseData(client.GET('/workspaces/{workspaceId}/resources', { params })),
   resourcesPage: (cursor?: string) =>
     responseData(
@@ -247,10 +365,10 @@ export const workspaceApi = {
     responseData(client.POST('/workspaces/{workspaceId}/queries', { params, body, signal })),
   saveFile: (body: WriteFileInput, onProgress?: (progress: UploadProgress) => void) =>
     responseData(
-      (onProgress ? createWorkspaceClient(apiBaseUrl, createUploadFetch(onProgress)) : client).PUT(
-        '/workspaces/{workspaceId}/files',
-        { params, body },
-      ),
+      (onProgress
+        ? createWorkspaceClient(apiBaseUrl, createUploadFetch(onProgress), portalApiPath)
+        : client
+      ).PUT('/workspaces/{workspaceId}/files', { params, body }),
     ),
   deleteFile: (entry: Pick<WorkspaceFile, 'resourceId' | 'path'>) =>
     responseData(
@@ -281,7 +399,7 @@ export const workspaceApi = {
     onProgress: (progress: UploadProgress) => void,
   ) =>
     responseData(
-      createWorkspaceClient(apiBaseUrl, createUploadFetch(onProgress)).PUT(
+      createWorkspaceClient(apiBaseUrl, createUploadFetch(onProgress), portalApiPath).PUT(
         '/workspaces/{workspaceId}/files/content',
         {
           params: { path: params.path, query: file, header: { 'If-None-Match': '*' } },
@@ -293,7 +411,7 @@ export const workspaceApi = {
     ),
   createKey: async (body: CreateKeyInput) => {
     const global = await ownerGlobalClient();
-    const result = await global.POST('/api/v1/workspaces/{workspaceId}/keys', {
+    const result = await global.POST('/api/portal/v1/workspaces/{workspaceId}/keys', {
       params: {
         path: { workspaceId },
         header: { Origin: window.location.origin, 'Idempotency-Key': crypto.randomUUID() },
@@ -311,7 +429,7 @@ export const workspaceApi = {
   keysPage: async (cursor?: string) => {
     const global = await ownerGlobalClient();
     const value = await globalResult(
-      await global.GET('/api/v1/workspaces/{workspaceId}/keys', {
+      await global.GET('/api/portal/v1/workspaces/{workspaceId}/keys', {
         params: { path: { workspaceId }, query: { limit: 100, ...(cursor ? { cursor } : {}) } },
       }),
     );
@@ -320,12 +438,12 @@ export const workspaceApi = {
   revokeKey: async (keyId: string) => {
     const global = await ownerGlobalClient();
     const current = await globalResult(
-      await global.GET('/api/v1/workspaces/{workspaceId}/keys/{keyId}', {
+      await global.GET('/api/portal/v1/workspaces/{workspaceId}/keys/{keyId}', {
         params: { path: { workspaceId, keyId } },
       }),
     );
     return globalResult(
-      await global.DELETE('/api/v1/workspaces/{workspaceId}/keys/{keyId}', {
+      await global.DELETE('/api/portal/v1/workspaces/{workspaceId}/keys/{keyId}', {
         params: {
           path: { workspaceId, keyId },
           header: {
@@ -340,12 +458,12 @@ export const workspaceApi = {
   retryKeyPolicy: async (keyId: string) => {
     const global = await ownerGlobalClient();
     const current = await globalResult(
-      await global.GET('/api/v1/workspaces/{workspaceId}/keys/{keyId}', {
+      await global.GET('/api/portal/v1/workspaces/{workspaceId}/keys/{keyId}', {
         params: { path: { workspaceId, keyId } },
       }),
     );
     return globalResult(
-      await global.POST('/api/v1/workspaces/{workspaceId}/key-policy-deliveries', {
+      await global.POST('/api/portal/v1/workspaces/{workspaceId}/key-policy-deliveries', {
         params: {
           path: { workspaceId },
           header: { Origin: window.location.origin, 'Idempotency-Key': crypto.randomUUID() },
@@ -366,10 +484,12 @@ let globalSettings: SsoAuthConfig | undefined;
 export async function globalApiSettings() {
   globalSettings ??= await workspaceApi.authConfig();
   const descriptor = globalSettings.globalApi;
-  if (!descriptor)
+  if (!descriptor) {
+    globalSettings = undefined;
     throw new Error(
       'Global API is not configured. Ask the service operator to enable Global Key management.',
     );
+  }
   const url = new URL(descriptor.apiOrigin);
   if (
     url.origin !== descriptor.apiOrigin ||
@@ -378,6 +498,12 @@ export async function globalApiSettings() {
     throw new Error('Invalid Global API configuration.');
   return {
     baseUrl: descriptor.apiOrigin + descriptor.apiPathPrefix,
+    endpoint:
+      descriptor.apiOrigin +
+      (descriptor.apiPathPrefix.endsWith('/api/global')
+        ? descriptor.apiPathPrefix.slice(0, -'/api/global'.length)
+        : descriptor.apiPathPrefix) +
+      '/api',
     regionId: globalSettings.regionId || '',
   };
 }
@@ -408,8 +534,14 @@ export async function signInGlobal() {
 async function globalResult<T>(result: {
   data?: T;
   error?: { error: { code: string; message: string } };
+  response?: Response;
 }) {
-  if (result.error) throw new Error(result.error.error.message || result.error.error.code);
+  if (result.error)
+    throw new WorkspaceApiError(
+      result.error.error.message || result.error.error.code,
+      result.response?.status || 500,
+      result.error.error.code,
+    );
   if (!result.data) throw new Error('Global returned no result.');
   return result.data;
 }

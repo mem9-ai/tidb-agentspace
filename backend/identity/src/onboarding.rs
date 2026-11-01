@@ -6,18 +6,22 @@ use crate::{
     Directory, GuestRegistration, Provisioning, Registration, VerifiedIdentity, error,
     regional::{OwnerIdentity, Policy},
 };
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{future::Future, pin::Pin, sync::Arc};
 use uuid::Uuid;
 use workspace_contracts::Result;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Command {
     pub registration: Registration,
     pub policy: Policy,
 }
 
 /// This result is trusted only after the control implementation has authenticated the Region.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Acknowledgement {
     pub registration: Registration,
     pub policy_generation: u64,

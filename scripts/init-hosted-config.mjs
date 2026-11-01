@@ -91,7 +91,6 @@ export async function initializeHostedConfig({ directory, mountDirectory, input 
     mountDirectory: runtimePath('security'),
     api,
     initializeClock: true,
-    clockDirectory: input.clockDirectory || '/var/lib/workspace/security',
   });
   api = profile.api;
   await save('global-api.json', { ...profile.global, initializeClock: false });

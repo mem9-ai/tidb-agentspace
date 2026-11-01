@@ -205,8 +205,16 @@ export async function importCases(
       faults.afterCreate = undefined;
       // The admitted HTTP operation drains before policy applies. No later admission may pass.
       assert.equal(provider.statements.length, sqlCount + 2);
-      const applied = await f.deliver(revoked.data.id, 2);
-      assert.equal(applied.status, 201, JSON.stringify(applied.body));
+      // The in-flight operation can hold the policy transition until the control
+      // connection reconnects. Require the same durable revocation to converge.
+      let applied;
+      const deadline = Date.now() + 30_000;
+      do {
+        applied = await f.deliver(revoked.data.id, 2);
+        assert.equal(applied.status, 201, JSON.stringify(applied.body));
+        if (applied.body.data.regionalStatus === 'applied') break;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      } while (Date.now() < deadline);
       assert.equal(applied.body.data.regionalStatus, 'applied');
       await request(
         '/queries',

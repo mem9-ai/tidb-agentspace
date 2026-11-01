@@ -165,7 +165,7 @@ test(
     const first = await create();
     const second = await create();
     const provision = async (guest, kind) => {
-      const response = await request(`/api/v1/workspaces/${guest.workspaceId}/resources`, {
+      const response = await request(`/api/portal/v1/workspaces/${guest.workspaceId}/resources`, {
         cookie: guest.cookie,
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `guest-${kind}` },
@@ -187,17 +187,19 @@ test(
     assert.equal((await authConfig.json()).sessionKind, 'guest');
     assert.notEqual(first.workspaceId, second.workspaceId);
     assert.equal(
-      (await request(`/api/v1/workspaces/${second.workspaceId}`, { cookie: first.cookie })).status,
+      (await request(`/api/portal/v1/workspaces/${second.workspaceId}`, { cookie: first.cookie }))
+        .status,
       404,
     );
     assert.equal(
-      (await (await request('/api/v1/workspaces', { cookie: first.cookie })).json()).data[0].id,
+      (await (await request('/api/portal/v1/workspaces', { cookie: first.cookie })).json()).data[0]
+        .id,
       first.workspaceId,
     );
     // Guest cookies cannot create regional Keys; only Global Owner identity may create new Keys.
     assert.equal(
       (
-        await request(`/api/v1/workspaces/${first.workspaceId}/keys`, {
+        await request(`/api/portal/v1/workspaces/${first.workspaceId}/keys`, {
           cookie: first.cookie,
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -224,7 +226,7 @@ test(
     const resumed = await request('/api/auth/guest', { method: 'POST', cookie: first.cookie });
     assert.equal(resumed.status, 200);
     assert.equal((await resumed.json()).workspaceId, first.workspaceId);
-    const listed = await request('/api/v1/workspaces', { cookie: first.cookie });
+    const listed = await request('/api/portal/v1/workspaces', { cookie: first.cookie });
     assert.equal(listed.status, 200);
     assert.equal((await listed.json()).data[0].id, first.workspaceId);
     assert.equal((await request('/api/auth/guest', { method: 'POST' })).status, 503);
@@ -265,7 +267,9 @@ test(
         .some((header) => header.startsWith('aw_guest=;') && header.includes('Max-Age=0')),
     );
     assert.ok(
-      [401, 403].includes((await request('/api/v1/workspaces', { cookie: first.cookie })).status),
+      [401, 403].includes(
+        (await request('/api/portal/v1/workspaces', { cookie: first.cookie })).status,
+      ),
     );
     assert.ok(
       [401, 403].includes(
@@ -276,7 +280,10 @@ test(
         ).status,
       ),
     );
-    assert.equal((await request('/api/v1/workspaces', { cookie: second.cookie })).status, 200);
+    assert.equal(
+      (await request('/api/portal/v1/workspaces', { cookie: second.cookie })).status,
+      200,
+    );
     await until(() => {
       assert.deepEqual(provider.deleted.map((entry) => `${entry.kind}:${entry.id}`).sort(), [
         'db9:pg0',
@@ -308,7 +315,7 @@ test(
       });
       assert.equal(marker.records[`logout/${first.workspaceId}`], null);
     });
-    const remaining = await request(`/api/v1/workspaces/${second.workspaceId}/resources`, {
+    const remaining = await request(`/api/portal/v1/workspaces/${second.workspaceId}/resources`, {
       cookie: second.cookie,
     });
     assert.equal(remaining.status, 200);

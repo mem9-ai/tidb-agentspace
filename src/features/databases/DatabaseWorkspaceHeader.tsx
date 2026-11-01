@@ -60,7 +60,8 @@ export function DatabaseWorkspaceHeader({
             <ResourceDetails title="Database details">
               <Text>{provider}</Text>
               <Text>Status: {database.status}</Text>
-              <Text>Region: {regionLabel(database.region)}</Text>
+              <Text>Workspace region: {regionLabel(database.regionId)}</Text>
+              <Text>Provider data location: {regionLabel(database.region)}</Text>
               {database.kind === 'postgresql' && (
                 <Text>
                   db9 is PostgreSQL-compatible. NUMERIC supports up to 28–29 significant digits.{' '}

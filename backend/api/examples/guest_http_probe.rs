@@ -30,6 +30,7 @@ async fn main() -> anyhow::Result<()> {
         Some(signup.clone()),
         regional.clone(),
         vec!["https://studio.example.test".into()],
+        false,
     )?);
     let pool = Arc::new(ManagedWorkspaces::new(
         regional_meta.clone(),
@@ -147,7 +148,7 @@ async fn main() -> anyhow::Result<()> {
         anyhow::ensure!(body["workspaceId"] == *id, "Guest was recreated");
         let body: Value = call(
             reqwest::Method::GET,
-            "/api/v1/workspaces".into(),
+            "/api/portal/v1/workspaces".into(),
             Some(cookie.clone()),
         )
         .send()
@@ -161,7 +162,7 @@ async fn main() -> anyhow::Result<()> {
     }
     let created = call(
         reqwest::Method::POST,
-        format!("/api/v1/workspaces/{}/resources", guests[0].0),
+        format!("/api/portal/v1/workspaces/{}/resources", guests[0].0),
         Some(guests[0].1.clone()),
     )
     .json(&json!({"kind":"mysql","name":"guest-database","region":"aws-us-east-1"}))
@@ -174,7 +175,7 @@ async fn main() -> anyhow::Result<()> {
     );
     let second_resources: Value = call(
         reqwest::Method::GET,
-        format!("/api/v1/workspaces/{}/resources", guests[1].0),
+        format!("/api/portal/v1/workspaces/{}/resources", guests[1].0),
         Some(guests[1].1.clone()),
     )
     .send()
@@ -190,7 +191,7 @@ async fn main() -> anyhow::Result<()> {
     let forged = guests[0].1.replace(&guests[0].0, &guests[1].0);
     let denied = call(
         reqwest::Method::GET,
-        "/api/v1/workspaces".into(),
+        "/api/portal/v1/workspaces".into(),
         Some(forged),
     )
     .send()
@@ -202,7 +203,7 @@ async fn main() -> anyhow::Result<()> {
     );
     let cross = call(
         reqwest::Method::GET,
-        format!("/api/v1/workspaces/{}", guests[1].0),
+        format!("/api/portal/v1/workspaces/{}", guests[1].0),
         Some(guests[0].1.clone()),
     )
     .send()
@@ -210,7 +211,7 @@ async fn main() -> anyhow::Result<()> {
     anyhow::ensure!(cross.status() == 404, "cross-Workspace request allowed");
     let modified = call(
         reqwest::Method::PATCH,
-        format!("/api/v1/workspaces/{}/settings", guests[0].0),
+        format!("/api/portal/v1/workspaces/{}/settings", guests[0].0),
         Some(guests[0].1.clone()),
     )
     .json(&json!({"workspaceName":"First Guest","name":"First"}))
@@ -223,7 +224,7 @@ async fn main() -> anyhow::Result<()> {
     );
     let second: Value = call(
         reqwest::Method::GET,
-        format!("/api/v1/workspaces/{}", guests[1].0),
+        format!("/api/portal/v1/workspaces/{}", guests[1].0),
         Some(guests[1].1.clone()),
     )
     .send()

@@ -1,6 +1,7 @@
 //! Internal Global Key records. This module does not expose an HTTP service, verify owner
 //! identity, resolve resource grants, or install regional policy. Callers must do all of those
 //! before using these primitives to authorize or issue customer credentials.
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -93,10 +94,50 @@ fn scope(workspace: &str) -> Result<Scope> {
 fn digest(secret: &str) -> String {
     hex::encode(Sha256::digest(secret.as_bytes()))
 }
-fn make_secret(key_id: &str) -> Result<String> {
+fn make_secret(key_id: &str, workspace: &str) -> Result<String> {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes).map_err(|_| error(503, "RANDOM_UNAVAILABLE"))?;
-    Ok(format!("awk_{key_id}_{}", hex::encode(bytes)))
+    Ok(format!(
+        "awk_{key_id}_{}.{}",
+        hex::encode(bytes),
+        URL_SAFE_NO_PAD.encode(workspace)
+    ))
+}
+
+fn parse_secret(secret: &str) -> Result<(&str, Option<String>)> {
+    let denied = || error(401, "INVALID_CREDENTIAL");
+    if secret.len() > 280 {
+        return Err(denied());
+    }
+    let (key_id, tail) = secret
+        .strip_prefix("awk_")
+        .and_then(|v| v.split_once('_'))
+        .filter(|(id, _)| uuid(id))
+        .ok_or_else(denied)?;
+    let (random, hint) = tail
+        .split_once('.')
+        .map_or((tail, None), |(random, hint)| (random, Some(hint)));
+    if random.len() != 64
+        || !random
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err(denied());
+    }
+    let workspace = hint
+        .map(|encoded| {
+            let bytes = URL_SAFE_NO_PAD.decode(encoded).map_err(|_| denied())?;
+            if URL_SAFE_NO_PAD.encode(&bytes) != encoded {
+                return Err(denied());
+            }
+            let workspace = String::from_utf8(bytes).map_err(|_| denied())?;
+            if !valid_id(&workspace) {
+                return Err(denied());
+            }
+            Ok(workspace)
+        })
+        .transpose()?;
+    Ok((key_id, workspace))
 }
 fn fingerprint(value: &impl Serialize) -> Result<String> {
     Ok(hex::encode(Sha256::digest(
@@ -117,6 +158,12 @@ fn valid_record(record: &KeyRecord, workspace: &str, key_id: &str) -> bool {
 }
 
 impl GlobalKeys {
+    /// The hint is untrusted until the full secret is verified against its Workspace record.
+    pub async fn authenticate_discovered(&self, secret: &str) -> Result<KeyView> {
+        let (_, workspace) = parse_secret(secret)?;
+        let workspace = workspace.ok_or_else(|| error(401, "INVALID_CREDENTIAL"))?;
+        self.authenticate(&workspace, secret).await
+    }
     pub async fn open(metadata: Arc<dyn Metadata>) -> Result<Self> {
         let health = metadata.health().await?;
         if health["authorityId"] != "global"
@@ -324,7 +371,7 @@ impl GlobalKeys {
             expires_at: input.expires_at,
             revoked: false,
         };
-        let secret = make_secret(&view.key_id)?;
+        let secret = make_secret(&view.key_id, &view.workspace_id)?;
         let verifier = digest(&secret);
         let record = KeyRecord {
             view: view.clone(),
@@ -376,21 +423,14 @@ impl GlobalKeys {
         current: i64,
     ) -> Result<KeyView> {
         let denied = || error(401, "INVALID_CREDENTIAL");
-        if current <= 0 || secret.is_empty() || secret.len() > 256 {
+        if current <= 0 || secret.is_empty() {
             return Err(denied());
         }
         let scope = scope(workspace).map_err(|_| denied())?;
-        let (key_id, _random) = secret
-            .strip_prefix("awk_")
-            .and_then(|v| v.split_once('_'))
-            .filter(|(id, random)| {
-                uuid(id)
-                    && random.len() == 64
-                    && random
-                        .bytes()
-                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-            })
-            .ok_or_else(denied)?;
+        let (key_id, hint) = parse_secret(secret)?;
+        if hint.as_deref().is_some_and(|hint| hint != workspace) {
+            return Err(denied());
+        }
         let verifier = digest(secret);
         let key = format!("keys/{key_id}");
         let data = self.get(&scope, vec![key.clone()]).await?;
@@ -504,7 +544,7 @@ impl GlobalKeys {
         if record.view.revoked || record.view.expires_at <= current {
             return Err(error(409, "KEY_INACTIVE"));
         }
-        let secret = make_secret(key_id)?;
+        let secret = make_secret(key_id, workspace)?;
         let verifier = digest(&secret);
         record.verifier = verifier.clone();
         record.view.key_version = record
@@ -642,13 +682,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn workspace_hint_is_verified_and_legacy_keys_remain_usable_with_workspace() {
+        let metadata = Arc::new(MemoryMeta::default());
+        let keys = GlobalKeys::open(metadata.clone()).await.unwrap();
+        let mut request = input();
+        request.expires_at = now().unwrap() + 3600;
+        let issued = keys
+            .create(&request, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        assert_eq!(
+            keys.authenticate_discovered(&issued.secret).await.unwrap(),
+            issued.view
+        );
+        let prefix = issued.secret.split_once('.').unwrap().0;
+        let altered = format!("{prefix}.{}", URL_SAFE_NO_PAD.encode("ws_another"));
+        assert_eq!(
+            keys.authenticate_discovered(&altered)
+                .await
+                .unwrap_err()
+                .code,
+            "INVALID_CREDENTIAL"
+        );
+        let group = crate::tests::group_key(&scope(&request.workspace_id).unwrap());
+        metadata
+            .groups
+            .lock()
+            .unwrap()
+            .get_mut(&group)
+            .unwrap()
+            .get_mut(&format!("keys/{}", issued.view.key_id))
+            .unwrap()["value"]["verifier"] = json!(digest(prefix));
+        assert_eq!(
+            keys.authenticate(&request.workspace_id, prefix)
+                .await
+                .unwrap(),
+            issued.view
+        );
+        assert_eq!(
+            keys.authenticate_discovered(prefix).await.unwrap_err().code,
+            "INVALID_CREDENTIAL"
+        );
+    }
+
+    #[tokio::test]
     async fn creation_is_workspace_scoped_once_only_and_never_stores_plaintext() {
         let metadata = Arc::new(MemoryMeta::default());
         let keys = GlobalKeys::open(metadata.clone()).await.unwrap();
         let mutation = Uuid::new_v4().to_string();
         let issued = keys.create_at(&input(), &mutation, 100).await.unwrap();
         assert!(issued.secret.starts_with("awk_"));
-        assert_eq!(issued.secret.len(), 105);
+        assert!(issued.secret.len() > 105);
         assert_eq!(
             keys.authenticate_at("ws_agentlab", &issued.secret, 100)
                 .await

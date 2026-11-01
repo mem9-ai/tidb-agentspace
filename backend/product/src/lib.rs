@@ -350,6 +350,13 @@ impl Product {
                 let kind = text(&input, "kind").map_err(|_| err(400, "INVALID_KIND"))?;
                 let name = text(&input, "name").map_err(|_| err(400, "INVALID_NAME"))?;
                 let region = text(&input, "region").map_err(|_| err(400, "UNSUPPORTED_REGION"))?;
+                let authority = self.workspace.repository().authority_id().to_owned();
+                if input
+                    .get("regionId")
+                    .is_some_and(|value| value.as_str() != Some(authority.as_str()))
+                {
+                    return Err(err(400, "UNSUPPORTED_WORKSPACE_REGION"));
+                }
                 let caps = self.capabilities();
                 if caps[kind].is_null()
                     || (kind == "postgresql" && self.providers.config.postgres_provider != DB9)
@@ -382,7 +389,7 @@ impl Product {
                     "postgresql" => DB9,
                     _ => DUCKDB,
                 };
-                let resource = json!({"id":format!("{}_{}",if kind=="filesystem"{"fs"}else{"db"},secret(6)?),"name":name,"kind":kind,"region":region,"status":if provider=="local"{"active"}else{"provisioning"},"provider":provider,"createdAt":timestamp()});
+                let resource = json!({"id":format!("{}_{}",if kind=="filesystem"{"fs"}else{"db"},secret(6)?),"name":name,"kind":kind,"region":region,"regionId":authority,"status":if provider=="local"{"active"}else{"provisioning"},"provider":provider,"createdAt":timestamp()});
                 let event = json!({"id":uuid::Uuid::new_v4().to_string(),"action":"resource.created","resource":name,"resourceId":resource["id"],"actor":p.actor,"at":timestamp(),"outcome":"success"});
                 let resource = self
                     .workspace

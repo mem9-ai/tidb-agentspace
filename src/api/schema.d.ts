@@ -657,6 +657,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/portal/auth/session-exchanges': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Redeem one Global-issued, Region-bound, short-lived ticket exactly once to establish a Region Portal session. */
+    post: operations['exchangePortalRegionSession'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/auth/config': {
     parameters: {
       query?: never;
@@ -984,7 +1001,10 @@ export interface components {
       name: string;
       /** @enum {unknown} */
       kind: 'mysql' | 'postgresql' | 'duckdb' | 'filesystem';
+      /** @description Provider-assigned data location; may be automatic and is distinct from the Workspace Region. */
       region: string;
+      /** @description Region control plane owning this resource. Legacy records are interpreted in their existing Region. */
+      regionId: string;
       /** @enum {unknown} */
       status:
         'active' | 'provisioning' | 'failed' | 'suspended' | 'deleting' | 'deleted' | 'expired';
@@ -1346,6 +1366,8 @@ export interface components {
       name: string;
       description: string;
       plan: string;
+      /** @description Default Region for new resources. Currently only this Region is available. */
+      defaultRegionId: string;
       /** Format: date-time */
       createdAt: string;
     };
@@ -2668,8 +2690,10 @@ export interface operations {
           name: string;
           /** @enum {unknown} */
           kind: 'mysql' | 'postgresql' | 'duckdb' | 'filesystem';
+          /** @description Optional Workspace Region; must match the current Region. Omit to use the default. */
+          regionId?: string;
           /**
-           * @description Choose a region supported by the resource kind in capabilities. Zero MySQL uses automatic provider assignment. The first supported region is the Console default.
+           * @description Provider data location supported by the resource kind. This is separate from regionId. Zero MySQL uses automatic provider assignment.
            * @enum {string}
            */
           region: 'aws-us-east-1' | 'aws-us-west-2' | 'automatic' | 'aws-ap-southeast-1';
@@ -6881,6 +6905,63 @@ export interface operations {
       };
       /** @description SQL timeout; a write outcome may be unknown */
       504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  exchangePortalRegionSession: {
+    parameters: {
+      query?: never;
+      header: {
+        Origin: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          ticket: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            workspaceId: string;
+          };
+        };
+      };
+      /** @description Success */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Success */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Success */
+      403: {
         headers: {
           [name: string]: unknown;
         };

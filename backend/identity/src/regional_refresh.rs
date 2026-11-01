@@ -27,7 +27,7 @@ const RETRY_WINDOW: i64 = 10;
 /// Must provide monotonic, rollback-protected regional time across restart. A bare wall
 /// clock is not sufficient for production use.
 pub trait RegionalClock: Send + Sync {
-    fn now(&self) -> Result<i64>;
+    fn now(&self) -> Pin<Box<dyn Future<Output = Result<i64>> + Send + '_>>;
 }
 
 /// The provider must validate a durable immutable ceiling for this exact binding locally.
@@ -337,8 +337,8 @@ impl RefreshFamilies {
             .await
     }
 
-    fn fresh(&self, observed: i64, proof_issued: i64, expires_at: i64) -> Result<i64> {
-        let current = self.clock.now()?;
+    async fn fresh(&self, observed: i64, proof_issued: i64, expires_at: i64) -> Result<i64> {
+        let current = self.clock.now().await?;
         if current <= 0 || current < observed {
             return Err(error(503, "CLOCK_ROLLBACK"));
         }
@@ -450,11 +450,13 @@ impl RefreshFamilies {
         if self.family(scope, family_id).await?.is_some() {
             return Err(error(409, "ENROLLMENT_ALREADY_CONSUMED"));
         }
-        let commit_time = self.fresh(
-            now,
-            proof_issued,
-            family.expires_at.min(ticket.expires_at()),
-        )?;
+        let commit_time = self
+            .fresh(
+                now,
+                proof_issued,
+                family.expires_at.min(ticket.expires_at()),
+            )
+            .await?;
         let proof_key = format!("proofs/{family_id}/{}", hash(proof_id));
         let result = self.metadata.execute(MetaRequest::Commit { scope:scope.clone(), guard:None, mutation_id:mutation(b"enroll\0",family_id,proof_id), changes:vec![
             json!({"key":"policy","expectedVersion":policy_version,"value":policy}),
@@ -495,6 +497,7 @@ impl RefreshFamilies {
             return Err(error(409, "ENROLLMENT_ALREADY_CONSUMED"));
         }
         self.fresh(commit_time, proof_issued, family.expires_at)
+            .await
             .map_err(|_| conflict())?;
         Ok(IssuedRefresh {
             secret: credential,
@@ -591,11 +594,13 @@ impl RefreshFamilies {
                 )
                 .map_err(|_| denied())?;
                 self.ceiling(&family).await?;
-                let current = self.fresh(
-                    now,
-                    verified.issued_at(),
-                    family.expires_at.min(policy.expires_at),
-                )?;
+                let current = self
+                    .fresh(
+                        now,
+                        verified.issued_at(),
+                        family.expires_at.min(policy.expires_at),
+                    )
+                    .await?;
                 let elapsed = current
                     .checked_sub(history.rotated_at)
                     .filter(|v| *v >= 0)
@@ -662,11 +667,13 @@ impl RefreshFamilies {
             if self.record(&scope, &proof_key).await?.is_some() {
                 return Err(error(409, "DPOP_REPLAY"));
             }
-            let commit_time = self.fresh(
-                now,
-                verified.issued_at(),
-                family.expires_at.min(policy.expires_at),
-            )?;
+            let commit_time = self
+                .fresh(
+                    now,
+                    verified.issued_at(),
+                    family.expires_at.min(policy.expires_at),
+                )
+                .await?;
             history.rotated_at = commit_time;
             let result = self.metadata.execute(MetaRequest::Commit { scope:scope.clone(), guard:None, mutation_id:mutation(b"rotate\0",family_id,verified.proof_id()), changes:vec![
                 json!({"key":"policy","expectedVersion":policy_version,"value":policy}),
@@ -702,6 +709,7 @@ impl RefreshFamilies {
                 return Err(conflict());
             }
             self.fresh(commit_time, verified.issued_at(), family.expires_at)
+                .await
                 .map_err(|_| conflict())?;
             return Ok(IssuedRefresh {
                 secret: next_secret,
@@ -800,7 +808,9 @@ impl RefreshFamilies {
         if self.record(&scope, &proof_key).await?.is_some() {
             return Err(error(409, "DPOP_REPLAY"));
         }
-        let commit_time = self.fresh(request.now, proof.issued_at(), policy.expires_at)?;
+        let commit_time = self
+            .fresh(request.now, proof.issued_at(), policy.expires_at)
+            .await?;
         history.rotated_at = commit_time;
         let result=self.metadata.execute(MetaRequest::Commit{scope:scope.clone(),guard:None,mutation_id:mutation(b"rebind\0",family_id,proof.proof_id()),changes:vec![
             json!({"key":"policy","expectedVersion":policy_version,"value":policy}),
@@ -821,6 +831,7 @@ impl RefreshFamilies {
             return Err(conflict());
         }
         self.fresh(commit_time, proof.issued_at(), family.expires_at)
+            .await
             .map_err(|_| conflict())?;
         Ok(IssuedRefresh {
             secret: credential,
@@ -872,7 +883,7 @@ impl RefreshFamilies {
             .family(&scope, binding.family_id)
             .await?
             .ok_or_else(denied)?;
-        if !Self::policy_matches(&policy, &family, self.clock.now()?)
+        if !Self::policy_matches(&policy, &family, self.clock.now().await?)
             || family.security_epoch != binding.epoch
         {
             return Err(denied());
@@ -918,7 +929,8 @@ impl RefreshFamilies {
             return Err(denied());
         }
         self.ceiling(&family).await?;
-        self.fresh(now, now, family.expires_at.min(policy.expires_at))?;
+        self.fresh(now, now, family.expires_at.min(policy.expires_at))
+            .await?;
         Ok(())
     }
 }
@@ -944,8 +956,8 @@ mod tests {
     struct Ceiling(AtomicBool);
     struct Clock(AtomicI64);
     impl RegionalClock for Clock {
-        fn now(&self) -> Result<i64> {
-            Ok(self.0.load(Ordering::SeqCst))
+        fn now(&self) -> Pin<Box<dyn Future<Output = Result<i64>> + Send + '_>> {
+            Box::pin(async { Ok(self.0.load(Ordering::SeqCst)) })
         }
     }
     struct AdvanceClock(Arc<Clock>);

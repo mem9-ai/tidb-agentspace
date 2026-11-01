@@ -13,7 +13,10 @@ import {
   discoverAuthorizedRegions,
 } from '../../src/api/global-client.ts';
 const contract = JSON.parse(
-  await readFile(new URL('../../public/global-openapi.json', import.meta.url), 'utf8'),
+  await readFile(
+    new URL('../../tools/api-contract/portal-global-openapi.json', import.meta.url),
+    'utf8',
+  ),
 );
 const ajv = new Ajv2020({ strict: false, validateFormats: false });
 
@@ -27,6 +30,7 @@ export async function globalApiCases(
   ownerFile,
   ssoSettings,
   regionMetadata,
+  setSubject,
 ) {
   const listen = await port();
   const origin = `http://127.0.0.1:${listen}`;
@@ -51,7 +55,7 @@ export async function globalApiCases(
     signerId: 'global-fixture',
     signingKeyFile: keyFile,
     verificationKeyFile: publicFile,
-    clockDirectory: resolve(fixture.directory, 'global-clock'),
+    metadataSecurityState: true,
     initializeClock: true,
     regions: [
       { regionId: 'region:other', apiOrigin: 'https://region.example.test', apiPathPrefix: '' },
@@ -111,7 +115,7 @@ export async function globalApiCases(
     .find((c) => c.startsWith('aw_global_owner='))
     .split(';')[0];
   await logged.body.cancel();
-  const own = await fetch(origin + '/api/v1/workspaces/' + bob.workspaceId + '/keys', {
+  const own = await fetch(origin + '/api/portal/v1/workspaces/' + bob.workspaceId + '/keys', {
     headers: { Cookie: bobCookie },
   });
   assert.equal(own.status, 200);
@@ -119,20 +123,23 @@ export async function globalApiCases(
   const replay = await fetch(callback, { headers: { Cookie: flowCookie } });
   assert.equal(replay.status, 401);
   await replay.body.cancel();
-  const bobKeyResponse = await fetch(origin + '/api/v1/workspaces/' + bob.workspaceId + '/keys', {
-    method: 'POST',
-    headers: {
-      Cookie: bobCookie,
-      Origin: origin,
-      'Content-Type': 'application/json',
-      'Idempotency-Key': randomUUID(),
+  const bobKeyResponse = await fetch(
+    origin + '/api/portal/v1/workspaces/' + bob.workspaceId + '/keys',
+    {
+      method: 'POST',
+      headers: {
+        Cookie: bobCookie,
+        Origin: origin,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': randomUUID(),
+      },
+      body: JSON.stringify({
+        scopes: ['resources:read'],
+        resourceIds: ['*'],
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+      }),
     },
-    body: JSON.stringify({
-      scopes: ['resources:read'],
-      resourceIds: ['*'],
-      expiresAt: Math.floor(Date.now() / 1000) + 3600,
-    }),
-  });
+  );
   const bobKey = await bobKeyResponse.json();
   assert.equal(bobKeyResponse.status, 201, JSON.stringify(bobKey));
   const logout = await fetch(origin + '/api/auth/tidbcloud/logout?workspaceId=' + bob.workspaceId, {
@@ -140,7 +147,7 @@ export async function globalApiCases(
     headers: { Cookie: bobCookie, Origin: origin },
   });
   assert.equal(logout.status, 204);
-  const denied = await fetch(origin + '/api/v1/workspaces/' + bob.workspaceId + '/keys', {
+  const denied = await fetch(origin + '/api/portal/v1/workspaces/' + bob.workspaceId + '/keys', {
     headers: { Cookie: bobCookie },
   });
   assert.equal(denied.status, 401);
@@ -151,7 +158,8 @@ export async function globalApiCases(
     route,
     { method = 'GET', body, token, headers = {}, workspace = alice.workspaceId } = {},
   ) => {
-    const r = await fetch(origin + `/api/v1/workspaces/${workspace}` + route, {
+    const api = token ? '/api/v1' : '/api/portal/v1';
+    const r = await fetch(origin + `${api}/workspaces/${workspace}` + route, {
       method,
       redirect: 'error',
       headers: {
@@ -164,9 +172,14 @@ export async function globalApiCases(
     });
     const bodyResult = await r.json();
     const pathname = new URL(r.url).pathname;
-    const entry = Object.entries(contract.paths).find(([path]) =>
-      new RegExp('^' + path.replace(/\{[^}]+\}/g, '[^/]+') + '$').test(pathname),
-    )?.[1]?.[method.toLowerCase()];
+    const lookup = (candidate) =>
+      Object.entries(contract.paths).find(([path]) =>
+        new RegExp('^' + path.replace(/\{[^}]+\}/g, '[^/]+') + '$').test(candidate),
+      )?.[1]?.[method.toLowerCase()];
+    // Negative tests also probe retired Agent paths for Portal-only operations.
+    const entry =
+      lookup(pathname) ||
+      (r.status >= 400 && lookup(pathname.replace('/api/v1/', '/api/portal/v1/')));
     assert.ok(entry, method + ' ' + pathname + ' must be documented');
     const schema = (entry.responses[r.status] ?? entry.responses.default).content[
       'application/json'
@@ -338,27 +351,119 @@ export async function globalApiCases(
   );
   let metadataOwner;
   let savedControls;
+  let savedRegionConnection;
   const preserved = await regionSecurityCases(t, fixture, regionMetadata, alice.workspaceId, {
     origin,
     publicFile,
     request,
     otherWorkspace: bob.workspaceId,
     otherKey: bobKey.secret,
-    configure: async (regionOrigin, controlOrigin, tls) => {
+    firstLogin: async () => {
+      setSubject('first-time-distributed-user');
+      try {
+        const login = await fetch(origin + '/api/auth/tidbcloud/login', { redirect: 'manual' });
+        assert.equal(login.status, 303);
+        const authorize = new URL(login.headers.get('location'));
+        const code = await fetch(authorize).then((response) => response.json());
+        const flow = login.headers.get('set-cookie').split(';')[0];
+        const callback = await fetch(
+          origin +
+            '/api/auth/tidbcloud/callback?' +
+            new URLSearchParams({ code: code.code, state: authorize.searchParams.get('state') }),
+          { headers: { Cookie: flow } },
+        );
+        const result = await callback.json();
+        assert.equal(callback.status, 200, JSON.stringify(result));
+        assert.equal(result.regionId, regionMetadata.server.authorityId);
+        assert.notEqual(result.workspaceId, alice.workspaceId);
+        assert.notEqual(result.workspaceId, bob.workspaceId);
+        const scope = {
+          authorityId: regionMetadata.server.authorityId,
+          ownerKind: 'workspace',
+          ownerId: result.workspaceId,
+          family: 'workspace',
+          partitionId: 'primary',
+        };
+        const stored = await regionMetadata.client.call({
+          op: 'get',
+          scope,
+          keys: ['state/workspace', 'ownership/onboarding'],
+        });
+        assert.equal(stored.records['state/workspace'].value.id, result.workspaceId);
+        assert.equal(stored.records['ownership/onboarding'].value.workspaceId, result.workspaceId);
+        const cookie = callback.headers
+          .getSetCookie()
+          .find((value) => value.startsWith('aw_global_owner='))
+          .split(';')[0];
+        return { workspace: result.workspaceId, cookie };
+      } finally {
+        setSubject('bob');
+      }
+    },
+    verifyPortalSession: async ({ workspace, cookie }, regionOrigin) => {
+      const path = `/api/portal/v1/workspaces/${workspace}/regional-session-tickets`;
+      const issuance = await fetch(origin + path, {
+        method: 'POST',
+        headers: { Origin: origin, Cookie: cookie },
+      });
+      const issued = await issuance.json();
+      assert.equal(issuance.status, 201, JSON.stringify(issued));
+      assert.equal(issued.region.apiOrigin, regionOrigin);
+      const exchange = () =>
+        fetch(regionOrigin + '/api/portal/auth/session-exchanges', {
+          method: 'POST',
+          headers: { Origin: origin, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ticket: issued.ticket }),
+        });
+      const redeemed = await exchange();
+      const result = await redeemed.json();
+      assert.equal(redeemed.status, 200, JSON.stringify(result));
+      assert.equal(result.workspaceId, workspace);
+      const regionalCookie = redeemed.headers
+        .getSetCookie()
+        .find((value) => value.startsWith('aw_account='))
+        .split(';')[0];
+      const resources = await fetch(
+        regionOrigin + `/api/portal/v1/workspaces/${workspace}/resources`,
+        { headers: { Origin: origin, Cookie: regionalCookie } },
+      );
+      assert.equal(resources.status, 200, await resources.clone().text());
+      const replay = await exchange();
+      assert.equal(replay.status, 401);
+      await replay.body.cancel();
+      const cross = await fetch(
+        origin + `/api/portal/v1/workspaces/${alice.workspaceId}/regional-session-tickets`,
+        { method: 'POST', headers: { Origin: origin, Cookie: cookie } },
+      );
+      assert.notEqual(cross.status, 201);
+      await cross.body.cancel();
+    },
+    configure: async (regionOrigin, controlOrigin, tls, serverTls) => {
       await stop();
       config.regions[0].apiOrigin = regionOrigin;
       config.regionControls = [
         { regionId: regionMetadata.server.authorityId, origin: controlOrigin, tls },
       ];
+      config.regionConnection = {
+        bind: new URL(controlOrigin).host,
+        ...serverTls,
+        allowedRegions: [
+          { regionId: regionMetadata.server.authorityId, certificateFile: tls.certificateFile },
+        ],
+      };
       await writeFile(configFile, JSON.stringify(config), { mode: 0o600 });
       await start();
     },
     setDelivery: async (enabled) => {
       await stop();
-      if (enabled) config.regionControls = savedControls;
-      else {
+      if (enabled) {
+        config.regionControls = savedControls;
+        config.regionConnection = savedRegionConnection;
+      } else {
         savedControls = config.regionControls;
+        savedRegionConnection = config.regionConnection;
         config.regionControls = [];
+        delete config.regionConnection;
       }
       await writeFile(configFile, JSON.stringify(config), { mode: 0o600 });
       await start();

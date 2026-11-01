@@ -35,6 +35,17 @@ test(
     let a = await f.service('a');
     const b = await f.service('b');
     const s = scope('region:a');
+    const system = {
+      authorityId: 'region:a',
+      ownerKind: 'system',
+      ownerId: 'control-plane',
+      family: 'runtime-state',
+      partitionId: 'security-clock',
+    };
+    const key = 'time-floor';
+    await a.client.call(commit(system, [change(key, { floor: 123 })]));
+    assert.equal((await a.client.call(get(s, [key]))).records[key], null);
+    await assert.rejects(b.client.call(get(system, [key])), { code: 'META_AUTHORITY_MISMATCH' });
     await assert.rejects(
       createMetaClient({ ...a.clientConfig, tokenFile: b.clientConfig.tokenFile }),
       { code: 'META_UNAUTHORIZED' },
@@ -74,6 +85,7 @@ test(
     a.client.close();
     a = await f.service('a', { previous: a, recoverOwner: owner });
     assert.deepEqual(await a.client.call(get(s, ['resources/one', 'resources/two'])), before);
+    assert.deepEqual((await a.client.call(get(system, [key]))).records[key].value, { floor: 123 });
     assert.equal(
       (await a.client.call({ op: 'resolve', scope: s, mutationId: input.mutationId })).outcome,
       'committed',

@@ -16,6 +16,7 @@ type RegionalIdentity = {
   thumbprint: string;
   nonce: string;
   expiresAt: number;
+  connectionBinding?: string;
 };
 export type RegionalSession = RegionalIdentity & {
   state: 'ready';
@@ -34,6 +35,8 @@ export type AgentConnectionOptions = {
   proofKey: CryptoKeyPair;
   secrets: RegionalSecretStore;
   fetcher?: typeof fetch;
+  expectedEndpoint?: RegionEndpoint;
+  discoverWorkspaceFromKey?: boolean;
 };
 function base64url(bytes: Uint8Array): string {
   let value = '';
@@ -59,6 +62,17 @@ function expiry(value: unknown): number {
 /** Cached refresh credentials and routes use Region directly, including during Global outage. */
 export async function connectAgentWorkspace(options: AgentConnectionOptions) {
   const fetcher = options.fetcher ?? fetch;
+  const checkedEndpoint = (endpoint: RegionEndpoint) => {
+    const checked = validateRegionEndpoint(endpoint, options.trustedRegionOrigins);
+    if (
+      options.expectedEndpoint &&
+      (checked.regionId !== options.expectedEndpoint.regionId ||
+        checked.apiOrigin !== options.expectedEndpoint.apiOrigin ||
+        checked.apiPathPrefix !== options.expectedEndpoint.apiPathPrefix)
+    )
+      throw new Error('Region route does not match Global issuance.');
+    return checked;
+  };
   if (
     options.proofKey.privateKey.type !== 'private' ||
     options.proofKey.privateKey.algorithm.name !== 'Ed25519' ||
@@ -155,7 +169,7 @@ export async function connectAgentWorkspace(options: AgentConnectionOptions) {
       throw new Error('Cached regional identity mismatch.');
     stored = {
       ...stored,
-      endpoint: validateRegionEndpoint(stored.endpoint, options.trustedRegionOrigins),
+      endpoint: checkedEndpoint(stored.endpoint),
     };
   } else {
     if (!options.workspaceKey || /\s/.test(options.workspaceKey))
@@ -165,14 +179,25 @@ export async function connectAgentWorkspace(options: AgentConnectionOptions) {
       options.trustedGlobalOrigins,
       fetcher,
     );
-    const issuance = await global.POST('/api/v1/workspaces/{workspaceId}/token-issuances', {
-      params: { path: { workspaceId: options.workspaceId } },
-      headers: { Authorization: `Bearer ${options.workspaceKey}` },
-      body: { audience: options.regionId, clientThumbprint: thumbprint },
-    });
+    const issuance = options.discoverWorkspaceFromKey
+      ? await global.POST('/api/v1/token-issuances', {
+          headers: { Authorization: `Bearer ${options.workspaceKey}` },
+          body: { audience: 'region', clientThumbprint: thumbprint },
+        })
+      : await global.POST('/api/v1/workspaces/{workspaceId}/token-issuances', {
+          params: { path: { workspaceId: options.workspaceId } },
+          headers: { Authorization: `Bearer ${options.workspaceKey}` },
+          body: { audience: options.regionId, clientThumbprint: thumbprint },
+        });
     if (issuance.error) throw new Error(issuance.error.error.code);
     const value = issuance.data;
-    if (!value || !('enrollmentTicket' in value) || value.region.regionId !== options.regionId)
+    if (
+      !value ||
+      !('enrollmentTicket' in value) ||
+      value.region.regionId !== options.regionId ||
+      (options.discoverWorkspaceFromKey &&
+        (!('workspaceId' in value) || value.workspaceId !== options.workspaceId))
+    )
       throw new Error('Regional enrollment result required.');
     stored = {
       state: 'enrolling',
@@ -180,7 +205,7 @@ export async function connectAgentWorkspace(options: AgentConnectionOptions) {
       regionId: options.regionId,
       principalId: value.principalId,
       keyId: value.keyId,
-      endpoint: validateRegionEndpoint(value.region, options.trustedRegionOrigins),
+      endpoint: checkedEndpoint(value.region),
       thumbprint,
       enrollmentTicket: value.enrollmentTicket,
       nonce: value.nonce,
@@ -269,4 +294,144 @@ export async function connectAgentWorkspace(options: AgentConnectionOptions) {
     endpoint: session.endpoint,
     renew,
   };
+}
+
+/** Only Global is configured. Region routing and Token exchange stay inside the client. */
+export async function connectAgent(options: {
+  endpoint: string;
+  key: string;
+  fetcher?: typeof fetch;
+  proofKey?: CryptoKeyPair;
+  secrets?: RegionalSecretStore;
+}) {
+  const fetcher = options.fetcher ?? fetch;
+  if (!options.key || /\s/.test(options.key)) throw new Error('Workspace Key required.');
+  const globalUrl = new URL(options.endpoint);
+  if (globalUrl.username || globalUrl.password || globalUrl.search || globalUrl.hash)
+    throw new Error('Untrusted Global endpoint.');
+  const endpointPath = globalUrl.pathname.replace(/\/$/, '');
+  if (!endpointPath.endsWith('/api')) throw new Error('The API endpoint must end in /api.');
+  const globalEndpoint = globalUrl.origin + endpointPath.slice(0, -4);
+  const global = createGlobalApiClient(globalEndpoint, [globalUrl.origin], fetcher);
+  const bindingKey = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(options.key),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const binding = async (value: RegionalCredentials) => {
+    const identity = [
+      globalEndpoint,
+      value.workspaceId,
+      value.regionId,
+      value.principalId,
+      value.keyId,
+      value.endpoint.apiOrigin,
+      value.endpoint.apiPathPrefix,
+      value.thumbprint,
+      value.state,
+      value.nonce,
+      value.expiresAt,
+      ...(value.state === 'ready'
+        ? [value.familyId, value.refreshCredential]
+        : [value.enrollmentTicket]),
+    ];
+    return base64url(
+      new Uint8Array(
+        await crypto.subtle.sign(
+          'HMAC',
+          bindingKey,
+          new TextEncoder().encode(JSON.stringify(identity)),
+        ),
+      ),
+    );
+  };
+  let memory: RegionalCredentials | undefined;
+  const backing: RegionalSecretStore = options.secrets ?? {
+    async load() {
+      return memory;
+    },
+    async save(value) {
+      memory = value;
+    },
+  };
+  const secrets: RegionalSecretStore = {
+    async load() {
+      const value = await backing.load();
+      if (value && value.connectionBinding !== (await binding(value)))
+        throw new Error('Cached connection belongs to a different Global endpoint or Key.');
+      return value;
+    },
+    async save(value) {
+      await backing.save({ ...value, connectionBinding: await binding(value) });
+    },
+  };
+  const cached = await secrets.load();
+  if (cached && !options.proofKey)
+    throw new Error('The saved regional session requires its original client proof key.');
+  const proofKey =
+    options.proofKey ?? (await crypto.subtle.generateKey('Ed25519', false, ['sign', 'verify']));
+  let workspaceId: string;
+  let endpoint: RegionEndpoint;
+  if (cached) {
+    workspaceId = cached.workspaceId;
+    endpoint = cached.endpoint;
+  } else {
+    const issuance = await global.POST('/api/v1/token-issuances', {
+      headers: { Authorization: `Bearer ${options.key}` },
+      body: { audience: 'global' },
+    });
+    if (issuance.error) throw new Error(issuance.error.error.code);
+    const token = issuance.data;
+    if (!token || !('workspaceId' in token)) throw new Error('Global discovery failed.');
+    workspaceId = token.workspaceId;
+    const response = await fetcher(
+      `${globalEndpoint}/api/v1/workspaces/${encodeURIComponent(workspaceId)}/region-route`,
+      {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token.accessToken}` },
+        redirect: 'manual',
+        credentials: 'omit',
+      },
+    );
+    if (response.status !== 307) throw new Error('Global Region routing unavailable.');
+    const location = response.headers.get('Location');
+    const regionId = response.headers.get('X-Region-Id');
+    if (!location || !regionId) throw new Error('Invalid Global Region redirect.');
+    const target = new URL(location);
+    const loopback = ['127.0.0.1', 'localhost', '[::1]'];
+    if (
+      target.search ||
+      target.hash ||
+      target.username ||
+      target.password ||
+      (loopback.includes(target.hostname) && !loopback.includes(globalUrl.hostname)) ||
+      (target.protocol !== 'https:' &&
+        !(
+          target.protocol === 'http:' &&
+          loopback.includes(target.hostname) &&
+          loopback.includes(globalUrl.hostname)
+        ))
+    )
+      throw new Error('Untrusted Region redirect.');
+    endpoint = validateRegionEndpoint(
+      { regionId, apiOrigin: target.origin, apiPathPrefix: target.pathname.replace(/\/$/, '') },
+      [target.origin],
+    );
+  }
+  const connected = await connectAgentWorkspace({
+    globalOrigin: globalEndpoint,
+    trustedGlobalOrigins: [globalUrl.origin],
+    trustedRegionOrigins: [endpoint.apiOrigin],
+    expectedEndpoint: endpoint,
+    discoverWorkspaceFromKey: true,
+    workspaceId,
+    regionId: endpoint.regionId,
+    workspaceKey: options.key,
+    proofKey,
+    secrets,
+    fetcher,
+  });
+  return { client: connected.client, workspaceId, renew: connected.renew };
 }

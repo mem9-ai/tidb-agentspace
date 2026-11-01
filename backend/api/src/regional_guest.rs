@@ -71,6 +71,9 @@ fn cookie(headers: &HeaderMap) -> Result<&str> {
 }
 
 impl RegionalGuest {
+    pub(crate) async fn local_guest_expiry(&self, workspace: &str) -> Result<Option<i64>> {
+        self.sessions.local_guest_expiry(workspace).await
+    }
     pub fn has_cookie(headers: &HeaderMap) -> bool {
         headers
             .get_all(COOKIE)

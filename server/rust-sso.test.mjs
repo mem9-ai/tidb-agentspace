@@ -168,6 +168,17 @@ async function fixture(t, overrides = {}, managed = false, stripPublicPrefix = f
     },
     ...overrides,
   };
+  if (managed === 'localGuestGlobal') {
+    const localOrigin = `http://127.0.0.1:${listen}`;
+    config.publicOrigins = [localOrigin];
+    config.consoleOrigins = [localOrigin];
+    config.sso = {
+      issuer,
+      clientId: 'native-client',
+      redirectUri: `${localOrigin}/studio/api/auth/tidbcloud/callback`,
+      allowLoopbackHttp: true,
+    };
+  }
   const file = resolve(metadata.directory, 'api.json');
   const plan = resolve(metadata.directory, 'plan.json');
   const services = [];
@@ -186,7 +197,7 @@ async function fixture(t, overrides = {}, managed = false, stripPublicPrefix = f
       services.push({ kind: 'metadata', configFile: metaFile });
     }
   }
-  if (managed === 'globalApi') {
+  if (managed === 'globalApi' || managed === 'localGuestGlobal') {
     const { globalApiProfile } = await import('../scripts/global-api-profile.mjs');
     const clockDirectory = resolve(metadata.directory, 'portal-clocks');
     await mkdir(clockDirectory, { mode: 0o700 });
@@ -200,6 +211,8 @@ async function fixture(t, overrides = {}, managed = false, stripPublicPrefix = f
     const controlPort = await port();
     profile.api.security.control.bind = `127.0.0.1:${controlPort}`;
     profile.global.regionControls[0].origin = `https://127.0.0.1:${controlPort}`;
+    profile.api.security.regionConnection.origin = `https://127.0.0.1:${controlPort}`;
+    profile.global.regionConnection.bind = `127.0.0.1:${controlPort}`;
     Object.assign(config, profile.api);
     const globalFile = resolve(metadata.directory, 'global-api.json');
     await writeFile(globalFile, JSON.stringify(profile.global), { mode: 0o600 });
@@ -235,13 +248,22 @@ async function fixture(t, overrides = {}, managed = false, stripPublicPrefix = f
   const origin = `http://127.0.0.1:${listen}`;
   const request = (path, { method = 'GET', cookie, body, raw, headers = {} } = {}) =>
     new Promise((done, reject) => {
+      if (
+        (cookie || headers.Cookie || headers.cookie) &&
+        !headers.Authorization &&
+        !headers.authorization
+      )
+        path = path.replace('/api/v1/workspaces', '/api/portal/v1/workspaces');
       const req = http.request(
         origin + (stripPublicPrefix ? path.replace(/^\/studio(?=\/)/, '') : path),
         {
           method,
           headers: {
-            Host: 'studio.example.test',
-            Origin: 'https://studio.example.test',
+            Host: managed === 'localGuestGlobal' ? `127.0.0.1:${listen}` : 'studio.example.test',
+            Origin:
+              managed === 'localGuestGlobal'
+                ? `http://127.0.0.1:${listen}`
+                : 'https://studio.example.test',
             ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
             ...(cookie ? { Cookie: cookie } : {}),
             ...headers,
@@ -344,6 +366,7 @@ async function fixture(t, overrides = {}, managed = false, stripPublicPrefix = f
     }
   }
   return {
+    origin,
     request,
     flow,
     callback,
@@ -483,6 +506,155 @@ test(
       });
       if (i === 24) assert.equal(r.status, 429);
     }
+  },
+);
+
+test(
+  'local Guest manages a scoped Global Key without another login and logout denies it',
+  { skip: !enabled, timeout: 120000 },
+  async (t) => {
+    const f = await fixture(t, {}, 'localGuestGlobal');
+    async function guest() {
+      const response = await f.request('/studio/api/auth/guest', { method: 'POST' });
+      assert.equal(response.status, 200, JSON.stringify(response.body));
+      return {
+        workspace: response.body.workspaceId,
+        cookie: response.headers['set-cookie'].find((v) => v.startsWith('aw_guest=')).split(';')[0],
+      };
+    }
+    const first = await guest();
+    const second = await guest();
+    const publicSpec = await f.request('/studio/api/openapi.json');
+    assert.equal(publicSpec.status, 200);
+    assert.equal(publicSpec.body.servers[0].url, f.origin + '/studio/api');
+    assert.ok(publicSpec.body.paths['/v1/token-issuances'].post);
+    const global = '/studio/api/global';
+    const session = (workspace) => `${global}/api/auth/session?workspaceId=${workspace}`;
+    assert.equal((await f.request(session(first.workspace), { cookie: first.cookie })).status, 200);
+    assert.equal(
+      (await f.request(session(second.workspace), { cookie: first.cookie })).status,
+      404,
+    );
+    assert.equal((await f.request(session(first.workspace))).status, 401);
+
+    const path = `${global}/api/v1/workspaces/${first.workspace}`;
+    const created = await f.request(`${path}/keys`, {
+      method: 'POST',
+      cookie: first.cookie,
+      headers: { 'Idempotency-Key': randomUUID() },
+      body: {
+        name: 'guest-agent',
+        scopes: ['resources:read'],
+        resourceIds: ['*'],
+        expiresAt: Math.floor(Date.now() / 1000) + 30 * 86400,
+      },
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.equal(created.body.regionalStatus, 'applied');
+    assert.ok(created.body.data.expiresAt <= Math.floor(Date.now() / 1000) + 86400);
+    assert.equal((await f.request(`${path}/keys`, { cookie: second.cookie })).status, 404);
+    const discovered = await f.request('/studio/api/v1/token-issuances', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${created.body.secret}` },
+      body: { audience: 'global' },
+    });
+    assert.equal(discovered.status, 201, JSON.stringify(discovered.body));
+    assert.equal(discovered.body.workspaceId, first.workspace);
+    const stripped = await f.request('/api/v1/token-issuances', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${created.body.secret}` },
+      body: { audience: 'global' },
+    });
+    assert.equal(stripped.status, 201, JSON.stringify(stripped.body));
+    assert.equal(stripped.body.workspaceId, first.workspace);
+    assert.equal(
+      (
+        await f.request(`/api/v1/workspaces/${first.workspace}/region-route`, {
+          headers: { Authorization: `Bearer ${stripped.body.accessToken}` },
+        })
+      ).status,
+      307,
+    );
+    assert.match(discovered.headers.location, /^\/studio\/api\/v1\/workspaces\/[^/]+\/issuances\//);
+    assert.equal(
+      (
+        await f.request(discovered.headers.location, {
+          headers: { Authorization: `Bearer ${discovered.body.accessToken}` },
+        })
+      ).status,
+      200,
+    );
+    const route = await f.request(`/studio/api/v1/workspaces/${first.workspace}/region-route`, {
+      headers: { Authorization: `Bearer ${discovered.body.accessToken}` },
+    });
+    assert.equal(route.status, 307);
+    assert.equal(route.headers['x-region-id'], 'region:native-sso');
+    assert.match(route.headers.location, /^http:\/\/127\.0\.0\.1:\d+\/studio$/);
+    assert.notEqual(
+      (
+        await f.request(`/studio/api/v1/workspaces/${second.workspace}/region-route`, {
+          headers: { Authorization: `Bearer ${discovered.body.accessToken}` },
+        })
+      ).status,
+      307,
+    );
+    const directIssuance = await f.request('/studio/api/v1/token-issuances', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${created.body.secret}` },
+      body: { audience: 'region' },
+    });
+    assert.equal(directIssuance.status, 201, JSON.stringify(directIssuance.body));
+    assert.equal(directIssuance.body.workspaceId, first.workspace);
+    assert.equal(directIssuance.body.region.regionId, 'region:native-sso');
+    assert.equal(
+      route.headers.location,
+      directIssuance.body.region.apiOrigin + directIssuance.body.region.apiPathPrefix,
+    );
+    const { connectWorkspace } = await import('../src/generated/workspace-agent.mjs');
+    const client = await connectWorkspace({
+      endpoint: f.origin + '/studio/api',
+      apiKey: created.body.secret,
+    });
+    assert.ok(Array.isArray((await client.listResources()).data));
+    assert.notEqual(
+      (
+        await f.request(`${path}/region-route`, {
+          headers: { Authorization: `Bearer ${created.body.secret}` },
+        })
+      ).status,
+      307,
+    );
+    const exchange = () =>
+      f.request(`${path}/token-issuances`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${created.body.secret}` },
+        body: { audience: 'region:native-sso' },
+      });
+    const issued = await exchange();
+    assert.equal(issued.status, 201, JSON.stringify(issued.body));
+    const resources = `/studio/api/v1/workspaces/${first.workspace}/resources`;
+    assert.equal(
+      (
+        await f.request(resources, {
+          headers: { Authorization: `Bearer ${issued.body.accessToken}` },
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await f.request('/studio/api/auth/guest/logout', { method: 'POST', cookie: first.cookie }))
+        .status,
+      200,
+    );
+    assert.notEqual((await exchange()).status, 201);
+    assert.notEqual(
+      (
+        await f.request(resources, {
+          headers: { Authorization: `Bearer ${issued.body.accessToken}` },
+        })
+      ).status,
+      200,
+    );
   },
 );
 
@@ -667,11 +839,13 @@ test(
       const c = JSON.parse(await readFile(path));
       c.bind = `127.0.0.1:${listen}`;
       if (c.security) {
-        c.security.clockDirectory = resolve(directory, 'region-clock');
+        assert.equal(c.security.metadataSecurityState, true);
+        assert.equal(c.security.clockDirectory, undefined);
         c.security.initializeClock = name.endsWith('bootstrap');
         c.security.control.bind = `127.0.0.1:${await port()}`;
       } else {
-        c.clockDirectory = resolve(directory, 'global-clock');
+        assert.equal(c.metadataSecurityState, true);
+        assert.equal(c.clockDirectory, undefined);
         c.initializeClock = name.endsWith('bootstrap');
       }
       await writeFile(path, JSON.stringify(c), { mode: 0o600 });
@@ -700,6 +874,9 @@ test(
     } finally {
       await new Promise((done) => occupied.close(done));
     }
+    const { access } = await import('node:fs/promises');
+    await assert.rejects(access(resolve(directory, 'global-clock')), { code: 'ENOENT' });
+    await assert.rejects(access(resolve(directory, 'region-clock')), { code: 'ENOENT' });
     // Node fetch rewrites Host; use an actual HTTP request to exercise trusted ingress.
     const publicRequest = (path, options = {}) =>
       new Promise((done, reject) => {

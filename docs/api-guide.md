@@ -1,26 +1,95 @@
 # Use the Workspace API
 
-The Console’s **API documentation** page uses your actual Global/Region endpoints and
-resource IDs. It includes copyable cURL (curl + jq), Node.js 24 and Python examples and a
-searchable reference for every generated operation. Its read-only playground uses your
-Workspace Owner session to inspect current data; agent examples use Region Tokens. Both schemas are downloadable independently:
-[Global OpenAPI](../public/global-openapi.json), [Region OpenAPI](../public/openapi.json).
-Examples use environment variables; inject credentials from application secret storage.
+The Console’s **API documentation** page provides your endpoint, agent instructions, a
+downloadable JavaScript client and a searchable reference. Its read-only playground uses
+your signed-in Workspace session. Keep API keys in environment variables or secret storage.
+
+A Workspace has a `defaultRegionId` and each resource reports its own `regionId`. Initially,
+only the Workspace's default Region is available. The existing resource `region` field is the
+provider's data location, which may be `automatic`; it is separate from `regionId`. Existing
+resources and provider credentials remain in place. Use the same single endpoint and Key for
+the client below; you do not need to configure a Region URL.
+
+## Start with one endpoint
+
+New Workspace Keys allow an agent to start with only the Global API base URL and Key. The
+downloadable Node.js client handles discovery, redirects and Token renewal. Download
+`workspace-agent.mjs` from the Portal into your project:
+
+```js
+import { connectWorkspace } from './workspace-agent.mjs';
+
+const workspace = await connectWorkspace({
+  endpoint: process.env.WORKSPACE_ENDPOINT,
+  apiKey: process.env.WORKSPACE_API_KEY,
+});
+console.log(await workspace.listResources());
+```
+
+Only Global receives the Key. The client first exchanges it for a Global Token and sends a
+bodyless request to the Global Region route. It reads the 307 without automatically following
+it, checks the target and compares it with the Region descriptor returned by authenticated
+Global issuance, and sends data only to that Region. The redirect contains no credential. A
+Global outage does not affect an already enrolled client's Region requests or local renewal.
+
+By default the proof key and refresh state are in memory, so a process restart needs Global.
+To reconnect after restart without Global, supply both the same Ed25519 `proofKey` and an
+application-owned `RegionalSecretStore`; keep both in protected storage. The persisted route and
+credentials are integrity-bound to the Global endpoint and Key. Browser Fetch may make a
+cross-origin manual redirect opaque; this client flow is intended for Node.js rather than
+cross-origin browser execution. It is a downloadable file, not a published npm package.
+
+Keys issued before Workspace hints were introduced continue to work with the Workspace-scoped
+Token endpoint below. To use the single-endpoint flow with one of those Keys, rotate it or
+create a replacement; no existing Key, resource or provider credential is deleted.
+
+<details>
+<summary>Direct HTTP integration</summary>
+
+For direct HTTP use, send the Key only to Global, and do not automatically follow a redirect
+with credentials. The following keeps routing inside shell variables rather than requiring a
+configured Region address. `curl` here does not use `--location`:
+
+```sh
+export WORKSPACE_ENDPOINT='https://workspace.example.test/api'
+# WORKSPACE_API_KEY comes from protected application storage.
+GLOBAL=$(curl --fail-with-body -sS "$WORKSPACE_ENDPOINT/v1/token-issuances" \
+  -H "Authorization: Bearer $WORKSPACE_API_KEY" -H 'Content-Type: application/json' \
+  -d '{"audience":"global"}')
+WORKSPACE_ID=$(printf '%s' "$GLOBAL" | jq -er '.workspaceId')
+GLOBAL_TOKEN=$(printf '%s' "$GLOBAL" | jq -er '.accessToken')
+ROUTE_HEADERS=$(curl -sS -D - -o /dev/null \
+  "$WORKSPACE_ENDPOINT/v1/workspaces/$WORKSPACE_ID/region-route" \
+  -H "Authorization: Bearer $GLOBAL_TOKEN")
+test "$(printf '%s\n' "$ROUTE_HEADERS" | awk '/^HTTP\// {code=$2} END {print code}')" = 307 || exit 1
+REGION_API=$(printf '%s\n' "$ROUTE_HEADERS" | awk 'tolower($1)=="location:" {print $2}' | tr -d '\r')
+REGION_TOKEN_RESPONSE=$(curl --fail-with-body -sS "$WORKSPACE_ENDPOINT/v1/token-issuances" \
+  -H "Authorization: Bearer $WORKSPACE_API_KEY" -H 'Content-Type: application/json' \
+  -d '{"audience":"region"}')
+EXPECTED_REGION=$(printf '%s' "$REGION_TOKEN_RESPONSE" | jq -er '.region.apiOrigin + .region.apiPathPrefix')
+case "$REGION_API" in https://*) ;; *) exit 1 ;; esac
+test "$REGION_API" = "$EXPECTED_REGION" || exit 1
+REGION_TOKEN=$(printf '%s' "$REGION_TOKEN_RESPONSE" | jq -er '.accessToken')
+curl --fail-with-body "$REGION_API/api/v1/workspaces/$WORKSPACE_ID/context" \
+  -H "Authorization: Bearer $REGION_TOKEN"
+```
+
+</details>
 
 ## Authentication and endpoints
 
-| Authority | Credential                             | Responsibilities                                                                    |
-| --------- | -------------------------------------- | ----------------------------------------------------------------------------------- |
-| Global    | Verified Global Owner cookie           | Create, list, inspect, renew, rotate and revoke Keys; observe/retry policy delivery |
-| Global    | Workspace Key, only on Token issuance  | Obtain a short-lived Token for `global` or the granted Region                       |
-| Global    | Global-audience access Token           | Discover authorized Regions and inspect its own issuance                            |
-| Region    | Region-audience access Token           | Context, resources, SQL, files, analysis, imports and exports                       |
-| Region    | Client-bound refresh credential + DPoP | Rotate local refresh credentials and issue Region Tokens                            |
-| Region    | Regional Owner/account/Guest cookie    | Interactive operations allowed to that identity; not Global Key management          |
+| Authority | Credential                             | Responsibilities                                                           |
+| --------- | -------------------------------------- | -------------------------------------------------------------------------- |
+| Portal    | Verified user session                  | Create, list, inspect, renew, rotate and revoke Keys; manage the Workspace |
+| Global    | Workspace Key, only on Token issuance  | Obtain a short-lived Token for `global` or the granted Region              |
+| Global    | Global-audience access Token           | Discover authorized Regions and inspect its own issuance                   |
+| Region    | Region-audience access Token           | Context, resources, SQL, files, analysis, imports and exports              |
+| Region    | Client-bound refresh credential + DPoP | Rotate local refresh credentials and issue Region Tokens                   |
+| Portal    | Regional Owner/account/Guest session   | Interactive resource operations allowed to that identity                   |
 
 A Key is never a Region data credential. Region returns `EXCHANGE_KEY_AT_GLOBAL` for new
-raw Keys and rejects retired direct Keys. Regional `/keys` endpoints are removed. Public
-Key management uses `/api/v1/workspaces/{workspaceId}/keys` at **Global**. Provider/native
+raw Keys and rejects retired direct Keys. Regional `/keys` endpoints are removed. Portal
+Key management uses `/api/portal/v1/workspaces/{workspaceId}/keys` at **Global**. Provider/native
 credentials remain private. API keys cannot administer other Keys or acquire Owner privileges.
 Hosted Owner sign-in uses the configured OIDC client and ready Global Directory membership.
 On the bundled cloud deployment, sign in to Portal once. Its existing TiDB Account callback
@@ -31,25 +100,9 @@ for Key management. Region Tokens remain independent of browser cookies.
 A Guest Workspace is not a Global Owner account. Explicit local development profiles can use
 `POST Global /api/session` only from a real loopback peer with a trusted Origin; hosted deployments reject this mode.
 
-Set `GLOBAL_API` to the Global base URL and `REGION_API` to the Region base URL, including
-any deployment prefix. Independently deployed services may use different domains. A shared
-hosted listener typically uses `https://HOST/studio/api/global` for Global and
-`https://HOST/studio` for Region. Do not append `/api/v1` to these base variables.
-`GET Region /api/auth/config` exposes the configured `globalApi` and `regionId` without
-contacting Global. Global data-proxy endpoints do not exist.
-
-```sh
-export GLOBAL_API='https://global.example.test'
-export REGION_API='https://region.example.test'
-export WORKSPACE_ID='YOUR_WORKSPACE_ID'
-export REGION_ID='region:YOUR_REGION'
-# WORKSPACE_API_KEY is injected by your secret manager.
-TOKEN=$(curl --fail-with-body -sS "$GLOBAL_API/api/v1/workspaces/$WORKSPACE_ID/token-issuances" \
-  -H "Authorization: Bearer $WORKSPACE_API_KEY" -H 'Content-Type: application/json' \
-  -d "{\"audience\":\"$REGION_ID\"}" | jq -er '.accessToken')
-curl --fail-with-body "$REGION_API/api/v1/workspaces/$WORKSPACE_ID/context" \
-  -H "Authorization: Bearer $TOKEN"
-```
+Configure only the Workspace API endpoint and Key. The client discovers and verifies its data
+destination. The optional direct-HTTP example above derives its Region variables automatically;
+users do not configure a second endpoint.
 
 A short-lived Region issuance returns `accessToken`, `tokenType: "Bearer"`, Unix-second
 `expiresAt`, `keyId`, `keyVersion`, `principalId`, `scopes`, and a `region` descriptor.
@@ -57,7 +110,7 @@ Without `clientThumbprint` it does not create a refresh family. Tokens last at m
 and never outlive the actual parent Key expiry. Use `audience: "global"` in a separate exchange
 for Global `/regions` discovery; a Region Token is not valid at Global.
 
-For long-running agents, [the repository client](../src/api/agent-client.ts) accepts an
+For long-running agents, the downloadable client accepts an
 Ed25519 `CryptoKeyPair` and a `RegionalSecretStore` implemented using your application’s
 protected storage. Initial Global issuance includes the public JWK thumbprint; the SDK enrolls
 its returned one-use ticket at Region. It stores refresh credentials/nonces atomically, caches
@@ -126,8 +179,9 @@ List/detail never return the secret. Replaying a secret-producing request does n
 second copy. Create returns the one-time secret; store it before leaving the page.
 `regionalStatus: "pending"` means Region has not acknowledged policy application. Global
 revocation blocks issuance immediately; Region rejects access after receiving the new policy.
-Do not describe pending delivery as immediate Region revocation. Use a durable policy-delivery
-resource to explicitly reconcile, including for revoked Keys; GET never retries an effect.
+Do not describe pending delivery as immediate Region revocation. The Region connection profile
+reconciles persisted pending policy changes after reconnection; an explicit policy-delivery
+operation remains available for inspection/retry. GET never retries an effect.
 
 Errors have `{ "error": { "code", "message", "requestId" } }`:
 

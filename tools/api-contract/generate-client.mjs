@@ -5,11 +5,11 @@ import openapiTS, { astToString } from 'openapi-typescript';
 import { format, resolveConfig } from 'prettier';
 
 for (const [input, output] of [
-  ['openapi.json', 'schema.d.ts'],
-  ['global-openapi.json', 'global-schema.d.ts'],
+  ['portal-regional-openapi.json', 'schema.d.ts'],
+  ['portal-global-openapi.json', 'global-schema.d.ts'],
 ]) {
   const target = new URL('../../src/api/' + output, import.meta.url);
-  const schema = new URL('../../public/' + input, import.meta.url);
+  const schema = new URL(input, import.meta.url);
   const rendered = await format(
     astToString(
       await openapiTS(schema, {

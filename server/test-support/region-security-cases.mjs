@@ -9,7 +9,7 @@ import { generateKeyPair, exportJWK, calculateJwkThumbprint, SignJWT } from 'jos
 import { metadataCertificates } from './meta-tls.mjs';
 import { providerFixture } from './provider-fixture.mjs';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { connectAgentWorkspace } from '../../src/api/agent-client.ts';
+import { connectAgent } from '../../src/api/agent-client.ts';
 const contract = JSON.parse(
   await readFile(new URL('../../public/openapi.json', import.meta.url), 'utf8'),
 );
@@ -60,7 +60,8 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
     await provider.close();
   });
   const listen = await port(),
-    controlPort = await port();
+    controlPort = await port(),
+    unusedLegacyControlPort = await port();
   const origin = `http://127.0.0.1:${listen}`;
   const certificates = await metadataCertificates(fixture.directory);
   const keys = generateKeyPairSync('ed25519');
@@ -79,7 +80,7 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
     workspaceId: workspace,
     authorityId: metadata.server.authorityId,
     insecureLoopback: true,
-    consoleOrigins: [],
+    consoleOrigins: [global.origin],
     publicOrigins: [origin],
     metadata: { transport: 'remote', client: metadata.clientConfig },
     product: {
@@ -102,14 +103,15 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
       regionalSignerId: 'region-fixture',
       regionalSigningKeyFile: signing,
       regionalPublicKeyFile: publicFile,
-      clockDirectory: resolve(fixture.directory, 'regional-security-clock'),
+      metadataSecurityState: true,
       initializeClock: true,
       accessTokenTtl: 3,
       control: {
-        bind: `127.0.0.1:${controlPort}`,
+        bind: `127.0.0.1:${unusedLegacyControlPort}`,
         ...certificates.server,
         globalClientCertificates: [certificates.client.certificateFile],
       },
+      regionConnection: { origin: `https://127.0.0.1:${controlPort}`, tls: certificates.client },
     },
   };
   const configFile = resolve(fixture.directory, 'regional-security.json'),
@@ -159,7 +161,11 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
     route,
     { method = 'GET', body, token, proof, raw, workspaceId = workspace } = {},
   ) => {
-    const r = await fetch(origin + `/api/v1/workspaces/${workspaceId}` + route, {
+    const securityRoute = ['/refresh-families', '/token-issuances', '/access-tokens'].some(
+      (prefix) => route.startsWith(prefix),
+    );
+    const api = token || securityRoute ? '/api/v1' : '/api/portal/v1';
+    const r = await fetch(origin + `${api}/workspaces/${workspaceId}` + route, {
       method,
       redirect: 'error',
       headers: {
@@ -198,7 +204,13 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
     }
     return { status: r.status, body: value };
   };
-  await global.configure(origin, `https://127.0.0.1:${controlPort}`, certificates.client);
+  await global.configure(
+    origin,
+    `https://127.0.0.1:${controlPort}`,
+    certificates.client,
+    certificates.server,
+  );
+  const onboarded = await global.firstLogin();
   const setupKey = await global.request('/keys', {
     method: 'POST',
     headers: { 'Idempotency-Key': randomUUID() },
@@ -225,6 +237,7 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   });
   assert.equal(mysql.status, 201, JSON.stringify(mysql.body));
   assert.equal(mysql.body.data.status, 'active');
+  assert.equal(mysql.body.data.regionId, metadata.server.authorityId);
   const fs = await request('/resources', {
     method: 'POST',
     token: 'Bearer ' + setupAccess.body.accessToken,
@@ -232,6 +245,23 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   });
   assert.equal(fs.status, 201, JSON.stringify(fs.body));
   assert.equal(fs.body.data.status, 'active');
+  assert.equal(fs.body.data.regionId, metadata.server.authorityId);
+  assert.equal(
+    (await request('', { token: 'Bearer ' + setupAccess.body.accessToken })).body.data
+      .defaultRegionId,
+    metadata.server.authorityId,
+  );
+  const misplaced = await request('/resources', {
+    method: 'POST',
+    token: 'Bearer ' + setupAccess.body.accessToken,
+    body: {
+      kind: 'mysql',
+      name: 'wrong-region',
+      region: 'automatic',
+      regionId: 'region:elsewhere',
+    },
+  });
+  assert.equal(misplaced.status, 400);
   const resources = [mysql.body.data.id, fs.body.data.id];
   assert.equal((await request('/keys', { method: 'POST', body: {} })).status, 404);
   assert.equal(
@@ -268,6 +298,7 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   config.managedWorkspaceLimit = 16;
   config.security.initializeClock = false;
   await start();
+  await global.verifyPortalSession(onboarded, origin);
   assert.equal(
     (await request('/resources', { token: 'Bearer retired-workspace-key' })).status,
     401,
@@ -304,7 +335,12 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
       .status,
     403,
   );
-  await global.configure(origin, `https://127.0.0.1:${controlPort}`, certificates.client);
+  await global.configure(
+    origin,
+    `https://127.0.0.1:${controlPort}`,
+    certificates.client,
+    certificates.server,
+  );
   assert.equal((await deliver()).body.data.regionalStatus, 'applied');
   assert.equal(
     (await globalRequest('/key-policy-deliveries/' + deliveryId)).body.data.regionalStatus,
@@ -313,6 +349,46 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   assert.equal(
     (await globalRequest('/key-revocations/' + revokedPending.body.id)).body.data.regionalStatus,
     'applied',
+  );
+  const reconnectKey = await globalRequest('/keys', {
+    method: 'POST',
+    body: {
+      scopes: ['resources:read'],
+      resourceIds: resources,
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    },
+    headers: { 'Idempotency-Key': randomUUID() },
+  });
+  assert.equal(reconnectKey.status, 201, JSON.stringify(reconnectKey.body));
+  assert.equal(reconnectKey.body.regionalStatus, 'applied');
+  await stop();
+  const disconnectedRevoke = await globalRequest('/keys/' + reconnectKey.body.data.keyId, {
+    method: 'DELETE',
+    headers: { 'Idempotency-Key': randomUUID(), 'If-Match': '"1"' },
+  });
+  assert.equal(disconnectedRevoke.status, 202);
+  assert.equal(disconnectedRevoke.body.regionalStatus, 'pending');
+  // The reconciliation intent must survive Global process restart while Region is offline.
+  await global.configure(
+    origin,
+    `https://127.0.0.1:${controlPort}`,
+    certificates.client,
+    certificates.server,
+  );
+  await start();
+  await until(async () => {
+    const state = await globalRequest('/keys/' + reconnectKey.body.data.keyId);
+    assert.equal(state.body.regionalStatus, 'applied');
+  });
+  assert.equal(
+    (
+      await globalRequest('/token-issuances', {
+        method: 'POST',
+        token: reconnectKey.body.secret,
+        body: { audience: metadata.server.authorityId },
+      })
+    ).status,
+    401,
   );
   assert.equal(
     (
@@ -578,12 +654,8 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   assert.equal(sdkKey.status, 201, JSON.stringify(sdkKey.body));
   assert.equal(sdkKey.body.regionalStatus, 'applied');
   const sdkOptions = {
-    globalOrigin: global.origin,
-    trustedGlobalOrigins: [global.origin],
-    trustedRegionOrigins: [origin],
-    workspaceId: workspace,
-    regionId: metadata.server.authorityId,
-    workspaceKey: sdkKey.body.secret,
+    endpoint: global.origin + '/api',
+    key: sdkKey.body.secret,
     proofKey: client,
     secrets: {
       load: async () => saved && structuredClone(saved),
@@ -607,7 +679,7 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
       return fetch(r);
     },
   };
-  const agent = await connectAgentWorkspace(sdkOptions);
+  const agent = await connectAgent(sdkOptions);
   const beforeConcurrentRefresh = refreshCalls;
   await Promise.all([agent.renew(), agent.renew(), agent.renew()]);
   assert.equal(refreshCalls - beforeConcurrentRefresh, 1);
@@ -643,6 +715,15 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   const expired = await request('/resources', { token: 'Bearer ' + token });
   assert.equal(expired.status, 401);
   token = await renew();
+  assert.equal(
+    (await request('', { token: 'Bearer ' + token })).body.data.defaultRegionId,
+    metadata.server.authorityId,
+  );
+  const regionResources = await request('/resources', { token: 'Bearer ' + token });
+  assert.equal(regionResources.status, 200);
+  assert.ok(
+    regionResources.body.data.every((item) => item.regionId === metadata.server.authorityId),
+  );
   await data('Bearer ' + token);
   await renewOther();
   await sdkData(agent);
@@ -658,7 +739,7 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
     401,
   );
   await renewOther();
-  const resumed = await connectAgentWorkspace({ ...sdkOptions, workspaceKey: undefined });
+  const resumed = await connectAgent(sdkOptions);
   await sdkData(resumed);
   assert.equal(globalCalls, beforeOutageCalls);
   assert.deepEqual(provider.nativeCreates, creates);

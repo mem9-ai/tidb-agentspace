@@ -723,7 +723,7 @@ mod pool_concurrency_tests {
                         let values = keys.into_iter().map(|key| {
                             let value = match key.as_str() {
                                 "system/writer" => self.writers.lock().unwrap().get(&scope.owner_id).cloned().unwrap_or(Value::Null),
-                                "state/workspace" if self.seeded.contains(&scope.owner_id) => json!({"version":"core","value":{"id":scope.owner_id}}),
+                                "state/workspace" if self.seeded.contains(&scope.owner_id) => json!({"version":"core","value":{"id":scope.owner_id,"defaultRegionId":REGION}}),
                                 "ownership/onboarding" if self.seeded.contains(&scope.owner_id) => json!({"version":"onboarding","value":{"workspaceId":scope.owner_id,"userId":USER,"organizationId":ORG}}),
                                 "owner-policy" if self.seeded.contains(&scope.owner_id) => json!({"version":"policy","value":{"workspaceId":scope.owner_id,"regionId":REGION,"userId":USER,"organizationId":ORG,"generation":1,"denied":false,"identity":{"kind":"oidc","issuer":"issuer","subject":"subject"}}}),
                                 _ => Value::Null,

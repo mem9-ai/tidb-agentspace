@@ -28,7 +28,12 @@ async fn main() -> anyhow::Result<()> {
             authority,
         )))
     };
-    let entry = GuestEntry::new(signup, regional, vec!["https://studio.example.test".into()])?;
+    let entry = GuestEntry::new(
+        signup,
+        regional,
+        vec!["https://studio.example.test".into()],
+        false,
+    )?;
     let mut headers = axum::http::HeaderMap::new();
     headers.insert(
         axum::http::header::ORIGIN,

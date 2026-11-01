@@ -28,7 +28,7 @@ and owner-only permissions. Example configuration:
   "signerId": "global-access-1",
   "signingKeyFile": "/srv/private/global-access.der",
   "verificationKeyFile": "/srv/private/global-access.pub",
-  "clockDirectory": "/srv/private/global-clock",
+  "metadataSecurityState": true,
   "initializeClock": false,
   "regions": [
     {
@@ -47,12 +47,12 @@ credentials and retain protected backups; no development test key is a deploymen
 For a separate Global process use the existing `remote` Meta binding with its Global authority
 and authenticated TLS configuration. Never bind Global to Region Meta.
 
-Set `initializeClock` true only for deliberate creation of a new, absent clock directory,
-then change it to false before restart. The private host checkpoint uses an exclusive file
-lock and durable time floor independent of Meta/S3. Missing checkpoints and backward host time
-fail closed; startup never silently recreates them. The host clock and independent checkpoint
-storage are trusted deployment dependencies. This single-host checkpoint is not a claim of
-multi-host consensus or protection against restoring both host storage and S3 to old snapshots.
+Set `initializeClock` true only during deliberate initialization of a new authority, then set
+it to false before restart. `metadataSecurityState:true` stores the clock in Global System State;
+missing state and backward host time fail closed. The bounded time reservation and the effects
+of restoring the entire Meta store are described in [ADR 0040](decisions/0040-system-state-metadata.md).
+Older explicitly configured installations can continue to use their private `clockDirectory`
+until migrated or replaced by an authorized fresh installation.
 
 `publicOrigin` is an exact HTTPS origin for hosted use; HTTP is accepted only on an actual
 loopback listener. Trusted ingress must preserve the configured Host. Global verifies Host,
@@ -60,6 +60,12 @@ Origin and duplicate authentication headers, bounds request size/concurrency/tim
 credential caching and serves its own contract at `/openapi.json`.
 
 ## Owner login and Key operations
+
+Agents can start with the Global base and a new Workspace Key using the
+[single-entry flow](decisions/0041-single-global-entry.md). Global authenticates the
+Key's untrusted Workspace hint and returns a bodyless 307 to the granted Region for a
+Global-token-authorized route request. The client checks the destination before sending a
+Region credential. Older Keys remain valid for the Workspace-scoped issuance flow below.
 
 The bundled cloud profile uses the existing Portal OIDC+PKCE callback at
 `/studio/api/auth/tidbcloud/callback`. After verifying it and completing Global onboarding,
@@ -81,7 +87,8 @@ process-local, single-use and ten-minute bounded. Existing verified Directory ac
 supported; importing or adopting a legacy shared Workspace is not implemented by this role.
 Logout durably revokes the session and clears its cookie.
 
-Key creation/list/detail, version rotation, expiry renewal and revocation are Owner-only.
+Key creation/list/detail, version rotation, expiry renewal and revocation are Owner-only
+Portal operations under `/api/portal/v1/workspaces/{workspaceId}`.
 Mutations require the Global Origin or an explicitly trusted Console Origin and a UUID `Idempotency-Key`; changes also require
 a quoted version `If-Match`. A one-time secret is never retrieved or returned on replay.
 Unknown outcomes must be reconciled without blind secret-producing retries. Exact grants
@@ -123,7 +130,11 @@ cached SDK reconnect without Global. The case now includes a same-secret Key ren
 before the old expiry, cross-version local refresh after that expiry, and separate denial cases
 for fixed expiry, undelivered/late renewal and missing proof. Retired regional Keys are denied and discarded under ADR 0036; resource and provider credential preservation remain acceptance requirements.
 
-With a configured `regionControls` entry, Global signs and durably records exact policy/ceiling
+The `regionConnection` profile accepts an mTLS connection initiated by the Region, verifies a
+pinned Region certificate and an approved advertised endpoint, and sends signed policy over
+that connection. Pending changes are durably recorded for bounded in-process reconciliation
+after reconnection. The older `regionControls` profile remains available for existing setups:
+Global signs and durably records exact policy/ceiling
 intent before initiating TLS 1.3 mTLS to the Region control origin. Each entry contains
 `regionId`, an HTTPS `origin`, and `tls` files (`caFile`, `certificateFile`, `privateKeyFile`).
 The Region pins the exact Global client certificate. Global never proxies data requests.

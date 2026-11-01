@@ -46,10 +46,15 @@ pub struct Config {
     pub regional_signer_id: String,
     pub regional_signing_key_file: PathBuf,
     pub regional_public_key_file: PathBuf,
+    #[serde(default)]
     pub clock_directory: PathBuf,
     #[serde(default)]
     pub initialize_clock: bool,
+    #[serde(default)]
+    pub metadata_security_state: bool,
     pub control: ServerTls,
+    #[serde(default)]
+    pub region_connection: Option<crate::region_connection::ConnectorConfig>,
     #[serde(default = "default_ttl")]
     pub access_token_ttl: i64,
 }
@@ -73,13 +78,13 @@ fn public(path: &Path) -> anyhow::Result<[u8; 32]> {
     Ok(v)
 }
 impl RegionalClock for Clock {
-    fn now(&self) -> Result<i64> {
-        self.now()
+    fn now(&self) -> Pin<Box<dyn Future<Output = Result<i64>> + Send + '_>> {
+        Box::pin(Clock::now(self))
     }
 }
 impl crate::policy_transport::TrustedRegionalClock for Clock {
-    fn now(&self) -> Result<i64> {
-        self.now()
+    fn now(&self) -> Pin<Box<dyn Future<Output = Result<i64>> + Send + '_>> {
+        Box::pin(Clock::now(self))
     }
 }
 fn renewal_witness_path(
@@ -134,10 +139,56 @@ fn witness_valid(
     }
     Ok(true)
 }
+fn system_scope(policy: &KeyPolicy) -> Scope {
+    let partition = format!(
+        "{:x}",
+        Sha256::digest(format!(
+            "{}\0{}\0{}",
+            policy.region_id, policy.workspace_id, policy.key_id
+        ))
+    );
+    Scope::system(
+        &policy.region_id,
+        "control-plane",
+        "security-policy",
+        &partition,
+    )
+}
+async fn system_record(metadata: &dyn Metadata, policy: &KeyPolicy, key: &str) -> Result<Value> {
+    let response = metadata
+        .execute(MetaRequest::Get {
+            scope: system_scope(policy),
+            guard: None,
+            keys: vec![key.into()],
+        })
+        .await?;
+    Ok(response["records"][key].clone())
+}
+async fn meta_witness_valid(
+    metadata: &dyn Metadata,
+    policy: &KeyPolicy,
+    proof: &workspace_identity::renewal::SameKeyRenewal,
+) -> Result<bool> {
+    let record =
+        system_record(metadata, policy, &format!("renewal/{}", policy.key_version)).await?;
+    if record.is_null() {
+        return Ok(false);
+    }
+    let value = &record["value"];
+    if value["digest"] != renewal_digest(policy, proof)?
+        || value["observedAt"]
+            .as_i64()
+            .is_none_or(|t| t <= 0 || t >= proof.from_expires_at)
+    {
+        return Err(error(503, "RENEWAL_WITNESS_CORRUPT"));
+    }
+    Ok(true)
+}
 struct InstalledRenewals {
     metadata: Arc<dyn Metadata>,
     directory: PathBuf,
     region: String,
+    metadata_security_state: bool,
 }
 impl workspace_identity::regional_refresh::ContinuityVerifier for InstalledRenewals {
     fn check<'a>(
@@ -196,7 +247,11 @@ impl workspace_identity::regional_refresh::ContinuityVerifier for InstalledRenew
                     || next.region_id != self.region
                     || next.key_id != key
                     || previous.as_ref().is_some_and(|p| p != &prior)
-                    || !witness_valid(&self.directory, &next, &proof)?
+                    || !(if self.metadata_security_state {
+                        meta_witness_valid(self.metadata.as_ref(), &next, &proof).await?
+                    } else {
+                        witness_valid(&self.directory, &next, &proof)?
+                    })
                 {
                     return Err(denied());
                 }
@@ -225,6 +280,8 @@ pub struct Runtime {
     local: AccessVerifier,
     signer: AccessSigner,
     control_verifier: Arc<PolicyCommandVerifier>,
+    portal_verifier: crate::portal_ticket::Verifier,
+    initializer: Option<Arc<workspace_identity::embedded_region::EmbeddedRegion>>,
     gates: Vec<Arc<RwLock<()>>>,
 }
 impl Runtime {
@@ -309,11 +366,12 @@ impl Runtime {
             now,
         )?;
         local_verifier.verify(&sample.token, now)?;
-        let clock = Arc::new(Clock::open(
-            &config.clock_directory,
-            config.initialize_clock,
-        )?);
-        clock.now()?;
+        let clock = Arc::new(if config.metadata_security_state {
+            Clock::open_meta(metadata.clone(), region, config.initialize_clock).await?
+        } else {
+            Clock::open(&config.clock_directory, config.initialize_clock)?
+        });
+        clock.now().await?;
         let policies = Arc::new(KeyPolicies::open(metadata.clone(), region).await?);
         let tickets = TicketTrust {
             issuer: config.global_issuer.clone(),
@@ -341,6 +399,7 @@ impl Runtime {
             metadata: metadata.clone(),
             directory: config.clock_directory.clone(),
             region: region.into(),
+            metadata_security_state: config.metadata_security_state,
         }));
         let control_verifier = Arc::new(PolicyCommandVerifier::new(PolicyTrust {
             issuer: config.global_issuer.clone(),
@@ -349,6 +408,21 @@ impl Runtime {
             region_id: region.into(),
             keys: BTreeMap::from([(config.global_signer_id.clone(), global)]),
         })?);
+        let portal_verifier = crate::portal_ticket::Verifier::new(
+            config.global_issuer.clone(),
+            region.into(),
+            config.global_signer_id.clone(),
+            config.environment.clone(),
+            global,
+        );
+        let initializer = if config.region_connection.is_some() {
+            Some(Arc::new(
+                workspace_identity::embedded_region::EmbeddedRegion::open(metadata.clone(), region)
+                    .await?,
+            ))
+        } else {
+            None
+        };
         Ok(Arc::new(Self {
             config,
             workspace,
@@ -363,6 +437,8 @@ impl Runtime {
             local: local_verifier,
             signer,
             control_verifier,
+            portal_verifier,
+            initializer,
             gates: (0..64).map(|_| Arc::new(RwLock::new(()))).collect(),
         }))
     }
@@ -374,6 +450,43 @@ impl Runtime {
             self.clock.clone(),
         )?
         .with_installer(self.clone()))
+    }
+    pub async fn consume_portal_ticket(
+        &self,
+        ticket: &str,
+    ) -> Result<crate::portal_ticket::Claims> {
+        let claims = self
+            .portal_verifier
+            .verify(ticket, self.clock.now().await?)?;
+        self.allow_workspace(&claims.workspace_id)?;
+        let scope = Scope::system(&self.region, "portal", "ticket-replay", &claims.jti);
+        self.metadata
+            .execute(workspace_contracts::MetaRequest::Commit {
+                scope,
+                guard: None,
+                mutation_id: uuid::Uuid::new_v4().to_string(),
+                changes: vec![
+                    json!({"key":"used","expectedVersion":null,"value":{"expiresAt":claims.exp}}),
+                ],
+            })
+            .await
+            .map_err(|_| error(401, "PORTAL_EXCHANGE_INVALID"))?;
+        if self.clock.now().await? >= claims.exp {
+            return Err(error(401, "PORTAL_EXCHANGE_INVALID"));
+        }
+        Ok(claims)
+    }
+    pub fn region_connection(self: &Arc<Self>) -> Option<crate::region_connection::Connector> {
+        Some(crate::region_connection::Connector {
+            config: self.config.region_connection.clone()?,
+            descriptor: crate::global_api::RegionDescriptor {
+                region_id: self.region.clone(),
+                api_origin: self.config.public_origin.clone(),
+                api_path_prefix: self.public_path.clone(),
+            },
+            installer: self.clone(),
+            initializer: self.initializer.clone()?,
+        })
     }
     fn gate(&self, workspace: &str) -> Arc<RwLock<()>> {
         let digest = Sha256::digest(workspace.as_bytes());
@@ -465,7 +578,7 @@ impl Runtime {
         }
         if let workspace_identity::regional::OwnerIdentity::Guest { expires_at, .. } =
             &policy.identity
-            && *expires_at <= self.clock.now()?
+            && *expires_at <= self.clock.now().await?
         {
             return Err(error(401, "INVALID_CREDENTIAL"));
         }
@@ -508,22 +621,43 @@ impl Runtime {
             json!({"environment":self.config.environment,"regionId":self.region,"workspaceId":policy.workspace_id,"keyId":policy.key_id,"generation":policy.policy_generation,"digest":format!("{:x}",Sha256::digest(serde_json::to_vec(policy).map_err(|_|error(503,"POLICY_CORRUPT"))?))}),
         )
     }
-    fn witness(
+    async fn witness(
         &self,
         policy: &KeyPolicy,
         proof: &workspace_identity::renewal::SameKeyRenewal,
     ) -> Result<ContinuityStatus> {
-        if witness_valid(&self.config.clock_directory, policy, proof)? {
+        if if self.config.metadata_security_state {
+            meta_witness_valid(self.metadata.as_ref(), policy, proof).await?
+        } else {
+            witness_valid(&self.config.clock_directory, policy, proof)?
+        } {
             return Ok(ContinuityStatus::Eligible);
         }
         // This time is sampled only after the policy Meta commit is durably acknowledged.
         // The observation proves installation before the deadline even if witness persistence
         // completes later. A crash before persistence never manufactures a new observation.
-        let observed = self.clock.now()?;
+        let observed = self.clock.now().await?;
         if observed >= proof.from_expires_at {
             return Ok(ContinuityStatus::Unavailable);
         }
         let value = json!({"observedAt":observed,"digest":renewal_digest(policy,proof)?});
+        if self.config.metadata_security_state {
+            let key = format!("renewal/{}", policy.key_version);
+            let result = self
+                .metadata
+                .execute(MetaRequest::Commit {
+                    scope: system_scope(policy),
+                    guard: None,
+                    mutation_id: Uuid::new_v4().to_string(),
+                    changes: vec![json!({"key":key,"expectedVersion":null,"value":value})],
+                })
+                .await;
+            if result.is_err() && !meta_witness_valid(self.metadata.as_ref(), policy, proof).await?
+            {
+                return Err(error(503, "RENEWAL_WITNESS_UNAVAILABLE"));
+            }
+            return Ok(ContinuityStatus::Eligible);
+        }
         let path = renewal_witness_path(
             &self.config.clock_directory,
             &policy.region_id,
@@ -548,7 +682,17 @@ impl Runtime {
             .map_err(|_| failed())?;
         Ok(ContinuityStatus::Eligible)
     }
-    fn check_floor(&self, policy: &KeyPolicy) -> Result<()> {
+    async fn check_floor(&self, policy: &KeyPolicy) -> Result<()> {
+        if self.config.metadata_security_state {
+            let record = system_record(self.metadata.as_ref(), policy, "policy-floor").await?;
+            if record.is_null() {
+                return Err(error(503, "POLICY_CHECKPOINT_UNAVAILABLE"));
+            }
+            if record["value"] != self.floor_value(policy)? {
+                return Err(error(503, "POLICY_ROLLBACK"));
+            }
+            return Ok(());
+        }
         let bytes = private_file(&self.floor_path(policy))
             .map_err(|_| error(503, "POLICY_CHECKPOINT_UNAVAILABLE"))?;
         let value: Value =
@@ -558,7 +702,34 @@ impl Runtime {
         }
         Ok(())
     }
-    fn checkpoint(&self, policy: &KeyPolicy) -> Result<()> {
+    async fn checkpoint(&self, policy: &KeyPolicy) -> Result<()> {
+        if self.config.metadata_security_state {
+            let value = self.floor_value(policy)?;
+            for _ in 0..4 {
+                let record = system_record(self.metadata.as_ref(), policy, "policy-floor").await?;
+                if !record.is_null() {
+                    let prior = &record["value"];
+                    if prior["generation"]
+                        .as_u64()
+                        .is_none_or(|g| g > policy.policy_generation)
+                        || prior["generation"] == policy.policy_generation && prior != &value
+                    {
+                        return Err(error(503, "POLICY_ROLLBACK"));
+                    }
+                    if prior == &value {
+                        return Ok(());
+                    }
+                } else if policy.policy_generation != 1 {
+                    return Err(error(503, "POLICY_CHECKPOINT_UNAVAILABLE"));
+                }
+                match self.metadata.execute(MetaRequest::Commit { scope: system_scope(policy), guard: None, mutation_id: Uuid::new_v4().to_string(), changes: vec![json!({"key":"policy-floor","expectedVersion":record["version"],"value":value})] }).await {
+                    Ok(_) => return Ok(()),
+                    Err(e) if e.code == "META_CONFLICT" || e.code == "META_COMMIT_UNKNOWN" => continue,
+                    Err(_) => return Err(error(503, "POLICY_CHECKPOINT_UNAVAILABLE")),
+                }
+            }
+            return Err(error(503, "POLICY_CHECKPOINT_UNAVAILABLE"));
+        }
         let path = self.floor_path(policy);
         let value = self.floor_value(policy)?;
         if path.exists() {
@@ -594,7 +765,7 @@ impl Runtime {
         Ok(())
     }
     async fn validate(&self, token: &VerifiedAccess) -> Result<Principal> {
-        let now = self.clock.now()?;
+        let now = self.clock.now().await?;
         self.check_workspace(token.workspace_id()).await?;
         if token.region_id() != Some(&self.region) || token.expires_at() <= now {
             return Err(error(401, "INVALID_CREDENTIAL"));
@@ -603,7 +774,7 @@ impl Runtime {
             .policies
             .current(token.workspace_id(), token.key_id())
             .await?;
-        self.check_floor(&policy)?;
+        self.check_floor(&policy).await?;
         self.policies
             .check_token_key_binding(
                 &VerifiedKeyBinding {
@@ -671,8 +842,8 @@ impl Runtime {
                 .map(|t| t.to_rfc3339()),
         })
     }
-    pub(crate) fn workspace_for_token(&self, raw: &str) -> Result<String> {
-        let now = self.clock.now()?;
+    pub(crate) async fn workspace_for_token(&self, raw: &str) -> Result<String> {
+        let now = self.clock.now().await?;
         let token = self
             .local
             .verify(raw, now)
@@ -682,7 +853,7 @@ impl Runtime {
     }
     pub async fn authenticate(self: &Arc<Self>, workspace: &str, raw: &str) -> Result<Credential> {
         self.allow_workspace(workspace)?;
-        let now = self.clock.now()?;
+        let now = self.clock.now().await?;
         let candidate = self
             .local
             .verify(raw, now)
@@ -714,7 +885,7 @@ impl Runtime {
             .and_then(|h| h.to_str().ok())
             .and_then(|s| s.strip_prefix("Bearer "))
             .ok_or_else(|| error(401, "INVALID_CREDENTIAL"))?;
-        let now = self.clock.now()?;
+        let now = self.clock.now().await?;
         let token = self
             .local
             .verify(raw, now)
@@ -824,7 +995,7 @@ impl Runtime {
         }
         let gate = self.gate(workspace);
         let _lease = gate.write().await;
-        let now = self.clock.now()?;
+        let now = self.clock.now().await?;
         self.check_workspace(workspace).await?;
         let proof = headers
             .get("DPoP")
@@ -851,7 +1022,7 @@ impl Runtime {
                 serde_json::from_slice(bytes).map_err(|_| error(400, "INVALID_BODY"))?;
             let verified = self.tickets.verify(&input.ticket, now)?;
             let policy = self.policies.current(workspace, verified.key_id()).await?;
-            self.check_floor(&policy)?;
+            self.check_floor(&policy).await?;
             let issued = self
                 .families
                 .enroll(
@@ -873,7 +1044,7 @@ impl Runtime {
                 .and_then(|s| s.strip_prefix("Refresh "))
                 .ok_or_else(|| error(401, "INVALID_REFRESH_CREDENTIAL"))?;
             let policy = self.policies.current(workspace, &input.key_id).await?;
-            self.check_floor(&policy)?;
+            self.check_floor(&policy).await?;
             (
                 self.families
                     .rotate(RefreshRequest {
@@ -891,10 +1062,10 @@ impl Runtime {
         };
         // Rotation already committed: every subsequent failure is an uncertain issuance outcome.
         let result:Result<Response>=async {
-            let policy=self.policies.current(workspace,&key_id).await?;self.check_floor(&policy)?;
+            let policy=self.policies.current(workspace,&key_id).await?;self.check_floor(&policy).await?;
             let grant=self.policies.grant(workspace,&key_id,&issued.ceiling_ref).await?;
-            let token=self.signer.sign(&Issuance{workspace_id:workspace,principal_id:&policy.principal_id,key_id:&key_id,key_version:policy.key_version,policy_generation:policy.policy_generation,grant_ref:&issued.ceiling_ref,scopes:&grant.scopes,key_expires_at:policy.expires_at,grant_expires_at:policy.expires_at,family:Some(Family{id:&issued.family_id,epoch:issued.security_epoch,expires_at:issued.expires_at})},self.clock.now()?)?;
-            self.local.verify(&token.token,self.clock.now()?)?;
+            let token=self.signer.sign(&Issuance{workspace_id:workspace,principal_id:&policy.principal_id,key_id:&key_id,key_version:policy.key_version,policy_generation:policy.policy_generation,grant_ref:&issued.ceiling_ref,scopes:&grant.scopes,key_expires_at:policy.expires_at,grant_expires_at:policy.expires_at,family:Some(Family{id:&issued.family_id,epoch:issued.security_epoch,expires_at:issued.expires_at})},self.clock.now().await?)?;
+            self.local.verify(&token.token,self.clock.now().await?)?;
             let id=format!("{key_id}.{}",token.token_id);
             self.metadata.execute(MetaRequest::Commit{scope:self.scope(workspace,&key_id),guard:None,mutation_id:Uuid::new_v4().to_string(),changes:vec![json!({"key":format!("issuances/{}",token.token_id),"expectedVersion":null,"value":{"id":id,"keyId":key_id,"familyId":issued.family_id,"principalId":policy.principal_id,"expiresAt":token.expires_at,"status":"issued"}})]}).await?;
             Ok((StatusCode::CREATED,[(header::CACHE_CONTROL,"no-store"),(header::LOCATION,&format!("token-issuances/{id}"))],Json(json!({"id":id,"accessToken":token.token,"tokenType":"Bearer","expiresAt":token.expires_at,"refreshCredential":issued.secret,"refreshExpiresAt":issued.expires_at,"nonce":issued.nonce,"familyId":issued.family_id,"keyId":key_id,"scopes":grant.scopes}))).into_response())
@@ -915,7 +1086,7 @@ impl ScopedAuthorization for Authorization {
         self.token.workspace_id()
     }
     fn snapshot(&self) -> Result<Principal> {
-        let now = self.runtime.clock.now()?;
+        let now = self.runtime.clock.snapshot()?;
         if self.token.expires_at() <= now {
             return Err(error(401, "CREDENTIAL_EXPIRED"));
         }
@@ -932,7 +1103,7 @@ impl PolicyInstaller for Runtime {
         _now: i64,
     ) -> Pin<Box<dyn Future<Output = Result<PolicyReceipt>> + Send + 'a>> {
         Box::pin(async move {
-            let now = self.clock.now()?;
+            let now = self.clock.now().await?;
             let (policy, grant) = self.control_verifier.inspect(command, now)?;
             let gate = self.gate(&policy.workspace_id);
             let _lease = gate.write().await;
@@ -974,7 +1145,7 @@ impl PolicyInstaller for Runtime {
             }
             let mut receipt = self
                 .control_verifier
-                .apply(command, self.clock.now()?, &self.policies)
+                .apply(command, self.clock.now().await?, &self.policies)
                 .await?;
             let current = self
                 .policies
@@ -983,9 +1154,12 @@ impl PolicyInstaller for Runtime {
             if current != policy {
                 return Err(error(409, "POLICY_SUPERSEDED"));
             }
-            self.checkpoint(&current)?;
-            if let Some(proof) = self.control_verifier.renewal(command, self.clock.now()?)? {
-                receipt.continuity = Some(self.witness(&current, &proof)?);
+            self.checkpoint(&current).await?;
+            if let Some(proof) = self
+                .control_verifier
+                .renewal(command, self.clock.now().await?)?
+            {
+                receipt.continuity = Some(self.witness(&current, &proof).await?);
             }
             Ok(receipt)
         })
@@ -1022,6 +1196,64 @@ mod tests {
             })
         }
     }
+
+    #[tokio::test]
+    async fn meta_renewal_witness_is_scoped_and_must_predate_expiry() {
+        let policy = KeyPolicy {
+            workspace_id: "ws_test".into(),
+            region_id: "region:a".into(),
+            key_id: Uuid::new_v4().to_string(),
+            principal_id: "principal".into(),
+            key_version: 2,
+            policy_generation: 2,
+            grant_ref: "grant".into(),
+            expires_at: 4000,
+            revoked: false,
+        };
+        let proof = SameKeyRenewal {
+            from_version: 1,
+            from_expires_at: 2000,
+            global_observed_at: 1900,
+        };
+        let scope = system_scope(&policy);
+        assert_eq!(scope.authority_id, "region:a");
+        assert_eq!(scope.owner_kind, "system");
+        assert_eq!(scope.family, "security-policy");
+        let mut other = policy.clone();
+        other.workspace_id = "ws_other".into();
+        assert_ne!(scope.partition_id, system_scope(&other).partition_id);
+        other = policy.clone();
+        other.region_id = "region:b".into();
+        assert_ne!(scope.partition_id, system_scope(&other).partition_id);
+
+        let record = |observed, digest: String| {
+            Records(BTreeMap::from([(
+                "renewal/2".into(),
+                json!({"observedAt":observed,"digest":digest}),
+            )]))
+        };
+        let digest = renewal_digest(&policy, &proof).unwrap();
+        assert!(
+            meta_witness_valid(&record(1999, digest.clone()), &policy, &proof)
+                .await
+                .unwrap()
+        );
+        assert!(
+            meta_witness_valid(&record(2000, digest), &policy, &proof)
+                .await
+                .is_err()
+        );
+        assert!(
+            meta_witness_valid(&record(1999, "invalid".into()), &policy, &proof)
+                .await
+                .is_err()
+        );
+        assert!(
+            !meta_witness_valid(&Records(BTreeMap::new()), &policy, &proof)
+                .await
+                .unwrap()
+        );
+    }
     #[tokio::test]
     async fn renewal_requires_complete_signed_chain_and_pre_expiry_installation_witness() {
         let directory = std::env::temp_dir().join(format!("renewal-test-{}", Uuid::new_v4()));
@@ -1050,6 +1282,7 @@ mod tests {
             metadata: Arc::new(Records(BTreeMap::from([("renewals/2".into(), record)]))),
             directory: directory.clone(),
             region: "region:a".into(),
+            metadata_security_state: false,
         };
         let record = json!({"prior":prior,"policy":next,"proof":proof});
         let checker = verify(record.clone());

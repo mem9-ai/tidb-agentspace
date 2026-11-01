@@ -28,8 +28,8 @@ const ROTATE_URI: &str = "https://region.example/api/v1/workspaces/ws_agentlab/t
 
 struct TestClock(i64);
 impl RegionalClock for TestClock {
-    fn now(&self) -> Result<i64> {
-        Ok(self.0)
+    fn now(&self) -> Pin<Box<dyn Future<Output = Result<i64>> + Send + '_>> {
+        Box::pin(async { Ok(self.0) })
     }
 }
 struct TestCeiling;

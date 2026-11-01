@@ -23,6 +23,7 @@ pub struct GuestEntry {
     region: Arc<RegionalGuest>,
     trusted_origins: Vec<String>,
     attempts: Mutex<BTreeMap<IpAddr, (Instant, u32)>>,
+    allow_loopback_http: bool,
 }
 
 impl GuestEntry {
@@ -33,6 +34,7 @@ impl GuestEntry {
             region,
             trusted_origins: Vec::new(),
             attempts: Mutex::new(BTreeMap::new()),
+            allow_loopback_http: false,
         }
     }
     /// Origins must be verified deployment configuration. The HTTP host must additionally
@@ -41,11 +43,15 @@ impl GuestEntry {
         signup: Option<Arc<GlobalGuest>>,
         region: Arc<RegionalGuest>,
         trusted_origins: Vec<String>,
+        allow_loopback_http: bool,
     ) -> Result<Self> {
         if trusted_origins.is_empty()
             || trusted_origins.iter().any(|origin| {
                 reqwest::Url::parse(origin).ok().is_none_or(|url| {
-                    url.scheme() != "https"
+                    !(url.scheme() == "https"
+                        || (allow_loopback_http
+                            && url.scheme() == "http"
+                            && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))))
                         || url.origin().ascii_serialization() != *origin
                         || !url.username().is_empty()
                         || url.password().is_some()
@@ -59,6 +65,7 @@ impl GuestEntry {
             region,
             trusted_origins,
             attempts: Mutex::new(BTreeMap::new()),
+            allow_loopback_http,
         })
     }
 
@@ -69,6 +76,9 @@ impl GuestEntry {
             .get(ORIGIN)
             .and_then(|v| v.to_str().ok())
             .ok_or_else(|| ServiceError::new(403, "ORIGIN_DENIED"))?;
+        if origin.starts_with("http://") && (!self.allow_loopback_http || !peer.is_loopback()) {
+            return Err(ServiceError::new(403, "LOCAL_ONLY"));
+        }
         if !self.trusted_origins.iter().any(|value| value == origin) {
             return Err(ServiceError::new(403, "ORIGIN_DENIED"));
         }

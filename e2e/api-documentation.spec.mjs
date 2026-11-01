@@ -1,35 +1,46 @@
 import { test, expect } from './workspace-fixture.mjs';
 import { readFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 
-test('API docs explain both authorities, runnable examples and the complete generated reference', async ({
+test('API docs use one configured endpoint with runnable examples and complete reference', async ({
   page,
   workspace,
 }, testInfo) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: async (value) => {
+          globalThis.__copiedText = value;
+        },
+      },
+    });
+  });
   workspace.addResources();
   await workspace.open('#api');
   await expect(page.getByRole('heading', { name: 'API documentation', exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Global OpenAPI', exact: true })).toHaveAttribute(
-    'href',
-    'http://127.0.0.1:4389/api/global/openapi.json',
-  );
-  await expect(page.getByRole('link', { name: 'Region OpenAPI', exact: true })).toHaveAttribute(
-    'href',
-    'http://127.0.0.1:4389/openapi.json',
-  );
-  await expect(
-    page.getByText('Send data requests directly to Region.', { exact: false }),
-  ).toBeVisible();
-  await page.getByRole('tab', { name: 'JavaScript', exact: true }).click();
-  await expect(page.getByText('const issuance = await json(', { exact: false })).toBeVisible();
-  await page.getByRole('tab', { name: 'Python', exact: true }).click();
-  await expect(page.getByText('import os, json, urllib.request', { exact: false })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'API endpoint' })).toBeVisible();
+  await expect(page.getByText('http://127.0.0.1:4389/api', { exact: true })).toBeVisible();
+  await expect(page.getByText('http://127.0.0.1:4389', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Region OpenAPI' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Copy agent instructions' })).toBeVisible();
+  await page.getByRole('button', { name: 'Copy endpoint' }).click();
+  expect(await page.evaluate(() => globalThis.__copiedText)).toBe('http://127.0.0.1:4389/api');
+  await page.getByRole('button', { name: 'Copy agent instructions' }).click();
+  expect(await page.evaluate(() => globalThis.__copiedText)).toContain('http://127.0.0.1:4389/api');
+  await expect(page.getByText('workspace.listResources()', { exact: false })).toBeVisible();
+  await expect(page.getByText('REGION_API', { exact: false })).toHaveCount(0);
+  const clientDownload = page.waitForEvent('download');
+  await page.getByRole('link', { name: 'Download JavaScript client' }).click();
+  const clientFile = testInfo.outputPath('workspace-agent.mjs');
+  await (await clientDownload).saveAs(clientFile);
+  expect(typeof (await import(pathToFileURL(clientFile).href)).connectWorkspace).toBe('function');
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Download WORKSPACE.md', exact: true }).click();
+  await page.getByRole('button', { name: 'Download agent instructions', exact: true }).click();
   const downloaded = await downloadPromise;
   const instructions = await readFile(await downloaded.path(), 'utf8');
-  expect(instructions).toContain('http://127.0.0.1:4389/api/global');
-  expect(instructions).toContain('Send it ONLY to POST Global');
-  expect(instructions).toContain('renew directly at Region');
+  expect(instructions).toContain('http://127.0.0.1:4389/api');
+  expect(instructions).toContain('Never forward the key');
+  expect(instructions).toContain('GET /resources');
   await page.getByRole('textbox', { name: 'Find an operation' }).fill('file metadata');
   await page
     .getByRole('button', {
@@ -42,11 +53,10 @@ test('API docs explain both authorities, runnable examples and the complete gene
       name: 'Read file identity and an opaque conditional-write version',
     }),
   ).toBeVisible();
-  await page.getByRole('combobox', { name: 'API authority' }).selectOption('Global');
   await page.getByRole('textbox', { name: 'Find an operation' }).fill('create global key');
-  await page.getByRole('button', { name: 'POST Create Global Key', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Create Global Key', exact: true })).toBeVisible();
-  await expect(page.getByText('Owner only. Unix-second expiry.', { exact: false })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'POST Create Global Key', exact: true }),
+  ).toHaveCount(0);
   const dimensions = await page.evaluate(() => ({
     width: document.documentElement.clientWidth,
     scroll: document.documentElement.scrollWidth,

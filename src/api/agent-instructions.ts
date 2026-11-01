@@ -1,34 +1,46 @@
-export function agentInstructions(
-  workspaceId: string,
-  apiBaseUrl: string,
-  globalBaseUrl?: string,
-  regionId?: string,
-): string {
-  const workspace = `/workspaces/${workspaceId}`;
-  return `# TiDB Agent Workspace
+export function agentInstructions(endpoint?: string): string {
+  return `# Connect to my Workspace
 
-Workspace API: ${apiBaseUrl}/api/v1${workspace}
-OpenAPI: ${apiBaseUrl}/openapi.json
-Global API: ${globalBaseUrl || 'Ask the operator for the configured Global API URL'}
-Region: ${regionId || 'Use the authorized Region identifier from Global discovery'}
-Read WORKSPACE_API_KEY from application secret storage. Send it ONLY to POST Global /api/v1/workspaces/${workspaceId}/token-issuances with {"audience":"${regionId || 'REGION_ID'}"}. Use the returned accessToken as Authorization: Bearer at Region. Access Tokens last at most 15 minutes and do not outlive the Key. For Global discovery exchange with audience:"global"; never send a Region Token to Global. Never request native/provider credentials.
-For long-running agents, use src/api/agent-client.ts connectAgentWorkspace with an Ed25519 proof key and a durable application secret store. Include clientThumbprint at Global issuance to enroll a client-bound refresh family, then renew directly at Region. Persist the exact rotating refresh credential and nonce atomically; never retry an uncertain rotation blindly. Cached Region routes, local refresh and data operations continue during Global outages. Revocations take effect at Region when delivered; actual Key expiry still applies.
+API endpoint: ${endpoint || 'Ask for the Workspace API endpoint'}
+API key: read WORKSPACE_API_KEY from the environment or a secret manager.
 
-GET /context discovers your current scopes, resource grants, expiry, limits and links. GET /resources lists granted resources; GET /resources/{resourceId} returns detail/capabilities. DELETE /resources/{resourceId} requests removal: inspect Location and deletion.phase for 202 responses; acceptance is not verified physical erasure. Zero deletion is unsupported. Owner-only Key management does not become available to ordinary Keys.
+Use the endpoint and key to discover the Workspace and connect. Never send the key to the
+discovered data endpoint, put credentials in a URL, or send SQL or file content to the API
+endpoint. The downloadable workspace-agent.mjs client handles the connection automatically.
 
-GET /resources/{resourceId}/tables lists tables. GET /resources/{resourceId}/tables/{tableName} returns columns/indexes; append /rows for a bounded preview. Encode the exact table name as one URI segment, including literal slashes, using encodeURIComponent. Catalog reads require queries:read (implied by queries:execute) and the database grant.
-POST /queries accepts resourceId and sql. queries:read enforces a constrained SELECT/CTE/VALUES subset (1024 lexer tokens, 32 nesting levels); writes require queries:execute. readOnly:true also constrains a full-access caller. One statement, 64 KiB SQL, 15 seconds, 1000 result rows/1 MiB. Never blindly retry a timed-out write.
-DuckDB sources may select up to four CSV/JSON/NDJSON/Parquet Workspace files with {name, resourceId, path}; query files.NAME. Independently require source files:read/analyze and grants, with a 16 MiB combined snapshot budget. No external URLs, credentials or host paths.
+For direct HTTP:
+1. POST to /v1/token-issuances at the API endpoint with the key as Bearer authorization and
+   JSON {"audience":"global"}. Keep the returned workspaceId and accessToken.
+2. GET /v1/workspaces/{workspaceId}/region-route at the API endpoint with that accessToken. Read the 307
+   Location and X-Region-Id without automatically following the redirect.
+3. POST to /v1/token-issuances at the API endpoint with the key and
+   {"audience":"region"}. Verify that the returned region's origin, path and ID match the
+   redirect. Require HTTPS, except for an explicitly loopback development endpoint.
+4. Use the returned Region accessToken as Bearer authorization at the verified destination,
+   with /api/v1/workspaces/{workspaceId} before the operation paths below. Never forward the key
+   or Global Token to that destination. Access Tokens expire; request a new one when needed.
 
-GET /files?resourceId=ID&path=/ lists files. PUT /files writes UTF-8 files/directories. GET/PUT /files/content?resourceId=ID&path=PATH transfers Drive9 bytes; preview=1 requests bounded text. DELETE /files/entry?resourceId=ID&path=PATH has no body and deletes only a file or empty directory. Read GET /files/metadata before reading content, then send its strong version unchanged in If-Match to update safely; use If-None-Match: * for create-only. A stale version returns 412 without a write. Never silently fall back to an unconditional overwrite.
-GET /files/tabular-preview requires files:read for fixed CSV/Parquet samples. GET /file-analyses/capabilities discovers engines; POST /file-analyses requires read/analyze and the source grant. DuckDB reads table file; Bash reads the selected virtual input.path with quoted "$FILE" when advertised. Fresh saved snapshots only, 16 MiB input/15 seconds, no provider secrets, network, host paths or persistent source writes.
+If a key cannot use this flow, ask the user to create or rotate a key; older keys may require
+the Workspace-specific issuance endpoint. Do not delete or replace a key without permission.
+For a long-running Node.js agent, the downloadable client supports local token renewal. To
+resume across process restarts while the API endpoint is unavailable, retain the proof key and
+rotating refresh state in an application-owned secret store.
 
-POST /database-import-preparations creates a review. Use application/json with resourceId, source:{resourceId,path}, parsing for Workspace CSV/Parquet. Use application/octet-stream with resourceId, filename, format and CSV header/delimiter query fields for a local upload. Both return 201, id and Location. Destination queries:execute/grant are required; Workspace inputs additionally require source read/analyze/grant. Uploads do not create a File System resource.
-GET Location inspects a preparation without parsing again. DELETE Location cancels an unconsumed review (204). Reviews expire after five minutes and become unavailable after API restart; at most 1000 rows/100 columns/1 MiB parsed data, with a 20-row sample. POST /database-imports confirms resourceId, preparationId (the review id), confirmed:true, table and reviewed fields. New tables only, no append/overwrite. A consumed review does not prove import success; inspect partial/unknown writes before acting.
-POST /file-export-preparations creates an actor-bound original/output review with the same GET/cancel lifecycle. POST /file-exports or /result-exports creates supported copies/results; check source and destination grants independently.
+Start with GET /context to discover permissions, then GET /resources if permitted. Respect
+the Key's action and resource grants. Do not create, modify or delete data unless requested.
 
-POST /resources/{resourceId}/setup-attempts requires resources:write and Idempotency-Key, with no body. It creates a durable inline setup attempt using saved bindings only; no replacement resource is provisioned when bindings are missing. Follow Location with GET, or list /resources/{resourceId}/setup-attempts using cursor/limit. GET never retries setup. Repeating the same caller/resource/key returns the original attempt without effects, including after restart. A different key explicitly requests supported reconciliation/idempotent setup; do not automate retries after unknown outcomes.
+- GET /resources/{resourceId}/tables lists database tables. POST /queries runs one SQL statement;
+  use readOnly:true for reads. Never blindly retry an uncertain write.
+- GET /files lists files. PUT /files creates or updates a text file. Read GET /files/metadata
+  first; use If-Match for updates and If-None-Match: * for create-only writes.
+- POST /file-analyses runs analysis only with the necessary file read and analyze permissions.
+- POST /database-import-preparations creates a review. Inspect the result and obtain explicit
+  confirmation before POST /database-imports creates a table.
+- POST /file-export-preparations and POST /file-exports handle file exports; POST /result-exports
+  exports a supplied query result. Check source and destination permissions.
+- POST /resources/{resourceId}/setup-attempts requires resources:write and Idempotency-Key.
+  Inspect the result before retrying any operation with an uncertain outcome.
 
-Use only your granted actions/resources. Local resources are labeled demos; live-provider availability and compatibility limits remain capability-specific. Check database expiresAt and export important data before expiry. Cloud telemetry is unmeasured. Never commit or upload credentials.
+Do not request provider credentials or commit the Workspace API key to source control.
 `;
 }

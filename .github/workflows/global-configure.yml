@@ -9,10 +9,6 @@ on:
         default: inspect
         type: choice
         options: [inspect, reset-and-enable-global, activate-prepared, repair-probes]
-      storage_class:
-        description: Optional existing StorageClass reported by inspect; empty uses the cluster default
-        type: string
-        required: false
 
 permissions:
   contents: read
@@ -60,7 +56,6 @@ jobs:
       K8S_DEPLOYMENT: ${{ secrets.DEV_API_DEPLOYMENT }}
       K8S_CONTAINER: ${{ secrets.DEV_API_CONTAINER || secrets.DEV_API_DEPLOYMENT }}
       CUTOVER_OPERATION: ${{ inputs.operation }}
-      CUTOVER_STORAGE_CLASS: ${{ inputs.storage_class }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

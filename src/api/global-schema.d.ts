@@ -1,138 +1,4 @@
 export interface paths {
-  '/api/v1/workspaces/{workspaceId}/key-policy-deliveries': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Create Global Key Policy Delivery
-     * @description Explicit bounded application attempt for the current Key version, including revoked Keys. Replays reconcile the same immutable command. No background retry or data proxy is implied.
-     */
-    post: operations['createGlobalKeyPolicyDelivery'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/workspaces/{workspaceId}/key-policy-deliveries/{deliveryId}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Global Key Policy Delivery
-     * @description Observe durable application evidence without contacting Region or retrying effects.
-     */
-    get: operations['getGlobalKeyPolicyDelivery'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/workspaces/{workspaceId}/keys': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Global Keys */
-    get: operations['listGlobalKeys'];
-    put?: never;
-    /**
-     * Create Global Key
-     * @description Owner only. Unix-second expiry. Store the returned secret securely; it cannot be retrieved or returned again.
-     */
-    post: operations['createGlobalKey'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/workspaces/{workspaceId}/keys/{keyId}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Global Key */
-    get: operations['getGlobalKey'];
-    put?: never;
-    post?: never;
-    /** Revoke Global Key */
-    delete: operations['revokeGlobalKey'];
-    options?: never;
-    head?: never;
-    /**
-     * Renew Global Key
-     * @description Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application is reported separately. Only an explicit same-secret renewal durably observed by both authorities before the previous expiry enables existing proof-bound families to cross versions. An unreachable Region remains pending; unavailable continuity requires fresh enrollment.
-     */
-    patch: operations['renewGlobalKey'];
-    trace?: never;
-  };
-  '/api/v1/workspaces/{workspaceId}/keys/{keyId}/versions': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Rotate Global Key */
-    post: operations['rotateGlobalKey'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/workspaces/{workspaceId}/keys/{keyId}/versions/{version}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Global Key Version */
-    get: operations['getGlobalKeyVersion'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/workspaces/{workspaceId}/key-revocations/{revocationId}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Global Key Revocation */
-    get: operations['getGlobalKeyRevocation'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/api/v1/workspaces/{workspaceId}/token-issuances': {
     parameters: {
       query?: never;
@@ -182,6 +48,46 @@ export interface paths {
      * @description Requires resources:read on a current Global Token. Only the Key-granted Region is returned. Data requests go directly to Region.
      */
     get: operations['listAuthorizedRegions'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/token-issuances': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Exchange a Workspace Key without configuring a Workspace or Region
+     * @description The Key identifies its Workspace. Use audience global or region; region selects the Key-granted Region. Legacy Keys without a Workspace hint continue to use the Workspace-scoped issuance endpoint. Never forward the Workspace Key to a Region.
+     */
+    post: operations['createDiscoveredTokenIssuance'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/workspaces/{workspaceId}/region-route': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Discover the Region through a bodyless redirect
+     * @description Send only a Global access Token. Inspect the redirect without automatic credential forwarding; validate the HTTPS target against authenticated Global discovery before using the Region Token. Do not send SQL or file content to this endpoint.
+     */
+    get: operations['getGlobalRegionRoute'];
     put?: never;
     post?: never;
     delete?: never;
@@ -305,6 +211,160 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/portal/v1/workspaces/{workspaceId}/regional-session-tickets': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Create Portal Region Session Ticket
+     * @description Create a short-lived one-use user-session exchange ticket for the Workspace Region. A verified Portal Owner session is required.
+     */
+    post: operations['createPortalRegionSessionTicket'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/portal/v1/workspaces/{workspaceId}/key-policy-deliveries': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Create Global Key Policy Delivery
+     * @description Explicit bounded application attempt for the current Key version, including revoked Keys. Replays reconcile the same immutable command. The Region connection profile also reconciles durable pending changes after reconnection.
+     */
+    post: operations['createGlobalKeyPolicyDelivery'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/portal/v1/workspaces/{workspaceId}/key-policy-deliveries/{deliveryId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Global Key Policy Delivery
+     * @description Observe durable application evidence without contacting Region or retrying effects.
+     */
+    get: operations['getGlobalKeyPolicyDelivery'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/portal/v1/workspaces/{workspaceId}/keys': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Global Keys */
+    get: operations['listGlobalKeys'];
+    put?: never;
+    /**
+     * Create Global Key
+     * @description Owner only. Unix-second expiry. Store the returned secret securely; it cannot be retrieved or returned again.
+     */
+    post: operations['createGlobalKey'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/portal/v1/workspaces/{workspaceId}/keys/{keyId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Global Key */
+    get: operations['getGlobalKey'];
+    put?: never;
+    post?: never;
+    /** Revoke Global Key */
+    delete: operations['revokeGlobalKey'];
+    options?: never;
+    head?: never;
+    /**
+     * Renew Global Key
+     * @description Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application is reported separately. Only an explicit same-secret renewal durably observed by both authorities before the previous expiry enables existing proof-bound families to cross versions. An unreachable Region remains pending; unavailable continuity requires fresh enrollment.
+     */
+    patch: operations['renewGlobalKey'];
+    trace?: never;
+  };
+  '/api/portal/v1/workspaces/{workspaceId}/keys/{keyId}/versions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Rotate Global Key */
+    post: operations['rotateGlobalKey'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/portal/v1/workspaces/{workspaceId}/keys/{keyId}/versions/{version}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Global Key Version */
+    get: operations['getGlobalKeyVersion'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/portal/v1/workspaces/{workspaceId}/key-revocations/{revocationId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Global Key Revocation */
+    get: operations['getGlobalKeyRevocation'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -383,6 +443,44 @@ export interface components {
       keyVersion: number;
       region: components['schemas']['Region'];
     };
+    DiscoveredToken: {
+      id: string;
+      accessToken: string;
+      /** @constant */
+      tokenType: 'Bearer';
+      expiresAt: number;
+      scopes: string[];
+      workspaceId: string;
+    };
+    DiscoveredRegionAccessToken: {
+      id: string;
+      accessToken: string;
+      /** @constant */
+      tokenType: 'Bearer';
+      expiresAt: number;
+      scopes: string[];
+      keyId: string;
+      principalId: string;
+      keyVersion: number;
+      region: components['schemas']['Region'];
+      workspaceId: string;
+    };
+    DiscoveredRegionToken: {
+      id: string;
+      accessToken: string;
+      /** @constant */
+      tokenType: 'Bearer';
+      expiresAt: number;
+      scopes: string[];
+      keyId: string;
+      principalId: string;
+      keyVersion: number;
+      region: components['schemas']['Region'];
+      enrollmentTicket: string;
+      enrollmentExpiresAt: number;
+      nonce: string;
+      workspaceId: string;
+    };
   };
   responses: never;
   parameters: never;
@@ -392,6 +490,495 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  createGlobalTokenIssuance: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          audience: string;
+          scopes?: string[];
+          clientThumbprint?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful response */
+      201: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json':
+            | components['schemas']['Token']
+            | components['schemas']['RegionAccessToken']
+            | components['schemas']['RegionToken'];
+        };
+      };
+      /** @description Structured denial or unknown outcome; no credential is echoed. */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  getGlobalTokenIssuance: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceId: string;
+        issuanceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      200: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            data: components['schemas']['Issuance'];
+          };
+        };
+      };
+      /** @description Structured denial or unknown outcome; no credential is echoed. */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  listAuthorizedRegions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      200: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            data: components['schemas']['Region'][];
+            nextCursor: null;
+          };
+        };
+      };
+      /** @description Structured denial or unknown outcome; no credential is echoed. */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  createDiscoveredTokenIssuance: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @enum {unknown} */
+          audience: 'global' | 'region';
+          scopes?: string[];
+          clientThumbprint?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful response */
+      201: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json':
+            | components['schemas']['DiscoveredToken']
+            | components['schemas']['DiscoveredRegionAccessToken']
+            | components['schemas']['DiscoveredRegionToken'];
+        };
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  getGlobalRegionRoute: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Region API base URL. No data request has been sent to Global. */
+      307: {
+        headers: {
+          Location: string;
+          'X-Region-Id': string;
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  getGlobalHealth: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      200: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            /** @constant */
+            status: 'ok';
+            /** @constant */
+            authority: 'global';
+          };
+        };
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  getGlobalAuthConfig: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      200: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            /** @enum {unknown} */
+            mode: 'local' | 'oidc';
+            loginPath: string;
+            localSessionPath: string;
+          };
+        };
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  getGlobalOwnerSession: {
+    parameters: {
+      query: {
+        workspaceId: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      200: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            workspaceId: string;
+            regionId: string;
+          };
+        };
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  createLocalGlobalOwnerSession: {
+    parameters: {
+      query?: never;
+      header: {
+        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
+        Origin: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      201: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            workspaceId: string;
+            regionId: string;
+          };
+        };
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  startGlobalOwnerLogin: {
+    parameters: {
+      query?: {
+        /** @description Optional for first login when one Region is configured and registered. */
+        workspaceId?: string;
+        /** @description Optional return URL on an explicitly trusted Console origin. */
+        returnTo?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redirect to the existing Portal sign-in or the explicitly configured identity provider. */
+      303: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  completeGlobalOwnerLogin: {
+    parameters: {
+      query: {
+        code: string;
+        state: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      200: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            workspaceId: string;
+            regionId: string;
+            expiresAt: number;
+          };
+        };
+      };
+      /** @description Owner cookie issued; redirect to the validated Console return URL. */
+      303: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  revokeGlobalOwnerSession: {
+    parameters: {
+      query: {
+        workspaceId: string;
+      };
+      header: {
+        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
+        Origin: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Durably revoked the Global Owner session and cleared the host-only cookie. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  createPortalRegionSessionTicket: {
+    parameters: {
+      query?: never;
+      header: {
+        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
+        Origin: string;
+      };
+      path: {
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      201: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            ticket: string;
+            region: components['schemas']['Region'];
+            /** @constant */
+            expiresIn: 60;
+          };
+        };
+      };
+      /** @description Structured denial or unknown outcome; no credential is echoed. */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
   createGlobalKeyPolicyDelivery: {
     parameters: {
       query?: never;
@@ -840,377 +1427,6 @@ export interface operations {
         };
       };
       /** @description Structured denial or unknown outcome; no credential is echoed. */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  createGlobalTokenIssuance: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspaceId: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': {
-          audience: string;
-          scopes?: string[];
-          clientThumbprint?: string;
-        };
-      };
-    };
-    responses: {
-      /** @description Successful response */
-      201: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json':
-            | components['schemas']['Token']
-            | components['schemas']['RegionAccessToken']
-            | components['schemas']['RegionToken'];
-        };
-      };
-      /** @description Structured denial or unknown outcome; no credential is echoed. */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  getGlobalTokenIssuance: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspaceId: string;
-        issuanceId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful response */
-      200: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            data: components['schemas']['Issuance'];
-          };
-        };
-      };
-      /** @description Structured denial or unknown outcome; no credential is echoed. */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  listAuthorizedRegions: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspaceId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful response */
-      200: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            data: components['schemas']['Region'][];
-            nextCursor: null;
-          };
-        };
-      };
-      /** @description Structured denial or unknown outcome; no credential is echoed. */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  getGlobalHealth: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful response */
-      200: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            /** @constant */
-            status: 'ok';
-            /** @constant */
-            authority: 'global';
-          };
-        };
-      };
-      /** @description Successful response */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  getGlobalAuthConfig: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful response */
-      200: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            /** @enum {unknown} */
-            mode: 'local' | 'oidc';
-            loginPath: string;
-            localSessionPath: string;
-          };
-        };
-      };
-      /** @description Successful response */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  getGlobalOwnerSession: {
-    parameters: {
-      query: {
-        workspaceId: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful response */
-      200: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            workspaceId: string;
-            regionId: string;
-          };
-        };
-      };
-      /** @description Successful response */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  createLocalGlobalOwnerSession: {
-    parameters: {
-      query?: never;
-      header: {
-        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
-        Origin: string;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful response */
-      201: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            workspaceId: string;
-            regionId: string;
-          };
-        };
-      };
-      /** @description Successful response */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  startGlobalOwnerLogin: {
-    parameters: {
-      query: {
-        workspaceId: string;
-        /** @description Optional return URL on an explicitly trusted Console origin. */
-        returnTo?: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Redirect to the existing Portal sign-in or the explicitly configured identity provider. */
-      303: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Successful response */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  completeGlobalOwnerLogin: {
-    parameters: {
-      query: {
-        code: string;
-        state: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful response */
-      200: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            workspaceId: string;
-            regionId: string;
-            expiresAt: number;
-          };
-        };
-      };
-      /** @description Owner cookie issued; redirect to the validated Console return URL. */
-      303: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Successful response */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  revokeGlobalOwnerSession: {
-    parameters: {
-      query: {
-        workspaceId: string;
-      };
-      header: {
-        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
-        Origin: string;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Durably revoked the Global Owner session and cleared the host-only cookie. */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Successful response */
       default: {
         headers: {
           'Cache-Control'?: 'no-store';

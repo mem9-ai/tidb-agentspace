@@ -20,6 +20,19 @@ pub struct Scope {
     pub partition_id: String,
 }
 
+impl Scope {
+    /// Authority-local state that does not belong to a customer Workspace.
+    pub fn system(authority: &str, owner: &str, family: &str, partition: &str) -> Self {
+        Self {
+            authority_id: authority.into(),
+            owner_kind: "system".into(),
+            owner_id: owner.into(),
+            family: family.into(),
+            partition_id: partition.into(),
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WriterGuard {
@@ -86,4 +99,19 @@ pub type Call<'a> = Pin<Box<dyn Future<Output = Result<Value>> + Send + 'a>>;
 pub trait Metadata: Send + Sync {
     fn execute(&self, request: MetaRequest) -> Call<'_>;
     fn health(&self) -> Call<'_>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Scope;
+
+    #[test]
+    fn system_scope_is_bound_to_its_authority_and_has_no_workspace_owner() {
+        let scope = Scope::system("region:example", "control-plane", "runtime-state", "clock");
+        assert_eq!(scope.authority_id, "region:example");
+        assert_eq!(scope.owner_kind, "system");
+        assert_eq!(scope.owner_id, "control-plane");
+        assert_eq!(scope.family, "runtime-state");
+        assert_eq!(scope.partition_id, "clock");
+    }
 }

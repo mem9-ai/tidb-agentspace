@@ -1,7 +1,9 @@
 //! Isolated mTLS integration fixture, not a production deployment role.
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Deserialize;
-use std::{collections::BTreeMap, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{
+    collections::BTreeMap, future::Future, net::SocketAddr, path::PathBuf, pin::Pin, sync::Arc,
+};
 use workspace_api::{
     policy_command::{PolicyCommandVerifier, PolicyReceipt, PolicyTrust},
     policy_transport::{
@@ -13,8 +15,8 @@ use workspace_meta_client::{ClientConfig, RemoteMetadata};
 
 struct TestClock;
 impl TrustedRegionalClock for TestClock {
-    fn now(&self) -> workspace_contracts::Result<i64> {
-        Ok(1000)
+    fn now(&self) -> Pin<Box<dyn Future<Output = workspace_contracts::Result<i64>> + Send + '_>> {
+        Box::pin(async { Ok(1000) })
     }
 }
 

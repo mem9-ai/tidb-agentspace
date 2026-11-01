@@ -520,6 +520,29 @@ test(
 );
 
 test(
+  'Guest Portal HTTP sessions remain isolated after the API boundary split',
+  { skip: !enabled, timeout: 60000 },
+  async (t) => {
+    const fixture = await metaFixture();
+    t.after(() => fixture.close());
+    const global = await fixture.service('global');
+    const region = await fixture.service('other');
+    t.after(() => {
+      global.client.close();
+      region.client.close();
+    });
+    const globalConfig = resolve(fixture.directory, 'guest-http-global.json');
+    const regionConfig = resolve(fixture.directory, 'guest-http-region.json');
+    await writeFile(globalConfig, JSON.stringify(global.clientConfig), { mode: 0o600 });
+    await writeFile(regionConfig, JSON.stringify(region.clientConfig), { mode: 0o600 });
+    const probe = resolve('meta-service/target/debug/examples/guest_http_probe');
+    assert.equal(
+      JSON.parse((await exec(probe, [globalConfig, regionConfig])).stdout).isolated,
+      true,
+    );
+  },
+);
+test(
   'verified OIDC login creates one isolated personal user and Workspace',
   // Includes real old-Key-expiry waits, both Global process failures and regional restart.
   { skip: !enabled, timeout: 180_000 },
@@ -638,7 +661,19 @@ test(
     await assert.rejects(exec(identityProbe, [globalConfig, '--status', issuer, 'bob']));
     badSignature = false;
     const bob = await login();
-    global = await globalApiCases(t, fixture, global, alice, bob, ownerFile, settings, region);
+    global = await globalApiCases(
+      t,
+      fixture,
+      global,
+      alice,
+      bob,
+      ownerFile,
+      settings,
+      region,
+      (value) => {
+        subject = value;
+      },
+    );
     await writeFile(globalConfig, JSON.stringify(global.clientConfig), { mode: 0o600 });
     assert.notEqual(alice.userId, bob.userId);
     assert.notEqual(alice.organizationId, bob.organizationId);

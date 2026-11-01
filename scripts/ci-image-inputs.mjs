@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export function nativeImageInput(path) {
-  return /^(backend\/|meta-service\/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.cargo\/|scripts\/(duckdb-runtime\.json|prepare-duckdb\.mjs|deploy-dev|ci-image-inputs)|public\/(?:global-)?openapi\.json$|package(?:-lock)?\.json$|\.node-version$|Dockerfile$|\.dockerignore$|\.github\/workflows\/(ci|dev-cd)\.yml$)/.test(
+  return /^(backend\/|meta-service\/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.cargo\/|scripts\/(duckdb-runtime\.json|prepare-duckdb\.mjs|deploy-dev|ci-image-inputs)|public\/(?:global-|agent-entry-)?openapi\.json$|package(?:-lock)?\.json$|\.node-version$|Dockerfile$|\.dockerignore$|\.github\/workflows\/(ci|dev-cd)\.yml$)/.test(
     path,
   );
 }

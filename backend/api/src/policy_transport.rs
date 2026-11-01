@@ -41,7 +41,7 @@ const MAX_BODY: usize = 24 * 1024;
 /// An implementation must reject rollback and untrusted regional time. A plain wall clock
 /// is not a production implementation of this contract.
 pub trait TrustedRegionalClock: Send + Sync {
-    fn now(&self) -> workspace_contracts::Result<i64>;
+    fn now(&self) -> Pin<Box<dyn Future<Output = workspace_contracts::Result<i64>> + Send + '_>>;
 }
 
 #[derive(Clone, Deserialize)]
@@ -158,7 +158,7 @@ async fn receive(
             Json(serde_json::json!({"error":{"code":"CONTROL_BUSY"}})),
         );
     };
-    let result = match state.clock.now() {
+    let result = match state.clock.now().await {
         Ok(now) => {
             if let Some(installer) = &state.installer {
                 installer.apply(&body.command, now).await

@@ -102,7 +102,7 @@ test(
     });
     const cookie = session.headers.get('set-cookie').split(';')[0];
     const boot = await fetch(
-      `http://127.0.0.1:${apiPort}/api/v1/workspaces/ws_agentlab/bootstrap`,
+      `http://127.0.0.1:${apiPort}/api/portal/v1/workspaces/ws_agentlab/bootstrap`,
       { headers: { Cookie: cookie } },
     ).then((r) => r.json());
     assert.deepEqual(boot.resources, []);

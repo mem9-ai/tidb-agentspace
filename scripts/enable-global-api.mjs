@@ -10,14 +10,9 @@ async function privateJson(path) {
   return JSON.parse(await readFile(path, 'utf8'));
 }
 // Prepare a new private plan; never overwrite the active deployment or initialize Meta storage.
-export async function prepareGlobalCutover({
-  sourcePlan,
-  directory,
-  mountDirectory,
-  clockDirectory,
-}) {
-  if (![sourcePlan, directory, mountDirectory, clockDirectory].every(isAbsolute))
-    throw new Error('Use absolute configuration and persistent clock paths.');
+export async function prepareGlobalCutover({ sourcePlan, directory, mountDirectory }) {
+  if (![sourcePlan, directory, mountDirectory].every(isAbsolute))
+    throw new Error('Use absolute configuration paths.');
   const plan = await privateJson(sourcePlan);
   if (
     plan.format !== 1 ||
@@ -41,7 +36,6 @@ export async function prepareGlobalCutover({
     directory: resolve(directory, 'security'),
     mountDirectory: resolve(mountDirectory, 'security'),
     api,
-    clockDirectory,
     initializeClock: true,
   });
   const save = (name, value) =>
@@ -71,7 +65,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       sourcePlan: process.argv[2],
       directory: process.argv[3],
       mountDirectory: process.argv[4],
-      clockDirectory: process.argv[5],
     });
     console.log(JSON.stringify(result));
   } catch {
