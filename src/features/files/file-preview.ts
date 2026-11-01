@@ -12,7 +12,6 @@ const codeLanguages = {
   yml: 'yaml',
   yaml: 'yaml',
   css: 'css',
-  html: 'markup',
   xml: 'markup',
   svg: 'markup',
   go: 'go',
@@ -123,6 +122,7 @@ export function isTabularFile(path: string) {
 
 export function fileFormat(path: string) {
   const extension = path.split('/').pop()?.split('.').pop()?.toLowerCase() ?? '';
+  if (extension === 'html' || extension === 'htm') return { kind: 'html' } as const;
   if (extension === 'mmd' || extension === 'mermaid') return { kind: 'mermaid' } as const;
   if (extension === 'md' || extension === 'markdown') return { kind: 'markdown' } as const;
   if (extension === 'json') return { kind: 'json', language: 'json' } as const;

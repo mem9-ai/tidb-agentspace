@@ -122,3 +122,20 @@ Browser assertions cover Markdown, standalone files, malformed and oversized dia
 security directives and remote-image denial, multiple diagrams, source access, theme changes,
 lazy loading, light/dark and desktop/narrow layouts. See the [desktop dark](screenshots/mermaid/desktop-dark.png) and [narrow light](screenshots/mermaid/narrow-light.png) views. The `/studio/` base-path build is checked separately. These tests use
 synthetic local fixtures; they do not assert live-provider availability.
+
+## HTML preview
+
+HTML and HTM files open as a static page in the file workspace; Edit source and Export remain
+available. Inline styles and embedded data images can render, while scripts, links, forms,
+external resources, and nested frames are disabled. This is not an interactive website runtime:
+pages that depend on JavaScript or remote assets may be incomplete. Existing text preview limits
+(128 KiB, 2,000 lines, and 10,000 characters per line) apply before parsing.
+
+The client parses the untrusted document with parse5 without creating browser DOM nodes, removes
+active and navigational content, and renders the result in a scriptless, opaque-origin sandbox
+with a restrictive CSP. These protections are complementary: do not parse untrusted HTML in
+the host page, or enable scripts or network access in the frame, without reviewing the security
+boundary. Browser assertions exercise styling, source editing, CSP-blocked external resources,
+scripts and navigation, size fallback, and light/dark desktop and narrow layouts. The
+[desktop dark](screenshots/html-preview/desktop-dark.png) and
+[narrow light](screenshots/html-preview/narrow-light.png) views use synthetic local fixtures.
