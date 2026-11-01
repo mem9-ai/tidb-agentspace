@@ -356,6 +356,8 @@ impl WorkspaceServer {
         })
     }
     pub fn with_global(mut self, mut global: global_api::GlobalServer) -> Self {
+        global = global
+            .with_shared_region_origins(self.app.config.bind, &self.app.config.public_origins);
         if self.app.config.insecure_loopback
             && let Some(runtime) = &self.app.guest_runtime
             && runtime.guest_enabled

@@ -663,10 +663,30 @@ for (const gateway of ['preserved', 'stripped']) {
     `one Portal SSO callback establishes isolated Global and Region sessions through a ${gateway} gateway`,
     { skip: !enabled, timeout: 120000 },
     async (t) => {
-      const f = await fixture(t, {}, 'globalApi', gateway === 'stripped');
+      const f = await fixture(
+        t,
+        { publicOrigins: ['https://studio.example.test', 'https://gateway.example.test'] },
+        'globalApi',
+        gateway === 'stripped',
+      );
       const global = '/studio/api/global';
       const regional = '/studio';
       assert.equal((await f.request(global + '/api/health')).status, 200);
+      assert.equal(
+        (await f.request(global + '/api/health', { headers: { Host: 'gateway.example.test' } }))
+          .status,
+        200,
+      );
+      assert.equal(
+        (
+          await f.request('/studio/api/v1/token-issuances', {
+            method: 'POST',
+            headers: { Host: 'gateway.example.test' },
+            body: { audience: 'region' },
+          })
+        ).status,
+        401,
+      );
       assert.equal(
         (await f.request(global + '/api/health', { headers: { Host: 'unexpected.example' } }))
           .status,
