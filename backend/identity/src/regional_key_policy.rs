@@ -89,7 +89,7 @@ impl KeyPolicies {
         })
     }
 
-    fn scope(&self, workspace: &str, key: &str) -> Result<Scope> {
+    pub(crate) fn scope(&self, workspace: &str, key: &str) -> Result<Scope> {
         if !valid_id(workspace) || !uuid(key) {
             return Err(error(404, "NOT_FOUND"));
         }
@@ -102,7 +102,7 @@ impl KeyPolicies {
         })
     }
 
-    async fn read(&self, scope: &Scope) -> Result<Option<(KeyPolicy, Value)>> {
+    pub(crate) async fn read(&self, scope: &Scope) -> Result<Option<(KeyPolicy, Value)>> {
         let result = self
             .metadata
             .execute(MetaRequest::Get {

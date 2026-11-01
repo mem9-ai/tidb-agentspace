@@ -11,6 +11,7 @@ pub mod legacy_key_index;
 pub mod onboarding;
 pub mod regional;
 pub mod regional_key_policy;
+pub mod regional_refresh;
 pub mod scheduler;
 pub mod sessions;
 

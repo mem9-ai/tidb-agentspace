@@ -60,6 +60,8 @@ if (enabled) {
           'global_key_probe',
           '--example',
           'global_owner_session_probe',
+          '--example',
+          'regional_refresh_probe',
         ],
         { timeout: 180_000 },
       );
@@ -190,6 +192,64 @@ test(
     await save({ ...policy, keyVersion: 3, policyGeneration: 3, revoked: true });
     await install(randomUUID());
     await assert.rejects(check());
+  },
+);
+
+test(
+  'proof-bound refresh family survives Global metadata loss and Region S3 restart',
+  { skip: !enabled, timeout: 90000 },
+  async (t) => {
+    const fixture = await metaFixture();
+    const global = await fixture.service('global');
+    let region = await fixture.service('other');
+    t.after(async () => {
+      global.client.close();
+      region.client.close();
+      await fixture.close();
+    });
+    const config = resolve(fixture.directory, 'refresh-region.json');
+    const input = resolve(fixture.directory, 'refresh-policy.json');
+    const wrong = resolve(fixture.directory, 'refresh-wrong-workspace.json');
+    const current = resolve(fixture.directory, 'refresh-current.json');
+    const old = resolve(fixture.directory, 'refresh-old.json');
+    const policyProbe = resolve('meta-service/target/debug/examples/regional_key_policy_probe');
+    const refreshProbe = resolve('meta-service/target/debug/examples/regional_refresh_probe');
+    const policy = {
+      workspaceId: 'ws_agentlab',
+      regionId: 'region:other',
+      keyId: randomUUID(),
+      principalId: 'legacy-owner',
+      keyVersion: 1,
+      policyGeneration: 1,
+      grantRef: 'grant:existing',
+      expiresAt: 4000,
+      revoked: false,
+    };
+    await writeFile(config, JSON.stringify(region.clientConfig), { mode: 0o600 });
+    await writeFile(input, JSON.stringify(policy), { mode: 0o600 });
+    await writeFile(wrong, JSON.stringify({ ...policy, workspaceId: 'ws_other' }), { mode: 0o600 });
+    await exec(policyProbe, [config, 'install', input, randomUUID()]);
+    const run = (mode, path, now, policyFile = input) =>
+      exec(refreshProbe, [config, mode, policyFile, path, String(now)]);
+    await run('enroll', current, 1000);
+    assert.equal((await stat(current)).mode & 0o777, 0o600);
+    await copyFile(current, old);
+    await assert.rejects(run('check', current, 1000, wrong));
+    await global.stop('SIGKILL');
+    global.client.close();
+    await run('rotate', current, 1010);
+    await run('check', current, 1010);
+    const owner = (await region.client.health()).ownerId;
+    await region.stop('SIGKILL');
+    region.client.close();
+    region = await fixture.service('other', { previous: region, recoverOwner: owner });
+    await writeFile(config, JSON.stringify(region.clientConfig), { mode: 0o600 });
+    await run('check', current, 1011);
+    await run('rotate', current, 1020);
+    await run('check', current, 1020);
+    await assert.rejects(run('check', current, 4000));
+    await assert.rejects(run('rotate', old, 1022));
+    await assert.rejects(run('check', current, 1022));
   },
 );
 
