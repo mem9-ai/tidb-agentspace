@@ -74,6 +74,7 @@ export function extendRegionalSecurityContract(spec) {
   });
   const operation = (id, security, status, schema, extra = {}) => ({
     operationId: id,
+    'x-authentication-profile': 'regional-token',
     tags: ['Region security'],
     security,
     parameters: [...parameters],

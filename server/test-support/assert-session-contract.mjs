@@ -19,6 +19,39 @@ export function assertSessionContract(cookie) {
   for (const [path, methods] of Object.entries(contract.paths)) {
     if (!path.startsWith('/workspaces')) continue;
     for (const operation of Object.values(methods).filter((value) => value.operationId)) {
+      if (operation['x-authentication-profile'] === 'regional-token') {
+        assert.ok(
+          [
+            'enrollRegionalRefreshFamily',
+            'issueRegionalToken',
+            'getRegionalRefreshFamily',
+            'revokeRegionalRefreshFamily',
+            'getRegionalTokenIssuance',
+            'revokeRegionalAccessToken',
+          ].includes(operation.operationId),
+          'Explicit regional credential operation required',
+        );
+        assert.equal(
+          operation.security.some((requirement) =>
+            ['localOwner', 'accountOwner', 'guestOwner', 'workspaceKey'].some((key) =>
+              Object.hasOwn(requirement, key),
+            ),
+          ),
+          false,
+          'Owner cookies and Workspace Keys must not impersonate enrolled regional credentials',
+        );
+        assert.ok(
+          (operation.operationId === 'enrollRegionalRefreshFamily' &&
+            operation.security.length === 0) ||
+            operation.security.some(
+              (requirement) =>
+                Object.hasOwn(requirement, 'regionalAccess') ||
+                Object.hasOwn(requirement, 'regionalRefresh'),
+            ),
+          'Regional credential boundary must be documented',
+        );
+        continue;
+      }
       assert.ok(
         operation.security.some(
           (requirement) =>

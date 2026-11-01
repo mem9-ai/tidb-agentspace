@@ -6437,6 +6437,7 @@
     "/workspaces/{workspaceId}/refresh-families": {
       "post": {
         "operationId": "enrollRegionalRefreshFamily",
+        "x-authentication-profile": "regional-token",
         "tags": ["Region security"],
         "security": [],
         "parameters": [
@@ -6486,6 +6487,7 @@
     "/workspaces/{workspaceId}/token-issuances": {
       "post": {
         "operationId": "issueRegionalToken",
+        "x-authentication-profile": "regional-token",
         "tags": ["Region security"],
         "security": [{ "regionalRefresh": [] }],
         "parameters": [
@@ -6533,6 +6535,7 @@
     "/workspaces/{workspaceId}/refresh-families/{familyId}": {
       "get": {
         "operationId": "getRegionalRefreshFamily",
+        "x-authentication-profile": "regional-token",
         "tags": ["Region security"],
         "security": [{ "regionalAccess": [] }],
         "parameters": [
@@ -6566,6 +6569,7 @@
       },
       "delete": {
         "operationId": "revokeRegionalRefreshFamily",
+        "x-authentication-profile": "regional-token",
         "tags": ["Region security"],
         "security": [{ "regionalAccess": [] }],
         "parameters": [
@@ -6590,6 +6594,7 @@
     "/workspaces/{workspaceId}/token-issuances/{issuanceId}": {
       "get": {
         "operationId": "getRegionalTokenIssuance",
+        "x-authentication-profile": "regional-token",
         "tags": ["Region security"],
         "security": [{ "regionalAccess": [] }],
         "parameters": [
@@ -6625,6 +6630,7 @@
     "/workspaces/{workspaceId}/access-tokens/{tokenId}": {
       "delete": {
         "operationId": "revokeRegionalAccessToken",
+        "x-authentication-profile": "regional-token",
         "tags": ["Region security"],
         "security": [{ "regionalAccess": [] }],
         "parameters": [
