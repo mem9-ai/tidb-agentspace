@@ -9,7 +9,7 @@ Cursor, Copilot, and other tools through the root [AGENTS.md](../../AGENTS.md); 
 plugin, skill, or conversation history is required.
 
 Product flows and cross-page reviews also follow [product experience](product-experience.md):
-consistent interactions and minimum complete paths to useful value.
+consumer product clarity and care, consistent interactions and minimum complete paths to useful value.
 
 | Task                                                                                       | Required reference                                                                                                            |
 | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |

@@ -7,6 +7,35 @@
 - Current evidence and proposals: [experience audit](../product-experience-audit.md).
   Component APIs, theme and readability remain owned by the [TiUI standard](tiui-design-system.md).
 
+## Consumer product quality
+
+**Accepted owner direction (GH-96, 2026-11-01):** design this developer and agent Workspace
+with the care of an excellent consumer product. Steve Jobs and Elon Musk are design
+references: learn from focus, craftsmanship and questioning unnecessary complexity, then
+apply judgment to this product's users and tasks.
+
+- Define the useful outcome before choosing screens or exposing capabilities. Users should
+  understand what they can do and why it matters without an explanation from the builder.
+- Question each requirement, choice, label and step. Remove what does not serve the user's
+  task before polishing what remains; preserve the explicit decisions and safeguards below.
+- Treat naming, copy, defaults, examples, spacing and visual hierarchy as part of the product.
+  Use natural language and realistic sample content. Keep technical terms when they help a
+  developer act correctly, and make optional implementation details secondary.
+- Own the complete experience: first use, a useful result, a clear next action and returning
+  to continue. Creation alone does not complete a tutorial. A polished screen does not
+  compensate for a dead end, lost progress or an unexplained failure.
+- Exercise product judgment before delivery. Fix obvious confusing names, redundant controls,
+  inconsistent interactions and incomplete paths within the task's scope without waiting for
+  the owner to point them out. Review both new and returning user experiences with realistic
+  data. Passing automated checks does not establish clarity or product quality.
+
+These are accepted design and review expectations, not a claim that a product-wide redesign
+or automatic quality judgment is implemented. Revisit details when observed user behavior
+shows that a default or simplification makes a task harder. Reference material:
+[Steve Jobs, speeches to Apple employees and at Macworld, in _Make Something Wonderful_](https://book.stevejobsarchive.com/),
+and [Elon Musk on questioning requirements and deleting steps before optimizing, 44:08–46:14](https://lexfridman.com/elon-musk-and-neuralink-team-transcript/).
+The Workspace rules above are the project's application of these ideas.
+
 ## Design from the useful outcome
 
 Start with what a person or agent wants to accomplish: query data, work with a file, or
