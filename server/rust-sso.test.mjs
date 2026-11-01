@@ -592,6 +592,19 @@ test(
       const r = await publicRequest('/studio/api/health');
       assert.equal(r.status, 200, active.output());
     });
+    const localHealth = await fetch(`http://127.0.0.1:${listen}/api/health`);
+    assert.equal(localHealth.status, 200, await localHealth.clone().text());
+    await localHealth.body.cancel();
+    const localData = await fetch(`http://127.0.0.1:${listen}/studio/api/v1/workspaces`);
+    assert.equal(localData.status, 403);
+    assert.equal((await localData.json()).error.code, 'HOST_DENIED');
+    const localSession = await fetch(`http://127.0.0.1:${listen}/api/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    assert.equal(localSession.status, 403);
+    await localSession.body.cancel();
     const denied = await publicRequest('/studio/api/session', {
       method: 'POST',
       headers: {

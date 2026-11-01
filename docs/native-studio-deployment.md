@@ -81,8 +81,7 @@ processes to examine Global and Region failure boundaries; they do not establish
 isolation in the co-located deployment. The opt-in [regional Token profile](regional-token-api.md) tests independent Global API and
 Global Meta process loss, direct regional data/refresh and Region restart locally, including
 same-secret renewal beyond the old Key version expiry and undelivered/late-renewal denials.
-Existing Key/resource/provider bindings are checked for parity. Automatic legacy-Key authority
-cutover is not enabled; these tests do not establish cloud Pod-level isolation.
+Resource/provider bindings are checked for parity; retired direct regional Keys are discarded under ADR 0036. These local tests do not establish cloud Pod-level isolation.
 
 Main-only CD builds once and pushes an immutable digest. It checks the existing single-writer Deployment and public baseline, makes a resourceVersion-guarded image-only update, waits for readiness, and verifies public health, auth configuration and unauthenticated denial. A protected explicit compatibility policy may authorize bounded recovery after a confirmed failed rollout; an explicit `recover` dispatch provides guarded operator recovery. See [ADR 0032](decisions/0032-writer-safe-dev-release.md). CD does not create infrastructure, delete data, change credentials or initialize storage. Readiness checks do not prove a real-account login or provider functionality; verify those separately.
 
@@ -176,3 +175,8 @@ are initialized deliberately on first start; subsequently set `initializeClock:f
 prepared API configs. Back up the private identities/checkpoints; rotate control certificates
 before their one-year expiry. Cloud runs one service; local native tests own independent
 Global outage/Region renewal evidence. No cloud failure test is required.
+
+The Token profile preserves the existing GET `/api/health` probe with a loopback Host only
+when the socket peer is actually local. The same Host cannot access data or create an Owner
+session, and forwarding headers cannot enable the exception. Native hosted bootstrap tests
+verify public ingress, local readiness, local-data denial and restart together.

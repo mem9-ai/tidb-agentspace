@@ -519,7 +519,20 @@ async fn policy(State(app): State<App>, mut request: Request, next: Next) -> Res
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.starts_with("Bearer "));
-    let mut policy_result = http_policy::allowed(&app.config, headers, request.method());
+    let raw_path = request.uri().path();
+    let path = raw_path
+        .strip_prefix(&app.config.public_path)
+        .unwrap_or(raw_path);
+    // Existing Pod probes use a loopback Host. Only the actual local peer's read-only
+    // health route gets this exception; forwarding headers and data routes never do.
+    let local_readiness = request.method() == Method::GET
+        && path == "/api/health"
+        && request
+            .extensions()
+            .get::<ConnectInfo<SocketAddr>>()
+            .is_some_and(|p| p.0.ip().is_loopback());
+    let mut policy_result =
+        http_policy::allowed(&app.config, headers, request.method(), local_readiness);
     if app.security.is_some()
         && [
             "authorization",
