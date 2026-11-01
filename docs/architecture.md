@@ -120,13 +120,10 @@ management/documentation entry and authorized Region discovery. Clients then cal
 selected Region directly for table/file access, SQL, analysis, import/export and regional
 operation status; validated known routes do not require a Global preflight. Global owns
 policy/placement and Region owns admitted execution; the contract explicitly separates future
-desired-state delegation from the current regional resource mutation routes. Regional auth
-also goes directly to Region, including token exchange/refresh and independent reauthentication.
+desired-state delegation from the current regional resource mutation routes. Initial Key exchange goes to Global; proof-bound refresh and subsequent regional issuance go directly to Region.
 Short access-token expiry is separate from a durable, explicitly approved continuity grant
-and rotatable credential versions. Existing 7/30/90-day Keys retain their hard expiry; they
-are not silently converted into persistent grants. A Global-only expiring root cannot provide
-unbounded regional reauthentication merely by increasing JWT TTL. This is proposed behavior;
-the current one-origin generator/client remains implemented until an explicit migration.
+and rotatable credential versions. Actual parent Key expiry remains enforced; no Key becomes an unbounded continuity grant. A Global-only expiring root cannot provide
+unbounded regional reauthentication merely by increasing JWT TTL. The configured Global/Region public flow is implemented; [ADR 0036](decisions/0036-global-keys-only.md) replaces old direct regional Keys without changing resource/provider credentials.
 
 The [metadata scale profile](../specs/gh-74/metadata-scale.md) targets millions of Workspaces
 and individual million-resource Workspaces. Pool small tenants in shared cells and partition

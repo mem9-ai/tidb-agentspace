@@ -110,8 +110,7 @@ The additional regional integration fixture stops both independent Global API an
 then performs Region reads/writes, expiry-triggered local renewal and Region restart, including
 cached SDK reconnect without Global. The case now includes a same-secret Key renewal applied
 before the old expiry, cross-version local refresh after that expiry, and separate denial cases
-for fixed expiry, undelivered/late renewal and missing proof. Existing Keys retain their current
-regional authority; automatic fenced legacy-Key cutover is not enabled.
+for fixed expiry, undelivered/late renewal and missing proof. Retired regional Keys are denied and discarded under ADR 0036; resource and provider credential preservation remain acceptance requirements.
 
 With a configured `regionControls` entry, Global signs and durably records exact policy/ceiling
 intent before initiating TLS 1.3 mTLS to the Region control origin. Each entry contains

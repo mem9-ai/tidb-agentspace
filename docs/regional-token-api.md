@@ -1,13 +1,14 @@
 # Regional Token API and local continuity
 
-Status: opt-in native Region integration with Global policy delivery, client-bound refresh
+Status: configured native Region integration with Global policy delivery, client-bound refresh
 families, local issuance/rotation/revocation and direct data authorization. The supported
 single-writer profile supports either one explicit Workspace or the existing bounded managed
 Workspace registry. Existing account/Guest listeners may opt in; a separate Token-only Region
 can use `managedWorkspaceLimit` without regional Owner SSO or a Global dependency.
-Legacy direct-Key records and their authority are retained; enabling this profile does not import,
-rotate or replace them. Same-secret Key renewal is integrated across the previous version's
-expiry. Automatic legacy-Key authority cutover remains a separate migration gate.
+Retired direct regional Keys are discarded under [ADR 0036](decisions/0036-global-keys-only.md);
+there is no verifier migration or direct-Key compatibility. Resources and provider/native
+credentials remain intact. Same-secret Global Key renewal is integrated across the previous
+version’s expiry.
 
 ## Serving profile
 

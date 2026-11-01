@@ -13,13 +13,14 @@ through a Global catalog does not make Global a data proxy. Reuse validated know
 routes without a mandatory Global preflight, preserving regional autonomy during Global
 outage. The [regional API/auth contract](../../specs/gh-74/regional-api-auth.md#global-entry-and-operation-ownership)
 owns the detailed target boundary and migration/acceptance gates. The separate generated [Global contract](../../public/global-openapi.json) and regional contract
-now implement this boundary with the opt-in [regional Token profile](../regional-token-api.md).
-Default existing credentials retain their current regional authority.
+implement this boundary through the configured [regional Token profile](../regional-token-api.md).
+[ADR 0036](../decisions/0036-global-keys-only.md) retires direct regional customer Keys;
+resources and provider/native credentials remain intact.
 
 1. Give a business object a stable, tenant-scoped URI. Use plural collection nouns and opaque
    IDs: `/workspaces/{workspaceId}/resources/{resourceId}`. Put representations such as
    `/files/content` and filters such as `?path=` in the contract explicitly. Never encode
-   credentials in a URI. A regional Workspace API URL and Key are the agent bootstrap inputs.
+   credentials in a URI. The Global base URL, Workspace ID and Key bootstrap Token issuance; a validated Region descriptor supplies the direct data endpoint.
 2. GET/HEAD observe; they must not start provisioning, deletion or customer SQL. POST creates
    subordinate resources or bounded result representations. PUT replaces a known object;
    PATCH changes declared fields; DELETE requests removal. Avoid `/execute`, `/delete`,

@@ -20,9 +20,10 @@ tracks per-Region application separately from Global intent. An unreachable Regi
 pending; regional availability during a partition is incompatible with an unconditional claim
 of immediate global revocation. Policy synchronization age never implicitly expires access.
 
-Existing Key secret, ID, exact grants, expiry and resource/provider bindings are preserved.
-Migration adds versioned records and controlled authority fencing with parity verification;
-it does not recreate resources, recover plaintext or rotate customer credentials by default.
+The original legacy customer-Key preservation/migration requirement is superseded by
+[ADR 0036](0036-global-keys-only.md), following the owner’s explicit authorization to discard
+old direct regional Keys and create new Global Keys. Resource records, files and
+provider/native credentials remain intact. No resource recreation or plaintext recovery is required.
 
 ## Status and verification
 
@@ -33,10 +34,8 @@ The managed regional registry accepts locally verified Workspace-bound Tokens; s
 Token listeners do not require Global or regional Owner SSO on the data/renewal path.
 Same-secret Key-version rebind now requires signed, pre-expiry durable observations at both
 authorities and independent regional witnesses. Explicit Owner delivery-attempt resources reconcile
-pending policy/revocation without GET effects. Existing regional credentials remain authoritative;
-fenced legacy-Key cutover is not activated.
+pending policy/revocation without GET effects. New Global Keys replace retired regional direct Keys; Region accepts access Tokens and proof-bound local refresh.
 
-The running prototype has regional Key authorization and limited region-local account sessions.
-The non-destructive authority migration described here remains a separate implementation gate. `SEC-01` through `SEC-09` in the detailed design are required
+The running prototype implements Global Key lifecycle, direct Region Token authorization and local continuity. Legacy customer-Key verifier migration is intentionally omitted under ADR 0036. `SEC-01` through `SEC-09` in the detailed design are required
 native API evidence; separate implementation changes must update OpenAPI and client contracts.
 No deployment or live credential operation follows from this decision.
