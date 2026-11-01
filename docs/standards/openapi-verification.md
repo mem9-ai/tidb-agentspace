@@ -115,7 +115,9 @@ startup, serial waits, duplicated compilation and redundant PR/main/deploy execu
 that path through scoped checks, caches and reviewed evidence reuse rather than removing
 behavior assertions, accepting failures or bypassing protection.
 
-Implementation status: the current classifier and delivery consumers below still enforce
+Implementation status: [manual dev smoke release](../decisions/0039-dev-smoke-release.md)
+now supports explicitly selected basic dev acceptance. The automatic classifier and
+remaining delivery consumers below still enforce
 broader full-main checks for several operator/policy/documentation changes. This accepted
 selection rule is not a claim that those optimizations are implemented. Change those gates
 through a separate reviewed update; until then, honor the applicable enforced requirements

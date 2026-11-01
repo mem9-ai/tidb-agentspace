@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 export const repository = 'mem9-ai/tidb.ai';
 const checks = {
   console: ['Quality', 'Browser smoke'],
+  'dev-smoke': ['Quality'],
   full: ['Quality', 'Browser smoke', 'Rust backend and S3 integration'],
 };
 
@@ -28,9 +29,23 @@ export function evaluateEvidence(run, jobs, sha, mode) {
   const browser = jobs.filter((job) => job.name === 'Browser smoke');
   if (browser.length > 1) throw new Error('Ambiguous CI evidence.');
   const backendOnly = browser[0]?.status === 'completed' && browser[0].conclusion === 'skipped';
-  const required = backendOnly
-    ? ['Quality', 'Backend-only scope', 'Rust backend and S3 integration']
-    : checks[mode];
+  if (
+    mode === 'dev-smoke' &&
+    jobs.some((job) =>
+      [job, ...(job.steps || [])].some(
+        (check) =>
+          check.status === 'completed' &&
+          !['success', 'skipped', 'neutral'].includes(check.conclusion),
+      ),
+    )
+  )
+    throw new Error('A known CI failure prevents a dev smoke release.');
+  const required =
+    mode === 'dev-smoke'
+      ? checks[mode]
+      : backendOnly
+        ? ['Quality', 'Backend-only scope', 'Rust backend and S3 integration']
+        : checks[mode];
   for (const name of required) {
     const found = jobs.filter((job) => job.name === name);
     if (found.length > 1) throw new Error('Ambiguous CI evidence.');
@@ -42,12 +57,12 @@ export function evaluateEvidence(run, jobs, sha, mode) {
       return false;
     }
   }
-  return mode === 'console' || run.status === 'completed';
+  return mode !== 'full' || run.status === 'completed';
 }
 
 export async function requireCi({ sha, mode, api, pause = delay, attempts = 180 }) {
   if (!checks[mode] || !/^[a-f0-9]{40}$/.test(sha || ''))
-    throw new Error('Use a full commit SHA and console/full CI gate.');
+    throw new Error('Use a full commit SHA and a supported CI gate.');
   for (let attempt = 0; attempt < attempts; attempt++) {
     const list = await api(
       `/actions/workflows/ci.yml/runs?head_sha=${sha}&branch=main&per_page=100`,

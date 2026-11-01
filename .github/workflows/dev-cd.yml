@@ -38,6 +38,11 @@ on:
         type: choice
         options: [deploy, inspect, recover]
         default: deploy
+      verification:
+        description: Full CI by default; dev-smoke is an explicitly selected basic dev release
+        type: choice
+        options: [full, dev-smoke]
+        default: full
       failed_image_digest:
         description: Exact failed image digest for recover
         required: false
@@ -81,7 +86,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ github.sha }}
-          GATE: ${{ github.event.inputs.operation == 'inspect' && 'console' || 'full' }}
+          GATE: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy' && inputs.verification == 'dev-smoke' && 'dev-smoke' || inputs.operation == 'inspect' && 'console' || 'full' }}
         run: node scripts/require-ci.mjs "$GATE" "$SOURCE_SHA"
 
   deploy:
