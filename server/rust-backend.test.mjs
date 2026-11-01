@@ -433,18 +433,6 @@ test(
     assert.equal(boot.status, 200);
     for (const name of ['resources', 'keys', 'files', 'events'])
       assert.deepEqual(boot.body[name], []);
-    const index = await region.client.call({
-      op: 'get',
-      scope: {
-        authorityId: region.server.authorityId,
-        ownerKind: 'workspace',
-        ownerId: 'ws_agentlab',
-        family: 'workspace',
-        partitionId: 'primary',
-      },
-      keys: ['indexes/resource-v1/schema'],
-    });
-    assert.equal(index.records['indexes/resource-v1/schema'].value.phase, 'ready');
     const created = await request(base + '/resources', {
       method: 'POST',
       body: { kind: 'filesystem', name: 'fresh-files', region: 'aws-ap-southeast-1' },

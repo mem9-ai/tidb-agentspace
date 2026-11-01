@@ -552,7 +552,7 @@ test(
     const firstResource = await f.request(`/api/v1/workspaces/${workspace}/resources`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token.body.accessToken}` },
-      body: { kind: 'filesystem', name: 'Research files', region: 'aws-ap-southeast-1' },
+      body: { kind: 'filesystem', name: 'research-files', region: 'aws-ap-southeast-1' },
     });
     assert.equal(firstResource.status, 201, JSON.stringify(firstResource.body));
     const loggedOut = await f.request('/studio/api/auth/tidbcloud/logout', {
