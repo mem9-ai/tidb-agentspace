@@ -146,6 +146,7 @@ export default function FilePreviewPanel({
   const source = useRef<HTMLTextAreaElement>(null);
   const header = useRef<HTMLElement>(null);
   useEffect(() => {
+    if (loading) return;
     (initialView === 'source' ? source.current : title.current)?.focus({ preventScroll: true });
     if (window.matchMedia('(max-width: 1099px)').matches) {
       header.current?.scrollIntoView({ block: 'start' });
@@ -154,7 +155,7 @@ export default function FilePreviewPanel({
       if (trigger?.isConnected)
         trigger.focus({ preventScroll: !window.matchMedia('(max-width: 1099px)').matches });
     };
-  }, [trigger, initialView]);
+  }, [trigger, initialView, loading]);
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => {
@@ -285,11 +286,12 @@ export default function FilePreviewPanel({
               ref={source}
               label="File content"
               aria-label="File content"
+              description={loading ? 'Loading saved file…' : unavailableReason || undefined}
               className="file-source-editor"
               value={content}
               onChange={(event) => onChange(event.currentTarget.value)}
               spellCheck={false}
-              disabled={busy}
+              disabled={busy || loading || !!unavailableReason}
               autosize
               minRows={14}
               maxRows={30}

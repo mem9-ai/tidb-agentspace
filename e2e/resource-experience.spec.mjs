@@ -21,6 +21,62 @@ const collections = [
   },
 ];
 
+test('a new source editor waits for its saved content before accepting a draft and receiving focus', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  workspace.addResources();
+  let release;
+  const pending = new Promise((resolve) => {
+    release = resolve;
+  });
+  await context.route('**/api/**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (
+      url.pathname.endsWith('/files/content') &&
+      url.searchParams.get('path') === '/agent-notes.md'
+    ) {
+      await pending;
+      return route.fulfill({ json: { content: '', size: 0 } });
+    }
+    if (!url.pathname.endsWith('/files') || request.method() !== 'PUT') return route.fallback();
+    const input = request.postDataJSON();
+    const saved = {
+      id: 'new-source',
+      resourceId: input.resourceId,
+      path: input.path,
+      type: 'file',
+      size: 0,
+      updatedAt: null,
+    };
+    workspace.state.files.push({ ...saved, content: '' });
+    return route.fulfill({ json: { data: saved } });
+  });
+  try {
+    await workspace.open('#files?resourceId=fs_fixture');
+    await page.getByRole('button', { name: 'Create file or folder', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'New file', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Create a file', exact: true });
+    await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('agent-notes.md');
+    await dialog.getByRole('button', { name: 'Create file', exact: true }).click();
+    const source = page.getByRole('textbox', { name: 'File content', exact: true });
+    await expect(source).toBeVisible();
+    await expect(source).toBeDisabled();
+    await expect(page.getByText('Loading saved file…', { exact: true })).toBeVisible();
+    release();
+    await expect(source).toBeEnabled();
+    await expect(source).toBeFocused();
+    await source.fill('# Agent notes\n\nKeep this draft.');
+    await page.getByRole('button', { name: 'All file systems', exact: true }).click();
+    await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
+    await expect(source).toHaveValue('# Agent notes\n\nKeep this draft.');
+  } finally {
+    release();
+  }
+});
+
 test('new files open for editing, lock creation, protect drafts and survive summary refresh failure', async ({
   page,
   context,
