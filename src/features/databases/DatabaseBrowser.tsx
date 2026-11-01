@@ -22,6 +22,7 @@ import { DatabaseTableItem } from './DatabaseTableItem';
 import type { TableMetadata } from './use-table-metadata';
 import { readDatabase } from './database-read';
 import './database-browser.css';
+import { tutorialHash } from '../navigation/workspace-route';
 
 function useRead<T>(load: (signal: AbortSignal) => Promise<T>, refreshVersion = 0) {
   const [state, setState] = useState<{ data?: T; error?: string; loading: boolean }>({
@@ -377,9 +378,22 @@ export function DatabaseTableList({
               <Text>
                 {listing.data?.data.length
                   ? 'No matching tables.'
-                  : 'No tables yet. Create one in SQL Editor, then refresh.'}
+                  : 'No tables yet. Try the sample orders, import a file, or create a table in SQL Editor.'}
               </Text>
             )}
+            {!listing.data?.data.length &&
+              database.status === 'active' &&
+              !database.connectionError && (
+                <Button
+                  variant="filled"
+                  disabled={busy || waiting}
+                  onClick={() => {
+                    location.hash = tutorialHash(database.id);
+                  }}
+                >
+                  Try sample data
+                </Button>
+              )}
             <nav aria-label="Database tables">
               {matches.map((table) => (
                 <DatabaseTableItem

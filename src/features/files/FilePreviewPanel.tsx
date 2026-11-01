@@ -143,9 +143,10 @@ export default function FilePreviewPanel({
     </WorkspaceResultPanel>
   );
   const title = useRef<HTMLSpanElement>(null);
+  const source = useRef<HTMLTextAreaElement>(null);
   const header = useRef<HTMLElement>(null);
   useEffect(() => {
-    title.current?.focus({ preventScroll: true });
+    (initialView === 'source' ? source.current : title.current)?.focus({ preventScroll: true });
     if (window.matchMedia('(max-width: 1099px)').matches) {
       header.current?.scrollIntoView({ block: 'start' });
     }
@@ -153,7 +154,7 @@ export default function FilePreviewPanel({
       if (trigger?.isConnected)
         trigger.focus({ preventScroll: !window.matchMedia('(max-width: 1099px)').matches });
     };
-  }, [trigger]);
+  }, [trigger, initialView]);
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => {
@@ -281,6 +282,7 @@ export default function FilePreviewPanel({
         <WorkspaceResultPanel title="Edit source" actions={fileActions}>
           <div className="file-preview-content">
             <Textarea
+              ref={source}
               label="File content"
               aria-label="File content"
               className="file-source-editor"

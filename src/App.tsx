@@ -149,6 +149,13 @@ const allScopes: CreateKeyInput['scopes'] = [
 function go(route: Route) {
   location.hash = route;
 }
+function isDemoWorkspace(data: Data) {
+  return (
+    data.mode === 'demo' &&
+    data.resources.length > 0 &&
+    data.resources.every((resource) => resource.provider === 'local')
+  );
+}
 function openDatabaseEditor(resourceId: string) {
   location.hash = databaseEditorHash(resourceId);
 }
@@ -524,7 +531,7 @@ function App() {
           {route === 'overview' && <Overview {...shared} />}
           {(route === 'databases' || route === 'files') &&
           lookupKey &&
-          (!selectedLoaded || route === 'files') &&
+          !selectedLoaded &&
           resolvedResourceKey !== lookupKey &&
           resourceLookupFailure !== lookupKey ? (
             <Text role="status">Loading resource…</Text>
@@ -801,95 +808,97 @@ function Overview({
       )}
       {!!data.resources.length && (
         <>
-          <div className="overview-grid">
-            <Paper className="panel activity-panel" withBorder>
-              <div className="panel-header">
-                <div>
-                  <Heading level={2}>Workspace activity</Heading>
-                  <Text component="p">Illustrative activity · demo data</Text>
+          {isDemoWorkspace(data) && (
+            <div className="overview-grid">
+              <Paper className="panel activity-panel" withBorder>
+                <div className="panel-header">
+                  <div>
+                    <Heading level={2}>Workspace activity</Heading>
+                    <Text component="p">Illustrative activity · demo data</Text>
+                  </div>
+                  <SegmentedControl
+                    aria-label="Activity time range"
+                    value={range}
+                    onChange={setRange}
+                    data={[
+                      { value: '24h', label: '24 hours' },
+                      { value: '7d', label: '7 days' },
+                    ]}
+                  />
                 </div>
-                <SegmentedControl
-                  aria-label="Activity time range"
-                  value={range}
-                  onChange={setRange}
-                  data={[
-                    { value: '24h', label: '24 hours' },
-                    { value: '7d', label: '7 days' },
-                  ]}
-                />
-              </div>
-              <div className="metrics-inline">
-                <div>
-                  <span>Local queries run</span>
-                  <strong>
-                    {data.queryCount}
-                    <small>queries</small>
-                  </strong>
+                <div className="metrics-inline">
+                  <div>
+                    <span>Local queries run</span>
+                    <strong>
+                      {data.queryCount}
+                      <small>queries</small>
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Databases</span>
+                    <strong>
+                      {dbs.length}
+                      <small>active</small>
+                    </strong>
+                  </div>
+                  <div>
+                    <span>File systems</span>
+                    <strong>
+                      {fs.length}
+                      <small>active</small>
+                    </strong>
+                  </div>
                 </div>
-                <div>
-                  <span>Databases</span>
-                  <strong>
-                    {dbs.length}
-                    <small>active</small>
-                  </strong>
+                <div className="chart-wrap">
+                  <Sparkline large range={range} />
+                  <div className="chart-axis">
+                    {(range === '24h'
+                      ? ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00']
+                      : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                    ).map((t) => (
+                      <span key={t}>{t}</span>
+                    ))}
+                  </div>
                 </div>
-                <div>
-                  <span>File systems</span>
-                  <strong>
-                    {fs.length}
-                    <small>active</small>
-                  </strong>
+              </Paper>
+              <Paper className="panel spend-panel" withBorder>
+                <div className="panel-header">
+                  <Heading level={2}>Usage this month</Heading>
+                  <Badge>Free plan</Badge>
                 </div>
-              </div>
-              <div className="chart-wrap">
-                <Sparkline large range={range} />
-                <div className="chart-axis">
-                  {(range === '24h'
-                    ? ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00']
-                    : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-                  ).map((t) => (
-                    <span key={t}>{t}</span>
-                  ))}
+                <div className="spend-number">
+                  —<small>Billing not connected</small>
                 </div>
-              </div>
-            </Paper>
-            <Paper className="panel spend-panel" withBorder>
-              <div className="panel-header">
-                <Heading level={2}>Usage this month</Heading>
-                <Badge>Free plan</Badge>
-              </div>
-              <div className="spend-number">
-                —<small>Billing not connected</small>
-              </div>
-              <div className="spend-rule">
-                <ShieldCheck size={15} />
-                <span>No payment method connected</span>
-              </div>
-              <div className="usage-mini">
-                <div>
-                  <span>MySQL request units</span>
-                  <strong>
-                    {data.resources.some((r) => r.provider === 'tidb-cloud-zero')
-                      ? 'Not measured'
-                      : '0 / 50M (demo)'}
-                  </strong>
+                <div className="spend-rule">
+                  <ShieldCheck size={15} />
+                  <span>No payment method connected</span>
                 </div>
-                <Progress value={0} aria-label="MySQL request units used" />
-                <div>
-                  <span>File System allowance</span>
-                  <strong>
-                    {data.capabilities.filesystem.provider === 'drive9-anonymous'
-                      ? 'Service trial limits'
-                      : '$5 / month (reference)'}
-                  </strong>
+                <div className="usage-mini">
+                  <div>
+                    <span>MySQL request units</span>
+                    <strong>
+                      {data.resources.some((r) => r.provider === 'tidb-cloud-zero')
+                        ? 'Not measured'
+                        : '0 / 50M (demo)'}
+                    </strong>
+                  </div>
+                  <Progress value={0} aria-label="MySQL request units used" />
+                  <div>
+                    <span>File System allowance</span>
+                    <strong>
+                      {data.capabilities.filesystem.provider === 'drive9-anonymous'
+                        ? 'Service trial limits'
+                        : '$5 / month (reference)'}
+                    </strong>
+                  </div>
+                  <small>Live trial quota and usage are not measured here.</small>
                 </div>
-                <small>Live trial quota and usage are not measured here.</small>
-              </div>
-              <Button className="text-link" onClick={() => go('billing')} variant="subtle">
-                View usage & limits <ArrowRight size={14} />
-              </Button>
-            </Paper>
-          </div>
+                <Button className="text-link" onClick={() => go('billing')} variant="subtle">
+                  View usage & limits <ArrowRight size={14} />
+                </Button>
+              </Paper>
+            </div>
+          )}
           <div className="overview-grid bottom-grid">
             <Paper className="panel quickstart-panel" withBorder>
               <div className="panel-header">
@@ -1253,17 +1262,41 @@ function FileWorkspace({
     setBusy(true);
     setError('');
     try {
-      await workspaceApi.saveFile({ resourceId, path: target, type, content: text });
-      await refresh();
+      const { data: saved } = await workspaceApi.saveFile({
+        resourceId,
+        path: target,
+        type,
+        content: text,
+      });
       listing.refresh();
-      notify(type === 'directory' ? 'Folder created' : 'File saved');
       setNewItem(null);
       setName('');
-      return true;
+      const summaryUpdated = await refresh().then(
+        () => true,
+        () => false,
+      );
+      notify(
+        summaryUpdated
+          ? type === 'directory'
+            ? 'Folder created'
+            : 'File saved'
+          : 'Saved. Refresh the file list to see the update; do not repeat the save.',
+      );
+      return (
+        saved ?? {
+          id: `${resourceId}:${target}`,
+          resourceId,
+          path: target,
+          type,
+          content: text,
+          size: new TextEncoder().encode(text).length,
+          updatedAt: null,
+        }
+      );
     } catch (e) {
       setError((e as Error).message);
       notify((e as Error).message);
-      return false;
+      return null;
     } finally {
       setBusy(false);
     }
@@ -1373,10 +1406,14 @@ function FileWorkspace({
           }}
           refreshing={listing.loading || analysisBusy}
           canCreate={!!system && !busy && !analysisBusy}
-          onCreate={(type) => {
-            setNewItem(type);
-            setError('');
-          }}
+          onCreate={(type) =>
+            requestPreviewChange(() => {
+              if (dirty) setContent(editing?.content || '');
+              setNewItem(type);
+              setName('');
+              setError('');
+            })
+          }
           collapsed={browserCollapsed}
           onToggle={() => setBrowserCollapsed((value) => !value)}
           footer={
@@ -1441,11 +1478,26 @@ function FileWorkspace({
           )}
           {systems.length > 0 && !children.length && !listing.loading && !listing.error && (
             <Empty
-              title={search ? 'No matching files' : 'An open canvas'}
+              title={search ? 'No matching files' : 'No files yet'}
               description={
                 search
                   ? 'Try another file name.'
                   : 'Create a file or upload some context to get started.'
+              }
+              action={
+                !search && path === '/' ? (
+                  <Button
+                    variant="filled"
+                    disabled={busy || analysisBusy}
+                    onClick={() =>
+                      requestPreviewChange(() => {
+                        location.hash = tutorialHash(system);
+                      })
+                    }
+                  >
+                    Try sample data
+                  </Button>
+                ) : undefined
               }
             />
           )}
@@ -1514,7 +1566,7 @@ function FileWorkspace({
           <Paper className="panel file-placeholder" withBorder>
             <Empty
               title="Select a file"
-              description="Choose a file on the left to preview, edit or analyze its contents."
+              description="Choose a file to preview, edit or analyze its contents."
             />
           </Paper>
         )}
@@ -1529,6 +1581,7 @@ function FileWorkspace({
         <Modal
           title={newItem === 'file' ? 'Create a file' : 'Create a folder'}
           description={`Location: ${path}`}
+          busy={busy}
           onClose={() => {
             setNewItem(null);
             setName('');
@@ -1537,6 +1590,7 @@ function FileWorkspace({
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              if (busy) return;
               if (!name.trim() || name.includes('/') || name === '.' || name === '..') {
                 setError('Enter a name without slashes or path segments.');
                 return;
@@ -1546,7 +1600,10 @@ function FileWorkspace({
                 setError('An item with this name already exists.');
                 return;
               }
-              void saveFile(target, newItem);
+              const type = newItem;
+              void saveFile(target, type).then((saved) => {
+                if (saved && type === 'file') void openFile(saved, 'source');
+              });
             }}
           >
             <TextInput
@@ -1556,6 +1613,7 @@ function FileWorkspace({
               maxLength={100}
               placeholder={newItem === 'file' ? 'context.md' : 'research'}
               value={name}
+              disabled={busy}
               onChange={(e) => setName(e.target.value)}
             />
             {error && (
@@ -1564,7 +1622,14 @@ function FileWorkspace({
               </Alert>
             )}
             <div className="modal-actions">
-              <Button type="button" onClick={() => setNewItem(null)}>
+              <Button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setNewItem(null);
+                  setName('');
+                }}
+              >
                 Cancel
               </Button>
               <Button variant="filled" loading={busy} disabled={busy} type="submit">
@@ -1681,7 +1746,7 @@ function Connect({ data, copy, onNewKey }: Shared & { onNewKey: () => void }) {
             </Text>
           </div>
           <div className="capability-note">
-            <Badge>REST API · Available locally</Badge>
+            <Badge>REST API</Badge>
             <Text component="p">
               Native MCP support is part of the proposed next phase. These instructions use the
               working REST API.
@@ -2030,8 +2095,8 @@ function ApiExplorer({ data, copy }: Shared) {
               </Button>
             </div>
             <div className="api-auth-note">
-              <ShieldCheck size={14} /> Explorer uses your local owner session. Agents use Bearer
-              authentication.
+              <ShieldCheck size={14} /> Explorer uses your Workspace owner session. Agents use
+              Bearer authentication.
             </div>
             <Code
               label="cURL"
@@ -2054,7 +2119,7 @@ function ApiExplorer({ data, copy }: Shared) {
               <Empty
                 icon={Terminal}
                 title="See the API in action"
-                description="Send a request to inspect the real local response."
+                description="Send a request to see the response from your Workspace."
               />
             )}
           </Paper>
@@ -2076,15 +2141,17 @@ function Monitoring({ data }: Shared) {
         title="Monitoring"
         description="Understand what your workspace is doing, and who is doing it."
         actions={
-          <SegmentedControl
-            aria-label="Activity time range"
-            value={range}
-            onChange={setRange}
-            data={[
-              { value: '24h', label: '24 hours' },
-              { value: '7d', label: '7 days' },
-            ]}
-          />
+          isDemoWorkspace(data) ? (
+            <SegmentedControl
+              aria-label="Activity time range"
+              value={range}
+              onChange={setRange}
+              data={[
+                { value: '24h', label: '24 hours' },
+                { value: '7d', label: '7 days' },
+              ]}
+            />
+          ) : undefined
         }
       />
       <ChoiceTabs value={tab} onChange={setTab} options={['Metrics', 'Activity log']}>
@@ -2092,8 +2159,9 @@ function Monitoring({ data }: Shared) {
           <>
             <Alert className="notice" color="peacock" icon={<Activity size={17} />}>
               <span>
-                Charts below are illustrative. Resource counts and local action counts come from the
-                running prototype. Cloud QPS and latency are not connected.
+                {isDemoWorkspace(data)
+                  ? 'Charts below use illustrative demo data. Counts come from this local Workspace.'
+                  : 'Resource status and recorded Workspace activity are shown below. Request rate and latency metrics are not available yet.'}
               </span>
             </Alert>
             <div className="metric-cards">
@@ -2102,15 +2170,15 @@ function Monitoring({ data }: Shared) {
                   name: 'Active resources',
                   value:
                     data.resourceNextCursor || data.resourceWindowTruncated
-                      ? `${data.resources.length}+`
-                      : data.resources.length,
+                      ? `${data.resources.filter((resource) => resource.status === 'active').length}+`
+                      : data.resources.filter((resource) => resource.status === 'active').length,
                   unit: 'resources',
                   icon: Database,
                 },
                 {
                   name: 'Queries executed',
                   value: data.queryCount,
-                  unit: 'local queries',
+                  unit: 'queries',
                   icon: Code2,
                 },
                 {
@@ -2122,9 +2190,9 @@ function Monitoring({ data }: Shared) {
                   icon: KeyRound,
                 },
                 {
-                  name: 'Activity events',
+                  name: 'Recent events',
                   value: data.events.length,
-                  unit: 'local events',
+                  unit: 'events',
                   icon: Activity,
                 },
               ].map((m) => (
@@ -2138,34 +2206,36 @@ function Monitoring({ data }: Shared) {
                 </Paper>
               ))}
             </div>
-            <div className="two-column">
-              <Paper className="panel monitoring-chart" withBorder>
-                <div className="panel-header">
-                  <Heading level={2}>Request activity</Heading>
-                  <Badge>Illustrative</Badge>
-                </div>
-                <div className="chart-wrap">
-                  <Sparkline large range={range} />
-                  <div className="chart-axis">
-                    <span>{range === '7d' ? '7 days ago' : '24 hours ago'}</span>
-                    <span>Now</span>
+            {isDemoWorkspace(data) && (
+              <div className="two-column">
+                <Paper className="panel monitoring-chart" withBorder>
+                  <div className="panel-header">
+                    <Heading level={2}>Request activity</Heading>
+                    <Badge>Illustrative</Badge>
                   </div>
-                </div>
-              </Paper>
-              <Paper className="panel monitoring-chart blue-chart" withBorder>
-                <div className="panel-header">
-                  <Heading level={2}>Query duration</Heading>
-                  <Badge>Illustrative</Badge>
-                </div>
-                <div className="chart-wrap">
-                  <Sparkline large range={range === '7d' ? '24h' : '7d'} />
-                  <div className="chart-axis">
-                    <span>{range === '7d' ? '7 days ago' : '24 hours ago'}</span>
-                    <span>Now</span>
+                  <div className="chart-wrap">
+                    <Sparkline large range={range} />
+                    <div className="chart-axis">
+                      <span>{range === '7d' ? '7 days ago' : '24 hours ago'}</span>
+                      <span>Now</span>
+                    </div>
                   </div>
-                </div>
-              </Paper>
-            </div>
+                </Paper>
+                <Paper className="panel monitoring-chart blue-chart" withBorder>
+                  <div className="panel-header">
+                    <Heading level={2}>Query duration</Heading>
+                    <Badge>Illustrative</Badge>
+                  </div>
+                  <div className="chart-wrap">
+                    <Sparkline large range={range === '7d' ? '24h' : '7d'} />
+                    <div className="chart-axis">
+                      <span>{range === '7d' ? '7 days ago' : '24 hours ago'}</span>
+                      <span>Now</span>
+                    </div>
+                  </div>
+                </Paper>
+              </div>
+            )}
             <div className="section-title">
               <Heading level={2}>Resource health</Heading>
             </div>
@@ -2281,8 +2351,8 @@ function Billing({ data }: Shared) {
           <Badge>FREE PLAN</Badge>
           <Heading level={2}>Room to experiment.</Heading>
           <Text component="p">
-            Billing is not connected. Anonymous File Systems use the service’s trial limits;
-            database usage remains simulated.
+            Billing is not connected. Service trial limits apply; cloud usage and charges are not
+            measured here.
           </Text>
         </div>
         <div className="billing-total">

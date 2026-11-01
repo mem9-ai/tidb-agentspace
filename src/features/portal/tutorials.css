@@ -8,6 +8,10 @@
 .tutorial-resume {
   margin-block: 24px;
 }
+.data-tutorials[data-focused] {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 860px;
+}
 .tutorial-resume-card {
   min-width: 0;
 }
