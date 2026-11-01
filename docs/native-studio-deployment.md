@@ -14,6 +14,8 @@ A public API configuration requires `insecureLoopback:false`, explicit `publicOr
 
 Build the independent Console with `npm run build:console -- --base=/studio/` and serve `config.json` as `{"apiOrigin":"","apiPathPrefix":"/studio"}`. The Rust API accepts gateway-stripped `/api/*` and direct `/studio/api/*`; it never serves static HTML. Keep gateway API rules before the SPA fallback. Callback registration is exactly `https://drive9.ai/studio/api/auth/tidbcloud/callback`; use the actual configured public origin. Session cookies use `/studio/`, HttpOnly, SameSite=Strict and Secure; the temporary flow cookie uses `/studio/api/auth/tidbcloud`, SameSite=Lax and Secure. Post-login redirects stay in the configured callback origin/prefix.
 
+In the shared listener, Global accepts Host values from its public origin and the Region's explicit `publicOrigins`. This covers a trusted reverse proxy that sends its upstream Host. Standalone Global retains its own Host boundary. Neither mode trusts client-supplied forwarded-host headers; configure only the proxy and public hosts actually in use. Browser Origin and session checks remain independent.
+
 Native `api.json` accepts the existing `TIDB_SSO_*` environment settings when its `sso` field is absent; `TIDB_PUBLIC_ORIGIN`, `WORKSPACE_TRUSTED_ORIGINS` and `WORKSPACE_PUBLIC_PATH` are supported. Explicit `sso` JSON uses camelCase (`issuer`, `clientId`, `redirectUri`, optional endpoints/grants). No OAuth client secret is read. Provider endpoints and ID-token issuer must match the registered client; a successful fake-provider test is not real TiDB Account integration.
 
 ## Fresh dev configuration

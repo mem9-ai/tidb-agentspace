@@ -258,6 +258,7 @@ struct LocalGuestAuthority {
 }
 struct App {
     config: Config,
+    trusted_host_origins: Vec<String>,
     metadata: Arc<dyn Metadata>,
     keys: GlobalKeys,
     owners: OwnerSessions,
@@ -433,6 +434,25 @@ fn etag(mut r: Response, v: u64) -> Response {
     r
 }
 impl GlobalServer {
+    /// A shared listener accepts exactly the Region's configured trusted hosts.
+    /// Standalone Global servers continue to use only their own public origin.
+    pub(crate) fn with_shared_region_origins(
+        mut self,
+        regional_bind: SocketAddr,
+        public_origins: &[String],
+    ) -> Self {
+        if self.app.config.shared_listener
+            && self.app.config.bind == regional_bind
+            && let Some(app) = Arc::get_mut(&mut self.app)
+        {
+            for origin in public_origins {
+                if !app.trusted_host_origins.contains(origin) {
+                    app.trusted_host_origins.push(origin.clone());
+                }
+            }
+        }
+        self
+    }
     /// Explicit single-process development profile; hosted and independent Global never use
     /// a Region browser credential as a Global Owner credential.
     pub(crate) fn with_local_guests(
@@ -614,10 +634,12 @@ impl GlobalServer {
         } else {
             Some(TcpListener::bind(config.bind).await?)
         };
+        let trusted_host_origins = vec![config.public_origin.clone()];
         Ok(Self {
             listener,
             app: Arc::new(App {
                 config,
+                trusted_host_origins,
                 metadata,
                 keys,
                 owners,
@@ -1261,13 +1283,17 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
         }
         path = format!("/api/v1/{tail}");
     }
-    let origin = reqwest::Url::parse(&app.config.public_origin)
-        .map_err(|_| err(503, "GLOBAL_CONFIG_INVALID"))?;
-    let host = match origin.port() {
-        Some(port) => format!("{}:{port}", origin.host_str().unwrap_or_default()),
-        None => origin.host_str().unwrap_or_default().to_owned(),
-    };
-    if h.get(header::HOST).and_then(|s| s.to_str().ok()) != Some(&host) {
+    let host = h.get(header::HOST).and_then(|s| s.to_str().ok());
+    let trusted_host = app.trusted_host_origins.iter().any(|value| {
+        reqwest::Url::parse(value).ok().is_some_and(|origin| {
+            let expected = match origin.port() {
+                Some(port) => format!("{}:{port}", origin.host_str().unwrap_or_default()),
+                None => origin.host_str().unwrap_or_default().to_owned(),
+            };
+            host == Some(expected.as_str())
+        })
+    });
+    if !trusted_host {
         return Err(err(403, "HOST_DENIED"));
     }
     for name in [
