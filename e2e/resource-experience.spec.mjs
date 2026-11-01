@@ -21,6 +21,67 @@ const collections = [
   },
 ];
 
+test('the shared shell identifies Agent Workspace and separates Cloud attribution from help', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  workspace.addResources();
+  workspace.signInAsAccount();
+  workspace.state.resources[0].provider = 'tidb-cloud-zero';
+  await workspace.open('#overview');
+  await expect(page).toHaveTitle('TiDB Agent Workspace');
+  const brand = page.getByRole('link', { name: 'TiDB Agent Workspace', exact: true });
+  const narrow = testInfo.project.name.startsWith('narrow');
+  if (!narrow) {
+    await expect(brand).toBeVisible();
+    await expect(brand).toHaveAttribute('href', '#overview');
+  }
+  await expect(page.getByText('Live resources', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Prototype · Live resources', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open documentation' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Documentation', exact: true })).toHaveCount(0);
+  if (process.env.BRANDING_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.BRANDING_SCREENSHOTS}/header-${testInfo.project.name}.png`,
+      animations: 'disabled',
+    });
+  const footer = page.locator('footer');
+  const attribution = footer.getByRole('link', { name: 'TiDB Cloud', exact: true });
+  await attribution.scrollIntoViewIfNeeded();
+  await expect(footer).toContainText('Powered by TiDB Cloud');
+  await expect(attribution).toHaveAttribute('href', 'https://www.pingcap.com/tidb/cloud/');
+  await expect(attribution).toHaveAttribute('target', '_blank');
+  await expect(attribution).toHaveAttribute('rel', 'noopener noreferrer');
+  if (process.env.BRANDING_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.BRANDING_SCREENSHOTS}/footer-${testInfo.project.name}.png`,
+      animations: 'disabled',
+    });
+  if (narrow) {
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+    await expect(
+      page.getByRole('dialog', { name: 'TiDB Agent Workspace', exact: true }),
+    ).toBeVisible();
+    if (process.env.BRANDING_SCREENSHOTS)
+      await page.screenshot({
+        path: `${process.env.BRANDING_SCREENSHOTS}/navigation-${testInfo.project.name}.png`,
+        animations: 'disabled',
+      });
+  }
+  await page.getByRole('link', { name: 'Usage & billing', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Usage & billing', exact: true })).toBeVisible();
+  await expect(page.locator('a[href^="https://docs.pingcap.com/"]')).toHaveCount(0);
+  if (!narrow) await brand.click();
+  else {
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+    await page.getByRole('link', { name: 'Overview', exact: true }).click();
+  }
+  await expect(page).toHaveURL(/#overview$/);
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true);
+});
+
 test('resource pages distinguish unloaded collections and resolve deep links', async ({
   page,
   workspace,

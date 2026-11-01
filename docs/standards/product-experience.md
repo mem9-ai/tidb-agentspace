@@ -36,6 +36,21 @@ a Key or discard work to save a click. Backend authorization remains authoritati
 
 ## One interaction language
 
+**Product identity and attribution (owner correction, GH-92, 2026-11-01):** use **TiDB Agent
+Workspace** for the Console brand and document title. Do not label the entire Workspace
+**Live resources** or use TiDB Cloud documentation as Workspace help. Remove the unrelated
+help/Documentation and Cloud quota-documentation links; keep actual limits and resource-specific
+provider/demo/expiry information explicit. Use one quiet footer **Powered by TiDB Cloud** link
+to the [TiDB Cloud product page](https://www.pingcap.com/tidb/cloud/). Verify desktop branding,
+mobile navigation, footer destination and the absence of the removed entry points in both
+themes and viewport sizes. Revisit when Workspace-specific documentation is available.
+
+The shared-shell browser case verifies the removed destinations, external attribution target,
+brand return and mobile navigation. Reviewed evidence: [desktop dark header](../screenshots/branding/header-desktop-dark.png),
+[desktop light footer](../screenshots/branding/footer-desktop-light.png),
+[narrow light navigation](../screenshots/branding/navigation-narrow-light.png), and
+[narrow dark footer](../screenshots/branding/footer-narrow-dark.png), at 1280×800 and 390×844.
+
 **Executable, resumable tutorials (owner correction 2026-10-31):** database and File System
 tutorials continue beyond creation with prepared sample data, an explicit query/analysis,
 expected output and a useful next action. Retain a named Tutorials destination after completion,

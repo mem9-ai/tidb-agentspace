@@ -2295,14 +2295,6 @@ function Billing({ data }: Shared) {
       </Paper>
       <div className="section-title">
         <Heading level={2}>Resource allowances</Heading>
-        <a
-          className="text-link"
-          href="https://docs.pingcap.com/tidbcloud/select-cluster-tier/"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Current cloud limits <ArrowUpRight size={14} />
-        </a>
       </div>
       <Paper className="panel table-panel" withBorder>
         <Table>
@@ -2382,14 +2374,6 @@ function Billing({ data }: Shared) {
             TiDB Cloud account-bound allowances are separate from the anonymous trial. The file
             browser shows the current upload limit.
           </Text>
-          <a
-            className="text-link"
-            href="https://docs.pingcap.com/tidbcloud-filesystem/manage-filesystem-limits/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            File System limits <ArrowUpRight size={13} />
-          </a>
         </Paper>
         <Paper className="panel info-panel" withBorder>
           <ShieldCheck size={22} />
