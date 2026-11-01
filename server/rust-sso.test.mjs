@@ -564,14 +564,35 @@ test(
     } finally {
       await new Promise((done) => occupied.close(done));
     }
+    // Node fetch rewrites Host; use an actual HTTP request to exercise trusted ingress.
+    const publicRequest = (path, options = {}) =>
+      new Promise((done, reject) => {
+        const req = http.request(
+          `http://127.0.0.1:${listen}${path}`,
+          { ...options, headers: { Host: 'studio.example.test', ...options.headers } },
+          (res) => {
+            const chunks = [];
+            res.on('data', (c) => chunks.push(c));
+            res.on('end', () =>
+              done(
+                new Response(Buffer.concat(chunks), {
+                  status: res.statusCode,
+                  headers: res.headers,
+                }),
+              ),
+            );
+            res.on('error', reject);
+          },
+        );
+        req.on('error', reject);
+        req.end(options.body);
+      });
     const active = await run('serve', 'deployment.json', false);
     await until(async () => {
-      const r = await fetch(`http://127.0.0.1:${listen}/studio/api/health`, {
-        headers: { Host: 'studio.example.test' },
-      });
+      const r = await publicRequest('/studio/api/health');
       assert.equal(r.status, 200, active.output());
     });
-    const denied = await fetch(`http://127.0.0.1:${listen}/api/session`, {
+    const denied = await publicRequest('/studio/api/session', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -592,9 +613,7 @@ test(
     }
     const again = await run('serve', 'deployment.json', false);
     await until(async () => {
-      const r = await fetch(`http://127.0.0.1:${listen}/studio/api/health`, {
-        headers: { Host: 'studio.example.test' },
-      });
+      const r = await publicRequest('/studio/api/health');
       assert.equal(r.status, 200, again.output());
     });
   },
