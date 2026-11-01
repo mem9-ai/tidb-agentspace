@@ -119,6 +119,22 @@ export async function globalApiCases(
   const replay = await fetch(callback, { headers: { Cookie: flowCookie } });
   assert.equal(replay.status, 401);
   await replay.body.cancel();
+  const bobKeyResponse = await fetch(origin + '/api/v1/workspaces/' + bob.workspaceId + '/keys', {
+    method: 'POST',
+    headers: {
+      Cookie: bobCookie,
+      Origin: origin,
+      'Content-Type': 'application/json',
+      'Idempotency-Key': randomUUID(),
+    },
+    body: JSON.stringify({
+      scopes: ['resources:read'],
+      resourceIds: ['*'],
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    }),
+  });
+  const bobKey = await bobKeyResponse.json();
+  assert.equal(bobKeyResponse.status, 201, JSON.stringify(bobKey));
   const logout = await fetch(origin + '/api/auth/tidbcloud/logout?workspaceId=' + bob.workspaceId, {
     method: 'POST',
     headers: { Cookie: bobCookie, Origin: origin },
@@ -326,6 +342,8 @@ export async function globalApiCases(
     origin,
     publicFile,
     request,
+    otherWorkspace: bob.workspaceId,
+    otherKey: bobKey.secret,
     configure: async (regionOrigin, controlOrigin, tls) => {
       await stop();
       config.regions[0].apiOrigin = regionOrigin;

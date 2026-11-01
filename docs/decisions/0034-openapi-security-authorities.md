@@ -29,6 +29,8 @@ it does not recreate resources, recover plaintext or rotate customer credentials
 The [independent Global role](../global-public-api.md) now exposes Owner login, Key lifecycle,
 Global Token issuance and authorized Region discovery. The [regional security profile](../regional-token-api.md) integrates signed policy application,
 Region Token issuance/local refresh, typed data authorization and an origin-bound agent client.
+The managed regional registry accepts locally verified Workspace-bound Tokens; standalone managed
+Token listeners do not require Global or regional Owner SSO on the data/renewal path.
 Same-secret Key-version rebind now requires signed, pre-expiry durable observations at both
 authorities and independent regional witnesses. Explicit Owner delivery-attempt resources reconcile
 pending policy/revocation without GET effects. Existing regional credentials remain authoritative;

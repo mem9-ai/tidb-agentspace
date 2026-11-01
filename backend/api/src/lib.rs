@@ -82,6 +82,8 @@ pub struct Config {
     pub guest: Option<GuestConfig>,
     #[serde(default)]
     pub security: Option<region_security::Config>,
+    #[serde(default)]
+    pub managed_workspace_limit: Option<usize>,
 }
 fn guest_environment(value: &str) -> Result<Option<GuestConfig>> {
     match value {
@@ -155,6 +157,11 @@ impl Config {
         if let Some(product) = &self.product {
             product.validate()?;
         }
+        anyhow::ensure!(
+            self.managed_workspace_limit
+                .is_none_or(|limit| self.security.is_some() && (1..=4096).contains(&limit)),
+            "Managed Token hosts require a bounded pool and security configuration"
+        );
         if let Some(security) = &self.security {
             anyhow::ensure!(
                 security.control.bind != self.bind,
@@ -187,6 +194,7 @@ struct App {
     current_guest: Option<regional_guest::AuthorizedGuest>,
     current_account: Option<regional_account::AuthorizedAccount>,
     security: Option<Arc<region_security::Runtime>>,
+    token_credential: Option<Credential>,
 }
 
 /// Explicit co-located integration. Separate services require authenticated control transport;
@@ -218,7 +226,13 @@ impl WorkspaceServer {
         guest_runtime: Option<Arc<GuestRuntime>>,
     ) -> Result<Self> {
         config.validate()?;
-        if guest_runtime.is_some()
+        anyhow::ensure!(
+            config.managed_workspace_limit.is_none() || guest_runtime.is_some(),
+            "Managed Token configuration requires its regional Workspace registry"
+        );
+        if guest_runtime
+            .as_ref()
+            .is_some_and(|runtime| config.security.is_none() || runtime.guest_enabled)
             && (config.sso.is_none()
                 || (!config.insecure_loopback
                     && (!matches!(&config.metadata, MetaBinding::InProcess { .. })
@@ -255,15 +269,15 @@ impl WorkspaceServer {
         } else {
             None
         };
-        anyhow::ensure!(
-            config.security.is_none() || guest_runtime.is_none(),
-            "The regional Token profile currently requires an explicit Workspace listener"
-        );
         let security = if let Some(settings) = config.security.clone() {
             Some(
                 region_security::Runtime::open(
                     settings,
-                    workspace.clone(),
+                    if guest_runtime.is_some() {
+                        None
+                    } else {
+                        Some(config.workspace_id.clone())
+                    },
                     metadata_port_for_security,
                     &config.authority_id,
                     &config.public_path,
@@ -294,6 +308,7 @@ impl WorkspaceServer {
                 current_guest: None,
                 current_account: None,
                 security,
+                token_credential: None,
             },
         })
     }
@@ -611,6 +626,27 @@ async fn dispatch(
         )
         .await);
     }
+    if let Some(security) = &app.security
+        && let Some((workspace, tail)) = path
+            .strip_prefix("/api/v1/workspaces/")
+            .and_then(|v| v.split_once('/'))
+        && matches!(
+            tail.split('/').next(),
+            Some("refresh-families" | "token-issuances" | "access-tokens")
+        )
+    {
+        let bytes = tokio::time::timeout(
+            Duration::from_secs(10),
+            to_bytes(request.into_body(), 16 * 1024),
+        )
+        .await
+        .map_err(|_| reject(408, "BODY_TIMEOUT"))?
+        .map_err(|_| reject(413, "BODY_TOO_LARGE"))?;
+        return security
+            .route(workspace, &format!("/{tail}"), &method, &headers, &bytes)
+            .await?
+            .ok_or_else(|| reject(404, "NOT_FOUND"));
+    }
     // An authenticated regional cookie selects exactly one managed Workspace.
     // A valid TiDB Account session takes precedence when both cookies exist.
     let legacy_account_session = if let Some(token) = cookie(&headers, "aw_session") {
@@ -633,6 +669,19 @@ async fn dispatch(
             Err(e) if e.status == 401 || e.code == "POLICY_DENIED" => None,
             Err(e) => return Err(e),
         }
+    } else {
+        None
+    };
+    let listed_workspace = if path == "/api/v1/workspaces"
+        && app.guest_runtime.is_some()
+        && let Some(security) = &app.security
+        && let Some(token) = headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .filter(|v| v.split('.').count() == 3)
+    {
+        Some(security.workspace_for_token(token)?)
     } else {
         None
     };
@@ -683,11 +732,24 @@ async fn dispatch(
             && let Some(workspace_id) = path
                 .strip_prefix("/api/v1/workspaces/")
                 .and_then(|tail| tail.split('/').next())
+                .or(listed_workspace.as_deref())
             && uuid::Uuid::parse_str(workspace_id).is_ok_and(|id| id.to_string() == workspace_id)
         {
             // The URL selects only a candidate. The Key and Region policy must authenticate
             // before the pool returns a lease or any application operation is run.
-            let key = credential(&app, &headers).await?;
+            let token = headers
+                .get("authorization")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.strip_prefix("Bearer "));
+            let key = if let Some(security) = &app.security
+                && let Some(token) = token.filter(|v| v.split('.').count() == 3)
+            {
+                let value = security.authenticate(workspace_id, token).await?;
+                app.token_credential = Some(value.clone());
+                value
+            } else {
+                credential(&app, &headers).await?
+            };
             let lease = runtime.workspaces.acquire(workspace_id, &key).await?;
             app.workspace = lease.workspace();
             app.product = lease.product();
@@ -824,7 +886,9 @@ async fn dispatch(
     }
     let route = path.strip_prefix(&prefix).unwrap_or_default();
     if let Some(security) = &app.security
-        && let Some(mut response) = security.route(route, &method, &headers, &bytes).await?
+        && let Some(mut response) = security
+            .route(&app.config.workspace_id, route, &method, &headers, &bytes)
+            .await?
     {
         response.headers_mut().insert(
             axum::http::header::CACHE_CONTROL,
@@ -1022,6 +1086,9 @@ async fn credential(
     app: &App,
     headers: &HeaderMap,
 ) -> std::result::Result<Credential, ServiceError> {
+    if let Some(credential) = &app.token_credential {
+        return Ok(credential.clone());
+    }
     if let Some(header) = headers.get("authorization") {
         let token = header
             .to_str()

@@ -141,14 +141,25 @@ async fn main() -> Result<()> {
                 "workspace-keys-only profile"
             };
             let guest_setup: Result<_> = async {
-                let settings = config.guest.clone().or_else(|| {
-                    (config.sso.is_some()
-                        && matches!(&config.metadata, MetaBinding::InProcess { .. }))
-                    .then(|| workspace_api::GuestConfig {
-                        global_authority_id: "global".into(),
-                        workspace_limit: 128,
+                let settings = config
+                    .guest
+                    .clone()
+                    .or_else(|| {
+                        config
+                            .managed_workspace_limit
+                            .map(|limit| workspace_api::GuestConfig {
+                                global_authority_id: "global".into(),
+                                workspace_limit: limit,
+                            })
                     })
-                });
+                    .or_else(|| {
+                        (config.sso.is_some()
+                            && matches!(&config.metadata, MetaBinding::InProcess { .. }))
+                        .then(|| workspace_api::GuestConfig {
+                            global_authority_id: "global".into(),
+                            workspace_limit: 128,
+                        })
+                    });
                 if let Some(settings) = &settings {
                     let region = Arc::new(
                         RegionalGuest::open(port.clone(), &authority, &config.public_path).await?,
@@ -172,11 +183,15 @@ async fn main() -> Result<()> {
                         config.product.clone(),
                         settings.workspace_limit,
                     )?);
-                    let entry = Arc::new(GuestEntry::new(
-                        signup.clone(),
-                        region.clone(),
-                        config.public_origins.clone(),
-                    )?);
+                    let entry = Arc::new(if config.guest.is_some() {
+                        GuestEntry::new(
+                            signup.clone(),
+                            region.clone(),
+                            config.public_origins.clone(),
+                        )?
+                    } else {
+                        GuestEntry::disabled(region.clone())
+                    });
                     let processor = Arc::new(GuestCleanup::new(queue.clone(), pool.clone()));
                     let scheduler = Scheduler::new(queue.clone(), processor.clone(), 128)?;
                     Ok((

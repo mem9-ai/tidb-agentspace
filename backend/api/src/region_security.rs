@@ -27,7 +27,7 @@ use std::{
 use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 use uuid::Uuid;
 use workspace_contracts::{MetaRequest, Metadata, Result, Scope, ServiceError};
-use workspace_domain::{Credential, Principal, ScopedAuthorization, Workspace};
+use workspace_domain::{Credential, Principal, ScopedAuthorization};
 use workspace_identity::{
     enrollment_ticket::{TicketTrust, TicketVerifier},
     regional_key_policy::{KeyPolicies, KeyPolicy, VerifiedKeyBinding},
@@ -213,7 +213,7 @@ impl workspace_identity::regional_refresh::ContinuityVerifier for InstalledRenew
 
 pub struct Runtime {
     config: Config,
-    workspace: Arc<Workspace>,
+    workspace: Option<String>,
     metadata: Arc<dyn Metadata>,
     region: String,
     public_path: String,
@@ -225,12 +225,12 @@ pub struct Runtime {
     local: AccessVerifier,
     signer: AccessSigner,
     control_verifier: Arc<PolicyCommandVerifier>,
-    gate: Arc<RwLock<()>>,
+    gates: Vec<Arc<RwLock<()>>>,
 }
 impl Runtime {
     pub async fn open(
         config: Config,
-        workspace: Arc<Workspace>,
+        workspace: Option<String>,
         metadata: Arc<dyn Metadata>,
         region: &str,
         public_path: &str,
@@ -363,7 +363,7 @@ impl Runtime {
             local: local_verifier,
             signer,
             control_verifier,
-            gate: Arc::new(RwLock::new(())),
+            gates: (0..64).map(|_| Arc::new(RwLock::new(()))).collect(),
         }))
     }
     pub fn control(self: &Arc<Self>) -> anyhow::Result<PolicyControlServer> {
@@ -375,11 +375,121 @@ impl Runtime {
         )?
         .with_installer(self.clone()))
     }
-    fn scope(&self, key: &str) -> Scope {
+    fn gate(&self, workspace: &str) -> Arc<RwLock<()>> {
+        let digest = Sha256::digest(workspace.as_bytes());
+        self.gates[usize::from(digest[0]) % self.gates.len()].clone()
+    }
+    /// Read-only control/security observation of an already owned Workspace. Borrow the
+    /// current writer fence for point reads only; never claim ownership or mutate with it.
+    async fn workspace_records(&self, workspace: &str, keys: Vec<String>) -> Result<Value> {
+        let scope = Scope {
+            authority_id: self.region.clone(),
+            owner_kind: "workspace".into(),
+            owner_id: workspace.into(),
+            family: "workspace".into(),
+            partition_id: "primary".into(),
+        };
+        let writer = self
+            .metadata
+            .execute(MetaRequest::Get {
+                scope: scope.clone(),
+                guard: None,
+                keys: vec!["system/writer".into()],
+            })
+            .await?;
+        let guard = writer["records"]["system/writer"]["value"]["ownerId"]
+            .as_str()
+            .map(|owner| workspace_contracts::WriterGuard {
+                owner_id: owner.into(),
+            });
+        let mut records = serde_json::Map::new();
+        for chunk in keys.chunks(128) {
+            let result = self
+                .metadata
+                .execute(MetaRequest::Get {
+                    scope: scope.clone(),
+                    guard: guard.clone(),
+                    keys: chunk.to_vec(),
+                })
+                .await?;
+            records.extend(
+                result["records"]
+                    .as_object()
+                    .ok_or_else(|| error(503, "META_RECORD_CORRUPT"))?
+                    .clone(),
+            );
+        }
+        Ok(json!({"records":records}))
+    }
+    fn allow_workspace(&self, workspace: &str) -> Result<()> {
+        if self
+            .workspace
+            .as_ref()
+            .is_some_and(|bound| bound != workspace)
+            || self.workspace.is_none()
+                && !Uuid::parse_str(workspace).is_ok_and(|id| id.to_string() == workspace)
+        {
+            return Err(error(404, "NOT_FOUND"));
+        }
+        Ok(())
+    }
+    async fn check_workspace(&self, workspace: &str) -> Result<()> {
+        self.allow_workspace(workspace)?;
+        if self.workspace.is_some() {
+            return Ok(());
+        }
+        let scope = Scope {
+            authority_id: self.region.clone(),
+            owner_kind: "workspace".into(),
+            owner_id: workspace.into(),
+            family: "regional-policy".into(),
+            partition_id: "primary".into(),
+        };
+        let policy = self
+            .metadata
+            .execute(MetaRequest::Get {
+                scope: scope.clone(),
+                guard: None,
+                keys: vec!["owner-policy".into()],
+            })
+            .await?;
+        let policy: workspace_identity::regional::Policy =
+            serde_json::from_value(policy["records"]["owner-policy"]["value"].clone())
+                .map_err(|_| error(401, "INVALID_CREDENTIAL"))?;
+        if policy.workspace_id != workspace
+            || policy.region_id != self.region
+            || policy.denied
+            || policy.generation == 0
+        {
+            return Err(error(401, "INVALID_CREDENTIAL"));
+        }
+        if let workspace_identity::regional::OwnerIdentity::Guest { expires_at, .. } =
+            &policy.identity
+            && *expires_at <= self.clock.now()?
+        {
+            return Err(error(401, "INVALID_CREDENTIAL"));
+        }
+        let records = self
+            .workspace_records(
+                workspace,
+                vec!["ownership/onboarding".into(), "state/workspace".into()],
+            )
+            .await?;
+        let marker = &records["records"]["ownership/onboarding"]["value"];
+        if marker["workspaceId"] != workspace
+            || marker["userId"] != policy.user_id
+            || marker["organizationId"] != policy.organization_id
+            || records["records"]["state/workspace"]["value"]["id"] != workspace
+        {
+            return Err(error(401, "INVALID_CREDENTIAL"));
+        }
+        Ok(())
+    }
+    fn scope(&self, workspace: &str, key: &str) -> Scope {
         Scope {
             authority_id: self.region.clone(),
             owner_kind: "workspace".into(),
-            owner_id: self.workspace.repository().workspace_id().into(),
+            owner_id: workspace.into(),
             family: "regional-key-policy".into(),
             partition_id: key.into(),
         }
@@ -485,10 +595,8 @@ impl Runtime {
     }
     async fn validate(&self, token: &VerifiedAccess) -> Result<Principal> {
         let now = self.clock.now()?;
-        if token.workspace_id() != self.workspace.repository().workspace_id()
-            || token.region_id() != Some(&self.region)
-            || token.expires_at() <= now
-        {
+        self.check_workspace(token.workspace_id()).await?;
+        if token.region_id() != Some(&self.region) || token.expires_at() <= now {
             return Err(error(401, "INVALID_CREDENTIAL"));
         }
         let policy = self
@@ -515,7 +623,7 @@ impl Runtime {
         let denial = self
             .metadata
             .execute(MetaRequest::Get {
-                scope: self.scope(token.key_id()),
+                scope: self.scope(token.workspace_id(), token.key_id()),
                 guard: None,
                 keys: vec![deny_path.clone()],
             })
@@ -563,16 +671,27 @@ impl Runtime {
                 .map(|t| t.to_rfc3339()),
         })
     }
-    pub async fn authenticate(self: &Arc<Self>, workspace: &str, raw: &str) -> Result<Credential> {
-        if workspace != self.workspace.repository().workspace_id() {
-            return Err(error(404, "NOT_FOUND"));
-        }
-        let lease = self.gate.clone().read_owned().await;
+    pub(crate) fn workspace_for_token(&self, raw: &str) -> Result<String> {
         let now = self.clock.now()?;
         let token = self
             .local
             .verify(raw, now)
             .or_else(|_| self.global.verify(raw, now))?;
+        self.allow_workspace(token.workspace_id())?;
+        Ok(token.workspace_id().into())
+    }
+    pub async fn authenticate(self: &Arc<Self>, workspace: &str, raw: &str) -> Result<Credential> {
+        self.allow_workspace(workspace)?;
+        let now = self.clock.now()?;
+        let candidate = self
+            .local
+            .verify(raw, now)
+            .or_else(|_| self.global.verify(raw, now))?;
+        if candidate.workspace_id() != workspace {
+            return Err(error(401, "INVALID_CREDENTIAL"));
+        }
+        let lease = self.gate(workspace).read_owned().await;
+        let token = candidate;
         let principal = self.validate(&token).await?;
         Ok(Credential::Scoped(Arc::new(Authorization {
             runtime: self.clone(),
@@ -583,11 +702,13 @@ impl Runtime {
     }
     async fn observation(
         &self,
+        workspace: &str,
         route: &str,
         method: &Method,
         headers: &HeaderMap,
     ) -> Result<Response> {
-        let _lease = self.gate.write().await;
+        let gate = self.gate(workspace);
+        let _lease = gate.write().await;
         let raw = headers
             .get(header::AUTHORIZATION)
             .and_then(|h| h.to_str().ok())
@@ -598,6 +719,9 @@ impl Runtime {
             .local
             .verify(raw, now)
             .or_else(|_| self.global.verify(raw, now))?;
+        if token.workspace_id() != workspace {
+            return Err(error(401, "INVALID_CREDENTIAL"));
+        }
         self.validate(&token).await?;
         let segments: Vec<_> = route.split('/').collect();
         if segments.len() != 3 {
@@ -640,7 +764,7 @@ impl Runtime {
             let value = self
                 .metadata
                 .execute(MetaRequest::Get {
-                    scope: self.scope(key),
+                    scope: self.scope(workspace, key),
                     guard: None,
                     keys: vec![path.clone()],
                 })
@@ -658,7 +782,7 @@ impl Runtime {
             if segments[2] != token.token_id() {
                 return Err(error(404, "NOT_FOUND"));
             }
-            self.metadata.execute(MetaRequest::Commit{scope:self.scope(token.key_id()),guard:None,mutation_id:Uuid::new_v4().to_string(),changes:vec![json!({"key":format!("denied-tokens/{}",token.token_id()),"expectedVersion":null,"value":{"expiresAt":token.expires_at(),"principalId":token.principal_id()}})]}).await?;
+            self.metadata.execute(MetaRequest::Commit{scope:self.scope(token.workspace_id(),token.key_id()),guard:None,mutation_id:Uuid::new_v4().to_string(),changes:vec![json!({"key":format!("denied-tokens/{}",token.token_id()),"expectedVersion":null,"value":{"expiresAt":token.expires_at(),"principalId":token.principal_id()}})]}).await?;
             return Ok(StatusCode::NO_CONTENT.into_response());
         }
         Err(error(405, "METHOD_NOT_ALLOWED"))
@@ -666,6 +790,7 @@ impl Runtime {
 
     pub async fn route(
         &self,
+        workspace: &str,
         route: &str,
         method: &Method,
         headers: &HeaderMap,
@@ -675,7 +800,11 @@ impl Runtime {
             || route.starts_with("/access-tokens/")
             || route.starts_with("/token-issuances/")
         {
-            return self.observation(route, method, headers).await.map(Some);
+            self.check_workspace(workspace).await?;
+            return self
+                .observation(workspace, route, method, headers)
+                .await
+                .map(Some);
         }
         if route != "/refresh-families" && route != "/token-issuances" {
             return Ok(None);
@@ -693,10 +822,10 @@ impl Runtime {
         {
             return Err(error(415, "JSON_REQUIRED"));
         }
-        let _lease = self.gate.write().await;
+        let gate = self.gate(workspace);
+        let _lease = gate.write().await;
         let now = self.clock.now()?;
-        let repository = self.workspace.repository();
-        let workspace = repository.workspace_id();
+        self.check_workspace(workspace).await?;
         let proof = headers
             .get("DPoP")
             .and_then(|h| h.to_str().ok())
@@ -767,7 +896,7 @@ impl Runtime {
             let token=self.signer.sign(&Issuance{workspace_id:workspace,principal_id:&policy.principal_id,key_id:&key_id,key_version:policy.key_version,policy_generation:policy.policy_generation,grant_ref:&issued.ceiling_ref,scopes:&grant.scopes,key_expires_at:policy.expires_at,grant_expires_at:policy.expires_at,family:Some(Family{id:&issued.family_id,epoch:issued.security_epoch,expires_at:issued.expires_at})},self.clock.now()?)?;
             self.local.verify(&token.token,self.clock.now()?)?;
             let id=format!("{key_id}.{}",token.token_id);
-            self.metadata.execute(MetaRequest::Commit{scope:self.scope(&key_id),guard:None,mutation_id:Uuid::new_v4().to_string(),changes:vec![json!({"key":format!("issuances/{}",token.token_id),"expectedVersion":null,"value":{"id":id,"keyId":key_id,"familyId":issued.family_id,"principalId":policy.principal_id,"expiresAt":token.expires_at,"status":"issued"}})]}).await?;
+            self.metadata.execute(MetaRequest::Commit{scope:self.scope(workspace,&key_id),guard:None,mutation_id:Uuid::new_v4().to_string(),changes:vec![json!({"key":format!("issuances/{}",token.token_id),"expectedVersion":null,"value":{"id":id,"keyId":key_id,"familyId":issued.family_id,"principalId":policy.principal_id,"expiresAt":token.expires_at,"status":"issued"}})]}).await?;
             Ok((StatusCode::CREATED,[(header::CACHE_CONTROL,"no-store"),(header::LOCATION,&format!("token-issuances/{id}"))],Json(json!({"id":id,"accessToken":token.token,"tokenType":"Bearer","expiresAt":token.expires_at,"refreshCredential":issued.secret,"refreshExpiresAt":issued.expires_at,"nonce":issued.nonce,"familyId":issued.family_id,"keyId":key_id,"scopes":grant.scopes}))).into_response())
         }.await;
         result
@@ -803,12 +932,11 @@ impl PolicyInstaller for Runtime {
         _now: i64,
     ) -> Pin<Box<dyn Future<Output = Result<PolicyReceipt>> + Send + 'a>> {
         Box::pin(async move {
-            let _lease = self.gate.write().await;
             let now = self.clock.now()?;
             let (policy, grant) = self.control_verifier.inspect(command, now)?;
-            if policy.workspace_id != self.workspace.repository().workspace_id() {
-                return Err(error(403, "WORKSPACE_DENIED"));
-            }
+            let gate = self.gate(&policy.workspace_id);
+            let _lease = gate.write().await;
+            self.allow_workspace(&policy.workspace_id)?;
             let grant = grant.ok_or_else(|| error(400, "GRANT_REQUIRED"))?;
             // Authorize only the explicitly selected records; policy application must not
             // inflate unrelated resources in a large Workspace.
@@ -818,15 +946,29 @@ impl PolicyInstaller for Runtime {
                 .filter(|id| id.as_str() != "*")
                 .map(String::as_str)
                 .collect::<Vec<_>>();
-            let resources = self.workspace.repository().resources_by_id(&ids).await?;
-            if resources.len() != ids.len()
-                || resources.iter().any(|resource| {
-                    !matches!(
-                        resource["kind"].as_str(),
-                        Some("mysql" | "duckdb" | "filesystem")
-                    ) && !(resource["kind"] == "postgresql"
-                        && resource["provider"] == "db9-anonymous")
-                })
+            let keys = ids
+                .iter()
+                .map(|id| format!("state/resources/{id}"))
+                .collect::<Vec<_>>();
+            let found = if keys.is_empty() || policy.revoked {
+                json!({"records":{}})
+            } else {
+                self.workspace_records(&policy.workspace_id, keys.clone())
+                    .await?
+            };
+            let resources = keys
+                .iter()
+                .filter_map(|key| found["records"][key]["value"].get("record"))
+                .collect::<Vec<_>>();
+            if !policy.revoked
+                && (resources.len() != ids.len()
+                    || resources.iter().any(|resource| {
+                        !matches!(
+                            resource["kind"].as_str(),
+                            Some("mysql" | "duckdb" | "filesystem")
+                        ) && !(resource["kind"] == "postgresql"
+                            && resource["provider"] == "db9-anonymous")
+                    }))
             {
                 return Err(error(403, "RESOURCE_ACCESS_DENIED"));
             }

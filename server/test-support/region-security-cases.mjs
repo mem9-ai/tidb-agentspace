@@ -154,10 +154,12 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   assert.equal(session.status, 200);
   const cookie = session.headers.get('set-cookie').split(';')[0];
   await session.body.cancel();
-  const base = `/api/v1/workspaces/${workspace}`;
   const covered = new Set();
-  const request = async (route, { method = 'GET', body, token, proof, raw } = {}) => {
-    const r = await fetch(origin + base + route, {
+  const request = async (
+    route,
+    { method = 'GET', body, token, proof, raw, workspaceId = workspace } = {},
+  ) => {
+    const r = await fetch(origin + `/api/v1/workspaces/${workspaceId}` + route, {
       method,
       redirect: 'error',
       headers: {
@@ -196,14 +198,36 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
     }
     return { status: r.status, body: value };
   };
+  await global.configure(origin, `https://127.0.0.1:${controlPort}`, certificates.client);
+  const setupKey = await global.request('/keys', {
+    method: 'POST',
+    headers: { 'Idempotency-Key': randomUUID() },
+    body: {
+      scopes: ['resources:read', 'resources:write'],
+      resourceIds: ['*'],
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    },
+  });
+  assert.equal(setupKey.status, 201, JSON.stringify(setupKey.body));
+  const setupAccess = await global.request('/token-issuances', {
+    method: 'POST',
+    token: setupKey.body.secret,
+    body: {
+      audience: metadata.server.authorityId,
+      clientThumbprint: 'kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k',
+    },
+  });
+  assert.equal(setupAccess.status, 201, JSON.stringify(setupAccess.body));
   const mysql = await request('/resources', {
     method: 'POST',
+    token: 'Bearer ' + setupAccess.body.accessToken,
     body: { kind: 'mysql', name: 'continuity-db', region: 'automatic' },
   });
   assert.equal(mysql.status, 201, JSON.stringify(mysql.body));
   assert.equal(mysql.body.data.status, 'active');
   const fs = await request('/resources', {
     method: 'POST',
+    token: 'Bearer ' + setupAccess.body.accessToken,
     body: { kind: 'filesystem', name: 'continuity-fs', region: 'aws-ap-southeast-1' },
   });
   assert.equal(fs.status, 201, JSON.stringify(fs.body));
@@ -243,10 +267,21 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
     assert.deepEqual(get.body, Buffer.from([0, 255, 7]));
   };
   await data('Bearer ' + oldKey.body.secret);
+  const legacyList = await fetch(origin + '/api/v1/workspaces', {
+    headers: { Authorization: 'Bearer ' + oldKey.body.secret },
+  });
+  assert.equal(legacyList.status, 200);
+  assert.equal((await legacyList.json()).data[0].id, workspace);
   const creates = { ...provider.nativeCreates };
   const fileCreates = provider.creates;
   const credentialCount = credentials.size;
+  await stop();
+  config.managedWorkspaceLimit = 16;
+  config.security.initializeClock = false;
+  await start();
+  await data('Bearer ' + oldKey.body.secret);
   const globalRequest = global.request;
+  await global.setDelivery(false);
   const pendingKey = await globalRequest('/keys', {
     method: 'POST',
     body: {
@@ -318,16 +353,93 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   });
   assert.equal(issue.status, 201, JSON.stringify(issue.body));
   await data('Bearer ' + issue.body.accessToken);
-  const proof = async (route, nonce) =>
+  const proof = async (route, nonce, workspaceId = workspace) =>
     new SignJWT({
       jti: randomUUID(),
       htm: 'POST',
-      htu: origin + base + route,
+      htu: origin + `/api/v1/workspaces/${workspaceId}` + route,
       nonce,
       iat: Math.floor(Date.now() / 1000),
     })
       .setProtectedHeader({ alg: 'EdDSA', typ: 'dpop+jwt', jwk })
       .sign(client.privateKey);
+  const otherIssued = await globalRequest('/token-issuances', {
+    method: 'POST',
+    workspace: global.otherWorkspace,
+    token: global.otherKey,
+    body: { audience: metadata.server.authorityId, clientThumbprint: thumbprint },
+  });
+  assert.equal(otherIssued.status, 201, JSON.stringify(otherIssued.body));
+  const otherVisible = await request('/resources', {
+    workspaceId: global.otherWorkspace,
+    token: 'Bearer ' + otherIssued.body.accessToken,
+  });
+  assert.equal(otherVisible.status, 200, JSON.stringify(otherVisible.body));
+  const otherWorkspaces = await fetch(origin + '/api/v1/workspaces', {
+    headers: { Authorization: 'Bearer ' + otherIssued.body.accessToken },
+  });
+  assert.equal(otherWorkspaces.status, 200);
+  assert.deepEqual(
+    (await otherWorkspaces.json()).data.map((item) => item.id),
+    [global.otherWorkspace],
+  );
+  assert.equal(
+    otherVisible.body.data.some((item) => resources.includes(item.id)),
+    false,
+  );
+  assert.equal(
+    (
+      await request('/resources', {
+        workspaceId: global.otherWorkspace,
+        token: 'Bearer ' + issue.body.accessToken,
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    (await request('/resources', { token: 'Bearer ' + otherIssued.body.accessToken })).status,
+    401,
+  );
+  const otherEnrollment = await request('/refresh-families', {
+    workspaceId: global.otherWorkspace,
+    method: 'POST',
+    body: { ticket: otherIssued.body.enrollmentTicket },
+    proof: await proof('/refresh-families', otherIssued.body.nonce, global.otherWorkspace),
+  });
+  assert.equal(otherEnrollment.status, 201, JSON.stringify(otherEnrollment.body));
+  const crossFamily = await request('/token-issuances', {
+    method: 'POST',
+    body: { keyId: otherEnrollment.body.keyId },
+    token: 'Refresh ' + otherEnrollment.body.refreshCredential,
+    proof: await proof('/token-issuances', otherEnrollment.body.nonce),
+  });
+  assert.ok([401, 404].includes(crossFamily.status));
+  let otherRefresh = otherEnrollment.body;
+  const renewOther = async () => {
+    const response = await request('/token-issuances', {
+      workspaceId: global.otherWorkspace,
+      method: 'POST',
+      body: { keyId: otherRefresh.keyId },
+      token: 'Refresh ' + otherRefresh.refreshCredential,
+      proof: await proof('/token-issuances', otherRefresh.nonce, global.otherWorkspace),
+    });
+    assert.equal(response.status, 201, JSON.stringify(response.body));
+    otherRefresh = response.body;
+    assert.equal(
+      (
+        await request('/resources', {
+          workspaceId: global.otherWorkspace,
+          token: 'Bearer ' + response.body.accessToken,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await request('/resources', { token: 'Bearer ' + response.body.accessToken })).status,
+      401,
+    );
+  };
+  await renewOther();
   const enrolled = await request('/refresh-families', {
     method: 'POST',
     body: { ticket: issue.body.enrollmentTicket },
@@ -540,6 +652,7 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   assert.equal(expired.status, 401);
   token = await renew();
   await data('Bearer ' + token);
+  await renewOther();
   await sdkData(agent);
   assert.equal(saved.expiresAt, extended.body.data.expiresAt);
   assert.equal(globalCalls, beforeOutageCalls);
@@ -549,6 +662,7 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   token = await renew();
   await data('Bearer ' + token);
   await data('Bearer ' + oldKey.body.secret);
+  await renewOther();
   const resumed = await connectAgentWorkspace({ ...sdkOptions, workspaceKey: undefined });
   await sdkData(resumed);
   assert.equal(globalCalls, beforeOutageCalls);

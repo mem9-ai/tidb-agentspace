@@ -2,15 +2,20 @@
 
 Status: opt-in native Region integration with Global policy delivery, client-bound refresh
 families, local issuance/rotation/revocation and direct data authorization. The supported
-single-writer profile attaches to an explicit Workspace listener. Managed multi-Workspace
-Guest/SSO listeners cannot currently enable this profile; default listeners remain unchanged.
+single-writer profile supports either one explicit Workspace or the existing bounded managed
+Workspace registry. Existing account/Guest listeners may opt in; a separate Token-only Region
+can use `managedWorkspaceLimit` without regional Owner SSO or a Global dependency.
 Legacy direct-Key records and their authority are retained; enabling this profile does not import,
 rotate or replace them. Same-secret Key renewal is integrated across the previous version's
 expiry. Automatic legacy-Key authority cutover remains a separate migration gate.
 
 ## Serving profile
 
-Add `security` to the existing regional Workspace API configuration. It includes:
+Add `security` to the existing regional Workspace API configuration. For a standalone managed
+Token listener, also set top-level `managedWorkspaceLimit` (1–4,096, for example 128). A hosted
+account listener can retain its current managed composition and SSO configuration. The pool opens
+only already owned regional Workspaces; it never initializes a tenant from a request URL.
+`security` includes:
 
 - `publicOrigin`: exact trusted HTTPS origin (actual loopback may explicitly use HTTP).
 - `environment`, `globalIssuer`, `globalSignerId`, `globalPublicKeyFile`: fixed Global trust.
@@ -47,6 +52,10 @@ A data request verifies the exact local JWT issuer/audience and current Key, imm
 family epoch, token denial and host policy/time checkpoints. Scoped credentials remain
 non-Owner throughout existing domain/provider operations and are rechecked at their effect
 boundaries. Policies, family changes and denial drain local request leases before acknowledgement.
+Request leases use 64 bounded Workspace-hash lanes: applying one Workspace's policy drains its
+lane, with possible bounded hash collisions; unrelated lanes continue. Managed tokens are checked
+before a Workspace pool lease is selected and against the local ownership/denial policy before
+data or renewal. The proof-bound credential routes do not require an Owner browser session.
 This is a single-writer host guarantee, not multi-node serving consensus. Current Workspace
 view and control-body limits remain; no million-resource throughput is claimed.
 
@@ -94,12 +103,14 @@ credentials are never sent to Region.
 
 ## Evidence and current limits
 
-The native OIDC fixture creates resources and credentials before enabling Global grants, then
-exercises actual Global/Region HTTP, mTLS apply, token issuance, refresh enrollment, family and
+The native OIDC fixture creates resources through scoped public API authorization and captures
+existing resource/provider bindings and a regional Key before managed-client use. It then exercises actual Global/Region HTTP, mTLS apply, token issuance, refresh enrollment, family and
 token revocation, schema validation and the generated/agent clients. It kills Global API and
 Global Meta, waits past a local access token expiry, performs renewal and SQL/file read/write,
 restarts Region and reconnects the cached SDK, then recovers Global from the same S3/key and
-checks its original Key. Existing regional Key, resource IDs, provider creation counts and
+checks its original Key. The same listener also serves a second real Workspace with independent
+Key/family state, rejects cross-Workspace tokens, and locally refreshes both after Global loss
+and Region restart. Existing regional Key, resource IDs, provider creation counts and
 captured upstream credentials are checked for parity. SQL/files upstreams are isolated fixture
 servers; these cases do not establish real cloud provider compatibility.
 

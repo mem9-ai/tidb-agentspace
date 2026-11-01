@@ -471,7 +471,7 @@ impl Repository {
                         policy_generation: Some(value),
                         ..
                     } if id == &owner && *value == generation => {}
-                    Credential::Bearer(_) => {}
+                    Credential::Bearer(_) | Credential::Scoped(_) => {}
                     _ => return Err(ServiceError::new(401, "UNAUTHENTICATED")),
                 }
             }

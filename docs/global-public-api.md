@@ -120,6 +120,6 @@ With a configured `regionControls` entry, Global signs and durably records exact
 intent before initiating TLS 1.3 mTLS to the Region control origin. Each entry contains
 `regionId`, an HTTPS `origin`, and `tls` files (`caFile`, `certificateFile`, `privateKeyFile`).
 The Region pins the exact Global client certificate. Global never proxies data requests.
-The current prototype binds one grant to its Directory-assigned Region, has a 16 KiB signed
+The current prototype binds each Workspace grant to its Directory-assigned Region, has a 16 KiB signed
 control-message limit and bounds per-Key automatic history reconciliation to 1,024 versions;
 large grant/history reconciliation requires an explicit follow-up rather than an unbounded scan.
