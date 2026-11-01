@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { productApiFixture } from './product-api-fixture.mjs';
 import { nativeSecret } from './provider-fixture.mjs';
+import { setTimeout as delay } from 'node:timers/promises';
 
 export async function restWorkflowCases(t, transport) {
   let setupFault,
@@ -22,7 +23,26 @@ export async function restWorkflowCases(t, transport) {
     { missingBinding: true },
   );
   const request = async (path, options = {}, status = 200, code) => {
-    const r = await f.request(path, options);
+    const before = f.provider.calls;
+    let r = await f.request(path, options);
+    // This fixture seeds legacy records without resource indexes. Backfill is bounded by
+    // the API, not guaranteed to finish within its first 250 ms budget on a shared runner.
+    // Only the explicit pre-effect migration response permits this same-intent retry.
+    for (
+      let attempt = 0;
+      attempt < 200 &&
+      path === '/resources' &&
+      options.method === 'POST' &&
+      status === 201 &&
+      r.status === 503 &&
+      r.body.error?.code === 'RESOURCE_INDEX_MIGRATING';
+      attempt++
+    ) {
+      assert.ok(options.headers?.['Idempotency-Key']);
+      assert.equal(f.provider.calls, before, 'Migration must not perform provider I/O');
+      await delay(25);
+      r = await f.request(path, options);
+    }
     assert.equal(r.status, status, `${options.method || 'GET'} ${path}: ${JSON.stringify(r.body)}`);
     if (code) assert.equal(r.body.error.code, code);
     assert.equal(JSON.stringify(r.body).includes(nativeSecret), false);
