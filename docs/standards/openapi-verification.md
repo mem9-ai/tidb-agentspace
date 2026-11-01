@@ -83,6 +83,46 @@ The current preproduction permission to replace development interfaces does not 
 change this boundary. Internal CLI/config names are distinct from the public HTTP contract.
 There is no authority here to reset resources, rotate credentials or recreate provider state.
 
+## Choose verification scope and control delivery time
+
+Accepted owner direction, 2026-11-01: every change must select its verification scope before
+running checks. CI/CD waiting time is an engineering cost, not a reason to weaken assertions.
+Record the affected interfaces/artifacts and material risks, the checks that apply, the checks
+that do not apply and why, and any existing evidence that can be reused. Estimate the critical
+path, including duplicate build/test work between PR, main and deployment.
+
+Choose the smallest set that establishes the changed behavior and its material boundaries:
+
+| Change                                                                            | Relevant verification                                                                                              | Normally unrelated work                                                    |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Documentation or durable guidance only                                            | Formatting, links and repository policy checks                                                                     | Application builds, browser journeys and native database/storage suites    |
+| Deployment probe/operator configuration                                           | Operator mutation/guard tests, affected hosting behavior, target readiness and public health/auth denial           | Unchanged SQL, file analysis, import/export and rendered Console journeys  |
+| Internal backend module                                                           | Affected native API/domain cases and relevant permission, effect or recovery boundaries                            | Frontend/browser tests when the public and Console contracts are unchanged |
+| Public contract or client workflow                                                | Contract generation/schema checks and affected native/client acceptance; browser behavior when its journey changes | Unaffected provider engines or unrelated visual journeys                   |
+| Cross-cutting authorization, persistence, runtime composition or uncertain impact | The broader native/security/recovery suites justified by those dependencies                                        | A full suite still needs an explicit impact reason                         |
+
+Reuse passing evidence only when its relevant source inputs, dependency/toolchain inputs,
+fixtures and acceptance requirements are unchanged and its provenance is traceable. Changes,
+failures and unresolved risks invalidate the affected evidence, not every unrelated check.
+Independent cases may run in parallel with isolated roots, ports and credentials; preserve
+single-writer and cleanup guarantees. Prefer bounded observation of a declared state over
+fixed timing assumptions. Retry a mutation only when the contract explicitly establishes a
+pre-effect retry condition or an idempotent same-intent reconciliation; never hide an unknown
+write outcome.
+
+Full regression runs need a stated reason. Capture phase/test timings to identify repeated
+startup, serial waits, duplicated compilation and redundant PR/main/deploy execution. Shorten
+that path through scoped checks, caches and reviewed evidence reuse rather than removing
+behavior assertions, accepting failures or bypassing protection.
+
+Implementation status: [manual dev smoke release](../decisions/0039-dev-smoke-release.md)
+now supports explicitly selected basic dev acceptance. The automatic classifier and
+remaining delivery consumers below still enforce
+broader full-main checks for several operator/policy/documentation changes. This accepted
+selection rule is not a claim that those optimizations are implemented. Change those gates
+through a separate reviewed update; until then, honor the applicable enforced requirements
+and report the remaining avoidable waiting time.
+
 ## Required behavior coverage
 
 Each affected operation needs a deterministic successful case and its relevant failure and

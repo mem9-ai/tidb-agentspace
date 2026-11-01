@@ -168,3 +168,37 @@ test('a concurrent rerun, truncated jobs or missing registration cannot reuse st
     /evidence is unavailable/,
   );
 });
+
+test('explicit dev smoke evidence uses trusted same-commit Quality without waiting for unrelated suites', () => {
+  const pending = { ...run, status: 'in_progress', conclusion: null };
+  const runningNative = { ...jobs[2], status: 'in_progress', conclusion: null };
+  const evidence = [jobs[0], { ...jobs[1], conclusion: 'skipped' }, runningNative];
+  assert.equal(evaluateEvidence(pending, evidence, sha, 'dev-smoke'), true);
+  assert.equal(evaluateEvidence(pending, evidence, sha, 'full'), false);
+  assert.equal(evaluateEvidence(pending, evidence.slice(1), sha, 'dev-smoke'), false);
+  assert.throws(
+    () => evaluateEvidence({ ...pending, head_sha: 'b'.repeat(40) }, evidence, sha, 'dev-smoke'),
+    /Untrusted/,
+  );
+  for (const conclusion of ['failure', 'cancelled', 'timed_out', 'neutral', 'skipped']) {
+    assert.throws(() =>
+      evaluateEvidence(pending, [{ ...jobs[0], conclusion }, runningNative], sha, 'dev-smoke'),
+    );
+  }
+  for (const conclusion of ['failure', 'cancelled', 'timed_out']) {
+    assert.throws(
+      () => evaluateEvidence(pending, [jobs[0], { ...jobs[2], conclusion }], sha, 'dev-smoke'),
+      /known CI failure/,
+    );
+    assert.throws(
+      () =>
+        evaluateEvidence(
+          pending,
+          [jobs[0], { ...runningNative, steps: [{ status: 'completed', conclusion }] }],
+          sha,
+          'dev-smoke',
+        ),
+      /known CI failure/,
+    );
+  }
+});

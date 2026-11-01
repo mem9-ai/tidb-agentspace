@@ -39,6 +39,18 @@ GitHub CI is running; branch protection, deployment environments, and hosting ar
 configured. At initial setup, GitHub reported that branch protection for this private
 repository requires a plan upgrade. Do not change repository visibility to work around it.
 
+## Verification scope and waiting time
+
+Accepted owner direction, 2026-11-01: select checks from the changed inputs and material risks;
+do not default every change to full regression. Record required/inapplicable checks, reusable
+passing evidence and the PR/main/deploy critical path following
+[verification scope](standards/openapi-verification.md#choose-verification-scope-and-control-delivery-time).
+CI/CD time is part of delivery cost. Optimize redundant builds/runs, cache safe unchanged
+inputs and parallelize isolated work while preserving all required behavior assertions and
+trusted provenance. Current automatic scope rules and exact-commit consumers below remain
+implemented requirements; finer automatic operator/documentation scope and cross-commit evidence reuse
+require a reviewed automation change and must not be claimed as already available.
+
 ## Current early-iteration merge policy
 
 The project owner has authorized rapid iteration during the prototype phase. Agents may
@@ -312,3 +324,18 @@ The first successful optimized [cold image run](https://github.com/mem9-ai/tidb.
 The [ordinary CI run](https://github.com/mem9-ai/tidb.ai/actions/runs/40986247801) passed on the same candidate: native job 2m 40s, all 22 native/S3 cases passed without skips, integration phase 50.38s and the main SSO case 1.01s. The held-provider-connection regression passed in 0.82s. A subsequent candidate adds only an explanatory comment to native `runtime-info` so that a fresh runner must rebuild application source while reusing the unchanged dependency recipe. [PR #18](https://github.com/mem9-ai/tidb.ai/pull/18) records that warm-source measurement and the separate main cache seed; those results must be observed before claiming them.
 
 The [warm-source run](https://github.com/mem9-ai/tidb.ai/actions/runs/40988488887) at `5056642` confirmed dependency reuse on a fresh runner after that Rust source edit: cargo-chef installation and dependency cooking were `CACHED`, application compilation took 48.13s, cache prepare/upload 15.4s, the image build step 2m 33s and the complete image job 2m 58s. Runtime metadata validation passed. The complete quality/native gate ran alongside it in 4m 26s, replacing the earlier 19–28 minute serial verification path. Its separate [ordinary CI](https://github.com/mem9-ai/tidb.ai/actions/runs/40988488872) also passed (native job 2m 34s, Quality 2m 30s). Main cache seeding is recorded separately in the task/PR; a PR-local hit alone does not prove default-branch availability.
+
+## Explicit manual dev smoke release
+
+[ADR 0039](decisions/0039-dev-smoke-release.md) implements the owner's basic dev acceptance
+mode. `Deploy API to dev` defaults to `verification:full`. Only a manual `deploy` on main
+can select `dev-smoke`: exact-commit trusted Quality must pass and no known CI failure may
+exist. The remaining native/browser jobs continue in the background. Native image build and
+runtime verification, protected dev credentials, source/digest checks, serialized guarded
+Deployment update, readiness and public health/auth-denial verification remain unchanged.
+This is neither production release authority nor a claim that pending tests passed.
+
+Use this mode only after reviewing the change and its relevant native/Portal/API evidence
+and explicitly choosing basic dev acceptance. Ordinary automatic releases and manual
+inspect/recover retain their current gates. Follow publication with the agreed basic smoke
+flow and report its limits; do not add unrelated suites to the release critical path.

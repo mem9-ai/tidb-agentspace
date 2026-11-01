@@ -250,6 +250,11 @@ test('automatic checks execute once and releases require exact-commit native evi
     'recover',
   ]);
   assert.equal(workflow.on.workflow_dispatch.inputs.operation.default, 'deploy');
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.verification.options, [
+    'full',
+    'dev-smoke',
+  ]);
+  assert.equal(workflow.on.workflow_dispatch.inputs.verification.default, 'full');
   assert.equal(workflow.jobs.deploy.needs, 'verify');
   assert.equal(workflow.jobs.deploy.environment, 'dev');
   assert.equal(workflow.jobs.verify.environment, undefined);
@@ -262,7 +267,7 @@ test('automatic checks execute once and releases require exact-commit native evi
   assert.equal(evidence.env.SOURCE_SHA, '${{ github.sha }}');
   assert.equal(
     evidence.env.GATE,
-    "${{ github.event.inputs.operation == 'inspect' && 'console' || 'full' }}",
+    "${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy' && inputs.verification == 'dev-smoke' && 'dev-smoke' || inputs.operation == 'inspect' && 'console' || 'full' }}",
   );
   assert.equal(workflow.concurrency['cancel-in-progress'], false);
   assert.equal(workflow.jobs.deploy.concurrency['cancel-in-progress'], false);

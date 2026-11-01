@@ -7,6 +7,9 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Accepted decisions
 
+- [0039: Manual dev smoke release](0039-dev-smoke-release.md) — explicitly selected basic
+  dev acceptance with trusted same-commit Quality, protected image deployment and health checks.
+
 - [0037: Single Portal sign-in](0037-single-portal-login.md) — one existing OIDC callback,
   distinct Global/Region sessions and joint logout for the bundled cloud deployment.
 
