@@ -15,7 +15,7 @@ import { Heading } from '../../ui/WorkspaceHeading';
 import { WorkspaceResultPanel } from '../../ui/WorkspaceQueryResults';
 import { WorkspaceExportButton } from '../../ui/WorkspaceExportButton';
 import { FileContent, FilePreviewBoundary } from './FileContent';
-import { fileFormat, isTabularFile } from './file-preview';
+import { fileFormat, isImageFile, isTabularFile } from './file-preview';
 import { TabularFilePreview, useTabularPreview } from './TabularFilePreview';
 import type { FileView } from './file-location';
 
@@ -34,6 +34,7 @@ export default function FilePreviewPanel({
   size,
   loading = false,
   unavailableReason = '',
+  image,
   dirty,
   busy,
   error,
@@ -57,6 +58,7 @@ export default function FilePreviewPanel({
   size?: number;
   loading?: boolean;
   unavailableReason?: string;
+  image: { mimeType: string; base64: string } | null;
   dirty: boolean;
   busy: boolean;
   error: string;
@@ -71,7 +73,10 @@ export default function FilePreviewPanel({
   onAnalysisRunningChange: (running: boolean) => void;
   onExportSaved: () => Promise<void>;
 }) {
-  const [mode, setMode] = useState<string | null>(initialView);
+  const imageFile = isImageFile(path);
+  const [mode, setMode] = useState<string | null>(
+    imageFile && initialView === 'source' ? 'preview' : initialView,
+  );
   const [expanded, setExpanded] = useState(initialView === 'analyze');
   const [analysisRunning, setAnalysisRunning] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -83,6 +88,7 @@ export default function FilePreviewPanel({
     [onAnalysisRunningChange],
   );
   const tabular = isTabularFile(path);
+  const [imageError, setImageError] = useState(false);
   const tablePreview = useTabularPreview(resourceId, path, savedContent, tabular && !loading);
   const fileActions = (
     <Group gap="sm">
@@ -130,6 +136,19 @@ export default function FilePreviewPanel({
         <Alert color="yellow" title="Preview unavailable">
           {unavailableReason} Use Export to download the file and open it in another tool.
         </Alert>
+      ) : imageFile ? (
+        image && !imageError ? (
+          <img
+            className="file-image-preview"
+            src={`data:${image.mimeType};base64,${image.base64}`}
+            alt={path.split('/').pop() || 'File preview'}
+            onError={() => setImageError(true)}
+          />
+        ) : (
+          <Alert color="yellow" title="Preview unavailable">
+            This image could not be displayed. Use Export to download the file.
+          </Alert>
+        )
       ) : (
         <FilePreviewBoundary path={path} content={content}>
           <FileContent path={path} content={content} />
@@ -147,7 +166,9 @@ export default function FilePreviewPanel({
   const header = useRef<HTMLElement>(null);
   useEffect(() => {
     if (loading) return;
-    (initialView === 'source' ? source.current : title.current)?.focus({ preventScroll: true });
+    (initialView === 'source' && !imageFile ? source.current : title.current)?.focus({
+      preventScroll: true,
+    });
     if (window.matchMedia('(max-width: 1099px)').matches) {
       header.current?.scrollIntoView({ block: 'start' });
     }
@@ -155,7 +176,7 @@ export default function FilePreviewPanel({
       if (trigger?.isConnected)
         trigger.focus({ preventScroll: !window.matchMedia('(max-width: 1099px)').matches });
     };
-  }, [trigger, initialView, loading]);
+  }, [trigger, initialView, imageFile, loading]);
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => {
@@ -204,7 +225,7 @@ export default function FilePreviewPanel({
             </Text>
           </div>
           <Group gap={4} wrap="nowrap">
-            {fileFormat(path).kind !== 'parquet' && (
+            {!imageFile && fileFormat(path).kind !== 'parquet' && (
               <Button
                 variant="subtle"
                 disabled={
@@ -230,7 +251,11 @@ export default function FilePreviewPanel({
         </Group>
         <Group gap={10} mt={8}>
           <Badge>
-            {fileFormat(path).kind === 'code' ? 'Code' : fileFormat(path).kind.toUpperCase()}
+            {imageFile
+              ? 'IMAGE'
+              : fileFormat(path).kind === 'code'
+                ? 'Code'
+                : fileFormat(path).kind.toUpperCase()}
           </Badge>
           <Text size="sm" c="carbon.7">
             {(dirty
@@ -259,27 +284,31 @@ export default function FilePreviewPanel({
         </Alert>
       )}
       <div hidden={mode === 'source'}>
-        <Suspense fallback={preview}>
-          <FileAnalysisPanel
-            key={resourceId + path}
-            resourceId={resourceId}
-            path={path}
-            savedContent={savedContent}
-            preview={preview}
-            expanded={expanded}
-            blocked={dirty || busy}
-            onExpandedChange={(value) => {
-              setExpanded(value);
-              onViewChange(value ? 'analyze' : 'preview');
-            }}
-            previewVersion={tablePreview.data?.fileVersion}
-            onRefreshPreview={tablePreview.refresh}
-            onRunningChange={reportRunning}
-            onExportSaved={onExportSaved}
-          />
-        </Suspense>
+        {imageFile ? (
+          preview
+        ) : (
+          <Suspense fallback={preview}>
+            <FileAnalysisPanel
+              key={resourceId + path}
+              resourceId={resourceId}
+              path={path}
+              savedContent={savedContent}
+              preview={preview}
+              expanded={expanded}
+              blocked={dirty || busy}
+              onExpandedChange={(value) => {
+                setExpanded(value);
+                onViewChange(value ? 'analyze' : 'preview');
+              }}
+              previewVersion={tablePreview.data?.fileVersion}
+              onRefreshPreview={tablePreview.refresh}
+              onRunningChange={reportRunning}
+              onExportSaved={onExportSaved}
+            />
+          </Suspense>
+        )}
       </div>
-      <div hidden={mode !== 'source'}>
+      <div hidden={imageFile || mode !== 'source'}>
         <WorkspaceResultPanel title="Edit source" actions={fileActions}>
           <div className="file-preview-content">
             <Textarea

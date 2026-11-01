@@ -1155,6 +1155,9 @@ function FileWorkspace({
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [unavailableReason, setUnavailableReason] = useState('');
+  const [previewImage, setPreviewImage] = useState<{ mimeType: string; base64: string } | null>(
+    null,
+  );
   const previewRequest = useRef<AbortController | null>(null);
   useEffect(() => () => previewRequest.current?.abort(), []);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
@@ -1209,6 +1212,7 @@ function FileWorkspace({
       setContent(file.content || '');
       setError('');
       setUnavailableReason('');
+      setPreviewImage(null);
       const needsPreview = remote || file.content === undefined;
       setPreviewLoading(needsPreview);
       if (!needsPreview) return;
@@ -1218,6 +1222,7 @@ function FileWorkspace({
         setEditing({ ...file, content: result.content, size: result.size });
         setContent(result.content || '');
         setUnavailableReason(result.unavailableReason || '');
+        setPreviewImage(result.image || null);
       } catch (cause) {
         if (!controller.signal.aborted)
           setUnavailableReason(cause instanceof Error ? cause.message : 'Unable to load preview.');
@@ -1522,6 +1527,7 @@ function FileWorkspace({
               size={editing.size}
               loading={previewLoading}
               unavailableReason={unavailableReason}
+              image={previewImage}
               busy={busy}
               error={error}
               pendingChange={!!pendingAction}

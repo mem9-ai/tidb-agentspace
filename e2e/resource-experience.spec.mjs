@@ -1,4 +1,5 @@
 import { test, expect, sampleResources } from './workspace-fixture.mjs';
+import { readFile } from 'node:fs/promises';
 
 const collections = [
   {
@@ -756,4 +757,66 @@ test('Connect opens scoped Key creation directly and the empty Keys page has one
       (request) => request.method === 'POST' && request.path.endsWith('/keys'),
     ),
   ).toEqual([]);
+});
+
+test('image preview displays bounded images and explains unavailable files', async ({
+  page,
+  context,
+  workspace,
+}, testInfo) => {
+  workspace.addResources();
+  workspace.state.resources[1].provider = 'drive9-anonymous';
+  const imageBytes = await readFile(new URL('./fixtures/image-preview.png', import.meta.url));
+  for (const [name, size] of [
+    ['photo.png', imageBytes.length],
+    ['large.jpg', 1048577],
+    ['broken.gif', 12],
+  ]) {
+    workspace.state.files.push({
+      id: name,
+      resourceId: 'fs_fixture',
+      path: `/${name}`,
+      type: 'file',
+      size,
+      updatedAt: null,
+    });
+  }
+  const pixel = imageBytes.toString('base64');
+  await context.route('**/api/**', async (route) => {
+    const url = new URL(route.request().url());
+    if (!url.pathname.endsWith('/files/content')) return route.fallback();
+    const path = url.searchParams.get('path');
+    if (path === '/photo.png')
+      return route.fulfill({
+        json: { size: imageBytes.length, image: { mimeType: 'image/png', base64: pixel } },
+      });
+    if (path === '/large.jpg')
+      return route.fulfill({
+        json: { size: 1048577, unavailableReason: 'This image exceeds the 1 MiB preview limit.' },
+      });
+    if (path === '/broken.gif')
+      return route.fulfill({
+        json: { size: 12, image: { mimeType: 'image/gif', base64: 'R0lGODlhAAAA' } },
+      });
+    return route.fallback();
+  });
+  await workspace.open('#files?resourceId=fs_fixture&path=%2Fphoto.png&view=source');
+  const image = page.getByRole('img', { name: 'photo.png' });
+  await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate((node) => node.naturalWidth)).toBeGreaterThan(0);
+  await expect(page.getByRole('button', { name: 'Edit source', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('image-preview.png') });
+  await page.getByRole('button', { name: /^large\.jpg/ }).click();
+  await expect(
+    page.getByText(
+      'This image exceeds the 1 MiB preview limit. Use Export to download the file and open it in another tool.',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /^broken\.gif/ }).click();
+  await expect(
+    page.getByText('This image could not be displayed.', { exact: false }),
+  ).toBeVisible();
 });

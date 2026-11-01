@@ -417,7 +417,7 @@ domain differences. See the [cross-page audit](../product-experience-audit.md).
   Preserve editable text drafts and label their download as Download draft. Verify boundary
   sizes (including UTF-8), complex/invalid content, recovery after correction, and downloaded
   bytes. Current budgets are documented in [file preview verification](../file-preview-verification.md);
-  Live file metadata now gates bounded preview reads before content transfer; binary/oversized files disable source editing and keep authenticated Download available. See [ADR 0004](../decisions/0004-drive9-anonymous-provider.md). Revisit budgets with measured renderer performance.
+  Live file metadata now gates bounded preview reads before content transfer; supported raster images use their own bounded preview and cannot be edited as text. Unsupported binary and oversized files keep authenticated Export available. See [ADR 0004](../decisions/0004-drive9-anonymous-provider.md). Revisit budgets with measured renderer performance.
 - The selector offers Light, Dark, and System; map the visible System option to TiUI `auto`.
   Use the library's persistence/system support. Migrate the current `tidb-workspace-theme`
   preference once (`system` → `auto`) so integration does not reset a user's selection.

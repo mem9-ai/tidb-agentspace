@@ -66,6 +66,8 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0030: Personal TiDB Account isolation](0030-personal-account-isolation.md) — account-scoped regional access and explicit retirement of the shared Workspace.
 - [0032: Writer-safe dev release](0032-writer-safe-dev-release.md) — bounded health checks and explicitly compatible, fenced image recovery for the single-writer profile.
 
+- [0038: Bounded raster image previews](0038-bounded-image-preview.md) — authorized, size-limited image preview with signature checks and an export fallback.
+
 ## Proposed decisions
 
 - [0034: Global Key authority and independently serving Regions](0034-openapi-security-authorities.md) — owner-confirmed Key/Token and regional autonomy direction; detailed implementation and security gates proposed.

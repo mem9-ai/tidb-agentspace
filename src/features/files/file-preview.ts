@@ -113,6 +113,10 @@ export function prepareFilePreview(path: string, content: string) {
   }
 }
 
+export function isImageFile(path: string) {
+  return /\.(png|jpe?g|gif|webp)$/i.test(path);
+}
+
 export function isTabularFile(path: string) {
   return /\.(csv|parquet)$/i.test(path);
 }

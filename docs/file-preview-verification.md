@@ -86,8 +86,7 @@ Unavailable-preview follow-up:
 
 ## Boundaries
 
-The backend contract, authorization and storage limit are unchanged. The local demo accepts
-UTF-8 text only; binary image/PDF/media previews and real cloud storage are not implemented.
+The local demo accepts UTF-8 text only; PDF and other media previews are not implemented. The live Drive9 provider additionally supports the bounded raster image preview below.
 Creation and deletion still use their existing dialogs. The file-level draft guard covers
 switching files/systems, closing the panel and browser unload; it does not add application-wide
 SPA navigation blocking. Save before leaving File System for another workspace destination.
@@ -95,3 +94,9 @@ SPA navigation blocking. Save before leaving File System for another workspace d
 ## Live provider extension
 
 [Drive9 verification](drive9-verification.md) covers metadata-only listings, bounded content loading, binary downloads, and live Singapore examples. The original local UTF-8 behavior above remains supported. See [ADR 0004](decisions/0004-drive9-anonymous-provider.md) for current transfer limits.
+
+## Raster image preview
+
+The Drive9-backed workspace previews PNG, JPEG, GIF, and WebP images up to 1 MiB. The service checks metadata before reading, bounds the response stream again if the file grows, and checks the file signature against the selected extension. The authorized preview response contains the selected bytes; the browser renders them without requesting a provider URL. Invalid, oversized, or undecodable images display an explanation and retain Export. SVG stays inert source text and is never rendered as an image. Binary images cannot be edited as text. The local text-only provider does not store image bytes.
+
+This compressed-byte limit is not a decoded pixel or frame budget; revisit with measured rendering performance and server-side image inspection before raising it or allowing larger uploads. Browser tests cover image display, failure and fallback in both themes at desktop and narrow widths. Native integration checks the response, image signatures and exact size boundary.

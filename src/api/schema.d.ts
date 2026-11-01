@@ -273,7 +273,7 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Download original bytes or request a bounded text preview (Drive9)
+     * Download original bytes or request a bounded file preview (Drive9)
      * @description Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['downloadFile'];
@@ -3942,7 +3942,7 @@ export interface operations {
       query: {
         resourceId: string;
         path: string;
-        /** @description Returns JSON content or an unavailableReason. Never reads files larger than 128 KiB for preview. */
+        /** @description Returns text content, a base64 image, or an unavailableReason. Text is limited to 128 KiB and PNG, JPEG, GIF, and WebP to 1 MiB. */
         preview?: '1';
       };
       header?: never;
@@ -3965,6 +3965,11 @@ export interface operations {
             content?: string;
             size: number;
             unavailableReason?: string;
+            image?: {
+              /** @enum {unknown} */
+              mimeType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+              base64: string;
+            };
           };
         };
       };
