@@ -100,3 +100,25 @@ SPA navigation blocking. Save before leaving File System for another workspace d
 The Drive9-backed workspace previews PNG, JPEG, GIF, and WebP images up to 1 MiB. The service checks metadata before reading, bounds the response stream again if the file grows, and checks the file signature against the selected extension. The authorized preview response contains the selected bytes; the browser renders them without requesting a provider URL. Invalid, oversized, or undecodable images display an explanation and retain Export. SVG stays inert source text and is never rendered as an image. Binary images cannot be edited as text. The local text-only provider does not store image bytes.
 
 This compressed-byte limit is not a decoded pixel or frame budget; revisit with measured rendering performance and server-side image inspection before raising it or allowing larger uploads. Browser tests cover image display, failure and fallback in both themes at desktop and narrow widths. Native integration checks the response, image signatures and exact size boundary.
+
+## Mermaid diagrams
+
+Markdown Mermaid fences and standalone `.mmd`/`.mermaid` files render inside the existing
+file preview. Graphs follow the active light or dark TiUI palette and scroll horizontally when
+needed to preserve readable labels; source stays available
+through **View diagram source**, and ordinary file editing and Export remain unchanged.
+Invalid, over-budget, or unsupported embedded-image diagrams explain the fallback.
+
+The renderer uses pinned Mermaid 12.2.0 in an opaque-origin `allow-scripts` iframe with
+a restrictive CSP, no network connections, strict Mermaid security, SVG labels and a
+channel-bound message handshake. It strips active/image nodes and links before showing the
+result. A file may automatically render at most eight diagrams, each at most 20,000 UTF-8
+bytes and 200 edges; existing 128 KiB, line and text-shape limits apply before this.
+The complete Mermaid runtime is lazily downloaded only for diagrams and is approximately
+5.2 MB uncompressed in the production build. Revisit the limits and renderer isolation
+when upgrading Mermaid or adding image, link, or interactive-diagram support.
+
+Browser assertions cover Markdown, standalone files, malformed and oversized diagrams,
+security directives and remote-image denial, multiple diagrams, source access, theme changes,
+lazy loading, light/dark and desktop/narrow layouts. See the [desktop dark](screenshots/mermaid/desktop-dark.png) and [narrow light](screenshots/mermaid/narrow-light.png) views. The `/studio/` base-path build is checked separately. These tests use
+synthetic local fixtures; they do not assert live-provider availability.
