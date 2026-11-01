@@ -14,6 +14,10 @@ use crate::{error, now};
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KeyView {
+    #[serde(default = "default_name")]
+    pub name: String,
+    #[serde(default)]
+    pub created_at: i64,
     pub workspace_id: String,
     pub key_id: String,
     pub principal_id: String,
@@ -46,6 +50,8 @@ pub struct KeyPage {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct NewKey {
+    #[serde(default = "default_name")]
+    pub name: String,
     pub workspace_id: String,
     pub principal_id: String,
     pub grant_ref: String,
@@ -54,6 +60,10 @@ pub struct NewKey {
 
 pub struct GlobalKeys {
     metadata: Arc<dyn Metadata>,
+}
+
+fn default_name() -> String {
+    "Agent key".into()
 }
 
 fn valid_id(value: &str) -> bool {
@@ -283,7 +293,9 @@ impl GlobalKeys {
     }
     async fn create_at(&self, input: &NewKey, mutation: &str, current: i64) -> Result<IssuedKey> {
         let scope = scope(&input.workspace_id)?;
-        if !valid_id(&input.principal_id)
+        if input.name.trim().is_empty()
+            || input.name.len() > 80
+            || !valid_id(&input.principal_id)
             || !valid_id(&input.grant_ref)
             || !uuid(mutation)
             || current <= 0
@@ -302,6 +314,8 @@ impl GlobalKeys {
             };
         }
         let view = KeyView {
+            name: input.name.trim().into(),
+            created_at: current,
             workspace_id: input.workspace_id.clone(),
             key_id: Uuid::new_v4().to_string(),
             principal_id: input.principal_id.clone(),
@@ -619,6 +633,7 @@ mod tests {
 
     fn input() -> NewKey {
         NewKey {
+            name: "Test key".into(),
             workspace_id: "ws_agentlab".into(),
             principal_id: "legacy-owner".into(),
             grant_ref: "grant:unchanged".into(),

@@ -59,6 +59,7 @@ pub fn allowed(
     config: &Config,
     headers: &HeaderMap,
     method: &Method,
+    local_readiness: bool,
 ) -> Result<bool, ServiceError> {
     let host = headers
         .get("host")
@@ -85,6 +86,7 @@ pub fn allowed(
     if config.security.is_some()
         && !public
         && !(config.insecure_loopback && host == config.bind.to_string())
+        && !(local_readiness && local)
     {
         return Err(reject(403, "HOST_DENIED"));
     }
@@ -120,14 +122,14 @@ mod tests {
         let mut h = HeaderMap::new();
         h.insert("host", "studio.example".parse().unwrap());
         h.insert("origin", "http://studio.example".parse().unwrap());
-        assert!(allowed(&c, &h, &Method::GET).is_err());
+        assert!(allowed(&c, &h, &Method::GET, false).is_err());
         h.insert("origin", "https://studio.example".parse().unwrap());
-        assert!(allowed(&c, &h, &Method::GET).is_ok());
+        assert!(allowed(&c, &h, &Method::GET, false).is_ok());
         h.remove("origin");
         h.insert("cookie", "aw_session=test".parse().unwrap());
-        assert!(allowed(&c, &h, &Method::POST).is_err());
+        assert!(allowed(&c, &h, &Method::POST, false).is_err());
         h.insert("host", "evil.example".parse().unwrap());
-        assert!(allowed(&c, &h, &Method::GET).is_err());
+        assert!(allowed(&c, &h, &Method::GET, false).is_err());
         c.sso = None;
         assert!(c.validate().is_err());
         c.public_origins.clear();

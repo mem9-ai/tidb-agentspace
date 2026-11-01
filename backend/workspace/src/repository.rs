@@ -798,6 +798,33 @@ impl Repository {
         self.commit(changes).await?;
         Ok(result)
     }
+    /// Owner-authorized retirement: delete only obsolete customer Key records/indexes.
+    /// Resource records, bindings, provider credentials and new Global Key/family scopes are untouched.
+    pub async fn discard_regional_keys(&self) -> Result<()> {
+        let _lock = self.queue.write().await;
+        for prefix in ["state/keys/", "indexes/key-digest/"] {
+            loop {
+                let page = self
+                    .call(MetaRequest::List {
+                        scope: self.scope.clone(),
+                        guard: Some(self.guard.clone()),
+                        prefix: prefix.into(),
+                        after: None,
+                        limit: 128,
+                    })
+                    .await?;
+                let records = page["records"]
+                    .as_array()
+                    .ok_or_else(|| error("META_RECORD_CORRUPT"))?;
+                if records.is_empty() {
+                    break;
+                }
+                let changes=records.iter().map(|record|json!({"key":record["key"],"expectedVersion":record["version"],"delete":true})).collect();
+                self.commit(changes).await?;
+            }
+        }
+        Ok(())
+    }
     pub async fn resource(&self, id: &str) -> Result<Value> {
         Ok(self.get(&format!("state/resources/{id}")).await?["value"]["record"].clone())
     }

@@ -1,6 +1,6 @@
 # TiDB Agent Workspace
 
-An independent Workspace for developers and agents to use databases and files through one scoped Workspace Key. The Console is React/TiUI; the hosted/local API and regional Meta services use Rust. MySQL, opt-in db9 PostgreSQL, native DuckDB and independent File Systems have separate provider capabilities and credential boundaries.
+An independent Workspace for developers and agents to use databases and files through one scoped Global Workspace Key and Region access Tokens. The Console is React/TiUI; the hosted/local API and regional Meta services use Rust. MySQL, opt-in db9 PostgreSQL, native DuckDB and independent File Systems have separate provider capabilities and credential boundaries.
 
 Start with [start-here.md](start-here.md), [contribution rules](CONTRIBUTING.md) and [architecture](docs/architecture.md). The Rust API supports local guest and hosted shared-Workspace SSO; production multi-tenant identity remains planned.
 
@@ -97,9 +97,9 @@ See [runtime setup and recovery](docs/duckdb-databases.md) and
 - Table links preserve exact names and keep the SQL editor visible. Table selection retains drafts; Query table explicitly prepares a SELECT. Agents use the same scoped table APIs; see [unified workspace verification](docs/database-workspace-verification.md) and [database API evidence](docs/database-browser-verification.md).
 - Simulated databases/local files by default, plus opt-in real Zero MySQL, db9 PostgreSQL databases and Drive9 anonymous File Systems in Singapore. Creation persists idempotency and provider bindings across restarts.
 - Local UTF-8 files up to 256 KiB; live text/binary uploads up to the negotiated gateway maximum of 1 MiB, metadata listings, bounded previews, streaming downloads, and empty-directory deletion. Markdown, JSON, CSV, code, and text render in a side panel; oversized/binary content remains downloadable.
-- Read-only file analysis in the file side panel: CSV/Parquet use real DuckDB SQL; UTF-8 logs/text use Just Bash grep/awk/pipelines. The API takes bounded snapshots from local or live files, with no hosted Exec requirement. Agents need both `files:read` and `files:analyze` plus the File System grant; existing keys are unchanged. See [limits and verification](docs/file-analysis-verification.md).
-- Unified Workspace Keys with action scopes and explicit resource access, 7/30/90-day expiration, last-used metadata, and immediate revocation. Keys are revealed once; only a digest is stored.
-- Working Bearer-authenticated REST APIs, owner-only key administration, OpenAPI 3.1, API explorer, and agent instructions.
+- Read-only file analysis in the file side panel: CSV/Parquet use real DuckDB SQL; UTF-8 logs/text use Just Bash grep/awk/pipelines. The API takes bounded snapshots from local or live files, with no hosted Exec requirement. Agents need both `files:read` and `files:analyze` plus the File System grant, carried by a Region access Token. See [limits and verification](docs/file-analysis-verification.md).
+- Global Workspace Keys with explicit action/resource grants and expiry. Keys are revealed once and exchanged for scoped access Tokens. Global records revocation immediately and reports Region policy application separately; disconnected Regions remain pending.
+- Direct Region REST APIs, Global Owner-only Key administration, separate OpenAPI 3.1 contracts, API documentation with executable examples, and agent instructions.
 - Local action counts, file usage, latest 200 successful mutation events, and saved profile / workspace settings.
 - Responsive layouts, keyboard search, modal focus management, and reduced-motion support.
 
@@ -107,7 +107,7 @@ See [runtime setup and recovery](docs/duckdb-databases.md) and
 
 Unbound database instances and chart series are simulated and labeled in the UI. Demo SQL supports only `SELECT 1 [AS connected]` and `SELECT * FROM agent_events [LIMIT n]`; this is not a MySQL or PostgreSQL server. Local demo files are text records in encrypted native metadata. File Systems marked `drive9-anonymous` store their content in the real Singapore service, with internal credentials in encrypted native records. Database usage is not metered; local filesystem allowances are a reference snapshot. Live trial storage usage, quotas, and billing are not measured. One Workspace Key works across its permitted database and file APIs. Both action scopes and resource IDs are enforced; selected resources do not automatically expand to future resources. Path-level policies and native protocol gateways are not implemented.
 
-Persistent Starter provisioning, production secret management, native protocol gateways, real telemetry, MCP, multi-tenant sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). The native loopback guest profile remains for local validation. Native SSO is an explicitly configured shared workspace, without customer/team isolation.
+Persistent Starter provisioning, production secret management, native protocol gateways, real telemetry, MCP, multi-tenant sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). The native loopback guest profile remains for local validation. Native SSO supports explicitly configured personal Workspace isolation; team sharing and production identity operations retain separate delivery limits.
 
 The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, and TiUI SQL Editor 0.0.6. Shared overrides preserve 16px body text, 48px primary controls, spacious layouts, and Light/Dark/System modes. Inter is self-hosted. See the [TiUI standard](docs/standards/tiui-design-system.md) for compatibility, extension rules, and [migration verification](docs/tiui-migration-verification.md).
 
@@ -146,7 +146,7 @@ Every coding tool uses the shared [agent instructions](AGENTS.md), [contribution
 
 `npm run check` is the common local/CI gate. It checks required standards and instruction links as well as application quality; it does not certify visual fidelity. The [CI/CD policy](docs/ci-cd.md) describes PR review, immutable artifacts, and future protected deployments. GitHub CI runs in `mem9-ai/tidb.ai`; deployment depends on the target environment and its configured protections.
 
-The product uses one customer-facing Workspace Key; upstream provider credentials are owned by internal services. See [ADR 0001](docs/decisions/0001-unified-workspace-key.md). Existing prototype keys without an explicit resource grant must be reissued.
+The product uses one customer-facing Workspace Key; upstream provider credentials are owned by internal services. See [ADR 0001](docs/decisions/0001-unified-workspace-key.md). Retired direct regional Keys are discarded under [ADR 0036](docs/decisions/0036-global-keys-only.md); resources and provider/native credentials remain intact. Read [the API guide](docs/api-guide.md) for Global Key creation, Token exchange, Region data access and local renewal.
 
 Read [SlateDB Metadata Architecture Version 1](docs/slatedb-metadata-design.md) for the complete
 Global/Region metadata design, domain model, durability, security, recovery and iteration plan.

@@ -79,15 +79,12 @@ export async function productApiCases(t, transport) {
     return response;
   }
   async function key(name, grants = resources, actions = scopes, workspace = 0) {
-    return (
-      await request(
-        '/keys',
-        { method: 'POST', body: { name, scopes: actions, resourceIds: grants, expiresInDays: 7 } },
-        201,
-        undefined,
-        workspace,
-      )
-    ).body;
+    const result = await f.issueKey(
+      { name, scopes: actions, resourceIds: grants, expiresInDays: 7 },
+      workspace,
+    );
+    assert.equal(result.status, 201, JSON.stringify(result.body));
+    return result.body;
   }
   const full = await key('coverage-all');
   const token = full.secret;
@@ -199,7 +196,7 @@ export async function productApiCases(t, transport) {
       });
       await query('db_live', 'INSERT INTO coverage_roundtrip VALUES (1)');
       const revoked = await key('coverage-revoked-before-restart');
-      await request(`/keys/${revoked.data.id}`, { method: 'DELETE' });
+      assert.equal((await f.revokeKey(revoked.data.id)).status, 202);
       const review = (await upload()).body;
       const creates = { ...provider.nativeCreates, files: provider.creates };
       await f.restart();
@@ -214,14 +211,19 @@ export async function productApiCases(t, transport) {
         row,
       ]);
       const before = provider.calls;
-      await request('/files?resourceId=fs_live', { token: revoked.secret }, 401, 'INVALID_KEY');
+      await request(
+        '/files?resourceId=fs_live',
+        { token: revoked.secret },
+        401,
+        'INVALID_CREDENTIAL',
+      );
       await request(
         '/files?resourceId=fs_live',
         { token: 'expired-coverage-key' },
         401,
-        'INVALID_KEY',
+        'INVALID_CREDENTIAL',
       );
-      await request('/files?resourceId=fs_live', { token }, 401, 'INVALID_KEY', 1);
+      await request('/files?resourceId=fs_live', { token }, 401, 'INVALID_CREDENTIAL', 1);
       await request(
         '/database-imports',
         { method: 'POST', token, body: commit(review, 'lost_review') },

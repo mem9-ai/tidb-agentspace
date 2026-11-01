@@ -109,25 +109,18 @@ export async function tutorialCases(t, transport) {
     'c'.repeat(32),
   );
 
-  const key = (
-    await request(
-      '/keys',
-      {
-        method: 'POST',
-        body: {
-          name: 'tutorial-denial',
-          scopes: ['resources:read', 'queries:execute'],
-          resourceIds: ['*'],
-          expiresInDays: 7,
-        },
-      },
-      201,
-    )
-  ).body;
+  const issued = await f.issueKey({
+    name: 'tutorial-denial',
+    scopes: ['resources:read', 'queries:execute'],
+    resourceIds: ['*'],
+    expiresInDays: 7,
+  });
+  assert.equal(issued.status, 201, JSON.stringify(issued.body));
+  const key = issued.body;
   for (const path of ['/tutorials', '/tutorials/db_memory'])
     await request(path, { token: key.secret }, 403, 'OWNER_REQUIRED');
   await request('/tutorials/db_memory', { ...create, token: key.secret }, 403, 'OWNER_REQUIRED');
-  await request(`/keys/${key.data.id}`, { method: 'DELETE' });
+  assert.equal((await f.revokeKey(key.data.id)).status, 202);
   for (const token of [key.secret, 'expired-coverage-key', 'revoked-coverage-key', 'invalid']) {
     await request('/tutorials', { token }, 401);
     await request('/tutorials/db_memory', { ...create, token }, 401);

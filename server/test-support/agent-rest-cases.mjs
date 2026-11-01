@@ -19,14 +19,11 @@ export async function agentRestCases(t, transport) {
   const key = async (
     scopes,
     resourceIds = ['fs_shared', 'fs_live', 'db_live', 'db_pg', 'db_duck'],
-  ) =>
-    (
-      await request(
-        '/keys',
-        { method: 'POST', body: { name: 'agent-p0', scopes, resourceIds, expiresInDays: 7 } },
-        201,
-      )
-    ).body;
+  ) => {
+    const r = await f.issueKey({ name: 'agent-p0', scopes, resourceIds, expiresInDays: 7 });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    return r.body;
+  };
   const reader = await key(['queries:read', 'resources:read', 'files:read', 'files:write']);
   const full = await key([
     'queries:execute',
@@ -78,12 +75,12 @@ export async function agentRestCases(t, transport) {
       'INVALID_PAGE_CURSOR',
     );
     const first = (await request('/resources?limit=1', { token: selected.secret })).body;
-    await request(`/keys/${selected.data.id}`, { method: 'DELETE' });
+    assert.equal((await f.revokeKey(selected.data.id)).status, 202);
     await request(
       `/resources?cursor=${first.nextCursor}`,
       { token: selected.secret },
       401,
-      'INVALID_KEY',
+      'INVALID_CREDENTIAL',
     );
   });
 
@@ -92,12 +89,13 @@ export async function agentRestCases(t, transport) {
     async () => {
       const minimal = await key(['queries:read'], ['db_live']);
       const context = (await request('/context', { token: minimal.secret })).body;
-      assert.deepEqual(context.principal, {
-        id: minimal.data.id,
+      const { expiresAt, ...principal } = context.principal;
+      assert.equal(Date.parse(expiresAt), minimal.accessExpiresAt * 1000);
+      assert.deepEqual(principal, {
+        id: minimal.data.principalId,
         kind: 'workspaceKey',
         scopes: ['queries:read'],
         resourceIds: ['db_live'],
-        expiresAt: minimal.data.expiresAt,
       });
       assert.equal(context.workspaceId, 'ws_agentlab');
       assert.equal(context.permissions.manageKeys, false);
@@ -111,8 +109,8 @@ export async function agentRestCases(t, transport) {
         await request('/context', { token: access }, 401);
       const cross = await f.request('/context', { token: full.secret }, 1);
       assert.equal(cross.status, 401);
-      await request(`/keys/${minimal.data.id}`, { method: 'DELETE' });
-      await request('/context', { token: minimal.secret }, 401, 'INVALID_KEY');
+      assert.equal((await f.revokeKey(minimal.data.id)).status, 202);
+      await request('/context', { token: minimal.secret }, 401, 'INVALID_CREDENTIAL');
     },
   );
 
@@ -413,7 +411,10 @@ export async function agentRestCases(t, transport) {
         409,
         'RESOURCE_DELETING',
       );
-      assert.equal((await request('/context', { token })).body.principal.id, reader.data.id);
+      assert.equal(
+        (await request('/context', { token })).body.principal.id,
+        reader.data.principalId,
+      );
       assert.equal(
         (await f.request('/files?resourceId=fs_shared', {}, 1)).body.data[0].content,
         'ws_other',
@@ -482,7 +483,10 @@ export async function agentRestCases(t, transport) {
         const records = await f.records(bindingKeys);
         for (const name of bindingKeys)
           assert.deepEqual(records[name].value, beforeBindings[name].value);
-        assert.equal((await request('/context', { token })).body.principal.id, reader.data.id);
+        assert.equal(
+          (await request('/context', { token })).body.principal.id,
+          reader.data.principalId,
+        );
       }
       assert.equal(f.provider.nativeCreates.zero, 0);
       assert.equal(f.provider.nativeCreates.db9, 0);

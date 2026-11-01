@@ -194,49 +194,22 @@ test(
       (await (await request('/api/v1/workspaces', { cookie: first.cookie })).json()).data[0].id,
       first.workspaceId,
     );
-    const keyResponse = await request(`/api/v1/workspaces/${first.workspaceId}/keys`, {
-      cookie: first.cookie,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: 'Guest test key',
-        scopes: ['resources:read'],
-        resourceIds: ['*'],
-        expiresInDays: 7,
-      }),
-    });
-    assert.equal(keyResponse.status, 201);
-    const key = await keyResponse.json();
-    const authorization = { Authorization: `Bearer ${key.secret}` };
+    // Guest cookies cannot create regional Keys; only Global Owner identity may create new Keys.
     assert.equal(
       (
-        await request(`/api/v1/workspaces/${first.workspaceId}/resources`, {
-          headers: authorization,
-        })
-      ).status,
-      200,
-    );
-    assert.equal(
-      (
-        await request(`/api/v1/workspaces/${second.workspaceId}/resources`, {
-          headers: authorization,
-        })
-      ).status,
-      401,
-    );
-    assert.equal(
-      (
-        await request(`/api/v1/workspaces/${first.workspaceId}/keys/${key.data.id}`, {
+        await request(`/api/v1/workspaces/${first.workspaceId}/keys`, {
           cookie: first.cookie,
-          method: 'DELETE',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
         })
       ).status,
-      200,
+      404,
     );
     assert.equal(
       (
         await request(`/api/v1/workspaces/${first.workspaceId}/resources`, {
-          headers: authorization,
+          headers: { Authorization: 'Bearer retired-guest-key' },
         })
       ).status,
       401,
@@ -255,19 +228,6 @@ test(
     assert.equal(listed.status, 200);
     assert.equal((await listed.json()).data[0].id, first.workspaceId);
     assert.equal((await request('/api/auth/guest', { method: 'POST' })).status, 503);
-    const remainingKey = await request(`/api/v1/workspaces/${first.workspaceId}/keys`, {
-      cookie: first.cookie,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: 'Logout key',
-        scopes: ['resources:read'],
-        resourceIds: ['*'],
-        expiresInDays: 7,
-      }),
-    });
-    assert.equal(remainingKey.status, 201);
-    const remainingSecret = (await remainingKey.json()).secret;
     assert.equal((await request('/api/auth/guest/logout', { method: 'POST' })).status, 401);
     assert.equal(
       (
@@ -311,7 +271,7 @@ test(
       [401, 403].includes(
         (
           await request(`/api/v1/workspaces/${first.workspaceId}/resources`, {
-            headers: { Authorization: `Bearer ${remainingSecret}` },
+            headers: { Authorization: 'Bearer retired-guest-key' },
           })
         ).status,
       ),

@@ -203,7 +203,11 @@ async fn run_open(mut job: OpenJob) {
         }
     };
     let workspace = Arc::new(Workspace::new_managed(repository));
-    let result = match workspace.authenticate(&job.credential).await {
+    let authorization = match workspace.repository().discard_regional_keys().await {
+        Ok(()) => workspace.authenticate(&job.credential).await.map(|_| ()),
+        Err(error) => Err(error),
+    };
+    let result = match authorization {
         Err(error) => Err(error),
         Ok(_) => match job.product {
             Some(config) => workspace_product::Product::new(workspace.clone(), config)
@@ -432,6 +436,11 @@ impl ManagedWorkspaces {
                 return Err(error);
             }
         };
+        if let Err(error) = repository.discard_regional_keys().await {
+            let _ = repository.close().await;
+            self.state.lock().await.cleanup.remove(workspace_id);
+            return Err(error);
+        }
         let workspace = Arc::new(Workspace::new_managed(repository));
         let product = if let Some(config) = self.product.clone() {
             match workspace_product::Product::new(workspace.clone(), config).await {
@@ -776,6 +785,20 @@ mod pool_concurrency_tests {
                             }
                         }
                         Ok(json!({}))
+                    }
+                    MetaRequest::List {
+                        scope,
+                        guard,
+                        prefix,
+                        ..
+                    } => {
+                        assert!(prefix == "state/keys/" || prefix == "indexes/key-digest/");
+                        let writers = self.writers.lock().unwrap();
+                        assert_eq!(
+                            writers[&scope.owner_id]["value"]["ownerId"],
+                            guard.expect("fenced key cleanup").owner_id
+                        );
+                        Ok(json!({"records":[],"nextCursor":null}))
                     }
                     _ => panic!("unexpected metadata request"),
                 }

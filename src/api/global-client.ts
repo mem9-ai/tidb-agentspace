@@ -6,12 +6,15 @@ export function createGlobalApiClient(
   origin: string,
   trustedOrigins: readonly string[],
   fetcher: typeof fetch = fetch,
+  owner = false,
 ) {
   const url = new URL(origin);
   const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
   if (
-    url.origin !== origin ||
-    !trustedOrigins.includes(origin) ||
+    url.search ||
+    url.hash ||
+    !/^\/(?:[A-Za-z0-9_-]+\/?)*$/.test(url.pathname) ||
+    !trustedOrigins.includes(url.origin) ||
     (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) ||
     url.username ||
     url.password
@@ -20,9 +23,14 @@ export function createGlobalApiClient(
   const boundedFetch: typeof fetch = (input, init) => {
     const request = new Request(input, init);
     const target = new URL(request.url);
-    if (target.origin !== origin || !target.pathname.startsWith('/api/'))
+    if (
+      target.origin !== url.origin ||
+      !target.pathname.startsWith(url.pathname.replace(/\/$/, '') + '/api/')
+    )
       throw new Error('Request outside the Global API.');
-    return fetcher(new Request(request, { redirect: 'error' }));
+    return fetcher(
+      new Request(request, { redirect: 'error', credentials: owner ? 'include' : 'omit' }),
+    );
   };
   return createClient<paths>({ baseUrl: origin, fetch: boundedFetch });
 }

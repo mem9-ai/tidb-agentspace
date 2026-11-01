@@ -172,7 +172,7 @@ export async function connectAgentWorkspace(options: AgentConnectionOptions) {
     });
     if (issuance.error) throw new Error(issuance.error.error.code);
     const value = issuance.data;
-    if (!value || !('region' in value) || value.region.regionId !== options.regionId)
+    if (!value || !('enrollmentTicket' in value) || value.region.regionId !== options.regionId)
       throw new Error('Regional enrollment result required.');
     stored = {
       state: 'enrolling',

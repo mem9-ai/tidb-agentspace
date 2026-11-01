@@ -8,7 +8,10 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** @description Explicit bounded application attempt for the current Key version, including revoked Keys. Replays reconcile the same immutable command. No background retry or data proxy is implied. */
+    /**
+     * Create Global Key Policy Delivery
+     * @description Explicit bounded application attempt for the current Key version, including revoked Keys. Replays reconcile the same immutable command. No background retry or data proxy is implied.
+     */
     post: operations['createGlobalKeyPolicyDelivery'];
     delete?: never;
     options?: never;
@@ -23,7 +26,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** @description Observe durable application evidence without contacting Region or retrying effects. */
+    /**
+     * Get Global Key Policy Delivery
+     * @description Observe durable application evidence without contacting Region or retrying effects.
+     */
     get: operations['getGlobalKeyPolicyDelivery'];
     put?: never;
     post?: never;
@@ -40,9 +46,13 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
+    /** List Global Keys */
     get: operations['listGlobalKeys'];
     put?: never;
-    /** @description Owner only. Unix-second expiry. Store the returned secret securely; it cannot be retrieved or returned again. */
+    /**
+     * Create Global Key
+     * @description Owner only. Unix-second expiry. Store the returned secret securely; it cannot be retrieved or returned again.
+     */
     post: operations['createGlobalKey'];
     delete?: never;
     options?: never;
@@ -57,13 +67,18 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
+    /** Get Global Key */
     get: operations['getGlobalKey'];
     put?: never;
     post?: never;
+    /** Revoke Global Key */
     delete: operations['revokeGlobalKey'];
     options?: never;
     head?: never;
-    /** @description Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application is reported separately. Only an explicit same-secret renewal durably observed by both authorities before the previous expiry enables existing proof-bound families to cross versions. An unreachable Region remains pending; unavailable continuity requires fresh enrollment. */
+    /**
+     * Renew Global Key
+     * @description Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application is reported separately. Only an explicit same-secret renewal durably observed by both authorities before the previous expiry enables existing proof-bound families to cross versions. An unreachable Region remains pending; unavailable continuity requires fresh enrollment.
+     */
     patch: operations['renewGlobalKey'];
     trace?: never;
   };
@@ -76,6 +91,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
+    /** Rotate Global Key */
     post: operations['rotateGlobalKey'];
     delete?: never;
     options?: never;
@@ -90,6 +106,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
+    /** Get Global Key Version */
     get: operations['getGlobalKeyVersion'];
     put?: never;
     post?: never;
@@ -106,6 +123,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
+    /** Get Global Key Revocation */
     get: operations['getGlobalKeyRevocation'];
     put?: never;
     post?: never;
@@ -124,7 +142,10 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** @description Exchange the Workspace Key at Global only. Region audience requests require an Ed25519 client JWK thumbprint and matching applied regional policy. The response includes a client-bound enrollment ticket for direct regional refresh enrollment. */
+    /**
+     * Create Global Token Issuance
+     * @description Exchange the Workspace Key at Global only. Region audience requests require matching applied regional policy. Without clientThumbprint the response is a short-lived Region access Token. With an Ed25519 client JWK thumbprint it also includes a client-bound enrollment ticket for direct regional refresh enrollment.
+     */
     post: operations['createGlobalTokenIssuance'];
     delete?: never;
     options?: never;
@@ -139,6 +160,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
+    /** Get Global Token Issuance */
     get: operations['getGlobalTokenIssuance'];
     put?: never;
     post?: never;
@@ -155,7 +177,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** @description Requires resources:read on a current Global Token. Only the Key-granted Region is returned. Data requests go directly to Region. */
+    /**
+     * List Authorized Regions
+     * @description Requires resources:read on a current Global Token. Only the Key-granted Region is returned. Data requests go directly to Region.
+     */
     get: operations['listAuthorizedRegions'];
     put?: never;
     post?: never;
@@ -175,6 +200,55 @@ export interface paths {
     get: operations['getGlobalHealth'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/auth/config': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['getGlobalAuthConfig'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/auth/session': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['getGlobalOwnerSession'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/session': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Explicit development profile only, real loopback peer and trusted Origin required. Unavailable in hosted deployments. */
+    post: operations['createLocalGlobalOwnerSession'];
     delete?: never;
     options?: never;
     head?: never;
@@ -242,6 +316,8 @@ export interface components {
       };
     };
     Key: {
+      name: string;
+      createdAt: number;
       workspaceId: string;
       /** Format: uuid */
       keyId: string;
@@ -294,6 +370,18 @@ export interface components {
       enrollmentExpiresAt: number;
       nonce: string;
     };
+    RegionAccessToken: {
+      id: string;
+      accessToken: string;
+      /** @constant */
+      tokenType: 'Bearer';
+      expiresAt: number;
+      scopes: string[];
+      keyId: string;
+      principalId: string;
+      keyVersion: number;
+      region: components['schemas']['Region'];
+    };
   };
   responses: never;
   parameters: never;
@@ -309,7 +397,7 @@ export interface operations {
       header: {
         /** @description Operation identity. A repeated secret-producing operation never returns another secret. Resolve uncertain outcomes; do not blindly repeat. */
         'Idempotency-Key': string;
-        /** @description Must equal the configured Global public origin for Owner mutations. */
+        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
         Origin: string;
       };
       path: {
@@ -424,7 +512,12 @@ export interface operations {
         };
         content: {
           'application/json': {
-            data: components['schemas']['Key'][];
+            data: {
+              data: components['schemas']['Key'];
+              grants: components['schemas']['Grants'];
+              /** @enum {unknown} */
+              regionalStatus: 'pending' | 'applied';
+            }[];
             nextCursor: string | null;
           };
         };
@@ -447,7 +540,7 @@ export interface operations {
       header: {
         /** @description Operation identity. A repeated secret-producing operation never returns another secret. Resolve uncertain outcomes; do not blindly repeat. */
         'Idempotency-Key': string;
-        /** @description Must equal the configured Global public origin for Owner mutations. */
+        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
         Origin: string;
       };
       path: {
@@ -458,6 +551,8 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': {
+          /** @default Agent key */
+          name?: string;
           scopes: string[];
           resourceIds: string[];
           expiresAt: number;
@@ -540,7 +635,7 @@ export interface operations {
         'Idempotency-Key': string;
         /** @description Quoted current Key version ETag. */
         'If-Match': string;
-        /** @description Must equal the configured Global public origin for Owner mutations. */
+        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
         Origin: string;
       };
       path: {
@@ -585,7 +680,7 @@ export interface operations {
         'Idempotency-Key': string;
         /** @description Quoted current Key version ETag. */
         'If-Match': string;
-        /** @description Must equal the configured Global public origin for Owner mutations. */
+        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
         Origin: string;
       };
       path: {
@@ -638,7 +733,7 @@ export interface operations {
         'Idempotency-Key': string;
         /** @description Quoted current Key version ETag. */
         'If-Match': string;
-        /** @description Must equal the configured Global public origin for Owner mutations. */
+        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
         Origin: string;
       };
       path: {
@@ -781,7 +876,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['Token'] | components['schemas']['RegionToken'];
+          'application/json':
+            | components['schemas']['Token']
+            | components['schemas']['RegionAccessToken']
+            | components['schemas']['RegionToken'];
         };
       };
       /** @description Structured denial or unknown outcome; no credential is echoed. */
@@ -904,10 +1002,121 @@ export interface operations {
       };
     };
   };
+  getGlobalAuthConfig: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      200: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            /** @enum {unknown} */
+            mode: 'local' | 'oidc';
+            loginPath: string;
+            localSessionPath: string;
+          };
+        };
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  getGlobalOwnerSession: {
+    parameters: {
+      query: {
+        workspaceId: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      200: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            workspaceId: string;
+            regionId: string;
+          };
+        };
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  createLocalGlobalOwnerSession: {
+    parameters: {
+      query?: never;
+      header: {
+        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
+        Origin: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      201: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            workspaceId: string;
+            regionId: string;
+          };
+        };
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
   startGlobalOwnerLogin: {
     parameters: {
       query: {
         workspaceId: string;
+        /** @description Optional return URL on an explicitly trusted Console origin. */
+        returnTo?: string;
       };
       header?: never;
       path?: never;
@@ -960,6 +1169,13 @@ export interface operations {
           };
         };
       };
+      /** @description Owner cookie issued; redirect to the validated Console return URL. */
+      303: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       /** @description Successful response */
       default: {
         headers: {
@@ -978,7 +1194,7 @@ export interface operations {
         workspaceId: string;
       };
       header: {
-        /** @description Must equal the configured Global public origin for Owner mutations. */
+        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
         Origin: string;
       };
       path?: never;

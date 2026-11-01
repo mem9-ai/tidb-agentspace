@@ -1,4 +1,11 @@
 import { test as base, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+const globalContract = JSON.parse(
+  await readFile(new URL('../public/global-openapi.json', import.meta.url), 'utf8'),
+);
+const regionalContract = JSON.parse(
+  await readFile(new URL('../public/openapi.json', import.meta.url), 'utf8'),
+);
 
 const createdAt = '2026-01-01T00:00:00.000Z';
 export const sampleResources = [
@@ -71,6 +78,9 @@ export const test = base.extend({
         unexpected.push(`External request blocked: ${url.origin}`);
         return route.abort();
       }
+      if (url.pathname === '/openapi.json') return route.fulfill({ json: regionalContract });
+      if (url.pathname === '/api/global/openapi.json')
+        return route.fulfill({ json: globalContract });
       if (!url.pathname.startsWith('/api/')) return route.continue();
       const method = request.method();
       const body = request.postDataJSON();
@@ -81,10 +91,14 @@ export const test = base.extend({
         query: Object.fromEntries(url.searchParams),
       });
       const reply = (json, status = 200) => route.fulfill({ status, json });
+      if (url.pathname === '/api/global/api/auth/session')
+        return reply({ workspaceId: state.workspace.id, regionId: 'region:fixture' });
       if (url.pathname === '/api/auth/config')
         return reply(
           signInRequired || signedInAsGuest || signedInAsAccount
             ? {
+                globalApi: { apiOrigin: url.origin, apiPathPrefix: '/api/global' },
+                regionId: 'region:fixture',
                 enabled: true,
                 loginPath: '/api/auth/tidbcloud/login',
                 logoutPath: '/api/auth/tidbcloud/logout',
@@ -93,7 +107,11 @@ export const test = base.extend({
                 ...(signedInAsGuest ? { sessionKind: 'guest' } : {}),
                 ...(signedInAsAccount ? { sessionKind: 'account' } : {}),
               }
-            : { enabled: false },
+            : {
+                enabled: false,
+                globalApi: { apiOrigin: url.origin, apiPathPrefix: '/api/global' },
+                regionId: 'region:fixture',
+              },
         );
       if (url.pathname === '/api/auth/guest' && method === 'POST' && guestEnabled) {
         signInRequired = false;
@@ -115,7 +133,9 @@ export const test = base.extend({
         return signInRequired
           ? reply({ error: { code: 'UNAUTHENTICATED', message: 'Sign in' } }, 401)
           : reply({ data: [state.workspace] });
-      const path = url.pathname.replace(`/api/v1/workspaces/${state.workspace.id}`, '');
+      const path = url.pathname
+        .replace('/api/global', '')
+        .replace(`/api/v1/workspaces/${state.workspace.id}`, '');
       if (path === '/bootstrap') {
         return reply({
           ...state,
@@ -216,22 +236,60 @@ export const test = base.extend({
           durationMs: 1,
         });
       if (/\/tables$/.test(path)) return reply({ data: [], mode: 'demo', truncated: false });
+      const summary = (key) => ({
+        data: {
+          workspaceId: state.workspace.id,
+          keyId: key.id,
+          name: key.name,
+          createdAt: Math.floor(Date.parse(key.createdAt) / 1000),
+          keyVersion: 1,
+          principalId: 'fixture-owner',
+          grantRef: 'fixture-grant',
+          expiresAt: Math.floor(Date.parse(key.expiresAt) / 1000),
+          revoked: Boolean(key.revokedAt),
+        },
+        grants: { scopes: key.scopes, resourceIds: key.resourceIds, regionId: 'region:fixture' },
+        regionalStatus: key.regionalStatus || 'applied',
+      });
+      if (path === '/key-policy-deliveries' && method === 'POST') {
+        const key = state.keys.find((key) => key.id === body.keyId);
+        key.regionalStatus = 'applied';
+        return reply(
+          {
+            data: {
+              id: 'fixture-delivery',
+              keyId: key.id,
+              keyVersion: body.keyVersion,
+              regionalStatus: 'applied',
+              regionalContinuity: 'unavailable',
+            },
+          },
+          201,
+        );
+      }
       if (path === '/keys' && method === 'GET') {
         const cursor = url.searchParams.get('cursor');
-        return reply((cursor && keyPages.get(cursor)) || { data: state.keys, nextCursor: null });
+        const value = (cursor && keyPages.get(cursor)) || {
+          data: state.keys,
+          nextCursor: state.keysNextCursor || null,
+        };
+        return reply({ ...value, data: value.data.map(summary) });
       }
+      if (path.startsWith('/keys/') && method === 'GET')
+        return reply(summary(state.keys.find((key) => key.id === path.slice('/keys/'.length))));
       if (path === '/keys' && method === 'POST') {
         const key = {
           ...body,
           id: 'key_fixture',
-          prefix: 'fixture',
-          createdAt,
-          expiresAt: '2099-01-01T00:00:00Z',
-          lastUsedAt: null,
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(body.expiresAt * 1000).toISOString(),
           revokedAt: null,
         };
         state.keys.push(key);
-        return reply({ data: key, secret: 'synthetic-browser-key-never-valid-on-a-provider' }, 201);
+        return reply(
+          { ...summary(key), secret: 'synthetic-browser-key-never-valid-on-a-provider' },
+          201,
+        );
       }
       if (path === '/file-analyses/capabilities')
         return reply({

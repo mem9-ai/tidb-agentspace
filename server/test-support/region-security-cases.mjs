@@ -233,16 +233,11 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   assert.equal(fs.status, 201, JSON.stringify(fs.body));
   assert.equal(fs.body.data.status, 'active');
   const resources = [mysql.body.data.id, fs.body.data.id];
-  const oldKey = await request('/keys', {
-    method: 'POST',
-    body: {
-      name: 'before-global-security',
-      scopes: ['resources:read', 'queries:execute', 'files:read', 'files:write'],
-      resourceIds: resources,
-      expiresInDays: 7,
-    },
-  });
-  assert.equal(oldKey.status, 201);
+  assert.equal((await request('/keys', { method: 'POST', body: {} })).status, 404);
+  assert.equal(
+    (await request('/resources', { token: 'Bearer retired-workspace-key' })).status,
+    401,
+  );
   const data = async (token) => {
     const insert = await request('/queries', {
       method: 'POST',
@@ -266,12 +261,6 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
     assert.equal(get.status, 200);
     assert.deepEqual(get.body, Buffer.from([0, 255, 7]));
   };
-  await data('Bearer ' + oldKey.body.secret);
-  const legacyList = await fetch(origin + '/api/v1/workspaces', {
-    headers: { Authorization: 'Bearer ' + oldKey.body.secret },
-  });
-  assert.equal(legacyList.status, 200);
-  assert.equal((await legacyList.json()).data[0].id, workspace);
   const creates = { ...provider.nativeCreates };
   const fileCreates = provider.creates;
   const credentialCount = credentials.size;
@@ -279,7 +268,10 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   config.managedWorkspaceLimit = 16;
   config.security.initializeClock = false;
   await start();
-  await data('Bearer ' + oldKey.body.secret);
+  assert.equal(
+    (await request('/resources', { token: 'Bearer retired-workspace-key' })).status,
+    401,
+  );
   const globalRequest = global.request;
   await global.setDelivery(false);
   const pendingKey = await globalRequest('/keys', {
@@ -661,7 +653,10 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   await start();
   token = await renew();
   await data('Bearer ' + token);
-  await data('Bearer ' + oldKey.body.secret);
+  assert.equal(
+    (await request('/resources', { token: 'Bearer retired-workspace-key' })).status,
+    401,
+  );
   await renewOther();
   const resumed = await connectAgentWorkspace({ ...sdkOptions, workspaceKey: undefined });
   await sdkData(resumed);

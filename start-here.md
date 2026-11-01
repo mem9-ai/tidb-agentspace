@@ -45,7 +45,7 @@ are the UI-only exception; authentication and permission boundaries still apply.
 [Global public API implementation](docs/global-public-api.md) documents the independently
 runnable Global role, its generated contract and client. The [regional Token flow](docs/regional-token-api.md)
 connects policy delivery, managed Workspace authorization and local renewal across Global outages;
-existing credentials retain their original authority until a separate migration.
+retired direct regional Keys are discarded under [ADR 0036](docs/decisions/0036-global-keys-only.md), while resource and provider credentials remain intact. The [API guide](docs/api-guide.md) covers the customer flow and copyable examples.
 
 The Console and API build, run, and package independently in this repository. The Console
 consumes generated API types and selects its API origin at runtime. This implemented boundary
@@ -126,10 +126,10 @@ state/recovery. Policy-sync age never expires access; actual credential expiry a
 denials still apply. Production mTLS and regional autonomy require implementation evidence.
 For direct regional OpenAPI/SDK routes and credential lifetime/renewal, read the
 [regional API/auth contract](specs/gh-74/regional-api-auth.md). It separates explicit continuity
-grants from existing expiring Keys and preserves the current single-origin implementation status.
+grants from actual Key expiry. See the implemented [Global/Region flow](docs/api-guide.md) and its configured deployment profile.
 For Global Workspace Key lifecycle, token/refresh security, local enforcement, pending
-revocation and credential-preserving migration, see the proposed [OpenAPI security design](specs/gh-84/openapi-security.md)
-and [ADR 0034](docs/decisions/0034-openapi-security-authorities.md). These are not implemented capabilities.
+revocation and credential-preserving migration, see the accepted [OpenAPI security design](specs/gh-84/openapi-security.md)
+and [ADR 0034](docs/decisions/0034-openapi-security-authorities.md). The public flow and local continuity are implemented; [ADR 0036](docs/decisions/0036-global-keys-only.md) supersedes legacy customer-Key migration, while production scale and availability claims still require separate evidence.
 Global is the common management/discovery entry; clients use the selected Region OpenAPI
 directly for data and regional operation status, with no mandatory Global hop for known routes.
 

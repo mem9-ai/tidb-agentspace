@@ -1,13 +1,14 @@
 # Regional Token API and local continuity
 
-Status: opt-in native Region integration with Global policy delivery, client-bound refresh
+Status: configured native Region integration with Global policy delivery, client-bound refresh
 families, local issuance/rotation/revocation and direct data authorization. The supported
 single-writer profile supports either one explicit Workspace or the existing bounded managed
 Workspace registry. Existing account/Guest listeners may opt in; a separate Token-only Region
 can use `managedWorkspaceLimit` without regional Owner SSO or a Global dependency.
-Legacy direct-Key records and their authority are retained; enabling this profile does not import,
-rotate or replace them. Same-secret Key renewal is integrated across the previous version's
-expiry. Automatic legacy-Key authority cutover remains a separate migration gate.
+Retired direct regional Keys are discarded under [ADR 0036](decisions/0036-global-keys-only.md);
+there is no verifier migration or direct-Key compatibility. Resources and provider/native
+credentials remain intact. Same-secret Global Key renewal is integrated across the previous
+version’s expiry.
 
 ## Serving profile
 
@@ -104,13 +105,13 @@ credentials are never sent to Region.
 ## Evidence and current limits
 
 The native OIDC fixture creates resources through scoped public API authorization and captures
-existing resource/provider bindings and a regional Key before managed-client use. It then exercises actual Global/Region HTTP, mTLS apply, token issuance, refresh enrollment, family and
+existing resource/provider bindings before managed-client use. It then exercises actual Global/Region HTTP, mTLS apply, token issuance, refresh enrollment, family and
 token revocation, schema validation and the generated/agent clients. It kills Global API and
 Global Meta, waits past a local access token expiry, performs renewal and SQL/file read/write,
 restarts Region and reconnects the cached SDK, then recovers Global from the same S3/key and
 checks its original Key. The same listener also serves a second real Workspace with independent
 Key/family state, rejects cross-Workspace tokens, and locally refreshes both after Global loss
-and Region restart. Existing regional Key, resource IDs, provider creation counts and
+and Region restart. Retired regional Key denial, resource IDs, provider creation counts and
 captured upstream credentials are checked for parity. SQL/files upstreams are isolated fixture
 servers; these cases do not establish real cloud provider compatibility.
 
@@ -136,3 +137,7 @@ No automatic Global authority cutover or replacement of existing Keys occurs. Th
 migration and versioned keyed-index mechanics in the accepted design are not enabled by this
 profile, and are not claimed by this evidence. No live credential migration or cloud outage test
 is performed.
+
+[ADR 0036](decisions/0036-global-keys-only.md) retires direct regional customer Keys.
+New Keys are Global-owned; local data/refresh operations accept Region Tokens only.
+See [the API guide](api-guide.md) for the short-lived curl flow and client-bound renewal.

@@ -31,6 +31,7 @@ async fn main() -> anyhow::Result<()> {
         let issued = keys
             .create(
                 &NewKey {
+                    name: "Probe key".into(),
                     workspace_id: "ws_agentlab".into(),
                     principal_id: "legacy-owner".into(),
                     grant_ref: "grant:existing".into(),

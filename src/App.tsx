@@ -1,7 +1,8 @@
-import { agentInstructions } from './api/agent-instructions';
+import { ApiDocumentation } from './features/api/ApiDocumentation';
 import {
   apiBaseUrl,
   base,
+  signInGlobal,
   workspaceApi,
   type Data,
   type Resource,
@@ -49,7 +50,6 @@ import {
   Checkbox,
   Loader,
   NativeSelect,
-  NavLink,
   Paper,
   Progress,
   SegmentedControl,
@@ -70,7 +70,6 @@ import { Heading } from './ui/WorkspaceHeading';
 import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   IconActivity as Activity,
-  IconDownload01 as ArrowDownToLine,
   IconArrowRight as ArrowRight,
   IconArrowUpRight as ArrowUpRight,
   IconCheck as Check,
@@ -83,7 +82,6 @@ import {
   IconFolder as Folder,
   IconKey01 as KeyRound,
   IconLayoutGrid01 as LayoutDashboard,
-  IconPlay as Play,
   IconPlus as Plus,
   IconRefreshCw01 as RefreshCw,
   IconSearchLg as Search,
@@ -125,7 +123,7 @@ const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string 
   connect: { label: 'Connect an agent', icon: Workflow, group: 'Build' },
   tutorials: { label: 'Tutorials', icon: CircleHelp, group: 'Build' },
   keys: { label: 'API keys', icon: KeyRound, group: 'Build' },
-  api: { label: 'API explorer', icon: Terminal, group: 'Build' },
+  api: { label: 'API documentation', icon: Terminal, group: 'Build' },
   monitoring: { label: 'Monitoring', icon: Activity, group: 'Manage' },
   billing: { label: 'Usage & billing', icon: CreditCard, group: 'Manage' },
   settings: { label: 'Settings', icon: Settings, group: 'Manage' },
@@ -1662,116 +1660,62 @@ function FileWorkspace({
   );
 }
 function Connect({ data, copy, onNewKey }: Shared & { onNewKey: () => void }) {
-  const [tab, setTab] = useState('Agent');
-  const snippet = `# Discover your workspace resources\ncurl ${apiBaseUrl}${base}/resources \\\n  -H "Authorization: Bearer $WORKSPACE_API_KEY"`;
-  const python = `import os, json, urllib.request\n\nreq = urllib.request.Request(\n    "${apiBaseUrl}${base}/resources",\n    headers={"Authorization": "Bearer " + os.environ["WORKSPACE_API_KEY"]}\n)\nwith urllib.request.urlopen(req) as response:\n    print(json.load(response))`;
-  const js = `const response = await fetch(\n  "${apiBaseUrl}${base}/resources",\n  { headers: { Authorization: \`Bearer \${process.env.WORKSPACE_API_KEY}\` } }\n);\nconsole.log(await response.json());`;
-  const agents = agentInstructions(data.workspace.id, apiBaseUrl);
-  return (
-    <>
-      <PageHeading
-        eyebrow="BUILT FOR AGENTS"
-        title="Connect an agent"
-        description="Give your agent scoped access to databases and files with one Workspace Key."
-        actions={
-          <Button variant="filled" onClick={onNewKey} leftSection={<KeyRound size={18} />}>
-            Create API key
-          </Button>
-        }
-      />
-      <div className="setup-layout">
-        <Paper className="panel setup-steps" withBorder>
-          <Heading level={2}>Connect in three steps</Heading>
-          <div className="setup-step">
-            <span>1</span>
-            <div>
-              <Heading level={3}>Create a workspace key</Heading>
-              <Text component="p">
-                Grant only the permissions your agent needs. Keys expire automatically and can be
-                revoked anytime.
-              </Text>
-              <Anchor href="#keys">Manage API keys</Anchor>
-            </div>
-          </div>
-          <div className="setup-step">
-            <span>2</span>
-            <div>
-              <Heading level={3}>Make your workspace discoverable</Heading>
-              <Text component="p">
-                Provide the OpenAPI schema or reference WORKSPACE.md from your project’s existing
-                agent instructions.
-              </Text>
-              <div className="inline-controls">
-                <Button
-                  onClick={() => download('WORKSPACE.md', agents)}
-                  leftSection={React.createElement(ArrowDownToLine, { size: 18 })}
-                >
-                  Download workspace instructions
-                </Button>
-                <a
-                  className="text-link"
-                  href={apiBaseUrl + '/openapi.json'}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  OpenAPI schema <ArrowUpRight size={13} />
-                </a>
-              </div>
-            </div>
-          </div>
-          <div className="setup-step">
-            <span>3</span>
-            <div>
-              <Heading level={3}>Build with persistent context</Heading>
-              <Text component="p">
-                Call the REST API from an agent shell or your application. No custom SDK is required
-                for this prototype.
-              </Text>
-            </div>
-          </div>
-        </Paper>
-        <Paper className="panel connect-code-panel" withBorder>
-          <ChoiceTabs value={tab} onChange={setTab} options={['Agent', 'JavaScript', 'Python']}>
-            <Code
-              value={tab === 'Agent' ? snippet : tab === 'Python' ? python : js}
-              copy={copy}
-              label={tab === 'Agent' ? 'SHELL' : tab.toUpperCase()}
-            />
-          </ChoiceTabs>
-          <div className="connection-note">
-            <ShieldCheck size={17} />
-            <Text component="p">
-              Inject <code>WORKSPACE_API_KEY</code> through your environment. The full key is
-              displayed once when created.
-            </Text>
-          </div>
-          <div className="capability-note">
-            <Badge>REST API</Badge>
-            <Text component="p">
-              Native MCP support is part of the proposed next phase. These instructions use the
-              working REST API.
-            </Text>
-          </div>
-        </Paper>
-      </div>
-    </>
-  );
+  return <ApiDocumentation data={data} copy={copy} connect onNewKey={onNewKey} />;
 }
 function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => void }) {
   const [revoke, setRevoke] = useState<ApiKey | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
-  const [keyWindow, setKeyWindow] = useState({
-    keys: data.keys,
+  const [keyWindow, setKeyWindow] = useState<{
+    keys: ApiKey[];
+    next: string | null;
+    earlier: boolean;
+  }>({
+    keys: [],
     next: data.keysNextCursor ?? null,
     earlier: false,
   });
   const [pageBusy, setPageBusy] = useState(false);
   const [pageError, setPageError] = useState('');
   useEffect(() => {
-    setKeyWindow({ keys: data.keys, next: data.keysNextCursor ?? null, earlier: false });
-    setPageError('');
+    let active = true;
+    setPageBusy(true);
+    void workspaceApi
+      .keysPage()
+      .then((page) => {
+        if (active) {
+          setPageError('');
+          setKeyWindow({ keys: page.data, next: page.nextCursor, earlier: false });
+        }
+      })
+      .catch((cause) => {
+        if (active)
+          setPageError(cause instanceof Error ? cause.message : 'Unable to load Global keys.');
+      })
+      .finally(() => {
+        if (active) setPageBusy(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [data.keys, data.keysNextCursor]);
+  async function retryPolicy(id: string) {
+    setBusy(true);
+    setPageError('');
+    try {
+      const result = await workspaceApi.retryKeyPolicy(id);
+      await refresh();
+      notify(
+        result.data.regionalStatus === 'applied'
+          ? 'Region policy applied.'
+          : 'Region delivery is still pending.',
+      );
+    } catch (cause) {
+      setPageError(cause instanceof Error ? cause.message : 'Unable to deliver policy.');
+    } finally {
+      setBusy(false);
+    }
+  }
   async function loadKeys() {
     if (!keyWindow.next || pageBusy) return;
     const cursor = keyWindow.next;
@@ -1801,10 +1745,14 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
     if (!revoke) return;
     setBusy(true);
     try {
-      await workspaceApi.revokeKey(revoke.id);
+      const result = await workspaceApi.revokeKey(revoke.id);
       await refresh();
       setRevoke(null);
-      notify('API key revoked. Access has been removed.');
+      notify(
+        result.regionalStatus === 'applied'
+          ? 'Key revoked. Region policy applied.'
+          : 'Key revoked at Global. Region policy delivery is pending.',
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -1830,8 +1778,8 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
       />
       <Alert className="notice" color="peacock" icon={<ShieldCheck size={18} />}>
         <span>
-          One Workspace Key can access your databases and files. Choose its allowed resources and
-          actions; provider credentials are managed by the service.
+          Create Keys at Global and exchange them for scoped Tokens. Region accepts Tokens for
+          database and file operations. Provider credentials stay private.
         </span>
       </Alert>
       <div className="section-title">
@@ -1852,7 +1800,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
                 <Table.Th>Name & key</Table.Th>
                 <Table.Th>Resource access</Table.Th>
                 <Table.Th>Permissions</Table.Th>
-                <Table.Th>Last used</Table.Th>
+                <Table.Th>Created</Table.Th>
                 <Table.Th>Expires</Table.Th>
                 <Table.Th>Status</Table.Th>
                 <Table.Th />
@@ -1892,18 +1840,27 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
                       ))}
                     </div>
                   </Table.Td>
-                  <Table.Td>{k.lastUsedAt ? relative(k.lastUsedAt) : 'Never'}</Table.Td>
+                  <Table.Td>{relative(k.createdAt)}</Table.Td>
                   <Table.Td>{new Date(k.expiresAt).toLocaleDateString()}</Table.Td>
                   <Table.Td>
                     <Badge color="carbon">
                       {k.revokedAt
-                        ? 'Revoked'
+                        ? k.regionalStatus === 'pending'
+                          ? 'Revocation pending'
+                          : 'Revoked'
                         : Date.parse(k.expiresAt) <= Date.now()
                           ? 'Expired'
-                          : 'Active'}
+                          : k.regionalStatus === 'pending'
+                            ? 'Delivery pending'
+                            : 'Active'}
                     </Badge>
                   </Table.Td>
                   <Table.Td>
+                    {k.regionalStatus === 'pending' && (
+                      <Button disabled={busy} onClick={() => void retryPolicy(k.id)}>
+                        Retry delivery
+                      </Button>
+                    )}
                     {!k.revokedAt && (
                       <Button
                         className="text-link danger-link"
@@ -1937,7 +1894,18 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
             }
           />
         )}
-        {pageError && <Alert color="red">{pageError}</Alert>}
+        {pageError && (
+          <Alert color="red">
+            {pageError}
+            <Button
+              onClick={() =>
+                void signInGlobal().catch((cause) => setPageError(String(cause.message)))
+              }
+            >
+              Sign in at Global
+            </Button>
+          </Alert>
+        )}
         {(keyWindow.next || keyWindow.earlier) && (
           <Group justify="center" my="md">
             {keyWindow.earlier && (
@@ -1982,7 +1950,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
       {revoke && (
         <Modal
           title="Revoke API key?"
-          description={`Agents using “${revoke.name}” will immediately lose access. Create a replacement first if the workflow should keep running.`}
+          description={`Global will stop issuing Tokens. Region access stops once the revocation policy is delivered; a disconnected Region reports pending delivery.`}
           onClose={() => setRevoke(null)}
         >
           {error && (
@@ -2002,132 +1970,9 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
   );
 }
 function ApiExplorer({ data, copy }: Shared) {
-  const [endpoint, setEndpoint] = useState('/resources'),
-    [result, setResult] = useState(''),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
-  const fileSystem = data.resources.find((r) => r.kind === 'filesystem');
-  const endpoints = [
-    { path: '/resources', label: 'List resources', scope: 'resources:read' },
-    { path: '/usage', label: 'Get usage', scope: 'usage:read' },
-    { path: '/events', label: 'List activity', scope: 'resources:read' },
-    ...(fileSystem
-      ? [{ path: '/files?resourceId=' + fileSystem.id, label: 'List files', scope: 'files:read' }]
-      : []),
-  ];
-  async function run() {
-    setBusy(true);
-    setError('');
-    try {
-      const result =
-        endpoint === '/resources'
-          ? await workspaceApi.resources()
-          : endpoint === '/usage'
-            ? await workspaceApi.usage()
-            : endpoint === '/events'
-              ? await workspaceApi.events()
-              : await workspaceApi.listFiles(fileSystem?.id || '');
-      setResult(JSON.stringify(result, null, 2));
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <>
-      <PageHeading
-        title="API explorer"
-        description="The same API powers your console and your agents."
-        actions={
-          <Anchor
-            href={apiBaseUrl + '/openapi.json'}
-            target="_blank"
-            rel="noreferrer"
-            className="schema-link"
-          >
-            <ArrowUpRight size={15} />
-            OpenAPI 3.1 schema
-          </Anchor>
-        }
-      />
-      <div className="api-layout">
-        <Paper className="panel endpoint-list" withBorder>
-          <div className="panel-header">
-            <Heading level={2}>Workspace API</Heading>
-            <Badge>v1</Badge>
-          </div>
-          {endpoints.map((e) => (
-            <NavLink
-              key={e.path}
-              active={endpoint === e.path}
-              label={e.label}
-              description={e.path.split('?')[0]}
-              leftSection={<Badge color="green">GET</Badge>}
-              onClick={() => {
-                setEndpoint(e.path);
-                setResult('');
-                setError('');
-              }}
-            />
-          ))}
-          <div className="endpoint-note">
-            The schema also documents resource creation, file writes, queries, and key management.
-          </div>
-        </Paper>
-        <div className="api-main">
-          <Paper className="panel" withBorder>
-            <div className="panel-header">
-              <Heading level={2}>{endpoints.find((e) => e.path === endpoint)?.label}</Heading>
-              <Badge>{endpoints.find((e) => e.path === endpoint)?.scope}</Badge>
-            </div>
-            <div className="api-url">
-              <span className="http-method">GET</span>
-              <code>{base + endpoint}</code>
-              <Button
-                variant="filled"
-                loading={busy}
-                leftSection={<Play size={18} />}
-                onClick={run}
-                disabled={busy}
-              >
-                Send request
-              </Button>
-            </div>
-            <div className="api-auth-note">
-              <ShieldCheck size={14} /> Explorer uses your Workspace owner session. Agents use
-              Bearer authentication.
-            </div>
-            <Code
-              label="cURL"
-              copy={copy}
-              value={`curl '${apiBaseUrl}${base + endpoint}' \\\n  -H "Authorization: Bearer $WORKSPACE_API_KEY"`}
-            />
-          </Paper>
-          <Paper className="panel api-response" withBorder>
-            <div className="panel-header">
-              <Heading level={2}>Response</Heading>
-              {result && <Badge color="green">200 OK</Badge>}
-            </div>
-            {error ? (
-              <Alert className="inline-error" color="red">
-                {error}
-              </Alert>
-            ) : result ? (
-              <Code label="JSON" value={result} copy={copy} />
-            ) : (
-              <Empty
-                icon={Terminal}
-                title="See the API in action"
-                description="Send a request to see the response from your Workspace."
-              />
-            )}
-          </Paper>
-        </div>
-      </div>
-    </>
-  );
+  return <ApiDocumentation data={data} copy={copy} />;
 }
+
 function Monitoring({ data }: Shared) {
   const [tab, setTab] = useState('Metrics'),
     [range, setRange] = useState('24h'),
@@ -2182,11 +2027,9 @@ function Monitoring({ data }: Shared) {
                   icon: Code2,
                 },
                 {
-                  name: 'Active API keys',
-                  value: data.keys.filter(
-                    (k) => !k.revokedAt && Date.parse(k.expiresAt) > Date.now(),
-                  ).length,
-                  unit: 'keys',
+                  name: 'API authority',
+                  value: 'Global',
+                  unit: 'Key management',
                   icon: KeyRound,
                 },
                 {
@@ -2659,8 +2502,8 @@ function CreateKey({
           </div>
           <Alert className="notice" color="peacock" icon={<ShieldCheck size={17} />}>
             <span>
-              Save this in your agent’s environment as WORKSPACE_API_KEY. This Workspace Key only
-              works against the local workspace API.
+              Save this in your secret manager as WORKSPACE_API_KEY. Exchange it at Global for a
+              Token before calling Region. See API documentation for examples.
             </span>
           </Alert>
           <div className="modal-actions">

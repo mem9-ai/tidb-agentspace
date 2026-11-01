@@ -1,10 +1,18 @@
-export function agentInstructions(workspaceId: string, apiBaseUrl: string): string {
+export function agentInstructions(
+  workspaceId: string,
+  apiBaseUrl: string,
+  globalBaseUrl?: string,
+  regionId?: string,
+): string {
   const workspace = `/workspaces/${workspaceId}`;
   return `# TiDB Agent Workspace
 
 Workspace API: ${apiBaseUrl}/api/v1${workspace}
 OpenAPI: ${apiBaseUrl}/openapi.json
-Read WORKSPACE_API_KEY from the environment and use Authorization: Bearer. Configure both this Workspace API URL and the Key. Never request native/provider credentials.
+Global API: ${globalBaseUrl || 'Ask the operator for the configured Global API URL'}
+Region: ${regionId || 'Use the authorized Region identifier from Global discovery'}
+Read WORKSPACE_API_KEY from application secret storage. Send it ONLY to POST Global /api/v1/workspaces/${workspaceId}/token-issuances with {"audience":"${regionId || 'REGION_ID'}"}. Use the returned accessToken as Authorization: Bearer at Region. Access Tokens last at most 15 minutes and do not outlive the Key. For Global discovery exchange with audience:"global"; never send a Region Token to Global. Never request native/provider credentials.
+For long-running agents, use src/api/agent-client.ts connectAgentWorkspace with an Ed25519 proof key and a durable application secret store. Include clientThumbprint at Global issuance to enroll a client-bound refresh family, then renew directly at Region. Persist the exact rotating refresh credential and nonce atomically; never retry an uncertain rotation blindly. Cached Region routes, local refresh and data operations continue during Global outages. Revocations take effect at Region when delivered; actual Key expiry still applies.
 
 GET /context discovers your current scopes, resource grants, expiry, limits and links. GET /resources lists granted resources; GET /resources/{resourceId} returns detail/capabilities. DELETE /resources/{resourceId} requests removal: inspect Location and deletion.phase for 202 responses; acceptance is not verified physical erasure. Zero deletion is unsupported. Owner-only Key management does not become available to ordinary Keys.
 

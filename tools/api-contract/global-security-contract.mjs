@@ -13,6 +13,8 @@ export function globalSecurityContract() {
   const schemas = {
     Error: object({ error: object({ code: string, message: string, requestId: string }) }),
     Key: object({
+      name: { type: 'string', minLength: 1, maxLength: 80 },
+      createdAt: { type: 'integer', minimum: 0 },
       workspaceId: string,
       keyId: { type: 'string', format: 'uuid' },
       principalId: string,
@@ -61,6 +63,13 @@ export function globalSecurityContract() {
     enrollmentExpiresAt: number,
     nonce: string,
   });
+  schemas.RegionAccessToken = object(
+    Object.fromEntries(
+      Object.entries(schemas.RegionToken.properties).filter(
+        ([key]) => !['enrollmentTicket', 'enrollmentExpiresAt', 'nonce'].includes(key),
+      ),
+    ),
+  );
   const response = (schema, description = 'Successful response') => ({
     description,
     headers: { 'Cache-Control': { schema: { const: 'no-store' } } },
@@ -92,7 +101,8 @@ export function globalSecurityContract() {
     in: 'header',
     required: true,
     schema: { type: 'string', format: 'uri' },
-    description: 'Must equal the configured Global public origin for Owner mutations.',
+    description:
+      'Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations.',
   };
   const parameter = (name) => ({ name, in: 'path', required: true, schema: string });
   const request = (schema) => ({ required: true, content: { 'application/json': { schema } } });
@@ -104,6 +114,7 @@ export function globalSecurityContract() {
     paths[path] ??= {};
     paths[path][method] = {
       operationId: id,
+      summary: id.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (s) => s.toUpperCase()),
       security,
       parameters: [workspace],
       responses: {
@@ -156,7 +167,7 @@ export function globalSecurityContract() {
     owner,
     200,
     object({
-      data: { type: 'array', items: ref('Key') },
+      data: { type: 'array', items: keyData },
       nextCursor: { type: ['string', 'null'] },
     }),
     {
@@ -186,11 +197,15 @@ export function globalSecurityContract() {
     {
       parameters: [workspace, mutation, origin],
       requestBody: request(
-        object({
-          scopes: { ...array, minItems: 1, maxItems: 8 },
-          resourceIds: { ...array, minItems: 1, maxItems: 1024 },
-          expiresAt: number,
-        }),
+        object(
+          {
+            name: { type: 'string', minLength: 1, maxLength: 80, default: 'Agent key' },
+            scopes: { ...array, minItems: 1, maxItems: 8 },
+            resourceIds: { ...array, minItems: 1, maxItems: 1024 },
+            expiresAt: number,
+          },
+          ['scopes', 'resourceIds', 'expiresAt'],
+        ),
       ),
       description:
         'Owner only. Unix-second expiry. Store the returned secret securely; it cannot be retrieved or returned again.',
@@ -266,13 +281,13 @@ export function globalSecurityContract() {
     'createGlobalTokenIssuance',
     key,
     201,
-    { oneOf: [ref('Token'), ref('RegionToken')] },
+    { oneOf: [ref('Token'), ref('RegionAccessToken'), ref('RegionToken')] },
     {
       requestBody: request(
         object({ audience: string, scopes: array, clientThumbprint: string }, ['audience']),
       ),
       description:
-        'Exchange the Workspace Key at Global only. Region audience requests require an Ed25519 client JWK thumbprint and matching applied regional policy. The response includes a client-bound enrollment ticket for direct regional refresh enrollment.',
+        'Exchange the Workspace Key at Global only. Region audience requests require matching applied regional policy. Without clientThumbprint the response is a short-lived Region access Token. With an Ed25519 client JWK thumbprint it also includes a client-bound enrollment ticket for direct regional refresh enrollment.',
     },
   );
   add(
@@ -310,11 +325,59 @@ export function globalSecurityContract() {
       },
     },
   };
+  mounted['/api/auth/config'] = {
+    get: {
+      operationId: 'getGlobalAuthConfig',
+      security: [],
+      responses: {
+        200: response(
+          object({
+            mode: { enum: ['local', 'oidc'] },
+            loginPath: string,
+            localSessionPath: string,
+          }),
+        ),
+        default: response(ref('Error')),
+      },
+    },
+  };
+  mounted['/api/auth/session'] = {
+    get: {
+      operationId: 'getGlobalOwnerSession',
+      security: owner,
+      parameters: [{ name: 'workspaceId', in: 'query', required: true, schema: string }],
+      responses: {
+        200: response(object({ workspaceId: string, regionId: string })),
+        default: response(ref('Error')),
+      },
+    },
+  };
+  mounted['/api/session'] = {
+    post: {
+      operationId: 'createLocalGlobalOwnerSession',
+      security: [],
+      description:
+        'Explicit development profile only, real loopback peer and trusted Origin required. Unavailable in hosted deployments.',
+      parameters: [origin],
+      responses: {
+        201: response(object({ workspaceId: string, regionId: string })),
+        default: response(ref('Error')),
+      },
+    },
+  };
   mounted['/api/auth/tidbcloud/login'] = {
     get: {
       operationId: 'startGlobalOwnerLogin',
       security: [],
-      parameters: [{ name: 'workspaceId', in: 'query', required: true, schema: string }],
+      parameters: [
+        { name: 'workspaceId', in: 'query', required: true, schema: string },
+        {
+          name: 'returnTo',
+          in: 'query',
+          schema: { type: 'string', format: 'uri' },
+          description: 'Optional return URL on an explicitly trusted Console origin.',
+        },
+      ],
       responses: {
         303: {
           description:
@@ -336,6 +399,7 @@ export function globalSecurityContract() {
       })),
       responses: {
         200: response(object({ workspaceId: string, regionId: string, expiresAt: number })),
+        303: { description: 'Owner cookie issued; redirect to the validated Console return URL.' },
         default: response(ref('Error')),
       },
       description:
