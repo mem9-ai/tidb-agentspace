@@ -7,6 +7,7 @@ import { CodeExample } from '../../ui/CodeExample';
 import { WorkspaceQueryResults } from '../../ui/WorkspaceQueryResults';
 import { databaseEditorHash, tutorialHash } from '../navigation/workspace-route';
 import { fileHash } from '../files/file-location';
+import { resourceKindLabels } from '../resources/resource-creation';
 import {
   databaseTutorial,
   liveDatabase,
@@ -53,6 +54,14 @@ export function DataTutorials({
   const target = data.resources.find((resource) => resource.id === resourceId);
   const targetId = target?.id;
   const targetKind = target?.kind;
+  const focusedKind = target
+    ? target.kind === 'filesystem'
+      ? 'filesystem'
+      : 'database'
+    : requestedKind;
+  const kinds: ('database' | 'filesystem')[] = focusedKind
+    ? [focusedKind]
+    : ['database', 'filesystem'];
   useEffect(() => {
     const kind = targetKind
       ? targetKind === 'filesystem'
@@ -82,8 +91,12 @@ export function DataTutorials({
       </Alert>
     );
   return (
-    <section className="data-tutorials" aria-label="Hands-on tutorials">
-      {(['database', 'filesystem'] as const).map((kind) => {
+    <section
+      className="data-tutorials"
+      data-focused={focusedKind || undefined}
+      aria-label="Hands-on tutorials"
+    >
+      {kinds.map((kind) => {
         const resources = data.resources.filter((resource) =>
           kind === 'filesystem' ? resource.kind === 'filesystem' : resource.kind !== 'filesystem',
         );
@@ -110,9 +123,16 @@ export function DataTutorials({
             id={`tutorial-${kind}`}
             tabIndex={-1}
           >
-            <Group gap="sm">
-              {kind === 'filesystem' ? <IconFolder size={24} /> : <IconDatabase01 size={24} />}
-              <Badge color="peacock">Hands-on tutorial</Badge>
+            <Group justify="space-between" gap="sm">
+              <Group gap="sm">
+                {kind === 'filesystem' ? <IconFolder size={24} /> : <IconDatabase01 size={24} />}
+                <Badge color="peacock">Hands-on tutorial</Badge>
+              </Group>
+              {focusedKind && (
+                <Button component="a" href="#tutorials" variant="subtle">
+                  All tutorials
+                </Button>
+              )}
             </Group>
             <Heading level={2}>
               {kind === 'filesystem' ? 'Analyze sample files' : 'Query sample data'}
@@ -128,22 +148,35 @@ export function DataTutorials({
                   1. Choose or create {kind === 'filesystem' ? 'a File System' : 'a database'}
                 </Heading>
                 {resources.length > 0 && (
-                  <NativeSelect
-                    mt="sm"
-                    label={kind === 'filesystem' ? 'Tutorial File System' : 'Tutorial database'}
-                    value={selected?.id ?? ''}
-                    disabled={busy}
-                    onChange={(event) => {
-                      const id = event.currentTarget.value;
-                      (kind === 'filesystem' ? setFilesystemId : setDatabaseId)(id);
-                      store.saveSelection(kind, id);
-                      location.hash = tutorialHash(id);
-                    }}
-                    data={resources.map((resource) => ({
-                      value: resource.id,
-                      label: `${resource.name} · ${resource.kind === 'filesystem' ? 'Files' : resource.kind} · ${resource.status}`,
-                    }))}
-                  />
+                  <>
+                    <NativeSelect
+                      mt="sm"
+                      label={kind === 'filesystem' ? 'Tutorial File System' : 'Tutorial database'}
+                      value={selected?.id ?? ''}
+                      title={selected?.name}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const id = event.currentTarget.value;
+                        (kind === 'filesystem' ? setFilesystemId : setDatabaseId)(id);
+                        store.saveSelection(kind, id);
+                        location.hash = tutorialHash(id);
+                      }}
+                      data={resources.map((resource) => ({
+                        value: resource.id,
+                        label: resource.name,
+                      }))}
+                    />
+                    {selected && (
+                      <Text size="sm" c="carbon.7" mt="xs">
+                        {resourceKindLabels[selected.kind]} ·{' '}
+                        {selected.connectionError
+                          ? 'Connection unavailable'
+                          : selected.status === 'active'
+                            ? 'Ready'
+                            : selected.status}
+                      </Text>
+                    )}
+                  </>
                 )}
                 <Button
                   mt="sm"
@@ -196,7 +229,8 @@ function TutorialSteps({
 }) {
   const [initialSample] = useState(freshSample);
   const sample = store.readSample(resource.id) ?? initialSample;
-  const [busy, setBusy] = useState(false);
+  const [action, setAction] = useState<'prepare' | 'query' | 'verify' | 'reset' | null>(null);
+  const busy = action !== null;
   const running = useRef(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -212,7 +246,7 @@ function TutorialSteps({
   async function run(action: 'prepare' | 'query' | 'verify' | 'reset') {
     if (running.current || !available) return;
     running.current = true;
-    setBusy(true);
+    setAction(action);
     onRunningChange(true);
     setError('');
     setNotice('');
@@ -303,7 +337,7 @@ function TutorialSteps({
       setError(cause instanceof Error ? cause.message : 'The tutorial action failed.');
     } finally {
       running.current = false;
-      setBusy(false);
+      setAction(null);
       onRunningChange(false);
     }
   }
@@ -336,9 +370,14 @@ function TutorialSteps({
               : '6 orders · id, region, amount. Creates a new sample table in the selected database.'}
         </Text>
         {!demo && (
-          <Text size="sm" mt="xs" className="tutorial-artifact">
-            <code>{files ? path : database.table}</code>
-          </Text>
+          <details className="tutorial-code tutorial-artifact">
+            <summary>Sample location</summary>
+            <CodeExample
+              value={files ? path : database.table}
+              label={files ? 'File path' : 'Table name'}
+              copy={copy}
+            />
+          </details>
         )}
         {!demo && (
           <details className="tutorial-code">
@@ -357,20 +396,33 @@ function TutorialSteps({
           ) : (
             <Button
               variant="filled"
-              loading={busy}
-              disabled={!available || sample.attempted}
+              loading={action === 'prepare'}
+              disabled={busy || !available || sample.attempted}
               onClick={() => void run('prepare')}
             >
-              {files ? 'Save sample CSV' : 'Load sample orders'}
+              {action === 'prepare'
+                ? 'Saving sample data…'
+                : files
+                  ? 'Save sample CSV'
+                  : 'Load sample orders'}
             </Button>
           )}
-          {sample.attempted && !sample.ready && (
-            <Button disabled={busy || !available} onClick={() => void run('verify')}>
-              Check saved sample
+          {sample.attempted && !sample.ready && action !== 'prepare' && (
+            <Button
+              loading={action === 'verify'}
+              disabled={busy || !available}
+              onClick={() => void run('verify')}
+            >
+              {action === 'verify' ? 'Checking saved sample…' : 'Check saved sample'}
             </Button>
           )}
         </Group>
-        {sample.attempted && !sample.ready && (
+        {action === 'prepare' && (
+          <Text mt="sm" size="sm" role="status">
+            Saving the sample in this resource. You can run the query when it is ready.
+          </Text>
+        )}
+        {sample.attempted && !sample.ready && !busy && (
           <Text mt="sm" size="sm">
             The save outcome is unconfirmed. Check the sample before continuing; loading it again is
             disabled to avoid repeating a write.
@@ -396,11 +448,11 @@ function TutorialSteps({
         <Button
           mt="sm"
           variant="filled"
-          loading={busy}
-          disabled={!available || !ready}
+          loading={action === 'query'}
+          disabled={busy || !available || !ready}
           onClick={() => void run('query')}
         >
-          Run tutorial query
+          {action === 'query' ? 'Running query…' : 'Run tutorial query'}
         </Button>
       </div>
       {error && (

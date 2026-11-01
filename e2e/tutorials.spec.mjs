@@ -1,7 +1,11 @@
 import { test, expect } from './workspace-fixture.mjs';
 import { ordersCsv, orderRows, expectedTotals } from '../src/features/portal/tutorial-data.ts';
 
-async function tutorialApi(context, workspace, { uncertainSeed = false } = {}) {
+async function tutorialApi(
+  context,
+  workspace,
+  { uncertainSeed = false, beforeSeed, beforeFileSave } = {},
+) {
   const calls = [];
   const tables = new Set();
   const handler = async (route) => {
@@ -43,6 +47,7 @@ async function tutorialApi(context, workspace, { uncertainSeed = false } = {}) {
       expect(body.table).toMatch(/^tutorial_orders_[a-f0-9]{32}$/);
       expect(tables.has(body.table)).toBe(false);
       tables.add(body.table);
+      await beforeSeed?.();
       if (uncertainSeed) {
         uncertainSeed = false;
         return reply({ error: { code: 'UNAVAILABLE', message: 'Save outcome is unknown.' } }, 503);
@@ -81,6 +86,7 @@ async function tutorialApi(context, workspace, { uncertainSeed = false } = {}) {
     if (path === '/files' && method === 'PUT') {
       const body = request.postDataJSON();
       calls.push({ ...body, action: 'file' });
+      await beforeFileSave?.();
       expect(body.content).toBe(ordersCsv);
       const file = {
         ...body,
@@ -248,6 +254,8 @@ test('tutorial creation selects the returned resource and continues with include
   await expect(
     page.locator('#tutorial-database').getByText('Your first result is ready', { exact: true }),
   ).toBeVisible();
+  await expect(page.locator('#tutorial-filesystem')).toHaveCount(0);
+  await page.getByRole('link', { name: 'All tutorials', exact: true }).click();
   await page
     .locator('#tutorial-filesystem')
     .getByRole('button', { name: 'Create File System', exact: true })
@@ -271,6 +279,101 @@ test('tutorial creation selects the returned resource and continues with include
   expect(calls.filter((call) => call.action === 'analyze')[0].resourceId).toBe(
     'fixture_filesystem_1',
   );
+});
+
+test('saving a tutorial sample shows activity without reporting an uncertain outcome or running another step', async ({
+  page,
+  context,
+  workspace,
+}, testInfo) => {
+  workspace.addResources();
+  workspace.state.resources[0].name = 'sales-demo';
+  workspace.state.resources[1].name = 'demo-files';
+  workspace.state.profile.name = 'Developer';
+  workspace.state.resources[0].provider = 'tidb-cloud-zero';
+  let releaseDatabase, releaseFile;
+  const databasePending = new Promise((resolve) => {
+    releaseDatabase = resolve;
+  });
+  const filePending = new Promise((resolve) => {
+    releaseFile = resolve;
+  });
+  const { calls } = await tutorialApi(context, workspace, {
+    beforeSeed: () => databasePending,
+    beforeFileSave: () => filePending,
+  });
+  try {
+    await workspace.open('#tutorials');
+    for (const [kind, button] of [
+      ['database', 'Load sample orders'],
+      ['filesystem', 'Save sample CSV'],
+    ]) {
+      const card = page.locator(`#tutorial-${kind}`);
+      await card.getByRole('button', { name: button, exact: true }).click();
+      await expect
+        .poll(() => calls.some((call) => call.action === (kind === 'database' ? 'seed' : 'file')))
+        .toBe(true);
+      await expect(card.getByRole('status')).toContainText('Saving the sample');
+      await expect(
+        card.getByRole('button', { name: 'Saving sample data…', exact: true }),
+      ).toBeDisabled();
+      await expect(
+        card.getByRole('button', { name: 'Check saved sample', exact: true }),
+      ).toHaveCount(0);
+      await expect(card.getByText(/The save outcome is unconfirmed/)).toHaveCount(0);
+      const run = card.getByRole('button', { name: 'Run tutorial query', exact: true });
+      await expect(run).toBeDisabled();
+      await expect(run).not.toHaveAttribute('data-loading', 'true');
+    }
+    releaseDatabase();
+    releaseFile();
+    await expect(page.getByText('Sample data ready', { exact: true })).toHaveCount(2);
+    const database = page.locator('#tutorial-database');
+    await expect(database.locator('.tutorial-artifact .code-example')).not.toBeVisible();
+    await database.getByText('Sample location', { exact: true }).click();
+    await expect(database.locator('.tutorial-artifact .code-example')).toContainText(
+      calls.find((call) => call.action === 'seed').table,
+    );
+    if (process.env.EXPERIENCE_SCREENSHOTS)
+      await page.screenshot({
+        path: `${process.env.EXPERIENCE_SCREENSHOTS}/tutorials-${testInfo.project.name}.png`,
+        animations: 'disabled',
+      });
+  } finally {
+    releaseDatabase();
+    releaseFile();
+  }
+});
+
+test('empty resource workspaces lead directly to their focused tutorial and back to all tutorials', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  workspace.addResources();
+  workspace.state.resources[0].name = 'sales-demo';
+  workspace.state.resources[1].name = 'demo-files';
+  workspace.state.profile.name = 'Developer';
+  workspace.state.files = [];
+  await workspace.open('#databases/db_fixture/sql');
+  const start = page.getByRole('button', { name: 'Try sample data', exact: true });
+  await expect(start).toBeEnabled();
+  await start.click();
+  await expect(page).toHaveURL(/#tutorials\?resourceId=db_fixture$/);
+  await expect(page.locator('#tutorial-database')).toBeVisible();
+  await expect(page.locator('#tutorial-filesystem')).toHaveCount(0);
+  await page.getByRole('link', { name: 'All tutorials', exact: true }).click();
+  await expect(page.locator('#tutorial-filesystem')).toBeVisible();
+  await page.goto('/#files?resourceId=fs_fixture');
+  await page.getByRole('button', { name: 'Try sample data', exact: true }).click();
+  await expect(page).toHaveURL(/#tutorials\?resourceId=fs_fixture$/);
+  await expect(page.locator('#tutorial-filesystem')).toBeVisible();
+  await expect(page.locator('#tutorial-database')).toHaveCount(0);
+  await page.getByRole('combobox', { name: 'Color theme', exact: true }).selectOption('auto');
+  if (process.env.EXPERIENCE_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.EXPERIENCE_SCREENSHOTS}/focused-${testInfo.project.name}.png`,
+      animations: 'disabled',
+    });
 });
 
 test('uncertain tutorial writes are checked without replay and missing resource links stay explicit', async ({
