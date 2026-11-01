@@ -940,6 +940,92 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/workspaces/{workspaceId}/refresh-families': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Available on a Region listener configured with the regional security profile. Direct regional operation; no Global callback. Uncertain credential-producing outcomes are not automatically retried. */
+    post: operations['enrollRegionalRefreshFamily'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/workspaces/{workspaceId}/token-issuances': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Available on a Region listener configured with the regional security profile. Direct regional operation; no Global callback. Uncertain credential-producing outcomes are not automatically retried. */
+    post: operations['issueRegionalToken'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/workspaces/{workspaceId}/refresh-families/{familyId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Available on a Region listener configured with the regional security profile. Direct regional operation; no Global callback. Uncertain credential-producing outcomes are not automatically retried. */
+    get: operations['getRegionalRefreshFamily'];
+    put?: never;
+    post?: never;
+    /** @description Available on a Region listener configured with the regional security profile. Direct regional operation; no Global callback. Uncertain credential-producing outcomes are not automatically retried. */
+    delete: operations['revokeRegionalRefreshFamily'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/workspaces/{workspaceId}/token-issuances/{issuanceId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** @description Available on a Region listener configured with the regional security profile. Direct regional operation; no Global callback. Uncertain credential-producing outcomes are not automatically retried. */
+    get: operations['getRegionalTokenIssuance'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/workspaces/{workspaceId}/access-tokens/{tokenId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** @description Locally deny the authenticated access token itself until its original expiry. An arbitrary ID is not authorization. */
+    delete: operations['revokeRegionalAccessToken'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1401,6 +1487,44 @@ export interface components {
       version: string;
       /** Format: date-time */
       updatedAt: string;
+    };
+    RegionalEnrollment: {
+      keyId: string;
+      familyId: string;
+      refreshCredential: string;
+      nonce: string;
+      expiresAt: number;
+    };
+    RegionalToken: {
+      id: string;
+      accessToken: string;
+      /** @constant */
+      tokenType: 'Bearer';
+      expiresAt: number;
+      refreshCredential: string;
+      refreshExpiresAt: number;
+      nonce: string;
+      familyId: string;
+      keyId: string;
+      scopes: string[];
+    };
+    RegionalFamily: {
+      id: string;
+      keyId: string;
+      keyVersion: number;
+      generation: number;
+      securityEpoch: number;
+      expiresAt: number;
+      revoked: boolean;
+    };
+    RegionalIssuance: {
+      id: string;
+      keyId: string;
+      familyId: string;
+      principalId: string;
+      expiresAt: number;
+      /** @constant */
+      status: 'issued';
     };
   };
   responses: never;
@@ -8858,6 +8982,224 @@ export interface operations {
       /** @description SQL timeout; a write outcome may be unknown */
       504: {
         headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  enrollRegionalRefreshFamily: {
+    parameters: {
+      query?: never;
+      header: {
+        /** @description Ed25519 proof bound to POST, exact configured URI, server nonce, client thumbprint and fresh unique jti. */
+        DPoP: string;
+      };
+      path: {
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          ticket: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful regional response */
+      201: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RegionalEnrollment'];
+        };
+      };
+      /** @description Successful regional response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  issueRegionalToken: {
+    parameters: {
+      query?: never;
+      header: {
+        /** @description Ed25519 proof bound to POST, exact configured URI, server nonce, client thumbprint and fresh unique jti. */
+        DPoP: string;
+      };
+      path: {
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          keyId: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful regional response */
+      201: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RegionalToken'];
+        };
+      };
+      /** @description Successful regional response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  getRegionalRefreshFamily: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceId: string;
+        familyId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful regional response */
+      200: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            data: components['schemas']['RegionalFamily'];
+          };
+        };
+      };
+      /** @description Successful regional response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  revokeRegionalRefreshFamily: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceId: string;
+        familyId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Durably denied and local in-flight authorization leases fenced. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Successful regional response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  getRegionalTokenIssuance: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceId: string;
+        issuanceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful regional response */
+      200: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            data: components['schemas']['RegionalIssuance'];
+          };
+        };
+      };
+      /** @description Successful regional response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  revokeRegionalAccessToken: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceId: string;
+        tokenId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Durably denied and local in-flight authorization leases fenced. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Successful regional response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
           [name: string]: unknown;
         };
         content: {

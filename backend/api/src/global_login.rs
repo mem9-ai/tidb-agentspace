@@ -5,10 +5,13 @@
 //! transport, and route established Region access without consulting Global. Separately
 //! deployed Regions require an authenticated control transport, not direct Meta access.
 
+use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, sync::Arc};
+use uuid::Uuid;
 use workspace_contracts::Result;
 use workspace_identity::{
-    Directory, GuestRegistration, Registration, VerifiedIdentity,
+    Directory, GuestRegistration, RegionAssignment, Registration, VerifiedIdentity,
+    global_owner_sessions::{IssuedOwnerSession, OwnerSessions},
     onboarding::{Onboarding, RegionControl},
 };
 
@@ -18,6 +21,7 @@ use crate::sso::Runtime;
 pub struct GlobalLogin {
     sso: Runtime,
     onboarding: Onboarding,
+    directory: Directory,
     region: String,
 }
 
@@ -86,7 +90,8 @@ impl GlobalLogin {
         );
         Ok(Self {
             sso: Runtime::new(config)?,
-            onboarding: Onboarding::new(directory, region_control),
+            onboarding: Onboarding::new(directory.clone(), region_control),
+            directory,
             region,
         })
     }
@@ -108,6 +113,54 @@ impl GlobalLogin {
         let (issuer, subject) = login.identity();
         self.onboarding
             .personal(VerifiedIdentity { issuer, subject }, &self.region)
+            .await
+    }
+
+    /// Resolve an existing ready Workspace only after consuming a verified OIDC flow.
+    /// Unlike onboarding, discovery never creates an identity or invokes Region control.
+    pub async fn finish_discovery(
+        &self,
+        flow: &str,
+        query: &BTreeMap<String, String>,
+        workspace_id: &str,
+    ) -> Result<RegionAssignment> {
+        let login = self.sso.callback(flow, query).await?;
+        let (issuer, subject) = login.identity();
+        self.directory
+            .region_assignment(VerifiedIdentity { issuer, subject }, workspace_id)
+            .await
+    }
+
+    /// Consume a verified, single-use OIDC callback before issuing a Global owner session.
+    /// The caller must deliver it via a protected host-only cookie and enforce CSRF/Origin.
+    /// This does not expose HTTP or grant a regional session.
+    pub async fn finish_owner_session(
+        &self,
+        sessions: &OwnerSessions,
+        flow: &str,
+        query: &BTreeMap<String, String>,
+        workspace_id: &str,
+    ) -> Result<IssuedOwnerSession> {
+        if !sessions.bound_to(&self.directory) {
+            return Err(workspace_contracts::ServiceError::new(
+                503,
+                "GLOBAL_IDENTITY_STORE_MISMATCH",
+            ));
+        }
+        let login = self.sso.callback(flow, query).await?;
+        let (issuer, subject) = login.identity();
+        let mut hash = Sha256::new();
+        hash.update(b"workspace-global-owner-session\0oidc-flow\0v1\0");
+        hash.update(flow.as_bytes());
+        let digest = hash.finalize();
+        let mut bytes = [0; 16];
+        bytes.copy_from_slice(&digest[..16]);
+        sessions
+            .issue(
+                VerifiedIdentity { issuer, subject },
+                workspace_id,
+                &Uuid::from_bytes(bytes).to_string(),
+            )
             .await
     }
 }

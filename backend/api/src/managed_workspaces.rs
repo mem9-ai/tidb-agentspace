@@ -316,6 +316,7 @@ impl ManagedWorkspaces {
         if !uuid::Uuid::parse_str(workspace_id).is_ok_and(|id| id.to_string() == workspace_id)
             || !matches!(credential, Credential::SessionOwner { workspace_id: bound, policy_generation: Some(_), .. } if bound == workspace_id)
                 && !matches!(credential, Credential::Bearer(_))
+                && !matches!(credential,Credential::Scoped(value) if value.workspace_id()==workspace_id)
         {
             return Err(ServiceError::new(401, "UNAUTHENTICATED"));
         }

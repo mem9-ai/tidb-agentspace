@@ -2,9 +2,18 @@
 //! regional access; callers must supply an already verified issuer and subject.
 
 pub mod cleanup;
+pub mod dpop;
 pub mod embedded_region;
+pub mod enrollment_ticket;
+pub mod global_keys;
+pub mod global_owner_sessions;
+pub mod legacy_key_index;
 pub mod onboarding;
 pub mod regional;
+pub mod regional_grants;
+pub mod regional_key_policy;
+pub mod regional_refresh;
+pub mod renewal;
 pub mod scheduler;
 pub mod sessions;
 
@@ -42,6 +51,14 @@ pub struct Registration {
     pub workspace_id: String,
     pub region_id: String,
     pub operation_id: String,
+}
+
+/// Publicly safe placement information for one verified Workspace owner.
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RegionAssignment {
+    pub workspace_id: String,
+    pub region_id: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -227,6 +244,11 @@ fn decode_guest(
 }
 
 impl Directory {
+    // A control flow must not authorize against one Global store and issue a session in another.
+    fn same_store(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.metadata, &other.metadata)
+    }
+
     pub async fn open(metadata: Arc<dyn Metadata>) -> Result<Self> {
         let health = metadata.health().await?;
         if health["authorityId"] != "global"
@@ -279,6 +301,26 @@ impl Directory {
             _ => return Err(error(503, "IDENTITY_RECORD_CORRUPT")),
         };
         Ok(Some((registration, state)))
+    }
+
+    /// Resolve a ready Workspace for a previously verified identity, without provisioning
+    /// or consulting Region. Unknown, foreign and pending Workspaces share one response.
+    pub async fn region_assignment(
+        &self,
+        identity: VerifiedIdentity<'_>,
+        workspace_id: &str,
+    ) -> Result<RegionAssignment> {
+        match self.status(identity).await? {
+            Some((registration, Provisioning::Ready))
+                if registration.workspace_id == workspace_id =>
+            {
+                Ok(RegionAssignment {
+                    workspace_id: registration.workspace_id,
+                    region_id: registration.region_id,
+                })
+            }
+            _ => Err(error(404, "NOT_FOUND")),
+        }
     }
 
     /// Record a Region's matching durable initialization acknowledgement. Only a trusted
@@ -713,6 +755,72 @@ pub(crate) mod tests {
 
     fn identity<'a>(issuer: &'a str, subject: &'a str) -> VerifiedIdentity<'a> {
         VerifiedIdentity { issuer, subject }
+    }
+
+    #[tokio::test]
+    async fn region_assignment_is_ready_owner_only_and_read_only() {
+        let metadata = Arc::new(MemoryMeta::default());
+        let directory = Directory::open(metadata.clone()).await.unwrap();
+        let alice = directory
+            .reserve(identity("https://issuer.example", "alice"), "region:a")
+            .await
+            .unwrap();
+        let bob = directory
+            .reserve(identity("https://issuer.example", "bob"), "region:b")
+            .await
+            .unwrap();
+        let lookup = |subject: &'static str, workspace: String| {
+            let directory = directory.clone();
+            async move {
+                directory
+                    .region_assignment(identity("https://issuer.example", subject), &workspace)
+                    .await
+            }
+        };
+        assert_eq!(
+            lookup("alice", alice.workspace_id.clone())
+                .await
+                .unwrap_err()
+                .code,
+            "NOT_FOUND"
+        );
+        directory
+            .record_region_ready(
+                identity("https://issuer.example", "alice"),
+                &alice,
+                &Uuid::new_v4().to_string(),
+            )
+            .await
+            .unwrap();
+        let before = metadata.groups.lock().unwrap().clone();
+        assert_eq!(
+            lookup("alice", alice.workspace_id.clone()).await.unwrap(),
+            RegionAssignment {
+                workspace_id: alice.workspace_id.clone(),
+                region_id: "region:a".into()
+            }
+        );
+        for (subject, workspace) in [
+            ("alice", bob.workspace_id),
+            ("bob", alice.workspace_id.clone()),
+            ("unknown", alice.workspace_id.clone()),
+            ("alice", Uuid::new_v4().to_string()),
+        ] {
+            let err = lookup(subject, workspace).await.unwrap_err();
+            assert_eq!((err.status, err.code.as_str()), (404, "NOT_FOUND"));
+        }
+        let other_issuer = directory
+            .region_assignment(
+                identity("https://other.example", "alice"),
+                &alice.workspace_id,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            (other_issuer.status, other_issuer.code.as_str()),
+            (404, "NOT_FOUND")
+        );
+        assert_eq!(*metadata.groups.lock().unwrap(), before);
     }
 
     #[tokio::test]

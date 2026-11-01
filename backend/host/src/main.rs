@@ -89,6 +89,38 @@ async fn main() -> Result<()> {
             ),
         }
     }
+    let mut global_started = false;
+    for config in plan.globals {
+        let port: Option<Arc<dyn Metadata>> = match &config.metadata {
+            MetaBinding::InProcess { authority_id } => metadata
+                .get(authority_id)
+                .cloned()
+                .map(|v| v as Arc<dyn Metadata>),
+            MetaBinding::Remote { client } => RemoteMetadata::connect(client.clone())
+                .await
+                .ok()
+                .map(|v| Arc::new(v) as Arc<dyn Metadata>),
+        };
+        if let Some(port) = port {
+            match workspace_api::global_api::GlobalServer::open(config, port).await {
+                Ok(server) => {
+                    global_started = true;
+                    let receiver = api_receiver.clone();
+                    api_tasks.push(tokio::spawn(async move {
+                        if server.serve(stopped(receiver)).await.is_err() {
+                            eprintln!(
+                                "Global public API listener unavailable; other roles continue."
+                            );
+                        }
+                    }));
+                    println!("Rust Global public API started.");
+                }
+                Err(_) => eprintln!(
+                    "Global public API could not start; inspect private configuration and checkpoint ownership."
+                ),
+            }
+        }
+    }
     for config in plan.workspaces {
         let authority = config.authority_id.clone();
         let port: Option<Arc<dyn Metadata>> = match &config.metadata {
@@ -109,14 +141,25 @@ async fn main() -> Result<()> {
                 "workspace-keys-only profile"
             };
             let guest_setup: Result<_> = async {
-                let settings = config.guest.clone().or_else(|| {
-                    (config.sso.is_some()
-                        && matches!(&config.metadata, MetaBinding::InProcess { .. }))
-                    .then(|| workspace_api::GuestConfig {
-                        global_authority_id: "global".into(),
-                        workspace_limit: 128,
+                let settings = config
+                    .guest
+                    .clone()
+                    .or_else(|| {
+                        config
+                            .managed_workspace_limit
+                            .map(|limit| workspace_api::GuestConfig {
+                                global_authority_id: "global".into(),
+                                workspace_limit: limit,
+                            })
                     })
-                });
+                    .or_else(|| {
+                        (config.sso.is_some()
+                            && matches!(&config.metadata, MetaBinding::InProcess { .. }))
+                        .then(|| workspace_api::GuestConfig {
+                            global_authority_id: "global".into(),
+                            workspace_limit: 128,
+                        })
+                    });
                 if let Some(settings) = &settings {
                     let region = Arc::new(
                         RegionalGuest::open(port.clone(), &authority, &config.public_path).await?,
@@ -140,11 +183,15 @@ async fn main() -> Result<()> {
                         config.product.clone(),
                         settings.workspace_limit,
                     )?);
-                    let entry = Arc::new(GuestEntry::new(
-                        signup.clone(),
-                        region.clone(),
-                        config.public_origins.clone(),
-                    )?);
+                    let entry = Arc::new(if config.guest.is_some() {
+                        GuestEntry::new(
+                            signup.clone(),
+                            region.clone(),
+                            config.public_origins.clone(),
+                        )?
+                    } else {
+                        GuestEntry::disabled(region.clone())
+                    });
                     let processor = Arc::new(GuestCleanup::new(queue.clone(), pool.clone()));
                     let scheduler = Scheduler::new(queue.clone(), processor.clone(), 128)?;
                     Ok((
@@ -229,7 +276,7 @@ async fn main() -> Result<()> {
             eprintln!("Regional dependency unavailable for {authority}; no fallback selected.");
         }
     }
-    if metadata.is_empty() && workspaces.is_empty() {
+    if metadata.is_empty() && workspaces.is_empty() && !global_started {
         bail!("No configured service could start");
     }
     shutdown_signal().await;

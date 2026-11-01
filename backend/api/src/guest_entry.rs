@@ -26,6 +26,15 @@ pub struct GuestEntry {
 }
 
 impl GuestEntry {
+    /// Token-only/account-only managed hosts have no Guest enrollment origin or signup authority.
+    pub fn disabled(region: Arc<RegionalGuest>) -> Self {
+        Self {
+            signup: None,
+            region,
+            trusted_origins: Vec::new(),
+            attempts: Mutex::new(BTreeMap::new()),
+        }
+    }
     /// Origins must be verified deployment configuration. The HTTP host must additionally
     /// enforce Host, CORS, body-size and secure-transport policy before calling this service.
     pub fn new(

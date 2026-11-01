@@ -76,6 +76,14 @@ For native service startup, mount the prepared private files at `/run/workspace`
 
 The runtime profile uses one replica/Recreate, bounded scratch space, non-root UID/GID 1000, read-only root, no service account token/capabilities and `/api/health` readiness with loopback Host. Its container must invoke the image's native entrypoint, without the previous Node command override. CD does not require the former Pod-template annotation `workspace.tidb.ai/runtime: rust-v1` and leaves existing annotations, probes and configuration untouched.
 
+The cloud profile remains a single co-located deployment. Local and CI fault tests use isolated
+processes to examine Global and Region failure boundaries; they do not establish Pod-level
+isolation in the co-located deployment. The opt-in [regional Token profile](regional-token-api.md) tests independent Global API and
+Global Meta process loss, direct regional data/refresh and Region restart locally, including
+same-secret renewal beyond the old Key version expiry and undelivered/late-renewal denials.
+Existing Key/resource/provider bindings are checked for parity. Automatic legacy-Key authority
+cutover is not enabled; these tests do not establish cloud Pod-level isolation.
+
 Main-only CD builds once and pushes an immutable digest. It checks the existing single-writer Deployment and public baseline, makes a resourceVersion-guarded image-only update, waits for readiness, and verifies public health, auth configuration and unauthenticated denial. A protected explicit compatibility policy may authorize bounded recovery after a confirmed failed rollout; an explicit `recover` dispatch provides guarded operator recovery. See [ADR 0032](decisions/0032-writer-safe-dev-release.md). CD does not create infrastructure, delete data, change credentials or initialize storage. Readiness checks do not prove a real-account login or provider functionality; verify those separately.
 
 ### Deployment operator handoff

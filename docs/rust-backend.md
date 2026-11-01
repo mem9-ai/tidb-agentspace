@@ -171,7 +171,10 @@ references are absolute. A co-located plan can contain:
 }
 ```
 
-For separate processes, use one role per deployment file. Each Global/Region Meta has a
+The independent Global public API uses a `global` role; [Global configuration](global-public-api.md)
+and [regional Token configuration](regional-token-api.md) describe the opt-in security flow.
+They can share this binary or run in separate processes; the default hosted plan remains
+co-located. For separate processes, use one role per deployment file. Each Global/Region Meta has a
 separate engine, installation, bucket/non-overlapping root, encryption key and identity.
 The host rejects duplicates/overlapping roots before opening writers; actual IAM/DNS alias
 isolation remains an operator responsibility. Global never opens Region metadata as a second

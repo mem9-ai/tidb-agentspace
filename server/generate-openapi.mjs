@@ -1,5 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { extendRegionalSecurityContract } from '../tools/api-contract/regional-security-contract.mjs';
+import { globalSecurityContract } from '../tools/api-contract/global-security-contract.mjs';
 import { format, resolveConfig } from 'prettier';
 import { analysisLimits } from '../tools/api-contract/analysis-limits.mjs';
 import { fileExportSchemas } from '../tools/api-contract/file-export-schemas.mjs';
@@ -1567,6 +1569,7 @@ const spec = {
     schemas,
   },
 };
+extendRegionalSecurityContract(spec);
 const target = new URL('../public/openapi.json', import.meta.url);
 const rendered = await format(JSON.stringify(spec), {
   ...(await resolveConfig(fileURLToPath(target))),
@@ -1578,3 +1581,15 @@ if (process.argv.includes('--check')) {
     process.exitCode = 1;
   } else console.log('Generated OpenAPI contract is current.');
 } else await writeFile(target, rendered);
+
+const globalTarget = new URL('../public/global-openapi.json', import.meta.url);
+const globalRendered = await format(JSON.stringify(globalSecurityContract()), {
+  ...(await resolveConfig(fileURLToPath(globalTarget))),
+  parser: 'json',
+});
+if (process.argv.includes('--check')) {
+  if ((await readFile(globalTarget, 'utf8')) !== globalRendered) {
+    console.error('Global OpenAPI contract drifted. Run npm run api:generate.');
+    process.exitCode = 1;
+  }
+} else await writeFile(globalTarget, globalRendered);

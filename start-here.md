@@ -42,6 +42,11 @@ It also defines product completeness: supported customer business workflows must
 through documented OpenAPI without Portal automation. Pure presentation/browser interactions
 are the UI-only exception; authentication and permission boundaries still apply.
 
+[Global public API implementation](docs/global-public-api.md) documents the independently
+runnable Global role, its generated contract and client. The [regional Token flow](docs/regional-token-api.md)
+connects policy delivery, managed Workspace authorization and local renewal across Global outages;
+existing credentials retain their original authority until a separate migration.
+
 The Console and API build, run, and package independently in this repository. The Console
 consumes generated API types and selects its API origin at runtime. This implemented boundary
 is documented in [independent delivery](docs/independent-delivery.md) and
