@@ -669,6 +669,9 @@ test('populated collections share metadata, exact-resource entry, connection and
     await expect(page.getByRole('dialog')).toHaveAccessibleName(`Connect to ${resource.name}`);
     await expect(page.getByRole('dialog')).toContainText('REGION_ACCESS_TOKEN');
     await expect(page.getByRole('dialog')).not.toContainText('$WORKSPACE_API_KEY');
+    const command = await page.getByRole('dialog').locator('pre').innerText();
+    expect(command).toContain(' \\\n');
+    expect(command).not.toContain(' \\\\\n');
     await expect(
       page.getByRole('dialog').getByRole('link', { name: 'API documentation' }),
     ).toHaveAttribute('href', '#api');

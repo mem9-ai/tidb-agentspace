@@ -55,13 +55,20 @@ async fn main() -> anyhow::Result<()> {
     let repo = Arc::new(Repository::open(meta.clone(), &authority, &workspace, true, None).await?);
     let other = Arc::new(Repository::open(meta, &authority, &other_workspace, true, None).await?);
     for repository in [&repo, &other] {
-        repository.transaction(|state| {
-            for id in ["cross","wrong_target","bad_path","no_account","valid","lost"] {
+        for id in [
+            "cross",
+            "wrong_target",
+            "bad_path",
+            "no_account",
+            "valid",
+            "lost",
+        ] {
+            repository.transaction(|state| {
                 state["resources"].as_array_mut().ok_or_else(||workspace_providers::err(503,"TEST_STATE"))?
-                    .push(json!({"id":id,"kind":"postgresql","provider":"db9-anonymous","region":"automatic"}));
-            }
-            Ok(((),true))
-        }).await?;
+                    .push(json!({"id":id,"name":id,"status":"active","kind":"postgresql","provider":"db9-anonymous","region":"automatic"}));
+                Ok(((),true))
+            }).await?;
+        }
         for (id, target) in [
             ("cross", "db_guest"),
             ("wrong_target", "db_guest"),
@@ -225,18 +232,18 @@ async fn main() -> anyhow::Result<()> {
             .is_some_and(|e| e.code == "CLEANUP_EFFECT_REQUIRES_RECONCILIATION"),
         "uncertain deletion was retried"
     );
-    repo.transaction(|state| {
-        let resources = state["resources"]
-            .as_array_mut()
-            .ok_or_else(|| workspace_providers::err(503, "TEST_STATE"))?;
-        resources
-            .push(json!({"id":"file_guest","kind":"filesystem","provider":"drive9-anonymous"}));
-        resources
-            .push(json!({"id":"file_wrong","kind":"filesystem","provider":"drive9-anonymous"}));
-        resources.push(json!({"id":"duck_guest","kind":"duckdb","provider":"duckdb-drive9"}));
-        Ok(((), true))
-    })
-    .await?;
+    for (id, kind, provider) in [
+        ("file_guest", "filesystem", "drive9-anonymous"),
+        ("file_wrong", "filesystem", "drive9-anonymous"),
+        ("duck_guest", "duckdb", "duckdb-drive9"),
+    ] {
+        repo.transaction(|state| {
+            state["resources"].as_array_mut()
+                .ok_or_else(|| workspace_providers::err(503, "TEST_STATE"))?
+                .push(json!({"id":id,"name":id,"status":"active","kind":kind,"provider":provider,"region":"aws-ap-southeast-1"}));
+            Ok(((), true))
+        }).await?;
+    }
     for id in ["file_guest", "file_wrong", "duck_storage"] {
         repo.save_binding(
             "drive9",
