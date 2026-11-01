@@ -279,3 +279,16 @@ Resources, Keys, files, bindings and credentials are independent encrypted recor
 The API has one active writer per Workspace until provider lifecycle claims support concurrent API writers. `recoverWriterOwner` names the exact stopped owner after a crash; there is no lease timeout or global dependency. Storage version 2 intentionally rejects the old five-document installation. JSON import/export, legacy vault codecs and Node/Rust handoff are retired under [ADR 0024](decisions/0024-fresh-record-metadata.md).
 
 Package reviewed clean source with a full SHA and binary/archive checksums. Keep configuration and state outside the artifact. Deploy all version-coupled API/Meta roles, verify readiness, authorized/denied reads and the Portal. A source upgrade cannot silently reset an incompatible root. The owner now authorizes a fresh hosted deployment under ADR 0026, using a new S3 prefix and keys. Distributed policy, customer isolation, sharding and automatic HA remain future work.
+
+## Shared Global listener behind a gateway
+
+A Region with `publicPath:"/studio"` and a shared Global mount at `/studio/api/global`
+accepts both a preserved public prefix and the gateway's `/studio`-stripped internal prefix
+`/api/global`. Both mounts use the same Global router and enforce its Host, Origin, Owner
+and Token rules. Public discovery, OpenAPI servers, issuer, cookie paths and the existing
+Portal callback retain their configured external paths; the internal mount is not a new
+authority or a data proxy. See [path hosting](independent-delivery.md#hosting-below-a-path).
+
+Native SSO acceptance exercises both forwarding modes: one Portal callback, isolated
+Global/Region sessions, Owner-only Key creation, Global-to-Region Token issuance and a
+regional resource mutation, plus hostile Host/Origin, cross-session and logout denials.

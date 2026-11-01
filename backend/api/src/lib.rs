@@ -372,12 +372,23 @@ impl WorkspaceServer {
             .as_ref()
             .map(|r| r.control())
             .transpose()?;
+        let gateway_prefix = self.app.config.public_path.clone();
         let router = Router::new()
             .fallback(any(handle))
             .layer(middleware::from_fn_with_state(self.app.clone(), policy))
             .with_state(self.app);
         let router = if let Some((path, global)) = self.global_mount {
-            router.nest_service(&path, global)
+            // Gateways may preserve the public path or remove the Region prefix. Both
+            // mounts share the same Global authority, public issuer and cookie paths.
+            let router = router.nest_service(&path, global.clone());
+            match path.strip_prefix(&gateway_prefix) {
+                Some(relative)
+                    if relative.starts_with('/') && relative != path && relative != "/" =>
+                {
+                    router.nest_service(relative, global)
+                }
+                _ => router,
+            }
         } else {
             router
         };
