@@ -1,4 +1,5 @@
 //! Test-only helper for exercising history against the real metadata service and RustFS.
+use sha2::{Digest, Sha256};
 use std::{env, fs, sync::Arc};
 use uuid::Uuid;
 use workspace_domain::{Repository, observability::*};
@@ -30,7 +31,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
     )
     .await?;
-    let b = Repository::open(metadata, &authority, "ws_history_b", initialize, None).await?;
+    let b = Repository::open(
+        metadata.clone(),
+        &authority,
+        "ws_history_b",
+        initialize,
+        None,
+    )
+    .await?;
     if initialize {
         let entry = |status| RequestEntry {
             request_id: Uuid::new_v4(),
@@ -75,6 +83,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "INVALID_HISTORY_CURSOR"
         );
     } else if stage == "verify" {
+        let maintenance = HistoryMaintenance::new(metadata, &authority)?;
+        let shard = Sha256::digest(b"ws_history_a")[0] % HistoryMaintenance::shard_count();
+        let now = chrono::Utc::now().timestamp() as u64 + 1;
+        let jobs = maintenance.due(shard, now, None, 10).await?;
+        let job = jobs.jobs.first().ok_or("missing durable maintenance job")?;
+        assert_eq!(job.workspace_id, "ws_history_a");
+        maintenance.reschedule(job, now + 60).await?;
+        assert!(maintenance.due(shard, now, None, 10).await?.jobs.is_empty());
         let first = a
             .history_page(HistoryStream::Requests, page(None, 1))
             .await?;

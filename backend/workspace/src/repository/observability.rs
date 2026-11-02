@@ -4,8 +4,10 @@
 //! persist requests, credentials, provider errors, SQL, commands, or customer content here.
 use super::*;
 mod history;
+mod maintenance;
 mod requests;
 pub use history::{HistoryFilter, HistoryStream};
+pub use maintenance::{HistoryJob, HistoryMaintenance, HistoryMaintenancePage};
 pub use requests::{HttpCompletion, HttpMethod, HttpOperation, RequestEntry};
 
 const AUDIT_HEAD: &str = "observability/audit-v1/head";
@@ -306,6 +308,7 @@ impl Repository {
         if !safe_id(&entry.actor_id) || entry.target_id.as_deref().is_some_and(|id| !safe_id(id)) {
             return Err(ServiceError::new(400, "INVALID_AUDIT_ID"));
         }
+        self.ensure_history_maintenance().await?;
         let _guard = self.queue.read().await;
         let now = chrono::Utc::now();
         let timestamp = now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);

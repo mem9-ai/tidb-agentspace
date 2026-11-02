@@ -223,6 +223,7 @@ impl Repository {
                 "durationMs":entry.duration_ms,
             }), deadline));
         }
+        self.ensure_history_maintenance().await?;
         let _guard = self.queue.read().await;
         'attempts: for attempt in 0..8 {
             let head = self.get(HEAD).await?;

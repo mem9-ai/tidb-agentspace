@@ -15,6 +15,7 @@ use workspace_contracts::{Call, MetaRequest, Metadata, ServiceError};
 struct ScopedMetadata {
     scopes: Mutex<BTreeMap<String, BTreeMap<String, Value>>>,
     fail_after_audit_commit: AtomicBool,
+    fail_history_registration: AtomicBool,
 }
 
 impl Metadata for ScopedMetadata {
@@ -30,6 +31,7 @@ impl Metadata for ScopedMetadata {
                 | MetaRequest::Resolve { scope, guard, .. } => (scope, guard),
             };
             let name = serde_json::to_string(scope).unwrap();
+            let is_history_maintenance = scope.family == "history-maintenance";
             let mut all = self.scopes.lock().unwrap();
             let records = all.entry(name).or_default();
             if let Some(guard) = guard
@@ -72,6 +74,11 @@ impl Metadata for ScopedMetadata {
                     )
                 }
                 MetaRequest::Commit { changes, .. } => {
+                    if is_history_maintenance
+                        && self.fail_history_registration.load(Ordering::Acquire)
+                    {
+                        return Err(ServiceError::new(503, "META_UNAVAILABLE"));
+                    }
                     let unknown = changes
                         .iter()
                         .any(|change| change["key"] == "observability/audit-v1/head")
@@ -282,5 +289,115 @@ async fn uncertain_audit_intent_returns_no_permit_and_retains_attempt() {
     assert_eq!(recovered["data"][0]["outcome"], "attempted");
     assert_eq!(recovered["data"][0]["resolution"], "unknown");
     assert!(recovered["data"][0].get("writerId").is_none());
+    reopened.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn history_writes_require_durable_maintenance_registration() {
+    let metadata = Arc::new(ScopedMetadata::default());
+    let workspace = Repository::open(metadata.clone(), "region:test", "workspace-a", true, None)
+        .await
+        .unwrap();
+    let intent = || AuditIntent {
+        request_id: None,
+        actor_kind: ActorKind::Owner,
+        actor_id: "owner-a",
+        action: AuditAction::FileWrite,
+        target_id: None,
+    };
+    metadata
+        .fail_history_registration
+        .store(true, Ordering::Release);
+    assert_eq!(
+        workspace
+            .begin_audit_operation(intent())
+            .await
+            .err()
+            .unwrap()
+            .code,
+        "META_UNAVAILABLE"
+    );
+    assert!(
+        workspace
+            .history_page(HistoryStream::Audit, filter(None))
+            .await
+            .unwrap()["data"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    metadata
+        .fail_history_registration
+        .store(false, Ordering::Release);
+    let operation = workspace.begin_audit_operation(intent()).await.unwrap();
+    workspace
+        .finish_audit_operation(operation, AuditOutcome::Succeeded)
+        .await
+        .unwrap();
+    workspace.close().await.unwrap();
+    let reopened = Repository::open(metadata.clone(), "region:test", "workspace-a", false, None)
+        .await
+        .unwrap();
+    let second = reopened.begin_audit_operation(intent()).await.unwrap();
+    reopened
+        .finish_audit_operation(second, AuditOutcome::Succeeded)
+        .await
+        .unwrap();
+    let maintenance = HistoryMaintenance::new(metadata.clone(), "region:test").unwrap();
+    let now = chrono::Utc::now().timestamp() as u64 + 1;
+    let mut due_job = None;
+    let mut due_shard = 0;
+    for shard in 0..HistoryMaintenance::shard_count() {
+        let page = maintenance.due(shard, now, None, 10).await.unwrap();
+        if let Some(job) = page.jobs.into_iter().next() {
+            assert!(due_job.is_none());
+            assert_eq!(job.workspace_id, "workspace-a");
+            due_job = Some(job);
+            due_shard = shard;
+        }
+    }
+    let job = due_job.expect("registered maintenance job");
+    maintenance.reschedule(&job, now + 100).await.unwrap();
+    assert!(
+        maintenance
+            .due(due_shard, now, None, 10)
+            .await
+            .unwrap()
+            .jobs
+            .is_empty()
+    );
+    assert_eq!(
+        maintenance
+            .reschedule(&job, now + 101)
+            .await
+            .unwrap_err()
+            .code,
+        "META_CONFLICT"
+    );
+    assert_eq!(
+        maintenance
+            .due(due_shard, now + 100, None, 10)
+            .await
+            .unwrap()
+            .jobs[0]
+            .workspace_id,
+        "workspace-a"
+    );
+    {
+        let scopes = metadata.scopes.lock().unwrap();
+        let system = scopes
+            .iter()
+            .filter(|(scope, _)| scope.contains("history-maintenance"))
+            .flat_map(|(_, records)| records.keys())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            system.iter().filter(|key| key.starts_with("jobs/")).count(),
+            1
+        );
+        assert_eq!(
+            system.iter().filter(|key| key.starts_with("due/")).count(),
+            1
+        );
+    }
     reopened.close().await.unwrap();
 }
