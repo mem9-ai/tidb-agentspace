@@ -268,16 +268,20 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
     (await request('/resources', { token: 'Bearer retired-workspace-key' })).status,
     401,
   );
-  const data = async (token) => {
+  const data = async (token, renewAccess) => {
+    // The deliberately short-lived access token is used to test expiry. During the
+    // longer outage/restart journey, renew before each operation rather than
+    // assuming four real storage operations finish inside that three-second TTL.
+    const access = async () => (renewAccess ? 'Bearer ' + (await renewAccess()) : token);
     const insert = await request('/queries', {
       method: 'POST',
-      token,
+      token: await access(),
       body: { resourceId: resources[0], sql: 'INSERT INTO continuity VALUES (7)' },
     });
     assert.equal(insert.status, 200, JSON.stringify(insert.body));
     const rows = await request('/queries', {
       method: 'POST',
-      token,
+      token: await access(),
       body: { resourceId: resources[0], sql: 'SELECT value FROM continuity' },
     });
     assert.equal(rows.status, 200, JSON.stringify(rows.body));
@@ -285,9 +289,13 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
     const path =
       '/files/content?' +
       new URLSearchParams({ resourceId: resources[1], path: '/continuity.bin' });
-    const put = await request(path, { method: 'PUT', token, raw: Buffer.from([0, 255, 7]) });
+    const put = await request(path, {
+      method: 'PUT',
+      token: await access(),
+      raw: Buffer.from([0, 255, 7]),
+    });
     assert.equal(put.status, 200, JSON.stringify(put.body));
-    const get = await request(path, { token });
+    const get = await request(path, { token: await access() });
     assert.equal(get.status, 200);
     assert.deepEqual(get.body, Buffer.from([0, 255, 7]));
   };
@@ -724,7 +732,7 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   assert.ok(
     regionResources.body.data.every((item) => item.regionId === metadata.server.authorityId),
   );
-  await data('Bearer ' + token);
+  await data('Bearer ' + token, renew);
   await renewOther();
   await sdkData(agent);
   assert.equal(saved.expiresAt, extended.body.data.expiresAt);
@@ -733,7 +741,7 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
   config.security.initializeClock = false;
   await start();
   token = await renew();
-  await data('Bearer ' + token);
+  await data('Bearer ' + token, renew);
   assert.equal(
     (await request('/resources', { token: 'Bearer retired-workspace-key' })).status,
     401,
