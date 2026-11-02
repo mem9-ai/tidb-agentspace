@@ -23,6 +23,7 @@ on:
       - 'scripts/duckdb-runtime.json'
       - 'scripts/prepare-duckdb.mjs'
       - 'public/openapi.json'
+      - 'public/owner-openapi.json'
       - 'public/global-openapi.json'
       - 'public/agent-entry-openapi.json'
       - 'scripts/deploy-dev*'

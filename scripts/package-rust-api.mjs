@@ -43,6 +43,7 @@ export async function packageRustApi({ root, sourceSha, binary, destination }) {
     await chmod(resolve(staged, 'workspace-backend'), 0o755);
     await cp(resolve(root, 'Cargo.lock'), resolve(staged, 'Cargo.lock'));
     await cp(resolve(root, 'public/openapi.json'), resolve(staged, 'openapi.json'));
+    await cp(resolve(root, 'public/owner-openapi.json'), resolve(staged, 'owner-openapi.json'));
     await cp(resolve(root, 'public/global-openapi.json'), resolve(staged, 'global-openapi.json'));
     await cp(
       resolve(root, 'public/agent-entry-openapi.json'),

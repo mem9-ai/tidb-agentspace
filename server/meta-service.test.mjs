@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 import https from 'node:https';
 import { metadataCertificates } from './test-support/meta-tls.mjs';
@@ -10,6 +12,7 @@ import { walGate } from './test-support/meta-wal-gate.mjs';
 import { createMetaClient } from './meta/client.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 const options = { skip: process.env.WORKSPACE_META_TEST !== '1', timeout: 120000 };
+const execFileAsync = promisify(execFile);
 const scope = (authorityId) => ({
   authorityId,
   ownerKind: 'workspace',
@@ -25,6 +28,36 @@ const commit = (s, changes, mutationId = randomUUID()) => ({
   changes,
 });
 const get = (s, keys) => ({ op: 'get', scope: s, keys });
+test('inactive history is isolated and survives a real metadata restart', options, async (t) => {
+  const fixture = await metaFixture();
+  t.after(() => fixture.close());
+  let service = await fixture.service('history');
+  const configuration = resolve(fixture.directory, 'history-client.json');
+  const run = async (stage) => {
+    await writeFile(configuration, JSON.stringify(service.clientConfig), { mode: 0o600 });
+    await execFileAsync(
+      'cargo',
+      [
+        'run',
+        '--quiet',
+        '--locked',
+        '-p',
+        'workspace-domain',
+        '--example',
+        'history_fixture',
+        '--',
+        configuration,
+        stage,
+      ],
+      { timeout: 90000 },
+    );
+  };
+  await run('write');
+  await service.stop();
+  service.client.close();
+  service = await fixture.service('history', { previous: service });
+  await run('verify');
+});
 test(
   'record metadata preserves atomicity, per-record conflicts, receipts, scope isolation and crash recovery',
   options,

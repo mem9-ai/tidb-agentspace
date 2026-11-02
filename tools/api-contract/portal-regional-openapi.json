@@ -4461,6 +4461,328 @@
         }
       ]
     },
+    "/workspaces/{workspaceId}/request-history": {
+      "get": {
+        "operationId": "listRequestHistory",
+        "summary": "List partial regional HTTP diagnostics",
+        "tags": ["Owner"],
+        "description": "Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Region access Tokens cannot perform this Owner operation.",
+        "x-required-scope": null,
+        "security": [{ "localOwner": [] }, { "accountOwner": [] }, { "guestOwner": [] }],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": { "type": "string", "minLength": 1, "maxLength": 1024 }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": { "type": "string", "format": "date-time", "maxLength": 40 }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": { "type": "string", "format": "date-time", "maxLength": 40 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "nextCursor", "coverage", "retention", "health"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/RequestHistoryRecord" }
+                    },
+                    "nextCursor": { "type": ["string", "null"], "maxLength": 1024 },
+                    "coverage": { "$ref": "#/components/schemas/HistoryCoverage" },
+                    "retention": { "$ref": "#/components/schemas/HistoryRetention" },
+                    "health": { "$ref": "#/components/schemas/HistoryHealth" }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "History cursor expired; restart from the first page",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
+        }
+      ]
+    },
+    "/workspaces/{workspaceId}/audit-history": {
+      "get": {
+        "operationId": "listAuditHistory",
+        "summary": "List partial regional audit history",
+        "tags": ["Owner"],
+        "description": "Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Region access Tokens cannot perform this Owner operation.",
+        "x-required-scope": null,
+        "security": [{ "localOwner": [] }, { "accountOwner": [] }, { "guestOwner": [] }],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": { "type": "string", "minLength": 1, "maxLength": 1024 }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": { "type": "string", "format": "date-time", "maxLength": 40 }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": { "type": "string", "format": "date-time", "maxLength": 40 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "nextCursor", "coverage", "retention", "health"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/AuditHistoryRecord" }
+                    },
+                    "nextCursor": { "type": ["string", "null"], "maxLength": 1024 },
+                    "coverage": { "$ref": "#/components/schemas/HistoryCoverage" },
+                    "retention": { "$ref": "#/components/schemas/HistoryRetention" },
+                    "health": { "$ref": "#/components/schemas/HistoryHealth" }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, or revoked credential",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permission",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "404": {
+            "description": "Resource or endpoint not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "405": {
+            "description": "Resource lifecycle operation unsupported by provider",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "409": {
+            "description": "Conflict or free-tier limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "410": {
+            "description": "History cursor expired; restart from the first page",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "412": {
+            "description": "Version precondition failed without a write",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "413": {
+            "description": "Content too large",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "415": {
+            "description": "Unsupported content type",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "422": {
+            "description": "SQL syntax, result limit, or unsupported demo query",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "429": {
+            "description": "Provider quota or rate limit",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable or invalid response",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "503": {
+            "description": "Provider binding needs operator recovery",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          },
+          "504": {
+            "description": "SQL timeout; a write outcome may be unknown",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          },
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
+        }
+      ]
+    },
     "/workspaces/{workspaceId}/settings": {
       "patch": {
         "operationId": "updateSettings",
@@ -7205,6 +7527,119 @@
           },
           "updatedAt": { "type": "string", "format": "date-time" }
         }
+      },
+      "HistoryActor": {
+        "type": "object",
+        "required": ["kind", "id"],
+        "properties": { "kind": { "enum": ["owner", "workspaceKey"] }, "id": { "type": "string" } },
+        "additionalProperties": false
+      },
+      "RequestHistoryRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "requestId",
+          "authority",
+          "actor",
+          "operation",
+          "method",
+          "status",
+          "completion",
+          "startedAt",
+          "durationMs"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "requestId": { "type": "string", "format": "uuid" },
+          "authority": { "type": "string" },
+          "actor": { "$ref": "#/components/schemas/HistoryActor" },
+          "operation": { "enum": ["workspace", "resources", "files", "query", "other"] },
+          "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "OTHER"] },
+          "status": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 },
+          "completion": { "enum": ["responded", "canceled", "unknown"] },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "durationMs": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      },
+      "AuditHistoryRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "operationId",
+          "authority",
+          "actor",
+          "action",
+          "decision",
+          "outcome",
+          "occurredAt"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "operationId": { "type": "string", "format": "uuid" },
+          "requestId": { "type": "string", "format": "uuid" },
+          "authority": { "type": "string" },
+          "actor": { "$ref": "#/components/schemas/HistoryActor" },
+          "action": {
+            "enum": [
+              "workspace.update",
+              "resource.create",
+              "resource.delete",
+              "resource.retry",
+              "file.write",
+              "file.delete",
+              "query.write",
+              "query.execute",
+              "database.import"
+            ]
+          },
+          "target": {
+            "type": "object",
+            "required": ["type", "id"],
+            "properties": {
+              "type": { "enum": ["workspace", "resource", "filesystem", "database"] },
+              "id": { "type": "string" }
+            },
+            "additionalProperties": false
+          },
+          "decision": { "enum": ["allowed", "denied", "unknown"] },
+          "outcome": { "enum": ["attempted", "succeeded", "denied", "failed", "unknown"] },
+          "resolution": { "enum": ["inProgress", "succeeded", "denied", "failed", "unknown"] },
+          "occurredAt": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      },
+      "HistoryCoverage": {
+        "type": "object",
+        "required": ["status", "startedAt", "operations", "exclusions"],
+        "properties": {
+          "status": { "enum": ["partial", "unavailable"] },
+          "startedAt": { "type": ["string", "null"], "format": "date-time" },
+          "operations": { "type": "array", "items": { "type": "string" } },
+          "exclusions": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      },
+      "HistoryRetention": {
+        "type": "object",
+        "required": ["maxAgeDays", "maxRecords", "earliestAt", "truncated"],
+        "properties": {
+          "maxAgeDays": { "type": "integer", "minimum": 1 },
+          "maxRecords": { "type": "integer", "minimum": 1 },
+          "earliestAt": { "type": ["string", "null"], "format": "date-time" },
+          "truncated": { "type": ["boolean", "null"] }
+        },
+        "additionalProperties": false
+      },
+      "HistoryHealth": {
+        "type": "object",
+        "required": ["status", "droppedCount", "lossDetectedAt"],
+        "properties": {
+          "status": { "enum": ["unknown", "degraded", "unavailable"] },
+          "droppedCount": { "type": ["integer", "null"], "minimum": 0 },
+          "lossDetectedAt": { "type": ["string", "null"], "format": "date-time" }
+        },
+        "additionalProperties": false
       },
       "RegionalEnrollment": {
         "type": "object",

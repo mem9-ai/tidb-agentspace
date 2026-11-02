@@ -1,6 +1,9 @@
+#[cfg(test)]
+mod observability_tests;
 mod repository;
 use chrono::{DateTime, SecondsFormat, Utc};
 pub use repository::Repository;
+pub use repository::observability;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use workspace_contracts::{Result, ServiceError};
@@ -23,6 +26,10 @@ pub enum Credential {
 /// lease alive; control activation/revocation drains such leases before acknowledging apply.
 pub trait ScopedAuthorization: Send + Sync {
     fn workspace_id(&self) -> &str;
+    /// Only the trusted authenticator may expose a verified Key identifier.
+    fn workspace_key_id(&self) -> Option<&str> {
+        None
+    }
     fn snapshot(&self) -> Result<Principal>;
     fn check(
         &self,
@@ -111,6 +118,12 @@ pub struct Principal {
     pub scopes: Vec<String>,
     pub resource_ids: Vec<String>,
     pub expires_at: Option<String>,
+}
+/// An authority-verified opaque identity, never a token, cookie or display label.
+#[derive(Clone)]
+pub struct HistoryActor {
+    pub kind: observability::ActorKind,
+    pub id: String,
 }
 impl Principal {
     pub fn scope(&self, action: &str) -> Result<()> {
@@ -206,6 +219,43 @@ pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
         },
     })
 }
+fn history_actor_from_principal(
+    credential: &Credential,
+    principal: &Principal,
+) -> Result<HistoryActor> {
+    // Owner identifiers can contain issuer URLs or account details. Persist only a stable,
+    // bounded opaque identifier, regardless of which session mechanism authenticated them.
+    if principal.owner {
+        return Ok(HistoryActor {
+            kind: observability::ActorKind::Owner,
+            id: format!(
+                "owner-{}",
+                hex::encode(Sha256::digest(
+                    format!("history-owner-v1\0{}", principal.id).as_bytes()
+                ))
+            ),
+        });
+    }
+    let id = match credential {
+        Credential::Scoped(authorization) => authorization.workspace_key_id(),
+        Credential::Bearer(_) => Some(principal.id.as_str()),
+        _ => None,
+    }
+    .ok_or_else(|| reject(503, "HISTORY_ACTOR_UNAVAILABLE"))?;
+    if id.is_empty()
+        || id.len() > 128
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_-.:".contains(&byte))
+    {
+        return Err(reject(503, "HISTORY_ACTOR_UNAVAILABLE"));
+    }
+    Ok(HistoryActor {
+        kind: observability::ActorKind::WorkspaceKey,
+        id: id.to_owned(),
+    })
+}
+
 impl Workspace {
     async fn authorize_managed(&self, credential: &Credential) -> Result<()> {
         if self.managed {
@@ -242,6 +292,43 @@ impl Workspace {
     }
     pub fn repository(&self) -> std::sync::Arc<Repository> {
         self.repository.clone()
+    }
+    pub async fn history_actor(&self, credential: &Credential) -> Result<HistoryActor> {
+        let principal = self.authenticate(credential).await?;
+        history_actor_from_principal(credential, &principal)
+    }
+    /// For diagnostics only, after the trusted API has just authenticated and bound the
+    /// credential. This snapshot is not an authorization decision and never accepts a
+    /// raw legacy Bearer value.
+    pub fn history_principal_snapshot(&self, credential: &Credential) -> Result<Principal> {
+        if matches!(credential, Credential::Bearer(_)) {
+            return Err(reject(503, "HISTORY_ACTOR_UNAVAILABLE"));
+        }
+        principal(
+            &json!({"workspace":{"id":self.repository.workspace_id()}}),
+            credential,
+        )
+    }
+    pub fn history_actor_snapshot(&self, credential: &Credential) -> Result<HistoryActor> {
+        let principal = self.history_principal_snapshot(credential)?;
+        history_actor_from_principal(credential, &principal)
+    }
+    /// History is owner-only even for Keys with wildcard resource and action grants.
+    /// Recheck the authority after metadata I/O before returning a page.
+    pub async fn owner_history_page(
+        &self,
+        credential: &Credential,
+        stream: observability::HistoryStream,
+        filter: observability::HistoryFilter<'_>,
+    ) -> Result<Value> {
+        if !self.authenticate(credential).await?.owner {
+            return Err(reject(403, "OWNER_REQUIRED"));
+        }
+        let page = self.repository.history_page(stream, filter).await?;
+        if !self.authenticate(credential).await?.owner {
+            return Err(reject(403, "OWNER_REQUIRED"));
+        }
+        Ok(page)
     }
     pub fn new(repository: Repository) -> Self {
         Self {

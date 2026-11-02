@@ -279,12 +279,31 @@ async fn main() -> Result<()> {
                 purge_legacy_workspace(port.clone(), &config).await?;
                 println!("Legacy Workspace live metadata and credentials removed.");
             }
+            let history_metadata = port.clone();
             match WorkspaceServer::open_with_guest(config, port, guest_runtime).await {
                 Ok(server) => {
                     let server = if let Some(global) = shared_globals.remove(&bind) {
                         server.with_global(global)
                     } else {
                         server
+                    };
+                    let workspace = server.workspace.clone();
+                    let history_scheduler = match server.history_scheduler(history_metadata) {
+                        Ok(scheduler) => scheduler,
+                        Err(_) => {
+                            eprintln!(
+                                "Workspace history maintenance is unavailable for {authority}."
+                            );
+                            if let Some(pool) = guest_pool
+                                && pool.close().await.is_err()
+                            {
+                                eprintln!(
+                                    "Guest Workspace ownership release is uncertain; reconcile regionally before restart."
+                                );
+                            }
+                            let _ = workspace.close().await;
+                            continue;
+                        }
                     };
                     if let Some(scheduler) = scheduler {
                         let receiver = api_receiver.clone();
@@ -300,11 +319,14 @@ async fn main() -> Result<()> {
                             }
                         }));
                     }
-                    let workspace = server.workspace.clone();
                     workspaces.push(workspace.clone());
                     let receiver = api_receiver.clone();
                     api_tasks.push(tokio::spawn(async move {
+                        let (history_stop, history_receiver) = watch::channel(false);
+                        let history_task = tokio::spawn(workspace_api::history_maintenance::supervise(history_scheduler, history_receiver));
                         if server.serve(stopped(receiver)).await.is_err() {eprintln!("Workspace listener unavailable for {authority}; other roles continue.");}
+                        let _ = history_stop.send(true);
+                        let _ = history_task.await;
                         if let Some(pool) = guest_pool && pool.close().await.is_err() { eprintln!("Guest Workspace ownership release is uncertain; reconcile regionally before restart."); }
                         if workspace.close().await.is_err() {eprintln!("Workspace ownership release is uncertain; reconcile regionally before restart.");}
                     }));

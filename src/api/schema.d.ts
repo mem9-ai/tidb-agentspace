@@ -598,6 +598,52 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/workspaces/{workspaceId}/request-history': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    /**
+     * List partial regional HTTP diagnostics
+     * @description Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Region access Tokens cannot perform this Owner operation.
+     */
+    get: operations['listRequestHistory'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/workspaces/{workspaceId}/audit-history': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    /**
+     * List partial regional audit history
+     * @description Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Region access Tokens cannot perform this Owner operation.
+     */
+    get: operations['listAuditHistory'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/workspaces/{workspaceId}/settings': {
     parameters: {
       query?: never;
@@ -1458,6 +1504,85 @@ export interface components {
       version: string;
       /** Format: date-time */
       updatedAt: string;
+    };
+    HistoryActor: {
+      /** @enum {unknown} */
+      kind: 'owner' | 'workspaceKey';
+      id: string;
+    };
+    RequestHistoryRecord: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      requestId: string;
+      authority: string;
+      actor: components['schemas']['HistoryActor'];
+      /** @enum {unknown} */
+      operation: 'workspace' | 'resources' | 'files' | 'query' | 'other';
+      /** @enum {unknown} */
+      method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OTHER';
+      status: number | null;
+      /** @enum {unknown} */
+      completion: 'responded' | 'canceled' | 'unknown';
+      /** Format: date-time */
+      startedAt: string;
+      durationMs: number;
+    };
+    AuditHistoryRecord: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      operationId: string;
+      /** Format: uuid */
+      requestId?: string;
+      authority: string;
+      actor: components['schemas']['HistoryActor'];
+      /** @enum {unknown} */
+      action:
+        | 'workspace.update'
+        | 'resource.create'
+        | 'resource.delete'
+        | 'resource.retry'
+        | 'file.write'
+        | 'file.delete'
+        | 'query.write'
+        | 'query.execute'
+        | 'database.import';
+      target?: {
+        /** @enum {unknown} */
+        type: 'workspace' | 'resource' | 'filesystem' | 'database';
+        id: string;
+      };
+      /** @enum {unknown} */
+      decision: 'allowed' | 'denied' | 'unknown';
+      /** @enum {unknown} */
+      outcome: 'attempted' | 'succeeded' | 'denied' | 'failed' | 'unknown';
+      /** @enum {unknown} */
+      resolution?: 'inProgress' | 'succeeded' | 'denied' | 'failed' | 'unknown';
+      /** Format: date-time */
+      occurredAt: string;
+    };
+    HistoryCoverage: {
+      /** @enum {unknown} */
+      status: 'partial' | 'unavailable';
+      /** Format: date-time */
+      startedAt: string | null;
+      operations: string[];
+      exclusions: string[];
+    };
+    HistoryRetention: {
+      maxAgeDays: number;
+      maxRecords: number;
+      /** Format: date-time */
+      earliestAt: string | null;
+      truncated: boolean | null;
+    };
+    HistoryHealth: {
+      /** @enum {unknown} */
+      status: 'unknown' | 'degraded' | 'unavailable';
+      droppedCount: number | null;
+      /** Format: date-time */
+      lossDetectedAt: string | null;
     };
     RegionalEnrollment: {
       keyId: string;
@@ -6463,6 +6588,346 @@ export interface operations {
         };
       };
       /** @description Temporary database expired */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Content too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Unsupported content type */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL syntax, result limit, or unsupported demo query */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider quota or rate limit */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider unavailable or invalid response */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider binding needs operator recovery */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  listRequestHistory: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string;
+        from?: string;
+        to?: string;
+      };
+      header?: never;
+      path: {
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            data: components['schemas']['RequestHistoryRecord'][];
+            nextCursor: string | null;
+            coverage: components['schemas']['HistoryCoverage'];
+            retention: components['schemas']['HistoryRetention'];
+            health: components['schemas']['HistoryHealth'];
+          };
+        };
+      };
+      /** @description Invalid request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Missing, invalid, expired, or revoked credential */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Insufficient permission */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource or endpoint not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Conflict or free-tier limit */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description History cursor expired; restart from the first page */
+      410: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Version precondition failed without a write */
+      412: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Content too large */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Unsupported content type */
+      415: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL syntax, result limit, or unsupported demo query */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider quota or rate limit */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider unavailable or invalid response */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Provider binding needs operator recovery */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description SQL timeout; a write outcome may be unknown */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  listAuditHistory: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string;
+        from?: string;
+        to?: string;
+      };
+      header?: never;
+      path: {
+        /** @description A Workspace ID returned by the authenticated Workspace discovery API. */
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Success */
+      200: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            data: components['schemas']['AuditHistoryRecord'][];
+            nextCursor: string | null;
+            coverage: components['schemas']['HistoryCoverage'];
+            retention: components['schemas']['HistoryRetention'];
+            health: components['schemas']['HistoryHealth'];
+          };
+        };
+      };
+      /** @description Invalid request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Missing, invalid, expired, or revoked credential */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Insufficient permission */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource or endpoint not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Resource lifecycle operation unsupported by provider */
+      405: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description Conflict or free-tier limit */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+      /** @description History cursor expired; restart from the first page */
       410: {
         headers: {
           [name: string]: unknown;

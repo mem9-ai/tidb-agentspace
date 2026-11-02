@@ -5904,6 +5904,119 @@
           "updatedAt": { "type": "string", "format": "date-time" }
         }
       },
+      "HistoryActor": {
+        "type": "object",
+        "required": ["kind", "id"],
+        "properties": { "kind": { "enum": ["owner", "workspaceKey"] }, "id": { "type": "string" } },
+        "additionalProperties": false
+      },
+      "RequestHistoryRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "requestId",
+          "authority",
+          "actor",
+          "operation",
+          "method",
+          "status",
+          "completion",
+          "startedAt",
+          "durationMs"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "requestId": { "type": "string", "format": "uuid" },
+          "authority": { "type": "string" },
+          "actor": { "$ref": "#/components/schemas/HistoryActor" },
+          "operation": { "enum": ["workspace", "resources", "files", "query", "other"] },
+          "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "OTHER"] },
+          "status": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 },
+          "completion": { "enum": ["responded", "canceled", "unknown"] },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "durationMs": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      },
+      "AuditHistoryRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "operationId",
+          "authority",
+          "actor",
+          "action",
+          "decision",
+          "outcome",
+          "occurredAt"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "operationId": { "type": "string", "format": "uuid" },
+          "requestId": { "type": "string", "format": "uuid" },
+          "authority": { "type": "string" },
+          "actor": { "$ref": "#/components/schemas/HistoryActor" },
+          "action": {
+            "enum": [
+              "workspace.update",
+              "resource.create",
+              "resource.delete",
+              "resource.retry",
+              "file.write",
+              "file.delete",
+              "query.write",
+              "query.execute",
+              "database.import"
+            ]
+          },
+          "target": {
+            "type": "object",
+            "required": ["type", "id"],
+            "properties": {
+              "type": { "enum": ["workspace", "resource", "filesystem", "database"] },
+              "id": { "type": "string" }
+            },
+            "additionalProperties": false
+          },
+          "decision": { "enum": ["allowed", "denied", "unknown"] },
+          "outcome": { "enum": ["attempted", "succeeded", "denied", "failed", "unknown"] },
+          "resolution": { "enum": ["inProgress", "succeeded", "denied", "failed", "unknown"] },
+          "occurredAt": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      },
+      "HistoryCoverage": {
+        "type": "object",
+        "required": ["status", "startedAt", "operations", "exclusions"],
+        "properties": {
+          "status": { "enum": ["partial", "unavailable"] },
+          "startedAt": { "type": ["string", "null"], "format": "date-time" },
+          "operations": { "type": "array", "items": { "type": "string" } },
+          "exclusions": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      },
+      "HistoryRetention": {
+        "type": "object",
+        "required": ["maxAgeDays", "maxRecords", "earliestAt", "truncated"],
+        "properties": {
+          "maxAgeDays": { "type": "integer", "minimum": 1 },
+          "maxRecords": { "type": "integer", "minimum": 1 },
+          "earliestAt": { "type": ["string", "null"], "format": "date-time" },
+          "truncated": { "type": ["boolean", "null"] }
+        },
+        "additionalProperties": false
+      },
+      "HistoryHealth": {
+        "type": "object",
+        "required": ["status", "droppedCount", "lossDetectedAt"],
+        "properties": {
+          "status": { "enum": ["unknown", "degraded", "unavailable"] },
+          "droppedCount": { "type": ["integer", "null"], "minimum": 0 },
+          "lossDetectedAt": { "type": ["string", "null"], "format": "date-time" }
+        },
+        "additionalProperties": false
+      },
       "RegionalEnrollment": {
         "type": "object",
         "additionalProperties": false,
@@ -5980,5 +6093,9 @@
         }
       }
     }
+  },
+  "externalDocs": {
+    "description": "Regional Owner history API contract",
+    "url": "owner-openapi.json"
   }
 }

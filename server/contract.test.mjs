@@ -11,13 +11,34 @@ const contract = JSON.parse(
     'utf8',
   ),
 );
+const ownerContract = JSON.parse(
+  await readFile(new URL('../public/owner-openapi.json', import.meta.url), 'utf8'),
+);
 const ajv = new Ajv2020({ strict: false, validateFormats: false, allErrors: true });
+
+test('published regional owner contract exposes only owner-authenticated history operations', () => {
+  assert.deepEqual(Object.keys(ownerContract.paths).sort(), [
+    '/workspaces/{workspaceId}/audit-history',
+    '/workspaces/{workspaceId}/request-history',
+  ]);
+  assert.equal(ownerContract.components.securitySchemes.workspaceKey, undefined);
+  for (const entry of Object.values(ownerContract.paths)) {
+    assert.deepEqual(entry.get.security, [
+      { localOwner: [] },
+      { accountOwner: [] },
+      { guestOwner: [] },
+    ]);
+  }
+});
 
 test(
   'native API responses conform to every declared JSON operation, including denials',
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
   async (t) => {
     const { origin } = await nativeProductFixture(t);
+    const publishedOwner = await fetch(origin + '/owner-openapi.json');
+    assert.equal(publishedOwner.status, 200);
+    assert.deepEqual(await publishedOwner.json(), ownerContract);
     const covered = new Set();
     let cookie;
     async function request(
@@ -297,6 +318,8 @@ test(
     await request(workspace + '/bootstrap');
     await request(workspace + '/usage');
     await request(workspace + '/events');
+    await request(workspace + '/request-history');
+    await request(workspace + '/audit-history');
     await request(workspace + '/settings', 'patch', {
       workspaceName: 'Contract workspace',
       name: 'Contract owner',

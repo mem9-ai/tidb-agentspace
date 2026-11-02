@@ -55,6 +55,231 @@ const base = '/api/v1/workspaces/ws_agentlab';
 const secret = 'retained-public-workspace-key';
 const privateWrite = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
 test(
+  'an unavailable audit journal rejects a file mutation before provider I/O',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    assert.equal((await fixture.request('/resources')).status, 200);
+    await fixture.stopRegionMetadata();
+    const calls = fixture.provider.calls;
+    const result = await fixture.request(
+      '/files/content?resourceId=fs_live&path=%2Fmust-not-exist',
+      {
+        method: 'PUT',
+        raw: Buffer.from('private-content'),
+        headers: { 'Content-Type': 'application/octet-stream' },
+      },
+    );
+    assert.equal(result.status, 503, JSON.stringify(result.body));
+    assert.equal(result.body.error.code, 'AUDIT_UNAVAILABLE');
+    assert.match(result.body.error.message, /did not start/);
+    assert.equal(fixture.provider.calls, calls);
+  },
+);
+test(
+  'audit history journals covered effects without storing customer content',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const write = await fixture.request('/files', {
+      method: 'PUT',
+      body: {
+        resourceId: 'fs_shared',
+        path: '/audit-private-canary',
+        type: 'file',
+        content: 'audit-content-canary',
+      },
+    });
+    assert.equal(write.status, 200, JSON.stringify(write.body));
+    const id = write.headers.get('x-request-id');
+    const history = await until(async () => {
+      const response = await fixture.request('/audit-history');
+      assert.equal(response.status, 200);
+      const records = response.body.data.filter((entry) => entry.requestId === id);
+      assert.equal(records.length, 2);
+      return response.body;
+    });
+    const records = history.data.filter((entry) => entry.requestId === id);
+    assert.deepEqual(
+      records.map((entry) => entry.outcome),
+      ['succeeded', 'attempted'],
+    );
+    assert.equal(records[0].action, 'file.write');
+    assert.deepEqual(records[0].target, { type: 'filesystem', id: 'fs_shared' });
+    assert.equal(Object.hasOwn(records[1], 'target'), false);
+    assert.equal(records[0].actor.kind, 'owner');
+    assert.equal(records[0].operationId, records[1].operationId);
+    assert.equal(records[1].resolution, 'succeeded');
+    assert.equal(history.coverage.status, 'partial');
+    assert.equal(JSON.stringify(history).includes('audit-private-canary'), false);
+    assert.equal(JSON.stringify(history).includes('audit-content-canary'), false);
+    const key = await fixture.issueKey({
+      name: 'read-only-agent',
+      scopes: ['resources:read', 'files:read'],
+      resourceIds: ['*'],
+      expiresInDays: 7,
+    });
+    assert.equal(key.status, 201, JSON.stringify(key.body));
+    const denied = await fixture.request('/files', {
+      method: 'PUT',
+      token: key.body.secret,
+      body: {
+        resourceId: 'fs_shared',
+        path: '/denied-private-canary',
+        type: 'file',
+        content: 'must-not-write',
+      },
+    });
+    assert.equal(denied.status, 403, JSON.stringify(denied.body));
+    const deniedId = denied.headers.get('x-request-id');
+    const deniedHistory = await until(async () => {
+      const response = await fixture.request('/audit-history');
+      const records = response.body.data.filter((entry) => entry.requestId === deniedId);
+      assert.equal(records.length, 2);
+      return records;
+    });
+    assert.deepEqual(
+      deniedHistory.map((entry) => entry.outcome),
+      ['denied', 'attempted'],
+    );
+    assert.equal(deniedHistory[0].decision, 'denied');
+    assert.equal(Object.hasOwn(deniedHistory[0], 'target'), false);
+    assert.equal(deniedHistory[0].actor.id, key.body.data.id);
+    assert.equal(JSON.stringify(deniedHistory).includes('denied-private-canary'), false);
+    assert.equal(JSON.stringify(deniedHistory).includes(key.body.secret), false);
+    let providerAttempts = 0;
+    fixture.provider.writeRace = (path, files) => {
+      providerAttempts++;
+      files.set(path, Buffer.from('provider may already have applied this'));
+      return { status: 503, body: { error: 'private-provider-error' } };
+    };
+    const uncertain = await fixture.request('/files', {
+      method: 'PUT',
+      body: {
+        resourceId: 'fs_live',
+        path: '/uncertain-private-canary',
+        type: 'file',
+        content: 'uncertain-content-canary',
+      },
+    });
+    assert.ok(uncertain.status >= 500, JSON.stringify(uncertain.body));
+    const uncertainId = uncertain.headers.get('x-request-id');
+    const uncertainRecords = await until(async () => {
+      const response = await fixture.request('/audit-history');
+      const records = response.body.data.filter((entry) => entry.requestId === uncertainId);
+      assert.equal(records.length, 2);
+      return records;
+    });
+    assert.deepEqual(
+      uncertainRecords.map((entry) => entry.outcome),
+      ['unknown', 'attempted'],
+    );
+    assert.equal(providerAttempts, 1);
+    assert.equal(JSON.stringify(uncertainRecords).includes('private-provider-error'), false);
+    assert.equal(JSON.stringify(uncertainRecords).includes('uncertain-private-canary'), false);
+    assert.equal(JSON.stringify(uncertainRecords).includes('uncertain-content-canary'), false);
+    const other = await fixture.request('/audit-history', {}, 1);
+    assert.equal(other.status, 200);
+    assert.equal(
+      other.body.data.some((entry) => entry.requestId === id),
+      false,
+    );
+  },
+);
+test(
+  'request history records authenticated responses without paths, secrets or cross-Workspace leakage',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const key = await fixture.issueKey({
+      name: 'read-resources-only',
+      scopes: ['resources:read'],
+      resourceIds: ['*'],
+      expiresInDays: 7,
+    });
+    assert.equal(key.status, 201, JSON.stringify(key.body));
+    const invalid = await fixture.request('/resources', { token: 'synthetic-invalid-token' });
+    assert.equal(invalid.status, 401);
+    const invalidId = invalid.headers.get('x-request-id');
+    const denied = await fixture.request('/files?resourceId=fs_shared&path=%2Fprivate-canary', {
+      token: key.body.secret,
+      headers: { 'x-sensitive-canary': 'sensitive-canary' },
+    });
+    assert.equal(denied.status, 403, JSON.stringify(denied.body));
+    const deniedId = denied.headers.get('x-request-id');
+    const history = await until(async () => {
+      const response = await fixture.request('/request-history');
+      assert.equal(response.status, 200);
+      const record = response.body.data.find((entry) => entry.requestId === deniedId);
+      assert.ok(record);
+      return response.body;
+    });
+    const record = history.data.find((entry) => entry.requestId === deniedId);
+    assert.equal(history.coverage.status, 'partial');
+    assert.equal(history.health.status, 'unknown');
+    assert.equal(history.health.droppedCount, null);
+    assert.equal(record.operation, 'files');
+    assert.equal(record.method, 'GET');
+    assert.equal(record.status, 403);
+    assert.equal(record.actor.kind, 'workspaceKey');
+    assert.equal(record.actor.id, key.body.data.id);
+    assert.equal(
+      history.data.some((entry) => entry.requestId === invalidId),
+      false,
+    );
+    const serialized = JSON.stringify(history);
+    for (const secret of [
+      'private-canary',
+      'sensitive-canary',
+      key.body.secret,
+      'synthetic-invalid-token',
+    ])
+      assert.equal(serialized.includes(secret), false);
+    const other = await fixture.request('/request-history', {}, 1);
+    assert.equal(other.status, 200);
+    assert.deepEqual(other.body.data, []);
+    const after = await fixture.request('/request-history');
+    assert.equal(
+      after.body.data.some((entry) => entry.requestId === after.headers.get('x-request-id')),
+      false,
+    );
+  },
+);
+test(
+  'history pages require the current Workspace owner and disclose unavailable collection',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const key = await fixture.issueKey({
+      name: 'broad-agent',
+      scopes: ['resources:read', 'files:read'],
+      resourceIds: ['*'],
+      expiresInDays: 7,
+    });
+    assert.equal(key.status, 201, JSON.stringify(key.body));
+    for (const route of ['/audit-history', '/request-history']) {
+      const page = await fixture.request(route);
+      assert.equal(page.status, 200, JSON.stringify(page.body));
+      assert.deepEqual(page.body.data, []);
+      assert.equal(page.body.coverage.status, 'partial');
+      assert.equal(page.body.health.status, 'unavailable');
+      assert.equal(page.headers.get('cache-control'), 'no-store');
+      assert.equal((await fixture.request(`${route}?limit=bad`, { token: null })).status, 401);
+      assert.equal(
+        (await fixture.request(`${route}?limit=bad`, { token: key.body.secret })).status,
+        403,
+      );
+      assert.equal((await fixture.request(`${route}?limit=1&limit=2`)).status, 400);
+      assert.equal((await fixture.request(`/api/v1/workspaces/ws_other${route}`)).status, 404);
+      assert.equal(
+        (await fixture.request(`/api/v1/workspaces/${fixture.endpoints.workspaceId}${route}`))
+          .status,
+        200,
+      );
+    }
+  },
+);
+test(
   'image preview enforces the size boundary before reading and validates image type',
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
   async (t) => {
@@ -461,6 +686,19 @@ test(
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
   async (t) => {
     const fixture = await productApiFixture(t, 'remote');
+    // An existing legacy Workspace builds its resource index asynchronously. Exercise
+    // the concurrent idempotency guarantee after that separate migration is ready.
+    await until(async () => {
+      const existing = await fixture.request('/resources', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'index-readiness' },
+        body: { kind: 'mysql', name: 'fixture-mysql', region: 'automatic' },
+      });
+      if (existing.status === 503 && existing.body.error?.code === 'RESOURCE_INDEX_MIGRATING')
+        throw new Error('Resource index is still migrating');
+      assert.equal(existing.status, 409, JSON.stringify(existing.body));
+      assert.equal(existing.body.error.code, 'NAME_EXISTS');
+    });
     const create = () =>
       fixture.request('/resources', {
         method: 'POST',
