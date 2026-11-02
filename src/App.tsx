@@ -2395,12 +2395,6 @@ function WorkspaceSettings({
                 </ActionIcon>
               }
             />
-            <TextInput
-              label="Default region"
-              readOnly
-              value={region(data.workspace.defaultRegionId)}
-              description="New resources are managed in this region."
-            />
           </div>
         </Paper>
         <Paper className="panel settings-panel" withBorder>

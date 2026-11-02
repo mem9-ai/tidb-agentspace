@@ -1,17 +1,18 @@
 import { readFile } from 'node:fs/promises';
 import { test, expect } from './workspace-fixture.mjs';
 
-test('workspace shows its default region separately from provider data locations', async ({
+test('workspace settings and resource creation focus on customer choices', async ({
   page,
   workspace,
 }, testInfo) => {
   workspace.addResources();
   await workspace.open('#settings');
-  await expect(page.getByLabel('Default region')).toHaveValue('Local');
+  await expect(page.getByLabel('Default region')).toHaveCount(0);
+  await expect(page.getByLabel('Workspace ID', { exact: true })).toBeVisible();
   await workspace.open('#databases');
   await page.getByRole('button', { name: /create database/i }).click();
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByLabel('Workspace region')).toHaveValue('Local');
+  await expect(dialog.getByLabel('Workspace region')).toHaveCount(0);
   await expect(dialog.getByLabel('Provider data location')).toBeVisible();
   if (process.env.REGION_VISUAL_DIR)
     await page.screenshot({
