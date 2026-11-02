@@ -16,6 +16,37 @@ export async function port() {
   await new Promise((r) => server.close(r));
   return result;
 }
+// Hold each selected port until its service is ready to bind. Otherwise another fixture
+// service can acquire a recently released port and answer the wrong readiness probe.
+export async function reservePorts(count) {
+  const servers = [];
+  try {
+    for (let i = 0; i < count; i++) {
+      const server = createServer();
+      await new Promise((resolve, reject) => {
+        const onError = (error) => reject(error);
+        server.once('error', onError);
+        server.listen(0, '127.0.0.1', () => {
+          server.off('error', onError);
+          resolve();
+        });
+      });
+      servers.push(server);
+    }
+    return servers.map((server) => ({
+      port: server.address().port,
+      async release() {
+        if (!server.listening) return;
+        await new Promise((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
+      },
+    }));
+  } catch (error) {
+    await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
+    throw error;
+  }
+}
 export async function until(fn) {
   let error;
   for (let i = 0; i < 200; i++) {

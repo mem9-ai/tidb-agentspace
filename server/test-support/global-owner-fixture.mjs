@@ -13,6 +13,7 @@ export async function globalOwnerFixture(
   workspaceId,
   regionOrigin,
   index,
+  controlPort,
 ) {
   const directory = resolve(meta.directory, `global-owner-${index}`);
   const { mkdir } = await import('node:fs/promises');
@@ -35,7 +36,7 @@ export async function globalOwnerFixture(
   const global = await signer('global'),
     regional = await signer('region');
   const origin = regionOrigin + '/api/global';
-  const control = `127.0.0.1:${await port()}`;
+  const control = `127.0.0.1:${controlPort ?? (await port())}`;
   const configFile = resolve(directory, 'global.json');
   const config = {
     bind: new URL(regionOrigin).host,
