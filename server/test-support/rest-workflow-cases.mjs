@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { productApiFixture } from './product-api-fixture.mjs';
 import { nativeSecret } from './provider-fixture.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
+import { revokeAndConfirmRegion } from './revoke-confirm.mjs';
 
 export async function restWorkflowCases(t, transport) {
   let setupFault,
@@ -266,7 +267,7 @@ export async function restWorkflowCases(t, transport) {
       },
       201,
     );
-    assert.equal((await f.revokeKey(restricted.data.id)).status, 202);
+    await revokeAndConfirmRegion(f, restricted.data);
     await request(follow(review), { token: restricted.secret }, 401, 'INVALID_CREDENTIAL');
   });
 

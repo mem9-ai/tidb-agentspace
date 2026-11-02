@@ -1,5 +1,6 @@
 import { restWorkflowCases } from './test-support/rest-workflow-cases.mjs';
 import { tutorialCases } from './test-support/tutorial-cases.mjs';
+import { revokeAndConfirmRegion } from './test-support/revoke-confirm.mjs';
 import './test-support/tutorial-sample-cases.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -678,7 +679,7 @@ test(
       responses.every((response) => response.status === 200),
       JSON.stringify(responses),
     );
-    assert.equal((await fixture.revokeKey(created.body.data.id)).status, 202);
+    await revokeAndConfirmRegion(fixture, created.body.data);
     assert.equal((await fixture.request('/context', { token })).status, 401);
   },
 );
@@ -810,7 +811,7 @@ test(
       ).status,
       200,
     );
-    assert.equal((await fixture.revokeKey(key.body.data.id)).status, 202);
+    await revokeAndConfirmRegion(fixture, key.body.data);
     assert.equal(
       (await fixture.request('/resources?limit=1', { token: key.body.secret })).status,
       401,

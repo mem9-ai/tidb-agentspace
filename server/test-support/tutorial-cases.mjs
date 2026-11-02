@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { productApiFixture } from './product-api-fixture.mjs';
+import { revokeAndConfirmRegion } from './revoke-confirm.mjs';
 
 export async function tutorialCases(t, transport) {
   const f = await productApiFixture(t, transport);
@@ -120,7 +121,7 @@ export async function tutorialCases(t, transport) {
   for (const path of ['/tutorials', '/tutorials/db_memory'])
     await request(path, { token: key.secret }, 403, 'OWNER_REQUIRED');
   await request('/tutorials/db_memory', { ...create, token: key.secret }, 403, 'OWNER_REQUIRED');
-  assert.equal((await f.revokeKey(key.data.id)).status, 202);
+  await revokeAndConfirmRegion(f, key.data);
   for (const token of [key.secret, 'expired-coverage-key', 'revoked-coverage-key', 'invalid']) {
     await request('/tutorials', { token }, 401);
     await request('/tutorials/db_memory', { ...create, token }, 401);

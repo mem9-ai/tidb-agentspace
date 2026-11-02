@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { productApiFixture } from './product-api-fixture.mjs';
 import { nativeSecret } from './provider-fixture.mjs';
+import { revokeAndConfirmRegion } from './revoke-confirm.mjs';
 
 export async function agentRestCases(t, transport) {
   const f = await productApiFixture(t, transport);
@@ -75,7 +76,7 @@ export async function agentRestCases(t, transport) {
       'INVALID_PAGE_CURSOR',
     );
     const first = (await request('/resources?limit=1', { token: selected.secret })).body;
-    assert.equal((await f.revokeKey(selected.data.id)).status, 202);
+    await revokeAndConfirmRegion(f, selected.data);
     await request(
       `/resources?cursor=${first.nextCursor}`,
       { token: selected.secret },
@@ -109,7 +110,7 @@ export async function agentRestCases(t, transport) {
         await request('/context', { token: access }, 401);
       const cross = await f.request('/context', { token: full.secret }, 1);
       assert.equal(cross.status, 401);
-      assert.equal((await f.revokeKey(minimal.data.id)).status, 202);
+      await revokeAndConfirmRegion(f, minimal.data);
       await request('/context', { token: minimal.secret }, 401, 'INVALID_CREDENTIAL');
     },
   );
