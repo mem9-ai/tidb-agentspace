@@ -109,6 +109,22 @@ and native API/S3 success. Browser smoke remains visibly skipped. This is applic
 evidence, not an additional test gate or a passing browser result. The [OpenAPI standard](standards/openapi-verification.md)
 defines the required response, authorization, side-effect, failure and recovery assertions.
 
+For PRs that only modify existing regional history modules and their Rust unit tests, the
+trusted base may select the focused history integration suite. It retains real RustFS restart,
+Workspace isolation, Owner and scoped-Key authorization, SSO and revocation, audit intent and
+uncertain effects, HTTP redaction, contract conformance and concurrent resource idempotency.
+All Rust unit tests, formatting, Clippy and native build still run. The trusted-base runner
+requires each named integration test to actually pass; missing, renamed, skipped or failing
+tests fail the job. Added, deleted, renamed, unknown or mixed paths, including any changes to
+the test harness, contracts or workflow, run the complete integration suite. Pushes, merge
+queues, manual runs and release evidence always retain the full suite. The scoped PR result
+cannot authorize a release.
+
+In one local native/RustFS run, the twelve selected cases completed in about 63 seconds.
+The earlier [full CI integration run](https://github.com/mem9-ai/tidb.ai/actions/runs/41382963375)
+ran 134 cases in about 15 minutes and exposed SSO and index-readiness failures that were fixed.
+These are different machines and workloads; the local measurement is not a CI timing guarantee.
+
 Dev CD no longer triggers on PRs or repeats quality/native commands. Its read-only verify
 job runs `scripts/require-ci.mjs full "$SOURCE_SHA"`, then the existing protected dev job
 builds/pushes and updates the image. Console publishing consumes `console` evidence (Quality
