@@ -123,15 +123,15 @@ impl HistoryIngestionProcessor for HistoryProcessor {
     fn write<'a>(
         &'a self,
         id: &'a str,
-        request: &'a CompletedHistoryRequest,
+        requests: &'a [CompletedHistoryRequest],
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(async move {
+            let entries: Vec<_> = requests
+                .iter()
+                .map(CompletedHistoryRequest::entry)
+                .collect();
             if self.local.repository().workspace_id() == id {
-                return self
-                    .local
-                    .repository()
-                    .append_request_batch(&[request.entry()])
-                    .await;
+                return self.local.repository().append_request_batch(&entries).await;
             }
             let pool = self.managed.as_ref().ok_or_else(|| {
                 workspace_contracts::ServiceError::new(503, "HISTORY_WORKSPACE_UNAVAILABLE")
@@ -140,7 +140,7 @@ impl HistoryIngestionProcessor for HistoryProcessor {
             lease
                 .workspace()
                 .repository()
-                .append_request_batch(&[request.entry()])
+                .append_request_batch(&entries)
                 .await
         })
     }

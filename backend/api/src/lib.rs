@@ -367,7 +367,7 @@ impl WorkspaceServer {
         let (history_queue, history_worker) = history_queue::HistoryQueue::new(
             256,
             1024,
-            8,
+            64,
             history_processor,
             Duration::from_secs(1),
         )

@@ -346,7 +346,7 @@ impl Repository {
             .map(|index| {
                 index["value"]["sequence"]
                     .as_u64()
-                    .filter(|sequence| *sequence > 0 && *sequence <= position)
+                    .filter(|sequence| *sequence > 0)
                     .map(|sequence| format!("{prefix}{:020}", u64::MAX - sequence))
                     .ok_or_else(|| error("HISTORY_INDEX_CORRUPT"))
             })
@@ -365,6 +365,13 @@ impl Repository {
         // A concurrent append or eviction invalidates the two index snapshots.
         if version(&self.get(head_key).await?) != version(head) {
             return Ok((None, None));
+        }
+        if indexes.iter().any(|index| {
+            index["value"]["sequence"]
+                .as_u64()
+                .is_none_or(|sequence| sequence > position)
+        }) {
+            return Err(error("HISTORY_INDEX_CORRUPT"));
         }
         let Some(oldest_deadline) = oldest_deadline else {
             return Err(error("HISTORY_INDEX_CORRUPT"));

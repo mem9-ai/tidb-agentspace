@@ -1,4 +1,4 @@
-//! Multi-Workspace and reopen checks for the inactive history storage boundary.
+//! Multi-Workspace, retention and reopen checks for history storage.
 use crate::{Credential, Principal, Repository, ScopedAuthorization, Workspace, observability::*};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -18,6 +18,7 @@ struct ScopedMetadata {
     fail_after_audit_commit: AtomicBool,
     fail_history_registration: AtomicBool,
     revoke_on_history_read: Mutex<Option<Arc<AtomicBool>>>,
+    pause_retention: Mutex<Option<(Arc<tokio::sync::Semaphore>, Arc<tokio::sync::Semaphore>)>>,
 }
 
 struct HistoryKey;
@@ -367,6 +368,14 @@ impl Metadata for ScopedMetadata {
     }
     fn execute(&self, request: MetaRequest) -> Call<'_> {
         Box::pin(async move {
+            if matches!(&request, MetaRequest::List { prefix, after: None, .. } if prefix == "observability/requests-v1/expiry/")
+            {
+                let pause = self.pause_retention.lock().unwrap().take();
+                if let Some((entered, release)) = pause {
+                    entered.add_permits(1);
+                    release.acquire().await.unwrap().forget();
+                }
+            }
             if matches!(&request, MetaRequest::List { prefix, .. } if prefix == "observability/audit-v1/records/")
                 && let Some(revoked) = self.revoke_on_history_read.lock().unwrap().as_ref()
             {
@@ -641,6 +650,43 @@ async fn history_remains_workspace_scoped_and_survives_repository_reopen() {
     );
     reopened.close().await.unwrap();
     second.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn concurrent_history_append_does_not_turn_retention_lookup_into_a_server_error() {
+    let metadata = Arc::new(ScopedMetadata::default());
+    let workspace = Arc::new(
+        Repository::open(metadata.clone(), "region:test", "workspace-a", true, None)
+            .await
+            .unwrap(),
+    );
+    let entry = || RequestEntry {
+        request_id: Uuid::new_v4(),
+        actor_kind: ActorKind::Owner,
+        actor_id: "owner-a",
+        operation: HttpOperation::Files,
+        method: HttpMethod::Get,
+        completion: HttpCompletion::Responded(200),
+        started_at: chrono::Utc::now(),
+        duration_ms: 1,
+    };
+    workspace.append_request_batch(&[entry()]).await.unwrap();
+    let entered = Arc::new(tokio::sync::Semaphore::new(0));
+    let release = Arc::new(tokio::sync::Semaphore::new(0));
+    *metadata.pause_retention.lock().unwrap() = Some((entered.clone(), release.clone()));
+    let reader = workspace.clone();
+    let read = tokio::spawn(async move {
+        reader
+            .history_page(HistoryStream::Requests, filter(None))
+            .await
+    });
+    entered.acquire().await.unwrap().forget();
+    workspace.append_request_batch(&[entry()]).await.unwrap();
+    release.add_permits(1);
+    let page = read.await.unwrap().unwrap();
+    assert!(page["earliestAt"].is_null());
+    assert!(page["truncated"].is_null());
+    workspace.close().await.unwrap();
 }
 
 #[tokio::test]
