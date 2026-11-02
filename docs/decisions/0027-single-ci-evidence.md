@@ -61,3 +61,13 @@ and multi-commit push ranges. Applicable browser tests assert user-visible behav
 the shared theme/viewport matrix. Record
 actual latest-head CI timings in the implementation PR; no speedup target is claimed until
 observed. See [CI/CD](../ci-cd.md) and [browser verification](../standards/browser-verification.md).
+
+## Full integration partition amendment
+
+The accepted [GH-131 amendment](../../specs/gh-131/spec.md#full-gate-parallelization-amendment)
+permits a future implementation to execute the existing full integration suite in isolated,
+parallel file groups. This amendment does not itself change the running workflow. Full release
+evidence must prove either every required shard succeeded or the explicitly identified complete
+unsharded fallback succeeded, in the same trusted exact-SHA run and attempt. Missing or skipped
+required work fails closed; caches never substitute for test evidence. Existing PR profiles,
+scope rules, Quality, Browser applicability and protected deployment authority remain in force.
