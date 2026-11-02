@@ -147,6 +147,37 @@ test(
     assert.equal(deniedHistory[0].actor.id, key.body.data.id);
     assert.equal(JSON.stringify(deniedHistory).includes('denied-private-canary'), false);
     assert.equal(JSON.stringify(deniedHistory).includes(key.body.secret), false);
+    let providerAttempts = 0;
+    fixture.provider.writeRace = (path, files) => {
+      providerAttempts++;
+      files.set(path, Buffer.from('provider may already have applied this'));
+      return { status: 503, body: { error: 'private-provider-error' } };
+    };
+    const uncertain = await fixture.request('/files', {
+      method: 'PUT',
+      body: {
+        resourceId: 'fs_live',
+        path: '/uncertain-private-canary',
+        type: 'file',
+        content: 'uncertain-content-canary',
+      },
+    });
+    assert.ok(uncertain.status >= 500, JSON.stringify(uncertain.body));
+    const uncertainId = uncertain.headers.get('x-request-id');
+    const uncertainRecords = await until(async () => {
+      const response = await fixture.request('/audit-history');
+      const records = response.body.data.filter((entry) => entry.requestId === uncertainId);
+      assert.equal(records.length, 2);
+      return records;
+    });
+    assert.deepEqual(
+      uncertainRecords.map((entry) => entry.outcome),
+      ['unknown', 'attempted'],
+    );
+    assert.equal(providerAttempts, 1);
+    assert.equal(JSON.stringify(uncertainRecords).includes('private-provider-error'), false);
+    assert.equal(JSON.stringify(uncertainRecords).includes('uncertain-private-canary'), false);
+    assert.equal(JSON.stringify(uncertainRecords).includes('uncertain-content-canary'), false);
     const other = await fixture.request('/audit-history', {}, 1);
     assert.equal(other.status, 200);
     assert.equal(
