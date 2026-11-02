@@ -79,3 +79,17 @@ cold/warm cache conditions stated; local and GitHub timings are not interchangea
 full profile available and run it at a reviewed cadence and for applicable release gates.
 Cross-commit reuse must separately prove that the tested merge candidate and delivered tree,
 trusted workflow, test selection and run attempt match; see [ADR 0027](../decisions/0027-single-ci-evidence.md).
+
+The implementation acceptance cases are:
+
+- **TEST-1 — default core:** a recognized product change runs the core with its selected cases
+  listed, including Workspace access, database and File System results, and tutorial resume.
+- **TEST-2 — additive risks:** a database, File System, tutorial, authorization or persistence
+  change adds its relevant risk suites. A case belonging to several suites executes once.
+- **TEST-3 — conservative selection:** mixed, unknown, renamed or deleted paths and changes
+  to selectors, workflows, dependencies or shared boundaries select the complete relevant gate.
+  Pull requests cannot replace their trusted base's selector or selected-case manifest.
+- **TEST-4 — evidence:** a required case that is missing, renamed, skipped or failing makes
+  the selected run fail. An explicit full run remains available and is identified as full.
+- **TEST-5 — delivery:** main and release consumers retain their current exact-commit and full
+  evidence requirements until a separately reviewed delivery policy changes them.
