@@ -41,8 +41,9 @@ repository requires a plan upgrade. Do not change repository visibility to work 
 
 ## Verification scope and waiting time
 
-Accepted owner direction, 2026-11-01: select checks from the changed inputs and material risks;
-do not default every change to full regression. Record required/inapplicable checks, reusable
+Accepted owner direction, updated 2026-11-02: default to skipping checks unrelated to the change
+or already covered by applicable evidence. Run each check only for a material risk or explicit
+requirement, choosing the smallest necessary set. Record required/inapplicable checks, reusable
 passing evidence and the PR/main/deploy critical path following
 [verification scope](standards/openapi-verification.md#choose-verification-scope-and-control-delivery-time).
 CI/CD time is part of delivery cost. Optimize redundant builds/runs, cache safe unchanged
@@ -73,8 +74,9 @@ sync the local checkout with `main`.
 ## Single automatic gate and delivery consumers
 
 [ADR 0027](decisions/0027-single-ci-evidence.md) assigns automatic checks to CI once per
-candidate. For PR merge candidates only, an allowlist of UI `.tsx`/`.css` files and their
-specified browser tests and experience guidance may skip the Rust/S3 job. At least one UI file
+candidate. For PR merge candidates only, an allowlist of UI `.ts`/`.tsx`/`.css` files outside
+`src/api`, their colocated unit tests, screenshot evidence, specified browser tests and experience
+guidance may skip the Rust/S3 job. At least one UI file
 must change; a backend, contract, dependency, workflow, other test or unrecognized file requires
 the full job. The classifier runs the policy from the tested base, compares both sides of renames,
 and falls back to full checks when the merge or policy cannot be verified. Quality and security
