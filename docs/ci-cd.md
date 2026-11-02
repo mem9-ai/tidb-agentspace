@@ -48,7 +48,7 @@ passing evidence and the PR/main/deploy critical path following
 CI/CD time is part of delivery cost. Optimize redundant builds/runs, cache safe unchanged
 inputs and parallelize isolated work while preserving all required behavior assertions and
 trusted provenance. Current automatic scope rules and exact-commit consumers below remain
-implemented requirements; finer automatic operator/documentation scope and cross-commit evidence reuse
+implemented requirements; finer automatic operator scope and cross-commit evidence reuse
 require a reviewed automation change and must not be claimed as already available.
 
 ## Current early-iteration merge policy
@@ -59,8 +59,9 @@ or a separate human approval after all of the following are true:
 
 - The diff has been reviewed for behavior, scope, compatibility, and credentials.
 - `Quality` and all applicable CI checks pass on the latest PR head. A skipped Rust/S3 job
-  is acceptable only for the narrowly classified UI-only PR path. A skipped Browser smoke
-  requires successful native and `Backend-only scope` jobs as described below.
+  requires the narrowly classified UI-only or documentation-only PR path. A skipped Browser
+  smoke requires successful native and `Backend-only scope` jobs, or successful
+  `Documentation-only scope` evidence, as described below.
 - The PR has no merge conflict, and any enforced GitHub requirements are satisfied.
 - Contributor attribution is preserved.
 
@@ -81,6 +82,15 @@ and falls back to full checks when the merge or policy cannot be verified. Quali
 checks remain applicable. Main pushes, merge queues and manual runs always execute
 Rust/S3. Main CI runs use independent SHA groups so later pushes do not cancel evidence awaited by
 delivery. Only superseded PR/merge-queue candidates cancel.
+
+For documentation-only PR merge candidates, a separate policy from the tested base permits
+Markdown in `docs/` or `specs/`, root `README.md`, and raster evidence in `docs/screenshots/`.
+If every changed path is allowlisted, `Quality` checks runtime, repository policy and formatting;
+application builds and tests, native and browser jobs are inapplicable. `Documentation-only
+scope` records that decision only after the applicable Quality checks succeed.
+The comparison includes both sides of renames; unknown paths, source, contracts, dependencies,
+workflow files, missing policy and ambiguous merge candidates fall back to both jobs. Main
+pushes and all deployment evidence continue to require the existing same-commit checks.
 
 For native-only PR/main changes, the trusted-base policy may skip Browser smoke. At least
 one allowlisted native source must change, and every path must belong to native implementation,

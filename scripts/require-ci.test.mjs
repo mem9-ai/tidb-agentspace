@@ -52,6 +52,20 @@ test('failed, skipped, ambiguous and incomplete checks cannot authorize a releas
   assert.equal(evaluateEvidence(pending, [jobs[0]], sha, 'console'), false);
 });
 
+test('documentation-only PR applicability is never release evidence', () => {
+  const docScope = { name: 'Documentation-only scope', status: 'completed', conclusion: 'success' };
+  const skipped = [
+    jobs[0],
+    { ...jobs[1], conclusion: 'skipped' },
+    { ...jobs[2], conclusion: 'skipped' },
+    docScope,
+  ];
+  for (const mode of ['console', 'full']) {
+    assert.throws(() => evaluateEvidence(run, skipped, sha, mode));
+    assert.throws(() => evaluateEvidence({ ...run, event: 'pull_request' }, skipped, sha, mode));
+  }
+});
+
 test('browser inapplicability requires explicit scope and native success in both release modes', () => {
   const scope = { name: 'Backend-only scope', status: 'completed', conclusion: 'success' };
   const skipped = [jobs[0], { ...jobs[1], conclusion: 'skipped' }, jobs[2], scope];
