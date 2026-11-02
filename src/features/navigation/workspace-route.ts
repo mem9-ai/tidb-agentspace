@@ -6,7 +6,6 @@ const pages = [
   'tutorials',
   'keys',
   'api',
-  'activity',
   'billing',
   'settings',
 ] as const;
@@ -50,7 +49,7 @@ export function tableSelectSql(
 }
 export function parseWorkspaceRoute(hash: string): WorkspaceRoute {
   const value = hash.replace(/^#/, '');
-  if (value === 'monitoring') return { page: 'overview' };
+  if (value === 'monitoring' || value === 'activity') return { page: 'overview' };
   if (value.startsWith('tutorials?')) {
     const query = new URLSearchParams(value.slice(10));
     const resourceId = query.get('resourceId');

@@ -1,6 +1,11 @@
 # ADR 0044: Workspace audit and request history
 
 - Status: Accepted for [GH-119](https://github.com/mem9-ai/tidb.ai/issues/119). The regional phase is implemented in this revision; Global history remains planned. Deployment is not implied.
+
+The owner removed the Console Activity views on 2026-11-02 because the hosted experience was slow
+and did not provide useful, clear information. The regional APIs and retained records are unchanged.
+Console presentation described below is the accepted design for a future useful history experience,
+not a claim that those views are currently available.
 - Date: 2026-11-02.
 - Extends [Global and Regional security](0034-openapi-security-authorities.md), [sparse metadata](0035-sparse-scale-metadata.md), and [the feature proposal](../../specs/gh-119/spec.md).
 

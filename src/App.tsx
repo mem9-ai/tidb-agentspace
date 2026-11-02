@@ -1,5 +1,4 @@
 import { ApiDocumentation } from './features/api/ApiDocumentation';
-import { ActivityHistory } from './features/activity/ActivityHistory';
 import { WorkspaceApiError } from './api/transport';
 import {
   apiBaseUrl,
@@ -67,7 +66,6 @@ import { ChoiceTabs } from './ui/ChoiceTabs';
 import { Heading } from './ui/WorkspaceHeading';
 import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
-  IconActivity as Activity,
   IconArrowRight as ArrowRight,
   IconArrowUpRight as ArrowUpRight,
   IconCheckCircle as CheckCircle2,
@@ -118,7 +116,6 @@ const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string 
   tutorials: { label: 'Tutorials', icon: CircleHelp, group: 'Build' },
   keys: { label: 'API keys', icon: KeyRound, group: 'Build' },
   api: { label: 'API documentation', icon: Terminal, group: 'Build' },
-  activity: { label: 'Activity', icon: Activity, group: 'Manage' },
   billing: { label: 'Usage & billing', icon: CreditCard, group: 'Manage' },
   settings: { label: 'Settings', icon: Settings, group: 'Manage' },
 };
@@ -322,7 +319,8 @@ function App() {
   useEffect(() => {
     void start();
     const update = () => {
-      if (location.hash === '#monitoring') history.replaceState(history.state, '', '#overview');
+      if (location.hash === '#monitoring' || location.hash === '#activity')
+        history.replaceState(history.state, '', '#overview');
       setRouteLocation(currentRoute());
     };
     update();
@@ -505,9 +503,6 @@ function App() {
           )}
           {route === 'keys' && <Keys {...shared} onNewKey={() => setModal('key')} />}
           {route === 'api' && <ApiExplorer {...shared} />}
-          {route === 'activity' && (
-            <ActivityPage key={data.workspace.id} data={data} refresh={refresh} copy={copy} />
-          )}
           {route === 'billing' && <Billing {...shared} />}
           {route === 'settings' && (
             <WorkspaceSettings {...shared} sso={sso} onSignOut={requestSignOut} />
@@ -1698,145 +1693,6 @@ function ApiExplorer({ data, copy }: Shared) {
   return <ApiDocumentation data={data} copy={copy} />;
 }
 
-function ActivityPage({
-  data,
-  refresh,
-  copy,
-}: {
-  data: Data;
-  refresh: () => Promise<void>;
-  copy: (value: string) => void;
-}) {
-  const [tab, setTab] = useState('Audit');
-  const [historyRevision, setHistoryRevision] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshError, setRefreshError] = useState('');
-  async function refreshActivity() {
-    if (refreshing) return;
-    if (tab !== 'Past activity') {
-      setHistoryRevision((value) => value + 1);
-      return;
-    }
-    setRefreshing(true);
-    setRefreshError('');
-    try {
-      await refresh();
-    } catch {
-      setRefreshError('Could not refresh activity. Try again.');
-    } finally {
-      setRefreshing(false);
-    }
-  }
-  return (
-    <div className="activity-page">
-      <PageHeading
-        title="Activity"
-        description="Review changes and requests in your workspace."
-        actions={
-          <Button size="sm" loading={refreshing} onClick={() => void refreshActivity()}>
-            Refresh activity
-          </Button>
-        }
-      />
-      {refreshError && (
-        <Alert color="red" role="alert" mb="md">
-          {refreshError}
-        </Alert>
-      )}
-      <ChoiceTabs
-        value={tab}
-        onChange={setTab}
-        options={['Audit', 'HTTP requests', 'Past activity']}
-      >
-        {tab === 'Past activity' ? (
-          <WorkspaceActivityLog data={data} />
-        ) : (
-          <ActivityHistory
-            workspaceId={data.workspace.id}
-            workspaceName={data.workspace.name}
-            resources={data.resources}
-            copy={copy}
-            kind={tab === 'Audit' ? 'audit' : 'requests'}
-            revision={historyRevision}
-          />
-        )}
-      </ChoiceTabs>
-    </div>
-  );
-}
-
-function activityLabel(action: string) {
-  const words = action.replace(/[._-]+/g, ' ').trim();
-  return words ? words[0].toUpperCase() + words.slice(1) : 'Workspace activity';
-}
-
-function WorkspaceActivityLog({ data }: { data: Data }) {
-  const [filter, setFilter] = useState('');
-  const events = data.events.filter((event) =>
-    (activityLabel(event.action) + ' ' + event.action + ' ' + event.resource + ' ' + event.actor)
-      .toLowerCase()
-      .includes(filter.toLowerCase()),
-  );
-  return (
-    <>
-      <Alert color="peacock" mb="md">
-        Shows up to 200 successful Workspace changes. Failed or denied actions and HTTP requests are
-        not shown here; this is not a complete audit log.
-      </Alert>
-      <div className="log-toolbar">
-        <div className="input-with-icon">
-          <Search size={15} />
-          <TextInput
-            aria-label="Filter activity"
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-            placeholder="Filter by action, resource, or actor…"
-          />
-        </div>
-        <span>
-          {events.length} {events.length === 1 ? 'event' : 'events'} · Up to 200 recent changes
-        </span>
-      </div>
-      <Text className="activity-scroll-hint" size="sm" c="carbon.7" mb="sm">
-        Scroll horizontally to see all columns.
-      </Text>
-      <Paper className="panel table-panel" withBorder>
-        <Table>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Action</Table.Th>
-              <Table.Th>Resource</Table.Th>
-              <Table.Th>Actor</Table.Th>
-              <Table.Th>Result</Table.Th>
-              <Table.Th>Time</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {events.map((event) => (
-              <Table.Tr key={event.id}>
-                <Table.Td>{activityLabel(event.action)}</Table.Td>
-                <Table.Td>{event.resource}</Table.Td>
-                <Table.Td>{event.actor}</Table.Td>
-                <Table.Td>
-                  <Badge color="green">Success</Badge>
-                </Table.Td>
-                <Table.Td>{new Date(event.at).toLocaleString()}</Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-        {!events.length && (
-          <Empty
-            title={filter ? 'No matching events' : 'No activity yet'}
-            description={
-              filter ? 'Try a different filter.' : 'Recorded Workspace changes will appear here.'
-            }
-          />
-        )}
-      </Paper>
-    </>
-  );
-}
 function Billing({ data }: Shared) {
   return (
     <>
