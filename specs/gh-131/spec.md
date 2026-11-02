@@ -1,6 +1,6 @@
 # GH-131: Classic and risk-specific test selection
 
-- Status: proposed specification; no new profile is active until its implementation is merged.
+- Status: accepted specification; no new profile is active until its implementation is merged.
 - Parent intent: [GH-131](https://github.com/mem9-ai/tidb.ai/issues/131).
 - Accountable maintainer: project owner. Source baseline: `f33efbb03f4dbc7503a569c26c132560a2a44597`.
 - Dependencies: [test selection](../../docs/standards/testing.md), [CI/CD](../../docs/ci-cd.md), and [ADR 0027](../../docs/decisions/0027-single-ci-evidence.md). The merged specification revision pins the acceptance baseline.
