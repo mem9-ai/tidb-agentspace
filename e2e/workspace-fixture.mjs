@@ -67,7 +67,7 @@ export const test = base.extend({
     const requests = [];
     const unexpected = [];
     const tutorials = new Map();
-    const history = { audit: [], requests: [] };
+    const history = { audit: [], requests: [], retention: {} };
     const historyPages = { audit: new Map(), requests: new Map() };
     let tutorialRevision = 0;
     let rejectAutomaticName = false;
@@ -170,6 +170,7 @@ export const test = base.extend({
             maxRecords: 100000,
             earliestAt: null,
             truncated: null,
+            ...history.retention[kind],
           },
           health: { status: 'unknown', droppedCount: null, lossDetectedAt: null },
         });

@@ -213,6 +213,8 @@ export function ActivityHistory({
           <Text size="sm" c="carbon.7" mb="md">
             Retained up to {page.retention.maxAgeDays} days and{' '}
             {page.retention.maxRecords.toLocaleString()} records.{' '}
+            {page.retention.earliestAt && `Earliest retained: ${time(page.retention.earliestAt)}. `}
+            {page.retention.truncated === true && 'Older records are no longer available. '}
             {page.health.status === 'degraded'
               ? 'Some records may be missing.'
               : page.health.status === 'unavailable'

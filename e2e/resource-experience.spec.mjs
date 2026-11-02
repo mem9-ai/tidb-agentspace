@@ -876,6 +876,7 @@ test('Overview prioritizes actual resources and Activity clearly describes its c
       startedAt: '2026-11-01T00:00:00Z',
     },
   ];
+  workspace.history.retention.audit = { earliestAt: '2026-11-01T00:00:00Z', truncated: true };
   await workspace.open('#overview');
   const resources = page.getByRole('region', { name: 'Your resources' });
   await expect(resources.getByRole('link', { name: 'Project files', exact: true })).toBeVisible();
@@ -895,6 +896,7 @@ test('Overview prioritizes actual resources and Activity clearly describes its c
   await expect(page.getByText('File saved', { exact: true })).toBeVisible();
   await expect(page.getByText(/not a complete history/)).toBeVisible();
   await expect(page.getByText('File system · Project files', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Older records are no longer available/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Copy request ID correlation-1' })).toBeVisible();
   if (process.env.OVERVIEW_SCREENSHOTS)
     await page.screenshot({

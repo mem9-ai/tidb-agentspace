@@ -529,6 +529,8 @@ async fn history_remains_workspace_scoped_and_survives_repository_reopen() {
         .await
         .unwrap();
     let request_start = page["coverageStartedAt"].as_str().unwrap().to_owned();
+    assert!(page["earliestAt"].as_str().is_some());
+    assert_eq!(page["truncated"], false);
     let audit_start = first
         .history_page(HistoryStream::Audit, filter(None))
         .await
@@ -595,6 +597,8 @@ async fn history_remains_workspace_scoped_and_survives_repository_reopen() {
         .await
         .unwrap();
     assert_eq!(audit["coverageStartedAt"], audit_start);
+    assert!(audit["earliestAt"].as_str().is_some());
+    assert_eq!(audit["truncated"], false);
     assert_eq!(audit["data"][0]["outcome"], "attempted");
     assert_eq!(audit["data"][0]["resolution"], "unknown");
     assert_eq!(
@@ -637,6 +641,64 @@ async fn history_remains_workspace_scoped_and_survives_repository_reopen() {
     );
     reopened.close().await.unwrap();
     second.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn request_history_reports_retention_and_bounds_ambiguous_watermarks() {
+    let metadata = Arc::new(ScopedMetadata::default());
+    let workspace = Repository::open(metadata, "region:test", "workspace-a", true, None)
+        .await
+        .unwrap();
+    let now = chrono::Utc::now();
+    let entry = |started_at| RequestEntry {
+        request_id: Uuid::new_v4(),
+        actor_kind: ActorKind::Owner,
+        actor_id: "owner-a",
+        operation: HttpOperation::Files,
+        method: HttpMethod::Get,
+        completion: HttpCompletion::Responded(200),
+        started_at,
+        duration_ms: 1,
+    };
+    workspace
+        .append_request_batch(&[entry(now - chrono::Duration::days(8)), entry(now)])
+        .await
+        .unwrap();
+    let page = workspace
+        .history_page(HistoryStream::Requests, filter(None))
+        .await
+        .unwrap();
+    assert_eq!(page["truncated"], true);
+    assert_eq!(
+        page["earliestAt"],
+        now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    );
+    assert_eq!(workspace.purge_expired_request_batch(now).await.unwrap(), 1);
+    let after_cleanup = workspace
+        .history_page(HistoryStream::Requests, filter(None))
+        .await
+        .unwrap();
+    assert_eq!(
+        after_cleanup["coverageStartedAt"],
+        page["coverageStartedAt"]
+    );
+    assert_eq!(after_cleanup["truncated"], true);
+    let entries: Vec<_> = (0..100).map(|_| entry(now)).collect();
+    workspace
+        .append_request_batch(&entries[..50])
+        .await
+        .unwrap();
+    workspace
+        .append_request_batch(&entries[50..])
+        .await
+        .unwrap();
+    let crowded = workspace
+        .history_page(HistoryStream::Requests, filter(None))
+        .await
+        .unwrap();
+    assert!(crowded["earliestAt"].is_null());
+    assert_eq!(crowded["truncated"], true);
+    workspace.close().await.unwrap();
 }
 
 #[tokio::test]

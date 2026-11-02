@@ -15,6 +15,18 @@ pub struct HistoryFilter<'a> {
     pub to: Option<DateTime<Utc>>,
 }
 
+struct RetentionSnapshot<'a> {
+    head_key: &'a str,
+    prefix: &'a str,
+    expiry_prefix: &'a str,
+    timestamp_field: &'a str,
+    head: &'a Value,
+    position: u64,
+    count: u64,
+    cutoff: DateTime<Utc>,
+    days: i64,
+}
+
 impl Repository {
     /// Authorization belongs to the caller: only a verified Workspace owner may read this.
     /// The returned records are not a claim of complete coverage or physical TTL deletion.
@@ -26,11 +38,19 @@ impl Repository {
         if !(1..=100).contains(&filter.limit) {
             return Err(ServiceError::new(400, "INVALID_HISTORY_LIMIT"));
         }
-        let (head_key, prefix, stream_name, timestamp_field, days) = match stream {
-            HistoryStream::Audit => (AUDIT_HEAD, AUDIT_RECORDS, "audit", "occurredAt", 30),
+        let (head_key, prefix, expiry_prefix, stream_name, timestamp_field, days) = match stream {
+            HistoryStream::Audit => (
+                AUDIT_HEAD,
+                AUDIT_RECORDS,
+                AUDIT_EXPIRY,
+                "audit",
+                "occurredAt",
+                30,
+            ),
             HistoryStream::Requests => (
                 requests::HEAD,
                 requests::RECORDS,
+                requests::EXPIRY,
                 "requests",
                 "startedAt",
                 7,
@@ -259,8 +279,139 @@ impl Repository {
                     .expect("cursor JSON"),
             )
         });
+        let (earliest, truncated) = self
+            .history_retention(RetentionSnapshot {
+                head_key,
+                prefix,
+                expiry_prefix,
+                timestamp_field,
+                head: &head,
+                position,
+                count,
+                cutoff,
+                days,
+            })
+            .await?;
         Ok(
-            json!({"data":data,"nextCursor":cursor,"coverageStartedAt":head["value"]["coverageStartedAt"]}),
+            json!({"data":data,"nextCursor":cursor,"coverageStartedAt":head["value"]["coverageStartedAt"],"earliestAt":earliest,"truncated":truncated}),
         )
+    }
+
+    // Expiry is indexed to the second. If more than one bounded page shares the oldest
+    // second, return an unknown watermark rather than inventing an exact timestamp.
+    async fn history_retention(
+        &self,
+        snapshot: RetentionSnapshot<'_>,
+    ) -> Result<(Option<String>, Option<bool>)> {
+        let RetentionSnapshot {
+            head_key,
+            prefix,
+            expiry_prefix,
+            timestamp_field,
+            head,
+            position,
+            count,
+            cutoff,
+            days,
+        } = snapshot;
+        if count == 0 {
+            return Ok((None, Some(position > 0)));
+        }
+        let oldest = self
+            .call(MetaRequest::List {
+                scope: self.scope.clone(),
+                guard: Some(self.guard.clone()),
+                prefix: expiry_prefix.into(),
+                after: None,
+                limit: 1,
+            })
+            .await?;
+        let oldest_deadline = oldest["records"][0]["value"]["deadline"].as_u64();
+        let deadline = u64::try_from((cutoff + chrono::Duration::days(days)).timestamp())
+            .map_err(|_| error("HISTORY_INDEX_CORRUPT"))?;
+        let candidates = self
+            .call(MetaRequest::List {
+                scope: self.scope.clone(),
+                guard: Some(self.guard.clone()),
+                prefix: expiry_prefix.into(),
+                after: Some(format!("{expiry_prefix}{deadline:020}/")),
+                limit: 100,
+            })
+            .await?;
+        let indexes = candidates["records"]
+            .as_array()
+            .ok_or_else(|| error("HISTORY_INDEX_CORRUPT"))?;
+        let keys: Vec<_> = indexes
+            .iter()
+            .map(|index| {
+                index["value"]["sequence"]
+                    .as_u64()
+                    .filter(|sequence| *sequence > 0 && *sequence <= position)
+                    .map(|sequence| format!("{prefix}{:020}", u64::MAX - sequence))
+                    .ok_or_else(|| error("HISTORY_INDEX_CORRUPT"))
+            })
+            .collect::<Result<_>>()?;
+        let values = if keys.is_empty() {
+            json!({})
+        } else {
+            self.call(MetaRequest::Get {
+                scope: self.scope.clone(),
+                guard: Some(self.guard.clone()),
+                keys: keys.clone(),
+            })
+            .await?["records"]
+                .clone()
+        };
+        // A concurrent append or eviction invalidates the two index snapshots.
+        if version(&self.get(head_key).await?) != version(head) {
+            return Ok((None, None));
+        }
+        let Some(oldest_deadline) = oldest_deadline else {
+            return Err(error("HISTORY_INDEX_CORRUPT"));
+        };
+        let mut earliest: Option<DateTime<Utc>> = None;
+        let mut earliest_deadline = None;
+        let mut expired_at_boundary = false;
+        for (index, key) in indexes.iter().zip(keys.iter()) {
+            let index_deadline = index["value"]["deadline"]
+                .as_u64()
+                .ok_or_else(|| error("HISTORY_INDEX_CORRUPT"))?;
+            if earliest_deadline.is_some_and(|first| index_deadline > first) {
+                break;
+            }
+            let timestamp = values[key]["value"][timestamp_field]
+                .as_str()
+                .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+                .map(|value| value.with_timezone(&Utc))
+                .ok_or_else(|| error("HISTORY_INDEX_CORRUPT"))?;
+            if timestamp >= cutoff {
+                earliest_deadline = Some(index_deadline);
+                earliest = Some(earliest.map_or(timestamp, |first| first.min(timestamp)));
+            } else {
+                expired_at_boundary = true;
+            }
+        }
+        let last_deadline = indexes
+            .last()
+            .and_then(|index| index["value"]["deadline"].as_u64());
+        if !candidates["nextCursor"].is_null()
+            && (earliest_deadline.is_none() || earliest_deadline == last_deadline)
+        {
+            earliest = None;
+        }
+        let truncated = if position > count || oldest_deadline < deadline || expired_at_boundary {
+            Some(true)
+        } else if oldest_deadline == deadline
+            && !candidates["nextCursor"].is_null()
+            && last_deadline == Some(deadline)
+        {
+            None
+        } else {
+            Some(false)
+        };
+        Ok((
+            earliest.map(|value| value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+            truncated,
+        ))
     }
 }

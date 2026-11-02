@@ -1220,7 +1220,7 @@ async fn dispatch(
             "data": page["data"],
             "nextCursor": page["nextCursor"],
             "coverage": coverage,
-            "retention": {"maxAgeDays":days, "maxRecords":100000, "earliestAt":null, "truncated":null},
+            "retention": {"maxAgeDays":days, "maxRecords":100000, "earliestAt":page["earliestAt"], "truncated":page["truncated"]},
             "health": {"status":health_status, "droppedCount":null, "lossDetectedAt":loss_detected_at}
         })).into_response();
         response
