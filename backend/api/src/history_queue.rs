@@ -233,7 +233,10 @@ impl HistoryQueueWorker {
             Err(_) => return,
         };
         if !diagnostics.is_empty() {
-            eprintln!(
+            use std::io::Write;
+            // A closed logging stream must not stop the history worker.
+            let _ = writeln!(
+                std::io::stderr().lock(),
                 "HTTP history unconfirmed records: workspace_limit={} workspace_queue_full={} queue_full={} queue_closed={} writer_busy={} writer_unavailable={} write_error={} write_timeout={} write_panic={} shutdown={}",
                 diagnostics.workspace_limit,
                 diagnostics.workspace_queue_full,
