@@ -1581,7 +1581,9 @@ mod concurrency_tests {
                 [
                     ("observability/audit-v1/head".into(), json!({"version":"v1","value":{"format":1,"position":99_999,"count":99_999,"pending":0}})),
                     (oldest.clone(), json!({"version":"v1","value":{"operationId":old_id.to_string(),"outcome":"succeeded"}})),
-                    (format!("observability/audit-v1/operations/{old_id}"), json!({"version":"v1","value":{"status":"succeeded"}})),
+                    (format!("observability/audit-v1/operations/{old_id}"), json!({"version":"v1","value":{"status":"succeeded","remaining":1}})),
+                    (format!("observability/audit-v1/order/{:020}",1),json!({"version":"v1","value":{"sequence":1,"deadline":0}})),
+                    (format!("observability/audit-v1/expiry/{:020}/{:020}",0,1),json!({"version":"v1","value":{"sequence":1,"deadline":0}})),
                 ].into_iter().collect(),
             ),
             paused: Notify::new(),
@@ -1715,18 +1717,52 @@ mod concurrency_tests {
             .finish_audit_operation(operation, AuditOutcome::Succeeded)
             .await
             .unwrap();
+        {
+            let mut values = metadata.values.lock().unwrap();
+            assert_eq!(values["observability/audit-v1/head"]["value"]["count"], 3);
+            let record =
+                &values[&format!("observability/audit-v1/records/{:020}", u64::MAX - 1)]["value"];
+            assert_eq!(record["outcome"], "attempted");
+            let attempted =
+                &values[&format!("observability/audit-v1/records/{:020}", u64::MAX - 2)]["value"];
+            let completed =
+                &values[&format!("observability/audit-v1/records/{:020}", u64::MAX - 3)]["value"];
+            assert_eq!(attempted["operationId"], completed["operationId"]);
+            assert_eq!(attempted["outcome"], "attempted");
+            assert_eq!(completed["outcome"], "succeeded");
+            let keys = values
+                .keys()
+                .filter(|key| key.starts_with("observability/audit-v1/expiry/"))
+                .cloned()
+                .collect::<Vec<_>>();
+            for key in keys {
+                let mut record = values.remove(&key).unwrap();
+                let sequence = record["value"]["sequence"].as_u64().unwrap();
+                record["value"]["deadline"] = json!(0);
+                values
+                    .get_mut(&format!("observability/audit-v1/order/{sequence:020}"))
+                    .unwrap()["value"]["deadline"] = json!(0);
+                values.insert(
+                    format!("observability/audit-v1/expiry/{:020}/{sequence:020}", 0),
+                    record,
+                );
+            }
+        }
+        let purge = first
+            .purge_expired_audit_batch(chrono::Utc::now())
+            .await
+            .unwrap();
+        assert_eq!((purge.removed, purge.pending), (2, 1));
         let values = metadata.values.lock().unwrap();
-        assert_eq!(values["observability/audit-v1/head"]["value"]["count"], 3);
-        let record =
-            &values[&format!("observability/audit-v1/records/{:020}", u64::MAX - 1)]["value"];
-        assert_eq!(record["outcome"], "attempted");
-        let attempted =
-            &values[&format!("observability/audit-v1/records/{:020}", u64::MAX - 2)]["value"];
-        let completed =
-            &values[&format!("observability/audit-v1/records/{:020}", u64::MAX - 3)]["value"];
-        assert_eq!(attempted["operationId"], completed["operationId"]);
-        assert_eq!(attempted["outcome"], "attempted");
-        assert_eq!(completed["outcome"], "succeeded");
+        assert_eq!(values["observability/audit-v1/head"]["value"]["count"], 1);
+        assert!(values.contains_key(&format!(
+            "observability/audit-v1/records/{:020}",
+            u64::MAX - 1
+        )));
+        assert!(!values.contains_key(&format!(
+            "observability/audit-v1/records/{:020}",
+            u64::MAX - 2
+        )));
     }
 
     #[tokio::test]
@@ -1771,7 +1807,7 @@ mod concurrency_tests {
         {
             let mut values = metadata.values.lock().unwrap();
             values.get_mut("observability/audit-v1/head").unwrap()["value"] =
-                json!({"format":1,"position":99_999,"count":99_999,"pending":1});
+                json!({"format":1,"position":99_998,"count":99_998,"pending":1});
         }
         assert_eq!(
             repository
@@ -1789,7 +1825,7 @@ mod concurrency_tests {
         let values = metadata.values.lock().unwrap();
         assert_eq!(
             values["observability/audit-v1/head"]["value"]["count"],
-            100_000
+            99_999
         );
         assert_eq!(values["observability/audit-v1/head"]["value"]["pending"], 0);
     }
@@ -1978,10 +2014,36 @@ mod concurrency_tests {
                 .iter()
                 .any(|entry| entry["status"] == 418)
         );
+        assert_eq!(
+            repository
+                .purge_expired_request_batch(chrono::Utc::now())
+                .await
+                .unwrap(),
+            1
+        );
+        {
+            let values = metadata.values.lock().unwrap();
+            assert!(!values.contains_key(&format!(
+                "observability/requests-v1/records/{:020}",
+                u64::MAX - 4
+            )));
+            assert!(values.contains_key(&format!(
+                "observability/requests-v1/records/{:020}",
+                u64::MAX - 1
+            )));
+            assert_eq!(
+                values["observability/requests-v1/head"]["value"]["count"],
+                3
+            );
+        }
         {
             let mut values = metadata.values.lock().unwrap();
             values.get_mut("observability/requests-v1/head").unwrap()["value"] =
                 json!({"format":1,"position":100_000,"count":99_998});
+            values.remove(&format!(
+                "observability/requests-v1/records/{:020}",
+                u64::MAX - 2
+            ));
         }
         assert_eq!(
             repository

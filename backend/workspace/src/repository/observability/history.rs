@@ -89,12 +89,17 @@ impl Repository {
                     .as_u64()
                     .filter(|sequence| *sequence > 0)
                     .ok_or_else(|| ServiceError::new(400, "INVALID_HISTORY_CURSOR"))?;
-                if count == 0 || sequence > position || sequence < position - count + 1 {
+                if count == 0 || sequence > position {
                     return Err(ServiceError::new(410, "HISTORY_CURSOR_EXPIRED"));
                 }
                 Ok(format!("{prefix}{:020}", u64::MAX - sequence))
             })
             .transpose()?;
+        if let Some(key) = after.as_deref()
+            && self.get(key).await?.is_null()
+        {
+            return Err(ServiceError::new(410, "HISTORY_CURSOR_EXPIRED"));
+        }
         let cutoff = Utc::now() - chrono::Duration::days(days);
         let effective_from = filter.from.map_or(cutoff, |from| from.max(cutoff));
         let mut data = Vec::new();
