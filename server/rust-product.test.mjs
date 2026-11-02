@@ -12,7 +12,7 @@ import { createWriteStream } from 'node:fs';
 import { resolve } from 'node:path';
 import { workspaceFixture } from './test-support/workspace-fixture.mjs';
 import { providerFixture, nativeSecret } from './test-support/provider-fixture.mjs';
-import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
+import { metaFixture, port, reservePorts, until } from './test-support/meta-fixture.mjs';
 import { seedRecords, readState, readBinding } from './test-support/record-fixture.mjs';
 import { agentRestCases } from './test-support/agent-rest-cases.mjs';
 import { productApiCases } from './test-support/product-api-cases.mjs';
@@ -1220,8 +1220,10 @@ for (const transport of ['remote', 'inProcess']) {
     async (t) => {
       const f = await metaFixture();
       const provider = await providerFixture();
-      let child;
+      let child,
+        reserved = [];
       t.after(async () => {
+        await Promise.all(reserved.map((entry) => entry.release()));
         if (child && child.exitCode === null) {
           child.kill('SIGTERM');
           await new Promise((r) => child.once('exit', r));
@@ -1346,10 +1348,11 @@ for (const transport of ['remote', 'inProcess']) {
           ['drive9', 'zero', 'duckdb', 'db9'].map((name, i) => [name, raw[i + 1]]),
         ),
       );
+      reserved = await reservePorts(2);
       if (transport === 'inProcess') await region.stop();
       const regionConfig = resolve(f.directory, 'embedded-region.json');
       await privateWrite(regionConfig, region.server);
-      const bind = await port();
+      const bind = reserved[0].port;
       const globalPublic = await globalOwnerFixture(
         f,
         global,
@@ -1357,6 +1360,7 @@ for (const transport of ['remote', 'inProcess']) {
         'ws_agentlab',
         `http://127.0.0.1:${bind}`,
         0,
+        reserved[1].port,
       );
       const config = resolve(f.directory, 'workspace-rust.json');
       await privateWrite(config, {
@@ -1392,6 +1396,7 @@ for (const transport of ['remote', 'inProcess']) {
         ],
       });
       const log = createWriteStream(resolve(f.directory, 'backend.log'), { mode: 0o600 });
+      await Promise.all(reserved.map((entry) => entry.release()));
       child = spawn(
         resolve('meta-service/target/debug/workspace-backend'),
         ['serve', '--config', deployment],
