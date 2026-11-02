@@ -1,9 +1,9 @@
 //! Batched diagnostic records, kept separately from the durable audit journal.
 use super::*;
 
-const HEAD: &str = "observability/requests-v1/head";
-const RECORDS: &str = "observability/requests-v1/records/";
-const CAPACITY: u64 = 100_000;
+pub(super) const HEAD: &str = "observability/requests-v1/head";
+pub(super) const RECORDS: &str = "observability/requests-v1/records/";
+pub(super) const CAPACITY: u64 = 100_000;
 const MAX_BATCH: usize = 64;
 
 #[derive(Clone, Copy)]

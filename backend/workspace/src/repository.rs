@@ -1796,7 +1796,10 @@ mod concurrency_tests {
 
     #[tokio::test]
     async fn request_diagnostics_batch_records_safe_status_and_excludes_content() {
-        use observability::{ActorKind, HttpCompletion, HttpMethod, HttpOperation, RequestEntry};
+        use observability::{
+            ActorKind, HistoryFilter, HistoryStream, HttpCompletion, HttpMethod, HttpOperation,
+            RequestEntry,
+        };
         let metadata = Arc::new(MetadataGate {
             values: std::sync::Mutex::new(Records::new()),
             paused: Notify::new(),
@@ -1871,6 +1874,130 @@ mod concurrency_tests {
         assert_eq!(
             repository.append_request_batch(&[]).await.unwrap_err().code,
             "INVALID_REQUEST_BATCH"
+        );
+        let page = repository
+            .history_page(
+                HistoryStream::Requests,
+                HistoryFilter {
+                    cursor: None,
+                    limit: 1,
+                    from: None,
+                    to: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(page["data"][0]["completion"], "canceled");
+        let cursor = page["nextCursor"].as_str().unwrap().to_owned();
+        repository
+            .append_request_batch(&[create(HttpCompletion::Responded(201))])
+            .await
+            .unwrap();
+        let next = repository
+            .history_page(
+                HistoryStream::Requests,
+                HistoryFilter {
+                    cursor: Some(&cursor),
+                    limit: 1,
+                    from: None,
+                    to: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(next["data"][0]["status"], 403);
+        assert!(next["nextCursor"].is_null());
+        assert_eq!(
+            repository
+                .history_page(
+                    HistoryStream::Audit,
+                    HistoryFilter {
+                        cursor: Some(&cursor),
+                        limit: 1,
+                        from: None,
+                        to: None
+                    }
+                )
+                .await
+                .unwrap_err()
+                .code,
+            "INVALID_HISTORY_CURSOR"
+        );
+        let other = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "other".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        assert_eq!(
+            other
+                .history_page(
+                    HistoryStream::Requests,
+                    HistoryFilter {
+                        cursor: Some(&cursor),
+                        limit: 1,
+                        from: None,
+                        to: None
+                    }
+                )
+                .await
+                .unwrap_err()
+                .code,
+            "INVALID_HISTORY_CURSOR"
+        );
+        let mut expired = create(HttpCompletion::Responded(418));
+        expired.started_at = chrono::Utc::now() - chrono::Duration::days(8);
+        repository.append_request_batch(&[expired]).await.unwrap();
+        let visible = repository
+            .history_page(
+                HistoryStream::Requests,
+                HistoryFilter {
+                    cursor: None,
+                    limit: 100,
+                    from: None,
+                    to: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(
+            !visible["data"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["status"] == 418)
+        );
+        {
+            let mut values = metadata.values.lock().unwrap();
+            values.get_mut("observability/requests-v1/head").unwrap()["value"] =
+                json!({"format":1,"position":100_000,"count":99_998});
+        }
+        assert_eq!(
+            repository
+                .history_page(
+                    HistoryStream::Requests,
+                    HistoryFilter {
+                        cursor: Some(&cursor),
+                        limit: 1,
+                        from: None,
+                        to: None
+                    }
+                )
+                .await
+                .unwrap_err()
+                .status,
+            410
         );
         {
             let mut values = metadata.values.lock().unwrap();

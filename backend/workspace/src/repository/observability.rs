@@ -3,7 +3,9 @@
 //! The stored schema deliberately has no free-form text or metadata maps: callers must not
 //! persist requests, credentials, provider errors, SQL, commands, or customer content here.
 use super::*;
+mod history;
 mod requests;
+pub use history::{HistoryFilter, HistoryStream};
 pub use requests::{HttpCompletion, HttpMethod, HttpOperation, RequestEntry};
 
 const AUDIT_HEAD: &str = "observability/audit-v1/head";
