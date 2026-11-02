@@ -106,9 +106,11 @@ test('a candidate cannot replace its trusted base partition policy', (t) => {
   writeFileSync(trusted, git('show', 'HEAD^1:scripts/ci-full-integration.mjs'));
   const output = join(root, 'classification');
   writeFileSync(output, '');
+  const env = { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_OUTPUT: output };
+  delete env.NODE_TEST_CONTEXT;
   execFileSync(process.execPath, [trusted, 'classify'], {
     cwd: root,
-    env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_OUTPUT: output },
+    env,
   });
   assert.equal(readFileSync(output, 'utf8'), 'full_partition=false\n');
 });

@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { appendFile, readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // This manifest is executed from the trusted base, never from the candidate.
@@ -27,7 +27,10 @@ export function partition(command, event) {
   };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (
+  process.argv[1] &&
+  realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+) {
   try {
     const command = JSON.parse(await readFile('package.json', 'utf8')).scripts?.[
       'backend:test:integration'
