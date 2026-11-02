@@ -6,7 +6,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
-use tokio::sync::{Mutex, watch};
+use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore, watch};
 use workspace_contracts::{Metadata, Result, ServiceError};
 use workspace_domain::{Credential, Operation, Repository, Response, Workspace};
 
@@ -66,6 +66,84 @@ pub struct ManagedWorkspaces {
     product: Option<workspace_product::Config>,
     limit: usize,
     state: Arc<Mutex<State>>,
+    history_slot: Arc<Semaphore>,
+}
+
+/// A Region-internal maintenance lease. Cold Workspaces use one extra bounded slot and
+/// never run Guest deletion or legacy-Key retirement as a side effect of history cleanup.
+pub(crate) struct HistoryLease {
+    entry: Option<Arc<ManagedWorkspace>>,
+    pool: Arc<ManagedWorkspaces>,
+    workspace_id: String,
+    temporary: bool,
+    permit: Option<OwnedSemaphorePermit>,
+}
+
+impl HistoryLease {
+    pub(crate) fn workspace(&self) -> Arc<Workspace> {
+        self.entry.as_ref().expect("live history lease").workspace()
+    }
+
+    pub(crate) async fn release(mut self) -> Result<()> {
+        let entry = self.entry.take().expect("live history lease");
+        if self.temporary {
+            let result = self
+                .pool
+                .release_history_maintenance(&self.workspace_id, entry)
+                .await;
+            self.permit.take();
+            result
+        } else {
+            drop(entry);
+            Ok(())
+        }
+    }
+}
+
+impl Drop for HistoryLease {
+    fn drop(&mut self) {
+        let Some(entry) = self.entry.take() else {
+            return;
+        };
+        if !self.temporary {
+            return;
+        }
+        let pool = self.pool.clone();
+        let workspace = self.workspace_id.clone();
+        let permit = self.permit.take();
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                let _ = pool.release_history_maintenance(&workspace, entry).await;
+                drop(permit);
+            });
+        }
+    }
+}
+
+struct HistoryOpenGuard {
+    pool: Arc<ManagedWorkspaces>,
+    workspace_id: String,
+    armed: bool,
+}
+impl Drop for HistoryOpenGuard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let pool = self.pool.clone();
+        let workspace = self.workspace_id.clone();
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                let mut state = pool.state.lock().await;
+                state.release_uncertain = true;
+                complete_flight(
+                    &mut state,
+                    &workspace,
+                    Err(ServiceError::new(503, "WORKSPACE_RELEASE_UNCERTAIN")),
+                );
+            });
+        }
+    }
 }
 
 struct OpenJob {
@@ -265,6 +343,26 @@ async fn run_open(mut job: OpenJob) {
 }
 
 impl ManagedWorkspaces {
+    /// Diagnostics must not open an inactive Workspace or delay a user request behind
+    /// an internal writer acquisition. Missing or busy entries are reported as loss.
+    pub(crate) async fn acquire_cached_history(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Arc<ManagedWorkspace>> {
+        let state = self.state.lock().await;
+        if state.shutdown
+            || state.release_uncertain
+            || state.cleanup.contains(workspace_id)
+            || state.flights.contains_key(workspace_id)
+        {
+            return Err(ServiceError::new(503, "WORKSPACE_POOL_BUSY"));
+        }
+        state
+            .entries
+            .get(workspace_id)
+            .map(|cached| cached.entry.clone())
+            .ok_or_else(|| ServiceError::new(503, "WORKSPACE_POOL_UNAVAILABLE"))
+    }
     pub fn new(
         metadata: Arc<dyn Metadata>,
         authority: &str,
@@ -280,7 +378,138 @@ impl ManagedWorkspaces {
             product,
             limit,
             state: Arc::new(Mutex::new(State::default())),
+            history_slot: Arc::new(Semaphore::new(1)),
         })
+    }
+
+    /// Only the trusted Region history scheduler may select this Workspace. Customer
+    /// requests still use `acquire`, which authenticates every lease.
+    pub(crate) async fn acquire_history_maintenance(
+        self: &Arc<Self>,
+        workspace_id: &str,
+    ) -> Result<HistoryLease> {
+        if !uuid::Uuid::parse_str(workspace_id).is_ok_and(|id| id.to_string() == workspace_id) {
+            return Err(ServiceError::new(404, "WORKSPACE_NOT_FOUND"));
+        }
+        let mut state = self.state.lock().await;
+        if state.shutdown
+            || state.release_uncertain
+            || state.cleanup.contains(workspace_id)
+            || state.flights.contains_key(workspace_id)
+        {
+            return Err(ServiceError::new(409, "WORKSPACE_POOL_BUSY"));
+        }
+        if let Some(entry) = state
+            .entries
+            .get(workspace_id)
+            .map(|cached| cached.entry.clone())
+        {
+            return Ok(HistoryLease {
+                entry: Some(entry),
+                pool: self.clone(),
+                workspace_id: workspace_id.into(),
+                temporary: false,
+                permit: None,
+            });
+        }
+        let permit = self
+            .history_slot
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ServiceError::new(429, "WORKSPACE_POOL_BUSY"))?;
+        let (signal, _) = watch::channel(None);
+        state.flights.insert(workspace_id.to_owned(), signal);
+        drop(state);
+        let pool = self.clone();
+        let id = workspace_id.to_owned();
+        // The detached job owns the reservation if its caller is cancelled. If nobody
+        // receives its lease, Drop releases the writer and reservation after the open.
+        tokio::spawn(async move {
+            let mut guard = HistoryOpenGuard {
+                pool: pool.clone(),
+                workspace_id: id.clone(),
+                armed: true,
+            };
+            let opened =
+                Repository::open(pool.metadata.clone(), &pool.authority, &id, false, None).await;
+            match opened {
+                Ok(repository) => {
+                    let workspace = Arc::new(Workspace::new_managed(repository));
+                    let blocked = {
+                        let state = pool.state.lock().await;
+                        state.shutdown || state.release_uncertain
+                    };
+                    if blocked {
+                        let release_failed = workspace.close().await.is_err();
+                        let mut state = pool.state.lock().await;
+                        if release_failed {
+                            state.release_uncertain = true;
+                        }
+                        complete_flight(
+                            &mut state,
+                            &id,
+                            Err(ServiceError::new(503, "WORKSPACE_POOL_UNAVAILABLE")),
+                        );
+                        guard.armed = false;
+                        return Err(ServiceError::new(503, "WORKSPACE_POOL_UNAVAILABLE"));
+                    }
+                    guard.armed = false;
+                    Ok(HistoryLease {
+                        entry: Some(Arc::new(ManagedWorkspace {
+                            workspace,
+                            product: None,
+                        })),
+                        pool,
+                        workspace_id: id,
+                        temporary: true,
+                        permit: Some(permit),
+                    })
+                }
+                Err(failure) => {
+                    let mut state = pool.state.lock().await;
+                    if matches!(
+                        failure.code.as_str(),
+                        "META_COMMIT_UNKNOWN" | "META_WRITER_RELEASE_UNCERTAIN"
+                    ) {
+                        state.release_uncertain = true;
+                    }
+                    complete_flight(&mut state, &id, Err(failure.clone()));
+                    guard.armed = false;
+                    Err(failure)
+                }
+            }
+        })
+        .await
+        .map_err(|_| ServiceError::new(503, "WORKSPACE_POOL_UNAVAILABLE"))?
+    }
+
+    async fn release_history_maintenance(
+        &self,
+        workspace_id: &str,
+        entry: Arc<ManagedWorkspace>,
+    ) -> Result<()> {
+        if Arc::strong_count(&entry) != 1 {
+            let failure = ServiceError::new(503, "WORKSPACE_RELEASE_UNCERTAIN");
+            let mut state = self.state.lock().await;
+            state.release_uncertain = true;
+            complete_flight(&mut state, workspace_id, Err(failure.clone()));
+            return Err(failure);
+        }
+        let result = entry
+            .workspace
+            .close()
+            .await
+            .map_err(|_| ServiceError::new(503, "WORKSPACE_RELEASE_UNCERTAIN"));
+        let mut state = self.state.lock().await;
+        if result.is_err() {
+            state.release_uncertain = true;
+        }
+        complete_flight(
+            &mut state,
+            workspace_id,
+            result.clone().map(|_| FlightOutcome::Released),
+        );
+        result
     }
 
     async fn authorize_lease(
@@ -646,6 +875,133 @@ mod tests {
         assert_eq!(other.workspace().repository().workspace_id(), B);
         metadata.resume.notify_one();
         closing.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn history_maintenance_shares_live_lease_and_never_retires_cold_workspace_keys() {
+        let metadata = Arc::new(MetadataGate {
+            pause: AtomicBool::new(false),
+            pause_release: AtomicBool::new(false),
+            paused: Notify::new(),
+            resume: Notify::new(),
+        });
+        let pool = Arc::new(ManagedWorkspaces::new(metadata.clone(), REGION, None, 1).unwrap());
+        let repository = Repository::open(metadata, REGION, A, false, None)
+            .await
+            .unwrap();
+        let entry = Arc::new(ManagedWorkspace {
+            workspace: Arc::new(Workspace::new_managed(repository)),
+            product: None,
+        });
+        pool.state.lock().await.entries.insert(
+            A.into(),
+            Cached {
+                entry: entry.clone(),
+                used: 0,
+            },
+        );
+        let cached = pool.acquire_cached_history(A).await.unwrap();
+        assert!(Arc::ptr_eq(&cached, &entry));
+        drop(cached);
+        assert_eq!(
+            pool.acquire_cached_history(B).await.err().unwrap().code,
+            "WORKSPACE_POOL_UNAVAILABLE"
+        );
+        assert!(!pool.state.lock().await.flights.contains_key(B));
+        let live = pool.acquire_history_maintenance(A).await.unwrap();
+        assert!(Arc::ptr_eq(live.entry.as_ref().unwrap(), &entry));
+        let cold = pool.acquire_history_maintenance(B).await.unwrap();
+        assert_eq!(
+            pool.acquire_cached_history(B).await.err().unwrap().code,
+            "WORKSPACE_POOL_BUSY"
+        );
+        assert_eq!(cold.workspace().repository().workspace_id(), B);
+        assert_eq!(
+            pool.acquire_history_maintenance("not-a-workspace")
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "WORKSPACE_NOT_FOUND"
+        );
+        assert_eq!(
+            pool.acquire(B, &credential(A)).await.err().unwrap().code,
+            "UNAUTHENTICATED"
+        );
+        let receiver = pool.state.lock().await.flights.get(B).unwrap().subscribe();
+        let mut waiter = tokio::spawn(wait_for_flight(receiver));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), &mut waiter)
+                .await
+                .is_err()
+        );
+        cold.release().await.unwrap();
+        assert!(matches!(
+            waiter.await.unwrap().unwrap(),
+            FlightOutcome::Released
+        ));
+        assert!(!pool.state.lock().await.flights.contains_key(B));
+        live.release().await.unwrap();
+        drop(entry);
+        pool.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancelled_cold_history_open_releases_its_writer_and_slot() {
+        let metadata = Arc::new(MetadataGate {
+            pause: AtomicBool::new(false),
+            pause_release: AtomicBool::new(true),
+            paused: Notify::new(),
+            resume: Notify::new(),
+        });
+        let pool = Arc::new(ManagedWorkspaces::new(metadata.clone(), REGION, None, 1).unwrap());
+        let opening = tokio::spawn({
+            let pool = pool.clone();
+            async move { pool.acquire_history_maintenance(A).await }
+        });
+        metadata.paused.notified().await;
+        opening.abort();
+        metadata.resume.notify_one();
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let state = pool.state.lock().await;
+                if !state.flights.contains_key(A) && pool.history_slot.available_permits() == 1 {
+                    assert!(!state.release_uncertain);
+                    break;
+                }
+                drop(state);
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("cancelled maintenance stranded a writer");
+        pool.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn history_open_during_shutdown_releases_its_writer() {
+        let metadata = Arc::new(MetadataGate {
+            pause: AtomicBool::new(false),
+            pause_release: AtomicBool::new(true),
+            paused: Notify::new(),
+            resume: Notify::new(),
+        });
+        let pool = Arc::new(ManagedWorkspaces::new(metadata.clone(), REGION, None, 1).unwrap());
+        let opening = tokio::spawn({
+            let pool = pool.clone();
+            async move { pool.acquire_history_maintenance(A).await }
+        });
+        metadata.paused.notified().await;
+        assert_eq!(pool.close().await.unwrap_err().code, "WORKSPACE_POOL_BUSY");
+        metadata.resume.notify_one();
+        assert_eq!(
+            opening.await.unwrap().err().unwrap().code,
+            "WORKSPACE_POOL_UNAVAILABLE"
+        );
+        let state = pool.state.lock().await;
+        assert!(!state.flights.contains_key(A));
+        assert!(!state.release_uncertain);
+        assert_eq!(pool.history_slot.available_permits(), 1);
     }
 }
 

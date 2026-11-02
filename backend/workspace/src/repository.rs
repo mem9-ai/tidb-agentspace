@@ -1,6 +1,7 @@
 mod event_index;
 mod file_index;
 mod file_paths;
+pub mod observability;
 mod resource_index;
 mod setup_attempts;
 mod tutorials;
@@ -63,6 +64,7 @@ pub struct Repository {
     scope: Scope,
     guard: WriterGuard,
     queue: RwLock<()>,
+    history_maintenance: tokio::sync::OnceCell<()>,
     closed: AtomicBool,
     resource_backfill_running: AtomicBool,
     resource_backfill_error: std::sync::Mutex<Option<ServiceError>>,
@@ -119,6 +121,7 @@ impl Repository {
             scope,
             guard: WriterGuard { owner_id: owner },
             queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
@@ -1570,6 +1573,525 @@ mod concurrency_tests {
     }
 
     #[tokio::test]
+    async fn audit_history_is_bounded_and_stores_only_allowlisted_fields() {
+        use observability::{ActorKind, AuditAction, AuditIntent};
+
+        let oldest = format!("observability/audit-v1/records/{:020}", u64::MAX - 1);
+        let old_id = Uuid::new_v4();
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(
+                [
+                    ("observability/audit-v1/head".into(), json!({"version":"v1","value":{"format":1,"position":99_999,"count":99_999,"pending":0}})),
+                    (oldest.clone(), json!({"version":"v1","value":{"operationId":old_id.to_string(),"outcome":"succeeded"}})),
+                    (format!("observability/audit-v1/operations/{old_id}"), json!({"version":"v1","value":{"status":"succeeded","remaining":1}})),
+                    (format!("observability/audit-v1/order/{:020}",1),json!({"version":"v1","value":{"sequence":1,"deadline":0}})),
+                    (format!("observability/audit-v1/expiry/{:020}/{:020}",0,1),json!({"version":"v1","value":{"sequence":1,"deadline":0}})),
+                ].into_iter().collect(),
+            ),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        let _operation = repository
+            .begin_audit_operation(AuditIntent {
+                request_id: None,
+                actor_kind: ActorKind::Owner,
+                actor_id: "owner-1",
+                action: AuditAction::FileWrite,
+                target_id: Some("filesystem-1"),
+            })
+            .await
+            .unwrap();
+        {
+            let values = metadata.values.lock().unwrap();
+            assert!(!values.contains_key(&oldest));
+            assert_eq!(
+                values["observability/audit-v1/head"]["value"]["count"],
+                99_999
+            );
+            let key = format!("observability/audit-v1/records/{:020}", u64::MAX - 100_000);
+            let record = &values[&key]["value"];
+            assert!(
+                record["operationId"]
+                    .as_str()
+                    .is_some_and(|id| Uuid::parse_str(id).is_ok())
+            );
+            assert_eq!(record["outcome"], "attempted");
+            assert_eq!(record["action"], "file.write");
+            assert!(record.get("body").is_none());
+            assert!(record.get("headers").is_none());
+            assert!(record.get("sql").is_none());
+        }
+        assert_eq!(
+            repository
+                .begin_audit_operation(AuditIntent {
+                    request_id: None,
+                    actor_kind: ActorKind::Owner,
+                    actor_id: "Bearer secret",
+                    action: AuditAction::FileWrite,
+                    target_id: None,
+                })
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "INVALID_AUDIT_ID"
+        );
+    }
+
+    #[tokio::test]
+    async fn audit_attempt_precedes_effect_and_cannot_finish_in_another_workspace() {
+        use observability::{ActorKind, AuditAction, AuditIntent, AuditOutcome};
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(Records::new()),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = |workspace: &str| Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: workspace.into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        let first = repository("workspace-a");
+        let second = repository("workspace-b");
+        let intent = || AuditIntent {
+            request_id: None,
+            actor_kind: ActorKind::WorkspaceKey,
+            actor_id: "key-1",
+            action: AuditAction::ResourceDelete,
+            target_id: None,
+        };
+        first.closed.store(true, Ordering::Release);
+        assert!(first.begin_audit_operation(intent()).await.is_err());
+        assert!(metadata.values.lock().unwrap().is_empty());
+        first.closed.store(false, Ordering::Release);
+        let operation = first.begin_audit_operation(intent()).await.unwrap();
+        assert_eq!(
+            second
+                .finish_audit_operation(operation, AuditOutcome::Succeeded)
+                .await
+                .unwrap_err()
+                .code,
+            "INVALID_AUDIT_TRANSITION"
+        );
+        let operation = first.begin_audit_operation(intent()).await.unwrap();
+        first
+            .finish_audit_operation(operation, AuditOutcome::Succeeded)
+            .await
+            .unwrap();
+        {
+            let mut values = metadata.values.lock().unwrap();
+            assert_eq!(values["observability/audit-v1/head"]["value"]["count"], 3);
+            let record =
+                &values[&format!("observability/audit-v1/records/{:020}", u64::MAX - 1)]["value"];
+            assert_eq!(record["outcome"], "attempted");
+            let attempted =
+                &values[&format!("observability/audit-v1/records/{:020}", u64::MAX - 2)]["value"];
+            let completed =
+                &values[&format!("observability/audit-v1/records/{:020}", u64::MAX - 3)]["value"];
+            assert_eq!(attempted["operationId"], completed["operationId"]);
+            assert_eq!(attempted["outcome"], "attempted");
+            assert_eq!(completed["outcome"], "succeeded");
+            let keys = values
+                .keys()
+                .filter(|key| key.starts_with("observability/audit-v1/expiry/"))
+                .cloned()
+                .collect::<Vec<_>>();
+            for key in keys {
+                let mut record = values.remove(&key).unwrap();
+                let sequence = record["value"]["sequence"].as_u64().unwrap();
+                record["value"]["deadline"] = json!(0);
+                values
+                    .get_mut(&format!("observability/audit-v1/order/{sequence:020}"))
+                    .unwrap()["value"]["deadline"] = json!(0);
+                values.insert(
+                    format!("observability/audit-v1/expiry/{:020}/{sequence:020}", 0),
+                    record,
+                );
+            }
+        }
+        let purge = first
+            .purge_expired_audit_batch(chrono::Utc::now())
+            .await
+            .unwrap();
+        assert_eq!((purge.removed, purge.pending), (2, 1));
+        let values = metadata.values.lock().unwrap();
+        assert_eq!(values["observability/audit-v1/head"]["value"]["count"], 1);
+        assert!(values.contains_key(&format!(
+            "observability/audit-v1/records/{:020}",
+            u64::MAX - 1
+        )));
+        assert!(!values.contains_key(&format!(
+            "observability/audit-v1/records/{:020}",
+            u64::MAX - 2
+        )));
+    }
+
+    #[tokio::test]
+    async fn audit_capacity_reserves_space_for_unfinished_operations() {
+        use observability::{ActorKind, AuditAction, AuditIntent, AuditOutcome};
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(Records::new()),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        let intent = || AuditIntent {
+            request_id: None,
+            actor_kind: ActorKind::Owner,
+            actor_id: "owner-1",
+            action: AuditAction::FileWrite,
+            target_id: None,
+        };
+        let operation = repository.begin_audit_operation(intent()).await.unwrap();
+        {
+            let mut values = metadata.values.lock().unwrap();
+            values.get_mut("observability/audit-v1/head").unwrap()["value"] =
+                json!({"format":1,"position":99_998,"count":99_998,"pending":1});
+        }
+        assert_eq!(
+            repository
+                .begin_audit_operation(intent())
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "AUDIT_CAPACITY"
+        );
+        repository
+            .finish_audit_operation(operation, AuditOutcome::Unknown)
+            .await
+            .unwrap();
+        let values = metadata.values.lock().unwrap();
+        assert_eq!(
+            values["observability/audit-v1/head"]["value"]["count"],
+            99_999
+        );
+        assert_eq!(values["observability/audit-v1/head"]["value"]["pending"], 0);
+    }
+
+    #[tokio::test]
+    async fn request_diagnostics_batch_records_safe_status_and_excludes_content() {
+        use observability::{
+            ActorKind, HistoryFilter, HistoryStream, HttpCompletion, HttpMethod, HttpOperation,
+            RequestEntry,
+        };
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(Records::new()),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        let create = |completion| RequestEntry {
+            request_id: Uuid::new_v4(),
+            actor_kind: ActorKind::WorkspaceKey,
+            actor_id: "key-1",
+            operation: HttpOperation::Query,
+            method: HttpMethod::Post,
+            completion,
+            started_at: chrono::Utc::now(),
+            duration_ms: 42,
+        };
+        repository
+            .append_request_batch(&[
+                create(HttpCompletion::Responded(403)),
+                create(HttpCompletion::Canceled),
+            ])
+            .await
+            .unwrap();
+        {
+            let values = metadata.values.lock().unwrap();
+            assert_eq!(
+                values["observability/requests-v1/head"]["value"]["count"],
+                2
+            );
+            let response = &values
+                [&format!("observability/requests-v1/records/{:020}", u64::MAX - 1)]["value"];
+            let canceled = &values
+                [&format!("observability/requests-v1/records/{:020}", u64::MAX - 2)]["value"];
+            assert_eq!(response["status"], 403);
+            assert_eq!(response["operation"], "query");
+            assert!(response.get("sql").is_none());
+            assert!(response.get("url").is_none());
+            assert!(response.get("headers").is_none());
+            assert_eq!(canceled["completion"], "canceled");
+            assert!(canceled["status"].is_null());
+        }
+        assert_eq!(
+            repository
+                .append_request_batch(&[create(HttpCompletion::Responded(999))])
+                .await
+                .unwrap_err()
+                .code,
+            "INVALID_REQUEST_STATUS"
+        );
+        assert_eq!(
+            repository.append_request_batch(&[]).await.unwrap_err().code,
+            "INVALID_REQUEST_BATCH"
+        );
+        let page = repository
+            .history_page(
+                HistoryStream::Requests,
+                HistoryFilter {
+                    cursor: None,
+                    limit: 1,
+                    from: None,
+                    to: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(page["data"][0]["completion"], "canceled");
+        let cursor = page["nextCursor"].as_str().unwrap().to_owned();
+        repository
+            .append_request_batch(&[create(HttpCompletion::Responded(201))])
+            .await
+            .unwrap();
+        let next = repository
+            .history_page(
+                HistoryStream::Requests,
+                HistoryFilter {
+                    cursor: Some(&cursor),
+                    limit: 1,
+                    from: None,
+                    to: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(next["data"][0]["status"], 403);
+        assert!(next["nextCursor"].is_null());
+        assert_eq!(
+            repository
+                .history_page(
+                    HistoryStream::Audit,
+                    HistoryFilter {
+                        cursor: Some(&cursor),
+                        limit: 1,
+                        from: None,
+                        to: None
+                    }
+                )
+                .await
+                .unwrap_err()
+                .code,
+            "INVALID_HISTORY_CURSOR"
+        );
+        let other = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "other".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        assert_eq!(
+            other
+                .history_page(
+                    HistoryStream::Requests,
+                    HistoryFilter {
+                        cursor: Some(&cursor),
+                        limit: 1,
+                        from: None,
+                        to: None
+                    }
+                )
+                .await
+                .unwrap_err()
+                .code,
+            "INVALID_HISTORY_CURSOR"
+        );
+        let mut expired = create(HttpCompletion::Responded(418));
+        expired.started_at = chrono::Utc::now() - chrono::Duration::days(8);
+        repository.append_request_batch(&[expired]).await.unwrap();
+        let visible = repository
+            .history_page(
+                HistoryStream::Requests,
+                HistoryFilter {
+                    cursor: None,
+                    limit: 100,
+                    from: None,
+                    to: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(
+            !visible["data"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["status"] == 418)
+        );
+        assert_eq!(
+            repository
+                .purge_expired_request_batch(chrono::Utc::now())
+                .await
+                .unwrap(),
+            1
+        );
+        {
+            let values = metadata.values.lock().unwrap();
+            assert!(!values.contains_key(&format!(
+                "observability/requests-v1/records/{:020}",
+                u64::MAX - 4
+            )));
+            assert!(values.contains_key(&format!(
+                "observability/requests-v1/records/{:020}",
+                u64::MAX - 1
+            )));
+            assert_eq!(
+                values["observability/requests-v1/head"]["value"]["count"],
+                3
+            );
+        }
+        {
+            let mut values = metadata.values.lock().unwrap();
+            values.get_mut("observability/requests-v1/head").unwrap()["value"] =
+                json!({"format":1,"position":100_000,"count":99_998});
+            values.remove(&format!(
+                "observability/requests-v1/records/{:020}",
+                u64::MAX - 2
+            ));
+        }
+        assert_eq!(
+            repository
+                .history_page(
+                    HistoryStream::Requests,
+                    HistoryFilter {
+                        cursor: Some(&cursor),
+                        limit: 1,
+                        from: None,
+                        to: None
+                    }
+                )
+                .await
+                .unwrap_err()
+                .status,
+            410
+        );
+        {
+            let mut values = metadata.values.lock().unwrap();
+            values.get_mut("observability/requests-v1/head").unwrap()["value"] =
+                json!({"format":1,"position":99_999,"count":99_999});
+        }
+        repository
+            .append_request_batch(&[
+                create(HttpCompletion::Responded(200)),
+                create(HttpCompletion::Unknown),
+            ])
+            .await
+            .unwrap();
+        let values = metadata.values.lock().unwrap();
+        assert_eq!(
+            values["observability/requests-v1/head"]["value"]["count"],
+            100_000
+        );
+        assert!(!values.contains_key(&format!(
+            "observability/requests-v1/records/{:020}",
+            u64::MAX - 1
+        )));
+    }
+
+    #[tokio::test]
     async fn legacy_region_projection_does_not_rewrite_unrelated_resources() {
         let metadata = Arc::new(MetadataGate {
             values: std::sync::Mutex::new([
@@ -1597,6 +2119,7 @@ mod concurrency_tests {
                 owner_id: "test".into(),
             },
             queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
@@ -1653,6 +2176,7 @@ mod concurrency_tests {
                 owner_id: "test".into(),
             },
             queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
@@ -1772,6 +2296,7 @@ mod concurrency_tests {
                 owner_id: "test".into(),
             },
             queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
@@ -1840,6 +2365,7 @@ mod concurrency_tests {
                 owner_id: "test".into(),
             },
             queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
@@ -1900,6 +2426,7 @@ mod concurrency_tests {
                 owner_id: "test".into(),
             },
             queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
@@ -1962,6 +2489,7 @@ mod concurrency_tests {
                 owner_id: "test".into(),
             },
             queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
@@ -2035,6 +2563,7 @@ mod concurrency_tests {
                 owner_id: "test".into(),
             },
             queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
@@ -2100,6 +2629,7 @@ mod concurrency_tests {
                 owner_id: "test".into(),
             },
             queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
@@ -2168,6 +2698,7 @@ mod concurrency_tests {
                 owner_id: "test".into(),
             },
             queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
@@ -2271,6 +2802,7 @@ mod concurrency_tests {
                 owner_id: "test".into(),
             },
             queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
@@ -2356,6 +2888,7 @@ mod concurrency_tests {
                 owner_id: "test".into(),
             },
             queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
@@ -2427,6 +2960,7 @@ mod concurrency_tests {
                 owner_id: "test".into(),
             },
             queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
@@ -2499,6 +3033,7 @@ mod concurrency_tests {
                 owner_id: "test".into(),
             },
             queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
@@ -2569,6 +3104,7 @@ mod concurrency_tests {
                 owner_id: "test".into(),
             },
             queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),

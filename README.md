@@ -120,7 +120,7 @@ The console uses `@tidbcloud/uikit@2.9.1` components, provider, official icons, 
 - `backend/workspace/`: resource/action authorization and native record repositories.
 - `src/features/keys/ResourceAccessPicker.tsx`: explicit customer key resource selection.
 - `server/generate-openapi.mjs`: canonical API contract source.
-- `public/openapi.json`, `src/api/schema.d.ts`: generated contract and client types.
+- `public/openapi.json`, `public/owner-openapi.json`, `src/api/schema.d.ts`: generated Agent and regional Owner contracts and Portal client types.
 - `src/api/`: shared generated-type HTTP client and runtime API configuration.
 - `console/public/config.json`: runtime API origin; `scripts/serve-console.mjs`: optional static runner.
 - `server/rust-product.test.mjs`, `server/rust-backend.test.mjs`, `server/contract.test.mjs`: native behavior, authorization and HTTP schema tests with isolated RustFS/S3.

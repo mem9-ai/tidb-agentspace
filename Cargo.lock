@@ -5002,6 +5002,7 @@ dependencies = [
  "tokio",
  "uuid",
  "workspace-contracts",
+ "workspace-meta-client",
 ]
 
 [[package]]

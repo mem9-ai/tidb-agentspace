@@ -183,6 +183,34 @@ test(
     await provision(first, 'mysql');
     await provision(second, 'postgresql');
     await provision(second, 'filesystem');
+    const marker = await request(`/api/portal/v1/workspaces/${first.workspaceId}/resources`, {
+      cookie: first.cookie,
+    });
+    assert.equal(marker.status, 200);
+    const markerId = marker.headers.get('x-request-id');
+    await marker.body?.cancel();
+    await until(async () => {
+      const response = await request(
+        `/api/portal/v1/workspaces/${first.workspaceId}/request-history`,
+        {
+          cookie: first.cookie,
+        },
+      );
+      assert.equal(response.status, 200);
+      const history = await response.json();
+      assert.ok(history.data.some((entry) => entry.requestId === markerId));
+    });
+    const otherHistory = await request(
+      `/api/portal/v1/workspaces/${second.workspaceId}/request-history`,
+      {
+        cookie: second.cookie,
+      },
+    );
+    assert.equal(otherHistory.status, 200);
+    assert.equal(
+      (await otherHistory.json()).data.some((entry) => entry.requestId === markerId),
+      false,
+    );
     const authConfig = await request('/api/auth/config', { cookie: first.cookie });
     assert.equal((await authConfig.json()).sessionKind, 'guest');
     assert.notEqual(first.workspaceId, second.workspaceId);
