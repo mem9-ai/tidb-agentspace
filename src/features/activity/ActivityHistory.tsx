@@ -200,35 +200,37 @@ export function ActivityHistory({
     <section aria-label={kind === 'audit' ? 'Audit history' : 'HTTP request history'}>
       {page && (
         <>
-          <Alert color="yellow" title="Some activity is not included" mb="md">
-            Records cover this region. {coverageSummary && <>{coverageSummary}. </>}
-            {page.coverage.startedAt
-              ? `Recording started ${time(page.coverage.startedAt)}.`
-              : 'Recording start unavailable.'}
-            {page.coverage.exclusions.length > 1 && (
-              <details>
-                <summary>Coverage details</summary>
-                <ul>
-                  {page.coverage.exclusions.slice(1).map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </details>
-            )}
-          </Alert>
           {kind === 'audit' && (
-            <Text size="sm" c="carbon.7" mb="md">
-              Retained up to {page.retention.maxAgeDays} days and{' '}
-              {page.retention.maxRecords.toLocaleString()} records.{' '}
-              {page.retention.earliestAt &&
-                `Earliest retained: ${time(page.retention.earliestAt)}. `}
-              {page.retention.truncated === true && 'Older records are no longer available. '}
-              {page.health.status === 'degraded'
-                ? 'Some records may be missing.'
-                : page.health.status === 'unavailable'
-                  ? 'Recording status is unavailable.'
-                  : 'The full loss count is unavailable across restarts.'}
-            </Text>
+            <>
+              <Alert color="yellow" title="Some activity is not included" mb="md">
+                Records cover this region. {coverageSummary && <>{coverageSummary}. </>}
+                {page.coverage.startedAt
+                  ? `Recording started ${time(page.coverage.startedAt)}.`
+                  : 'Recording start unavailable.'}
+                {page.coverage.exclusions.length > 1 && (
+                  <details>
+                    <summary>Coverage details</summary>
+                    <ul>
+                      {page.coverage.exclusions.slice(1).map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </Alert>
+              <Text size="sm" c="carbon.7" mb="md">
+                Retained up to {page.retention.maxAgeDays} days and{' '}
+                {page.retention.maxRecords.toLocaleString()} records.{' '}
+                {page.retention.earliestAt &&
+                  `Earliest retained: ${time(page.retention.earliestAt)}. `}
+                {page.retention.truncated === true && 'Older records are no longer available. '}
+                {page.health.status === 'degraded'
+                  ? 'Some records may be missing.'
+                  : page.health.status === 'unavailable'
+                    ? 'Recording status is unavailable.'
+                    : 'The full loss count is unavailable across restarts.'}
+              </Text>
+            </>
           )}
           <div className="log-toolbar">
             <div className="input-with-icon">

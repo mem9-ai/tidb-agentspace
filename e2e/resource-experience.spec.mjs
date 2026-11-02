@@ -907,6 +907,7 @@ test('Overview prioritizes actual resources and Activity clearly describes its c
   await page.getByRole('tab', { name: 'HTTP requests' }).click();
   await expect(page.getByText('GET · Files')).toBeVisible();
   await expect(page.getByText('403', { exact: true })).toBeVisible();
+  await expect(page.getByText('Some activity is not included', { exact: true })).toHaveCount(0);
   await expect(page.getByText(/Retained up to/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Copy request ID correlation-1' })).toBeVisible();
   if (process.env.OVERVIEW_SCREENSHOTS)
