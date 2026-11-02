@@ -878,3 +878,23 @@ test('Overview prioritizes actual resources and Activity clearly describes its c
   await page.reload();
   await expect(page.getByText('No activity yet', { exact: true })).toBeVisible();
 });
+
+test('Overview directs paginated resource discovery to the full collections', async ({
+  page,
+  workspace,
+}) => {
+  workspace.addResources();
+  workspace.state.resourceNextCursor = 'page-two';
+  await workspace.open('#overview');
+  const resources = page.getByRole('region', { name: 'Your resources' });
+  await expect(resources.getByText('More resources may be available.')).toBeVisible();
+  await expect(resources.getByRole('link', { name: 'All file systems' })).toHaveAttribute(
+    'href',
+    '#files',
+  );
+  await expect(resources.getByRole('link', { name: 'All databases' })).toHaveAttribute(
+    'href',
+    '#databases',
+  );
+  await expect(page.getByRole('button', { name: 'Load more resources' })).toHaveCount(0);
+});

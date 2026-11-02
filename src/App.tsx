@@ -651,15 +651,7 @@ type Shared = {
   resourcePageBusy: boolean;
   resourcePageError: string;
 };
-function Overview({
-  data,
-  onCreate,
-  isGuest,
-  loadMoreResources,
-  resourcePageBusy,
-  resourcePageError,
-  refresh,
-}: Shared) {
+function Overview({ data, onCreate, isGuest }: Shared) {
   const hasResources =
     data.resources.length > 0 || Boolean(data.resourceNextCursor || data.resourceWindowTruncated);
   const resources = [...data.resources].sort(
@@ -686,7 +678,7 @@ function Overview({
       {!hasResources && (
         <WorkspaceFirstSteps onCreate={onCreate} showDatabase showFileSystem isGuest={isGuest} />
       )}
-      {!!resources.length && (
+      {hasResources && (
         <section aria-label="Your resources" className="overview-resources">
           <Group justify="space-between" mb="md">
             <Heading level={2}>
@@ -697,41 +689,46 @@ function Overview({
               </span>
             </Heading>
           </Group>
-          <Paper withBorder className="overview-resource-list">
-            {resources.slice(0, 6).map((resource) => (
-              <div className="overview-resource-row" key={resource.id}>
-                <KindIcon small kind={resource.kind} />
-                <div className="overview-resource-identity">
-                  <Anchor href={resourceWorkspaceHref(resource)} fw={600}>
-                    {resource.name}
-                  </Anchor>
-                  <Text size="sm" c="carbon.7">
-                    {kindLabel[resource.kind]} · {resourceServiceLabel(resource)}
-                  </Text>
-                  {resource.connectionError && (
-                    <Text size="sm" c="red">
-                      {resource.connectionError}
+          {!resources.length && <Text>Open a collection to find your resources.</Text>}
+          {!!resources.length && (
+            <Paper withBorder className="overview-resource-list">
+              {resources.slice(0, 6).map((resource) => (
+                <div className="overview-resource-row" key={resource.id}>
+                  <KindIcon small kind={resource.kind} />
+                  <div className="overview-resource-identity">
+                    <Anchor href={resourceWorkspaceHref(resource)} fw={600}>
+                      {resource.name}
+                    </Anchor>
+                    <Text size="sm" c="carbon.7">
+                      {kindLabel[resource.kind]} · {resourceServiceLabel(resource)}
                     </Text>
-                  )}
+                    {resource.connectionError && (
+                      <Text size="sm" c="red">
+                        {resource.connectionError}
+                      </Text>
+                    )}
+                  </div>
+                  <Badge
+                    color={
+                      resource.connectionError || resource.status !== 'active' ? 'yellow' : 'green'
+                    }
+                  >
+                    {resource.status !== 'active'
+                      ? resource.status
+                      : resource.connectionError
+                        ? 'Connection unavailable'
+                        : 'Ready'}
+                  </Badge>
                 </div>
-                <Badge
-                  color={
-                    resource.connectionError || resource.status !== 'active' ? 'yellow' : 'green'
-                  }
-                >
-                  {resource.status !== 'active'
-                    ? resource.status
-                    : resource.connectionError
-                      ? 'Connection unavailable'
-                      : 'Ready'}
-                </Badge>
-              </div>
-            ))}
-          </Paper>
-          {resources.length > 6 && (
+              ))}
+            </Paper>
+          )}
+          {(resources.length > 6 || data.resourceNextCursor || data.resourceWindowTruncated) && (
             <Group mt="sm">
               <Text size="sm" c="carbon.7">
-                Showing 6 of {resources.length} loaded resources.
+                {resources.length > 6
+                  ? `Showing 6 of ${resources.length} loaded resources.`
+                  : 'More resources may be available.'}
               </Text>
               <Button component="a" href="#files" variant="subtle">
                 All file systems
@@ -742,27 +739,6 @@ function Overview({
             </Group>
           )}
         </section>
-      )}
-      {(data.resourceNextCursor || data.resourceWindowTruncated) && (
-        <Alert color="peacock" mt="md">
-          <Text>
-            Showing {data.resources.length} loaded resources.
-            {data.resourceWindowTruncated &&
-              ' Earlier resources are hidden to keep this page responsive.'}
-            {data.resourceNextCursor && ' More resources are available.'}
-          </Text>
-          {resourcePageError && <Text c="red">{resourcePageError}</Text>}
-          <Group mt="sm">
-            {data.resourceWindowTruncated && (
-              <Button onClick={() => void refresh()}>Back to first resources</Button>
-            )}
-            {data.resourceNextCursor && (
-              <Button loading={resourcePageBusy} onClick={() => void loadMoreResources()}>
-                Load more resources
-              </Button>
-            )}
-          </Group>
-        </Alert>
       )}
       <TutorialResume data={data} />
     </>
