@@ -195,7 +195,7 @@ test('live workspaces show recorded state without illustrative charts or local-o
     .getByRole('navigation', { name: 'Main navigation' })
     .filter({ visible: true });
   await expect(navigation.getByRole('link', { name: 'Monitoring', exact: true })).toHaveCount(0);
-  await expect(navigation.getByRole('link', { name: 'Activity', exact: true })).toBeVisible();
+  await expect(navigation.getByRole('link', { name: 'Activity', exact: true })).toHaveCount(0);
   if (process.env.EXPERIENCE_SCREENSHOTS)
     await page.screenshot({
       path: `${process.env.EXPERIENCE_SCREENSHOTS}/navigation-${testInfo.project.name}.png`,
@@ -207,7 +207,11 @@ test('live workspaces show recorded state without illustrative charts or local-o
   await expect(page).toHaveURL(/#overview$/);
   await expect(page.getByRole('region', { name: 'Your resources' })).toBeVisible();
   await page.goto('/#activity');
-  await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/#overview$/);
+  await expect(page.getByRole('region', { name: 'Your resources' })).toBeVisible();
+  expect(
+    workspace.requests.filter(({ path }) => /\/(?:audit|request)-history$/.test(path)),
+  ).toHaveLength(0);
   await page.goto('/#connect');
   await expect(page.getByText('REST API · Available locally', { exact: true })).toHaveCount(0);
   await page.goto('/#api');
@@ -835,53 +839,11 @@ test('image preview displays bounded images and explains unavailable files', asy
   ).toBeVisible();
 });
 
-test('Overview prioritizes actual resources and Activity clearly describes its coverage', async ({
-  page,
-  workspace,
-}, testInfo) => {
+test('Overview prioritizes actual resources', async ({ page, workspace }, testInfo) => {
   workspace.addResources();
   workspace.state.resources[0].name = 'Sales data';
   workspace.state.resources[1].name = 'Project files';
   workspace.state.profile.name = 'Developer';
-  workspace.state.events = [
-    {
-      id: 'evt',
-      action: 'file.created',
-      resource: 'Project files',
-      actor: 'Developer',
-      at: '2026-11-01T00:00:00Z',
-      outcome: 'success',
-    },
-  ];
-  workspace.history.audit = [
-    {
-      id: 'audit-1',
-      operationId: 'operation-1',
-      requestId: 'correlation-1',
-      authority: 'region:local',
-      actor: { kind: 'owner', id: 'owner' },
-      action: 'file.write',
-      target: { type: 'filesystem', id: 'fs_fixture' },
-      decision: 'allowed',
-      outcome: 'succeeded',
-      occurredAt: '2026-11-01T00:00:00Z',
-    },
-  ];
-  workspace.history.requests = [
-    {
-      id: 'request-1',
-      requestId: 'correlation-1',
-      authority: 'region:local',
-      actor: { kind: 'workspaceKey', id: 'key-one' },
-      operation: 'files',
-      method: 'GET',
-      status: 403,
-      completion: 'responded',
-      durationMs: 42,
-      startedAt: '2026-11-01T00:00:00Z',
-    },
-  ];
-  workspace.history.retention.audit = { earliestAt: '2026-11-01T00:00:00Z', truncated: true };
   await workspace.open('#overview');
   const resources = page.getByRole('region', { name: 'Your resources' });
   await expect(resources.getByRole('link', { name: 'Project files', exact: true })).toBeVisible();
@@ -894,37 +856,6 @@ test('Overview prioritizes actual resources and Activity clearly describes its c
       path: `${process.env.OVERVIEW_SCREENSHOTS}/overview-${testInfo.project.name}.png`,
       fullPage: true,
     });
-  if (testInfo.project.name.startsWith('narrow'))
-    await page.getByRole('button', { name: 'Open navigation' }).click();
-  await page.getByRole('link', { name: 'Activity', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible();
-  await expect(page.getByText('File saved', { exact: true })).toBeVisible();
-  await expect(page.getByText('Some activity is not included', { exact: true })).toBeVisible();
-  await expect(page.getByText('File system · Project files', { exact: true })).toBeVisible();
-  await expect(page.getByText(/Older records are no longer available/)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Copy request ID correlation-1' })).toBeVisible();
-  if (process.env.OVERVIEW_SCREENSHOTS)
-    await page.screenshot({
-      path: `${process.env.OVERVIEW_SCREENSHOTS}/activity-${testInfo.project.name}.png`,
-      fullPage: true,
-      animations: 'disabled',
-    });
-  await page.getByRole('tab', { name: 'HTTP requests' }).click();
-  await expect(page.getByText('GET · Files')).toBeVisible();
-  await expect(page.getByText('403', { exact: true })).toBeVisible();
-  await expect(page.getByText('Some activity is not included', { exact: true })).toHaveCount(0);
-  await expect(page.getByText(/Retained up to/)).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Copy request ID correlation-1' })).toBeVisible();
-  if (process.env.OVERVIEW_SCREENSHOTS)
-    await page.screenshot({
-      path: `${process.env.OVERVIEW_SCREENSHOTS}/requests-${testInfo.project.name}.png`,
-      fullPage: true,
-      animations: 'disabled',
-    });
-  workspace.state.events = [];
-  await page.getByRole('tab', { name: 'Past activity' }).click();
-  await page.getByRole('button', { name: 'Refresh activity' }).click();
-  await expect(page.getByText('No activity yet', { exact: true })).toBeVisible();
 });
 
 test('Overview directs paginated resource discovery to the full collections', async ({
@@ -948,36 +879,4 @@ test('Overview directs paginated resource discovery to the full collections', as
     '#databases',
   );
   await expect(page.getByRole('button', { name: 'Load more resources' })).toHaveCount(0);
-});
-
-test('audit history filters loaded pages and recovers from an expired cursor', async ({
-  page,
-  workspace,
-}) => {
-  const record = (id, action, outcome) => ({
-    id,
-    operationId: `operation-${id}`,
-    authority: 'region:local',
-    actor: { kind: 'owner', id: 'owner' },
-    action,
-    decision: outcome === 'denied' ? 'denied' : 'allowed',
-    outcome,
-    occurredAt: '2026-11-01T00:00:00Z',
-  });
-  workspace.setHistoryPage('audit', '', [record('first', 'file.write', 'succeeded')], 'next');
-  workspace.setHistoryPage('audit', 'next', [record('second', 'file.delete', 'denied')], 'expired');
-  await workspace.open('#activity');
-  await expect(page.getByText('File saved', { exact: true })).toBeVisible();
-  await expect(page.getByText(/Workspace Key changes are not included/)).toBeVisible();
-  await page.getByRole('button', { name: 'Load more' }).click();
-  await expect(page.getByText('File deleted', { exact: true })).toBeVisible();
-  await page.getByRole('textbox', { name: 'Filter loaded audit records' }).fill('deleted');
-  await expect(page.getByText('File saved', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('File deleted', { exact: true })).toBeVisible();
-  await page.getByRole('textbox', { name: 'Filter loaded audit records' }).clear();
-  await page.getByRole('button', { name: 'Load more' }).click();
-  await expect(page.getByRole('alert').filter({ hasText: 'This page has expired' })).toBeVisible();
-  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-  await expect(page.getByText('File saved', { exact: true })).toBeVisible();
-  await expect(page.getByText('File deleted', { exact: true })).toHaveCount(0);
 });

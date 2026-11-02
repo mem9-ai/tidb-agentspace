@@ -77,19 +77,15 @@ a Key or discard work to save a click. Backend authorization remains authoritati
 **Focused Overview and activity (owner correction, 2026-11-02):** a populated Overview
 prioritizes compact links to actual resources and resumable work. Avoid large empty resource-type
 cards and embedded API examples; keep creation and the dedicated connection guide reachable.
-Put operational history on a separate Activity destination. The current event feed contains at
-most 200 successful changes and is not a complete security audit or HTTP request history;
-show that limitation explicitly. Both audit and HTTP histories are required, with backend design
-and implementation tracked in [GH-119](https://github.com/mem9-ai/tidb.ai/issues/119). Verify
-empty and populated states, exact-resource links, progress re-entry, truthful coverage and
-narrow layouts. Revisit the Activity presentation when verified request and audit records ship.
-On the HTTP requests view, omit the coverage, retention and recording-status text at the owner's
-request. This supersedes the corresponding Console disclosure in ADR 0044; the API's coverage
-and health metadata remain available.
+The standalone Activity page was removed after its audit, HTTP and legacy views proved slow or
+unhelpful in the hosted experience. Existing Activity links return to Overview. The regional history
+APIs and existing records remain intact; this UI change does not alter their coverage or retention.
+Revisit a user-facing history experience when it can show useful, timely, clearly labeled records;
+any audit or HTTP view must accurately convey its actual coverage and limitations.
 
 **Monitoring (owner correction, 2026-11-02):** remove the standalone Monitoring page when it
 only repeats existing resource lists. Keep resources accessible through Overview and their own
-collections, and operational history under Activity. Existing Monitoring links return to Overview.
+collections. Existing Monitoring links return to Overview.
 Reintroduce a monitoring destination only when real, useful measurements support it. This
 supersedes the earlier Monitoring presentation and the historical GH-98 experience audit.
 

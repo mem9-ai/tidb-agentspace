@@ -741,19 +741,6 @@ form > .modal-actions {
   gap: 8px;
   align-items: center;
 }
-.log-toolbar {
-  display: flex;
-  gap: 16px;
-  padding: 24px;
-  justify-content: space-between;
-}
-.log-toolbar .input-with-icon {
-  flex: 1;
-  max-width: 480px;
-}
-.activity-scroll-hint {
-  display: none;
-}
 .billing-overview {
   padding: 24px;
   display: flex;
@@ -1045,18 +1032,4 @@ form > .modal-actions {
 }
 .overview-resource-identity p {
   margin: 3px 0 0;
-}
-
-@media (max-width: 767px) {
-  .log-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-    padding: 16px 0;
-  }
-  .log-toolbar .input-with-icon {
-    width: 100%;
-  }
-  .activity-scroll-hint {
-    display: block;
-  }
 }
