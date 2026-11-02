@@ -278,7 +278,9 @@ test('@visual Workspace tutorials resume in an isolated browser with no browser 
       .click();
     await expect(reopened).toHaveURL(/#tutorials\?resourceId=fs_fixture$/);
     await reopened.getByRole('button', { name: 'Open sample CSV', exact: true }).click();
-    await expect(reopened).toHaveURL(new RegExp(encodeURIComponent(originalPath)));
+    await expect
+      .poll(() => new URLSearchParams(new URL(reopened.url()).hash.split('?')[1]).get('path'))
+      .toBe(originalPath);
     await reopened.getByRole('button', { name: 'Run query', exact: true }).click();
     await expect(reopened.getByRole('region', { name: 'Query result data' })).toContainText('APAC');
     expect(calls.filter((call) => call.action === 'file')).toHaveLength(1);
