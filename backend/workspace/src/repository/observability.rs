@@ -13,6 +13,7 @@ pub use requests::{HttpCompletion, HttpMethod, HttpOperation, RequestEntry};
 const AUDIT_HEAD: &str = "observability/audit-v1/head";
 const AUDIT_RECORDS: &str = "observability/audit-v1/records/";
 const AUDIT_OPERATIONS: &str = "observability/audit-v1/operations/";
+const AUDIT_PENDING: &str = "observability/audit-v1/pending/";
 const AUDIT_ORDER: &str = "observability/audit-v1/order/";
 const AUDIT_EXPIRY: &str = "observability/audit-v1/expiry/";
 const AUDIT_CAPACITY: u64 = 100_000;
@@ -69,6 +70,11 @@ pub struct AuditPurge {
     pub pending: usize,
 }
 
+pub struct AuditRecoveryPage {
+    pub resolved: usize,
+    pub next_cursor: Option<String>,
+}
+
 fn safe_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
@@ -88,6 +94,160 @@ fn expiry_key(deadline: u64, position: u64) -> String {
 }
 
 impl Repository {
+    /// Resolve only attempts owned by a previous fenced writer. This records an unknown
+    /// outcome; it does not execute or retry the original operation.
+    pub async fn recover_stale_audit_batch(
+        &self,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<AuditRecoveryPage> {
+        if !(1..=64).contains(&limit)
+            || cursor.is_some_and(|value| {
+                !Uuid::parse_str(value).is_ok_and(|id| id.to_string() == value)
+            })
+        {
+            return Err(ServiceError::new(400, "INVALID_AUDIT_RECOVERY_CURSOR"));
+        }
+        let page = self
+            .call(MetaRequest::List {
+                scope: self.scope.clone(),
+                guard: Some(self.guard.clone()),
+                prefix: AUDIT_PENDING.into(),
+                after: cursor.map(|value| format!("{AUDIT_PENDING}{value}")),
+                limit,
+            })
+            .await?;
+        let records = page["records"]
+            .as_array()
+            .ok_or_else(|| error("AUDIT_INDEX_CORRUPT"))?;
+        if records.is_empty() {
+            return Ok(AuditRecoveryPage {
+                resolved: 0,
+                next_cursor: None,
+            });
+        }
+        let mut keys = Vec::with_capacity(records.len());
+        for record in records {
+            let id = record["value"]["operationId"]
+                .as_str()
+                .and_then(|value| Uuid::parse_str(value).ok())
+                .ok_or_else(|| error("AUDIT_INDEX_CORRUPT"))?;
+            if record["key"] != format!("{AUDIT_PENDING}{id}") {
+                return Err(error("AUDIT_INDEX_CORRUPT"));
+            }
+            keys.push(format!("{AUDIT_OPERATIONS}{id}"));
+        }
+        let operations = self
+            .call(MetaRequest::Get {
+                scope: self.scope.clone(),
+                guard: Some(self.guard.clone()),
+                keys: keys.clone(),
+            })
+            .await?["records"]
+            .clone();
+        let mut resolved = 0;
+        for key in keys {
+            let state = &operations[&key]["value"];
+            if state["status"] != "pending" {
+                let id = key
+                    .strip_prefix(AUDIT_OPERATIONS)
+                    .ok_or_else(|| error("AUDIT_INDEX_CORRUPT"))?;
+                if !self.get(&format!("{AUDIT_PENDING}{id}")).await?.is_null() {
+                    return Err(error("AUDIT_INDEX_CORRUPT"));
+                }
+                continue;
+            }
+            let writer = state["writerId"]
+                .as_str()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| error("AUDIT_INDEX_CORRUPT"))?;
+            if writer == self.guard.owner_id {
+                continue;
+            }
+            let value = &state["attempt"];
+            let id = value["operationId"]
+                .as_str()
+                .and_then(|value| Uuid::parse_str(value).ok())
+                .ok_or_else(|| error("AUDIT_INDEX_CORRUPT"))?;
+            if key != format!("{AUDIT_OPERATIONS}{id}")
+                || value["authority"] != self.authority_id()
+                || value["outcome"] != "attempted"
+            {
+                return Err(error("AUDIT_INDEX_CORRUPT"));
+            }
+            let actor_kind = match value["actor"]["kind"].as_str() {
+                Some("owner") => ActorKind::Owner,
+                Some("workspaceKey") => ActorKind::WorkspaceKey,
+                _ => return Err(error("AUDIT_INDEX_CORRUPT")),
+            };
+            let action = match value["action"].as_str() {
+                Some("resource.create") => AuditAction::ResourceCreate,
+                Some("resource.delete") => AuditAction::ResourceDelete,
+                Some("file.write") => AuditAction::FileWrite,
+                Some("file.delete") => AuditAction::FileDelete,
+                Some("query.write") => AuditAction::QueryWrite,
+                _ => return Err(error("AUDIT_INDEX_CORRUPT")),
+            };
+            let actor_id = value["actor"]["id"]
+                .as_str()
+                .filter(|id| safe_id(id))
+                .ok_or_else(|| error("AUDIT_INDEX_CORRUPT"))?
+                .to_owned();
+            let target_id = if value["targetId"].is_null() {
+                None
+            } else {
+                Some(
+                    value["targetId"]
+                        .as_str()
+                        .filter(|id| safe_id(id))
+                        .ok_or_else(|| error("AUDIT_INDEX_CORRUPT"))?
+                        .to_owned(),
+                )
+            };
+            let request_id = if value["requestId"].is_null() {
+                None
+            } else {
+                Some(
+                    value["requestId"]
+                        .as_str()
+                        .and_then(|value| Uuid::parse_str(value).ok())
+                        .ok_or_else(|| error("AUDIT_INDEX_CORRUPT"))?,
+                )
+            };
+            let operation = AuditOperation {
+                operation_id: id,
+                request_id,
+                actor_kind,
+                actor_id,
+                action,
+                target_id,
+                workspace_id: self.workspace_id().into(),
+                authority_id: self.authority_id().into(),
+            };
+            match self
+                .append_audit_transition(&operation, AuditOutcome::Unknown, true)
+                .await
+            {
+                Ok(()) => resolved += 1,
+                Err(failure) if failure.code == "INVALID_AUDIT_TRANSITION" => continue,
+                Err(failure) => return Err(failure),
+            }
+        }
+        let next_cursor = page["nextCursor"]
+            .as_str()
+            .map(|key| {
+                key.strip_prefix(AUDIT_PENDING)
+                    .filter(|value| Uuid::parse_str(value).is_ok_and(|id| id.to_string() == *value))
+                    .map(str::to_owned)
+                    .ok_or_else(|| error("AUDIT_INDEX_CORRUPT"))
+            })
+            .transpose()?;
+        Ok(AuditRecoveryPage {
+            resolved,
+            next_cursor,
+        })
+    }
+
     /// Remove expired confirmed records in a bounded batch. Unresolved attempts are retained
     /// for reconciliation, and a durable host scheduler is still required for idle Workspaces.
     pub async fn purge_expired_audit_batch(
@@ -278,7 +438,7 @@ impl Repository {
             workspace_id: self.workspace_id().into(),
             authority_id: self.authority_id().into(),
         };
-        self.append_audit_transition(&operation, AuditOutcome::Attempted)
+        self.append_audit_transition(&operation, AuditOutcome::Attempted, false)
             .await?;
         Ok(operation)
     }
@@ -294,7 +454,8 @@ impl Repository {
         {
             return Err(ServiceError::new(400, "INVALID_AUDIT_TRANSITION"));
         }
-        self.append_audit_transition(&operation, outcome).await
+        self.append_audit_transition(&operation, outcome, false)
+            .await
     }
 
     /// Append one immutable transition under this repository's Workspace and writer fence.
@@ -304,6 +465,7 @@ impl Repository {
         &self,
         entry: &AuditOperation,
         outcome: AuditOutcome,
+        recovery: bool,
     ) -> Result<()> {
         if !safe_id(&entry.actor_id) || entry.target_id.as_deref().is_some_and(|id| !safe_id(id)) {
             return Err(ServiceError::new(400, "INVALID_AUDIT_ID"));
@@ -366,13 +528,20 @@ impl Repository {
                 (position, count, pending)
             };
             let operation = self.get(&operation_key).await?;
-            if starting && !operation.is_null()
-                || !starting
-                    && (operation["value"]["status"] != "pending"
-                        || operation["value"]["writerId"] != self.guard.owner_id
-                        || pending == 0)
-            {
+            if starting && !operation.is_null() {
                 return Err(ServiceError::new(409, "INVALID_AUDIT_TRANSITION"));
+            }
+            if !starting {
+                let writer = operation["value"]["writerId"]
+                    .as_str()
+                    .filter(|writer| !writer.is_empty())
+                    .ok_or_else(|| error("AUDIT_INDEX_CORRUPT"))?;
+                if operation["value"]["status"] != "pending"
+                    || (writer == self.guard.owner_id) == recovery
+                    || pending == 0
+                {
+                    return Err(ServiceError::new(409, "INVALID_AUDIT_TRANSITION"));
+                }
             }
             let next = position
                 .checked_add(1)
@@ -481,6 +650,19 @@ impl Repository {
                 }
                 json!({"status":outcome,"attempt":operation["value"]["attempt"],"remaining":2,"writerId":operation["value"]["writerId"]})
             };
+            let pending_key = format!("{AUDIT_PENDING}{}", entry.operation_id);
+            let pending_record = if starting {
+                Value::Null
+            } else {
+                self.get(&pending_key).await?
+            };
+            if !starting && pending_record["value"]["operationId"] != entry.operation_id.to_string()
+            {
+                if version(&self.get(AUDIT_HEAD).await?) != version(&head) && attempt < 7 {
+                    continue 'attempts;
+                }
+                return Err(error("AUDIT_INDEX_CORRUPT"));
+            }
             changes.extend([
                 json!({"key":AUDIT_HEAD,"expectedVersion":version(&head),"value":{"format":1,"position":next,"count":count+1-excess,"pending":next_pending}}),
                 json!({"key":record_key(next),"expectedVersion":null,"value":record}),
@@ -488,6 +670,11 @@ impl Repository {
                 json!({"key":expiry_key(deadline,next),"expectedVersion":null,"value":{"sequence":next,"deadline":deadline}}),
                 json!({"key":operation_key,"expectedVersion":version(&operation),"value":operation_state}),
             ]);
+            if starting {
+                changes.push(json!({"key":pending_key,"expectedVersion":null,"value":{"operationId":entry.operation_id.to_string()}}));
+            } else {
+                changes.push(json!({"key":pending_key,"expectedVersion":version(&pending_record),"delete":true}));
+            }
             match self.commit(changes).await {
                 Ok(()) => return Ok(()),
                 Err(failure) if failure.code == "META_CONFLICT" && attempt < 7 => continue,

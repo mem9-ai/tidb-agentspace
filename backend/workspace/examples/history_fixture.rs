@@ -108,6 +108,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(audit["data"][0]["resolution"], "unknown");
         assert!(audit["data"][0].get("writerId").is_none());
         assert_eq!(audit["data"][1]["outcome"], "succeeded");
+        assert_eq!(a.recover_stale_audit_batch(None, 64).await?.resolved, 1);
+        assert_eq!(a.recover_stale_audit_batch(None, 64).await?.resolved, 0);
+        assert_eq!(
+            a.history_page(HistoryStream::Audit, page(None, 1)).await?["data"][0]["outcome"],
+            "unknown"
+        );
         assert!(
             b.history_page(HistoryStream::Requests, page(None, 10))
                 .await?["data"]

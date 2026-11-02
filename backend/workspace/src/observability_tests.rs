@@ -168,6 +168,14 @@ async fn history_remains_workspace_scoped_and_survives_repository_reopen() {
         })
         .await
         .unwrap();
+    assert_eq!(
+        first
+            .recover_stale_audit_batch(None, 64)
+            .await
+            .unwrap()
+            .resolved,
+        0
+    );
     let page = first
         .history_page(HistoryStream::Requests, filter(None))
         .await
@@ -231,6 +239,29 @@ async fn history_remains_workspace_scoped_and_survives_repository_reopen() {
             .await
             .unwrap()["data"][0]["outcome"],
         "succeeded"
+    );
+    assert_eq!(
+        reopened
+            .recover_stale_audit_batch(None, 64)
+            .await
+            .unwrap()
+            .resolved,
+        1
+    );
+    assert_eq!(
+        reopened
+            .recover_stale_audit_batch(None, 64)
+            .await
+            .unwrap()
+            .resolved,
+        0
+    );
+    assert_eq!(
+        reopened
+            .history_page(HistoryStream::Audit, filter(None))
+            .await
+            .unwrap()["data"][0]["outcome"],
+        "unknown"
     );
     assert_eq!(
         first
