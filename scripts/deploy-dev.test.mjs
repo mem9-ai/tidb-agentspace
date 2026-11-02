@@ -375,6 +375,15 @@ test('automatic checks execute once and releases require exact-commit native evi
   assert.equal(prBuild.with.push, false);
   assert.equal(prBuild.with.load, true);
   assert.equal(prBuild.with.platforms, 'linux/amd64');
+  assert.match(
+    prBuild.with['cache-from'],
+    /scope=native-api-pr-\$\{\{ github\.event\.pull_request\.number \}\}/,
+  );
+  assert.match(prBuild.with['cache-from'], /scope=native-api-linux-amd64-v1/);
+  assert.match(
+    prBuild.with['cache-to'],
+    /scope=native-api-pr-\$\{\{ github\.event\.pull_request\.number \}\}/,
+  );
   assert.equal(prBuild.if, "steps.changes.outputs.changed == 'true'");
   assert.ok(ci.jobs.image.steps.some((step) => step.run === 'node scripts/ci-image-inputs.mjs'));
   const smoke = ci.jobs.image.steps.find(

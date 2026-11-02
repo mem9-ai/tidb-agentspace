@@ -266,8 +266,10 @@ jobs:
           load: true
           tags: workspace-api:verify
           labels: org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
-          cache-to: type=gha,scope=native-api-linux-amd64-v1,version=2,mode=max,timeout=3m,ignore-error=true
+          cache-from: |
+            type=gha,scope=native-api-pr-${{ github.event.pull_request.number }},version=2,timeout=3m
+            type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
+          cache-to: type=gha,scope=native-api-pr-${{ github.event.pull_request.number }},version=2,mode=max,timeout=3m,ignore-error=true
       - name: Run the final native image without network or writable root
         if: steps.changes.outputs.changed == 'true'
         env:
