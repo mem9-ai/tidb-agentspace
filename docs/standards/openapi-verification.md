@@ -118,10 +118,11 @@ behavior assertions, accepting failures or bypassing protection.
 Implementation status: [manual dev smoke release](../decisions/0039-dev-smoke-release.md)
 now supports explicitly selected basic dev acceptance. The automatic classifier and
 remaining delivery consumers below still enforce
-broader full-main checks for several operator/policy/documentation changes. This accepted
-selection rule is not a claim that those optimizations are implemented. Change those gates
-through a separate reviewed update; until then, honor the applicable enforced requirements
-and report the remaining avoidable waiting time.
+broader full-main checks for several operator, policy, and documentation changes. Documentation-only
+PR candidates can use the scoped evidence described in [CI/CD](../ci-cd.md). Other automatic
+scope refinements and cross-commit reuse remain proposals. Change those gates through a separate
+reviewed update; until then, honor the applicable enforced requirements and report the remaining
+avoidable waiting time.
 
 ## Required behavior coverage
 
