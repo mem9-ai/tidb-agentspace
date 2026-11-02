@@ -5,6 +5,7 @@ import { importCases } from './product-api-import-cases.mjs';
 import assert from 'node:assert/strict';
 import { nativeSecret } from './provider-fixture.mjs';
 import { productApiFixture } from './product-api-fixture.mjs';
+import { revokeAndConfirmRegion } from './revoke-confirm.mjs';
 
 const scopes = [
   'resources:read',
@@ -196,7 +197,13 @@ export async function productApiCases(t, transport) {
       });
       await query('db_live', 'INSERT INTO coverage_roundtrip VALUES (1)');
       const revoked = await key('coverage-revoked-before-restart');
-      assert.equal((await f.revokeKey(revoked.data.id)).status, 202);
+      await revokeAndConfirmRegion(f, revoked.data);
+      await request(
+        '/files?resourceId=fs_live',
+        { token: revoked.secret },
+        401,
+        'INVALID_CREDENTIAL',
+      );
       const review = (await upload()).body;
       const creates = { ...provider.nativeCreates, files: provider.creates };
       await f.restart();

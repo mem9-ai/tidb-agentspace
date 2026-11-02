@@ -37,6 +37,7 @@
     "backend:clippy": "cargo clippy --workspace --all-targets --locked -- -D warnings",
     "backend:test": "cargo test --workspace --locked",
     "backend:test:integration": "WORKSPACE_META_TEST=1 WORKSPACE_BACKEND_TEST=1 node --test --test-concurrency=1 server/meta-service.test.mjs server/identity-directory.test.mjs server/guest-host.test.mjs server/rust-backend.test.mjs server/rust-product.test.mjs server/contract.test.mjs scripts/package-runtime.test.mjs server/local-runtime.test.mjs server/rust-sso.test.mjs",
+    "backend:test:classic": "node scripts/run-classic-integration.mjs",
     "backend:check": "npm run backend:fmt && npm run backend:build && npm run backend:clippy && npm run backend:test && npm run backend:test:integration",
     "build:api:rust": "npm run backend:build",
     "package:api:rust": "node scripts/package-rust-api.mjs",

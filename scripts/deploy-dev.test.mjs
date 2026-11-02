@@ -343,16 +343,35 @@ test('automatic checks execute once and releases require exact-commit native evi
   assert.equal(historyScope.if, "github.event_name == 'pull_request' && github.base_ref == 'main'");
   assert.match(historyScope.run, /git show 'HEAD\^1:scripts\/ci-history-scope\.mjs'/);
   assert.match(historyScope.run, /history_only=false/);
+  assert.equal(
+    ci.jobs.scope.outputs.classic_profile,
+    '${{ steps.classic_scope.outputs.classic_profile }}',
+  );
+  const classicScope = ci.jobs.scope.steps.find((step) => step.id === 'classic_scope');
+  assert.equal(classicScope.if, "github.event_name == 'pull_request' && github.base_ref == 'main'");
+  assert.match(classicScope.run, /git show 'HEAD\^1:scripts\/ci-classic-scope\.mjs'/);
+  assert.match(classicScope.run, /classic_profile=full/);
   assert.equal(ci.jobs.scope.steps[0].with['fetch-depth'], 0);
   const fullIntegration = ci.jobs.metadata.steps.find(
     (step) => step.run === 'npm run backend:test:integration',
   );
-  assert.equal(fullIntegration.if, "${{ needs.scope.outputs.history_only != 'true' }}");
+  assert.equal(
+    fullIntegration.if,
+    '${{ needs.scope.outputs.history_only != \'true\' && !contains(fromJSON(\'["tutorial","database","files"]\'), needs.scope.outputs.classic_profile) }}',
+  );
   const historyIntegration = ci.jobs.metadata.steps.find(
     (step) => step.name === 'Run history authorization, isolation and storage integration tests',
   );
   assert.equal(historyIntegration.if, "${{ needs.scope.outputs.history_only == 'true' }}");
   assert.match(historyIntegration.run, /git show 'HEAD\^1:scripts\/run-history-integration\.mjs'/);
+  const classicIntegration = ci.jobs.metadata.steps.find(
+    (step) => step.name === 'Run classic and risk-specific integration tests',
+  );
+  assert.equal(
+    classicIntegration.if,
+    '${{ needs.scope.outputs.history_only != \'true\' && contains(fromJSON(\'["tutorial","database","files"]\'), needs.scope.outputs.classic_profile) }}',
+  );
+  assert.match(classicIntegration.run, /git show 'HEAD\^1:scripts\/run-classic-integration\.mjs'/);
   assert.equal(ci.jobs.metadata.steps[0].with['fetch-depth'], 2);
   for (const command of [
     'npm run backend:fmt',

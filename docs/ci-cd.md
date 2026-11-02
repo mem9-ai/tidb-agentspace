@@ -125,6 +125,24 @@ The earlier [full CI integration run](https://github.com/mem9-ai/tidb.ai/actions
 ran 134 cases in about 15 minutes and exposed SSO and index-readiness failures that were fixed.
 These are different machines and workloads; the local measurement is not a CI timing guarantee.
 
+For PRs restricted to existing, reviewed Tutorial, database or File System implementation
+files, the trusted merge base can select a classic native journey plus the corresponding
+risk suite. The classic cases cover scoped access, cross-Workspace isolation, restart,
+database and File System sample data, SQL and Bash analysis, and tutorial progress. Database
+and File System changes additionally run the relevant behavioral, permission, failure and
+recovery cases in both metadata modes; Tutorial changes run progress in both modes. The
+specific files and cases are pinned in `scripts/ci-classic-scope.mjs` and
+`scripts/run-classic-integration.mjs`. Tests, fixtures, unknown or mixed boundaries, added,
+deleted or renamed files, contracts, security, workflows and selector changes run the full
+integration suite. Main, merge queues, manual runs and release evidence remain full.
+The selected runner rejects missing, skipped, failing or renamed required cases, including
+missing nested cases. All Rust unit tests, formatting, Clippy and native build still run.
+These profiles are a conservative initial allowlist; other changes retain their existing gates.
+No comparable CI timing has yet been established for the selected profiles.
+After building the native backend and providing the isolated RustFS prerequisites,
+`npm run backend:test:classic` runs just the classic native journey locally. Pass
+`-- tutorial`, `-- database` or `-- files` to add the corresponding risk suite.
+
 Dev CD no longer triggers on PRs or repeats quality/native commands. Its read-only verify
 job runs `scripts/require-ci.mjs full "$SOURCE_SHA"`, then the existing protected dev job
 builds/pushes and updates the image. Console publishing consumes `console` evidence (Quality

@@ -25,6 +25,7 @@ jobs:
       backend_only: ${{ steps.scope.outputs.backend_only }}
       docs_only: ${{ steps.scope.outputs.docs_only }}
       history_only: ${{ steps.history_scope.outputs.history_only }}
+      classic_profile: ${{ steps.classic_scope.outputs.classic_profile }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: (github.event_name == 'pull_request' && github.base_ref == 'main') || github.event_name == 'push'
@@ -73,6 +74,18 @@ jobs:
             node "$policy"
           else
             echo 'history_only=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Select classic integration coverage using the trusted base policy
+        id: classic_scope
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          policy="$RUNNER_TEMP/ci-classic-scope.mjs"
+          if git show 'HEAD^1:scripts/ci-classic-scope.mjs' > "$policy"; then
+            node "$policy"
+          else
+            echo 'classic_profile=full' >> "$GITHUB_OUTPUT"
           fi
 
   quality:
@@ -160,7 +173,7 @@ jobs:
           chmod +x "$runtime_dir/rustfs"
           printf '%s\n' "$runtime_dir" >> "$GITHUB_PATH"
       - name: Run native API and real S3 integration tests
-        if: ${{ needs.scope.outputs.history_only != 'true' }}
+        if: ${{ needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile) }}
         run: npm run backend:test:integration
       - name: Run history authorization, isolation and storage integration tests
         if: ${{ needs.scope.outputs.history_only == 'true' }}
@@ -170,6 +183,16 @@ jobs:
           runner="$RUNNER_TEMP/run-history-integration.mjs"
           git show 'HEAD^1:scripts/run-history-integration.mjs' > "$runner"
           node "$runner"
+      - name: Run classic and risk-specific integration tests
+        if: ${{ needs.scope.outputs.history_only != 'true' && contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile) }}
+        env:
+          CLASSIC_PROFILE: ${{ needs.scope.outputs.classic_profile }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          runner="$RUNNER_TEMP/run-classic-integration.mjs"
+          git show 'HEAD^1:scripts/run-classic-integration.mjs' > "$runner"
+          node "$runner" "$CLASSIC_PROFILE"
       - name: Save Cargo timing reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
