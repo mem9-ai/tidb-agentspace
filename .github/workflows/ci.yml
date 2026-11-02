@@ -23,6 +23,7 @@ jobs:
     outputs:
       ui_only: ${{ steps.scope.outputs.ui_only }}
       backend_only: ${{ steps.scope.outputs.backend_only }}
+      docs_only: ${{ steps.scope.outputs.docs_only }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: (github.event_name == 'pull_request' && github.base_ref == 'main') || github.event_name == 'push'
@@ -54,9 +55,17 @@ jobs:
             echo 'ui_only=false' >> "$GITHUB_OUTPUT"
             echo 'backend_only=false' >> "$GITHUB_OUTPUT"
           fi
+          docs_policy="$RUNNER_TEMP/ci-docs-scope.mjs"
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' ]] && git show "$policy_ref:scripts/ci-docs-scope.mjs" > "$docs_policy"; then
+            node "$docs_policy"
+          else
+            echo 'docs_only=false' >> "$GITHUB_OUTPUT"
+          fi
 
   quality:
     name: Quality
+    needs: scope
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -71,7 +80,12 @@ jobs:
         run: npm install --global npm@11.6.2 --ignore-scripts
       - run: npm ci
       - run: npm run check
+        if: ${{ needs.scope.outputs.docs_only != 'true' }}
+      - name: Check documentation and repository policy
+        if: ${{ needs.scope.outputs.docs_only == 'true' }}
+        run: npm run check:runtime && npm run check:repo && npm run format:check
       - name: Save the frontend for review
+        if: ${{ needs.scope.outputs.docs_only != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: console-dist-${{ github.sha }}
@@ -82,7 +96,7 @@ jobs:
   metadata:
     name: Rust backend and S3 integration
     needs: scope
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.ui_only != 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (needs.scope.outputs.ui_only != 'true' && needs.scope.outputs.docs_only != 'true')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
@@ -152,10 +166,20 @@ jobs:
       - name: Record browser applicability after native API verification
         run: echo 'Native-only change; Console and public contract inputs unchanged. Native API/S3 verification passed. Browser smoke is not applicable.'
 
+  documentation-scope:
+    name: Documentation-only scope
+    needs: [scope, quality]
+    if: ${{ !cancelled() && needs.scope.outputs.docs_only == 'true' && needs.quality.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Record applicability after Quality
+        run: echo 'Documentation-only change; application, contract and workflow inputs unchanged. Quality passed. Native and browser verification are not applicable.'
+
   browser:
     name: Browser smoke
     needs: scope
-    if: ${{ !cancelled() && needs.scope.outputs.backend_only != 'true' }}
+    if: ${{ !cancelled() && needs.scope.outputs.backend_only != 'true' && needs.scope.outputs.docs_only != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
