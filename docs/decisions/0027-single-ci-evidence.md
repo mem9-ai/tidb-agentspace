@@ -38,9 +38,7 @@ job can run. Full mode requires Quality, applicable Browser smoke and Rust/S3 pl
 run. Explicit read-only inspection uses the Console gate. Console publication requires its
 same-commit Quality and Browser smoke results; unrelated native work may still be running,
 preserving independent Console delivery. Its `/studio/` build is a distinct base-path variant,
-not another normal quality gate. A main-only build without publication credentials may overlap the same-commit
-CI checks; the trusted gate still precedes artifact upload and publication. Independent website
-tests/protection remain required.
+not another normal quality gate. Independent website tests/protection remain required.
 For a native-only source SHA, both consumer modes accept a completed/skipped Browser smoke
 only with successful `Backend-only scope` and native jobs from that exact run/attempt. This
 also handles Console publication selecting a later native-only main SHA.

@@ -91,11 +91,8 @@ native release gate; an explicit full CI run on the same revision is required fo
 Main CI runs use independent SHA groups so later pushes do not cancel evidence awaited by
 delivery. Only superseded PR/merge-queue candidates cancel.
 
-For Console publication, the main-only build job can build the distinct `/studio/` artifact
-while exact-commit Quality and Browser smoke are running. It has read-only permissions and no
-publication credentials. The same trusted CI gate still must succeed before artifact upload or
-the publishing job; website validation, protected merge and current-source checks are unchanged.
-The overlap avoids serial build time, but its actual savings depend on the run and cache.
+Console publication retains its same-commit checks before building, while the build job can reuse
+the lockfile-keyed npm download cache. A cache hit does not replace `npm ci` or any CI evidence.
 
 For documentation-only PR merge candidates, a separate policy from the tested base permits
 Markdown in `docs/` or `specs/`, root `README.md`, and raster evidence in `docs/screenshots/`.

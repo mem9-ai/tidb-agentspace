@@ -116,22 +116,20 @@ test('workflow triggers all current Console inputs, including config and workspa
   assert.equal(workflow.jobs.build.steps[0].with.ref, 'main');
   assert.equal(workflow.jobs.publish.steps[0].with.ref, '${{ needs.build.outputs.sha }}');
   assert.equal(workflow.jobs.build.permissions.actions, 'read');
+  const setup = workflow.jobs.build.steps.find((step) =>
+    step.uses?.startsWith('actions/setup-node@'),
+  );
+  assert.equal(setup.with.cache, 'npm');
   assert.ok(!JSON.stringify(workflow).includes('npm run check'));
   const gate = workflow.jobs.build.steps.find((step) =>
     step.run?.startsWith('node scripts/require-ci.mjs '),
   );
   assert.equal(gate.env.SOURCE_SHA, '${{ steps.commit.outputs.sha }}');
   assert.equal(gate.run, 'node scripts/require-ci.mjs console "$SOURCE_SHA"');
-  const build = workflow.jobs.build.steps.findIndex(
-    (step) => step.name === 'Build public Console without deployment credentials',
+  assert.ok(
+    workflow.jobs.build.steps.indexOf(gate) <
+      workflow.jobs.build.steps.findIndex((step) => step.run === 'npm ci'),
   );
-  const upload = workflow.jobs.build.steps.findIndex((step) =>
-    step.uses?.startsWith('actions/upload-artifact@'),
-  );
-  assert.ok(build >= 0 && build < workflow.jobs.build.steps.indexOf(gate));
-  assert.ok(workflow.jobs.build.steps.indexOf(gate) < upload);
-  assert.equal(gate.if, "steps.source.outputs.current == 'true'");
-  assert.equal(workflow.jobs.publish.needs, 'build');
   const steps = workflow.jobs.publish.steps;
   const checkout = steps.find((step) => step.with?.repository === websiteRepository);
   assert.equal(checkout.with['sparse-checkout-cone-mode'], false);
