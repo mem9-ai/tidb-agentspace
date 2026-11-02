@@ -25,11 +25,14 @@ impl ScopedAuthorization for HistoryKey {
     fn workspace_id(&self) -> &str {
         "workspace-a"
     }
+    fn workspace_key_id(&self) -> Option<&str> {
+        Some("verified-key-id")
+    }
     fn snapshot(&self) -> workspace_contracts::Result<Principal> {
         Ok(Principal {
             owner: false,
             actor: "Key".into(),
-            id: "key-a".into(),
+            id: "separate-principal-id".into(),
             scopes: vec!["*".into()],
             resource_ids: vec!["*".into()],
             expires_at: None,
@@ -96,6 +99,15 @@ async fn owner_history_denies_keys_cross_workspace_and_revocation_during_read() 
         from: None,
         to: None,
     };
+    let actor = workspace
+        .history_actor(&Credential::Scoped(Arc::new(HistoryKey)))
+        .await
+        .unwrap();
+    assert!(matches!(actor.kind, ActorKind::WorkspaceKey));
+    assert_eq!(actor.id, "verified-key-id");
+    let actor = workspace.history_actor(&owner).await.unwrap();
+    assert!(matches!(actor.kind, ActorKind::Owner));
+    assert_eq!(actor.id, "owner-a");
     assert_eq!(
         workspace
             .owner_history_page(&owner, HistoryStream::Audit, filter())

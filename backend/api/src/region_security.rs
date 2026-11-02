@@ -1085,6 +1085,9 @@ impl ScopedAuthorization for Authorization {
     fn workspace_id(&self) -> &str {
         self.token.workspace_id()
     }
+    fn workspace_key_id(&self) -> Option<&str> {
+        Some(self.token.key_id())
+    }
     fn snapshot(&self) -> Result<Principal> {
         let now = self.runtime.clock.snapshot()?;
         if self.token.expires_at() <= now {

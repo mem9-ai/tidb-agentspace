@@ -26,6 +26,10 @@ pub enum Credential {
 /// lease alive; control activation/revocation drains such leases before acknowledging apply.
 pub trait ScopedAuthorization: Send + Sync {
     fn workspace_id(&self) -> &str;
+    /// Only the trusted authenticator may expose a verified Key identifier.
+    fn workspace_key_id(&self) -> Option<&str> {
+        None
+    }
     fn snapshot(&self) -> Result<Principal>;
     fn check(
         &self,
@@ -114,6 +118,11 @@ pub struct Principal {
     pub scopes: Vec<String>,
     pub resource_ids: Vec<String>,
     pub expires_at: Option<String>,
+}
+/// An authority-verified opaque identity, never a token, cookie or display label.
+pub struct HistoryActor {
+    pub kind: observability::ActorKind,
+    pub id: String,
 }
 impl Principal {
     pub fn scope(&self, action: &str) -> Result<()> {
@@ -245,6 +254,32 @@ impl Workspace {
     }
     pub fn repository(&self) -> std::sync::Arc<Repository> {
         self.repository.clone()
+    }
+    pub async fn history_actor(&self, credential: &Credential) -> Result<HistoryActor> {
+        let principal = self.authenticate(credential).await?;
+        let (kind, id) = if principal.owner {
+            (observability::ActorKind::Owner, principal.id.as_str())
+        } else {
+            let id = match credential {
+                Credential::Scoped(authorization) => authorization.workspace_key_id(),
+                Credential::Bearer(_) => Some(principal.id.as_str()),
+                _ => None,
+            }
+            .ok_or_else(|| reject(503, "HISTORY_ACTOR_UNAVAILABLE"))?;
+            (observability::ActorKind::WorkspaceKey, id)
+        };
+        if id.is_empty()
+            || id.len() > 128
+            || !id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"_-.:".contains(&byte))
+        {
+            return Err(reject(503, "HISTORY_ACTOR_UNAVAILABLE"));
+        }
+        Ok(HistoryActor {
+            kind,
+            id: id.to_owned(),
+        })
     }
     /// History is owner-only even for Keys with wildcard resource and action grants.
     /// Recheck the authority after metadata I/O before returning a page.
