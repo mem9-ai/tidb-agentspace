@@ -23,6 +23,7 @@ consumer product clarity and care, consistent interactions and minimum complete 
 | Public authorization or credentials                                                        | [Workspace Key decision](../decisions/0001-unified-workspace-key.md)                                                          |
 | SlateDB metadata, authority boundaries, transactions, recovery or scale design             | [Metadata architecture version 1](../slatedb-metadata-design.md) and [current Meta runtime](../meta-service.md)               |
 | Independent Console/API builds, runtime configuration, or packaging                        | [Independent delivery](../independent-delivery.md) and [ADR 0005](../decisions/0005-independent-console-and-api.md)           |
+| Test planning, classic core, risk-specific suites, or full regression                      | [Test selection](testing.md)                                                                                                  |
 | Build, review, merge, release, or environment behavior                                     | [Contribution guide](../../CONTRIBUTING.md) and [CI/CD policy](../ci-cd.md)                                                   |
 
 For live file integrations, also read [the Drive9 provider boundary](../decisions/0004-drive9-anonymous-provider.md): authenticate before provider I/O, persist credentials privately, bound preview reads, and never retry uncertain tenant creation.
