@@ -5,17 +5,21 @@ import { completedSuite, groupedCases } from './run-classic-integration.mjs';
 
 test('classic profile verifies every parent and nested test actually passed', () => {
   const cases = [
-    { name: 'journey', count: 3 },
+    { name: 'journey', count: 3, children: ['child a', 'child b'] },
     { name: 'boundary', count: 1 },
   ];
   const good = {
     status: 0,
     stdout:
-      '    ok 1 - child a\n    ok 2 - child b\nok 1 - journey\nok 2 - boundary\n# pass 4\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n',
+      '# Subtest: journey\n    # Subtest: child a\n    ok 1 - child a\n    # Subtest: child b\n    ok 2 - child b\nok 1 - journey\n# Subtest: boundary\nok 2 - boundary\n# pass 4\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n',
   };
   assert.equal(completedSuite(cases, good), true);
   assert.equal(completedSuite(cases, { ...good, status: 1 }), false);
   assert.equal(completedSuite(cases, { ...good, status: null }), false);
+  assert.equal(
+    completedSuite(cases, { ...good, stdout: good.stdout.replace('child b', 'renamed child') }),
+    false,
+  );
   assert.equal(
     completedSuite(cases, {
       ...good,
