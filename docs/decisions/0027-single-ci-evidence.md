@@ -14,10 +14,15 @@ these times must not be added as an end-to-end measurement.
 
 CI owns one Quality job, Rust/S3 validation, applicable Browser smoke building the same SHA in parallel,
 and parallel credential-free native image validation when PR image inputs change. The owner
-accepts a narrow PR-only UI fast path: the merge candidate's files must be exclusively
+accepts a narrow UI fast path for PR merge candidates and verified main push ranges: files must be exclusively
 allowlisted UI files and their specified tests/guidance, with at least one UI file. The trusted
-base policy classifies the candidate and defaults to full Rust/S3 checks on uncertainty. Main,
-merge-queue and manual CI still run the complete native gate. See [CI/CD](../ci-cd.md).
+base policy classifies the candidate and defaults to full Rust/S3 checks on uncertainty.
+Merge-queue and manual CI still run the complete native gate. A UI-only main result can authorize
+Console publication but cannot satisfy a full native release; that operation requires a full
+same-revision CI run. See [CI/CD](../ci-cd.md).
+UI-only candidates can include reviewed Markdown documentation without requiring native tests;
+the CI/CD and Console publishing guides, this ADR, and other standards outside the existing
+experience/browser exceptions remain excluded from that companion allowlist.
 
 The owner also makes native OpenAPI behavior the independent backend acceptance boundary.
 Internal backend changes preserving the public contract do not need frontend testing. A

@@ -74,6 +74,17 @@ test('documentation-only PR applicability is never release evidence', () => {
   }
 });
 
+test('UI-only main checks cannot satisfy a full native release gate', () => {
+  const uiOnly = [
+    jobs[0],
+    jobs[1],
+    completed('Rust backend and S3 integration', 'skipped'),
+    jobs[3],
+  ];
+  assert.equal(evaluateEvidence(run, uiOnly, sha, 'console'), true);
+  assert.throws(() => evaluateEvidence(run, uiOnly, sha, 'full'), /Required CI check failed/);
+});
+
 test('browser inapplicability requires explicit scope and native success in both release modes', () => {
   const scope = { name: 'Backend-only scope', status: 'completed', conclusion: 'success' };
   const skipped = [jobs[0], { ...jobs[1], conclusion: 'skipped' }, jobs[2], jobs[3], scope];

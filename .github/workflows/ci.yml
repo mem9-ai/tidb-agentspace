@@ -152,7 +152,7 @@ jobs:
   metadata:
     name: Rust backend and S3 integration
     needs: scope
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (needs.scope.outputs.ui_only != 'true' && needs.scope.outputs.docs_only != 'true')) }}
+    if: ${{ !cancelled() && needs.scope.outputs.ui_only != 'true' && needs.scope.outputs.docs_only != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
@@ -247,7 +247,7 @@ jobs:
   product_integration:
     name: Native product integration
     needs: scope
-    if: ${{ !cancelled() && needs.scope.outputs.full_partition == 'true' && needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile) && (github.event_name != 'pull_request' || (needs.scope.outputs.ui_only != 'true' && needs.scope.outputs.docs_only != 'true')) }}
+    if: ${{ !cancelled() && needs.scope.outputs.full_partition == 'true' && needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile) && needs.scope.outputs.ui_only != 'true' && needs.scope.outputs.docs_only != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:

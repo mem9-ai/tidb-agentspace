@@ -116,6 +116,10 @@ test('workflow triggers all current Console inputs, including config and workspa
   assert.equal(workflow.jobs.build.steps[0].with.ref, 'main');
   assert.equal(workflow.jobs.publish.steps[0].with.ref, '${{ needs.build.outputs.sha }}');
   assert.equal(workflow.jobs.build.permissions.actions, 'read');
+  const setup = workflow.jobs.build.steps.find((step) =>
+    step.uses?.startsWith('actions/setup-node@'),
+  );
+  assert.equal(setup.with.cache, 'npm');
   assert.ok(!JSON.stringify(workflow).includes('npm run check'));
   const gate = workflow.jobs.build.steps.find((step) =>
     step.run?.startsWith('node scripts/require-ci.mjs '),

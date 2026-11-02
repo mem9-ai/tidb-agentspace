@@ -76,15 +76,23 @@ sync the local checkout with `main`.
 ## Single automatic gate and delivery consumers
 
 [ADR 0027](decisions/0027-single-ci-evidence.md) assigns automatic checks to CI once per
-candidate. For PR merge candidates only, an allowlist of UI `.ts`/`.tsx`/`.css` files outside
-`src/api`, their colocated unit tests, screenshot evidence, specified browser tests and experience
-guidance may skip the Rust/S3 job. At least one UI file
+candidate. For PR merge candidates and verified main push ranges, an allowlist of UI `.ts`/`.tsx`/`.css` files outside
+`src/api`, their colocated unit tests, screenshot evidence, specified browser tests and reviewed
+Markdown documentation may skip the Rust/S3 job. The CI/CD guide, Console publishing guide,
+ADR 0027 and other standards outside the existing experience/browser exceptions remain outside
+this companion allowlist. At least one UI file
 must change; a backend, contract, dependency, workflow, other test or unrecognized file requires
 the full job. The classifier runs the policy from the tested base, compares both sides of renames,
 and falls back to full checks when the merge or policy cannot be verified. Quality and security
-checks remain applicable. Main pushes, merge queues and manual runs always execute
-Rust/S3. Main CI runs use independent SHA groups so later pushes do not cancel evidence awaited by
+checks remain applicable. Main pushes use the complete `before..HEAD` range and fall back to
+full checks if that baseline or policy is missing or ambiguous. Merge queues and manual runs
+always execute Rust/S3. A UI-only main run is valid Console evidence but cannot satisfy a full
+native release gate; an explicit full CI run on the same revision is required for that operation.
+Main CI runs use independent SHA groups so later pushes do not cancel evidence awaited by
 delivery. Only superseded PR/merge-queue candidates cancel.
+
+Console publication retains its same-commit checks before building, while the build job can reuse
+the lockfile-keyed npm download cache. A cache hit does not replace `npm ci` or any CI evidence.
 
 For documentation-only PR merge candidates, a separate policy from the tested base permits
 Markdown in `docs/` or `specs/`, root `README.md`, and raster evidence in `docs/screenshots/`.
@@ -92,8 +100,8 @@ If every changed path is allowlisted, `Quality` checks runtime, repository polic
 application builds and tests, native and browser jobs are inapplicable. `Documentation-only
 scope` records that decision only after the applicable Quality checks succeed.
 The comparison includes both sides of renames; unknown paths, source, contracts, dependencies,
-workflow files, missing policy and ambiguous merge candidates fall back to both jobs. Main
-pushes and all deployment evidence continue to require the existing same-commit checks.
+workflow files, missing policy and ambiguous merge candidates fall back to both jobs. Deployment
+evidence continues to require the existing same-commit checks.
 
 For native-only PR/main changes, the trusted-base policy may skip Browser smoke. At least
 one allowlisted native source must change, and every path must belong to native implementation,
@@ -116,8 +124,8 @@ uncertain effects, HTTP redaction, contract conformance and concurrent resource 
 All Rust unit tests, formatting, Clippy and native build still run. The trusted-base runner
 requires each named integration test to actually pass; missing, renamed, skipped or failing
 tests fail the job. Added, deleted, renamed, unknown or mixed paths, including any changes to
-the test harness, contracts or workflow, run the complete integration suite. Pushes, merge
-queues, manual runs and release evidence always retain the full suite. The scoped PR result
+the test harness, contracts or workflow, run the complete integration suite. Native-change pushes,
+merge queues, manual runs and release evidence always retain the full suite. The scoped PR result
 cannot authorize a release.
 
 In one local native/RustFS run, the twelve selected cases completed in about 63 seconds.
@@ -134,7 +142,7 @@ recovery cases in both metadata modes; Tutorial changes run progress in both mod
 specific files and cases are pinned in `scripts/ci-classic-scope.mjs` and
 `scripts/run-classic-integration.mjs`. Tests, fixtures, unknown or mixed boundaries, added,
 deleted or renamed files, contracts, security, workflows and selector changes run the full
-integration suite. Main, merge queues, manual runs and release evidence remain full.
+integration suite. Native-change main runs, merge queues, manual runs and release evidence remain full.
 The selected runner rejects missing, skipped, failing or renamed required cases, including
 missing nested cases. All Rust unit tests, formatting, Clippy and native build still run.
 These profiles are a conservative initial allowlist; other changes retain their existing gates.

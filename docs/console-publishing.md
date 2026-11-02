@@ -61,6 +61,8 @@ Builds first verify the same resolved source SHA has passed Quality and Browser 
 the trusted main CI run. They do not repeat `npm run check`. The pinned Node/npm and
 `npm ci` then build the distinct `/studio/` base-path variant in a clean environment. No publication key is exposed
 to npm or Vite. Only Console output transfers between the build and publishing jobs.
+The build job caches npm's downloaded packages using the lockfile; `npm ci` still performs a
+clean install and the cache never substitutes for the same-commit checks.
 
 The website's existing importer enforces an allowlist of public static files, rejects symlinks
 and source maps, normalizes same-origin configuration, and records the exact source SHA plus
