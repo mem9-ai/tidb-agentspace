@@ -12,7 +12,7 @@ export function TutorialResume({ data }: { data: Data }) {
   if (loading || error) return <TutorialProgressStatus />;
   const tutorials = data.resources.flatMap((resource) => {
     const progress = store.readSample(resource.id);
-    return progress?.attempted ? [{ resource, progress }] : [];
+    return progress ? [{ resource, progress }] : [];
   });
   if (!tutorials.length) return null;
   return (
@@ -57,7 +57,9 @@ export function TutorialResume({ data }: { data: Data }) {
                     ? 'Completed'
                     : progress.ready
                       ? 'Sample ready'
-                      : 'Check sample'}
+                      : progress.attempted
+                        ? 'Check sample'
+                        : 'Started'}
               </Badge>
               <Group gap="xs">
                 <Button component="a" href={tutorialHash(resource.id)} variant="default">

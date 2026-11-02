@@ -1,16 +1,13 @@
 .data-tutorials {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
   margin-bottom: 32px;
-  align-items: start;
+  max-width: 860px;
+  min-width: 0;
 }
 .tutorial-resume {
   margin-block: 24px;
 }
-.data-tutorials[data-focused] {
-  grid-template-columns: minmax(0, 1fr);
-  max-width: 860px;
+.tutorial-tabs {
+  flex-wrap: wrap;
 }
 .tutorial-resume-card {
   min-width: 0;
@@ -60,9 +57,4 @@
 }
 .data-tutorial .workspace-results {
   min-width: 0;
-}
-@media (max-width: 1000px) {
-  .data-tutorials {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
