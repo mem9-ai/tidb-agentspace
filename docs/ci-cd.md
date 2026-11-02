@@ -258,6 +258,10 @@ The Rust CI job checks formatting before compiling, then runs separately named b
 Clippy, Rust unit-test and native/S3 integration-test steps. Together these run the same
 checks as local `npm run backend:check`; warnings remain errors and integration tests still
 use isolated real RustFS. Two Cargo jobs and disabled debug symbols bound runner memory.
+Multi-service product fixtures hold their selected Workspace and control ports until each
+host starts, so a metadata or control service cannot claim a released port and answer the
+wrong readiness probe. Keep the reservations distinct from the active metadata listener,
+including when that listener is subsequently restarted in-process.
 
 The pinned [rust-cache action](https://github.com/Swatinem/rust-cache/tree/d1527c8f67ef9af357290475d4af4b0fab8f12e0)
 caches Cargo registry/git dependencies and dependency build artifacts in the actual target
