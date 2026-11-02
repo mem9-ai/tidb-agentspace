@@ -87,11 +87,11 @@ On the HTTP requests view, omit the coverage, retention and recording-status tex
 request. This supersedes the corresponding Console disclosure in ADR 0044; the API's coverage
 and health metadata remain available.
 
-**Monitoring (owner correction, 2026-11-02):** show actionable resource status and link to the
-dedicated Activity page. Do not present internal API authority as a metric or fill the page with
-illustrative telemetry. Make partial resource lists, refresh and empty states usable without
-claiming that resource lifecycle status is a live health measurement. This supersedes the
-Monitoring presentation described in the historical GH-98 experience audit.
+**Monitoring (owner correction, 2026-11-02):** remove the standalone Monitoring page when it
+only repeats existing resource lists. Keep resources accessible through Overview and their own
+collections, and operational history under Activity. Existing Monitoring links return to Overview.
+Reintroduce a monitoring destination only when real, useful measurements support it. This
+supersedes the earlier Monitoring presentation and the historical GH-98 experience audit.
 
 ## One interaction language
 
