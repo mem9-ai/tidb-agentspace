@@ -18,6 +18,26 @@ struct ScopedMetadata {
     fail_history_registration: AtomicBool,
 }
 
+#[derive(Default)]
+struct MaintenanceRecorder(Mutex<Vec<String>>);
+impl HistoryMaintenanceProcessor for MaintenanceRecorder {
+    fn process<'a>(
+        &'a self,
+        workspace: &'a str,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = workspace_contracts::Result<HistoryScheduleOutcome>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            self.0.lock().unwrap().push(workspace.to_owned());
+            Ok(HistoryScheduleOutcome::Complete)
+        })
+    }
+}
+
 impl Metadata for ScopedMetadata {
     fn health(&self) -> Call<'_> {
         Box::pin(async { Ok(json!({"authorityId":"region:test","capabilities":["recordsV1"]})) })
@@ -414,6 +434,12 @@ async fn history_writes_require_durable_maintenance_registration() {
             .workspace_id,
         "workspace-a"
     );
+    let recorder = Arc::new(MaintenanceRecorder::default());
+    let mut scheduler = HistoryScheduler::new(maintenance, recorder.clone());
+    for _ in 0..HistoryMaintenance::shard_count() {
+        scheduler.tick_at(now + 100).await.unwrap();
+    }
+    assert_eq!(*recorder.0.lock().unwrap(), vec!["workspace-a"]);
     {
         let scopes = metadata.scopes.lock().unwrap();
         let system = scopes

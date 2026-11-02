@@ -6,9 +6,11 @@ use super::*;
 mod history;
 mod maintenance;
 mod requests;
+mod scheduler;
 pub use history::{HistoryFilter, HistoryStream};
 pub use maintenance::{HistoryJob, HistoryMaintenance, HistoryMaintenancePage};
 pub use requests::{HttpCompletion, HttpMethod, HttpOperation, RequestEntry};
+pub use scheduler::{HistoryMaintenanceProcessor, HistoryScheduleOutcome, HistoryScheduler};
 
 const AUDIT_HEAD: &str = "observability/audit-v1/head";
 const AUDIT_RECORDS: &str = "observability/audit-v1/records/";
