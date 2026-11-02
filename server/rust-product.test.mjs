@@ -686,6 +686,19 @@ test(
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
   async (t) => {
     const fixture = await productApiFixture(t, 'remote');
+    // An existing legacy Workspace builds its resource index asynchronously. Exercise
+    // the concurrent idempotency guarantee after that separate migration is ready.
+    await until(async () => {
+      const existing = await fixture.request('/resources', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'index-readiness' },
+        body: { kind: 'mysql', name: 'fixture-mysql', region: 'automatic' },
+      });
+      if (existing.status === 503 && existing.body.error?.code === 'RESOURCE_INDEX_MIGRATING')
+        throw new Error('Resource index is still migrating');
+      assert.equal(existing.status, 409, JSON.stringify(existing.body));
+      assert.equal(existing.body.error.code, 'NAME_EXISTS');
+    });
     const create = () =>
       fixture.request('/resources', {
         method: 'POST',

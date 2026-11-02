@@ -210,7 +210,23 @@ async fn owner_history_denies_keys_cross_workspace_and_revocation_during_read() 
     );
     let actor = workspace.history_actor(&owner).await.unwrap();
     assert!(matches!(actor.kind, ActorKind::Owner));
-    assert_eq!(actor.id, "owner-a");
+    assert!(actor.id.starts_with("owner-"));
+    assert!(!actor.id.contains("owner-a"));
+    let sso = Credential::SessionOwner {
+        id: "sso:https://issuer.example/user:alice@example.test".into(),
+        actor: "Alice".into(),
+        workspace_id: "workspace-a".into(),
+        policy_generation: None,
+        expires_at: chrono::Utc::now().timestamp() + 3600,
+        revoked: Arc::new(AtomicBool::new(false)),
+    };
+    let sso_actor = workspace.history_actor_snapshot(&sso).unwrap();
+    assert!(sso_actor.id.starts_with("owner-"));
+    assert!(!sso_actor.id.contains("alice"));
+    assert_eq!(
+        sso_actor.id,
+        workspace.history_actor_snapshot(&sso).unwrap().id
+    );
     assert_eq!(
         workspace
             .owner_history_page(&owner, HistoryStream::Audit, filter())

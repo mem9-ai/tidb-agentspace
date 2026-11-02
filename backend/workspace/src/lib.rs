@@ -223,17 +223,25 @@ fn history_actor_from_principal(
     credential: &Credential,
     principal: &Principal,
 ) -> Result<HistoryActor> {
-    let (kind, id) = if principal.owner {
-        (observability::ActorKind::Owner, principal.id.as_str())
-    } else {
-        let id = match credential {
-            Credential::Scoped(authorization) => authorization.workspace_key_id(),
-            Credential::Bearer(_) => Some(principal.id.as_str()),
-            _ => None,
-        }
-        .ok_or_else(|| reject(503, "HISTORY_ACTOR_UNAVAILABLE"))?;
-        (observability::ActorKind::WorkspaceKey, id)
-    };
+    // Owner identifiers can contain issuer URLs or account details. Persist only a stable,
+    // bounded opaque identifier, regardless of which session mechanism authenticated them.
+    if principal.owner {
+        return Ok(HistoryActor {
+            kind: observability::ActorKind::Owner,
+            id: format!(
+                "owner-{}",
+                hex::encode(Sha256::digest(
+                    format!("history-owner-v1\0{}", principal.id).as_bytes()
+                ))
+            ),
+        });
+    }
+    let id = match credential {
+        Credential::Scoped(authorization) => authorization.workspace_key_id(),
+        Credential::Bearer(_) => Some(principal.id.as_str()),
+        _ => None,
+    }
+    .ok_or_else(|| reject(503, "HISTORY_ACTOR_UNAVAILABLE"))?;
     if id.is_empty()
         || id.len() > 128
         || !id
@@ -243,7 +251,7 @@ fn history_actor_from_principal(
         return Err(reject(503, "HISTORY_ACTOR_UNAVAILABLE"));
     }
     Ok(HistoryActor {
-        kind,
+        kind: observability::ActorKind::WorkspaceKey,
         id: id.to_owned(),
     })
 }
