@@ -567,7 +567,7 @@ function App() {
           {route === 'keys' && <Keys {...shared} onNewKey={() => setModal('key')} />}
           {route === 'api' && <ApiExplorer {...shared} />}
           {route === 'monitoring' && <Monitoring {...shared} />}
-          {route === 'activity' && <ActivityPage data={data} />}
+          {route === 'activity' && <ActivityPage data={data} refresh={refresh} />}
           {route === 'billing' && <Billing {...shared} />}
           {route === 'settings' && (
             <WorkspaceSettings {...shared} sso={sso} onSignOut={requestSignOut} />
@@ -1914,14 +1914,38 @@ function Monitoring({ data }: Shared) {
     </>
   );
 }
-function ActivityPage({ data }: { data: Data }) {
+function ActivityPage({ data, refresh }: { data: Data; refresh: () => Promise<void> }) {
   const [tab, setTab] = useState('Workspace activity');
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState('');
+  async function refreshActivity() {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshError('');
+    try {
+      await refresh();
+    } catch {
+      setRefreshError('Could not refresh activity. Try again.');
+    } finally {
+      setRefreshing(false);
+    }
+  }
   return (
     <>
       <PageHeading
         title="Activity"
         description="Review Workspace activity and request visibility."
+        actions={
+          <Button loading={refreshing} onClick={() => void refreshActivity()}>
+            Refresh activity
+          </Button>
+        }
       />
+      {refreshError && (
+        <Alert color="red" role="alert" mb="md">
+          {refreshError}
+        </Alert>
+      )}
       <ChoiceTabs value={tab} onChange={setTab} options={['Workspace activity', 'HTTP requests']}>
         {tab === 'Workspace activity' ? (
           <WorkspaceActivityLog data={data} />

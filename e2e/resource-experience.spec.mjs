@@ -875,7 +875,8 @@ test('Overview prioritizes actual resources and Activity clearly describes its c
   await page.getByRole('tab', { name: 'HTTP requests' }).click();
   await expect(page.getByText('HTTP request history is not available yet')).toBeVisible();
   workspace.state.events = [];
-  await page.reload();
+  await page.getByRole('tab', { name: 'Workspace activity' }).click();
+  await page.getByRole('button', { name: 'Refresh activity' }).click();
   await expect(page.getByText('No activity yet', { exact: true })).toBeVisible();
 });
 
