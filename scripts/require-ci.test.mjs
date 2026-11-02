@@ -15,11 +15,19 @@ const run = {
   conclusion: 'success',
   run_attempt: 2,
 };
-const jobs = ['Quality', 'Browser smoke', 'Rust backend and S3 integration'].map((name) => ({
-  name,
-  status: 'completed',
-  conclusion: 'success',
-}));
+const completed = (name, conclusion = 'success') => ({ name, status: 'completed', conclusion });
+const jobs = [
+  completed('Quality'),
+  completed('Browser smoke'),
+  {
+    ...completed('Rust backend and S3 integration'),
+    steps: [
+      completed('Run native API and real S3 integration tests'),
+      completed('Run remaining native API and real S3 integration tests', 'skipped'),
+    ],
+  },
+  completed('Native product integration', 'skipped'),
+];
 
 test('release evidence requires the same source and trusted main workflow', () => {
   assert.equal(evaluateEvidence(run, jobs, sha, 'full'), true);
@@ -68,7 +76,7 @@ test('documentation-only PR applicability is never release evidence', () => {
 
 test('browser inapplicability requires explicit scope and native success in both release modes', () => {
   const scope = { name: 'Backend-only scope', status: 'completed', conclusion: 'success' };
-  const skipped = [jobs[0], { ...jobs[1], conclusion: 'skipped' }, jobs[2], scope];
+  const skipped = [jobs[0], { ...jobs[1], conclusion: 'skipped' }, jobs[2], jobs[3], scope];
   const pending = { ...run, status: 'in_progress', conclusion: null };
   for (const mode of ['console', 'full']) {
     assert.equal(evaluateEvidence(run, skipped, sha, mode), true);
@@ -112,6 +120,80 @@ test('browser inapplicability requires explicit scope and native success in both
   }
   assert.equal(evaluateEvidence(pending, skipped, sha, 'console'), true);
   assert.equal(evaluateEvidence(pending, skipped, sha, 'full'), false);
+});
+
+test('full delivery requires both exact-run shards or a complete unsharded fallback', () => {
+  const sharded = [
+    jobs[0],
+    jobs[1],
+    {
+      ...jobs[2],
+      steps: [
+        completed('Run native API and real S3 integration tests', 'skipped'),
+        completed('Run remaining native API and real S3 integration tests'),
+      ],
+    },
+    {
+      ...completed('Native product integration'),
+      steps: [completed('Run product API integration tests')],
+    },
+  ];
+  assert.equal(evaluateEvidence(run, sharded, sha, 'full'), true);
+  assert.equal(evaluateEvidence(run, jobs, sha, 'full'), true);
+  assert.equal(
+    evaluateEvidence(
+      { ...run, status: 'in_progress', conclusion: null },
+      [...sharded.slice(0, 3), { ...sharded[3], status: 'in_progress', conclusion: null }],
+      sha,
+      'full',
+    ),
+    false,
+  );
+  assert.throws(() => evaluateEvidence(run, sharded.slice(0, 3), sha, 'full'), /Missing/);
+  assert.throws(() => evaluateEvidence(run, [...sharded, sharded[3]], sha, 'full'), /Ambiguous/);
+  for (const conclusion of ['failure', 'cancelled', 'skipped', 'neutral', 'timed_out']) {
+    assert.throws(() =>
+      evaluateEvidence(run, [...sharded.slice(0, 3), { ...sharded[3], conclusion }], sha, 'full'),
+    );
+    const metadata = {
+      ...sharded[2],
+      steps: [sharded[2].steps[0], { ...sharded[2].steps[1], conclusion }],
+    };
+    assert.throws(() =>
+      evaluateEvidence(run, [sharded[0], sharded[1], metadata, sharded[3]], sha, 'full'),
+    );
+  }
+  assert.throws(() =>
+    evaluateEvidence(run, [...sharded.slice(0, 3), { ...sharded[3], steps: [] }], sha, 'full'),
+  );
+  for (const conclusion of ['failure', 'cancelled', 'skipped', 'neutral', 'timed_out']) {
+    assert.throws(() =>
+      evaluateEvidence(
+        run,
+        [
+          ...sharded.slice(0, 3),
+          { ...sharded[3], steps: [completed('Run product API integration tests', conclusion)] },
+        ],
+        sha,
+        'full',
+      ),
+    );
+  }
+  assert.throws(() =>
+    evaluateEvidence(
+      run,
+      [
+        ...sharded.slice(0, 3),
+        { ...sharded[3], steps: [sharded[3].steps[0], sharded[3].steps[0]] },
+      ],
+      sha,
+      'full',
+    ),
+  );
+  const missingFallback = { ...jobs[2], steps: jobs[2].steps.slice(1) };
+  assert.throws(() =>
+    evaluateEvidence(run, [jobs[0], jobs[1], missingFallback, jobs[3]], sha, 'full'),
+  );
 });
 
 test('waits for registration and the newest attempt, never reuses an older success', async () => {

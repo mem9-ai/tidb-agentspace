@@ -26,6 +26,7 @@ jobs:
       docs_only: ${{ steps.scope.outputs.docs_only }}
       history_only: ${{ steps.history_scope.outputs.history_only }}
       classic_profile: ${{ steps.classic_scope.outputs.classic_profile }}
+      full_partition: ${{ steps.full_partition.outputs.full_partition }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: (github.event_name == 'pull_request' && github.base_ref == 'main') || github.event_name == 'push'
@@ -87,6 +88,35 @@ jobs:
           else
             echo 'classic_profile=full' >> "$GITHUB_OUTPUT"
           fi
+      - name: Select the full integration partition using the trusted base policy
+        id: full_partition
+        if: (github.event_name == 'pull_request' && github.base_ref == 'main') || github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          policy_ref='HEAD^1'
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' ]]; then
+            if [[ ! "$BASE_SHA" =~ ^[a-f0-9]{40}$ || ! "$HEAD_SHA" =~ ^[a-f0-9]{40}$ ]] ||
+              [[ "$(git rev-list --parents -n 1 HEAD | wc -w | tr -d ' ')" != '3' ]] ||
+              [[ "$(git rev-parse HEAD^1)" != "$BASE_SHA" || "$(git rev-parse HEAD^2)" != "$HEAD_SHA" ]]; then
+              echo 'full_partition=false' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          else
+            if [[ ! "$BEFORE_SHA" =~ ^[a-f0-9]{40}$ ]] || ! git merge-base --is-ancestor "$BEFORE_SHA" HEAD; then
+              echo 'full_partition=false' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            policy_ref="$BEFORE_SHA"
+          fi
+          runner="$RUNNER_TEMP/ci-full-integration.mjs"
+          if ! git show "$policy_ref:scripts/ci-full-integration.mjs" > "$runner" || ! node "$runner" classify; then
+            echo 'full_partition=false' >> "$GITHUB_OUTPUT"
+          fi
 
   quality:
     name: Quality
@@ -132,7 +162,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -173,8 +203,20 @@ jobs:
           chmod +x "$runtime_dir/rustfs"
           printf '%s\n' "$runtime_dir" >> "$GITHUB_PATH"
       - name: Run native API and real S3 integration tests
-        if: ${{ needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile) }}
+        if: ${{ needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile) && needs.scope.outputs.full_partition != 'true' }}
         run: npm run backend:test:integration
+      - name: Run remaining native API and real S3 integration tests
+        if: ${{ needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile) && needs.scope.outputs.full_partition == 'true' }}
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          policy_ref='HEAD^1'
+          if [[ "$GITHUB_EVENT_NAME" == 'push' ]]; then policy_ref="$BEFORE_SHA"; fi
+          runner="$RUNNER_TEMP/ci-full-integration.mjs"
+          git show "$policy_ref:scripts/ci-full-integration.mjs" > "$runner"
+          node "$runner" other
       - name: Run history authorization, isolation and storage integration tests
         if: ${{ needs.scope.outputs.history_only == 'true' }}
         shell: bash
@@ -202,10 +244,67 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  product_integration:
+    name: Native product integration
+    needs: scope
+    if: ${{ !cancelled() && needs.scope.outputs.full_partition == 'true' && needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile) && (github.event_name != 'pull_request' || (needs.scope.outputs.ui_only != 'true' && needs.scope.outputs.docs_only != 'true')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: 2
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      BEFORE_SHA: ${{ github.event.before }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Select the pinned npm version
+        run: npm install --global npm@11.6.2 --ignore-scripts
+      - run: npm ci
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Restore Rust dependency cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          prefix-key: rust-v1-${{ hashFiles('Cargo.toml', '.cargo/config.toml', 'rust-toolchain.toml', 'scripts/duckdb-runtime.json') }}
+          shared-key: backend
+          workspaces: . -> meta-service/target
+          cache-bin: false
+          cache-workspace-crates: false
+          save-if: false
+      - name: Build native backend
+        run: npm run backend:build
+      - name: Install verified RustFS 1.0.4 binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_dir="$RUNNER_TEMP/workspace-rustfs"
+          mkdir -p "$runtime_dir"
+          curl --fail --location --retry 3 https://github.com/rustfs/rustfs/releases/download/1.0.4/rustfs-linux-x86_64-gnu-v1.0.4.zip --output "$runtime_dir/rustfs.zip"
+          printf '%s  %s\n' '4a25e48f5b5ae610a679b5324206962c6fb0eb20a9fa7ab6cb20e178cf6c534b' "$runtime_dir/rustfs.zip" | sha256sum --check
+          unzip -q "$runtime_dir/rustfs.zip" -d "$runtime_dir"
+          chmod +x "$runtime_dir/rustfs"
+          printf '%s\n' "$runtime_dir" >> "$GITHUB_PATH"
+      - name: Run product API integration tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          policy_ref='HEAD^1'
+          if [[ "$GITHUB_EVENT_NAME" == 'push' ]]; then policy_ref="$BEFORE_SHA"; fi
+          runner="$RUNNER_TEMP/ci-full-integration.mjs"
+          git show "$policy_ref:scripts/ci-full-integration.mjs" > "$runner"
+          node "$runner" product
+
   backend-scope:
     name: Backend-only scope
-    needs: [scope, metadata]
-    if: ${{ !cancelled() && needs.scope.outputs.backend_only == 'true' && needs.metadata.result == 'success' }}
+    needs: [scope, metadata, product_integration]
+    if: ${{ always() && !cancelled() && needs.scope.outputs.backend_only == 'true' && needs.metadata.result == 'success' && (needs.product_integration.result == 'success' || (needs.product_integration.result == 'skipped' && (needs.scope.outputs.full_partition != 'true' || needs.scope.outputs.history_only == 'true' || contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:

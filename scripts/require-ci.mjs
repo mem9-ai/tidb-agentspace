@@ -57,6 +57,33 @@ export function evaluateEvidence(run, jobs, sha, mode) {
       return false;
     }
   }
+  if (mode === 'full') {
+    const metadata = jobs.find((job) => job.name === 'Rust backend and S3 integration');
+    const products = jobs.filter((job) => job.name === 'Native product integration');
+    if (products.length > 1) throw new Error('Ambiguous CI evidence.');
+    const product = products[0];
+    if (product?.status !== 'completed') {
+      if (run.status === 'completed')
+        throw new Error('Missing CI check: Native product integration.');
+      return false;
+    }
+    const conclusion = (job, name) => {
+      const matches = (job.steps || []).filter((step) => step.name === name);
+      if (matches.length !== 1 || matches[0].status !== 'completed')
+        throw new Error(`Missing or ambiguous CI step: ${name}.`);
+      return matches[0].conclusion;
+    };
+    const whole = conclusion(metadata, 'Run native API and real S3 integration tests');
+    const other = conclusion(metadata, 'Run remaining native API and real S3 integration tests');
+    const unsharded =
+      whole === 'success' && other === 'skipped' && product.conclusion === 'skipped';
+    const sharded =
+      whole === 'skipped' &&
+      other === 'success' &&
+      product.conclusion === 'success' &&
+      conclusion(product, 'Run product API integration tests') === 'success';
+    if (!unsharded && !sharded) throw new Error('Incomplete full integration evidence.');
+  }
   return mode !== 'full' || run.status === 'completed';
 }
 
