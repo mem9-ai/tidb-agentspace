@@ -87,6 +87,12 @@ On the HTTP requests view, omit the coverage, retention and recording-status tex
 request. This supersedes the corresponding Console disclosure in ADR 0044; the API's coverage
 and health metadata remain available.
 
+**Monitoring (owner correction, 2026-11-02):** show actionable resource status and link to the
+dedicated Activity page. Do not present internal API authority as a metric or fill the page with
+illustrative telemetry. Make partial resource lists, refresh and empty states usable without
+claiming that resource lifecycle status is a live health measurement. This supersedes the
+Monitoring presentation described in the historical GH-98 experience audit.
+
 ## One interaction language
 
 **Product identity and attribution (owner correction, GH-92, 2026-11-01):** use **TiDB Agent
