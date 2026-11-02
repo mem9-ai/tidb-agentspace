@@ -18,6 +18,21 @@ export function WorkspaceFirstSteps({
     <section aria-label="Get started">
       {isGuest && <GuestExpiryNotice />}
       <div className="resource-grid">
+        {showFileSystem && (
+          <Paper className="panel first-value-choice" withBorder p="xl">
+            <IconFolder size={28} aria-hidden />
+            <Heading level={2}>Work with files</Heading>
+            <Text>Store agent context, preview files, and explore data with SQL or Bash.</Text>
+            <ResourceQuickStart kind="filesystem" />
+            <Button
+              variant="filled"
+              leftSection={<IconPlus size={18} />}
+              onClick={() => onCreate('filesystem')}
+            >
+              Create file system
+            </Button>
+          </Paper>
+        )}
         {showDatabase && (
           <Paper className="panel first-value-choice" withBorder p="xl">
             <IconDatabase01 size={28} aria-hidden />
@@ -30,21 +45,6 @@ export function WorkspaceFirstSteps({
               onClick={() => onCreate('database')}
             >
               Create database
-            </Button>
-          </Paper>
-        )}
-        {showFileSystem && (
-          <Paper className="panel first-value-choice" withBorder p="xl">
-            <IconFolder size={28} aria-hidden />
-            <Heading level={2}>Work with files</Heading>
-            <Text>Give your agent persistent context and explore your files.</Text>
-            <ResourceQuickStart kind="filesystem" />
-            <Button
-              variant="filled"
-              leftSection={<IconPlus size={18} />}
-              onClick={() => onCreate('filesystem')}
-            >
-              Create file system
             </Button>
           </Paper>
         )}

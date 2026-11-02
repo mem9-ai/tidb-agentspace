@@ -370,6 +370,13 @@ export const workspaceApi = {
         : client
       ).PUT('/workspaces/{workspaceId}/files', { params, body }),
     ),
+  createSampleFile: (body: WriteFileInput) =>
+    responseData(
+      client.PUT('/workspaces/{workspaceId}/files', {
+        params: { ...params, header: { 'If-None-Match': '*' } },
+        body,
+      }),
+    ),
   deleteFile: (entry: Pick<WorkspaceFile, 'resourceId' | 'path'>) =>
     responseData(
       client.DELETE('/workspaces/{workspaceId}/files/entry', {

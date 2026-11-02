@@ -23,11 +23,13 @@ const steps: Record<QuickStartKind, { title: string; description: string }[]> = 
       title: 'Create a File System',
       description: 'Choose a region and review the available service.',
     },
-    { title: 'Add a file', description: 'Upload a file or create an agent-notes.md file.' },
+    {
+      title: 'Explore sample files',
+      description: 'Preview notes and data, or add your own files.',
+    },
     {
       title: 'Preview and explore',
-      description:
-        'Preview or analyze supported files, then connect an agent with a Workspace Key.',
+      description: 'Query data with SQL or inspect logs with Bash, then connect an agent.',
     },
   ],
 };

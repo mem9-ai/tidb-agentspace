@@ -60,3 +60,37 @@ export function matchesTotals(rows: Record<string, unknown>[]) {
     )
   );
 }
+
+export const fileExamples = {
+  notes: {
+    suffix: 'notes.md',
+    title: 'Read agent notes',
+    description: 'Preview a Markdown handoff with context for an agent.',
+    content: `# Project handoff
+
+The team is reviewing sales by region.
+
+- APAC: 240
+- EMEA: 180
+- AMER: 90
+
+Next: investigate the failed sync in the activity log.
+`,
+  },
+  log: {
+    suffix: 'activity.log',
+    title: 'Find errors with Bash',
+    description: 'Open Editor tools and choose Find errors to locate the failed sync.',
+    content: `2026-10-30T09:00:00Z INFO sync started
+2026-10-30T09:01:00Z ERROR APAC sync timed out
+2026-10-30T09:02:00Z INFO sync retried
+2026-10-30T09:03:00Z INFO sync completed
+`,
+  },
+} as const;
+
+export type FileExampleKind = keyof typeof fileExamples;
+export function fileExamplePath(id: string, kind: FileExampleKind) {
+  tutorialSample(id); // Validate the workspace-saved identifier before constructing a path.
+  return `/tutorial-${id}-${fileExamples[kind].suffix}`;
+}

@@ -605,7 +605,7 @@ test('Guest sees expiry and File System Quick Start before creating a resource',
   await page.getByRole('button', { name: 'Continue as Guest' }).click();
   const guide = page.getByRole('region', { name: 'Get started' });
   await expect(guide.getByText(/Your Guest Workspace expires 24 hours/)).toBeVisible();
-  await expect(guide.getByText('Add a file', { exact: true })).toBeVisible();
+  await expect(guide.getByText('Explore sample files', { exact: true })).toBeVisible();
   await page.goto('/#files');
   const empty = page.getByRole('region', { name: 'File Systems empty state' });
   await expect(empty.getByText(/Your Guest Workspace expires 24 hours/)).toBeVisible();

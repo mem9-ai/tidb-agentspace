@@ -90,7 +90,10 @@ async function tutorialApi(
       const body = request.postDataJSON();
       calls.push({ ...body, action: 'file' });
       await beforeFileSave?.();
-      expect(body.content).toBe(ordersCsv);
+      if (body.path.includes('-notes.md') || body.path.includes('-activity.log')) {
+        expect(request.headers()['if-none-match']).toBe('*');
+        expect(workspace.state.files.some((file) => file.path === body.path)).toBe(false);
+      } else expect(body.content).toBe(ordersCsv);
       const file = {
         ...body,
         id: body.path,
@@ -107,15 +110,44 @@ async function tutorialApi(
         ),
         nextCursor: null,
       });
-    if (path === '/file-analyses/capabilities')
+    if (path === '/file-analyses/capabilities') {
+      if (url.searchParams.get('path')?.endsWith('-activity.log'))
+        return reply({
+          engine: 'bash',
+          available: true,
+          engines: [
+            {
+              engine: 'bash',
+              available: true,
+              reason: '',
+              input: { path: '/workspace/input.log', workingDirectory: '/workspace', aliases: [] },
+            },
+          ],
+        });
       return reply({
         engine: 'duckdb',
         available: true,
         engines: [{ engine: 'duckdb', available: true, reason: '' }],
       });
+    }
     if (path === '/file-analyses' && method === 'POST') {
       const body = request.postDataJSON();
       calls.push({ ...body, action: 'analyze' });
+      if (body.engine === 'bash') {
+        expect(body.command).toBe("grep -n 'ERROR' '/workspace/input.log' | head -20");
+        const file = workspace.state.files.find(
+          (entry) => entry.resourceId === body.resourceId && entry.path === body.path,
+        );
+        expect(file.content).toContain('ERROR APAC sync timed out');
+        return reply({
+          engine: 'bash',
+          stdout: '2:2026-10-30T09:01:00Z ERROR APAC sync timed out\n',
+          stderr: '',
+          exitCode: 0,
+          inputBytes: file.content.length,
+          durationMs: 1,
+        });
+      }
       expect(
         workspace.state.files.find(
           (file) => file.resourceId === body.resourceId && file.path === body.path,
@@ -531,4 +563,47 @@ test('legacy browser migration retains uncertain sample identity and Workspace s
   expect(workspace.tutorials.get('db_fixture').sampleId).toBe('c'.repeat(32));
   expect(workspace.tutorials.get('fs_fixture').state).toBe('attempted');
   expect(calls).toHaveLength(0);
+});
+
+test('file tutorial opens reusable notes and log samples without replacing edits', async ({
+  page,
+  context,
+  workspace,
+}, testInfo) => {
+  workspace.addResources();
+  workspace.state.resources.find((resource) => resource.id === 'fs_fixture').name = 'Project files';
+  workspace.state.profile.name = 'Developer';
+  const { calls } = await tutorialApi(context, workspace);
+  await workspace.open('#tutorials?resourceId=fs_fixture');
+  const tutorial = page.locator('#tutorial-filesystem');
+  await tutorial.getByRole('button', { name: 'Save sample CSV' }).click();
+  await expect(tutorial.getByText('Sample data ready')).toBeVisible();
+  if (process.env.EXPERIENCE_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.EXPERIENCE_SCREENSHOTS}/file-tutorial-${testInfo.project.name}.png`,
+      fullPage: true,
+    });
+  await tutorial.getByRole('button', { name: 'Open sample notes' }).click();
+  await expect(page.getByRole('heading', { name: 'Project handoff' })).toBeVisible();
+  const notes = workspace.state.files.find((file) => file.path.endsWith('-notes.md'));
+  expect(notes).toBeTruthy();
+  notes.content = '# My own handoff\n';
+  await page.goto('/#tutorials?resourceId=fs_fixture');
+  await tutorial.getByRole('button', { name: 'Open sample notes' }).click();
+  await expect(page.getByRole('heading', { name: 'My own handoff' })).toBeVisible();
+  expect(calls.filter((call) => call.action === 'file' && call.path === notes.path)).toHaveLength(
+    1,
+  );
+  await page.goto('/#tutorials?resourceId=fs_fixture');
+  await tutorial.getByRole('button', { name: 'Open sample log' }).click();
+  await expect(page).toHaveURL(/activity.log.*view=analyze/);
+  await page.getByRole('button', { name: 'Editor tools' }).click();
+  await page.getByRole('menuitem', { name: 'Find errors' }).click();
+  await page.getByRole('button', { name: 'Run command' }).click();
+  await expect(page.getByText('2:2026-10-30T09:01:00Z ERROR APAC sync timed out')).toBeVisible();
+  expect(
+    workspace.state.files.some(
+      (file) => file.path.endsWith('-activity.log') && file.content.includes('ERROR'),
+    ),
+  ).toBe(true);
 });
