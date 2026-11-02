@@ -14,13 +14,24 @@
 }
 .tutorial-resume-card {
   min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.tutorial-resume-identity {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tutorial-resume-list {
+  display: grid;
+  gap: 12px;
 }
 .tutorial-resume-card h3 {
-  margin-block: 12px 8px;
+  margin: 0 0 4px;
 }
-.tutorial-resume .data-tutorials {
-  margin-bottom: 12px;
-}
+
 .data-tutorial {
   min-width: 0;
   scroll-margin-top: 100px;

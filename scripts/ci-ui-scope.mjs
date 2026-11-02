@@ -3,9 +3,9 @@ import { appendFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const uiFile = /^src\/(?!api\/).+\.(?:tsx|css)$/;
+const uiFile = /^src\/(?!api\/).+\.(?:ts|tsx|css)$/;
 const companionFile =
-  /^(?:e2e\/[^/]+\.spec\.mjs|docs\/standards\/(?:product-experience|browser-verification)\.md)$/;
+  /^(?:src\/(?!api\/).+\.test\.mjs|e2e\/[^/]+\.spec\.mjs|docs\/screenshots\/.+\.(?:png|jpe?g|webp)|docs\/standards\/(?:product-experience|browser-verification)\.md)$/;
 const nativeSource = /^(?:backend\/(?!contracts\/)|meta-service\/).+\.rs$/;
 const nativeFile =
   /^(?:(?:backend|meta-service)\/.+\.(?:rs|toml)|Cargo\.(?:toml|lock)|rust-toolchain\.toml|\.cargo\/config\.toml|server\/(?:[^/]+\.test\.mjs|test-support\/.+)|docs\/(?:rust-backend|meta-service|native-backend-retirement)\.md)$/;

@@ -4,7 +4,7 @@ import { createWriteStream } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { metaFixture, port, until } from './meta-fixture.mjs';
+import { metaFixture, reservePorts, until } from './meta-fixture.mjs';
 import { seedRecords, workspaceScope } from './record-fixture.mjs';
 import { providerFixture, nativeSecret } from './provider-fixture.mjs';
 import { globalOwnerFixture } from './global-owner-fixture.mjs';
@@ -119,14 +119,22 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
       },
     });
   }
-  if (transport === 'inProcess') await region.stop();
-  const origins = [];
-  for (let index = 0; index < states.length; index++)
-    origins.push(`http://127.0.0.1:${await port()}`);
   const globalMeta = await meta.service('global');
+  const reserved = await reservePorts(states.length * 2);
+  t.after(async () => Promise.all(reserved.map((entry) => entry.release())));
+  const origins = states.map((_, index) => `http://127.0.0.1:${reserved[index].port}`);
+  if (transport === 'inProcess') await region.stop();
   const globals = await Promise.all(
     states.map((state, index) =>
-      globalOwnerFixture(meta, globalMeta, region, state.workspace.id, origins[index], index),
+      globalOwnerFixture(
+        meta,
+        globalMeta,
+        region,
+        state.workspace.id,
+        origins[index],
+        index,
+        reserved[states.length + index].port,
+      ),
     ),
   );
   const cookies = [];
@@ -182,6 +190,7 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
         flags: 'a',
         mode: 0o600,
       });
+      await Promise.all([reserved[index].release(), reserved[states.length + index].release()]);
       const child = spawn(
         resolve('meta-service/target/debug/workspace-backend'),
         ['serve', '--config', plan],
@@ -268,6 +277,10 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
     revokeKey: (id, workspace = 0) => globals[workspace].revokeKey(id),
     listKeys: (workspace = 0) => globals[workspace].listKeys(),
     deliver: (keyId, keyVersion) => globals[0].deliver(keyId, keyVersion),
+    async stopRegionMetadata() {
+      region.client.close();
+      await region.stop('SIGKILL');
+    },
     startIndependentGlobalMeta: async () => globalMeta,
     async seedResources(count, onProgress = () => {}) {
       const scope = workspaceScope(region.server.authorityId, states[0].workspace.id);

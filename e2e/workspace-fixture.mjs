@@ -67,6 +67,8 @@ export const test = base.extend({
     const requests = [];
     const unexpected = [];
     const tutorials = new Map();
+    const history = { audit: [], requests: [], retention: {} };
+    const historyPages = { audit: new Map(), requests: new Map() };
     let tutorialRevision = 0;
     let rejectAutomaticName = false;
     let signInRequired = false;
@@ -147,6 +149,37 @@ export const test = base.extend({
         .replace('/api/global', '')
         .replace('/api/portal/v1/', '/api/v1/')
         .replace(`/api/v1/workspaces/${state.workspace.id}`, '');
+      if (method === 'GET' && ['/audit-history', '/request-history'].includes(path)) {
+        const kind = path === '/audit-history' ? 'audit' : 'requests';
+        const cursor = url.searchParams.get('cursor');
+        const result = cursor
+          ? historyPages[kind].get(cursor)
+          : historyPages[kind].get('') || { data: history[kind], nextCursor: null };
+        if (!result)
+          return reply({ error: { code: 'HISTORY_CURSOR_EXPIRED', message: 'Page expired' } }, 410);
+        return reply({
+          ...result,
+          coverage: {
+            status: 'partial',
+            startedAt: null,
+            operations: [],
+            exclusions: [
+              kind === 'audit'
+                ? 'Global Key activity is not included'
+                : 'Global requests are not included',
+              'Some outcomes are unknown',
+            ],
+          },
+          retention: {
+            maxAgeDays: kind === 'audit' ? 30 : 7,
+            maxRecords: 100000,
+            earliestAt: null,
+            truncated: null,
+            ...history.retention[kind],
+          },
+          health: { status: 'unknown', droppedCount: null, lossDetectedAt: null },
+        });
+      }
       if (path === '/bootstrap') {
         return reply({
           ...state,
@@ -319,6 +352,10 @@ export const test = base.extend({
     await context.route('**/*', handler);
     await use({
       state,
+      history,
+      setHistoryPage(kind, cursor, data, nextCursor = null) {
+        historyPages[kind].set(cursor, { data, nextCursor });
+      },
       requests,
       setResourcePage(cursor, data, nextCursor = null) {
         resourcePages.set(cursor, { data, nextCursor, capabilities: state.capabilities });

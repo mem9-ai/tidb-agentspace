@@ -7,7 +7,8 @@ against the Rust API; runtime capability discovery remains authoritative for ava
 
 `generate-client.mjs` produces the shared Portal client types from the generated internal
 `portal-regional-openapi.json` and `portal-global-openapi.json`. Public `openapi.json` and
-`global-openapi.json` describe Agent operations; Portal session and Key administration
+`global-openapi.json` describe Agent operations; `owner-openapi.json` describes the regional
+owner-only history operations. Portal session and Key administration
 operations are kept in the separate Portal contracts. Use
 `npm run api:generate` and `npm run api:check`; do not edit generated outputs manually.
 

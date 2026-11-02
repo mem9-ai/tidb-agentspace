@@ -74,6 +74,16 @@ format/field/type confirmation, overwrite/discard decisions, provider limits and
 information remain explicit. Never auto-run customer SQL, auto-provision a resource, broaden
 a Key or discard work to save a click. Backend authorization remains authoritative.
 
+**Focused Overview and activity (owner correction, 2026-11-02):** a populated Overview
+prioritizes compact links to actual resources and resumable work. Avoid large empty resource-type
+cards and embedded API examples; keep creation and the dedicated connection guide reachable.
+Put operational history on a separate Activity destination. The current event feed contains at
+most 200 successful changes and is not a complete security audit or HTTP request history;
+show that limitation explicitly. Both audit and HTTP histories are required, with backend design
+and implementation tracked in [GH-119](https://github.com/mem9-ai/tidb.ai/issues/119). Verify
+empty and populated states, exact-resource links, progress re-entry, truthful coverage and
+narrow layouts. Revisit the Activity presentation when verified request and audit records ship.
+
 ## One interaction language
 
 **Product identity and attribution (owner correction, GH-92, 2026-11-01):** use **TiDB Agent

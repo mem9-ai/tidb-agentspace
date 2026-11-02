@@ -453,16 +453,20 @@ test(
       401,
     );
     assert.equal((await callback(login)).body.error.code, 'SSO_STATE_INVALID');
-    assert.equal(
-      (
-        await request(base + '/settings', {
-          method: 'PATCH',
-          cookie,
-          body: { workspaceName: 'SSO workspace', name: 'Alice', description: 'SSO audited' },
-        })
-      ).status,
-      200,
+    const updated = await request(base + '/settings', {
+      method: 'PATCH',
+      cookie,
+      body: { workspaceName: 'SSO workspace', name: 'Alice', description: 'SSO audited' },
+    });
+    assert.equal(updated.status, 200, JSON.stringify(updated.body));
+    const audit = await request(base + '/audit-history', { cookie });
+    assert.equal(audit.status, 200, JSON.stringify(audit.body));
+    const records = audit.body.data.filter(
+      (entry) => entry.requestId === updated.headers['x-request-id'],
     );
+    assert.equal(records.length, 2);
+    assert.match(records[0].actor.id, /^owner-[a-f0-9]{64}$/);
+    assert.equal(JSON.stringify(records).includes('alice'), false);
     const events = await request(base + '/events', { cookie });
     assert.ok(JSON.stringify(events.body).includes('tidb:alice'));
     assert.ok(!JSON.stringify(events.body).includes(cookie));

@@ -2,11 +2,12 @@
 
 ## What is implemented
 
-[ADR 0026](decisions/0026-native-hosted-studio.md) makes Rust the only serving runtime. `Quality` builds the Console and checks Console/tooling/contracts; `Rust backend and S3 integration` builds/tests all native phases, and applicable `Browser smoke` builds the same candidate and asserts Console journeys in parallel. Internal backend changes use [OpenAPI behavior verification](standards/openapi-verification.md) without frontend retesting. Dev CD packages a native-only Linux amd64 image, the currently verified Linux static DuckDB target. Node is not present in that image. [Native deployment](native-studio-deployment.md) defines fresh S3 roots/keys and the one-time target bootstrap.
+[ADR 0026](decisions/0026-native-hosted-studio.md) makes Rust the only serving runtime. For application changes, `Quality` builds the Console and checks Console/tooling/contracts; `Rust backend and S3 integration` builds/tests all native phases, and applicable `Browser smoke` builds the same candidate and asserts Console journeys in parallel. Documentation-only PRs use the scoped checks described below. Internal backend changes use [OpenAPI behavior verification](standards/openapi-verification.md) without frontend retesting. Dev CD packages a native-only Linux amd64 image, the currently verified Linux static DuckDB target. Node is not present in that image. [Native deployment](native-studio-deployment.md) defines fresh S3 roots/keys and the one-time target bootstrap.
 
-- `.github/workflows/ci.yml`: clean installation and `npm run check` on PRs, pushes to
-  `main`, merge-queue candidates, and manual requests. Quality uploads the Console artifact;
-  Browser smoke builds the same SHA independently to avoid waiting for Quality. Native image
+- `.github/workflows/ci.yml`: clean installation and `npm run check` on non-documentation PRs, pushes to
+  `main`, merge-queue candidates, and manual requests. Documentation-only PRs run scoped Quality
+  checks and do not upload a Console artifact. Browser smoke builds the same SHA independently
+  to avoid waiting for Quality. Native image
   verification runs in parallel for PR image-input changes.
 - `.github/workflows/release.yml`: a manual, main-branch-only internal artifact build. It
   runs the same quality gate and packages the runtime, frontend,
@@ -41,14 +42,15 @@ repository requires a plan upgrade. Do not change repository visibility to work 
 
 ## Verification scope and waiting time
 
-Accepted owner direction, 2026-11-01: select checks from the changed inputs and material risks;
-do not default every change to full regression. Record required/inapplicable checks, reusable
+Accepted owner direction, updated 2026-11-02: default to skipping checks unrelated to the change
+or already covered by applicable evidence. Run each check only for a material risk or explicit
+requirement, choosing the smallest necessary set. Record required/inapplicable checks, reusable
 passing evidence and the PR/main/deploy critical path following
 [verification scope](standards/openapi-verification.md#choose-verification-scope-and-control-delivery-time).
 CI/CD time is part of delivery cost. Optimize redundant builds/runs, cache safe unchanged
 inputs and parallelize isolated work while preserving all required behavior assertions and
 trusted provenance. Current automatic scope rules and exact-commit consumers below remain
-implemented requirements; finer automatic operator/documentation scope and cross-commit evidence reuse
+implemented requirements; finer automatic operator scope and cross-commit evidence reuse
 require a reviewed automation change and must not be claimed as already available.
 
 ## Current early-iteration merge policy
@@ -59,8 +61,9 @@ or a separate human approval after all of the following are true:
 
 - The diff has been reviewed for behavior, scope, compatibility, and credentials.
 - `Quality` and all applicable CI checks pass on the latest PR head. A skipped Rust/S3 job
-  is acceptable only for the narrowly classified UI-only PR path. A skipped Browser smoke
-  requires successful native and `Backend-only scope` jobs as described below.
+  requires the narrowly classified UI-only or documentation-only PR path. A skipped Browser
+  smoke requires successful native and `Backend-only scope` jobs, or successful
+  `Documentation-only scope` evidence, as described below.
 - The PR has no merge conflict, and any enforced GitHub requirements are satisfied.
 - Contributor attribution is preserved.
 
@@ -73,14 +76,24 @@ sync the local checkout with `main`.
 ## Single automatic gate and delivery consumers
 
 [ADR 0027](decisions/0027-single-ci-evidence.md) assigns automatic checks to CI once per
-candidate. For PR merge candidates only, an allowlist of UI `.tsx`/`.css` files and their
-specified browser tests and experience guidance may skip the Rust/S3 job. At least one UI file
+candidate. For PR merge candidates only, an allowlist of UI `.ts`/`.tsx`/`.css` files outside
+`src/api`, their colocated unit tests, screenshot evidence, specified browser tests and experience
+guidance may skip the Rust/S3 job. At least one UI file
 must change; a backend, contract, dependency, workflow, other test or unrecognized file requires
 the full job. The classifier runs the policy from the tested base, compares both sides of renames,
 and falls back to full checks when the merge or policy cannot be verified. Quality and security
 checks remain applicable. Main pushes, merge queues and manual runs always execute
 Rust/S3. Main CI runs use independent SHA groups so later pushes do not cancel evidence awaited by
 delivery. Only superseded PR/merge-queue candidates cancel.
+
+For documentation-only PR merge candidates, a separate policy from the tested base permits
+Markdown in `docs/` or `specs/`, root `README.md`, and raster evidence in `docs/screenshots/`.
+If every changed path is allowlisted, `Quality` checks runtime, repository policy and formatting;
+application builds and tests, native and browser jobs are inapplicable. `Documentation-only
+scope` records that decision only after the applicable Quality checks succeed.
+The comparison includes both sides of renames; unknown paths, source, contracts, dependencies,
+workflow files, missing policy and ambiguous merge candidates fall back to both jobs. Main
+pushes and all deployment evidence continue to require the existing same-commit checks.
 
 For native-only PR/main changes, the trusted-base policy may skip Browser smoke. At least
 one allowlisted native source must change, and every path must belong to native implementation,
@@ -258,6 +271,10 @@ The Rust CI job checks formatting before compiling, then runs separately named b
 Clippy, Rust unit-test and native/S3 integration-test steps. Together these run the same
 checks as local `npm run backend:check`; warnings remain errors and integration tests still
 use isolated real RustFS. Two Cargo jobs and disabled debug symbols bound runner memory.
+Multi-service product fixtures hold their selected Workspace and control ports until each
+host starts, so a metadata or control service cannot claim a released port and answer the
+wrong readiness probe. Keep the reservations distinct from the active metadata listener,
+including when that listener is subsequently restarted in-process.
 
 The pinned [rust-cache action](https://github.com/Swatinem/rust-cache/tree/d1527c8f67ef9af357290475d4af4b0fab8f12e0)
 caches Cargo registry/git dependencies and dependency build artifacts in the actual target

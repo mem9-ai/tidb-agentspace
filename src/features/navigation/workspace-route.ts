@@ -7,6 +7,7 @@ const pages = [
   'keys',
   'api',
   'monitoring',
+  'activity',
   'billing',
   'settings',
 ] as const;

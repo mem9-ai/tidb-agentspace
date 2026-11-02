@@ -15,6 +15,7 @@ test('only known native changes use API verification without a browser', () => {
       'src/api/client.ts',
       'src/App.tsx',
       'public/openapi.json',
+      'public/owner-openapi.json',
       'server/generate-openapi.mjs',
       'backend/contracts/src/lib.rs',
       'package.json',
@@ -44,9 +45,10 @@ test('only a proven UI-only PR merge candidate uses the fast path', () => {
   for (const file of [
     'backend/api/src/lib.rs',
     'src/api/client.ts',
-    'src/features/auth/helper.ts',
+    'src/api/client.test.mjs',
     'package-lock.json',
     'public/openapi.json',
+    'public/owner-openapi.json',
     '.github/workflows/ci.yml',
     'scripts/ci-ui-scope.mjs',
     'e2e/workspace-fixture.mjs',
@@ -56,6 +58,19 @@ test('only a proven UI-only PR merge candidate uses the fast path', () => {
   assert.equal(isUiOnlyPullRequest('pull_request', 2, []), false);
   assert.equal(isUiOnlyPullRequest('pull_request', 2, ['e2e/workspace.spec.mjs']), false);
   assert.equal(isUiOnlyPullRequest('pull_request', 2, ['src/App.tsx', 'src/styles.css']), true);
+  assert.equal(
+    isUiOnlyPullRequest('pull_request', 2, [
+      'src/App.tsx',
+      'src/features/navigation/workspace-route.ts',
+      'src/features/navigation/workspace-route.test.mjs',
+      'docs/screenshots/streamlined-workspace/overview-desktop-light.png',
+    ]),
+    true,
+  );
+  assert.equal(
+    isUiOnlyPullRequest('pull_request', 2, ['src/App.tsx', 'docs/screenshots/helper.mjs']),
+    false,
+  );
 });
 
 test('missing or untrusted Git candidate fails closed', (t) => {

@@ -279,10 +279,24 @@ test('automatic checks execute once and releases require exact-commit native evi
     );
   assert.ok(!JSON.stringify(workflow.jobs.verify).includes('secrets.'));
   assert.equal(ci.jobs.quality.steps.filter((step) => step.run === 'npm run check').length, 1);
+  assert.equal(ci.jobs.quality.needs, 'scope');
+  assert.equal(ci.jobs.quality.if, '${{ !cancelled() }}');
+  assert.equal(
+    ci.jobs.quality.steps.find((step) => step.run === 'npm run check').if,
+    "${{ needs.scope.outputs.docs_only != 'true' }}",
+  );
+  const docsQuality = ci.jobs.quality.steps.find(
+    (step) => step.name === 'Check documentation and repository policy',
+  );
+  assert.equal(docsQuality.if, "${{ needs.scope.outputs.docs_only == 'true' }}");
+  assert.equal(
+    docsQuality.run,
+    'npm run check:runtime && npm run check:repo && npm run format:check',
+  );
   assert.equal(ci.jobs.browser.needs, 'scope');
   assert.equal(
     ci.jobs.browser.if,
-    "${{ !cancelled() && needs.scope.outputs.backend_only != 'true' }}",
+    "${{ !cancelled() && needs.scope.outputs.backend_only != 'true' && needs.scope.outputs.docs_only != 'true' }}",
   );
   assert.deepEqual(ci.jobs['backend-scope'].needs, ['scope', 'metadata']);
   assert.equal(ci.jobs['backend-scope'].name, 'Backend-only scope');
@@ -297,7 +311,13 @@ test('automatic checks execute once and releases require exact-commit native evi
   assert.equal(ci.jobs.metadata.needs, 'scope');
   assert.equal(
     ci.jobs.metadata.if,
-    "${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.ui_only != 'true') }}",
+    "${{ !cancelled() && (github.event_name != 'pull_request' || (needs.scope.outputs.ui_only != 'true' && needs.scope.outputs.docs_only != 'true')) }}",
+  );
+  assert.deepEqual(ci.jobs['documentation-scope'].needs, ['scope', 'quality']);
+  assert.equal(ci.jobs['documentation-scope'].name, 'Documentation-only scope');
+  assert.equal(
+    ci.jobs['documentation-scope'].if,
+    "${{ !cancelled() && needs.scope.outputs.docs_only == 'true' && needs.quality.result == 'success' }}",
   );
   const scope = ci.jobs.scope.steps.find((step) => step.id === 'scope');
   assert.equal(
@@ -309,9 +329,12 @@ test('automatic checks execute once and releases require exact-commit native evi
   assert.match(scope.run, /policy_ref="\$BEFORE_SHA"/);
   assert.match(scope.run, /merge-base --is-ancestor/);
   assert.match(scope.run, /git show "\$policy_ref:scripts\/ci-ui-scope\.mjs"/);
+  assert.match(scope.run, /git show "\$policy_ref:scripts\/ci-docs-scope\.mjs"/);
+  assert.match(scope.run, /docs_only=false/);
   assert.match(scope.run, /ui_only=false/);
   assert.match(scope.run, /backend_only=false/);
   assert.equal(ci.jobs.scope.outputs.backend_only, '${{ steps.scope.outputs.backend_only }}');
+  assert.equal(ci.jobs.scope.outputs.docs_only, '${{ steps.scope.outputs.docs_only }}');
   assert.equal(ci.jobs.scope.steps[0].with['fetch-depth'], 0);
   for (const command of [
     'npm run backend:fmt',

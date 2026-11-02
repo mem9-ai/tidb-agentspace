@@ -18,10 +18,7 @@ export function TutorialResume({ data }: { data: Data }) {
   return (
     <section className="tutorial-resume" aria-label="Your tutorials">
       <Group justify="space-between" mb="md">
-        <div>
-          <Heading level={2}>Your tutorials</Heading>
-          <Text>Revisit a result or pick up where you left off.</Text>
-        </div>
+        <Heading level={2}>Your tutorials</Heading>
         <Group>
           <Button variant="subtle" onClick={() => void store.refresh()}>
             Refresh tutorials
@@ -31,8 +28,11 @@ export function TutorialResume({ data }: { data: Data }) {
           </Button>
         </Group>
       </Group>
-      <div className="data-tutorials">
-        {tutorials.map(({ resource, progress }) => {
+      <Text size="sm" c="carbon.7" mb="sm">
+        Progress is saved in this Workspace and available across browsers.
+      </Text>
+      <div className="tutorial-resume-list">
+        {tutorials.slice(0, 6).map(({ resource, progress }) => {
           const files = resource.kind === 'filesystem';
           const sample = tutorialSample(progress.id);
           const available = resource.status === 'active' && !resource.connectionError;
@@ -43,7 +43,11 @@ export function TutorialResume({ data }: { data: Data }) {
                 liveDatabase(resource) ? sample.table : 'agent_events',
               );
           return (
-            <Paper withBorder p="xl" key={resource.id} className="tutorial-resume-card">
+            <Paper withBorder p="md" key={resource.id} className="tutorial-resume-card">
+              <div className="tutorial-resume-identity">
+                <Heading level={3}>{files ? 'Analyze sample files' : 'Query sample data'}</Heading>
+                <Text size="sm">{resource.name}</Text>
+              </div>
               <Badge color={!available ? 'yellow' : progress.completed ? 'green' : 'carbon'}>
                 {!available
                   ? resource.connectionError
@@ -55,14 +59,7 @@ export function TutorialResume({ data }: { data: Data }) {
                       ? 'Sample ready'
                       : 'Check sample'}
               </Badge>
-              <Heading level={3}>{files ? 'Analyze sample files' : 'Query sample data'}</Heading>
-              <Text>{resource.name}</Text>
-              <Text size="sm" c="carbon.7">
-                {progress.completed
-                  ? 'Run the query again for a fresh result.'
-                  : 'Continue with the saved sample and query.'}
-              </Text>
-              <Group mt="md">
+              <Group gap="xs">
                 <Button component="a" href={tutorialHash(resource.id)} variant="default">
                   {progress.completed ? 'Revisit tutorial' : 'Continue tutorial'}
                 </Button>
@@ -76,10 +73,11 @@ export function TutorialResume({ data }: { data: Data }) {
           );
         })}
       </div>
-      <Text size="sm" c="carbon.7">
-        Progress is saved in this Workspace and available across browsers. Results are fetched when
-        you run a query.
-      </Text>
+      {tutorials.length > 6 && (
+        <Text size="sm" c="carbon.7">
+          More tutorials are available under All tutorials.
+        </Text>
+      )}
     </section>
   );
 }
