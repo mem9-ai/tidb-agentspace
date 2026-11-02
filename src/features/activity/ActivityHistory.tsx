@@ -189,16 +189,22 @@ export function ActivityHistory({
       ),
     ) || [];
   const noun = kind === 'audit' ? 'audit records' : 'requests';
+  const firstExclusion = page?.coverage.exclusions[0];
+  const coverageSummary =
+    firstExclusion === 'Global Key activity is not included'
+      ? 'Workspace Key changes are not included'
+      : firstExclusion === 'Global requests are not included'
+        ? 'Workspace Key and access requests are not included'
+        : firstExclusion;
   return (
     <section aria-label={kind === 'audit' ? 'Audit history' : 'HTTP request history'}>
       {page && (
         <>
-          <Alert color="yellow" title="Partial regional coverage" mb="md">
-            {page.coverage.exclusions[0] && <>{page.coverage.exclusions[0]}. </>}
+          <Alert color="yellow" title="Some activity is not included" mb="md">
+            Records cover this region. {coverageSummary && <>{coverageSummary}. </>}
             {page.coverage.startedAt
-              ? `Coverage starts ${time(page.coverage.startedAt)}.`
-              : 'Coverage start is unavailable.'}{' '}
-            This is not a complete history.
+              ? `Recording started ${time(page.coverage.startedAt)}.`
+              : 'Recording start unavailable.'}
             {page.coverage.exclusions.length > 1 && (
               <details>
                 <summary>Coverage details</summary>

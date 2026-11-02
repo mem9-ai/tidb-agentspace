@@ -894,7 +894,7 @@ test('Overview prioritizes actual resources and Activity clearly describes its c
   await page.getByRole('link', { name: 'Activity', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible();
   await expect(page.getByText('File saved', { exact: true })).toBeVisible();
-  await expect(page.getByText(/not a complete history/)).toBeVisible();
+  await expect(page.getByText('Some activity is not included', { exact: true })).toBeVisible();
   await expect(page.getByText('File system · Project files', { exact: true })).toBeVisible();
   await expect(page.getByText(/Older records are no longer available/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Copy request ID correlation-1' })).toBeVisible();
@@ -958,7 +958,7 @@ test('audit history filters loaded pages and recovers from an expired cursor', a
   workspace.setHistoryPage('audit', 'next', [record('second', 'file.delete', 'denied')], 'expired');
   await workspace.open('#activity');
   await expect(page.getByText('File saved', { exact: true })).toBeVisible();
-  await expect(page.getByText('Global activity is not included')).toBeVisible();
+  await expect(page.getByText(/Workspace Key changes are not included/)).toBeVisible();
   await page.getByRole('button', { name: 'Load more' }).click();
   await expect(page.getByText('File deleted', { exact: true })).toBeVisible();
   await page.getByRole('textbox', { name: 'Filter loaded audit records' }).fill('deleted');

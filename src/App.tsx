@@ -1950,7 +1950,7 @@ function ActivityPage({
     <div className="activity-page">
       <PageHeading
         title="Activity"
-        description="Review regional audit records and HTTP requests."
+        description="Review changes and requests in your workspace."
         actions={
           <Button size="sm" loading={refreshing} onClick={() => void refreshActivity()}>
             Refresh activity

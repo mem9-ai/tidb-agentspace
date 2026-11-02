@@ -163,7 +163,12 @@ export const test = base.extend({
             status: 'partial',
             startedAt: null,
             operations: [],
-            exclusions: ['Global activity is not included', 'Some outcomes are unknown'],
+            exclusions: [
+              kind === 'audit'
+                ? 'Global Key activity is not included'
+                : 'Global requests are not included',
+              'Some outcomes are unknown',
+            ],
           },
           retention: {
             maxAgeDays: kind === 'audit' ? 30 : 7,
