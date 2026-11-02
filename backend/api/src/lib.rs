@@ -771,12 +771,20 @@ async fn dispatch(
         )
             .into_response());
     }
-    let query: BTreeMap<String, String> =
-        reqwest::Url::parse(&format!("http://localhost{}", request.uri()))
-            .map_err(|_| reject(400, "INVALID_PATH"))?
-            .query_pairs()
-            .into_owned()
-            .collect();
+    let history_request = method == Method::GET
+        && path
+            .strip_prefix("/api/v1/workspaces/")
+            .and_then(|tail| tail.split_once('/'))
+            .is_some_and(|(_, route)| matches!(route, "audit-history" | "request-history"));
+    let mut query = BTreeMap::new();
+    let mut duplicate_history_query = false;
+    for (name, value) in reqwest::Url::parse(&format!("http://localhost{}", request.uri()))
+        .map_err(|_| reject(400, "INVALID_PATH"))?
+        .query_pairs()
+        .into_owned()
+    {
+        duplicate_history_query |= query.insert(name, value).is_some() && history_request;
+    }
     if path == "/api/portal/auth/session-exchanges" && method == Method::POST {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
@@ -870,6 +878,7 @@ async fn dispatch(
     if !portal_request
         && (path == "/api/v1/workspaces" || path.starts_with("/api/v1/workspaces/"))
         && !headers.contains_key("authorization")
+        && !history_request
     {
         return Err(reject(401, "AGENT_TOKEN_REQUIRED"));
     }
@@ -1123,6 +1132,38 @@ async fn dispatch(
         return Ok(response);
     }
     let credential = credential(&app, &headers).await?;
+    if history_request {
+        use workspace_domain::observability::HistoryStream;
+        if !app.workspace.authenticate(&credential).await?.owner {
+            return Err(reject(403, "OWNER_REQUIRED"));
+        }
+        if duplicate_history_query {
+            return Err(reject(400, "INVALID_HISTORY_QUERY"));
+        }
+        let (stream, days) = match route {
+            "/audit-history" => (HistoryStream::Audit, 30),
+            "/request-history" => (HistoryStream::Requests, 7),
+            _ => return Err(reject(404, "NOT_FOUND")),
+        };
+        let filter = history_query::HistoryQuery::parse(&query, stream)?;
+        let page = app
+            .workspace
+            .owner_history_page(&credential, stream, filter.filter())
+            .await?;
+        credential_for_response(&app, &headers, &credential).await?;
+        // Collection is not connected yet. Never claim that existing data is complete.
+        let mut response = Json(json!({
+            "data": page["data"],
+            "nextCursor": page["nextCursor"],
+            "coverage": {"status":"unavailable", "startedAt":null, "operations":[], "exclusions":["Regional collection is not enabled", "Global activity is unavailable"]},
+            "retention": {"maxAgeDays":days, "maxRecords":100000, "earliestAt":null, "truncated":null},
+            "health": {"status":"unavailable", "droppedCount":null, "lossDetectedAt":null}
+        })).into_response();
+        response
+            .headers_mut()
+            .insert("Cache-Control", HeaderValue::from_static("no-store"));
+        return Ok(retain_guest_lease(response, guest_lease));
+    }
     let operation = if path == "/api/v1/workspaces" && method == Method::GET {
         Operation::ListWorkspaces
     } else {

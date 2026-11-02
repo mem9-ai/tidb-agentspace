@@ -55,6 +55,40 @@ const base = '/api/v1/workspaces/ws_agentlab';
 const secret = 'retained-public-workspace-key';
 const privateWrite = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
 test(
+  'history pages require the current Workspace owner and disclose unavailable collection',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const key = await fixture.issueKey({
+      name: 'broad-agent',
+      scopes: ['resources:read', 'files:read'],
+      resourceIds: ['*'],
+      expiresInDays: 7,
+    });
+    assert.equal(key.status, 201, JSON.stringify(key.body));
+    for (const route of ['/audit-history', '/request-history']) {
+      const page = await fixture.request(route);
+      assert.equal(page.status, 200, JSON.stringify(page.body));
+      assert.deepEqual(page.body.data, []);
+      assert.equal(page.body.coverage.status, 'unavailable');
+      assert.equal(page.body.health.status, 'unavailable');
+      assert.equal(page.headers.get('cache-control'), 'no-store');
+      assert.equal((await fixture.request(`${route}?limit=bad`, { token: null })).status, 401);
+      assert.equal(
+        (await fixture.request(`${route}?limit=bad`, { token: key.body.secret })).status,
+        403,
+      );
+      assert.equal((await fixture.request(`${route}?limit=1&limit=2`)).status, 400);
+      assert.equal((await fixture.request(`/api/v1/workspaces/ws_other${route}`)).status, 404);
+      assert.equal(
+        (await fixture.request(`/api/v1/workspaces/${fixture.endpoints.workspaceId}${route}`))
+          .status,
+        200,
+      );
+    }
+  },
+);
+test(
   'image preview enforces the size boundary before reading and validates image type',
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
   async (t) => {
