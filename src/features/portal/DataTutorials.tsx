@@ -17,7 +17,6 @@ import { CodeExample } from '../../ui/CodeExample';
 import { WorkspaceQueryResults } from '../../ui/WorkspaceQueryResults';
 import { databaseEditorHash, tutorialHash } from '../navigation/workspace-route';
 import { fileHash } from '../files/file-location';
-import { resourceKindLabels } from '../resources/resource-creation';
 import {
   databaseTutorial,
   fileExamples,
@@ -142,6 +141,11 @@ export function DataTutorials({
                 resource.status === 'active' && (kind === 'filesystem' || liveDatabase(resource)),
             ) ??
             resources[0];
+          const canCreate =
+            !selected ||
+            selected.status !== 'active' ||
+            !!selected.connectionError ||
+            (kind === 'database' && !liveDatabase(selected));
           return (
             <Tabs.Panel value={kind} key={kind}>
               <Paper
@@ -204,50 +208,44 @@ export function DataTutorials({
                     <div>
                       <Heading level={3}>
                         {kind === 'filesystem'
-                          ? 'Choose a File System'
-                          : '1. Choose or create a database'}
+                          ? selected
+                            ? 'Choose a File System'
+                            : 'Create a File System'
+                          : canCreate
+                            ? '1. Choose or create a database'
+                            : '1. Choose a database'}
                       </Heading>
                       {resources.length > 0 && (
-                        <>
-                          <NativeSelect
-                            mt="sm"
-                            label={
-                              kind === 'filesystem' ? 'Tutorial File System' : 'Tutorial database'
-                            }
-                            value={selected?.id ?? ''}
-                            title={selected?.name}
-                            disabled={busy}
-                            onChange={(event) => {
-                              const id = event.currentTarget.value;
-                              (kind === 'filesystem' ? setFilesystemId : setDatabaseId)(id);
-                              store.saveSelection(kind, id);
-                              location.hash = tutorialHash(id);
-                            }}
-                            data={resources.map((resource) => ({
-                              value: resource.id,
-                              label: resource.name,
-                            }))}
-                          />
-                          {selected && (
-                            <Text size="sm" c="carbon.7" mt="xs">
-                              {resourceKindLabels[selected.kind]} ·{' '}
-                              {selected.connectionError
-                                ? 'Connection unavailable'
-                                : selected.status === 'active'
-                                  ? 'Ready'
-                                  : selected.status}
-                            </Text>
-                          )}
-                        </>
+                        <NativeSelect
+                          mt="sm"
+                          label={
+                            kind === 'filesystem' ? 'Tutorial File System' : 'Tutorial database'
+                          }
+                          value={selected?.id ?? ''}
+                          title={selected?.name}
+                          disabled={busy}
+                          onChange={(event) => {
+                            const id = event.currentTarget.value;
+                            (kind === 'filesystem' ? setFilesystemId : setDatabaseId)(id);
+                            store.saveSelection(kind, id);
+                            location.hash = tutorialHash(id);
+                          }}
+                          data={resources.map((resource) => ({
+                            value: resource.id,
+                            label: resource.name,
+                          }))}
+                        />
                       )}
-                      <Button
-                        mt="sm"
-                        variant={selected ? 'subtle' : 'filled'}
-                        disabled={busy}
-                        onClick={() => onCreate(kind === 'filesystem' ? 'filesystem' : 'mysql')}
-                      >
-                        Create {kind === 'filesystem' ? 'File System' : 'database'}
-                      </Button>
+                      {canCreate && (
+                        <Button
+                          mt="sm"
+                          variant={selected ? 'default' : 'filled'}
+                          disabled={busy}
+                          onClick={() => onCreate(kind === 'filesystem' ? 'filesystem' : 'mysql')}
+                        >
+                          Create {kind === 'filesystem' ? 'File System' : 'database'}
+                        </Button>
+                      )}
                       {!selected && (
                         <Text mt="sm">
                           After creation, continue here with your new resource selected.

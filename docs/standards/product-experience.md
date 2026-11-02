@@ -127,7 +127,9 @@ resource identity, unavailable persistence, conflicts and error/draft states. Se
 and separate file examples by the outcome a user wants, such as SQL analysis, Markdown preview
 and Bash. Each example must be independently accessible without first completing another one;
 keep the database tutorial discoverable and retain Workspace-backed sample identity and safe
-re-entry. Verify first use, switching journeys, cross-browser return and narrow layouts. Revisit
+re-entry. When an available resource is selected, lead directly to its examples; offer creation
+when a resource is missing or unavailable, and keep failure recovery explicit. Verify first use,
+switching journeys, cross-browser return and narrow layouts. Revisit
 the grouping as supported file formats and real usage develop.
 
 - Comparable screens share implemented primitives and state transitions, not independently

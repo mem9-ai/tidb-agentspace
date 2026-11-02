@@ -187,6 +187,9 @@ test('@visual Workspace tutorials resume in an isolated browser with no browser 
     'true',
   );
   await page.getByRole('tab', { name: 'Database', exact: true }).click();
+  await expect(database.getByRole('button', { name: 'Create database', exact: true })).toHaveCount(
+    0,
+  );
   await expect(
     database.getByRole('button', { name: 'Run tutorial query', exact: true }),
   ).toBeDisabled();
@@ -295,6 +298,11 @@ test('tutorial creation selects the returned resource and continues with include
   await expect(page.getByRole('combobox', { name: 'Tutorial database', exact: true })).toHaveValue(
     'fixture_mysql_0',
   );
+  await expect(
+    page
+      .locator('#tutorial-database')
+      .getByRole('button', { name: 'Create database', exact: true }),
+  ).toBeEnabled();
   await page
     .locator('#tutorial-database')
     .getByRole('button', { name: 'Run tutorial query', exact: true })
@@ -316,6 +324,9 @@ test('tutorial creation selects the returned resource and continues with include
   await expect(
     page.getByRole('combobox', { name: 'Tutorial File System', exact: true }),
   ).toHaveValue('fixture_filesystem_1');
+  await expect(
+    page.locator('#tutorial-filesystem').getByRole('button', { name: 'Create File System' }),
+  ).toHaveCount(0);
   await expect(page.getByRole('tab', { name: 'Markdown', exact: true })).toHaveAttribute(
     'aria-selected',
     'true',
@@ -332,6 +343,20 @@ test('tutorial creation selects the returned resource and continues with include
   expect(calls.filter((call) => call.action === 'analyze')[0].resourceId).toBe(
     'fixture_filesystem_1',
   );
+});
+
+test('an unavailable tutorial resource offers recovery and creation', async ({
+  page,
+  workspace,
+}) => {
+  workspace.addResources();
+  workspace.state.resources[1].connectionError = 'Connection unavailable. Try again.';
+  await workspace.open('#tutorials?resourceId=fs_fixture');
+  const tutorial = page.locator('#tutorial-filesystem');
+  await expect(tutorial.getByText('Connection unavailable. Try again.')).toBeVisible();
+  await expect(tutorial.getByRole('button', { name: 'Refresh status' })).toBeEnabled();
+  await expect(tutorial.getByRole('button', { name: 'Create File System' })).toBeEnabled();
+  await expect(tutorial.getByRole('button', { name: 'Save sample CSV' })).toBeDisabled();
 });
 
 test('@visual saving a tutorial sample shows activity without reporting an uncertain outcome or running another step', async ({
