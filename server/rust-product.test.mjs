@@ -55,6 +55,81 @@ const base = '/api/v1/workspaces/ws_agentlab';
 const secret = 'retained-public-workspace-key';
 const privateWrite = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
 test(
+  'audit history journals covered effects without storing customer content',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    const write = await fixture.request('/files', {
+      method: 'PUT',
+      body: {
+        resourceId: 'fs_shared',
+        path: '/audit-private-canary',
+        type: 'file',
+        content: 'audit-content-canary',
+      },
+    });
+    assert.equal(write.status, 200, JSON.stringify(write.body));
+    const id = write.headers.get('x-request-id');
+    const history = await until(async () => {
+      const response = await fixture.request('/audit-history');
+      assert.equal(response.status, 200);
+      const records = response.body.data.filter((entry) => entry.requestId === id);
+      assert.equal(records.length, 2);
+      return response.body;
+    });
+    const records = history.data.filter((entry) => entry.requestId === id);
+    assert.deepEqual(
+      records.map((entry) => entry.outcome),
+      ['succeeded', 'attempted'],
+    );
+    assert.equal(records[0].action, 'file.write');
+    assert.equal(records[0].actor.kind, 'owner');
+    assert.equal(records[0].operationId, records[1].operationId);
+    assert.equal(records[1].resolution, 'succeeded');
+    assert.equal(history.coverage.status, 'partial');
+    assert.equal(JSON.stringify(history).includes('audit-private-canary'), false);
+    assert.equal(JSON.stringify(history).includes('audit-content-canary'), false);
+    const key = await fixture.issueKey({
+      name: 'read-only-agent',
+      scopes: ['resources:read', 'files:read'],
+      resourceIds: ['*'],
+      expiresInDays: 7,
+    });
+    assert.equal(key.status, 201, JSON.stringify(key.body));
+    const denied = await fixture.request('/files', {
+      method: 'PUT',
+      token: key.body.secret,
+      body: {
+        resourceId: 'fs_shared',
+        path: '/denied-private-canary',
+        type: 'file',
+        content: 'must-not-write',
+      },
+    });
+    assert.equal(denied.status, 403, JSON.stringify(denied.body));
+    const deniedId = denied.headers.get('x-request-id');
+    const deniedHistory = await until(async () => {
+      const response = await fixture.request('/audit-history');
+      const records = response.body.data.filter((entry) => entry.requestId === deniedId);
+      assert.equal(records.length, 2);
+      return records;
+    });
+    assert.deepEqual(
+      deniedHistory.map((entry) => entry.outcome),
+      ['denied', 'attempted'],
+    );
+    assert.equal(deniedHistory[0].actor.id, key.body.data.id);
+    assert.equal(JSON.stringify(deniedHistory).includes('denied-private-canary'), false);
+    assert.equal(JSON.stringify(deniedHistory).includes(key.body.secret), false);
+    const other = await fixture.request('/audit-history', {}, 1);
+    assert.equal(other.status, 200);
+    assert.equal(
+      other.body.data.some((entry) => entry.requestId === id),
+      false,
+    );
+  },
+);
+test(
   'request history records authenticated responses without paths, secrets or cross-Workspace leakage',
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
   async (t) => {
@@ -129,10 +204,7 @@ test(
       const page = await fixture.request(route);
       assert.equal(page.status, 200, JSON.stringify(page.body));
       assert.deepEqual(page.body.data, []);
-      assert.equal(
-        page.body.coverage.status,
-        route === '/request-history' ? 'partial' : 'unavailable',
-      );
+      assert.equal(page.body.coverage.status, 'partial');
       assert.equal(page.body.health.status, 'unavailable');
       assert.equal(page.headers.get('cache-control'), 'no-store');
       assert.equal((await fixture.request(`${route}?limit=bad`, { token: null })).status, 401);

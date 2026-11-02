@@ -343,6 +343,26 @@ async fn run_open(mut job: OpenJob) {
 }
 
 impl ManagedWorkspaces {
+    /// Diagnostics must not open an inactive Workspace or delay a user request behind
+    /// an internal writer acquisition. Missing or busy entries are reported as loss.
+    pub(crate) async fn acquire_cached_history(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Arc<ManagedWorkspace>> {
+        let state = self.state.lock().await;
+        if state.shutdown
+            || state.release_uncertain
+            || state.cleanup.contains(workspace_id)
+            || state.flights.contains_key(workspace_id)
+        {
+            return Err(ServiceError::new(503, "WORKSPACE_POOL_BUSY"));
+        }
+        state
+            .entries
+            .get(workspace_id)
+            .map(|cached| cached.entry.clone())
+            .ok_or_else(|| ServiceError::new(503, "WORKSPACE_POOL_UNAVAILABLE"))
+    }
     pub fn new(
         metadata: Arc<dyn Metadata>,
         authority: &str,
@@ -880,9 +900,21 @@ mod tests {
                 used: 0,
             },
         );
+        let cached = pool.acquire_cached_history(A).await.unwrap();
+        assert!(Arc::ptr_eq(&cached, &entry));
+        drop(cached);
+        assert_eq!(
+            pool.acquire_cached_history(B).await.err().unwrap().code,
+            "WORKSPACE_POOL_UNAVAILABLE"
+        );
+        assert!(!pool.state.lock().await.flights.contains_key(B));
         let live = pool.acquire_history_maintenance(A).await.unwrap();
         assert!(Arc::ptr_eq(live.entry.as_ref().unwrap(), &entry));
         let cold = pool.acquire_history_maintenance(B).await.unwrap();
+        assert_eq!(
+            pool.acquire_cached_history(B).await.err().unwrap().code,
+            "WORKSPACE_POOL_BUSY"
+        );
         assert_eq!(cold.workspace().repository().workspace_id(), B);
         assert_eq!(
             pool.acquire_history_maintenance("not-a-workspace")

@@ -136,14 +136,12 @@ impl HistoryIngestionProcessor for HistoryProcessor {
             let pool = self.managed.as_ref().ok_or_else(|| {
                 workspace_contracts::ServiceError::new(503, "HISTORY_WORKSPACE_UNAVAILABLE")
             })?;
-            let lease = pool.acquire_history_maintenance(id).await?;
-            let result = lease
+            let lease = pool.acquire_cached_history(id).await?;
+            lease
                 .workspace()
                 .repository()
                 .append_request_batch(&[request.entry()])
-                .await;
-            lease.release().await?;
-            result
+                .await
         })
     }
 }

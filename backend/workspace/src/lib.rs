@@ -120,6 +120,7 @@ pub struct Principal {
     pub expires_at: Option<String>,
 }
 /// An authority-verified opaque identity, never a token, cookie or display label.
+#[derive(Clone)]
 pub struct HistoryActor {
     pub kind: observability::ActorKind,
     pub id: String,
@@ -291,14 +292,17 @@ impl Workspace {
     /// For diagnostics only, after the trusted API has just authenticated and bound the
     /// credential. This snapshot is not an authorization decision and never accepts a
     /// raw legacy Bearer value.
-    pub fn history_actor_snapshot(&self, credential: &Credential) -> Result<HistoryActor> {
+    pub fn history_principal_snapshot(&self, credential: &Credential) -> Result<Principal> {
         if matches!(credential, Credential::Bearer(_)) {
             return Err(reject(503, "HISTORY_ACTOR_UNAVAILABLE"));
         }
-        let principal = principal(
+        principal(
             &json!({"workspace":{"id":self.repository.workspace_id()}}),
             credential,
-        )?;
+        )
+    }
+    pub fn history_actor_snapshot(&self, credential: &Credential) -> Result<HistoryActor> {
+        let principal = self.history_principal_snapshot(credential)?;
         history_actor_from_principal(credential, &principal)
     }
     /// History is owner-only even for Keys with wildcard resource and action grants.

@@ -28,11 +28,15 @@ pub enum ActorKind {
 
 #[derive(Clone, Copy)]
 pub enum AuditAction {
+    WorkspaceUpdate,
     ResourceCreate,
     ResourceDelete,
+    ResourceRetry,
     FileWrite,
     FileDelete,
     QueryWrite,
+    QueryExecute,
+    DatabaseImport,
 }
 
 #[derive(Clone, Copy)]
@@ -228,11 +232,15 @@ impl Repository {
                 _ => return Err(error("AUDIT_INDEX_CORRUPT")),
             };
             let action = match value["action"].as_str() {
+                Some("workspace.update") => AuditAction::WorkspaceUpdate,
                 Some("resource.create") => AuditAction::ResourceCreate,
                 Some("resource.delete") => AuditAction::ResourceDelete,
+                Some("resource.retry") => AuditAction::ResourceRetry,
                 Some("file.write") => AuditAction::FileWrite,
                 Some("file.delete") => AuditAction::FileDelete,
                 Some("query.write") => AuditAction::QueryWrite,
+                Some("query.execute") => AuditAction::QueryExecute,
+                Some("database.import") => AuditAction::DatabaseImport,
                 _ => return Err(error("AUDIT_INDEX_CORRUPT")),
             };
             let actor_id = value["actor"]["id"]
@@ -528,11 +536,15 @@ impl Repository {
             .ok_or_else(|| error("AUDIT_CLOCK_INVALID"))?;
         let record_id = Uuid::new_v4();
         let action = match entry.action {
+            AuditAction::WorkspaceUpdate => "workspace.update",
             AuditAction::ResourceCreate => "resource.create",
             AuditAction::ResourceDelete => "resource.delete",
+            AuditAction::ResourceRetry => "resource.retry",
             AuditAction::FileWrite => "file.write",
             AuditAction::FileDelete => "file.delete",
             AuditAction::QueryWrite => "query.write",
+            AuditAction::QueryExecute => "query.execute",
+            AuditAction::DatabaseImport => "database.import",
         };
         let outcome = match outcome {
             AuditOutcome::Attempted => "attempted",

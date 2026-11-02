@@ -4,6 +4,7 @@ mod global_local_sessions;
 pub mod global_login;
 pub mod guest_cleanup;
 pub mod guest_entry;
+pub mod history_audit;
 pub mod history_maintenance;
 pub mod history_query;
 pub mod history_queue;
@@ -368,7 +369,7 @@ impl WorkspaceServer {
             1024,
             8,
             history_processor,
-            Duration::from_secs(10),
+            Duration::from_secs(1),
         )
         .expect("bounded history queue configuration");
         Ok(Self {
@@ -1200,9 +1201,9 @@ async fn dispatch(
             .and_then(|value| value.last_loss)
             .map(|value| value.to_rfc3339());
         let coverage = if matches!(stream, HistoryStream::Requests) {
-            json!({"status":"partial", "startedAt":null, "operations":["workspace", "resources", "files", "query", "other"], "exclusions":["Global activity", "Requests rejected before Workspace authentication or body parsing", "Requests whose safe actor identity is unavailable", "Diagnostic writes may be delayed or lost"]})
+            json!({"status":"partial", "startedAt":null, "operations":["workspace", "resources", "files", "query", "other"], "exclusions":["Global activity", "Requests rejected before Workspace authentication or body parsing", "Requests whose safe actor identity is unavailable", "Requests rejected because audit intent could not be recorded", "Diagnostic writes may be delayed or lost"]})
         } else {
-            json!({"status":"unavailable", "startedAt":null, "operations":[], "exclusions":["Regional audit collection is not enabled", "Global activity is unavailable"]})
+            json!({"status":"partial", "startedAt":null, "operations":["workspace.update", "resource.create", "resource.delete", "resource.retry", "file.write", "file.delete", "query.execute", "database.import"], "exclusions":["Global activity", "Some failures and access denials are recorded as unknown", "Resource creation and setup acknowledgements do not confirm provider outcomes", "Target identities are not yet available"]})
         };
         // The process-local queue cannot prove loss totals across a restart.
         let mut response = Json(json!({
@@ -1219,21 +1220,73 @@ async fn dispatch(
     }
     // Diagnostics are best-effort; inability to construct a safe identity must not
     // change the application operation or persist untrusted credential text.
-    let history = app
-        .workspace
-        .history_actor_snapshot(&credential)
-        .ok()
-        .and_then(|actor| {
-            history_request::HistoryRequest::start_at(
-                actor,
-                request_id,
-                method.as_str(),
-                route,
-                started_at,
-                started,
-            )
-        });
+    let actor = app.workspace.history_actor_snapshot(&credential).ok();
+    let history = actor.as_ref().and_then(|actor| {
+        history_request::HistoryRequest::start_at(
+            actor.clone(),
+            request_id,
+            method.as_str(),
+            route,
+            started_at,
+            started,
+        )
+    });
     let workspace_id = app.workspace.repository().workspace_id().to_owned();
+    let mut parsed_for_audit = if method == Method::POST
+        && matches!(route, "/queries" | "/result-exports" | "/file-exports")
+    {
+        Some(body())
+    } else {
+        None
+    };
+    let empty_audit_input = Value::Null;
+    let audit_input = parsed_for_audit
+        .as_ref()
+        .and_then(|result| result.as_ref().ok())
+        .unwrap_or(&empty_audit_input);
+    let write_capable = match &credential {
+        Credential::Scoped(authorization) => authorization
+            .snapshot()
+            .is_ok_and(|principal| principal.scope("queries:execute").is_ok()),
+        Credential::SessionOwner { .. } | Credential::LocalDemoOwner => true,
+        Credential::Bearer(_) => false,
+    };
+    let audit_action = if route == "/queries" && !write_capable {
+        None
+    } else {
+        history_audit::action(method.as_str(), route, audit_input)
+    };
+    let proven_scope_denial = audit_action.is_some_and(|action| {
+        app.workspace
+            .history_principal_snapshot(&credential)
+            .is_ok_and(|principal| history_audit::scope_denied(action, &principal))
+    });
+    let audit_guard = if let Some(action) = audit_action {
+        let actor = actor
+            .as_ref()
+            .ok_or_else(|| reject(503, "AUDIT_UNAVAILABLE"))?;
+        let intent = workspace_domain::observability::AuditIntent {
+            request_id: Some(request_id),
+            actor_kind: actor.kind,
+            actor_id: &actor.id,
+            action,
+            target_id: None,
+        };
+        Some(
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                workspace_domain::observability::AuditGuard::begin(
+                    app.workspace.repository(),
+                    intent,
+                ),
+            )
+            .await
+            .map_err(|_| reject(503, "AUDIT_UNAVAILABLE"))?
+            .map_err(|_| reject(503, "AUDIT_UNAVAILABLE"))?,
+        )
+    } else {
+        None
+    };
     let result = async {
     let operation = if path == "/api/v1/workspaces" && method == Method::GET {
         Operation::ListWorkspaces
@@ -1296,7 +1349,10 @@ async fn dispatch(
                     } else if [Method::POST, Method::PUT, Method::PATCH, Method::DELETE]
                         .contains(&method)
                     {
-                        body()?
+                        match parsed_for_audit.take() {
+                            Some(parsed) => parsed?,
+                            None => body()?,
+                        }
                     } else {
                         json!({})
                     };
@@ -1388,6 +1444,34 @@ async fn dispatch(
         guest_lease,
     ))
     }.await;
+    if let (Some(guard), Some(action)) = (audit_guard, audit_action) {
+        use workspace_domain::observability::{AuditAction, AuditOutcome};
+        let outcome = if cancellation.is_cancelled() {
+            AuditOutcome::Unknown
+        } else {
+            match &result {
+                Err(error) if error.status == 403 && proven_scope_denial => AuditOutcome::Denied,
+                // A failure can follow provider I/O or a committed local mutation. Without a
+                // proven pre-effect denial, do not invent a denial or failure.
+                Err(_) => AuditOutcome::Unknown,
+                Ok(response) if response.status().as_u16() >= 500 => AuditOutcome::Unknown,
+                Ok(response) if response.status().as_u16() >= 400 => AuditOutcome::Failed,
+                Ok(response)
+                    if response.status().as_u16() == 202
+                        || matches!(
+                            action,
+                            AuditAction::ResourceCreate | AuditAction::ResourceRetry
+                        ) =>
+                {
+                    AuditOutcome::Unknown
+                }
+                Ok(_) => AuditOutcome::Succeeded,
+            }
+        };
+        // A finished customer effect must not be retried because a history write timed out.
+        // Dropping the guard preserves an unknown outcome for later reconciliation.
+        let _ = tokio::time::timeout(Duration::from_millis(500), guard.finish(outcome)).await;
+    }
     if let Some(history) = history {
         let completion = if cancellation.is_cancelled() {
             workspace_domain::observability::HttpCompletion::Canceled
