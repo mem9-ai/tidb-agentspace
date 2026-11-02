@@ -62,6 +62,12 @@ export function matchesTotals(rows: Record<string, unknown>[]) {
 }
 
 export const fileExamples = {
+  csv: {
+    suffix: 'orders.csv',
+    title: 'Explore sales data',
+    description: 'Preview six orders and use SQL to explore sales by region.',
+    content: ordersCsv,
+  },
   notes: {
     suffix: 'notes.md',
     title: 'Read agent notes',
@@ -91,6 +97,7 @@ Next: investigate the failed sync in the activity log.
 
 export type FileExampleKind = keyof typeof fileExamples;
 export function fileExamplePath(id: string, kind: FileExampleKind) {
+  if (kind === 'csv') return tutorialSample(id).path;
   tutorialSample(id); // Validate the workspace-saved identifier before constructing a path.
   return `/tutorial-${id}-${fileExamples[kind].suffix}`;
 }

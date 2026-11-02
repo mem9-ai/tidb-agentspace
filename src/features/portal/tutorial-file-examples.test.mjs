@@ -33,7 +33,15 @@ test('examples use explicit create-only writes and reopen without overwriting ed
   assert.equal(files.get(notes), 'My edits');
   const log = await openFileExample(api, 'fs', 'drive9-anonymous', id, 'log');
   assert.equal(files.get(log), fileExamples.log.content);
-  assert.equal(writes.length, 2);
+  let attempts = 0;
+  const csv = await openFileExample(api, 'fs', 'local', id, 'csv', async () => attempts++);
+  assert.equal(csv, `/tutorial-orders-${id}.csv`);
+  assert.equal(files.get(csv), fileExamples.csv.content);
+  files.set(csv, 'edited CSV');
+  assert.equal(await openFileExample(api, 'fs', 'local', id, 'csv', async () => attempts++), csv);
+  assert.equal(files.get(csv), 'edited CSV');
+  assert.equal(attempts, 1);
+  assert.equal(writes.length, 3);
 });
 
 test('only a missing file permits creation; uncertain writes are never retried automatically', async () => {
@@ -57,5 +65,12 @@ test('only a missing file permits creation; uncertain writes are never retried a
     throw new WorkspaceApiError('Not found', 404);
   };
   await assert.rejects(openFileExample(api, 'fs', 'local', id, 'notes'), /unconfirmed/);
+  assert.equal(writes, 1);
+  await assert.rejects(
+    openFileExample(api, 'fs', 'local', id, 'csv', async () => {
+      throw new Error('check existing sample');
+    }),
+    /check existing sample/,
+  );
   assert.equal(writes, 1);
 });
