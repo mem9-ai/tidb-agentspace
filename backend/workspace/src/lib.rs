@@ -218,6 +218,35 @@ pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
         },
     })
 }
+fn history_actor_from_principal(
+    credential: &Credential,
+    principal: &Principal,
+) -> Result<HistoryActor> {
+    let (kind, id) = if principal.owner {
+        (observability::ActorKind::Owner, principal.id.as_str())
+    } else {
+        let id = match credential {
+            Credential::Scoped(authorization) => authorization.workspace_key_id(),
+            Credential::Bearer(_) => Some(principal.id.as_str()),
+            _ => None,
+        }
+        .ok_or_else(|| reject(503, "HISTORY_ACTOR_UNAVAILABLE"))?;
+        (observability::ActorKind::WorkspaceKey, id)
+    };
+    if id.is_empty()
+        || id.len() > 128
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_-.:".contains(&byte))
+    {
+        return Err(reject(503, "HISTORY_ACTOR_UNAVAILABLE"));
+    }
+    Ok(HistoryActor {
+        kind,
+        id: id.to_owned(),
+    })
+}
+
 impl Workspace {
     async fn authorize_managed(&self, credential: &Credential) -> Result<()> {
         if self.managed {
@@ -257,29 +286,20 @@ impl Workspace {
     }
     pub async fn history_actor(&self, credential: &Credential) -> Result<HistoryActor> {
         let principal = self.authenticate(credential).await?;
-        let (kind, id) = if principal.owner {
-            (observability::ActorKind::Owner, principal.id.as_str())
-        } else {
-            let id = match credential {
-                Credential::Scoped(authorization) => authorization.workspace_key_id(),
-                Credential::Bearer(_) => Some(principal.id.as_str()),
-                _ => None,
-            }
-            .ok_or_else(|| reject(503, "HISTORY_ACTOR_UNAVAILABLE"))?;
-            (observability::ActorKind::WorkspaceKey, id)
-        };
-        if id.is_empty()
-            || id.len() > 128
-            || !id
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || b"_-.:".contains(&byte))
-        {
+        history_actor_from_principal(credential, &principal)
+    }
+    /// For diagnostics only, after the trusted API has just authenticated and bound the
+    /// credential. This snapshot is not an authorization decision and never accepts a
+    /// raw legacy Bearer value.
+    pub fn history_actor_snapshot(&self, credential: &Credential) -> Result<HistoryActor> {
+        if matches!(credential, Credential::Bearer(_)) {
             return Err(reject(503, "HISTORY_ACTOR_UNAVAILABLE"));
         }
-        Ok(HistoryActor {
-            kind,
-            id: id.to_owned(),
-        })
+        let principal = principal(
+            &json!({"workspace":{"id":self.repository.workspace_id()}}),
+            credential,
+        )?;
+        history_actor_from_principal(credential, &principal)
     }
     /// History is owner-only even for Keys with wildcard resource and action grants.
     /// Recheck the authority after metadata I/O before returning a page.

@@ -30,6 +30,24 @@ impl HistoryRequest {
     /// Only allowlisted operation names survive; the raw route is never retained. Reading
     /// history itself is excluded to prevent recursive diagnostics.
     pub fn start(actor: HistoryActor, request_id: Uuid, method: &str, route: &str) -> Option<Self> {
+        Self::start_at(
+            actor,
+            request_id,
+            method,
+            route,
+            chrono::Utc::now(),
+            Instant::now(),
+        )
+    }
+
+    pub fn start_at(
+        actor: HistoryActor,
+        request_id: Uuid,
+        method: &str,
+        route: &str,
+        started_at: chrono::DateTime<chrono::Utc>,
+        started: Instant,
+    ) -> Option<Self> {
         if matches!(route, "/audit-history" | "/request-history") {
             return None;
         }
@@ -53,8 +71,8 @@ impl HistoryRequest {
             actor,
             method,
             operation,
-            started_at: chrono::Utc::now(),
-            started: Instant::now(),
+            started_at,
+            started,
         })
     }
 

@@ -233,6 +233,7 @@ struct App {
     security: Option<Arc<region_security::Runtime>>,
     token_credential: Option<Credential>,
     portal_sessions: Option<global_api::PortalSessions>,
+    history_queue: history_queue::HistoryQueue,
 }
 
 /// Explicit co-located integration. Separate services require authenticated control transport;
@@ -254,6 +255,7 @@ pub struct WorkspaceServer {
     pub workspace: Arc<Workspace>,
     listener: TcpListener,
     app: App,
+    history_worker: history_queue::HistoryQueueWorker,
 }
 impl WorkspaceServer {
     /// Create the internal Region history worker using the same authenticated metadata
@@ -355,11 +357,26 @@ impl WorkspaceServer {
             .map(sso::Runtime::new)
             .transpose()?
             .map(Arc::new);
+        let history_processor = Arc::new(history_maintenance::HistoryProcessor::new(
+            workspace.clone(),
+            guest_runtime
+                .as_ref()
+                .map(|runtime| runtime.workspaces.clone()),
+        ));
+        let (history_queue, history_worker) = history_queue::HistoryQueue::new(
+            256,
+            1024,
+            8,
+            history_processor,
+            Duration::from_secs(10),
+        )
+        .expect("bounded history queue configuration");
         Ok(Self {
             global_mount: None,
             global_reconciler: None,
             workspace: workspace.clone(),
             listener,
+            history_worker,
             app: App {
                 workspace,
                 product,
@@ -373,6 +390,7 @@ impl WorkspaceServer {
                 security,
                 token_credential: None,
                 portal_sessions: None,
+                history_queue,
             },
         })
     }
@@ -408,6 +426,8 @@ impl WorkspaceServer {
         self,
         stop: impl std::future::Future<Output = ()> + Send + 'static,
     ) -> Result<()> {
+        let (history_stop, history_receiver) = tokio::sync::watch::channel(false);
+        let history_task = tokio::spawn(self.history_worker.run(history_receiver));
         let connection = self
             .app
             .security
@@ -474,6 +494,8 @@ impl WorkspaceServer {
         .with_graceful_shutdown(cancellation.clone().cancelled_owned())
         .await;
         cancellation.cancel();
+        let _ = history_stop.send(true);
+        let _ = history_task.await;
         if let Some(task) = task {
             task.await??;
         }
@@ -728,21 +750,32 @@ async fn handle(
 ) -> Response {
     let cancellation = tokio_util::sync::CancellationToken::new();
     let _on_disconnect = cancellation.clone().drop_guard();
+    let request_id = uuid::Uuid::new_v4();
+    let started_at = chrono::Utc::now();
+    let started = Instant::now();
     let result = tokio::spawn(async move {
         let _permit = permit;
-        dispatch(app, request, cancellation).await
+        dispatch(app, request, cancellation, request_id, started_at, started).await
     })
     .await;
-    match result {
+    let mut response = match result {
         Ok(Ok(response)) => response,
         Ok(Err(e)) => error(e),
         Err(_) => error(reject(503, "API_UNAVAILABLE")),
-    }
+    };
+    response.headers_mut().insert(
+        "X-Request-Id",
+        HeaderValue::from_str(&request_id.to_string()).expect("UUID header"),
+    );
+    response
 }
 async fn dispatch(
     mut app: App,
     request: Request,
     cancellation: tokio_util::sync::CancellationToken,
+    request_id: uuid::Uuid,
+    started_at: chrono::DateTime<chrono::Utc>,
+    started: Instant,
 ) -> std::result::Result<Response, ServiceError> {
     let mut path = request
         .uri()
@@ -1153,19 +1186,55 @@ async fn dispatch(
             .owner_history_page(&credential, stream, filter.filter())
             .await?;
         credential_for_response(&app, &headers, &credential).await?;
-        // Collection is not connected yet. Never claim that existing data is complete.
+        let diagnostic_health = if matches!(stream, HistoryStream::Requests) {
+            app.history_queue.health(&app.config.workspace_id)
+        } else {
+            None
+        };
+        let health_status = match &diagnostic_health {
+            Some(value) if value.degraded => "degraded",
+            Some(_) => "unknown",
+            None => "unavailable",
+        };
+        let loss_detected_at = diagnostic_health
+            .and_then(|value| value.last_loss)
+            .map(|value| value.to_rfc3339());
+        let coverage = if matches!(stream, HistoryStream::Requests) {
+            json!({"status":"partial", "startedAt":null, "operations":["workspace", "resources", "files", "query", "other"], "exclusions":["Global activity", "Requests rejected before Workspace authentication or body parsing", "Requests whose safe actor identity is unavailable", "Diagnostic writes may be delayed or lost"]})
+        } else {
+            json!({"status":"unavailable", "startedAt":null, "operations":[], "exclusions":["Regional audit collection is not enabled", "Global activity is unavailable"]})
+        };
+        // The process-local queue cannot prove loss totals across a restart.
         let mut response = Json(json!({
             "data": page["data"],
             "nextCursor": page["nextCursor"],
-            "coverage": {"status":"unavailable", "startedAt":null, "operations":[], "exclusions":["Regional collection is not enabled", "Global activity is unavailable"]},
+            "coverage": coverage,
             "retention": {"maxAgeDays":days, "maxRecords":100000, "earliestAt":null, "truncated":null},
-            "health": {"status":"unavailable", "droppedCount":null, "lossDetectedAt":null}
+            "health": {"status":health_status, "droppedCount":null, "lossDetectedAt":loss_detected_at}
         })).into_response();
         response
             .headers_mut()
             .insert("Cache-Control", HeaderValue::from_static("no-store"));
         return Ok(retain_guest_lease(response, guest_lease));
     }
+    // Diagnostics are best-effort; inability to construct a safe identity must not
+    // change the application operation or persist untrusted credential text.
+    let history = app
+        .workspace
+        .history_actor_snapshot(&credential)
+        .ok()
+        .and_then(|actor| {
+            history_request::HistoryRequest::start_at(
+                actor,
+                request_id,
+                method.as_str(),
+                route,
+                started_at,
+                started,
+            )
+        });
+    let workspace_id = app.workspace.repository().workspace_id().to_owned();
+    let result = async {
     let operation = if path == "/api/v1/workspaces" && method == Method::GET {
         Operation::ListWorkspaces
     } else {
@@ -1318,6 +1387,21 @@ async fn dispatch(
             .into_response(),
         guest_lease,
     ))
+    }.await;
+    if let Some(history) = history {
+        let completion = if cancellation.is_cancelled() {
+            workspace_domain::observability::HttpCompletion::Canceled
+        } else {
+            workspace_domain::observability::HttpCompletion::Responded(match &result {
+                Ok(response) => response.status().as_u16(),
+                Err(error) => error.status,
+            })
+        };
+        let _ = app
+            .history_queue
+            .try_record(&workspace_id, history.finish(completion));
+    }
+    result
 }
 
 fn retain_guest_lease(
