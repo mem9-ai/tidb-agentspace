@@ -51,7 +51,6 @@ import {
   NativeSelect,
   Paper,
   Progress,
-  SegmentedControl,
   Table,
   Text,
   Textarea,
@@ -72,7 +71,6 @@ import {
   IconArrowRight as ArrowRight,
   IconArrowUpRight as ArrowUpRight,
   IconCheckCircle as CheckCircle2,
-  IconCode02 as Code2,
   IconCopy03 as Copy,
   IconCreditCard01 as CreditCard,
   IconDatabase01 as Database,
@@ -138,13 +136,6 @@ const allScopes: CreateKeyInput['scopes'] = [
 function go(route: Route) {
   location.hash = route;
 }
-function isDemoWorkspace(data: Data) {
-  return (
-    data.mode === 'demo' &&
-    data.resources.length > 0 &&
-    data.resources.every((resource) => resource.provider === 'local')
-  );
-}
 function openDatabaseEditor(resourceId: string) {
   location.hash = databaseEditorHash(resourceId);
 }
@@ -169,55 +160,6 @@ function relative(value: string | null) {
         : new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function Sparkline({ large = false, range = '24h' }: { large?: boolean; range?: string }) {
-  const values =
-    range === '7d'
-      ? [
-          42, 40, 32, 39, 23, 30, 17, 34, 22, 25, 15, 26, 20, 29, 13, 26, 19, 14, 26, 8, 20, 15, 24,
-          9, 18, 14, 5,
-        ]
-      : [
-          44, 42, 46, 36, 38, 37, 29, 34, 17, 33, 29, 34, 23, 20, 30, 12, 28, 20, 21, 11, 27, 24,
-          12, 18, 14, 20, 9,
-        ];
-  const points = values.map((n, i) => `${i * 20},${n * 2}`).join(' ');
-  return (
-    <svg
-      className={large ? 'chart-svg' : 'sparkline'}
-      viewBox="0 0 520 110"
-      preserveAspectRatio="none"
-      aria-label="Illustrative request activity"
-    >
-      <defs>
-        <linearGradient id={large ? 'fill-lg' : 'fill-sm'} x1="0" y1="0" x2="0" y2="1">
-          <stop stopColor="var(--accent-text)" stopOpacity=".16" />
-          <stop offset="1" stopColor="var(--accent-text)" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      {large &&
-        [20, 50, 80, 109].map((y) => (
-          <line
-            key={y}
-            x1="0"
-            x2="520"
-            y1={y}
-            y2={y}
-            stroke="var(--border-subtle)"
-            strokeDasharray="3 4"
-          />
-        ))}
-      <polygon points={`0,110 ${points} 520,110`} fill={`url(#${large ? 'fill-lg' : 'fill-sm'})`} />
-      <polyline
-        points={points}
-        fill="none"
-        stroke="var(--accent-text)"
-        strokeWidth={large ? 1.7 : 2}
-        vectorEffect="non-scaling-stroke"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 function App() {
   const [data, setData] = useState<PortalData | null>(null),
     [routeLocation, setRouteLocation] = useState<WorkspaceRoute>(currentRoute),
@@ -1761,161 +1703,147 @@ function ApiExplorer({ data, copy }: Shared) {
   return <ApiDocumentation data={data} copy={copy} />;
 }
 
-function Monitoring({ data }: Shared) {
-  const [tab, setTab] = useState('Metrics'),
-    [range, setRange] = useState('24h');
+const resourceStatusLabels: Record<Resource['status'], string> = {
+  active: 'Ready',
+  provisioning: 'Setting up',
+  failed: 'Failed',
+  suspended: 'Suspended',
+  deleting: 'Deleting',
+  deleted: 'Deleted',
+  expired: 'Expired',
+};
+
+function Monitoring({
+  data,
+  refresh,
+  onCreate,
+  loadMoreResources,
+  resourcePageBusy,
+  resourcePageError,
+}: Shared) {
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState('');
+  const partial = Boolean(data.resourceNextCursor || data.resourceWindowTruncated);
+  const resources = [...data.resources].sort(
+    (a, b) => Number(b.kind === 'filesystem') - Number(a.kind === 'filesystem'),
+  );
+  async function refreshStatus() {
+    if (refreshing || resourcePageBusy) return;
+    setRefreshing(true);
+    setRefreshError('');
+    try {
+      await refresh();
+    } catch {
+      setRefreshError('Could not refresh resource status. Try again.');
+    } finally {
+      setRefreshing(false);
+    }
+  }
   return (
     <>
       <PageHeading
         title="Monitoring"
-        description="Understand what your workspace is doing, and who is doing it."
+        description="Check your resource status and review workspace activity."
         actions={
-          isDemoWorkspace(data) ? (
-            <SegmentedControl
-              aria-label="Activity time range"
-              value={range}
-              onChange={setRange}
-              data={[
-                { value: '24h', label: '24 hours' },
-                { value: '7d', label: '7 days' },
-              ]}
-            />
-          ) : undefined
+          <Group gap="sm">
+            <Button
+              component="a"
+              href="#activity"
+              variant="subtle"
+              rightSection={<ArrowRight size={16} />}
+            >
+              View activity
+            </Button>
+            <Button
+              loading={refreshing}
+              disabled={resourcePageBusy}
+              onClick={() => void refreshStatus()}
+            >
+              Refresh status
+            </Button>
+          </Group>
         }
       />
-      <ChoiceTabs value={tab} onChange={setTab} options={['Metrics', 'Activity log']}>
-        {tab === 'Metrics' ? (
-          <>
-            <Alert className="notice" color="peacock" icon={<Activity size={17} />}>
-              <span>
-                {isDemoWorkspace(data)
-                  ? 'Charts below use illustrative demo data. Counts come from this local Workspace.'
-                  : 'Resource status and recorded Workspace activity are shown below. Request rate and latency metrics are not available yet.'}
-              </span>
-            </Alert>
-            <div className="metric-cards">
-              {[
-                {
-                  name: 'Active resources',
-                  value:
-                    data.resourceNextCursor || data.resourceWindowTruncated
-                      ? `${data.resources.filter((resource) => resource.status === 'active').length}+`
-                      : data.resources.filter((resource) => resource.status === 'active').length,
-                  unit: 'resources',
-                  icon: Database,
-                },
-                {
-                  name: 'Queries executed',
-                  value: data.queryCount,
-                  unit: 'queries',
-                  icon: Code2,
-                },
-                {
-                  name: 'API authority',
-                  value: 'Global',
-                  unit: 'Key management',
-                  icon: KeyRound,
-                },
-                {
-                  name: 'Recent events',
-                  value: data.events.length,
-                  unit: 'events',
-                  icon: Activity,
-                },
-              ].map((m) => (
-                <Paper className="panel metric-card" key={m.name} withBorder>
-                  <div>
-                    <span>{m.name}</span>
-                    <m.icon size={16} />
+      {refreshError && (
+        <Alert color="red" role="alert" mb="md">
+          {refreshError}
+        </Alert>
+      )}
+      <section aria-label="Resource status">
+        <div className="section-title">
+          <Heading level={2}>Resource status</Heading>
+        </div>
+        {resources.length ? (
+          <Paper withBorder className="overview-resource-list">
+            {resources.map((resource) => {
+              const connectionUnavailable =
+                resource.status === 'active' && Boolean(resource.connectionError);
+              return (
+                <div className="overview-resource-row" key={resource.id}>
+                  <KindIcon small kind={resource.kind} />
+                  <div className="overview-resource-identity">
+                    <Anchor href={resourceWorkspaceHref(resource)} fw={600}>
+                      {resource.name}
+                    </Anchor>
+                    <Text size="sm" c="carbon.7">
+                      {kindLabel[resource.kind]} · {resourceServiceLabel(resource)}
+                    </Text>
                   </div>
-                  <strong>{m.value}</strong>
-                  <small>{m.unit}</small>
-                </Paper>
-              ))}
-            </div>
-            {isDemoWorkspace(data) && (
-              <div className="two-column">
-                <Paper className="panel monitoring-chart" withBorder>
-                  <div className="panel-header">
-                    <Heading level={2}>Request activity</Heading>
-                    <Badge>Illustrative</Badge>
-                  </div>
-                  <div className="chart-wrap">
-                    <Sparkline large range={range} />
-                    <div className="chart-axis">
-                      <span>{range === '7d' ? '7 days ago' : '24 hours ago'}</span>
-                      <span>Now</span>
-                    </div>
-                  </div>
-                </Paper>
-                <Paper className="panel monitoring-chart blue-chart" withBorder>
-                  <div className="panel-header">
-                    <Heading level={2}>Query duration</Heading>
-                    <Badge>Illustrative</Badge>
-                  </div>
-                  <div className="chart-wrap">
-                    <Sparkline large range={range === '7d' ? '24h' : '7d'} />
-                    <div className="chart-axis">
-                      <span>{range === '7d' ? '7 days ago' : '24 hours ago'}</span>
-                      <span>Now</span>
-                    </div>
-                  </div>
-                </Paper>
-              </div>
+                  <Badge
+                    color={
+                      connectionUnavailable || resource.status === 'failed'
+                        ? 'red'
+                        : resource.status === 'active'
+                          ? 'green'
+                          : 'yellow'
+                    }
+                  >
+                    {connectionUnavailable
+                      ? 'Connection unavailable'
+                      : resourceStatusLabels[resource.status]}
+                  </Badge>
+                </div>
+              );
+            })}
+          </Paper>
+        ) : !partial ? (
+          <Paper withBorder className="panel">
+            <Empty
+              title="No resources yet"
+              description="Create a File System or database to see its status here."
+              action={<Button onClick={() => onCreate()}>Create resource</Button>}
+            />
+          </Paper>
+        ) : null}
+        {partial && (
+          <Group mt="md" gap="sm">
+            <Text size="sm" c="carbon.7">
+              Some resources are not shown.
+            </Text>
+            <Anchor href="#files">File Systems</Anchor>
+            <Anchor href="#databases">Databases</Anchor>
+            {data.resourceNextCursor && (
+              <Button
+                size="sm"
+                loading={resourcePageBusy}
+                disabled={refreshing}
+                onClick={() => void loadMoreResources()}
+              >
+                Load more
+              </Button>
             )}
-            <div className="section-title">
-              <Heading level={2}>Resource health</Heading>
-            </div>
-            <Paper className="panel" withBorder>
-              <Table>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Resource</Table.Th>
-                    <Table.Th>Type</Table.Th>
-                    <Table.Th>Provider</Table.Th>
-                    <Table.Th>Status</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {data.resources.map((r) => (
-                    <Table.Tr key={r.id}>
-                      <Table.Td>
-                        <div className="table-resource">
-                          <KindIcon small kind={r.kind} />
-                          <strong>{r.name}</strong>
-                        </div>
-                      </Table.Td>
-                      <Table.Td>{kindLabel[r.kind]}</Table.Td>
-                      <Table.Td>
-                        {r.provider === 'drive9-anonymous'
-                          ? 'Live trial'
-                          : r.provider === 'db9-anonymous'
-                            ? 'db9 PostgreSQL'
-                            : r.provider === 'duckdb-drive9'
-                              ? 'DuckDB'
-                              : r.provider === 'tidb-cloud-zero'
-                                ? 'Zero trial'
-                                : 'Local demo'}
-                      </Table.Td>
-                      <Table.Td>
-                        <span className="status">
-                          <span className="live-dot" />
-                          {r.connectionError ? 'Connection unavailable' : r.status}
-                        </span>
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            </Paper>
-          </>
-        ) : (
-          <WorkspaceActivityLog data={data} />
+          </Group>
         )}
-      </ChoiceTabs>
+        {resourcePageError && (
+          <Alert color="red" role="alert" mt="md">
+            {resourcePageError}
+          </Alert>
+        )}
+      </section>
     </>
   );
 }
+
 function ActivityPage({
   data,
   refresh,
