@@ -1471,8 +1471,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
         }
       })
       .catch((cause) => {
-        if (active)
-          setPageError(cause instanceof Error ? cause.message : 'Unable to load Global keys.');
+        if (active) setPageError(cause instanceof Error ? cause.message : 'Unable to load keys.');
       })
       .finally(() => {
         if (active) setPageBusy(false);
@@ -1532,8 +1531,8 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
       setRevoke(null);
       notify(
         result.regionalStatus === 'applied'
-          ? 'Key revoked. Region policy applied.'
-          : 'Key revoked at Global. Region policy delivery is pending.',
+          ? 'Key revoked. Access in this region has been updated.'
+          : 'Key revoked. Access in this region is still being updated.',
       );
     } catch (e) {
       setError((e as Error).message);
@@ -1736,7 +1735,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
       {revoke && (
         <Modal
           title="Revoke API key?"
-          description={`Global will stop issuing Tokens. Region access stops once the revocation policy is delivered; a disconnected Region reports pending delivery.`}
+          description="After revocation, this key cannot request new access. Existing access ends when the region receives the update; this may take longer if the region is offline."
           onClose={() => setRevoke(null)}
         >
           {error && (
@@ -2358,8 +2357,8 @@ function CreateKey({
           </div>
           <Alert className="notice" color="peacock" icon={<ShieldCheck size={17} />}>
             <span>
-              Save this in your secret manager as WORKSPACE_API_KEY. Exchange it at Global for a
-              Token before calling Region. See API documentation for examples.
+              Save this in your secret manager as WORKSPACE_API_KEY. Your agent can exchange it for
+              an access token. See API documentation for examples.
             </span>
           </Alert>
           <div className="modal-actions">
