@@ -4,8 +4,33 @@ use std::{future::Future, pin::Pin, sync::Arc};
 use workspace_contracts::Result;
 use workspace_domain::{
     Workspace,
-    observability::{HistoryMaintenanceProcessor, HistoryScheduleOutcome},
+    observability::{HistoryMaintenanceProcessor, HistoryScheduleOutcome, HistoryScheduler},
 };
+
+/// Retry transient maintenance failures without replaying customer operations. Jobs remain
+/// durable and cleanup state is not reported as healthy merely because this loop is alive.
+pub async fn supervise(
+    mut scheduler: HistoryScheduler,
+    mut stop: tokio::sync::watch::Receiver<bool>,
+) {
+    loop {
+        if scheduler
+            .run(stop.clone(), std::time::Duration::from_secs(1))
+            .await
+            .is_ok()
+        {
+            return;
+        }
+        eprintln!("Workspace history maintenance is delayed; pending records are retained.");
+        if *stop.borrow() {
+            return;
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {},
+            changed = stop.changed() => if changed.is_err() || *stop.borrow() { return; },
+        }
+    }
+}
 
 pub struct HistoryProcessor {
     local: Arc<Workspace>,

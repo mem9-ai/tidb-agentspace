@@ -253,6 +253,23 @@ pub struct WorkspaceServer {
     app: App,
 }
 impl WorkspaceServer {
+    /// Create the internal Region history worker using the same authenticated metadata
+    /// connection and managed Workspace registry as this listener.
+    pub fn history_scheduler(
+        &self,
+        metadata: Arc<dyn Metadata>,
+    ) -> Result<workspace_domain::observability::HistoryScheduler> {
+        use workspace_domain::observability::{HistoryMaintenance, HistoryScheduler};
+        let queue = HistoryMaintenance::new(metadata, &self.app.config.authority_id)?;
+        let managed = self
+            .app
+            .guest_runtime
+            .as_ref()
+            .map(|runtime| runtime.workspaces.clone());
+        let processor = history_maintenance::HistoryProcessor::new(self.workspace.clone(), managed);
+        Ok(HistoryScheduler::new(queue, Arc::new(processor)))
+    }
+
     pub async fn open(config: Config, metadata: Arc<dyn Metadata>) -> Result<Self> {
         Self::open_with_guest(config, metadata, None).await
     }
