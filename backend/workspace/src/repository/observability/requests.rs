@@ -58,8 +58,8 @@ fn expiry_key(deadline: u64, position: u64) -> String {
 }
 
 impl Repository {
-    /// Delete at most one bounded batch of expired diagnostics. The host still needs a
-    /// durable regional scheduler so an inactive Workspace is revisited after its deadline.
+    /// Delete at most one bounded batch of expired diagnostics. The regional scheduler
+    /// revisits inactive Workspaces after their deadlines.
     pub async fn purge_expired_request_batch(
         &self,
         now: chrono::DateTime<chrono::Utc>,

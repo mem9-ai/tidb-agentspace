@@ -1,4 +1,4 @@
-//! Durable registration for a future Region-local history maintenance worker.
+//! Durable registration for the Region-local history maintenance worker.
 //!
 //! A persistent Workspace job is registered before the first history write. Keeping a
 //! recurring job, rather than deleting it after an empty scan, avoids losing cleanup work
