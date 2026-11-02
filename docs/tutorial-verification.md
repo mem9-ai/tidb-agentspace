@@ -99,6 +99,11 @@ input/precondition validation, concurrent conflict handling, pagination, crash/r
 and no provider I/O. `contract.test.mjs` validates the new public operations and response schemas.
 No provider adapter, grant, credential or dependency changes; the retired Node backend stays retired.
 
+`server/test-support/tutorial-sample-cases.mjs` also exercises the reviewed six-order CSV through the Rust
+import and file analysis APIs, checks the expected aggregate, denied analysis, duplicate
+import prevention and crash recovery. Its SQL provider is a fixture; it does not establish
+live database-provider compatibility.
+
 Representative current-build screenshots:
 
 - [Overview, Desktop Light](screenshots/tutorials/resume-desktop-light.png)
