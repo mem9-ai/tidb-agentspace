@@ -56,6 +56,7 @@ pub struct AuditIntent<'a> {
 
 /// Returned only after a durable attempt. Dropping it leaves that attempt unresolved, which
 /// downstream readers must treat as unknown rather than assuming success or failure.
+#[derive(Clone)]
 pub struct AuditOperation {
     operation_id: Uuid,
     request_id: Option<Uuid>,
@@ -65,6 +66,50 @@ pub struct AuditOperation {
     target_id: Option<String>,
     workspace_id: String,
     authority_id: String,
+}
+
+/// An attempted operation remains durable if its caller is cancelled. A dropped guard
+/// records an unknown outcome; it never retries the customer mutation.
+pub struct AuditGuard {
+    repository: Arc<Repository>,
+    operation: Option<AuditOperation>,
+}
+impl AuditGuard {
+    pub async fn begin(repository: Arc<Repository>, intent: AuditIntent<'_>) -> Result<Self> {
+        let operation = repository.begin_audit_operation(intent).await?;
+        Ok(Self {
+            repository,
+            operation: Some(operation),
+        })
+    }
+    pub async fn finish(mut self, outcome: AuditOutcome) -> Result<()> {
+        // Keep a copy until the transition is confirmed. Cancellation or an uncertain
+        // metadata commit then falls back to Unknown, never to repeating the operation.
+        let operation = self.operation.as_ref().expect("live audit guard").clone();
+        let result = self
+            .repository
+            .finish_audit_operation(operation, outcome)
+            .await;
+        if result.is_ok() {
+            self.operation.take();
+        }
+        result
+    }
+}
+impl Drop for AuditGuard {
+    fn drop(&mut self) {
+        let Some(operation) = self.operation.take() else {
+            return;
+        };
+        let repository = self.repository.clone();
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                let _ = repository
+                    .finish_audit_operation(operation, AuditOutcome::Unknown)
+                    .await;
+            });
+        }
+    }
 }
 
 pub struct AuditPurge {

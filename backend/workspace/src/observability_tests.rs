@@ -21,6 +21,79 @@ struct ScopedMetadata {
 }
 
 struct HistoryKey;
+
+#[tokio::test]
+async fn cancelled_audit_guard_records_unknown_without_replaying_the_effect() {
+    let metadata = Arc::new(ScopedMetadata::default());
+    let repository = Arc::new(
+        Repository::open(metadata, "region:test", "workspace-a", true, None)
+            .await
+            .unwrap(),
+    );
+    let intent = || AuditIntent {
+        request_id: Some(Uuid::new_v4()),
+        actor_kind: ActorKind::Owner,
+        actor_id: "owner-a",
+        action: AuditAction::FileWrite,
+        target_id: None,
+    };
+    let guard = AuditGuard::begin(repository.clone(), intent())
+        .await
+        .unwrap();
+    drop(guard);
+    let page = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            let page = repository
+                .history_page(
+                    HistoryStream::Audit,
+                    HistoryFilter {
+                        cursor: None,
+                        limit: 20,
+                        from: None,
+                        to: None,
+                    },
+                )
+                .await
+                .unwrap();
+            if page["data"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|record| record["outcome"] == "unknown")
+            {
+                break page;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("cancelled audit transition");
+    let records = page["data"].as_array().unwrap();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["outcome"], "unknown");
+    assert_eq!(records[1]["outcome"], "attempted");
+    assert_eq!(records[0]["operationId"], records[1]["operationId"]);
+    assert_eq!(records[1]["resolution"], "unknown");
+    let guard = AuditGuard::begin(repository.clone(), intent())
+        .await
+        .unwrap();
+    guard.finish(AuditOutcome::Succeeded).await.unwrap();
+    let page = repository
+        .history_page(
+            HistoryStream::Audit,
+            HistoryFilter {
+                cursor: None,
+                limit: 20,
+                from: None,
+                to: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(page["data"].as_array().unwrap().len(), 4);
+    assert_eq!(page["data"][0]["outcome"], "succeeded");
+    repository.close().await.unwrap();
+}
 impl ScopedAuthorization for HistoryKey {
     fn workspace_id(&self) -> &str {
         "workspace-a"
@@ -105,6 +178,26 @@ async fn owner_history_denies_keys_cross_workspace_and_revocation_during_read() 
         .unwrap();
     assert!(matches!(actor.kind, ActorKind::WorkspaceKey));
     assert_eq!(actor.id, "verified-key-id");
+    let actor = workspace
+        .history_actor_snapshot(&Credential::Scoped(Arc::new(HistoryKey)))
+        .unwrap();
+    assert_eq!(actor.id, "verified-key-id");
+    assert_eq!(
+        workspace
+            .history_actor_snapshot(&Credential::Bearer("never-persist-this-token".into()))
+            .err()
+            .unwrap()
+            .code,
+        "HISTORY_ACTOR_UNAVAILABLE"
+    );
+    assert_eq!(
+        workspace
+            .history_actor_snapshot(&expired)
+            .err()
+            .unwrap()
+            .code,
+        "UNAUTHENTICATED"
+    );
     let actor = workspace.history_actor(&owner).await.unwrap();
     assert!(matches!(actor.kind, ActorKind::Owner));
     assert_eq!(actor.id, "owner-a");
