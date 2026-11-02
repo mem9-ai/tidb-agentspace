@@ -98,23 +98,26 @@ async fn unavailable_workspace_does_not_starve_other_history_cleanup() {
         workspace.close().await.unwrap();
     }
     let processor = Arc::new(FailFirstMaintenance::default());
-    let queue = HistoryMaintenance::new(metadata, "region:test").unwrap();
+    let queue = HistoryMaintenance::new(metadata.clone(), "region:test").unwrap();
     let mut scheduler = HistoryScheduler::new(queue, processor.clone());
     let mut delayed = 0;
+    let now = chrono::Utc::now().timestamp() as u64 + 2;
     for _ in 0..HistoryMaintenance::shard_count() {
-        if let Err(error) = scheduler
-            .tick_at(chrono::Utc::now().timestamp() as u64 + 2)
-            .await
-        {
+        if let Err(error) = scheduler.tick_at(now).await {
             assert_eq!(error.code, "HISTORY_MAINTENANCE_DELAYED");
             delayed += 1;
         }
     }
     assert_eq!(delayed, 1);
-    let seen = processor.0.lock().unwrap();
+    let seen = processor.0.lock().unwrap().clone();
     assert_eq!(seen.len(), 2);
     assert!(seen.contains(&first));
     assert!(seen.contains(&second));
+    let shard = Sha256::digest(first.as_bytes())[0] % HistoryMaintenance::shard_count();
+    let queue = HistoryMaintenance::new(metadata, "region:test").unwrap();
+    let retry = queue.due(shard, now + 5, None, 10).await.unwrap();
+    assert_eq!(retry.jobs.len(), 1);
+    assert_eq!(retry.jobs[0].workspace_id, seen[0]);
 }
 
 impl Metadata for ScopedMetadata {
