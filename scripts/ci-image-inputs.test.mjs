@@ -24,6 +24,11 @@ test('image validation covers native/build/delivery inputs and excludes Console/
     'scripts/ci-image-inputs.mjs',
   ])
     assert.equal(nativeImageInput(path), true, path);
-  for (const path of ['src/App.tsx', 'docs/architecture.md', 'console/public/config.json'])
+  for (const path of [
+    'src/App.tsx',
+    'docs/architecture.md',
+    'console/public/config.json',
+    'scripts/deploy-dev.test.mjs',
+  ])
     assert.equal(nativeImageInput(path), false, path);
 });

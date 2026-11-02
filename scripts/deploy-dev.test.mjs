@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, matchesGlob } from 'node:path';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { parse } from 'yaml';
@@ -307,6 +307,42 @@ test('automatic checks execute once and releases require exact-commit native evi
   assert.equal(workflow.on.pull_request, undefined);
   for (const input of ['backend/**', 'meta-service/**', 'Cargo.lock', 'Dockerfile'])
     assert.ok(workflow.on.push.paths.includes(input), `API release lost ${input}`);
+  for (const path of [
+    'backend/api/src/lib.rs',
+    'meta-service/src/main.rs',
+    'Cargo.toml',
+    'Cargo.lock',
+    'rust-toolchain.toml',
+    '.cargo/config.toml',
+    'scripts/duckdb-runtime.json',
+    'scripts/prepare-duckdb.mjs',
+    'public/openapi.json',
+    'public/owner-openapi.json',
+    'public/global-openapi.json',
+    'public/agent-entry-openapi.json',
+    'package.json',
+    'package-lock.json',
+    '.node-version',
+    'Dockerfile',
+    '.dockerignore',
+  ])
+    assert.ok(
+      workflow.on.push.paths.some((pattern) => matchesGlob(path, pattern)),
+      path,
+    );
+  for (const path of [
+    'scripts/deploy-dev.mjs',
+    'scripts/deploy-dev.test.mjs',
+    '.github/workflows/dev-cd.yml',
+    '.github/workflows/ci.yml',
+    'src/App.tsx',
+    'README.md',
+  ])
+    assert.equal(
+      workflow.on.push.paths.some((pattern) => matchesGlob(path, pattern)),
+      false,
+      path,
+    );
   assert.deepEqual(workflow.on.workflow_dispatch.inputs.operation.options, [
     'deploy',
     'inspect',

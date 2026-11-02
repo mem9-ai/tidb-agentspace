@@ -12,7 +12,7 @@ name: Deploy API to dev
 on:
   push:
     branches: [main]
-    # Console and documentation changes retain ordinary CI, without releasing an API image.
+    # Console, documentation and deployment-tool-only changes do not release an API image.
     paths:
       - 'backend/**'
       - 'meta-service/**'
@@ -26,13 +26,11 @@ on:
       - 'public/owner-openapi.json'
       - 'public/global-openapi.json'
       - 'public/agent-entry-openapi.json'
-      - 'scripts/deploy-dev*'
       - 'package.json'
       - 'package-lock.json'
       - '.node-version'
       - 'Dockerfile'
       - '.dockerignore'
-      - '.github/workflows/dev-cd.yml'
   workflow_dispatch:
     inputs:
       operation:
