@@ -282,7 +282,6 @@ test('tutorial creation selects the returned resource and continues with include
     page.locator('#tutorial-filesystem').getByRole('button', { name: 'Create File System' }),
   ).toBeVisible();
   expect(calls).toHaveLength(0);
-  await page.getByRole('tab', { name: 'CSV', exact: true }).click();
   await page.getByRole('tab', { name: 'Database', exact: true }).click();
   await page
     .locator('#tutorial-database')
@@ -317,6 +316,11 @@ test('tutorial creation selects the returned resource and continues with include
   await expect(
     page.getByRole('combobox', { name: 'Tutorial File System', exact: true }),
   ).toHaveValue('fixture_filesystem_1');
+  await expect(page.getByRole('tab', { name: 'Markdown', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await page.getByRole('tab', { name: 'CSV', exact: true }).click();
   await page.getByRole('button', { name: 'Save sample CSV', exact: true }).click();
   await page
     .locator('#tutorial-filesystem')
