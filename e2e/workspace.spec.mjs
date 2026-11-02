@@ -246,7 +246,7 @@ for (const count of [0, 1, 2]) {
   });
 }
 
-test('contextual creation fills the matching name, restores focus and keeps readable controls', async ({
+test('database creation selects each type, generates a matching name and restores focus', async ({
   page,
   workspace,
 }) => {
@@ -262,16 +262,13 @@ test('contextual creation fills the matching name, restores focus and keeps read
       }),
     ]),
   );
-  for (const [label, kind] of [
-    ['MySQL', 'mysql'],
-    ['PostgreSQL', 'postgresql'],
-    ['DuckDB', 'duckdb'],
-  ]) {
-    const trigger = page.getByRole('button', { name: `Create ${label}`, exact: true });
+  await workspace.open('#databases');
+  for (const kind of ['mysql', 'postgresql', 'duckdb']) {
+    const trigger = page.getByRole('button', { name: 'Create database', exact: true });
     await trigger.click();
     const dialog = page.getByRole('dialog');
-    await expect(dialog).toHaveAccessibleName(`Create a ${label} database`);
-    await expect(dialog.getByRole('combobox', { name: 'Resource type' })).toHaveCount(0);
+    await expect(dialog).toHaveAccessibleName('Create a database');
+    await dialog.getByRole('combobox', { name: 'Resource type' }).selectOption(kind);
     const name = dialog.getByRole('textbox', { name: 'Resource name', exact: true });
     await expect(name).toHaveValue(new RegExp(`^${kind}-[a-f0-9]{16}$`));
     await expect(name).toHaveCSS('font-size', '16px');
