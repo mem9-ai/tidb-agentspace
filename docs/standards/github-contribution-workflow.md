@@ -114,8 +114,11 @@ that simultaneous assignment/comment updates provide atomic claims.
 ### Implement and publish a candidate
 
 Read the frozen specification from Git, not the latest unreviewed Issue wording. Implement in
-a focused branch or checkout with isolated test data. Open a draft PR early when it helps show
-ownership. Reference the task, parent intent, accepted specification, and requirement IDs.
+a focused branch or checkout with isolated test data. Fetch the latest main and use it as the
+starting point for a new task branch. Before resuming an older branch, compare it with the
+latest main and incorporate the current baseline while preserving uncommitted work. Open a
+draft PR early when it helps show ownership. Reference the task, parent intent, accepted
+specification, and requirement IDs.
 
 Add meaningful regression tests and a requirement-to-evidence table. Run the shared quality
 gate and applicable focused checks. Record limitations and unresolved requirements. The
