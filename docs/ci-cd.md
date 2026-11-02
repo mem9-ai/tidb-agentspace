@@ -109,6 +109,22 @@ and native API/S3 success. Browser smoke remains visibly skipped. This is applic
 evidence, not an additional test gate or a passing browser result. The [OpenAPI standard](standards/openapi-verification.md)
 defines the required response, authorization, side-effect, failure and recovery assertions.
 
+For PRs that only modify existing regional history modules and their Rust unit tests, the
+trusted base may select the focused history integration suite. It retains real RustFS restart,
+Workspace isolation, Owner and scoped-Key authorization, SSO and revocation, audit intent and
+uncertain effects, HTTP redaction, contract conformance and concurrent resource idempotency.
+All Rust unit tests, formatting, Clippy and native build still run. The trusted-base runner
+requires each named integration test to actually pass; missing, renamed, skipped or failing
+tests fail the job. Added, deleted, renamed, unknown or mixed paths, including any changes to
+the test harness, contracts or workflow, run the complete integration suite. Pushes, merge
+queues, manual runs and release evidence always retain the full suite. The scoped PR result
+cannot authorize a release.
+
+In one local native/RustFS run, the twelve selected cases completed in about 63 seconds.
+The earlier [full CI integration run](https://github.com/mem9-ai/tidb.ai/actions/runs/41382963375)
+ran 134 cases in about 15 minutes and exposed SSO and index-readiness failures that were fixed.
+These are different machines and workloads; the local measurement is not a CI timing guarantee.
+
 Dev CD no longer triggers on PRs or repeats quality/native commands. Its read-only verify
 job runs `scripts/require-ci.mjs full "$SOURCE_SHA"`, then the existing protected dev job
 builds/pushes and updates the image. Console publishing consumes `console` evidence (Quality
@@ -328,7 +344,13 @@ The SSO fixture also showed long tail latency: its main case took 180.55s in the
 
 The Dockerfile uses pinned `cargo-chef` 0.1.77 to separate the release dependency graph from application source. The same pinned Rust version, working directory, Cargo configuration, locked dependencies and verified DuckDB inputs apply to cooking and the final build. Pass the explicit `/source/meta-service/target` directory to both commands: the initial Linux probe compiled into the configured directory but cargo-chef tried to clean its default `/source/target/release` and failed. Source-only edits rebuild application crates; manifest/lockfile/toolchain/native input changes invalidate affected layers. The final image smoke check validates the real executable's exact version, static linkage, Linux target and pinned DuckDB checksum, rejecting an empty dependency skeleton.
 
-The pinned Docker build action imports/exports GitHub cache v2 with `mode=max` under `native-api-linux-amd64-v1`, including intermediate dependency layers. Ordinary cache mounts are not sufficient to persist those layers across fresh hosted runners. Cache transfer has a three-minute bound; failed export is non-fatal and a miss still builds fully. Base images are resolved with `pull:true`. No deployment files, credentials or product state enter the Docker context or cache.
+The pinned Docker build action imports/exports GitHub cache v2 with `mode=max`, including intermediate dependency layers. Main deployment continues to use `native-api-linux-amd64-v1`. PR image checks import a PR-specific scope first and the main scope as a fallback, and export only to the PR scope. This is intended to make subsequent builds of the same PR reuse its dependency layers without publishing an untrusted PR cache to main. Ordinary cache mounts are not sufficient to persist those layers across fresh hosted runners. Cache transfer has a three-minute bound; failed export is non-fatal and a miss still builds fully. Base images are resolved with `pull:true`. No deployment files, credentials or product state enter the Docker context or cache.
+
+During PR #124, two revisions with byte-identical Cargo Chef recipes both rebuilt the dependency
+layer; the second build imported a shared cache while the PR-specific cache from the prior run
+existed. The second dependency cook took approximately 9.5 minutes. Separate PR and main scopes
+are intended to avoid that overlap; verify the actual cache hit on a repeated PR run before
+claiming a measured improvement.
 
 GitHub cache access restrictions still separate PR merge-ref caches from default-branch caches. A repeated PR run can reuse its own cache; a successful main image release seeds the default-branch cache for later PRs. PR CI uses its own cancellable concurrency group; deploy-capable runs retain their constant non-cancellable target group. Do not claim cross-PR reuse before that main seed is observed. Existing Cargo dev/test caches are independent of these release image layers. Cold/warm Linux measurements and any remaining limitations belong in the linked task/PR; the table above is the pre-optimization baseline.
 

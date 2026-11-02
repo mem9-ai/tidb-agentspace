@@ -335,7 +335,25 @@ test('automatic checks execute once and releases require exact-commit native evi
   assert.match(scope.run, /backend_only=false/);
   assert.equal(ci.jobs.scope.outputs.backend_only, '${{ steps.scope.outputs.backend_only }}');
   assert.equal(ci.jobs.scope.outputs.docs_only, '${{ steps.scope.outputs.docs_only }}');
+  assert.equal(
+    ci.jobs.scope.outputs.history_only,
+    '${{ steps.history_scope.outputs.history_only }}',
+  );
+  const historyScope = ci.jobs.scope.steps.find((step) => step.id === 'history_scope');
+  assert.equal(historyScope.if, "github.event_name == 'pull_request' && github.base_ref == 'main'");
+  assert.match(historyScope.run, /git show 'HEAD\^1:scripts\/ci-history-scope\.mjs'/);
+  assert.match(historyScope.run, /history_only=false/);
   assert.equal(ci.jobs.scope.steps[0].with['fetch-depth'], 0);
+  const fullIntegration = ci.jobs.metadata.steps.find(
+    (step) => step.run === 'npm run backend:test:integration',
+  );
+  assert.equal(fullIntegration.if, "${{ needs.scope.outputs.history_only != 'true' }}");
+  const historyIntegration = ci.jobs.metadata.steps.find(
+    (step) => step.name === 'Run history authorization, isolation and storage integration tests',
+  );
+  assert.equal(historyIntegration.if, "${{ needs.scope.outputs.history_only == 'true' }}");
+  assert.match(historyIntegration.run, /git show 'HEAD\^1:scripts\/run-history-integration\.mjs'/);
+  assert.equal(ci.jobs.metadata.steps[0].with['fetch-depth'], 2);
   for (const command of [
     'npm run backend:fmt',
     'npm run backend:build -- --timings',
@@ -357,6 +375,15 @@ test('automatic checks execute once and releases require exact-commit native evi
   assert.equal(prBuild.with.push, false);
   assert.equal(prBuild.with.load, true);
   assert.equal(prBuild.with.platforms, 'linux/amd64');
+  assert.match(
+    prBuild.with['cache-from'],
+    /scope=native-api-pr-\$\{\{ github\.event\.pull_request\.number \}\}/,
+  );
+  assert.match(prBuild.with['cache-from'], /scope=native-api-linux-amd64-v1/);
+  assert.match(
+    prBuild.with['cache-to'],
+    /scope=native-api-pr-\$\{\{ github\.event\.pull_request\.number \}\}/,
+  );
   assert.equal(prBuild.if, "steps.changes.outputs.changed == 'true'");
   assert.ok(ci.jobs.image.steps.some((step) => step.run === 'node scripts/ci-image-inputs.mjs'));
   const smoke = ci.jobs.image.steps.find(
