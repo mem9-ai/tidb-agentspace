@@ -324,6 +324,105 @@ schemas.Tutorial = object({
   },
   updatedAt: { type: 'string', format: 'date-time' },
 });
+schemas.HistoryActor = {
+  ...object({ kind: { enum: ['owner', 'workspaceKey'] }, id: str }),
+  additionalProperties: false,
+};
+schemas.RequestHistoryRecord = {
+  ...object({
+    id: { type: 'string', format: 'uuid' },
+    requestId: { type: 'string', format: 'uuid' },
+    authority: str,
+    actor: ref('HistoryActor'),
+    operation: { enum: ['workspace', 'resources', 'files', 'query', 'other'] },
+    method: { enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OTHER'] },
+    status: { type: ['integer', 'null'], minimum: 100, maximum: 599 },
+    completion: { enum: ['responded', 'canceled', 'unknown'] },
+    startedAt: { type: 'string', format: 'date-time' },
+    durationMs: { type: 'integer', minimum: 0 },
+  }),
+  additionalProperties: false,
+};
+schemas.AuditHistoryRecord = {
+  ...object(
+    {
+      id: { type: 'string', format: 'uuid' },
+      operationId: { type: 'string', format: 'uuid' },
+      requestId: { type: 'string', format: 'uuid' },
+      authority: str,
+      actor: ref('HistoryActor'),
+      action: {
+        enum: [
+          'workspace.update',
+          'resource.create',
+          'resource.delete',
+          'resource.retry',
+          'file.write',
+          'file.delete',
+          'query.write',
+          'query.execute',
+          'database.import',
+        ],
+      },
+      target: {
+        ...object({ type: { enum: ['workspace', 'resource', 'filesystem', 'database'] }, id: str }),
+        additionalProperties: false,
+      },
+      decision: { enum: ['allowed', 'denied', 'unknown'] },
+      outcome: { enum: ['attempted', 'succeeded', 'denied', 'failed', 'unknown'] },
+      resolution: { enum: ['inProgress', 'succeeded', 'denied', 'failed', 'unknown'] },
+      occurredAt: { type: 'string', format: 'date-time' },
+    },
+    ['id', 'operationId', 'authority', 'actor', 'action', 'decision', 'outcome', 'occurredAt'],
+  ),
+  additionalProperties: false,
+};
+schemas.HistoryCoverage = {
+  ...object({
+    status: { enum: ['partial', 'unavailable'] },
+    startedAt: { type: ['string', 'null'], format: 'date-time' },
+    operations: { type: 'array', items: str },
+    exclusions: { type: 'array', items: str },
+  }),
+  additionalProperties: false,
+};
+schemas.HistoryRetention = {
+  ...object({
+    maxAgeDays: { type: 'integer', minimum: 1 },
+    maxRecords: { type: 'integer', minimum: 1 },
+    earliestAt: { type: ['string', 'null'], format: 'date-time' },
+    truncated: { type: ['boolean', 'null'] },
+  }),
+  additionalProperties: false,
+};
+schemas.HistoryHealth = {
+  ...object({
+    status: { enum: ['unknown', 'degraded', 'unavailable'] },
+    droppedCount: { type: ['integer', 'null'], minimum: 0 },
+    lossDetectedAt: { type: ['string', 'null'], format: 'date-time' },
+  }),
+  additionalProperties: false,
+};
+const historyPage = (record) => ({
+  ...object({
+    data: { type: 'array', items: ref(record) },
+    nextCursor: { type: ['string', 'null'], maxLength: 1024 },
+    coverage: ref('HistoryCoverage'),
+    retention: ref('HistoryRetention'),
+    health: ref('HistoryHealth'),
+  }),
+  additionalProperties: false,
+});
+const historyParameters = [
+  {
+    name: 'limit',
+    in: 'query',
+    schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+  },
+  { name: 'cursor', in: 'query', schema: { type: 'string', minLength: 1, maxLength: 1024 } },
+  { name: 'from', in: 'query', schema: { type: 'string', format: 'date-time', maxLength: 40 } },
+  { name: 'to', in: 'query', schema: { type: 'string', format: 'date-time', maxLength: 40 } },
+];
 const ownerSessions = [{ localOwner: [] }, { accountOwner: [] }, { guestOwner: [] }];
 function operation(
   id,
@@ -1125,6 +1224,20 @@ const paths = {
       },
     ),
   },
+  [ws + '/request-history']: {
+    get: operation('listRequestHistory', 'List partial regional HTTP diagnostics', null, {
+      owner: true,
+      parameters: historyParameters,
+      output: historyPage('RequestHistoryRecord'),
+    }),
+  },
+  [ws + '/audit-history']: {
+    get: operation('listAuditHistory', 'List partial regional audit history', null, {
+      owner: true,
+      parameters: historyParameters,
+      output: historyPage('AuditHistoryRecord'),
+    }),
+  },
   [ws + '/keys']: {
     get: operation('listKeys', 'List key metadata without secrets', null, {
       owner: true,
@@ -1235,6 +1348,14 @@ paths['/api/health'] = {
     },
   },
 };
+for (const route of ['/request-history', '/audit-history']) {
+  const operation = paths[ws + route].get;
+  operation.responses[200].headers = { 'Cache-Control': { schema: { const: 'no-store' } } };
+  operation.responses[410] = response(
+    ref('Error'),
+    'History cursor expired; restart from the first page',
+  );
+}
 paths['/api/session'] = {
   servers: [{ url: '/' }],
   post: {
@@ -1623,6 +1744,28 @@ extendRegionalSecurityContract(spec);
 const portalSpec = structuredClone(spec);
 portalSpec.info.title = 'Workspace Portal API';
 portalSpec.servers[0] = { url: '/api/portal/v1', description: 'Session-authenticated Portal API' };
+const ownerSpec = structuredClone(spec);
+ownerSpec.info.title = 'Workspace Regional Owner API';
+ownerSpec.info.description =
+  'Owner-session operations for partial regional request and audit history. Global activity is not included; read each response’s coverage and health before interpreting the records.';
+ownerSpec.servers[0] = { url: '/api/v1', description: 'Session-authenticated Regional Owner API' };
+for (const path of Object.keys(ownerSpec.paths)) {
+  if (![ws + '/request-history', ws + '/audit-history'].includes(path))
+    delete ownerSpec.paths[path];
+}
+delete ownerSpec.components.securitySchemes.workspaceKey;
+ownerSpec.tags = ownerSpec.tags.filter((tag) => tag.name === 'Owner');
+const ownerTarget = new URL('../public/owner-openapi.json', import.meta.url);
+const ownerRendered = await format(JSON.stringify(ownerSpec), {
+  ...(await resolveConfig(fileURLToPath(ownerTarget))),
+  parser: 'json',
+});
+if (process.argv.includes('--check')) {
+  if ((await readFile(ownerTarget, 'utf8')) !== ownerRendered) {
+    console.error('Regional Owner API contract drifted. Run npm run api:generate.');
+    process.exitCode = 1;
+  }
+} else await writeFile(ownerTarget, ownerRendered);
 for (const [path, entry] of Object.entries(spec.paths)) {
   if (path.startsWith('/api/')) {
     delete spec.paths[path];
@@ -1650,6 +1793,10 @@ for (const [path, entry] of Object.entries(spec.paths)) {
 for (const name of ['localOwner', 'accountOwner', 'guestOwner'])
   delete spec.components.securitySchemes[name];
 spec.tags = spec.tags.filter((tag) => tag.name !== 'Owner');
+spec.externalDocs = {
+  description: 'Regional Owner history API contract',
+  url: 'owner-openapi.json',
+};
 const target = new URL('../public/openapi.json', import.meta.url);
 const rendered = await format(JSON.stringify(spec), {
   ...(await resolveConfig(fileURLToPath(target))),

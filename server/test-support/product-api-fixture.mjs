@@ -277,6 +277,10 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
     revokeKey: (id, workspace = 0) => globals[workspace].revokeKey(id),
     listKeys: (workspace = 0) => globals[workspace].listKeys(),
     deliver: (keyId, keyVersion) => globals[0].deliver(keyId, keyVersion),
+    async stopRegionMetadata() {
+      region.client.close();
+      await region.stop('SIGKILL');
+    },
     startIndependentGlobalMeta: async () => globalMeta,
     async seedResources(count, onProgress = () => {}) {
       const scope = workspaceScope(region.server.authorityId, states[0].workspace.id);

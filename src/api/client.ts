@@ -12,6 +12,10 @@ import type { components as GlobalComponents } from './global-schema';
 
 export type Resource = components['schemas']['Resource'];
 export type Tutorial = components['schemas']['Tutorial'];
+export type AuditHistory =
+  operations['listAuditHistory']['responses'][200]['content']['application/json'];
+export type RequestHistory =
+  operations['listRequestHistory']['responses'][200]['content']['application/json'];
 export type TableList = components['schemas']['TableList'];
 export type TableDetail = components['schemas']['TableDetail'];
 export type ApiKey = components['schemas']['Key'] & { regionalStatus?: 'pending' | 'applied' };
@@ -94,6 +98,20 @@ export function configureApi(config: unknown) {
 }
 
 export const workspaceApi = {
+  auditHistory: (id: string, cursor?: string, signal?: AbortSignal) =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/audit-history', {
+        params: { path: { workspaceId: id }, query: { limit: 50, ...(cursor ? { cursor } : {}) } },
+        signal,
+      }),
+    ),
+  requestHistory: (id: string, cursor?: string, signal?: AbortSignal) =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/request-history', {
+        params: { path: { workspaceId: id }, query: { limit: 50, ...(cursor ? { cursor } : {}) } },
+        signal,
+      }),
+    ),
   listTutorials: (id: string, cursor?: string) =>
     responseData(
       client.GET('/workspaces/{workspaceId}/tutorials', {
