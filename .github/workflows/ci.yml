@@ -266,7 +266,7 @@ jobs:
           cache: npm
       - name: Select the pinned npm version
         run: npm install --global npm@11.6.2 --ignore-scripts
-      - run: npm ci
+      - run: npm run check:runtime && npm ci --ignore-scripts
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install 1.99.1 --profile minimal
       - name: Restore Rust dependency cache
