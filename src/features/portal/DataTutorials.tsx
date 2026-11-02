@@ -10,6 +10,8 @@ import { fileHash } from '../files/file-location';
 import { resourceKindLabels } from '../resources/resource-creation';
 import {
   databaseTutorial,
+  fileExamples,
+  type FileExampleKind,
   liveDatabase,
   matchesTotals,
   ordersCsv,
@@ -18,6 +20,7 @@ import {
 } from './tutorial-data';
 import './tutorials.css';
 import { loadDatabaseSample } from './tutorial-import';
+import { openFileExample } from './tutorial-file-examples';
 import type { TutorialProgress, TutorialStore } from './tutorial-progress';
 import { TutorialProgressStatus, useTutorialStore } from './TutorialProgressProvider';
 
@@ -61,7 +64,7 @@ export function DataTutorials({
     : requestedKind;
   const kinds: ('database' | 'filesystem')[] = focusedKind
     ? [focusedKind]
-    : ['database', 'filesystem'];
+    : ['filesystem', 'database'];
   useEffect(() => {
     const kind = targetKind
       ? targetKind === 'filesystem'
@@ -139,7 +142,7 @@ export function DataTutorials({
             </Heading>
             <Text component="p">
               {kind === 'filesystem'
-                ? 'Save a ready-made CSV, run SQL over its rows, and see sales by region.'
+                ? 'Explore a sales CSV, an agent handoff and a log. Preview files, run SQL and try Bash.'
                 : 'Load a small dataset, run your first query, and check the result here.'}
             </Text>
             <Stack gap="lg" mt="lg">
@@ -229,7 +232,9 @@ function TutorialSteps({
 }) {
   const [initialSample] = useState(freshSample);
   const sample = store.readSample(resource.id) ?? initialSample;
-  const [action, setAction] = useState<'prepare' | 'query' | 'verify' | 'reset' | null>(null);
+  const [action, setAction] = useState<
+    'prepare' | 'query' | 'verify' | 'reset' | FileExampleKind | null
+  >(null);
   const busy = action !== null;
   const running = useRef(false);
   const [error, setError] = useState('');
@@ -243,20 +248,33 @@ function TutorialSteps({
   const active = resource.status === 'active';
   const available = active && !resource.connectionError;
   const ready = sample.ready || demo;
-  async function run(action: 'prepare' | 'query' | 'verify' | 'reset') {
+  async function run(action: 'prepare' | 'query' | 'verify' | 'reset' | FileExampleKind) {
     if (running.current || !available) return;
     running.current = true;
     setAction(action);
     onRunningChange(true);
     setError('');
     setNotice('');
-    if (action !== 'prepare') setResult(null);
+    if (action !== 'prepare' && action !== 'notes' && action !== 'log') setResult(null);
     let progress = sample;
     async function updateSample(next: TutorialProgress) {
       progress = await store.saveSample(resource.id, { ...next, version: progress.version });
     }
     try {
-      if (action === 'reset') {
+      if (action === 'notes' || action === 'log') {
+        const examplePath = await openFileExample(
+          workspaceApi,
+          resource.id,
+          resource.provider,
+          sample.id,
+          action,
+        );
+        location.hash = fileHash(
+          resource.id,
+          examplePath,
+          action === 'log' ? 'analyze' : 'preview',
+        );
+      } else if (action === 'reset') {
         await updateSample(freshSample());
       } else if (action === 'prepare') {
         if (sample.attempted || demo) return;
@@ -501,6 +519,36 @@ function TutorialSteps({
             </Text>
           </Alert>
         </>
+      )}
+      {files && ready && (
+        <div>
+          <Heading level={3}>Explore more files</Heading>
+          <Text mt="sm">
+            Each example is saved in this File System when you open it. Your edits are kept when you
+            return.
+          </Text>
+          <Stack gap="sm" mt="sm">
+            {(['notes', 'log'] as const).map((kind) => (
+              <Paper withBorder p="md" key={kind}>
+                <Text fw={600}>{fileExamples[kind].title}</Text>
+                <Text size="sm">{fileExamples[kind].description}</Text>
+                <Button
+                  mt="sm"
+                  variant="default"
+                  loading={action === kind}
+                  disabled={busy || !available}
+                  onClick={() => void run(kind)}
+                >
+                  {action === kind
+                    ? 'Opening sample…'
+                    : kind === 'notes'
+                      ? 'Open sample notes'
+                      : 'Open sample log'}
+                </Button>
+              </Paper>
+            ))}
+          </Stack>
+        </div>
       )}
       {(ready || sample.attempted) && (
         <Group>

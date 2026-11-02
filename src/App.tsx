@@ -118,8 +118,8 @@ type PortalData = Data & { resourceWindowTruncated?: boolean };
 type Kind = Resource['kind'];
 const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string }> = {
   overview: { label: 'Overview', icon: LayoutDashboard, group: 'Workspace' },
-  databases: { label: 'Databases', icon: Database, group: 'Workspace' },
   files: { label: 'File Systems', icon: Folder, group: 'Workspace' },
+  databases: { label: 'Databases', icon: Database, group: 'Workspace' },
   connect: { label: 'Connect an agent', icon: Workflow, group: 'Build' },
   tutorials: { label: 'Tutorials', icon: CircleHelp, group: 'Build' },
   keys: { label: 'API keys', icon: KeyRound, group: 'Build' },
@@ -133,7 +133,7 @@ const kindDescription: Record<Kind, string> = {
   mysql: 'Relational memory for your agents.',
   postgresql: 'PostgreSQL for your apps and agents.',
   duckdb: 'Analytics in a persistent DuckDB database.',
-  filesystem: 'Persistent context, across sessions.',
+  filesystem: 'Store agent context, preview files, and analyze data with SQL or Bash.',
 };
 const allScopes: CreateKeyInput['scopes'] = [
   'resources:read',
@@ -552,7 +552,7 @@ function App() {
             <>
               <PageHeading
                 title="Tutorials"
-                description="Load the included sample data, run a query, and check your first result."
+                description="Explore sample files and data, try analysis, and see your first result."
                 actions={
                   <Button component="a" href="#connect">
                     Connect an agent
@@ -683,8 +683,8 @@ function Overview({
         title={hasResources ? data.workspace.name : 'Start with your data'}
         description={
           hasResources
-            ? 'Your data, files, and agents. All in one place.'
-            : 'Create a database for SQL or a File System for files. Connect your agent when you are ready.'
+            ? 'Your files, data, and agents. All in one place.'
+            : 'Store and explore files, query data, and connect your agent in one workspace.'
         }
         actions={
           hasResources ? (
@@ -748,7 +748,7 @@ function Overview({
             </Heading>
           </div>
           <section className="resource-grid">
-            {(['mysql', 'postgresql', 'duckdb', 'filesystem'] as Kind[])
+            {(['filesystem', 'mysql', 'postgresql', 'duckdb'] as Kind[])
               .filter((kind) => kind !== 'filesystem' || fs.length > 0)
               .filter(
                 (kind) =>

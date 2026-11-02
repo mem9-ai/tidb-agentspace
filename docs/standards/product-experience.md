@@ -47,6 +47,14 @@ minimum complete path to it. Remove repeated introductions, duplicate actions an
 pages when context is known. A named resource opens that exact resource; a section opens
 the collection.
 
+**File-centered Workspace exploration (owner direction, 2026-11-02):** treat files as a
+prominent Workspace entry and demonstrate how stored context, preview, SQL and Bash support
+agent work. Offer concrete, reusable examples with explicit creation and safe re-entry; preserve
+customer edits and make supported methods and read-only limits clear. This is a product direction
+to evaluate, not a claim that all Workspace users or all file formats use the same workflow.
+Verify first use, useful results and return alongside database discoverability; revisit the
+emphasis as usage evidence develops.
+
 The core journeys are Create database → run a query; Create File System → upload and
 preview/analyze a file; and choose permissions → create a Key → use the provided API example.
 These are design paths, not measured cloud-latency guarantees. Default safe optional inputs
