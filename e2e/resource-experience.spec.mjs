@@ -545,8 +545,8 @@ test('empty collections share one in-context create action and readable TiUI pre
   await expect(page.getByRole('heading', { name: 'Workspace activity', exact: true })).toHaveCount(
     0,
   );
-  await expect(page.locator('.resource-card .live-dot')).toHaveCount(0);
-  await expect(page.locator('.resource-card a.resource-name')).toHaveCount(0);
+  await expect(startingChoices.locator('.live-dot')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Your resources' })).toHaveCount(0);
 });
 
 test('populated Overview stays focused on existing resources and keeps creation available', async ({
