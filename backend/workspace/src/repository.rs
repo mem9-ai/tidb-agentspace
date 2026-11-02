@@ -1,6 +1,7 @@
 mod event_index;
 mod file_index;
 mod file_paths;
+pub mod observability;
 mod resource_index;
 mod setup_attempts;
 mod tutorials;
@@ -1567,6 +1568,163 @@ mod concurrency_tests {
                 }
             })
         }
+    }
+
+    #[tokio::test]
+    async fn audit_history_is_bounded_and_stores_only_allowlisted_fields() {
+        use observability::{ActorKind, AuditAction, AuditIntent};
+
+        let oldest = format!("observability/audit-v1/records/{:020}", u64::MAX - 1);
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(
+                [
+                    ("observability/audit-v1/head".into(), json!({"version":"v1","value":{"format":1,"position":100_000,"count":100_000}})),
+                    (oldest.clone(), json!({"version":"v1","value":{"id":"old"}})),
+                ].into_iter().collect(),
+            ),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        let _operation = repository
+            .begin_audit_operation(AuditIntent {
+                request_id: None,
+                actor_kind: ActorKind::Owner,
+                actor_id: "owner-1",
+                action: AuditAction::FileWrite,
+                target_id: Some("filesystem-1"),
+            })
+            .await
+            .unwrap();
+        {
+            let values = metadata.values.lock().unwrap();
+            assert!(!values.contains_key(&oldest));
+            assert_eq!(
+                values["observability/audit-v1/head"]["value"]["count"],
+                100_000
+            );
+            let key = format!("observability/audit-v1/records/{:020}", u64::MAX - 100_001);
+            let record = &values[&key]["value"];
+            assert!(
+                record["operationId"]
+                    .as_str()
+                    .is_some_and(|id| Uuid::parse_str(id).is_ok())
+            );
+            assert_eq!(record["outcome"], "attempted");
+            assert_eq!(record["action"], "file.write");
+            assert!(record.get("body").is_none());
+            assert!(record.get("headers").is_none());
+            assert!(record.get("sql").is_none());
+        }
+        assert_eq!(
+            repository
+                .begin_audit_operation(AuditIntent {
+                    request_id: None,
+                    actor_kind: ActorKind::Owner,
+                    actor_id: "Bearer secret",
+                    action: AuditAction::FileWrite,
+                    target_id: None,
+                })
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "INVALID_AUDIT_ID"
+        );
+    }
+
+    #[tokio::test]
+    async fn audit_attempt_precedes_effect_and_cannot_finish_in_another_workspace() {
+        use observability::{ActorKind, AuditAction, AuditIntent, AuditOutcome};
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(Records::new()),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = |workspace: &str| Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: workspace.into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        let first = repository("workspace-a");
+        let second = repository("workspace-b");
+        let intent = || AuditIntent {
+            request_id: None,
+            actor_kind: ActorKind::WorkspaceKey,
+            actor_id: "key-1",
+            action: AuditAction::ResourceDelete,
+            target_id: None,
+        };
+        first.closed.store(true, Ordering::Release);
+        assert!(first.begin_audit_operation(intent()).await.is_err());
+        assert!(metadata.values.lock().unwrap().is_empty());
+        first.closed.store(false, Ordering::Release);
+        let operation = first.begin_audit_operation(intent()).await.unwrap();
+        assert_eq!(
+            second
+                .finish_audit_operation(operation, AuditOutcome::Succeeded)
+                .await
+                .unwrap_err()
+                .code,
+            "INVALID_AUDIT_TRANSITION"
+        );
+        let operation = first.begin_audit_operation(intent()).await.unwrap();
+        first
+            .finish_audit_operation(operation, AuditOutcome::Succeeded)
+            .await
+            .unwrap();
+        let values = metadata.values.lock().unwrap();
+        assert_eq!(values["observability/audit-v1/head"]["value"]["count"], 3);
+        let record =
+            &values[&format!("observability/audit-v1/records/{:020}", u64::MAX - 1)]["value"];
+        assert_eq!(record["outcome"], "attempted");
+        let attempted =
+            &values[&format!("observability/audit-v1/records/{:020}", u64::MAX - 2)]["value"];
+        let completed =
+            &values[&format!("observability/audit-v1/records/{:020}", u64::MAX - 3)]["value"];
+        assert_eq!(attempted["operationId"], completed["operationId"]);
+        assert_eq!(attempted["outcome"], "attempted");
+        assert_eq!(completed["outcome"], "succeeded");
     }
 
     #[tokio::test]

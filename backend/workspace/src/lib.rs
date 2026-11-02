@@ -1,6 +1,7 @@
 mod repository;
 use chrono::{DateTime, SecondsFormat, Utc};
 pub use repository::Repository;
+pub use repository::observability;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use workspace_contracts::{Result, ServiceError};
