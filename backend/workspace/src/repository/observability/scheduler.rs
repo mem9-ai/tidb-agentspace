@@ -41,10 +41,17 @@ impl HistoryScheduler {
             .queue
             .due(shard, now, self.cursors[shard as usize].as_deref(), 16)
             .await?;
+        let mut delayed = false;
         for job in &page.jobs {
-            let delay = match self.processor.process(&job.workspace_id).await? {
-                HistoryScheduleOutcome::Complete => 900,
-                HistoryScheduleOutcome::RetrySoon => 5,
+            let delay = match self.processor.process(&job.workspace_id).await {
+                Ok(HistoryScheduleOutcome::Complete) => 900,
+                Ok(HistoryScheduleOutcome::RetrySoon) => 5,
+                Err(_) => {
+                    // A damaged or unavailable Workspace must not starve its neighbors.
+                    // Do not put underlying provider errors into operational logs.
+                    delayed = true;
+                    5
+                }
             };
             let next = now
                 .checked_add(delay)
@@ -53,7 +60,11 @@ impl HistoryScheduler {
             self.queue.reschedule(job, next).await?;
         }
         self.cursors[shard as usize] = page.next_cursor;
-        Ok(())
+        if delayed {
+            Err(error("HISTORY_MAINTENANCE_DELAYED"))
+        } else {
+            Ok(())
+        }
     }
 
     pub async fn run(

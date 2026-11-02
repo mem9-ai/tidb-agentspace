@@ -1,6 +1,7 @@
 //! Multi-Workspace and reopen checks for the inactive history storage boundary.
 use crate::{Repository, observability::*};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     sync::{
@@ -36,6 +37,84 @@ impl HistoryMaintenanceProcessor for MaintenanceRecorder {
             Ok(HistoryScheduleOutcome::Complete)
         })
     }
+}
+
+#[derive(Default)]
+struct FailFirstMaintenance(Mutex<Vec<String>>);
+impl HistoryMaintenanceProcessor for FailFirstMaintenance {
+    fn process<'a>(
+        &'a self,
+        workspace: &'a str,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = workspace_contracts::Result<HistoryScheduleOutcome>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            let mut seen = self.0.lock().unwrap();
+            seen.push(workspace.to_owned());
+            if seen.len() == 1 {
+                Err(ServiceError::new(503, "TEST_UNAVAILABLE"))
+            } else {
+                Ok(HistoryScheduleOutcome::Complete)
+            }
+        })
+    }
+}
+
+#[tokio::test]
+async fn unavailable_workspace_does_not_starve_other_history_cleanup() {
+    let mut shards = BTreeMap::new();
+    let (first, second) = (0..1000)
+        .find_map(|index| {
+            let id = format!("workspace-{index}");
+            let shard = Sha256::digest(id.as_bytes())[0] % HistoryMaintenance::shard_count();
+            shards
+                .insert(shard, id.clone())
+                .map(|previous| (previous, id))
+        })
+        .expect("two Workspaces in one shard");
+    let metadata = Arc::new(ScopedMetadata::default());
+    for id in [&first, &second] {
+        let workspace = Repository::open(metadata.clone(), "region:test", id, true, None)
+            .await
+            .unwrap();
+        let operation = workspace
+            .begin_audit_operation(AuditIntent {
+                request_id: None,
+                actor_kind: ActorKind::Owner,
+                actor_id: "owner",
+                action: AuditAction::ResourceCreate,
+                target_id: None,
+            })
+            .await
+            .unwrap();
+        workspace
+            .finish_audit_operation(operation, AuditOutcome::Succeeded)
+            .await
+            .unwrap();
+        workspace.close().await.unwrap();
+    }
+    let processor = Arc::new(FailFirstMaintenance::default());
+    let queue = HistoryMaintenance::new(metadata, "region:test").unwrap();
+    let mut scheduler = HistoryScheduler::new(queue, processor.clone());
+    let mut delayed = 0;
+    for _ in 0..HistoryMaintenance::shard_count() {
+        if let Err(error) = scheduler
+            .tick_at(chrono::Utc::now().timestamp() as u64 + 2)
+            .await
+        {
+            assert_eq!(error.code, "HISTORY_MAINTENANCE_DELAYED");
+            delayed += 1;
+        }
+    }
+    assert_eq!(delayed, 1);
+    let seen = processor.0.lock().unwrap();
+    assert_eq!(seen.len(), 2);
+    assert!(seen.contains(&first));
+    assert!(seen.contains(&second));
 }
 
 impl Metadata for ScopedMetadata {
