@@ -1795,6 +1795,107 @@ mod concurrency_tests {
     }
 
     #[tokio::test]
+    async fn request_diagnostics_batch_records_safe_status_and_excludes_content() {
+        use observability::{ActorKind, HttpCompletion, HttpMethod, HttpOperation, RequestEntry};
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(Records::new()),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        let create = |completion| RequestEntry {
+            request_id: Uuid::new_v4(),
+            actor_kind: ActorKind::WorkspaceKey,
+            actor_id: "key-1",
+            operation: HttpOperation::Query,
+            method: HttpMethod::Post,
+            completion,
+            started_at: chrono::Utc::now(),
+            duration_ms: 42,
+        };
+        repository
+            .append_request_batch(&[
+                create(HttpCompletion::Responded(403)),
+                create(HttpCompletion::Canceled),
+            ])
+            .await
+            .unwrap();
+        {
+            let values = metadata.values.lock().unwrap();
+            assert_eq!(
+                values["observability/requests-v1/head"]["value"]["count"],
+                2
+            );
+            let response = &values
+                [&format!("observability/requests-v1/records/{:020}", u64::MAX - 1)]["value"];
+            let canceled = &values
+                [&format!("observability/requests-v1/records/{:020}", u64::MAX - 2)]["value"];
+            assert_eq!(response["status"], 403);
+            assert_eq!(response["operation"], "query");
+            assert!(response.get("sql").is_none());
+            assert!(response.get("url").is_none());
+            assert!(response.get("headers").is_none());
+            assert_eq!(canceled["completion"], "canceled");
+            assert!(canceled["status"].is_null());
+        }
+        assert_eq!(
+            repository
+                .append_request_batch(&[create(HttpCompletion::Responded(999))])
+                .await
+                .unwrap_err()
+                .code,
+            "INVALID_REQUEST_STATUS"
+        );
+        assert_eq!(
+            repository.append_request_batch(&[]).await.unwrap_err().code,
+            "INVALID_REQUEST_BATCH"
+        );
+        {
+            let mut values = metadata.values.lock().unwrap();
+            values.get_mut("observability/requests-v1/head").unwrap()["value"] =
+                json!({"format":1,"position":99_999,"count":99_999});
+        }
+        repository
+            .append_request_batch(&[
+                create(HttpCompletion::Responded(200)),
+                create(HttpCompletion::Unknown),
+            ])
+            .await
+            .unwrap();
+        let values = metadata.values.lock().unwrap();
+        assert_eq!(
+            values["observability/requests-v1/head"]["value"]["count"],
+            100_000
+        );
+        assert!(!values.contains_key(&format!(
+            "observability/requests-v1/records/{:020}",
+            u64::MAX - 1
+        )));
+    }
+
+    #[tokio::test]
     async fn legacy_region_projection_does_not_rewrite_unrelated_resources() {
         let metadata = Arc::new(MetadataGate {
             values: std::sync::Mutex::new([
