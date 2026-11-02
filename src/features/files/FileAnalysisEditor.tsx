@@ -11,6 +11,8 @@ import { WorkspaceExportButton } from '../../ui/WorkspaceExportButton';
 import { BashAnalysisHelp } from './BashAnalysisHelp';
 import { legacyBashInput, bashPreviewCommand, bashSamples } from './bash-analysis';
 import { isTabularFile } from './file-preview';
+import { useTutorialStore } from '../portal/TutorialProgressProvider';
+import { tutorialSample } from '../portal/tutorial-data';
 import './file-analysis.css';
 const FileExportDialog = lazy(() =>
   import('../exports/FileExportDialog').then((module) => ({ default: module.FileExportDialog })),
@@ -48,6 +50,7 @@ export function FileAnalysisEditor({
   const [script, setScript] = useState(cap.engine === 'duckdb' ? sqlSample : previewCommand);
   const [result, setResult] = useState<FileAnalysisResult | null>(null);
   const [error, setError] = useState('');
+  const [progressNotice, setProgressNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [contentView, setContentView] = useState<string | null>('preview');
   const [exportOpen, setExportOpen] = useState(false);
@@ -55,6 +58,7 @@ export function FileAnalysisEditor({
   const visibleContentView = hasExecution ? contentView : 'preview';
   const execution = useRef<AbortController | null>(null);
   const pending = useRef(false);
+  const { store: tutorials } = useTutorialStore();
   useEffect(() => {
     onRunningChange(busy);
   }, [busy, onRunningChange]);
@@ -71,6 +75,7 @@ export function FileAnalysisEditor({
     setBusy(true);
     setContentView('result');
     setError('');
+    setProgressNotice('');
     setResult(null);
     const controller = new AbortController();
     execution.current = controller;
@@ -81,7 +86,18 @@ export function FileAnalysisEditor({
           : { resourceId, path, engine: 'bash', command: script },
         controller.signal,
       );
-      if (!controller.signal.aborted) setResult(value);
+      if (!controller.signal.aborted) {
+        setResult(value);
+        if (value.engine === 'duckdb')
+          void (async () => {
+            if (tutorials.getSnapshot().loading) await tutorials.refresh(undefined, true);
+            const progress = tutorials.readSample(resourceId);
+            if (progress?.ready && !progress.completed && path === tutorialSample(progress.id).path)
+              await tutorials.saveSample(resourceId, { ...progress, completed: true });
+          })().catch(() => {
+            setProgressNotice('Your result is ready, but tutorial progress could not be saved.');
+          });
+      }
     } catch (cause) {
       if (!controller.signal.aborted)
         setError(cause instanceof Error ? cause.message : 'Analysis failed.');
@@ -210,6 +226,11 @@ export function FileAnalysisEditor({
           </>
         )}
       </div>
+      {progressNotice && (
+        <Alert color="yellow" m="md">
+          {progressNotice}
+        </Alert>
+      )}
       {result?.fileVersion && previewVersion && result.fileVersion !== previewVersion && (
         <Alert color="yellow" title="File version changed" m="md">
           This result and the data preview use different saved versions. Refresh the preview, then

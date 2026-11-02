@@ -110,6 +110,26 @@ async function tutorialApi(
         ),
         nextCursor: null,
       });
+    if (path === '/files/tabular-preview')
+      return reply({
+        resourceId: url.searchParams.get('resourceId'),
+        path: url.searchParams.get('path'),
+        format: 'csv',
+        readOnly: true,
+        inputBytes: ordersCsv.length,
+        durationMs: 1,
+        fileVersion: 'a'.repeat(64),
+        columns: ['id', 'region', 'amount'],
+        schema: [
+          { column_name: 'id', column_type: 'BIGINT' },
+          { column_name: 'region', column_type: 'VARCHAR' },
+          { column_name: 'amount', column_type: 'BIGINT' },
+        ],
+        rows: orderRows,
+        rowCount: orderRows.length,
+        totalRows: null,
+        typesInferred: true,
+      });
     if (path === '/file-analyses/capabilities') {
       if (url.searchParams.get('path')?.endsWith('-activity.log'))
         return reply({
@@ -153,11 +173,12 @@ async function tutorialApi(
           (file) => file.resourceId === body.resourceId && file.path === body.path,
         )?.content,
       ).toBe(ordersCsv);
+      expect(body.sql).toBe('SELECT * FROM file LIMIT 100;');
       return reply({
         ...body,
-        columns: ['region', 'total'],
-        rows: expectedTotals,
-        rowCount: 3,
+        columns: ['id', 'region', 'amount'],
+        rows: orderRows,
+        rowCount: orderRows.length,
         readOnly: true,
         inputBytes: ordersCsv.length,
         durationMs: 1,
@@ -197,9 +218,11 @@ test('@visual Workspace tutorials resume in an isolated browser with no browser 
   await database.getByRole('button', { name: 'Run tutorial query', exact: true }).click();
   await expect(database.getByRole('region', { name: 'Query result data' })).toContainText('240');
   await page.getByRole('tab', { name: 'File System', exact: true }).click();
-  await files.getByRole('button', { name: 'Save sample CSV', exact: true }).click();
-  await files.getByRole('button', { name: 'Run tutorial query', exact: true }).click();
-  await expect(files.getByRole('region', { name: 'Query result data' })).toContainText('180');
+  await files.getByRole('button', { name: 'Open sample CSV', exact: true }).click();
+  await expect(page).toHaveURL(/tutorial-orders-.*\.csv.*view=analyze/);
+  await page.getByRole('button', { name: 'Run query', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Query result data' })).toContainText('APAC');
+  await expect.poll(() => workspace.tutorials.get('fs_fixture')?.state).toBe('completed');
   const originalTable = calls.find((call) => call.action === 'seed').table;
   const originalPath = calls.find((call) => call.action === 'file').path;
   const before = calls.length;
@@ -254,14 +277,12 @@ test('@visual Workspace tutorials resume in an isolated browser with no browser 
       .getByRole('link', { name: 'Revisit tutorial', exact: true })
       .click();
     await expect(reopened).toHaveURL(/#tutorials\?resourceId=fs_fixture$/);
-    await expect(reopened.locator('#tutorial-filesystem')).toContainText(originalPath);
-    await reopened
-      .locator('#tutorial-filesystem')
-      .getByRole('button', { name: 'Run tutorial query', exact: true })
-      .click();
-    await expect(
-      reopened.locator('#tutorial-filesystem').getByRole('region', { name: 'Query result data' }),
-    ).toContainText('180');
+    await reopened.getByRole('button', { name: 'Open sample CSV', exact: true }).click();
+    await expect
+      .poll(() => new URLSearchParams(new URL(reopened.url()).hash.split('?')[1]).get('path'))
+      .toBe(originalPath);
+    await reopened.getByRole('button', { name: 'Run query', exact: true }).click();
+    await expect(reopened.getByRole('region', { name: 'Query result data' })).toContainText('APAC');
     expect(calls.filter((call) => call.action === 'file')).toHaveLength(1);
     expect(calls.filter((call) => call.action === 'seed')).toHaveLength(1);
     await expect
@@ -332,14 +353,10 @@ test('tutorial creation selects the returned resource and continues with include
     'true',
   );
   await page.getByRole('tab', { name: 'CSV', exact: true }).click();
-  await page.getByRole('button', { name: 'Save sample CSV', exact: true }).click();
-  await page
-    .locator('#tutorial-filesystem')
-    .getByRole('button', { name: 'Run tutorial query', exact: true })
-    .click();
-  await expect(
-    page.locator('#tutorial-filesystem').getByText('Your first result is ready', { exact: true }),
-  ).toBeVisible();
+  await page.getByRole('button', { name: 'Open sample CSV', exact: true }).click();
+  await expect(page).toHaveURL(/tutorial-orders-.*\.csv.*view=analyze/);
+  await page.getByRole('button', { name: 'Run query', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Query result data' })).toContainText('APAC');
   expect(calls.filter((call) => call.action === 'analyze')[0].resourceId).toBe(
     'fixture_filesystem_1',
   );
@@ -356,7 +373,56 @@ test('an unavailable tutorial resource offers recovery and creation', async ({
   await expect(tutorial.getByText('Connection unavailable. Try again.')).toBeVisible();
   await expect(tutorial.getByRole('button', { name: 'Refresh status' })).toBeEnabled();
   await expect(tutorial.getByRole('button', { name: 'Create File System' })).toBeEnabled();
-  await expect(tutorial.getByRole('button', { name: 'Save sample CSV' })).toBeDisabled();
+  await expect(tutorial.getByRole('button', { name: 'Open sample CSV' })).toBeDisabled();
+});
+
+test('only the saved CSV sample completes the tutorial, and a progress failure keeps the result', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  workspace.addResources();
+  const id = 'a'.repeat(32);
+  const samplePath = `/tutorial-orders-${id}.csv`;
+  workspace.tutorials.set('fs_fixture', {
+    resourceId: 'fs_fixture',
+    sampleId: id,
+    state: 'ready',
+    version: '"tutorial-' + 'b'.repeat(32) + '"',
+    updatedAt: '2026-10-31T00:00:00Z',
+  });
+  for (const path of ['/other.csv', samplePath])
+    workspace.state.files.push({
+      id: path,
+      resourceId: 'fs_fixture',
+      path,
+      type: 'file',
+      content: ordersCsv,
+      size: ordersCsv.length,
+      updatedAt: '2026-01-01T00:00:00Z',
+    });
+  await tutorialApi(context, workspace);
+  await workspace.open('#files?resourceId=fs_fixture&path=%2Fother.csv&view=analyze');
+  await page.getByRole('button', { name: 'Run query', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Query result data' })).toContainText('APAC');
+  expect(workspace.tutorials.get('fs_fixture').state).toBe('ready');
+  await context.route('**/api/**', async (route) => {
+    if (
+      route.request().method() === 'PUT' &&
+      new URL(route.request().url()).pathname.endsWith('/tutorials/fs_fixture')
+    )
+      return route.fulfill({ status: 503, json: { error: { code: 'UNAVAILABLE' } } });
+    return route.fallback();
+  });
+  await page.goto(
+    `/#files?resourceId=fs_fixture&path=${encodeURIComponent(samplePath)}&view=analyze`,
+  );
+  await page.getByRole('button', { name: 'Run query', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Query result data' })).toContainText('APAC');
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'tutorial progress could not be saved' }),
+  ).toBeVisible();
+  expect(workspace.tutorials.get('fs_fixture').state).toBe('ready');
 });
 
 test('@visual saving a tutorial sample shows activity without reporting an uncertain outcome or running another step', async ({
@@ -384,7 +450,7 @@ test('@visual saving a tutorial sample shows activity without reporting an uncer
     await workspace.open('#tutorials');
     for (const [kind, button] of [
       ['database', 'Load sample orders'],
-      ['filesystem', 'Save sample CSV'],
+      ['filesystem', 'Open sample CSV'],
     ]) {
       await page
         .getByRole('tab', { name: kind === 'database' ? 'Database' : 'File System', exact: true })
@@ -394,24 +460,29 @@ test('@visual saving a tutorial sample shows activity without reporting an uncer
       await expect
         .poll(() => calls.some((call) => call.action === (kind === 'database' ? 'seed' : 'file')))
         .toBe(true);
-      await expect(card.getByRole('status')).toContainText('Saving the sample');
+      await expect(card.getByRole('status')).toContainText(
+        kind === 'database' ? 'Saving the sample' : 'Opening the sample',
+      );
       await expect(
-        card.getByRole('button', { name: 'Saving sample data…', exact: true }),
+        card.getByRole('button', {
+          name: kind === 'database' ? 'Saving sample data…' : 'Opening sample…',
+          exact: true,
+        }),
       ).toBeDisabled();
       await expect(
         card.getByRole('button', { name: 'Check saved sample', exact: true }),
       ).toHaveCount(0);
       await expect(card.getByText(/The save outcome is unconfirmed/)).toHaveCount(0);
-      const run = card.getByRole('button', { name: 'Run tutorial query', exact: true });
-      await expect(run).toBeDisabled();
-      await expect(run).not.toHaveAttribute('data-loading', 'true');
+      if (kind === 'database') {
+        const run = card.getByRole('button', { name: 'Run tutorial query', exact: true });
+        await expect(run).toBeDisabled();
+        await expect(run).not.toHaveAttribute('data-loading', 'true');
+      }
     }
     releaseDatabase();
     releaseFile();
-    await expect(
-      page.locator('#tutorial-filesystem').getByText('Sample data ready', { exact: true }),
-    ).toBeVisible();
-    await page.getByRole('tab', { name: 'Database', exact: true }).click();
+    await expect(page).toHaveURL(/tutorial-orders-.*\.csv.*view=analyze/);
+    await page.goto('/#tutorials?resourceId=db_fixture');
     const database = page.locator('#tutorial-database');
     await expect(database.getByText('Sample data ready', { exact: true })).toBeVisible();
     await expect(database.locator('.tutorial-artifact .code-example')).not.toBeVisible();
@@ -607,10 +678,9 @@ test('legacy browser migration retains uncertain sample identity and Workspace s
     .filter({ hasText: 'filesystem-fixture' })
     .getByRole('link', { name: 'Continue tutorial', exact: true })
     .click();
-  await expect(page.locator('#tutorial-filesystem')).toContainText(
-    '/tutorial-orders-' + 'b'.repeat(32) + '.csv',
-  );
-  await expect(page.getByRole('button', { name: 'Save sample CSV', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Check saved sample', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Check saved sample', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('saved sample could not be found');
   expect(workspace.tutorials.get('db_fixture').sampleId).toBe('c'.repeat(32));
   expect(workspace.tutorials.get('fs_fixture').state).toBe('attempted');
   expect(calls).toHaveLength(0);
@@ -629,6 +699,11 @@ test('@visual file journeys open independently and reuse Workspace samples witho
   const { calls } = api;
   await workspace.open('#tutorials?resourceId=fs_fixture');
   const tutorial = page.locator('#tutorial-filesystem');
+  if (process.env.EXPERIENCE_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.EXPERIENCE_SCREENSHOTS}/file-csv-${testInfo.project.name}.png`,
+      fullPage: true,
+    });
   await tutorial.getByRole('tab', { name: 'Markdown', exact: true }).click();
   if (process.env.EXPERIENCE_SCREENSHOTS)
     await page.screenshot({
@@ -667,6 +742,11 @@ test('@visual file journeys open independently and reuse Workspace samples witho
   );
   await page.goto('/#tutorials?resourceId=fs_fixture');
   await tutorial.getByRole('tab', { name: 'Logs · Bash' }).click();
+  if (process.env.EXPERIENCE_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.EXPERIENCE_SCREENSHOTS}/file-log-${testInfo.project.name}.png`,
+      fullPage: true,
+    });
   await tutorial.getByRole('button', { name: 'Open sample log' }).click();
   await expect(page).toHaveURL(/activity.log.*view=analyze/);
   await page.getByRole('button', { name: 'Editor tools' }).click();

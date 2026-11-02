@@ -12,6 +12,7 @@ export async function openFileExample(
   provider: string | undefined,
   sampleId: string,
   kind: FileExampleKind,
+  beforeCreate?: () => Promise<void>,
 ) {
   const path = fileExamplePath(sampleId, kind);
   try {
@@ -20,11 +21,12 @@ export async function openFileExample(
   } catch (error) {
     if (!(error instanceof WorkspaceApiError && error.status === 404)) throw error;
   }
+  await beforeCreate?.();
   const content = fileExamples[kind].content;
   if (provider === 'drive9-anonymous') {
     await api.uploadFile(
       { resourceId, path },
-      new Blob([content], { type: 'text/plain' }),
+      new Blob([content], { type: kind === 'csv' ? 'text/csv' : 'text/plain' }),
       () => {},
     );
   } else {

@@ -24,8 +24,6 @@ import {
   liveDatabase,
   matchesTotals,
   ordersCsv,
-  totalsQuery,
-  tutorialSample,
 } from './tutorial-data';
 import './tutorials.css';
 import { loadDatabaseSample } from './tutorial-import';
@@ -64,7 +62,7 @@ export function DataTutorials({
   const [databaseBusy, setDatabaseBusy] = useState(false);
   const [filesystemBusy, setFilesystemBusy] = useState(false);
   const [activeKind, setActiveKind] = useState<'filesystem' | 'database'>('filesystem');
-  const [fileJourney, setFileJourney] = useState<'csv' | FileExampleKind>('csv');
+  const [fileJourney, setFileJourney] = useState<FileExampleKind>('csv');
   const target = data.resources.find((resource) => resource.id === resourceId);
   const targetId = target?.id;
   const targetKind = target?.kind;
@@ -306,9 +304,8 @@ function TutorialSteps({
   const [result, setResult] = useState<QueryResult | null>(null);
   const files = resource.kind === 'filesystem';
   const demo = !files && !liveDatabase(resource);
-  const { path } = tutorialSample(sample.id);
   const database = databaseTutorial(resource, sample.id);
-  const query = files ? totalsQuery('file') : database.query;
+  const query = database.query;
   const active = resource.status === 'active';
   const available = active && !resource.connectionError;
   const ready = sample.ready || demo;
@@ -319,13 +316,13 @@ function TutorialSteps({
     onRunningChange(true);
     setError('');
     setNotice('');
-    if (action !== 'prepare' && action !== 'notes' && action !== 'log') setResult(null);
+    if (action === 'query' || action === 'verify' || action === 'reset') setResult(null);
     let progress = sample;
     async function updateSample(next: TutorialProgress) {
       progress = await store.saveSample(resource.id, { ...next, version: progress.version });
     }
     try {
-      if (action === 'notes' || action === 'log') {
+      if (action === 'csv' || action === 'notes' || action === 'log') {
         if (!progress.version) await updateSample(progress);
         const examplePath = await openFileExample(
           workspaceApi,
@@ -333,87 +330,49 @@ function TutorialSteps({
           resource.provider,
           sample.id,
           action,
+          action === 'csv'
+            ? async () => {
+                if (progress.attempted)
+                  throw new Error(
+                    'The saved sample could not be found. Check the File System or use a new sample name.',
+                  );
+                await updateSample({ ...progress, attempted: true });
+              }
+            : undefined,
         );
+        if (action === 'csv' && !progress.ready)
+          await updateSample({ ...progress, attempted: true, ready: true });
         location.hash = fileHash(
           resource.id,
           examplePath,
-          action === 'log' ? 'analyze' : 'preview',
+          action === 'notes' ? 'preview' : 'analyze',
         );
       } else if (action === 'reset') {
         await updateSample(freshSample());
       } else if (action === 'prepare') {
         if (sample.attempted || demo) return;
-        if (files) {
-          await updateSample({ ...progress, attempted: true });
-          if (resource.provider === 'drive9-anonymous') {
-            await workspaceApi.uploadFile(
-              { resourceId: resource.id, path },
-              new Blob([ordersCsv], { type: 'text/csv' }),
-              () => {},
-            );
-          } else {
-            await workspaceApi.saveFile({
-              resourceId: resource.id,
-              path,
-              type: 'file',
-              content: ordersCsv,
-            });
-          }
-        } else
-          await loadDatabaseSample(workspaceApi, resource.id, sample.id, () =>
-            updateSample({ ...sample, attempted: true }),
-          );
+        await loadDatabaseSample(workspaceApi, resource.id, sample.id, () =>
+          updateSample({ ...sample, attempted: true }),
+        );
         await updateSample({ ...progress, attempted: true, ready: true });
         await refresh().catch(() =>
           setNotice('Sample saved. The workspace summary could not refresh; continue with step 3.'),
         );
-      } else if (action === 'verify' && files) {
-        const content = (await workspaceApi.previewFile({ resourceId: resource.id, path })).content;
-        if (content !== ordersCsv)
-          throw new Error(
-            'The saved file does not match this tutorial sample. Open the File System to inspect it.',
-          );
-        await updateSample({ ...progress, attempted: true, ready: true });
       } else {
-        if (files) {
-          const cap = await workspaceApi.fileAnalysisCapabilities(resource.id, path);
-          const sqlEngine =
-            cap.engines?.find((engine) => engine.engine === 'duckdb') ??
-            (cap.engine === 'duckdb' ? cap : undefined);
-          if (!sqlEngine?.available)
-            throw new Error(
-              sqlEngine?.reason ||
-                'SQL analysis is unavailable. Open the file to preview or download the CSV.',
-            );
-          const output = await workspaceApi.analyzeFile({
-            resourceId: resource.id,
-            path,
-            engine: 'duckdb',
-            sql: query,
-          });
-          if (output.engine !== 'duckdb') throw new Error('Expected a SQL result.');
-          setResult({ ...output, mode: 'live' });
-          await updateSample({ ...progress, completed: matchesTotals(output.rows) });
-          if (!matchesTotals(output.rows))
-            setNotice(
-              'The result differs from the sample totals. The saved data may have changed; inspect the file.',
-            );
-        } else {
-          const output = await workspaceApi.query({ resourceId: resource.id, sql: query });
-          setResult(output);
-          await updateSample({
-            ...progress,
-            attempted: true,
-            ready: true,
-            completed: demo
-              ? output.rows.length === 3 && output.rows.every((row) => row.status === 'completed')
-              : matchesTotals(output.rows),
-          });
-          if (!demo && !matchesTotals(output.rows))
-            setNotice(
-              'The result differs from the sample totals. Inspect the sample table before continuing.',
-            );
-        }
+        const output = await workspaceApi.query({ resourceId: resource.id, sql: query });
+        setResult(output);
+        await updateSample({
+          ...progress,
+          attempted: true,
+          ready: true,
+          completed: demo
+            ? output.rows.length === 3 && output.rows.every((row) => row.status === 'completed')
+            : matchesTotals(output.rows),
+        });
+        if (!demo && !matchesTotals(output.rows))
+          setNotice(
+            'The result differs from the sample totals. Inspect the sample table before continuing.',
+          );
       }
     } catch (cause) {
       setResult(null);
@@ -441,179 +400,150 @@ function TutorialSteps({
           </Button>
         </Alert>
       )}
-      <Tabs.Panel value="csv">
-        <Stack gap="lg">
-          <div>
-            <Heading level={3}>
-              {files
-                ? 'Save the sample CSV'
-                : `2. ${demo ? 'Use the included demo data' : 'Load the sample data'}`}
-            </Heading>
-            <Text mt="sm">
-              {demo
-                ? 'Local demo · 3 preloaded agent events. This demo supports sample SELECT queries; use a live database to create your own tables.'
-                : files
-                  ? '6 orders · CSV · id, region, amount. Saves a new sample file in the selected File System.'
+      {!files && (
+        <Tabs.Panel value="csv">
+          <Stack gap="lg">
+            <div>
+              <Heading level={3}>
+                {`2. ${demo ? 'Use the included demo data' : 'Load the sample data'}`}
+              </Heading>
+              <Text mt="sm">
+                {demo
+                  ? 'Local demo · 3 preloaded agent events. This demo supports sample SELECT queries; use a live database to create your own tables.'
                   : '6 orders · id, region, amount. Creates a new sample table in the selected database.'}
-            </Text>
-            {!demo && (
-              <details className="tutorial-code tutorial-artifact">
-                <summary>Sample location</summary>
-                <CodeExample
-                  value={files ? path : database.table}
-                  label={files ? 'File path' : 'Table name'}
-                  copy={copy}
-                />
-              </details>
-            )}
-            {!demo && (
-              <details className="tutorial-code">
-                <summary>Preview sample CSV</summary>
-                <CodeExample value={ordersCsv} label="CSV" copy={copy} />
-                {!files && (
+              </Text>
+              {!demo && (
+                <details className="tutorial-code tutorial-artifact">
+                  <summary>Sample location</summary>
+                  <CodeExample value={database.table} label="Table name" copy={copy} />
+                </details>
+              )}
+              {!demo && (
+                <details className="tutorial-code">
+                  <summary>Preview sample CSV</summary>
+                  <CodeExample value={ordersCsv} label="CSV" copy={copy} />
                   <Text size="sm">
                     Imports six rows into a new table: id BIGINT, region TEXT, amount BIGINT.
                   </Text>
+                </details>
+              )}
+              <Group mt="sm">
+                {ready ? (
+                  <Badge color="green">{demo ? 'Demo data ready' : 'Sample data ready'}</Badge>
+                ) : (
+                  <Button
+                    variant="filled"
+                    loading={action === 'prepare'}
+                    disabled={busy || !available || sample.attempted}
+                    onClick={() => void run('prepare')}
+                  >
+                    {action === 'prepare' ? 'Saving sample data…' : 'Load sample orders'}
+                  </Button>
                 )}
-              </details>
-            )}
-            <Group mt="sm">
-              {ready ? (
-                <Badge color="green">{demo ? 'Demo data ready' : 'Sample data ready'}</Badge>
-              ) : (
-                <Button
-                  variant="filled"
-                  loading={action === 'prepare'}
-                  disabled={busy || !available || sample.attempted}
-                  onClick={() => void run('prepare')}
-                >
-                  {action === 'prepare'
-                    ? 'Saving sample data…'
-                    : files
-                      ? 'Save sample CSV'
-                      : 'Load sample orders'}
-                </Button>
-              )}
-              {sample.attempted && !sample.ready && action !== 'prepare' && (
-                <Button
-                  loading={action === 'verify'}
-                  disabled={busy || !available}
-                  onClick={() => void run('verify')}
-                >
-                  {action === 'verify' ? 'Checking saved sample…' : 'Check saved sample'}
-                </Button>
-              )}
-            </Group>
-            {action === 'prepare' && (
-              <Text mt="sm" size="sm" role="status">
-                Saving the sample in this resource. You can run the query when it is ready.
-              </Text>
-            )}
-            {sample.attempted && !sample.ready && !busy && (
-              <Text mt="sm" size="sm">
-                The save outcome is unconfirmed. Check the sample before continuing; loading it
-                again is disabled to avoid repeating a write.
-              </Text>
-            )}
-            {sample.attempted && !sample.ready && error && (
-              <Button mt="sm" variant="subtle" disabled={busy} onClick={() => void run('reset')}>
-                Use a new sample name (keep the previous sample)
-              </Button>
-            )}
-          </div>
-          <div>
-            <Heading level={3}>
-              {files
-                ? 'Run the query and check your result'
-                : '3. Run the query and check your result'}
-            </Heading>
-            <Text mt="sm">
-              {demo
-                ? 'Expected: 3 completed events from research-agent and coding-agent.'
-                : 'Expected: AMER = 90, APAC = 240, EMEA = 180. Total sales = 510.'}
-            </Text>
-            <details className="tutorial-code">
-              <summary>View query</summary>
-              <CodeExample value={query} label="SQL" copy={copy} />
-            </details>
-            <Button
-              mt="sm"
-              variant="filled"
-              loading={action === 'query'}
-              disabled={busy || !available || !ready}
-              onClick={() => void run('query')}
-            >
-              {action === 'query' ? 'Running query…' : 'Run tutorial query'}
-            </Button>
-          </div>
-          {sample.completed && !result && (
-            <Alert color="green" title="Tutorial completed">
-              Your sample is saved. Run the query again for a fresh result, or open the sample
-              below.
-            </Alert>
-          )}
-          {result && (
-            <>
-              <WorkspaceQueryResults
-                result={result}
-                busy={busy}
-                error=""
-                sourceResourceId={resource.id}
-                onExportSaved={refresh}
-                footnote={
-                  demo
-                    ? 'Local demo · Sample events'
-                    : 'Compare these rows with the expected totals above.'
-                }
-              />
-              <Alert
-                color={demo || matchesTotals(result.rows) ? 'green' : 'yellow'}
-                title={
-                  demo || matchesTotals(result.rows)
-                    ? 'Your first result is ready'
-                    : 'Review the changed sample'
-                }
-              >
-                <Text>
-                  Next:{' '}
-                  {files
-                    ? 'preview your CSV or try another SQL query or Just Bash in Analyze.'
-                    : 'browse the sample table and try your own queries in SQL Editor.'}{' '}
-                  Use Export above to download the result.
+                {sample.attempted && !sample.ready && action !== 'prepare' && (
+                  <Button
+                    loading={action === 'verify'}
+                    disabled={busy || !available}
+                    onClick={() => void run('verify')}
+                  >
+                    {action === 'verify' ? 'Checking saved sample…' : 'Check saved sample'}
+                  </Button>
+                )}
+              </Group>
+              {action === 'prepare' && (
+                <Text mt="sm" size="sm" role="status">
+                  Saving the sample in this resource. You can run the query when it is ready.
                 </Text>
-              </Alert>
-            </>
-          )}
-          {(ready || sample.attempted) && (
-            <Group>
+              )}
+              {sample.attempted && !sample.ready && !busy && (
+                <Text mt="sm" size="sm">
+                  The save outcome is unconfirmed. Check the sample before continuing; loading it
+                  again is disabled to avoid repeating a write.
+                </Text>
+              )}
+              {sample.attempted && !sample.ready && error && (
+                <Button mt="sm" variant="subtle" disabled={busy} onClick={() => void run('reset')}>
+                  Use a new sample name (keep the previous sample)
+                </Button>
+              )}
+            </div>
+            <div>
+              <Heading level={3}>3. Run the query and check your result</Heading>
+              <Text mt="sm">
+                {demo
+                  ? 'Expected: 3 completed events from research-agent and coding-agent.'
+                  : 'Expected: AMER = 90, APAC = 240, EMEA = 180. Total sales = 510.'}
+              </Text>
+              <details className="tutorial-code">
+                <summary>View query</summary>
+                <CodeExample value={query} label="SQL" copy={copy} />
+              </details>
               <Button
-                variant="default"
-                disabled={busy}
-                onClick={() => {
-                  location.hash = files
-                    ? fileHash(resource.id, path, 'preview')
-                    : databaseEditorHash(resource.id, demo ? 'agent_events' : database.table);
-                }}
+                mt="sm"
+                variant="filled"
+                loading={action === 'query'}
+                disabled={busy || !available || !ready}
+                onClick={() => void run('query')}
               >
-                {files ? 'Preview sample CSV' : 'Open sample in SQL Editor'}
+                {action === 'query' ? 'Running query…' : 'Run tutorial query'}
               </Button>
-              {files && ready && (
+            </div>
+            {sample.completed && !result && (
+              <Alert color="green" title="Tutorial completed">
+                Your sample is saved. Run the query again for a fresh result, or open the sample
+                below.
+              </Alert>
+            )}
+            {result && (
+              <>
+                <WorkspaceQueryResults
+                  result={result}
+                  busy={busy}
+                  error=""
+                  sourceResourceId={resource.id}
+                  onExportSaved={refresh}
+                  footnote={
+                    demo
+                      ? 'Local demo · Sample events'
+                      : 'Compare these rows with the expected totals above.'
+                  }
+                />
+                <Alert
+                  color={demo || matchesTotals(result.rows) ? 'green' : 'yellow'}
+                  title={
+                    demo || matchesTotals(result.rows)
+                      ? 'Your first result is ready'
+                      : 'Review the changed sample'
+                  }
+                >
+                  <Text>
+                    Next: browse the sample table and try your own queries in SQL Editor. Use Export
+                    above to download the result.
+                  </Text>
+                </Alert>
+              </>
+            )}
+            {(ready || sample.attempted) && (
+              <Group>
                 <Button
                   variant="default"
                   disabled={busy}
                   onClick={() => {
-                    location.hash = fileHash(resource.id, path, 'analyze');
+                    location.hash = databaseEditorHash(
+                      resource.id,
+                      demo ? 'agent_events' : database.table,
+                    );
                   }}
                 >
-                  Open file analysis
+                  Open sample in SQL Editor
                 </Button>
-              )}
-            </Group>
-          )}
-        </Stack>
-      </Tabs.Panel>
+              </Group>
+            )}
+          </Stack>
+        </Tabs.Panel>
+      )}
       {files &&
-        (['notes', 'log'] as const).map((kind) => (
+        (['csv', 'notes', 'log'] as const).map((kind) => (
           <Tabs.Panel value={kind} pt="lg" key={kind}>
             <Heading level={3}>{fileExamples[kind].title}</Heading>
             <Text mt="sm">{fileExamples[kind].description}</Text>
@@ -629,10 +559,36 @@ function TutorialSteps({
             >
               {action === kind
                 ? 'Opening sample…'
-                : kind === 'notes'
-                  ? 'Open sample notes'
-                  : 'Open sample log'}
+                : kind === 'csv'
+                  ? sample.attempted && !sample.ready
+                    ? 'Check saved sample'
+                    : 'Open sample CSV'
+                  : kind === 'notes'
+                    ? 'Open sample notes'
+                    : 'Open sample log'}
             </Button>
+            {action === kind && (
+              <Text mt="sm" size="sm" role="status">
+                Opening the sample in this File System.
+              </Text>
+            )}
+            {kind === 'csv' && sample.attempted && !sample.ready && !busy && (
+              <>
+                <Text mt="sm" size="sm">
+                  The save outcome is unconfirmed. Check the existing sample before continuing.
+                </Text>
+                {error && (
+                  <Button
+                    mt="sm"
+                    variant="subtle"
+                    disabled={busy}
+                    onClick={() => void run('reset')}
+                  >
+                    Use a new sample name (keep the previous sample)
+                  </Button>
+                )}
+              </>
+            )}
           </Tabs.Panel>
         ))}
       {error && (

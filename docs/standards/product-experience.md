@@ -109,8 +109,8 @@ brand return and mobile navigation. Reviewed evidence: [desktop dark header](../
 [narrow dark footer](../screenshots/branding/footer-narrow-dark.png), at 1280×800 and 390×844.
 
 **Executable, resumable tutorials (owner correction 2026-10-31):** database and File System
-tutorials continue beyond creation with prepared sample data, an explicit query/analysis,
-expected output and a useful next action. Retain a named Tutorials destination after completion,
+tutorials continue beyond creation with prepared sample data and an explicit path to a useful
+result. Retain a named Tutorials destination after completion,
 show attempted/completed tutorials on Overview, and link back from each resource. Reopening
 reuses the exact sample and resource; it must not automatically seed or execute another copy.
 Keep uncertain writes inspectable without automatic replay, resource availability explicit and
@@ -131,6 +131,13 @@ re-entry. When an available resource is selected, lead directly to its examples;
 when a resource is missing or unavailable, and keep failure recovery explicit. Verify first use,
 switching journeys, cross-browser return and narrow layouts. Revisit
 the grouping as supported file formats and real usage develop.
+
+**Consistent file examples (owner correction 2026-11-02):** CSV, Markdown and log tutorials
+offer the same direct open-sample flow. Open CSV and logs in the file workspace with analysis
+available and Markdown in preview; do not automatically execute a query or command. Preserve
+existing sample paths, customer edits, Workspace progress and uncertain-write recovery. A
+successful SQL query on the Workspace's CSV sample completes that tutorial without treating
+unrelated file queries as tutorial progress.
 
 - Comparable screens share implemented primitives and state transitions, not independently
   copied markup. Reuse `WorkspacePageHeader`, `WorkspaceEmptyState`, `ResourceCollectionPage`
