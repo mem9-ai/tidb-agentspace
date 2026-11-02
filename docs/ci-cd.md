@@ -143,6 +143,16 @@ After building the native backend and providing the isolated RustFS prerequisite
 `npm run backend:test:classic` runs just the classic native journey locally. Pass
 `-- tutorial`, `-- database` or `-- files` to add the corresponding risk suite.
 
+For full PR and main-push integration runs, the trusted base can partition the unchanged full
+test command into the product API file and the remaining files. Both groups run serially within
+their own isolated runner and must pass in the same CI attempt. Unknown commands, unsupported
+events and an unavailable base manifest use the original unsharded full command. The exact-SHA
+release verifier requires both groups or explicit success of that full fallback; a skipped or
+missing required group cannot authorize deployment. The two jobs restore the native cache
+independently, but only the primary job saves it. The baseline unsharded integration step took
+15m16s in [main CI at `650a196`](https://github.com/mem9-ai/tidb.ai/actions/runs/41425499855);
+measure partitioned CI on comparable runners before claiming a speedup.
+
 Dev CD no longer triggers on PRs or repeats quality/native commands. Its read-only verify
 job runs `scripts/require-ci.mjs full "$SOURCE_SHA"`, then the existing protected dev job
 builds/pushes and updates the image. Console publishing consumes `console` evidence (Quality

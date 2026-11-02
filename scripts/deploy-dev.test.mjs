@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { parse } from 'yaml';
 import { deployDev, recoverDev } from './deploy-dev.mjs';
+import { files as integrationFiles, fullCommand } from './ci-full-integration.mjs';
 
 const config = {
   namespace: 'example-dev',
@@ -18,6 +19,68 @@ const config = {
 
 const oldImage = `registry.example/api@sha256:${'a'.repeat(64)}`;
 const pause = async () => {};
+
+test('full partition uses the verified merge base and fails closed on mismatched parents', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'ci-partition-source-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+  git('init', '-q', '-b', 'main');
+  git('config', 'user.email', 'test@example.invalid');
+  git('config', 'user.name', 'CI fixture');
+  mkdirSync(join(root, 'scripts'));
+  writeFileSync(
+    join(root, 'scripts/ci-full-integration.mjs'),
+    readFileSync(new URL('./ci-full-integration.mjs', import.meta.url)),
+  );
+  writeFileSync(
+    join(root, 'package.json'),
+    JSON.stringify({ scripts: { 'backend:test:integration': fullCommand } }),
+  );
+  for (const file of integrationFiles) {
+    mkdirSync(dirname(join(root, file)), { recursive: true });
+    writeFileSync(join(root, file), '// fixture\n');
+  }
+  git('add', '.');
+  git('commit', '-qm', 'trusted base');
+  const base = git('rev-parse', 'HEAD');
+  git('switch', '-qc', 'candidate');
+  writeFileSync(join(root, 'candidate.txt'), 'candidate\n');
+  git('add', 'candidate.txt');
+  git('commit', '-qm', 'candidate');
+  const head = git('rev-parse', 'HEAD');
+  git('switch', '-q', 'main');
+  git('merge', '--no-ff', '-qm', 'merge candidate', 'candidate');
+  const ci = parse(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'));
+  const script = ci.jobs.scope.steps.find((step) => step.id === 'full_partition').run;
+  const output = join(root, 'output');
+  const classify = (overrides = {}) => {
+    writeFileSync(output, '');
+    const env = {
+      ...process.env,
+      GITHUB_EVENT_NAME: 'pull_request',
+      GITHUB_OUTPUT: output,
+      RUNNER_TEMP: root,
+      BASE_SHA: base,
+      HEAD_SHA: head,
+      BEFORE_SHA: '',
+      ...overrides,
+    };
+    delete env.NODE_TEST_CONTEXT;
+    execFileSync('bash', ['-c', script], { cwd: root, env, stdio: 'pipe' });
+    return readFileSync(output, 'utf8');
+  };
+  assert.equal(classify(), 'full_partition=true\n');
+  assert.equal(classify({ BASE_SHA: 'f'.repeat(40) }), 'full_partition=false\n');
+  assert.equal(classify({ HEAD_SHA: 'f'.repeat(40) }), 'full_partition=false\n');
+  assert.equal(classify({ GITHUB_EVENT_NAME: 'push', BEFORE_SHA: base }), 'full_partition=true\n');
+  assert.equal(
+    classify({ GITHUB_EVENT_NAME: 'push', BEFORE_SHA: 'f'.repeat(40) }),
+    'full_partition=false\n',
+  );
+  git('switch', '-q', 'candidate');
+  assert.equal(classify(), 'full_partition=false\n');
+});
+
 function fixture({
   failRollout = false,
   failPublic = false,
@@ -298,11 +361,11 @@ test('automatic checks execute once and releases require exact-commit native evi
     ci.jobs.browser.if,
     "${{ !cancelled() && needs.scope.outputs.backend_only != 'true' && needs.scope.outputs.docs_only != 'true' }}",
   );
-  assert.deepEqual(ci.jobs['backend-scope'].needs, ['scope', 'metadata']);
+  assert.deepEqual(ci.jobs['backend-scope'].needs, ['scope', 'metadata', 'product_integration']);
   assert.equal(ci.jobs['backend-scope'].name, 'Backend-only scope');
   assert.equal(
     ci.jobs['backend-scope'].if,
-    "${{ !cancelled() && needs.scope.outputs.backend_only == 'true' && needs.metadata.result == 'success' }}",
+    "${{ always() && !cancelled() && needs.scope.outputs.backend_only == 'true' && needs.metadata.result == 'success' && (needs.product_integration.result == 'success' || (needs.product_integration.result == 'skipped' && (needs.scope.outputs.full_partition != 'true' || needs.scope.outputs.history_only == 'true' || contains(fromJSON('[\"tutorial\",\"database\",\"files\"]'), needs.scope.outputs.classic_profile)))) }}",
   );
   assert.equal(
     ci.jobs.browser.steps.filter((step) => step.run === 'npm run build:console').length,
@@ -351,14 +414,56 @@ test('automatic checks execute once and releases require exact-commit native evi
   assert.equal(classicScope.if, "github.event_name == 'pull_request' && github.base_ref == 'main'");
   assert.match(classicScope.run, /git show 'HEAD\^1:scripts\/ci-classic-scope\.mjs'/);
   assert.match(classicScope.run, /classic_profile=full/);
+  assert.equal(
+    ci.jobs.scope.outputs.full_partition,
+    '${{ steps.full_partition.outputs.full_partition }}',
+  );
+  const partitionScope = ci.jobs.scope.steps.find((step) => step.id === 'full_partition');
+  assert.equal(partitionScope.env.BASE_SHA, '${{ github.event.pull_request.base.sha }}');
+  assert.equal(partitionScope.env.HEAD_SHA, '${{ github.event.pull_request.head.sha }}');
+  assert.match(partitionScope.run, /policy_ref='HEAD\^1'/);
+  assert.match(partitionScope.run, /git rev-parse HEAD\^1/);
+  assert.match(partitionScope.run, /git rev-parse HEAD\^2/);
+  assert.match(partitionScope.run, /merge-base --is-ancestor/);
+  assert.match(partitionScope.run, /git show "\$policy_ref:scripts\/ci-full-integration\.mjs"/);
+  assert.match(partitionScope.run, /full_partition=false/);
   assert.equal(ci.jobs.scope.steps[0].with['fetch-depth'], 0);
   const fullIntegration = ci.jobs.metadata.steps.find(
     (step) => step.run === 'npm run backend:test:integration',
   );
   assert.equal(
     fullIntegration.if,
-    '${{ needs.scope.outputs.history_only != \'true\' && !contains(fromJSON(\'["tutorial","database","files"]\'), needs.scope.outputs.classic_profile) }}',
+    '${{ needs.scope.outputs.history_only != \'true\' && !contains(fromJSON(\'["tutorial","database","files"]\'), needs.scope.outputs.classic_profile) && needs.scope.outputs.full_partition != \'true\' }}',
   );
+  const otherIntegration = ci.jobs.metadata.steps.find(
+    (step) => step.name === 'Run remaining native API and real S3 integration tests',
+  );
+  assert.equal(
+    otherIntegration.if,
+    '${{ needs.scope.outputs.history_only != \'true\' && !contains(fromJSON(\'["tutorial","database","files"]\'), needs.scope.outputs.classic_profile) && needs.scope.outputs.full_partition == \'true\' }}',
+  );
+  assert.match(otherIntegration.run, /git show "\$policy_ref:scripts\/ci-full-integration\.mjs"/);
+  assert.match(otherIntegration.run, /node "\$runner" other/);
+  const productIntegration = ci.jobs.product_integration;
+  assert.equal(productIntegration.name, 'Native product integration');
+  assert.equal(productIntegration.needs, 'scope');
+  assert.equal(
+    productIntegration.if,
+    "${{ !cancelled() && needs.scope.outputs.full_partition == 'true' && needs.scope.outputs.history_only != 'true' && !contains(fromJSON('[\"tutorial\",\"database\",\"files\"]'), needs.scope.outputs.classic_profile) && (github.event_name != 'pull_request' || (needs.scope.outputs.ui_only != 'true' && needs.scope.outputs.docs_only != 'true')) }}",
+  );
+  assert.ok(!JSON.stringify(productIntegration).includes('secrets.'));
+  assert.equal(productIntegration.steps[0].with['fetch-depth'], 0);
+  assert.equal(
+    productIntegration.steps.find((step) => step.uses?.startsWith('Swatinem/rust-cache@')).with[
+      'save-if'
+    ],
+    false,
+  );
+  const productStep = productIntegration.steps.find(
+    (step) => step.name === 'Run product API integration tests',
+  );
+  assert.match(productStep.run, /git show "\$policy_ref:scripts\/ci-full-integration\.mjs"/);
+  assert.match(productStep.run, /node "\$runner" product/);
   const historyIntegration = ci.jobs.metadata.steps.find(
     (step) => step.name === 'Run history authorization, isolation and storage integration tests',
   );
@@ -372,7 +477,7 @@ test('automatic checks execute once and releases require exact-commit native evi
     '${{ needs.scope.outputs.history_only != \'true\' && contains(fromJSON(\'["tutorial","database","files"]\'), needs.scope.outputs.classic_profile) }}',
   );
   assert.match(classicIntegration.run, /git show 'HEAD\^1:scripts\/run-classic-integration\.mjs'/);
-  assert.equal(ci.jobs.metadata.steps[0].with['fetch-depth'], 2);
+  assert.equal(ci.jobs.metadata.steps[0].with['fetch-depth'], 0);
   for (const command of [
     'npm run backend:fmt',
     'npm run backend:build -- --timings',
