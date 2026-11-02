@@ -6,6 +6,7 @@ use super::*;
 
 const AUDIT_HEAD: &str = "observability/audit-v1/head";
 const AUDIT_RECORDS: &str = "observability/audit-v1/records/";
+const AUDIT_OPERATIONS: &str = "observability/audit-v1/operations/";
 const AUDIT_CAPACITY: u64 = 100_000;
 
 #[derive(Clone, Copy)]
@@ -136,10 +137,12 @@ impl Repository {
             "authority":self.authority_id(), "actor":{"kind":actor_kind,"id":entry.actor_id},
             "action":action, "targetId":entry.target_id, "outcome":outcome, "occurredAt":timestamp,
         });
-        for attempt in 0..8 {
+        let operation_key = format!("{AUDIT_OPERATIONS}{}", entry.operation_id);
+        let starting = outcome == "attempted";
+        'attempts: for attempt in 0..8 {
             let head = self.get(AUDIT_HEAD).await?;
-            let (position, count) = if head.is_null() {
-                (0, 0)
+            let (position, count, pending) = if head.is_null() {
+                (0, 0, 0)
             } else {
                 if head["value"]["format"] != 1 {
                     return Err(error("AUDIT_INDEX_CORRUPT"));
@@ -151,28 +154,68 @@ impl Repository {
                     .as_u64()
                     .filter(|count| *count <= AUDIT_CAPACITY && *count <= position)
                     .ok_or_else(|| error("AUDIT_INDEX_CORRUPT"))?;
-                (position, count)
+                let pending = head["value"]["pending"]
+                    .as_u64()
+                    .filter(|pending| *pending <= AUDIT_CAPACITY - count)
+                    .ok_or_else(|| error("AUDIT_INDEX_CORRUPT"))?;
+                (position, count, pending)
             };
+            let operation = self.get(&operation_key).await?;
+            if starting && !operation.is_null()
+                || !starting && (operation["value"]["status"] != "pending" || pending == 0)
+            {
+                return Err(ServiceError::new(409, "INVALID_AUDIT_TRANSITION"));
+            }
             let next = position
                 .checked_add(1)
                 .ok_or_else(|| error("AUDIT_INDEX_CORRUPT"))?;
-            let mut changes = vec![
-                json!({"key":AUDIT_HEAD,"expectedVersion":version(&head),"value":{"format":1,"position":next,"count":(count+1).min(AUDIT_CAPACITY)}}),
-                json!({"key":record_key(next),"expectedVersion":null,"value":record}),
-            ];
-            if count == AUDIT_CAPACITY {
-                let oldest_key = record_key(position - count + 1);
+            // Each pending operation reserves space for its eventual outcome. If the oldest
+            // attempt is still pending, refuse new work rather than discard an unresolved effect.
+            let next_pending = if starting { pending + 1 } else { pending - 1 };
+            let excess = (count + 1 + next_pending).saturating_sub(AUDIT_CAPACITY);
+            let mut changes = Vec::new();
+            for offset in 0..excess {
+                let oldest_key = record_key(position - count + 1 + offset);
                 let oldest = self.get(&oldest_key).await?;
                 if oldest.is_null() {
                     if version(&self.get(AUDIT_HEAD).await?) != version(&head) && attempt < 7 {
-                        continue;
+                        continue 'attempts;
                     }
                     return Err(error("AUDIT_INDEX_CORRUPT"));
+                }
+                let old_id = oldest["value"]["operationId"]
+                    .as_str()
+                    .and_then(|id| Uuid::parse_str(id).ok())
+                    .ok_or_else(|| error("AUDIT_INDEX_CORRUPT"))?;
+                let old_operation_key = format!("{AUDIT_OPERATIONS}{old_id}");
+                let old_operation = self.get(&old_operation_key).await?;
+                if old_operation.is_null() {
+                    if version(&self.get(AUDIT_HEAD).await?) != version(&head) && attempt < 7 {
+                        continue 'attempts;
+                    }
+                    return Err(error("AUDIT_INDEX_CORRUPT"));
+                }
+                if oldest["value"]["outcome"] == "attempted" {
+                    if old_operation["value"]["status"] == "pending" {
+                        return Err(ServiceError::new(503, "AUDIT_CAPACITY"));
+                    }
+                } else {
+                    changes.push(json!({"key":old_operation_key,"expectedVersion":version(&old_operation),"delete":true}));
                 }
                 changes.push(
                     json!({"key":oldest_key,"expectedVersion":version(&oldest),"delete":true}),
                 );
             }
+            let operation_state = if starting {
+                json!({"status":"pending","attempt":record})
+            } else {
+                json!({"status":outcome,"attempt":operation["value"]["attempt"]})
+            };
+            changes.extend([
+                json!({"key":AUDIT_HEAD,"expectedVersion":version(&head),"value":{"format":1,"position":next,"count":count+1-excess,"pending":next_pending}}),
+                json!({"key":record_key(next),"expectedVersion":null,"value":record}),
+                json!({"key":operation_key,"expectedVersion":version(&operation),"value":operation_state}),
+            ]);
             match self.commit(changes).await {
                 Ok(()) => return Ok(()),
                 Err(failure) if failure.code == "META_CONFLICT" && attempt < 7 => continue,

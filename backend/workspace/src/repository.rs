@@ -1575,11 +1575,13 @@ mod concurrency_tests {
         use observability::{ActorKind, AuditAction, AuditIntent};
 
         let oldest = format!("observability/audit-v1/records/{:020}", u64::MAX - 1);
+        let old_id = Uuid::new_v4();
         let metadata = Arc::new(MetadataGate {
             values: std::sync::Mutex::new(
                 [
-                    ("observability/audit-v1/head".into(), json!({"version":"v1","value":{"format":1,"position":100_000,"count":100_000}})),
-                    (oldest.clone(), json!({"version":"v1","value":{"id":"old"}})),
+                    ("observability/audit-v1/head".into(), json!({"version":"v1","value":{"format":1,"position":99_999,"count":99_999,"pending":0}})),
+                    (oldest.clone(), json!({"version":"v1","value":{"operationId":old_id.to_string(),"outcome":"succeeded"}})),
+                    (format!("observability/audit-v1/operations/{old_id}"), json!({"version":"v1","value":{"status":"succeeded"}})),
                 ].into_iter().collect(),
             ),
             paused: Notify::new(),
@@ -1623,9 +1625,9 @@ mod concurrency_tests {
             assert!(!values.contains_key(&oldest));
             assert_eq!(
                 values["observability/audit-v1/head"]["value"]["count"],
-                100_000
+                99_999
             );
-            let key = format!("observability/audit-v1/records/{:020}", u64::MAX - 100_001);
+            let key = format!("observability/audit-v1/records/{:020}", u64::MAX - 100_000);
             let record = &values[&key]["value"];
             assert!(
                 record["operationId"]
@@ -1725,6 +1727,71 @@ mod concurrency_tests {
         assert_eq!(attempted["operationId"], completed["operationId"]);
         assert_eq!(attempted["outcome"], "attempted");
         assert_eq!(completed["outcome"], "succeeded");
+    }
+
+    #[tokio::test]
+    async fn audit_capacity_reserves_space_for_unfinished_operations() {
+        use observability::{ActorKind, AuditAction, AuditIntent, AuditOutcome};
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(Records::new()),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(false),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        };
+        let intent = || AuditIntent {
+            request_id: None,
+            actor_kind: ActorKind::Owner,
+            actor_id: "owner-1",
+            action: AuditAction::FileWrite,
+            target_id: None,
+        };
+        let operation = repository.begin_audit_operation(intent()).await.unwrap();
+        {
+            let mut values = metadata.values.lock().unwrap();
+            values.get_mut("observability/audit-v1/head").unwrap()["value"] =
+                json!({"format":1,"position":99_999,"count":99_999,"pending":1});
+        }
+        assert_eq!(
+            repository
+                .begin_audit_operation(intent())
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "AUDIT_CAPACITY"
+        );
+        repository
+            .finish_audit_operation(operation, AuditOutcome::Unknown)
+            .await
+            .unwrap();
+        let values = metadata.values.lock().unwrap();
+        assert_eq!(
+            values["observability/audit-v1/head"]["value"]["count"],
+            100_000
+        );
+        assert_eq!(values["observability/audit-v1/head"]["value"]["pending"], 0);
     }
 
     #[tokio::test]
