@@ -31,6 +31,37 @@ struct WorkspaceHealth {
 #[derive(Default)]
 struct Health {
     workspaces: BTreeMap<String, WorkspaceHealth>,
+    diagnostics: LossDiagnostics,
+}
+
+// Process-wide totals only: never include a Workspace identifier or error text in logs.
+#[derive(Default)]
+struct LossDiagnostics {
+    workspace_limit: u64,
+    workspace_queue_full: u64,
+    queue_full: u64,
+    queue_closed: u64,
+    writer_busy: u64,
+    writer_unavailable: u64,
+    write_error: u64,
+    write_timeout: u64,
+    write_panic: u64,
+    shutdown: u64,
+}
+
+impl LossDiagnostics {
+    fn is_empty(&self) -> bool {
+        self.workspace_limit == 0
+            && self.workspace_queue_full == 0
+            && self.queue_full == 0
+            && self.queue_closed == 0
+            && self.writer_busy == 0
+            && self.writer_unavailable == 0
+            && self.write_error == 0
+            && self.write_timeout == 0
+            && self.write_panic == 0
+            && self.shutdown == 0
+    }
 }
 
 #[derive(Clone)]
@@ -116,12 +147,16 @@ impl HistoryQueue {
             if let Some(id) = reusable {
                 health.workspaces.remove(&id);
             } else {
+                health.diagnostics.workspace_limit =
+                    health.diagnostics.workspace_limit.saturating_add(1);
                 return false;
             }
         }
         let state = health.workspaces.entry(workspace.to_owned()).or_default();
         if state.pending >= self.per_workspace {
             note_loss(state);
+            health.diagnostics.workspace_queue_full =
+                health.diagnostics.workspace_queue_full.saturating_add(1);
             return false;
         }
         match self.sender.try_send(Job {
@@ -132,8 +167,13 @@ impl HistoryQueue {
                 state.pending += 1;
                 true
             }
-            Err(_) => {
+            Err(error) => {
                 note_loss(state);
+                let counter = match error {
+                    mpsc::error::TrySendError::Full(_) => &mut health.diagnostics.queue_full,
+                    mpsc::error::TrySendError::Closed(_) => &mut health.diagnostics.queue_closed,
+                };
+                *counter = counter.saturating_add(1);
                 false
             }
         }
@@ -155,6 +195,11 @@ fn note_loss(state: &mut WorkspaceHealth) {
 }
 impl HistoryQueueWorker {
     pub async fn run(mut self, mut stop: watch::Receiver<bool>) {
+        let mut report = tokio::time::interval_at(
+            tokio::time::Instant::now() + std::time::Duration::from_secs(60),
+            std::time::Duration::from_secs(60),
+        );
+        report.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             if *stop.borrow() {
                 self.receiver.close();
@@ -162,9 +207,10 @@ impl HistoryQueueWorker {
             }
             tokio::select! {
                 changed = stop.changed() => if changed.is_err() || *stop.borrow() { self.receiver.close(); break; },
+                _ = report.tick() => self.report_diagnostics(),
                 job = self.receiver.recv() => match job {
                     Some(job) => { let jobs = self.collect(job); self.process_jobs(jobs, None).await; },
-                    None => return,
+                    None => { self.report_diagnostics(); return; },
                 },
             }
         }
@@ -177,6 +223,32 @@ impl HistoryQueueWorker {
                 }
                 break;
             }
+        }
+        self.report_diagnostics();
+    }
+
+    fn report_diagnostics(&self) {
+        let diagnostics = match self.health.lock() {
+            Ok(mut health) => std::mem::take(&mut health.diagnostics),
+            Err(_) => return,
+        };
+        if !diagnostics.is_empty() {
+            use std::io::Write;
+            // A closed logging stream must not stop the history worker.
+            let _ = writeln!(
+                std::io::stderr().lock(),
+                "HTTP history unconfirmed records: workspace_limit={} workspace_queue_full={} queue_full={} queue_closed={} writer_busy={} writer_unavailable={} write_error={} write_timeout={} write_panic={} shutdown={}",
+                diagnostics.workspace_limit,
+                diagnostics.workspace_queue_full,
+                diagnostics.queue_full,
+                diagnostics.queue_closed,
+                diagnostics.writer_busy,
+                diagnostics.writer_unavailable,
+                diagnostics.write_error,
+                diagnostics.write_timeout,
+                diagnostics.write_panic,
+                diagnostics.shutdown
+            );
         }
     }
     fn collect(&mut self, first: Job) -> Vec<(String, Vec<CompletedHistoryRequest>)> {
@@ -227,6 +299,7 @@ impl HistoryQueueWorker {
             for _ in 0..count {
                 note_loss(state);
             }
+            health.diagnostics.shutdown = health.diagnostics.shutdown.saturating_add(count as u64);
         }
     }
     async fn process(&self, workspace: &str, requests: &[CompletedHistoryRequest]) {
@@ -244,6 +317,19 @@ impl HistoryQueueWorker {
                 for _ in requests {
                     note_loss(state);
                 }
+                let counter = match result {
+                    Err(_) => &mut health.diagnostics.write_timeout,
+                    Ok(Err(_)) => &mut health.diagnostics.write_panic,
+                    Ok(Ok(Err(error))) if error.code == "WORKSPACE_POOL_BUSY" => {
+                        &mut health.diagnostics.writer_busy
+                    }
+                    Ok(Ok(Err(error))) if error.code == "WORKSPACE_POOL_UNAVAILABLE" => {
+                        &mut health.diagnostics.writer_unavailable
+                    }
+                    Ok(Ok(Err(_))) => &mut health.diagnostics.write_error,
+                    Ok(Ok(Ok(()))) => unreachable!(),
+                };
+                *counter = counter.saturating_add(requests.len() as u64);
             }
         }
     }
@@ -269,6 +355,36 @@ mod tests {
     }
     struct BatchProcessor {
         seen: Mutex<Vec<(String, usize)>>,
+    }
+    struct DiagnosticProcessor;
+    impl HistoryIngestionProcessor for DiagnosticProcessor {
+        fn write<'a>(
+            &'a self,
+            workspace: &'a str,
+            _: &'a [CompletedHistoryRequest],
+        ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+            Box::pin(async move {
+                match workspace {
+                    "busy" => Err(workspace_contracts::ServiceError::new(
+                        503,
+                        "WORKSPACE_POOL_BUSY",
+                    )),
+                    "unavailable" => Err(workspace_contracts::ServiceError::new(
+                        503,
+                        "WORKSPACE_POOL_UNAVAILABLE",
+                    )),
+                    "error" => Err(workspace_contracts::ServiceError::new(
+                        503,
+                        "PRIVATE_ERROR_DETAILS",
+                    )),
+                    "timeout" => {
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        Ok(())
+                    }
+                    _ => Ok(()),
+                }
+            })
+        }
     }
     impl HistoryIngestionProcessor for BatchProcessor {
         fn write<'a>(
@@ -333,6 +449,54 @@ mod tests {
         )
         .unwrap()
         .finish(HttpCompletion::Responded(200))
+    }
+
+    #[tokio::test]
+    async fn diagnostic_totals_distinguish_failures_without_recording_error_details() {
+        let (queue, mut worker) = HistoryQueue::new(
+            8,
+            8,
+            1,
+            Arc::new(DiagnosticProcessor),
+            std::time::Duration::from_millis(20),
+        )
+        .unwrap();
+        for workspace in ["busy", "unavailable", "error", "timeout", "success"] {
+            assert!(queue.try_record(workspace, event()));
+            let job = worker.receiver.try_recv().unwrap();
+            worker.process(&job.workspace, &[job.request]).await;
+        }
+        for workspace in ["busy", "unavailable", "error", "timeout"] {
+            assert_eq!(queue.health(workspace).unwrap().unconfirmed, 1);
+        }
+        assert!(!queue.health("success").unwrap().degraded);
+        let health = queue.health.lock().unwrap();
+        assert_eq!(health.diagnostics.writer_busy, 1);
+        assert_eq!(health.diagnostics.writer_unavailable, 1);
+        assert_eq!(health.diagnostics.write_error, 1);
+        assert_eq!(health.diagnostics.write_timeout, 1);
+        assert_eq!(health.diagnostics.write_panic, 0);
+    }
+
+    #[tokio::test]
+    async fn diagnostic_totals_distinguish_full_and_closed_queues() {
+        let (queue, worker) = HistoryQueue::new(
+            1,
+            3,
+            1,
+            Arc::new(DiagnosticProcessor),
+            std::time::Duration::from_secs(1),
+        )
+        .unwrap();
+        assert!(queue.try_record("a", event()));
+        assert!(!queue.try_record("a", event()));
+        assert!(!queue.try_record("b", event()));
+        drop(worker);
+        assert!(!queue.try_record("c", event()));
+        let health = queue.health.lock().unwrap();
+        assert_eq!(health.diagnostics.workspace_queue_full, 1);
+        assert_eq!(health.diagnostics.queue_full, 1);
+        assert_eq!(health.diagnostics.queue_closed, 1);
     }
     #[tokio::test]
     async fn batches_preserve_workspace_isolation_and_count_each_failed_record() {
