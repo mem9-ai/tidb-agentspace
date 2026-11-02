@@ -789,6 +789,13 @@ form > .modal-actions {
   padding: 24px;
   justify-content: space-between;
 }
+.log-toolbar .input-with-icon {
+  flex: 1;
+  max-width: 480px;
+}
+.activity-scroll-hint {
+  display: none;
+}
 .billing-overview {
   padding: 24px;
   display: flex;
@@ -1055,4 +1062,49 @@ form > .modal-actions {
 .empty .guest-expiry-notice {
   max-width: 480px;
   margin-bottom: 0;
+}
+
+/* Overview lists real resources compactly while preserving their individual destinations. */
+.overview-resources {
+  margin-block: 24px;
+}
+.overview-count {
+  color: var(--muted);
+  font-size: 0.85em;
+  margin-left: 4px;
+}
+.overview-resource-list {
+  overflow: hidden;
+}
+.overview-resource-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  min-width: 0;
+}
+.overview-resource-row + .overview-resource-row {
+  border-top: 1px solid var(--border);
+}
+.overview-resource-identity {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.overview-resource-identity p {
+  margin: 3px 0 0;
+}
+
+@media (max-width: 767px) {
+  .log-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 16px 0;
+  }
+  .log-toolbar .input-with-icon {
+    width: 100%;
+  }
+  .activity-scroll-hint {
+    display: block;
+  }
 }

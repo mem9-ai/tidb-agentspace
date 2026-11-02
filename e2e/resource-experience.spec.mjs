@@ -549,23 +549,23 @@ test('empty collections share one in-context create action and readable TiUI pre
   await expect(page.locator('.resource-card a.resource-name')).toHaveCount(0);
 });
 
-test('each Quick Start appears only while its resource type is missing', async ({
+test('populated Overview stays focused on existing resources and keeps creation available', async ({
   page,
   workspace,
 }) => {
-  for (const [existingKind, remaining, absent] of [
-    ['mysql', 'Create file system', 'Create database'],
-    ['filesystem', 'Create database', 'Create file system'],
-  ]) {
+  for (const existingKind of ['mysql', 'filesystem']) {
     workspace.state.resources = structuredClone(
       sampleResources.filter((resource) => resource.kind === existingKind),
     );
     await workspace.open('#overview');
     await page.reload();
-    const guide = page.getByRole('region', { name: 'Get started' });
-    await expect(guide.getByRole('button', { name: remaining, exact: true })).toBeVisible();
-    await expect(guide.getByRole('button', { name: absent, exact: true })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: remaining, exact: true })).toHaveCount(1);
+    await expect(page.getByRole('region', { name: 'Get started' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Create resource', exact: true })).toBeVisible();
+    await expect(
+      page
+        .getByRole('region', { name: 'Your resources' })
+        .getByRole('link', { name: workspace.state.resources[0].name }),
+    ).toBeVisible();
   }
 });
 
@@ -731,8 +731,13 @@ test('collections keep lifecycle failures, expiry and service context visible', 
   await expect(files.getByText('Fixture file service unavailable.', { exact: true })).toBeVisible();
   await expect(files).toContainText('Drive9 · Anonymous trial');
   await workspace.open('#overview');
-  await expect(page.locator('.resource-card').getByText('expired', { exact: true })).toBeVisible();
-  await expect(page.locator('.resource-card').getByText('failed', { exact: true })).toBeVisible();
+  const overview = page.getByRole('region', { name: 'Your resources' });
+  await expect(overview.getByText('expired', { exact: true })).toBeVisible();
+  await expect(overview.getByText('failed', { exact: true })).toBeVisible();
+  await expect(overview.getByText('Fixture database expired.', { exact: true })).toBeVisible();
+  await expect(
+    overview.getByText('Fixture file service unavailable.', { exact: true }),
+  ).toBeVisible();
 });
 
 test('Connect opens scoped Key creation directly and the empty Keys page has one create action', async ({
@@ -823,4 +828,53 @@ test('image preview displays bounded images and explains unavailable files', asy
   await expect(
     page.getByText('This image could not be displayed.', { exact: false }),
   ).toBeVisible();
+});
+
+test('Overview prioritizes actual resources and Activity clearly describes its coverage', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  workspace.addResources();
+  workspace.state.resources[0].name = 'Sales data';
+  workspace.state.resources[1].name = 'Project files';
+  workspace.state.profile.name = 'Developer';
+  workspace.state.events = [
+    {
+      id: 'evt',
+      action: 'file.created',
+      resource: 'Project files',
+      actor: 'Developer',
+      at: '2026-11-01T00:00:00Z',
+      outcome: 'success',
+    },
+  ];
+  await workspace.open('#overview');
+  const resources = page.getByRole('region', { name: 'Your resources' });
+  await expect(resources.getByRole('link', { name: 'Project files', exact: true })).toBeVisible();
+  await expect(resources.getByRole('link', { name: 'Sales data', exact: true })).toBeVisible();
+  await expect(page.getByText('No resources yet', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('From workspace to workflow', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('WORKSPACE API', { exact: true })).toHaveCount(0);
+  if (process.env.OVERVIEW_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.OVERVIEW_SCREENSHOTS}/overview-${testInfo.project.name}.png`,
+      fullPage: true,
+    });
+  if (testInfo.project.name.startsWith('narrow'))
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.getByRole('link', { name: 'Activity', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible();
+  await expect(page.getByText('File created', { exact: true })).toBeVisible();
+  await expect(page.getByText(/not a complete audit log/)).toBeVisible();
+  if (process.env.OVERVIEW_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.OVERVIEW_SCREENSHOTS}/activity-${testInfo.project.name}.png`,
+      fullPage: true,
+      animations: 'disabled',
+    });
+  await page.getByRole('tab', { name: 'HTTP requests' }).click();
+  await expect(page.getByText('HTTP request history is not available yet')).toBeVisible();
+  workspace.state.events = [];
+  await page.reload();
+  await expect(page.getByText('No activity yet', { exact: true })).toBeVisible();
 });
