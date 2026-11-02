@@ -83,6 +83,9 @@ show that limitation explicitly. Both audit and HTTP histories are required, wit
 and implementation tracked in [GH-119](https://github.com/mem9-ai/tidb.ai/issues/119). Verify
 empty and populated states, exact-resource links, progress re-entry, truthful coverage and
 narrow layouts. Revisit the Activity presentation when verified request and audit records ship.
+On the HTTP requests view, omit the retention and recording-status paragraph at the owner's
+request. This supersedes the corresponding Console disclosure in ADR 0044; the API's coverage
+and health metadata remain available.
 
 ## One interaction language
 

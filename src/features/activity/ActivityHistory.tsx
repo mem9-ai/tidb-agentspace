@@ -216,17 +216,20 @@ export function ActivityHistory({
               </details>
             )}
           </Alert>
-          <Text size="sm" c="carbon.7" mb="md">
-            Retained up to {page.retention.maxAgeDays} days and{' '}
-            {page.retention.maxRecords.toLocaleString()} records.{' '}
-            {page.retention.earliestAt && `Earliest retained: ${time(page.retention.earliestAt)}. `}
-            {page.retention.truncated === true && 'Older records are no longer available. '}
-            {page.health.status === 'degraded'
-              ? 'Some records may be missing.'
-              : page.health.status === 'unavailable'
-                ? 'Recording status is unavailable.'
-                : 'The full loss count is unavailable across restarts.'}
-          </Text>
+          {kind === 'audit' && (
+            <Text size="sm" c="carbon.7" mb="md">
+              Retained up to {page.retention.maxAgeDays} days and{' '}
+              {page.retention.maxRecords.toLocaleString()} records.{' '}
+              {page.retention.earliestAt &&
+                `Earliest retained: ${time(page.retention.earliestAt)}. `}
+              {page.retention.truncated === true && 'Older records are no longer available. '}
+              {page.health.status === 'degraded'
+                ? 'Some records may be missing.'
+                : page.health.status === 'unavailable'
+                  ? 'Recording status is unavailable.'
+                  : 'The full loss count is unavailable across restarts.'}
+            </Text>
+          )}
           <div className="log-toolbar">
             <div className="input-with-icon">
               <TextInput
