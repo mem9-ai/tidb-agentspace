@@ -4,6 +4,7 @@ mod global_local_sessions;
 pub mod global_login;
 pub mod guest_cleanup;
 pub mod guest_entry;
+pub mod history_maintenance;
 mod http_policy;
 pub mod managed_workspaces;
 pub mod policy_command;
