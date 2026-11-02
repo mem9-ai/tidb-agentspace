@@ -2,11 +2,12 @@
 
 ## What is implemented
 
-[ADR 0026](decisions/0026-native-hosted-studio.md) makes Rust the only serving runtime. `Quality` builds the Console and checks Console/tooling/contracts; `Rust backend and S3 integration` builds/tests all native phases, and applicable `Browser smoke` builds the same candidate and asserts Console journeys in parallel. Internal backend changes use [OpenAPI behavior verification](standards/openapi-verification.md) without frontend retesting. Dev CD packages a native-only Linux amd64 image, the currently verified Linux static DuckDB target. Node is not present in that image. [Native deployment](native-studio-deployment.md) defines fresh S3 roots/keys and the one-time target bootstrap.
+[ADR 0026](decisions/0026-native-hosted-studio.md) makes Rust the only serving runtime. For application changes, `Quality` builds the Console and checks Console/tooling/contracts; `Rust backend and S3 integration` builds/tests all native phases, and applicable `Browser smoke` builds the same candidate and asserts Console journeys in parallel. Documentation-only PRs use the scoped checks described below. Internal backend changes use [OpenAPI behavior verification](standards/openapi-verification.md) without frontend retesting. Dev CD packages a native-only Linux amd64 image, the currently verified Linux static DuckDB target. Node is not present in that image. [Native deployment](native-studio-deployment.md) defines fresh S3 roots/keys and the one-time target bootstrap.
 
-- `.github/workflows/ci.yml`: clean installation and `npm run check` on PRs, pushes to
-  `main`, merge-queue candidates, and manual requests. Quality uploads the Console artifact;
-  Browser smoke builds the same SHA independently to avoid waiting for Quality. Native image
+- `.github/workflows/ci.yml`: clean installation and `npm run check` on non-documentation PRs, pushes to
+  `main`, merge-queue candidates, and manual requests. Documentation-only PRs run scoped Quality
+  checks and do not upload a Console artifact. Browser smoke builds the same SHA independently
+  to avoid waiting for Quality. Native image
   verification runs in parallel for PR image-input changes.
 - `.github/workflows/release.yml`: a manual, main-branch-only internal artifact build. It
   runs the same quality gate and packages the runtime, frontend,
