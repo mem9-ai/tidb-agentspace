@@ -27,6 +27,10 @@ export default defineConfig({
       name: `${name}-${theme}`,
       metadata: { theme },
       use: { viewport, colorScheme: theme },
+      ...(process.env.BROWSER_FULL_MATRIX !== '1' &&
+      ((name === 'desktop' && theme === 'dark') || (name === 'narrow' && theme === 'light'))
+        ? { grep: /@visual/ }
+        : {}),
     })),
   ),
   webServer: {

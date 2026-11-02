@@ -33,7 +33,12 @@ Console build on a dedicated loopback port and use a fresh browser context and s
 API state per test. Unexpected routes, page errors and external requests fail the fixture.
 No persisted user session, personal data or provider credentials are loaded.
 
-The journeys run in Light/Dark at 1280×800 and 390×844:
+Every journey runs at 1280×800 in light mode and 390×844 in dark mode. Cases tagged
+`@visual` also run at 1280×800 in dark mode and 390×844 in light mode. Tag representative
+cases for screens, previews and states whose layout or rendering needs all four combinations;
+behavioral, permission and security assertions remain in both default viewports. For a
+change whose risk requires the entire matrix, set `BROWSER_FULL_MATRIX=1` when running the
+suite. The covered journeys include:
 
 - Actual sidebar entry from Databases and a selected File System, with zero/one/multiple
   resources, collection reload/history and unavailable resource links; never auto-select.
@@ -72,7 +77,8 @@ Use `npm run test:browser:ui` to step through a local test. CI records a trace o
 retry; local failures retain a trace. Open one with
 `npm run test:browser:trace -- /absolute/path/to/trace.zip`. The trace includes the action
 timeline, DOM snapshots and network activity, making it more useful than a screenshot alone.
-Screenshots are captured on failure only; video is off. CI uploads failed-run diagnostics
+Screenshots are captured on failure only; set `VISUAL_SCREENSHOTS=1` for optional preview
+captures (and `OVERVIEW_SCREENSHOTS=1` for Overview evidence). Video is off. CI uploads failed-run diagnostics
 for seven days. Use synthetic data so traces do not capture real credentials or content.
 
 For behavior-only changes, the focused assertions plus shared smoke matrix are the default.

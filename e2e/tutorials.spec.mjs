@@ -169,7 +169,7 @@ async function tutorialApi(
   return { calls, connectContext: (other) => other.route('**/api/**', handler) };
 }
 
-test('Workspace tutorials resume in an isolated browser with no browser progress or duplicate sample writes', async ({
+test('@visual Workspace tutorials resume in an isolated browser with no browser progress or duplicate sample writes', async ({
   page,
   context,
   workspace,
@@ -334,7 +334,7 @@ test('tutorial creation selects the returned resource and continues with include
   );
 });
 
-test('saving a tutorial sample shows activity without reporting an uncertain outcome or running another step', async ({
+test('@visual saving a tutorial sample shows activity without reporting an uncertain outcome or running another step', async ({
   page,
   context,
   workspace,
@@ -405,7 +405,7 @@ test('saving a tutorial sample shows activity without reporting an uncertain out
   }
 });
 
-test('empty resource workspaces lead directly to their focused tutorial and back to all tutorials', async ({
+test('@visual empty resource workspaces lead directly to their focused tutorial and back to all tutorials', async ({
   page,
   workspace,
 }, testInfo) => {
@@ -591,7 +591,7 @@ test('legacy browser migration retains uncertain sample identity and Workspace s
   expect(calls).toHaveLength(0);
 });
 
-test('file journeys open independently and reuse Workspace samples without replacing edits', async ({
+test('@visual file journeys open independently and reuse Workspace samples without replacing edits', async ({
   page,
   context,
   workspace,

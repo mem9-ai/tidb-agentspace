@@ -1,6 +1,6 @@
 import { test, expect } from './workspace-fixture.mjs';
 
-test('HTML opens as a styled page while keeping its source editable', async ({
+test('@visual HTML opens as a styled page while keeping its source editable', async ({
   page,
   workspace,
 }, testInfo) => {
@@ -23,14 +23,15 @@ test('HTML opens as a styled page while keeping its source editable', async ({
   await expect(frame.getByText('Build something useful.')).toBeVisible();
   await expect(frame.locator('body')).toHaveCSS('background-color', 'rgb(243, 238, 230)');
   await expect(page.getByText('Static preview:', { exact: false })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('html-preview.png') });
+  if (process.env.VISUAL_SCREENSHOTS)
+    await page.screenshot({ path: testInfo.outputPath('html-preview.png') });
   await page.getByRole('button', { name: 'Edit source', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'File content' })).toHaveValue(content);
   await page.getByRole('button', { name: 'Back to preview' }).click();
   await expect(frame.getByRole('heading', { name: 'Welcome to the workspace' })).toBeVisible();
 });
 
-test('HTML without explicit colors follows the workspace theme', async ({
+test('@visual HTML without explicit colors follows the workspace theme', async ({
   page,
   workspace,
 }, testInfo) => {
@@ -62,7 +63,8 @@ test('HTML without explicit colors follows the workspace theme', async ({
   const brightness = channels.reduce((sum, value) => sum + value, 0) / 3;
   if (testInfo.project.metadata.theme === 'dark') expect(brightness).toBeLessThan(80);
   else expect(brightness).toBeGreaterThan(200);
-  await page.screenshot({ path: testInfo.outputPath('html-themed-preview.png') });
+  if (process.env.VISUAL_SCREENSHOTS)
+    await page.screenshot({ path: testInfo.outputPath('html-themed-preview.png') });
   await page
     .getByRole('combobox', { name: 'Color theme' })
     .selectOption(testInfo.project.metadata.theme === 'dark' ? 'light' : 'dark');
