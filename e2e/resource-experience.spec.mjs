@@ -189,58 +189,31 @@ test('live workspaces show recorded state without illustrative charts or local-o
   await expect(
     page.getByRole('img', { name: 'Illustrative request activity', exact: true }),
   ).toHaveCount(0);
-  await page.goto('/#monitoring');
-  const monitoring = page.getByRole('region', { name: 'Resource status' });
-  await expect(page.getByRole('heading', { name: 'Resource status', exact: true })).toBeVisible();
-  await expect(
-    page.getByRole('img', { name: 'Illustrative request activity', exact: true }),
-  ).toHaveCount(0);
-  await expect(page.getByRole('radio', { name: '24 hours', exact: true })).toHaveCount(0);
-  await expect(page.getByText('API authority', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('tab', { name: 'Activity log' })).toHaveCount(0);
-  await expect(monitoring.getByText('Expired', { exact: true })).toBeVisible();
-  await expect(monitoring.getByRole('link', { name: 'demo-files' })).toHaveAttribute(
-    'href',
-    '#files?resourceId=fs_fixture',
-  );
-  await expect(monitoring.getByRole('link', { name: 'sales-demo' })).toHaveAttribute(
-    'href',
-    '#databases/db_fixture/sql',
-  );
-  await expect(page.getByRole('link', { name: 'View activity' })).toHaveAttribute(
-    'href',
-    '#activity',
-  );
+  if (testInfo.project.name.startsWith('narrow'))
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+  const navigation = page
+    .getByRole('navigation', { name: 'Main navigation' })
+    .filter({ visible: true });
+  await expect(navigation.getByRole('link', { name: 'Monitoring', exact: true })).toHaveCount(0);
+  await expect(navigation.getByRole('link', { name: 'Activity', exact: true })).toBeVisible();
   if (process.env.EXPERIENCE_SCREENSHOTS)
     await page.screenshot({
-      path: `${process.env.EXPERIENCE_SCREENSHOTS}/monitoring-${testInfo.project.name}.png`,
+      path: `${process.env.EXPERIENCE_SCREENSHOTS}/navigation-${testInfo.project.name}.png`,
       animations: 'disabled',
     });
-  await page.route('**/bootstrap', (route) =>
-    route.fulfill({ status: 503, json: { error: { code: 'UNAVAILABLE' } } }),
-  );
-  await page.getByRole('button', { name: 'Refresh status' }).click();
-  await expect(page.getByRole('alert')).toContainText('Could not refresh resource status');
-  await expect(monitoring.getByText('Expired', { exact: true })).toBeVisible();
-  await page.unroute('**/bootstrap');
-  workspace.state.resources[0].status = 'active';
-  await page.getByRole('button', { name: 'Refresh status' }).click();
-  await expect(monitoring.getByText('Expired', { exact: true })).toHaveCount(0);
-  await expect(monitoring.getByText('Ready', { exact: true })).toHaveCount(2);
-  await expect(page.getByRole('alert')).toHaveCount(0);
+  if (testInfo.project.name.startsWith('narrow'))
+    await page.getByRole('button', { name: 'Close navigation' }).click();
+  await page.goto('/#monitoring');
+  await expect(page).toHaveURL(/#overview$/);
+  await expect(page.getByRole('region', { name: 'Your resources' })).toBeVisible();
+  await page.goto('/#activity');
+  await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible();
   await page.goto('/#connect');
   await expect(page.getByText('REST API · Available locally', { exact: true })).toHaveCount(0);
   await page.goto('/#api');
   await page.getByRole('button', { name: 'Send request', exact: true }).click();
   await expect(page.getByRole('main')).toContainText('sales-demo');
   await expect(page.getByRole('main')).toContainText('Workspace owner session');
-});
-
-test('monitoring provides a useful empty state', async ({ page, workspace }) => {
-  await workspace.open('#monitoring');
-  await expect(page.getByRole('heading', { name: 'No resources yet' })).toBeVisible();
-  await page.getByRole('button', { name: 'Create resource', exact: true }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
 });
 
 test('the shared shell identifies Agent Workspace and separates Cloud attribution from help', async ({
@@ -975,16 +948,6 @@ test('Overview directs paginated resource discovery to the full collections', as
     '#databases',
   );
   await expect(page.getByRole('button', { name: 'Load more resources' })).toHaveCount(0);
-  await page.goto('/#monitoring');
-  const monitoring = page.getByRole('region', { name: 'Resource status' });
-  await expect(monitoring.getByText('Some resources are not shown.')).toBeVisible();
-  await expect(monitoring.getByRole('link', { name: 'File Systems', exact: true })).toHaveAttribute(
-    'href',
-    '#files',
-  );
-  await expect(monitoring.getByRole('button', { name: 'Load more', exact: true })).toBeVisible();
-  await monitoring.getByRole('button', { name: 'Load more', exact: true }).click();
-  await expect(monitoring.getByRole('link', { name: 'Later files' })).toBeVisible();
 });
 
 test('audit history filters loaded pages and recovers from an expired cursor', async ({

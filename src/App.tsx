@@ -118,7 +118,6 @@ const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string 
   tutorials: { label: 'Tutorials', icon: CircleHelp, group: 'Build' },
   keys: { label: 'API keys', icon: KeyRound, group: 'Build' },
   api: { label: 'API documentation', icon: Terminal, group: 'Build' },
-  monitoring: { label: 'Monitoring', icon: Activity, group: 'Manage' },
   activity: { label: 'Activity', icon: Activity, group: 'Manage' },
   billing: { label: 'Usage & billing', icon: CreditCard, group: 'Manage' },
   settings: { label: 'Settings', icon: Settings, group: 'Manage' },
@@ -323,8 +322,10 @@ function App() {
   useEffect(() => {
     void start();
     const update = () => {
+      if (location.hash === '#monitoring') history.replaceState(history.state, '', '#overview');
       setRouteLocation(currentRoute());
     };
+    update();
     window.addEventListener('hashchange', update);
     function key(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -504,7 +505,6 @@ function App() {
           )}
           {route === 'keys' && <Keys {...shared} onNewKey={() => setModal('key')} />}
           {route === 'api' && <ApiExplorer {...shared} />}
-          {route === 'monitoring' && <Monitoring {...shared} />}
           {route === 'activity' && (
             <ActivityPage key={data.workspace.id} data={data} refresh={refresh} copy={copy} />
           )}
@@ -1696,147 +1696,6 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
 }
 function ApiExplorer({ data, copy }: Shared) {
   return <ApiDocumentation data={data} copy={copy} />;
-}
-
-const resourceStatusLabels: Record<Resource['status'], string> = {
-  active: 'Ready',
-  provisioning: 'Setting up',
-  failed: 'Failed',
-  suspended: 'Suspended',
-  deleting: 'Deleting',
-  deleted: 'Deleted',
-  expired: 'Expired',
-};
-
-function Monitoring({
-  data,
-  refresh,
-  onCreate,
-  loadMoreResources,
-  resourcePageBusy,
-  resourcePageError,
-}: Shared) {
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshError, setRefreshError] = useState('');
-  const partial = Boolean(data.resourceNextCursor || data.resourceWindowTruncated);
-  const resources = [...data.resources].sort(
-    (a, b) => Number(b.kind === 'filesystem') - Number(a.kind === 'filesystem'),
-  );
-  async function refreshStatus() {
-    if (refreshing || resourcePageBusy) return;
-    setRefreshing(true);
-    setRefreshError('');
-    try {
-      await refresh();
-    } catch {
-      setRefreshError('Could not refresh resource status. Try again.');
-    } finally {
-      setRefreshing(false);
-    }
-  }
-  return (
-    <>
-      <PageHeading
-        title="Monitoring"
-        description="Check your resource status and review workspace activity."
-        actions={
-          <Group gap="sm">
-            <Button
-              component="a"
-              href="#activity"
-              variant="subtle"
-              rightSection={<ArrowRight size={16} />}
-            >
-              View activity
-            </Button>
-            <Button
-              loading={refreshing}
-              disabled={resourcePageBusy}
-              onClick={() => void refreshStatus()}
-            >
-              Refresh status
-            </Button>
-          </Group>
-        }
-      />
-      {refreshError && (
-        <Alert color="red" role="alert" mb="md">
-          {refreshError}
-        </Alert>
-      )}
-      <section aria-label="Resource status">
-        <div className="section-title">
-          <Heading level={2}>Resource status</Heading>
-        </div>
-        {resources.length ? (
-          <Paper withBorder className="overview-resource-list">
-            {resources.map((resource) => {
-              const connectionUnavailable =
-                resource.status === 'active' && Boolean(resource.connectionError);
-              return (
-                <div className="overview-resource-row" key={resource.id}>
-                  <KindIcon small kind={resource.kind} />
-                  <div className="overview-resource-identity">
-                    <Anchor href={resourceWorkspaceHref(resource)} fw={600}>
-                      {resource.name}
-                    </Anchor>
-                    <Text size="sm" c="carbon.7">
-                      {kindLabel[resource.kind]} · {resourceServiceLabel(resource)}
-                    </Text>
-                  </div>
-                  <Badge
-                    color={
-                      connectionUnavailable || resource.status === 'failed'
-                        ? 'red'
-                        : resource.status === 'active'
-                          ? 'green'
-                          : 'yellow'
-                    }
-                  >
-                    {connectionUnavailable
-                      ? 'Connection unavailable'
-                      : resourceStatusLabels[resource.status]}
-                  </Badge>
-                </div>
-              );
-            })}
-          </Paper>
-        ) : !partial ? (
-          <Paper withBorder className="panel">
-            <Empty
-              title="No resources yet"
-              description="Create a File System or database to see its status here."
-              action={<Button onClick={() => onCreate()}>Create resource</Button>}
-            />
-          </Paper>
-        ) : null}
-        {partial && (
-          <Group mt="md" gap="sm">
-            <Text size="sm" c="carbon.7">
-              Some resources are not shown.
-            </Text>
-            <Anchor href="#files">File Systems</Anchor>
-            <Anchor href="#databases">Databases</Anchor>
-            {data.resourceNextCursor && (
-              <Button
-                size="sm"
-                loading={resourcePageBusy}
-                disabled={refreshing}
-                onClick={() => void loadMoreResources()}
-              >
-                Load more
-              </Button>
-            )}
-          </Group>
-        )}
-        {resourcePageError && (
-          <Alert color="red" role="alert" mt="md">
-            {resourcePageError}
-          </Alert>
-        )}
-      </section>
-    </>
-  );
 }
 
 function ActivityPage({

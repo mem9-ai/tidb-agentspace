@@ -17,6 +17,7 @@ test('tutorial links resume the exact resource through reload and history', () =
   }
   assert.deepEqual(parseWorkspaceRoute('#connect'), { page: 'connect' });
   assert.deepEqual(parseWorkspaceRoute('#activity'), { page: 'activity' });
+  assert.deepEqual(parseWorkspaceRoute('#monitoring'), { page: 'overview' });
   assert.deepEqual(parseWorkspaceRoute('#tutorials?resourceId='), { page: 'tutorials' });
   assert.deepEqual(parseWorkspaceRoute('#tutorials?kind=filesystem'), {
     page: 'tutorials',
