@@ -486,11 +486,6 @@ function App() {
               <PageHeading
                 title="Tutorials"
                 description="Explore sample files and data, try analysis, and see your first result."
-                actions={
-                  <Button component="a" href="#connect">
-                    Connect an agent
-                  </Button>
-                }
               />
               <DataTutorials
                 key={data.workspace.id}

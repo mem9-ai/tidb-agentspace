@@ -182,12 +182,18 @@ test('Workspace tutorials resume in an isolated browser with no browser progress
   await workspace.open('#tutorials');
   const database = page.locator('#tutorial-database');
   const files = page.locator('#tutorial-filesystem');
+  await expect(page.getByRole('tab', { name: 'File System', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await page.getByRole('tab', { name: 'Database', exact: true }).click();
   await expect(
     database.getByRole('button', { name: 'Run tutorial query', exact: true }),
   ).toBeDisabled();
   await database.getByRole('button', { name: 'Load sample orders', exact: true }).click();
   await database.getByRole('button', { name: 'Run tutorial query', exact: true }).click();
   await expect(database.getByRole('region', { name: 'Query result data' })).toContainText('240');
+  await page.getByRole('tab', { name: 'File System', exact: true }).click();
   await files.getByRole('button', { name: 'Save sample CSV', exact: true }).click();
   await files.getByRole('button', { name: 'Run tutorial query', exact: true }).click();
   await expect(files.getByRole('region', { name: 'Query result data' })).toContainText('180');
@@ -270,6 +276,14 @@ test('tutorial creation selects the returned resource and continues with include
 }) => {
   const { calls } = await tutorialApi(context, workspace);
   await workspace.open('#tutorials');
+  await expect(page.getByRole('tab', { name: 'CSV', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await expect(
+    page.locator('#tutorial-filesystem').getByRole('button', { name: 'Create File System' }),
+  ).toBeVisible();
+  expect(calls).toHaveLength(0);
+  await page.getByRole('tab', { name: 'CSV', exact: true }).click();
+  await page.getByRole('tab', { name: 'Database', exact: true }).click();
   await page
     .locator('#tutorial-database')
     .getByRole('button', { name: 'Create database', exact: true })
@@ -343,6 +357,9 @@ test('saving a tutorial sample shows activity without reporting an uncertain out
       ['database', 'Load sample orders'],
       ['filesystem', 'Save sample CSV'],
     ]) {
+      await page
+        .getByRole('tab', { name: kind === 'database' ? 'Database' : 'File System', exact: true })
+        .click();
       const card = page.locator(`#tutorial-${kind}`);
       await card.getByRole('button', { name: button, exact: true }).click();
       await expect
@@ -362,8 +379,12 @@ test('saving a tutorial sample shows activity without reporting an uncertain out
     }
     releaseDatabase();
     releaseFile();
-    await expect(page.getByText('Sample data ready', { exact: true })).toHaveCount(2);
+    await expect(
+      page.locator('#tutorial-filesystem').getByText('Sample data ready', { exact: true }),
+    ).toBeVisible();
+    await page.getByRole('tab', { name: 'Database', exact: true }).click();
     const database = page.locator('#tutorial-database');
+    await expect(database.getByText('Sample data ready', { exact: true })).toBeVisible();
     await expect(database.locator('.tutorial-artifact .code-example')).not.toBeVisible();
     await database.getByText('Sample location', { exact: true }).click();
     await expect(database.locator('.tutorial-artifact .code-example')).toContainText(
@@ -505,6 +526,7 @@ test('unavailable progress blocks sample writes and unknown save acknowledgement
   expect(calls).toHaveLength(0);
   unavailable = false;
   await page.getByRole('button', { name: 'Retry tutorial progress', exact: true }).click();
+  await page.getByRole('tab', { name: 'Database', exact: true }).click();
   const database = page.locator('#tutorial-database');
   await database.getByRole('button', { name: 'Load sample orders', exact: true }).click();
   await expect(database.getByRole('alert')).toContainText('No sample action was retried');
@@ -565,19 +587,20 @@ test('legacy browser migration retains uncertain sample identity and Workspace s
   expect(calls).toHaveLength(0);
 });
 
-test('file tutorial opens reusable notes and log samples without replacing edits', async ({
+test('file journeys open independently and reuse Workspace samples without replacing edits', async ({
   page,
   context,
   workspace,
+  browser,
 }, testInfo) => {
   workspace.addResources();
   workspace.state.resources.find((resource) => resource.id === 'fs_fixture').name = 'Project files';
   workspace.state.profile.name = 'Developer';
-  const { calls } = await tutorialApi(context, workspace);
+  const api = await tutorialApi(context, workspace);
+  const { calls } = api;
   await workspace.open('#tutorials?resourceId=fs_fixture');
   const tutorial = page.locator('#tutorial-filesystem');
-  await tutorial.getByRole('button', { name: 'Save sample CSV' }).click();
-  await expect(tutorial.getByText('Sample data ready')).toBeVisible();
+  await tutorial.getByRole('tab', { name: 'Markdown', exact: true }).click();
   if (process.env.EXPERIENCE_SCREENSHOTS)
     await page.screenshot({
       path: `${process.env.EXPERIENCE_SCREENSHOTS}/file-tutorial-${testInfo.project.name}.png`,
@@ -587,14 +610,34 @@ test('file tutorial opens reusable notes and log samples without replacing edits
   await expect(page.getByRole('heading', { name: 'Project handoff' })).toBeVisible();
   const notes = workspace.state.files.find((file) => file.path.endsWith('-notes.md'));
   expect(notes).toBeTruthy();
+  expect(calls.filter((call) => call.action === 'file' && call.path.endsWith('.csv'))).toHaveLength(
+    0,
+  );
   notes.content = '# My own handoff\n';
-  await page.goto('/#tutorials?resourceId=fs_fixture');
-  await tutorial.getByRole('button', { name: 'Open sample notes' }).click();
-  await expect(page.getByRole('heading', { name: 'My own handoff' })).toBeVisible();
+  const fresh = await browser.newContext({
+    viewport: testInfo.project.use.viewport,
+    colorScheme: testInfo.project.metadata.theme,
+  });
+  try {
+    await workspace.connectContext(fresh);
+    await api.connectContext(fresh);
+    const reopened = await fresh.newPage();
+    await reopened.goto('/#overview');
+    await reopened
+      .getByRole('region', { name: 'Your tutorials' })
+      .getByRole('link', { name: 'Continue tutorial' })
+      .click();
+    await reopened.getByRole('tab', { name: 'Markdown' }).click();
+    await reopened.getByRole('button', { name: 'Open sample notes' }).click();
+    await expect(reopened.getByRole('heading', { name: 'My own handoff' })).toBeVisible();
+  } finally {
+    await fresh.close();
+  }
   expect(calls.filter((call) => call.action === 'file' && call.path === notes.path)).toHaveLength(
     1,
   );
   await page.goto('/#tutorials?resourceId=fs_fixture');
+  await tutorial.getByRole('tab', { name: 'Logs · Bash' }).click();
   await tutorial.getByRole('button', { name: 'Open sample log' }).click();
   await expect(page).toHaveURL(/activity.log.*view=analyze/);
   await page.getByRole('button', { name: 'Editor tools' }).click();
@@ -606,4 +649,29 @@ test('file tutorial opens reusable notes and log samples without replacing edits
       (file) => file.path.endsWith('-activity.log') && file.content.includes('ERROR'),
     ),
   ).toBe(true);
+});
+
+test('file examples do not write when Workspace progress cannot be saved', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  workspace.addResources();
+  const { calls } = await tutorialApi(context, workspace);
+  await context.route('**/api/**', async (route) => {
+    if (
+      route.request().method() === 'PUT' &&
+      new URL(route.request().url()).pathname.endsWith('/tutorials/fs_fixture')
+    )
+      return route.fulfill({
+        status: 503,
+        json: { error: { code: 'UNAVAILABLE', message: 'Unavailable' } },
+      });
+    return route.fallback();
+  });
+  await workspace.open('#tutorials?resourceId=fs_fixture');
+  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
+  await page.getByRole('button', { name: 'Open sample notes' }).click();
+  await expect(page.getByRole('alert')).toContainText('No sample action was retried');
+  expect(calls.filter((call) => call.action === 'file')).toHaveLength(0);
 });

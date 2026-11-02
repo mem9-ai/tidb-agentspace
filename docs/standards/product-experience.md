@@ -127,6 +127,13 @@ and an execution audit. Verify both complete flows, create handoff, isolated-bro
 resource identity, unavailable persistence, conflicts and error/draft states. See
 [implementation and evidence](../tutorial-verification.md) and [ADR 0033](../decisions/0033-workspace-tutorial-progress.md).
 
+**Focused file journeys (owner correction 2026-11-02):** lead Tutorials with the File System,
+and separate file examples by the outcome a user wants, such as SQL analysis, Markdown preview
+and Bash. Each example must be independently accessible without first completing another one;
+keep the database tutorial discoverable and retain Workspace-backed sample identity and safe
+re-entry. Verify first use, switching journeys, cross-browser return and narrow layouts. Revisit
+the grouping as supported file formats and real usage develop.
+
 - Comparable screens share implemented primitives and state transitions, not independently
   copied markup. Reuse `WorkspacePageHeader`, `WorkspaceEmptyState`, `ResourceCollectionPage`
   and existing resource/browser/execution/results adapters where applicable.
