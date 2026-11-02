@@ -126,12 +126,9 @@ export async function authorizationCases(
           403,
           'RESOURCE_ACCESS_DENIED',
         );
-        for (const denied of [
-          null,
-          'invalid-coverage-key',
-          'expired-coverage-key',
-          'revoked-coverage-key',
-        ])
+        // These routes share credential parsing. Legacy string keys all fail the same
+        // malformed-credential path; real token expiry and revocation are tested separately.
+        for (const denied of [null, 'invalid-coverage-key'])
           await request(
             path,
             { ...options, token: denied },

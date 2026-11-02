@@ -2,7 +2,7 @@ import { test, expect } from './workspace-fixture.mjs';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-test('API docs use one configured endpoint with runnable examples and complete reference', async ({
+test('@visual API docs use one configured endpoint with runnable examples and complete reference', async ({
   page,
   workspace,
 }, testInfo) => {
@@ -64,7 +64,10 @@ test('API docs use one configured endpoint with runnable examples and complete r
   expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.width + 1);
   if (process.env.API_SCREENSHOTS) {
     await page.evaluate(() => window.scrollTo(0, 0));
-    await page.screenshot({ path: testInfo.outputPath('api-documentation.png'), fullPage: false });
+    await page.screenshot({
+      path: testInfo.outputPath('api-documentation.png'),
+      fullPage: false,
+    });
   }
 });
 

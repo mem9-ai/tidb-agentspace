@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { test, expect } from './workspace-fixture.mjs';
 
-test('workspace settings and resource creation focus on customer choices', async ({
+test('@visual workspace settings and resource creation focus on customer choices', async ({
   page,
   workspace,
 }, testInfo) => {
@@ -39,7 +39,7 @@ test('cloud sign-in offers TiDB Account and clearly marks Guest access unavailab
   await expect(page).toHaveURL(/\/api\/auth\/tidbcloud\/login$/);
 });
 
-test('Guest sign-in opens the Workspace when the server enables it', async ({
+test('@visual Guest sign-in opens the Workspace when the server enables it', async ({
   page,
   workspace,
 }) => {
@@ -104,7 +104,7 @@ test('Guest API key creation explains the Workspace expiry', async ({ page, work
   expect(creation.body.expiresAt).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 86400);
 });
 
-test('Guest can cancel or confirm sign-out from the workspace navigation', async ({
+test('@visual Guest can cancel or confirm sign-out from the workspace navigation', async ({
   page,
   workspace,
 }) => {
@@ -157,7 +157,7 @@ test('Guest sign-out is not offered until the backend supports cleanup', async (
   await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toHaveCount(0);
 });
 
-test('an empty personal account workspace is described accurately', async ({
+test('@visual an empty personal account workspace is described accurately', async ({
   page,
   workspace,
 }, testInfo) => {
@@ -246,7 +246,7 @@ for (const count of [0, 1, 2]) {
   });
 }
 
-test('database creation selects each type, generates a matching name and restores focus', async ({
+test('@visual database creation selects each type, generates a matching name and restores focus', async ({
   page,
   workspace,
 }) => {
@@ -369,7 +369,7 @@ test('Key creation sends explicit resource/action grants and reveals its synthet
   await expect(page.getByRole('cell', { name: /^file-reader/ })).toBeVisible();
 });
 
-test('File System opens its collection; Markdown preview, draft protection and original download work inline', async ({
+test('@visual File System opens its collection; Markdown preview, draft protection and original download work inline', async ({
   page,
   workspace,
 }) => {

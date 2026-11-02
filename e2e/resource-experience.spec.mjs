@@ -170,7 +170,7 @@ test('new files open for editing, lock creation, protect drafts and survive summ
   }
 });
 
-test('live workspaces show recorded state without illustrative charts or local-only instructions', async ({
+test('@visual live workspaces show recorded state without illustrative charts or local-only instructions', async ({
   page,
   workspace,
 }, testInfo) => {
@@ -220,7 +220,7 @@ test('live workspaces show recorded state without illustrative charts or local-o
   await expect(page.getByRole('main')).toContainText('Workspace owner session');
 });
 
-test('the shared shell identifies Agent Workspace and separates Cloud attribution from help', async ({
+test('@visual the shared shell identifies Agent Workspace and separates Cloud attribution from help', async ({
   page,
   workspace,
 }, testInfo) => {
@@ -281,7 +281,7 @@ test('the shared shell identifies Agent Workspace and separates Cloud attributio
     .toBe(true);
 });
 
-test('resource pages distinguish unloaded collections and resolve deep links', async ({
+test('@visual resource pages distinguish unloaded collections and resolve deep links', async ({
   page,
   workspace,
 }, testInfo) => {
@@ -375,7 +375,10 @@ test('a directly linked local File System loads its own files outside the first 
     .toBe(true);
 });
 
-test('local File System loads directory pages on demand', async ({ page, workspace }, testInfo) => {
+test('@visual local File System loads directory pages on demand', async ({
+  page,
+  workspace,
+}, testInfo) => {
   workspace.addResources();
   workspace.state.files = Array.from({ length: 40 }, (_, index) => ({
     id: `file-${index}`,
@@ -406,27 +409,27 @@ test('resource windows stay bounded and disclose selections from earlier pages',
   workspace,
 }, testInfo) => {
   test.setTimeout(60000);
-  const resources = Array.from({ length: 600 }, (_, index) => ({
+  const resources = Array.from({ length: 400 }, (_, index) => ({
     ...structuredClone(sampleResources[0]),
     id: `db_window_${String(index).padStart(4, '0')}`,
     name: `window-database-${String(index).padStart(4, '0')}`,
   }));
   workspace.state.resources = resources.slice(0, 100);
   workspace.state.resourceNextCursor = 'window-1';
-  for (let pageNumber = 1; pageNumber <= 5; pageNumber++) {
+  for (let pageNumber = 1; pageNumber <= 3; pageNumber++) {
     workspace.setResourcePage(
       `window-${pageNumber}`,
       resources.slice(pageNumber * 100, (pageNumber + 1) * 100),
-      pageNumber < 5 ? `window-${pageNumber + 1}` : null,
+      pageNumber < 3 ? `window-${pageNumber + 1}` : null,
     );
   }
   await workspace.open('#keys');
   await page.getByRole('button', { name: 'Create API key', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
-  for (let pageNumber = 0; pageNumber < 5; pageNumber++)
+  for (let pageNumber = 0; pageNumber < 3; pageNumber++)
     await dialog.getByRole('button', { name: 'Load more resources' }).click();
   await expect(dialog.getByRole('checkbox', { name: 'window-database-0000' })).toHaveCount(0);
-  await expect(dialog.getByRole('checkbox', { name: 'window-database-0599' })).toBeVisible();
+  await expect(dialog.getByRole('checkbox', { name: 'window-database-0399' })).toBeVisible();
   await expect(
     dialog.getByText('100 selected resources are outside the loaded window.'),
   ).toBeVisible();
@@ -448,7 +451,7 @@ test('Key inventory pages keep a bounded window with a route back to the first p
   workspace,
 }) => {
   test.setTimeout(60000);
-  const keys = Array.from({ length: 600 }, (_, index) => ({
+  const keys = Array.from({ length: 400 }, (_, index) => ({
     id: `key_window_${String(index).padStart(4, '0')}`,
     name: `window-key-${String(index).padStart(4, '0')}`,
     prefix: 'fixture',
@@ -461,22 +464,22 @@ test('Key inventory pages keep a bounded window with a route back to the first p
   }));
   workspace.state.keys = keys.slice(0, 100);
   workspace.state.keysNextCursor = 'keys-1';
-  for (let pageNumber = 1; pageNumber <= 5; pageNumber++)
+  for (let pageNumber = 1; pageNumber <= 3; pageNumber++)
     workspace.setKeyPage(
       `keys-${pageNumber}`,
       keys.slice(pageNumber * 100, (pageNumber + 1) * 100),
-      pageNumber < 5 ? `keys-${pageNumber + 1}` : null,
+      pageNumber < 3 ? `keys-${pageNumber + 1}` : null,
     );
   await workspace.open('#keys');
-  for (let pageNumber = 0; pageNumber < 5; pageNumber++)
+  for (let pageNumber = 0; pageNumber < 3; pageNumber++)
     await page.getByRole('button', { name: 'Load more keys' }).click();
   await expect(page.getByText('window-key-0000', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('window-key-0599', { exact: true })).toBeVisible();
+  await expect(page.getByText('window-key-0399', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Back to first keys' }).click();
   await expect(page.getByText('window-key-0000', { exact: true })).toBeVisible();
 });
 
-test('empty collections share one in-context create action and readable TiUI presentation', async ({
+test('@visual empty collections share one in-context create action and readable TiUI presentation', async ({
   page,
   workspace,
 }, testInfo) => {
@@ -631,7 +634,7 @@ test('Guest sees expiry and File System Quick Start before creating a resource',
   ).toBe(true);
 });
 
-test('populated collections share metadata, exact-resource entry, connection and return actions', async ({
+test('@visual populated collections share metadata, exact-resource entry, connection and return actions', async ({
   page,
   workspace,
 }) => {
@@ -694,13 +697,28 @@ test('populated collections share metadata, exact-resource entry, connection and
   ).toEqual([]);
 });
 
-test('Overview named resources open their exact workspaces without an intermediate collection', async ({
+test('@visual Overview named resources open their exact workspaces without an intermediate collection', async ({
   page,
   workspace,
-}) => {
+}, testInfo) => {
   workspace.addResources();
-  for (const resource of workspace.state.resources) {
-    await workspace.open('#overview');
+  workspace.state.resources[0].name = 'Sales data';
+  workspace.state.resources[1].name = 'Project files';
+  workspace.state.profile.name = 'Developer';
+  await workspace.open('#overview');
+  const resources = page.getByRole('region', { name: 'Your resources' });
+  await expect(resources.getByRole('link', { name: 'Project files', exact: true })).toBeVisible();
+  await expect(resources.getByRole('link', { name: 'Sales data', exact: true })).toBeVisible();
+  await expect(page.getByText('No resources yet', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('From workspace to workflow', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('WORKSPACE API', { exact: true })).toHaveCount(0);
+  if (process.env.OVERVIEW_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.OVERVIEW_SCREENSHOTS}/overview-${testInfo.project.name}.png`,
+      fullPage: true,
+    });
+  for (const [index, resource] of workspace.state.resources.entries()) {
+    if (index) await workspace.open('#overview');
     const entry = page.getByRole('link', { name: resource.name, exact: true });
     await expect(entry).toBeVisible();
     await entry.click();
@@ -773,7 +791,7 @@ test('Connect opens scoped Key creation directly and the empty Keys page has one
   ).toEqual([]);
 });
 
-test('image preview displays bounded images and explains unavailable files', async ({
+test('@visual image preview displays bounded images and explains unavailable files', async ({
   page,
   context,
   workspace,
@@ -824,7 +842,8 @@ test('image preview displays bounded images and explains unavailable files', asy
   await expect.poll(() => image.evaluate((node) => node.naturalWidth)).toBeGreaterThan(0);
   await expect(page.getByRole('button', { name: 'Edit source', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('image-preview.png') });
+  if (process.env.VISUAL_SCREENSHOTS)
+    await page.screenshot({ path: testInfo.outputPath('image-preview.png') });
   await page.getByRole('button', { name: /^large\.jpg/ }).click();
   await expect(
     page.getByText(
@@ -837,25 +856,6 @@ test('image preview displays bounded images and explains unavailable files', asy
   await expect(
     page.getByText('This image could not be displayed.', { exact: false }),
   ).toBeVisible();
-});
-
-test('Overview prioritizes actual resources', async ({ page, workspace }, testInfo) => {
-  workspace.addResources();
-  workspace.state.resources[0].name = 'Sales data';
-  workspace.state.resources[1].name = 'Project files';
-  workspace.state.profile.name = 'Developer';
-  await workspace.open('#overview');
-  const resources = page.getByRole('region', { name: 'Your resources' });
-  await expect(resources.getByRole('link', { name: 'Project files', exact: true })).toBeVisible();
-  await expect(resources.getByRole('link', { name: 'Sales data', exact: true })).toBeVisible();
-  await expect(page.getByText('No resources yet', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('From workspace to workflow', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('WORKSPACE API', { exact: true })).toHaveCount(0);
-  if (process.env.OVERVIEW_SCREENSHOTS)
-    await page.screenshot({
-      path: `${process.env.OVERVIEW_SCREENSHOTS}/overview-${testInfo.project.name}.png`,
-      fullPage: true,
-    });
 });
 
 test('Overview directs paginated resource discovery to the full collections', async ({

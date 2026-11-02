@@ -1,6 +1,6 @@
 import { test, expect } from './workspace-fixture.mjs';
 
-test('Markdown Mermaid diagrams render safely and preserve normal file reading', async ({
+test('@visual Markdown Mermaid diagrams render safely and preserve normal file reading', async ({
   page,
   workspace,
 }, testInfo) => {
@@ -94,7 +94,8 @@ test('Markdown Mermaid diagrams render safely and preserve normal file reading',
     'sandbox',
     'allow-scripts',
   );
-  await page.screenshot({ path: testInfo.outputPath('mermaid-preview.png') });
+  if (process.env.VISUAL_SCREENSHOTS)
+    await page.screenshot({ path: testInfo.outputPath('mermaid-preview.png') });
   await page.getByText('View diagram source').first().click();
   await expect(
     page.locator('details code').getByText('flowchart LR', { exact: false }),
