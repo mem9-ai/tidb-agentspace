@@ -1,5 +1,8 @@
 //! Internal history cleanup adapter. No customer request can select a maintenance lease.
-use crate::managed_workspaces::ManagedWorkspaces;
+use crate::{
+    history_queue::HistoryIngestionProcessor, history_request::CompletedHistoryRequest,
+    managed_workspaces::ManagedWorkspaces,
+};
 use std::{future::Future, pin::Pin, sync::Arc};
 use workspace_contracts::Result;
 use workspace_domain::{
@@ -111,6 +114,35 @@ impl HistoryMaintenanceProcessor for HistoryProcessor {
             let result = Self::clean(lease.workspace()).await;
             let released = lease.release().await;
             released?;
+            result
+        })
+    }
+}
+
+impl HistoryIngestionProcessor for HistoryProcessor {
+    fn write<'a>(
+        &'a self,
+        id: &'a str,
+        request: &'a CompletedHistoryRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            if self.local.repository().workspace_id() == id {
+                return self
+                    .local
+                    .repository()
+                    .append_request_batch(&[request.entry()])
+                    .await;
+            }
+            let pool = self.managed.as_ref().ok_or_else(|| {
+                workspace_contracts::ServiceError::new(503, "HISTORY_WORKSPACE_UNAVAILABLE")
+            })?;
+            let lease = pool.acquire_history_maintenance(id).await?;
+            let result = lease
+                .workspace()
+                .repository()
+                .append_request_batch(&[request.entry()])
+                .await;
+            lease.release().await?;
             result
         })
     }
