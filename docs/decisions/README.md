@@ -74,7 +74,7 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0041: One Global endpoint for agents](0041-single-global-entry.md) — Key-based discovery, bodyless redirect and direct regional requests.
 - [0042: Global Workspaces and regional resources](0042-workspace-resource-regions.md) — one default Region per Workspace initially, independently recorded resource placement, and non-destructive legacy interpretation.
 - [0043: Portal, Agent and Region control boundaries](0043-portal-agent-region-control.md) — separate browser, Agent and service interfaces; Region-initiated authenticated control.
-- [0044: Workspace audit and request history](0044-workspace-observability.md) — proposed authority-local audit and HTTP history, not yet implemented.
+- [0044: Workspace audit and request history](0044-workspace-observability.md) — authority-local audit and HTTP history; implementation pending.
 
 ## Proposed decisions
 

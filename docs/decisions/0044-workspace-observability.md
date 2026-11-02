@@ -1,6 +1,6 @@
 # ADR 0044: Workspace audit and request history
 
-- Status: Proposed for [GH-119](https://github.com/mem9-ai/tidb.ai/issues/119); no implementation or deployment is claimed.
+- Status: Accepted direction when merged for [GH-119](https://github.com/mem9-ai/tidb.ai/issues/119); no implementation or deployment is claimed.
 - Date: 2026-11-02.
 - Extends [Global and Regional security](0034-openapi-security-authorities.md), [sparse metadata](0035-sparse-scale-metadata.md), and [the feature proposal](../../specs/gh-119/spec.md).
 
@@ -8,7 +8,7 @@
 
 A Workspace owner needs both a trail of significant changes and diagnostics for API requests. The current latest-200 successful-change feed is neither complete security audit nor request history. Add separately labeled, independently stored audit and HTTP streams with explicit authority, coverage, retention and loss state. Preserve the legacy feed during migration and never backfill it as complete audit history.
 
-Global and each Region are separate authorities and sources of truth. Each records only operations it actually serves and exposes an owner-authorized list under that authority. The Console chooses the source and identifies it; it must not imply a complete merged multi-Region chronology. A later aggregate requires an independently specified, authorized and bounded design. Workspace attribution happens only after identity and authority verification: an invalid bearer token, forged Workspace path or anonymous request is never attributed to the claimed customer Workspace. Unattributable failures are platform-only, outside the Workspace feed, and disclosed as a coverage limit.
+Global and each Region are separate authorities and sources of truth. Each records only operations it actually serves and exposes an owner-authorized list under that authority. Ship Region request history and the scoped Region audit together first; ship Global request and Key-lifecycle audit in a following bounded change. The first phase must clearly state that Global activity is unavailable. The Console chooses the source and identifies it; it must not imply a complete merged multi-Region chronology. A later aggregate requires an independently specified, authorized and bounded design. Workspace attribution happens only after identity and authority verification: an invalid bearer token, forged Workspace path or anonymous request is never attributed to the claimed customer Workspace. Unattributable failures are platform-only, outside the Workspace feed, and disclosed as a coverage limit.
 
 The first version grants list access to the verified Workspace Owner session, with authorization and revocation rechecked on every page. Existing Workspace Keys gain no new access implicitly. Any agent access requires an explicit new scope and resource-filtering decision. Both list operations are part of the public API contract and share the domain operations used by the Console; they are not direct metadata reads from the browser.
 
