@@ -1,5 +1,5 @@
 //! Multi-Workspace and reopen checks for the inactive history storage boundary.
-use crate::{Repository, observability::*};
+use crate::{Credential, Principal, Repository, ScopedAuthorization, Workspace, observability::*};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -17,6 +17,133 @@ struct ScopedMetadata {
     scopes: Mutex<BTreeMap<String, BTreeMap<String, Value>>>,
     fail_after_audit_commit: AtomicBool,
     fail_history_registration: AtomicBool,
+    revoke_on_history_read: Mutex<Option<Arc<AtomicBool>>>,
+}
+
+struct HistoryKey;
+impl ScopedAuthorization for HistoryKey {
+    fn workspace_id(&self) -> &str {
+        "workspace-a"
+    }
+    fn snapshot(&self) -> workspace_contracts::Result<Principal> {
+        Ok(Principal {
+            owner: false,
+            actor: "Key".into(),
+            id: "key-a".into(),
+            scopes: vec!["*".into()],
+            resource_ids: vec!["*".into()],
+            expires_at: None,
+        })
+    }
+    fn check(
+        &self,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = workspace_contracts::Result<Principal>> + Send + '_>,
+    > {
+        Box::pin(async { self.snapshot() })
+    }
+}
+
+#[tokio::test]
+async fn owner_history_denies_keys_cross_workspace_and_revocation_during_read() {
+    let metadata = Arc::new(ScopedMetadata::default());
+    let repository = Repository::open(metadata.clone(), "region:test", "workspace-a", true, None)
+        .await
+        .unwrap();
+    let operation = repository
+        .begin_audit_operation(AuditIntent {
+            request_id: None,
+            actor_kind: ActorKind::Owner,
+            actor_id: "owner-a",
+            action: AuditAction::ResourceCreate,
+            target_id: None,
+        })
+        .await
+        .unwrap();
+    repository
+        .finish_audit_operation(operation, AuditOutcome::Succeeded)
+        .await
+        .unwrap();
+    let workspace = Workspace::new(repository);
+    let revoked = Arc::new(AtomicBool::new(false));
+    let owner = Credential::SessionOwner {
+        id: "owner-a".into(),
+        actor: "Owner".into(),
+        workspace_id: "workspace-a".into(),
+        policy_generation: None,
+        expires_at: chrono::Utc::now().timestamp() + 3600,
+        revoked: revoked.clone(),
+    };
+    let other = Credential::SessionOwner {
+        id: "owner-b".into(),
+        actor: "Owner".into(),
+        workspace_id: "workspace-b".into(),
+        policy_generation: None,
+        expires_at: chrono::Utc::now().timestamp() + 3600,
+        revoked: Arc::new(AtomicBool::new(false)),
+    };
+    let expired = Credential::SessionOwner {
+        id: "owner-a".into(),
+        actor: "Owner".into(),
+        workspace_id: "workspace-a".into(),
+        policy_generation: None,
+        expires_at: chrono::Utc::now().timestamp() - 1,
+        revoked: Arc::new(AtomicBool::new(false)),
+    };
+    let filter = || HistoryFilter {
+        cursor: None,
+        limit: 10,
+        from: None,
+        to: None,
+    };
+    assert_eq!(
+        workspace
+            .owner_history_page(&owner, HistoryStream::Audit, filter())
+            .await
+            .unwrap()["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        workspace
+            .owner_history_page(
+                &Credential::Scoped(Arc::new(HistoryKey)),
+                HistoryStream::Audit,
+                filter()
+            )
+            .await
+            .unwrap_err()
+            .code,
+        "OWNER_REQUIRED"
+    );
+    assert_eq!(
+        workspace
+            .owner_history_page(&other, HistoryStream::Audit, filter())
+            .await
+            .unwrap_err()
+            .code,
+        "UNAUTHENTICATED"
+    );
+    assert_eq!(
+        workspace
+            .owner_history_page(&expired, HistoryStream::Audit, filter())
+            .await
+            .unwrap_err()
+            .code,
+        "UNAUTHENTICATED"
+    );
+    *metadata.revoke_on_history_read.lock().unwrap() = Some(revoked);
+    assert_eq!(
+        workspace
+            .owner_history_page(&owner, HistoryStream::Audit, filter())
+            .await
+            .unwrap_err()
+            .code,
+        "UNAUTHENTICATED"
+    );
+    workspace.close().await.unwrap();
 }
 
 #[derive(Default)]
@@ -126,6 +253,11 @@ impl Metadata for ScopedMetadata {
     }
     fn execute(&self, request: MetaRequest) -> Call<'_> {
         Box::pin(async move {
+            if matches!(&request, MetaRequest::List { prefix, .. } if prefix == "observability/audit-v1/records/")
+                && let Some(revoked) = self.revoke_on_history_read.lock().unwrap().as_ref()
+            {
+                revoked.store(true, Ordering::Release);
+            }
             let (scope, guard) = match &request {
                 MetaRequest::Get { scope, guard, .. }
                 | MetaRequest::List { scope, guard, .. }

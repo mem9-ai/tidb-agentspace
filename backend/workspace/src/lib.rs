@@ -246,6 +246,23 @@ impl Workspace {
     pub fn repository(&self) -> std::sync::Arc<Repository> {
         self.repository.clone()
     }
+    /// History is owner-only even for Keys with wildcard resource and action grants.
+    /// Recheck the authority after metadata I/O before returning a page.
+    pub async fn owner_history_page(
+        &self,
+        credential: &Credential,
+        stream: observability::HistoryStream,
+        filter: observability::HistoryFilter<'_>,
+    ) -> Result<Value> {
+        if !self.authenticate(credential).await?.owner {
+            return Err(reject(403, "OWNER_REQUIRED"));
+        }
+        let page = self.repository.history_page(stream, filter).await?;
+        if !self.authenticate(credential).await?.owner {
+            return Err(reject(403, "OWNER_REQUIRED"));
+        }
+        Ok(page)
+    }
     pub fn new(repository: Repository) -> Self {
         Self {
             repository: std::sync::Arc::new(repository),
