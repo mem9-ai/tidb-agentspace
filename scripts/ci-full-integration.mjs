@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
-import { appendFile, readFile } from 'node:fs/promises';
+import { appendFile, lstat, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 // This manifest is executed from the trusted base, never from the candidate.
@@ -27,6 +27,19 @@ export function partition(command, event) {
   };
 }
 
+async function presentFiles() {
+  const present = await Promise.all(
+    files.map(async (file) => {
+      try {
+        return (await lstat(file)).isFile();
+      } catch {
+        return false;
+      }
+    }),
+  );
+  return present.every(Boolean);
+}
+
 if (
   process.argv[1] &&
   realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
@@ -35,7 +48,8 @@ if (
     const command = JSON.parse(await readFile('package.json', 'utf8')).scripts?.[
       'backend:test:integration'
     ];
-    const groups = partition(command, process.env.GITHUB_EVENT_NAME);
+    const candidate = partition(command, process.env.GITHUB_EVENT_NAME);
+    const groups = candidate && (await presentFiles()) ? candidate : null;
     const action = process.argv[2];
     if (action === 'classify') {
       await appendFile(process.env.GITHUB_OUTPUT, `full_partition=${Boolean(groups)}\n`);

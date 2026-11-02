@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -63,6 +63,13 @@ test('both isolated groups execute the full command once and reject changed memb
   const executed = readFileSync(join(root, 'executed'), 'utf8').trim().split('\n');
   assert.equal(new Set(executed).size, files.length);
   assert.deepEqual([...executed].sort(), [...files].sort());
+  const missing = join(root, files[0]);
+  const original = readFileSync(missing);
+  unlinkSync(missing);
+  writeFileSync(output, '');
+  execFileSync(process.execPath, [runner, 'classify'], { cwd: root, env });
+  assert.equal(readFileSync(output, 'utf8'), 'full_partition=false\n');
+  writeFileSync(missing, original);
   writePackage(fullCommand.replace('server/contract.test.mjs ', ''));
   writeFileSync(output, '');
   execFileSync(process.execPath, [runner, 'classify'], { cwd: root, env });
@@ -86,6 +93,10 @@ test('a candidate cannot replace its trusted base partition policy', (t) => {
     join(root, 'package.json'),
     JSON.stringify({ scripts: { 'backend:test:integration': fullCommand } }),
   );
+  for (const file of files) {
+    mkdirSync(dirname(join(root, file)), { recursive: true });
+    writeFileSync(join(root, file), '// fixture\n');
+  }
   git('add', '.');
   git('commit', '-qm', 'trusted base');
   git('switch', '-qc', 'candidate');
