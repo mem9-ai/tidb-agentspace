@@ -159,7 +159,7 @@ impl Repository {
                     json!({"key":index["key"],"expectedVersion":index["version"],"delete":true}),
                 );
             }
-            changes.push(json!({"key":HEAD,"expectedVersion":version(&head),"value":{"format":1,"position":position,"count":count-expired.len() as u64}}));
+            changes.push(json!({"key":HEAD,"expectedVersion":version(&head),"value":{"format":1,"position":position,"count":count-expired.len() as u64,"coverageStartedAt":head["value"]["coverageStartedAt"]}}));
             match self.commit(changes).await {
                 Ok(()) => return Ok(expired.len()),
                 Err(failure) if failure.code == "META_CONFLICT" && attempt < 7 => continue,
@@ -308,7 +308,7 @@ impl Repository {
                 }
                 changes.push(json!({"key":key,"expectedVersion":version(old),"delete":true}));
             }
-            changes.push(json!({"key":HEAD,"expectedVersion":version(&head),"value":{"format":1,"position":next,"count":count+batch-excess}}));
+            changes.push(json!({"key":HEAD,"expectedVersion":version(&head),"value":{"format":1,"position":next,"count":count+batch-excess,"coverageStartedAt":if head.is_null() { json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis,true)) } else { head["value"]["coverageStartedAt"].clone() }}}));
             for (offset, (record, deadline)) in records.iter().enumerate() {
                 let sequence = position + offset as u64 + 1;
                 changes.push(

@@ -1,5 +1,6 @@
 //! Classify covered operations without keeping SQL, file paths or request content.
 use serde_json::Value;
+use std::collections::BTreeMap;
 use workspace_domain::{Principal, observability::AuditAction};
 
 /// Only conclusive pre-effect scope denials can be called denied. Later failures can
@@ -18,6 +19,46 @@ pub fn scope_denied(action: AuditAction, principal: &Principal) -> bool {
             principal.scope("queries:execute").is_err()
         }
     }
+}
+
+/// This is merely a candidate. Persist it only after the domain operation has succeeded
+/// and therefore authorized and resolved the selected resource.
+pub fn target_candidate(
+    method: &str,
+    route: &str,
+    query: &BTreeMap<String, String>,
+    input: &Value,
+) -> Option<String> {
+    let value = match (method, route) {
+        ("PUT", "/files") | ("POST", "/queries" | "/database-imports") => {
+            input["resourceId"].as_str()
+        }
+        ("PUT", "/files/content") | ("DELETE", "/files/entry") => {
+            query.get("resourceId").map(String::as_str)
+        }
+        ("POST", "/result-exports" | "/file-exports") => input["target"]["resourceId"].as_str(),
+        _ => {
+            let parts = route
+                .split('/')
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>();
+            match (method, parts.as_slice()) {
+                ("DELETE", ["resources", id]) | ("POST", ["resources", id, "setup-attempts"]) => {
+                    Some(*id)
+                }
+                _ => None,
+            }
+        }
+    }?;
+    if value.is_empty()
+        || value.len() > 128
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_-.:".contains(&byte))
+    {
+        return None;
+    }
+    Some(value.to_owned())
 }
 
 pub fn action(method: &str, route: &str, input: &Value) -> Option<AuditAction> {

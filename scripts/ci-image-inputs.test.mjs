@@ -13,6 +13,7 @@ test('image validation covers native/build/delivery inputs and excludes Console/
     'scripts/duckdb-runtime.json',
     'scripts/prepare-duckdb.mjs',
     'public/openapi.json',
+    'public/owner-openapi.json',
     'public/global-openapi.json',
     'public/agent-entry-openapi.json',
     'package-lock.json',

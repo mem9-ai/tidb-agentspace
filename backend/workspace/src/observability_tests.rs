@@ -71,13 +71,17 @@ async fn cancelled_audit_guard_records_unknown_without_replaying_the_effect() {
     let records = page["data"].as_array().unwrap();
     assert_eq!(records.len(), 2);
     assert_eq!(records[0]["outcome"], "unknown");
+    assert_eq!(records[0]["decision"], "unknown");
     assert_eq!(records[1]["outcome"], "attempted");
     assert_eq!(records[0]["operationId"], records[1]["operationId"]);
     assert_eq!(records[1]["resolution"], "unknown");
     let guard = AuditGuard::begin(repository.clone(), intent())
         .await
         .unwrap();
-    guard.finish(AuditOutcome::Succeeded).await.unwrap();
+    guard
+        .finish_with_target(AuditOutcome::Succeeded, Some("fs_1"))
+        .await
+        .unwrap();
     let page = repository
         .history_page(
             HistoryStream::Audit,
@@ -92,6 +96,11 @@ async fn cancelled_audit_guard_records_unknown_without_replaying_the_effect() {
         .unwrap();
     assert_eq!(page["data"].as_array().unwrap().len(), 4);
     assert_eq!(page["data"][0]["outcome"], "succeeded");
+    assert_eq!(page["data"][0]["decision"], "allowed");
+    assert_eq!(
+        page["data"][0]["target"],
+        json!({"type":"filesystem", "id":"fs_1"})
+    );
     repository.close().await.unwrap();
 }
 impl ScopedAuthorization for HistoryKey {
@@ -519,6 +528,14 @@ async fn history_remains_workspace_scoped_and_survives_repository_reopen() {
         .history_page(HistoryStream::Requests, filter(None))
         .await
         .unwrap();
+    let request_start = page["coverageStartedAt"].as_str().unwrap().to_owned();
+    let audit_start = first
+        .history_page(HistoryStream::Audit, filter(None))
+        .await
+        .unwrap()["coverageStartedAt"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     let cursor = page["nextCursor"].as_str().unwrap().to_owned();
     assert_eq!(page["data"][0]["status"], 403);
     assert!(
@@ -553,6 +570,13 @@ async fn history_remains_workspace_scoped_and_survives_repository_reopen() {
         .unwrap();
     assert_eq!(
         reopened
+            .history_page(HistoryStream::Requests, filter(None))
+            .await
+            .unwrap()["coverageStartedAt"],
+        request_start
+    );
+    assert_eq!(
+        reopened
             .history_page(HistoryStream::Requests, filter(Some(&cursor)))
             .await
             .unwrap()["data"][0]["status"],
@@ -570,6 +594,7 @@ async fn history_remains_workspace_scoped_and_survives_repository_reopen() {
         .history_page(HistoryStream::Audit, filter(None))
         .await
         .unwrap();
+    assert_eq!(audit["coverageStartedAt"], audit_start);
     assert_eq!(audit["data"][0]["outcome"], "attempted");
     assert_eq!(audit["data"][0]["resolution"], "unknown");
     assert_eq!(

@@ -1,4 +1,4 @@
-//! Bounded, Workspace-bound paging for the inactive history primitives.
+//! Bounded, Workspace-bound paging for history.
 use super::*;
 use chrono::{DateTime, Utc};
 
@@ -220,6 +220,38 @@ impl Repository {
                     record["resolution"] = json!(resolution);
                 }
             }
+            for record in &mut data {
+                let decision = match record["outcome"].as_str() {
+                    Some("succeeded") => "allowed",
+                    Some("denied") => "denied",
+                    Some("attempted" | "failed" | "unknown") => "unknown",
+                    _ => return Err(error("HISTORY_INDEX_CORRUPT")),
+                };
+                let target_type = match record["action"].as_str() {
+                    Some("workspace.update") => "workspace",
+                    Some("resource.create" | "resource.delete" | "resource.retry") => "resource",
+                    Some("file.write" | "file.delete") => "filesystem",
+                    Some("query.write" | "query.execute" | "database.import") => "database",
+                    _ => return Err(error("HISTORY_INDEX_CORRUPT")),
+                };
+                let object = record
+                    .as_object_mut()
+                    .ok_or_else(|| error("HISTORY_INDEX_CORRUPT"))?;
+                let target = object
+                    .remove("targetId")
+                    .ok_or_else(|| error("HISTORY_INDEX_CORRUPT"))?;
+                if !target.is_null() {
+                    let id = target
+                        .as_str()
+                        .filter(|value| safe_id(value))
+                        .ok_or_else(|| error("HISTORY_INDEX_CORRUPT"))?;
+                    object.insert("target".into(), json!({"type":target_type,"id":id}));
+                }
+                if object.get("requestId").is_some_and(Value::is_null) {
+                    object.remove("requestId");
+                }
+                object.insert("decision".into(), json!(decision));
+            }
         }
         let cursor = next.map(|sequence| {
             hex::encode(
@@ -227,6 +259,8 @@ impl Repository {
                     .expect("cursor JSON"),
             )
         });
-        Ok(json!({"data":data,"nextCursor":cursor}))
+        Ok(
+            json!({"data":data,"nextCursor":cursor,"coverageStartedAt":head["value"]["coverageStartedAt"]}),
+        )
     }
 }

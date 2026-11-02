@@ -1,4 +1,4 @@
-//! Workspace-scoped audit primitives. This module is not yet connected to API operations.
+//! Workspace-scoped audit and request history primitives.
 //!
 //! The stored schema deliberately has no free-form text or metadata maps: callers must not
 //! persist requests, credentials, provider errors, SQL, commands, or customer content here.
@@ -86,10 +86,29 @@ impl AuditGuard {
             operation: Some(operation),
         })
     }
-    pub async fn finish(mut self, outcome: AuditOutcome) -> Result<()> {
+    pub async fn finish(self, outcome: AuditOutcome) -> Result<()> {
+        self.finish_with_target(outcome, None).await
+    }
+    /// Supply a target only after a domain operation has authorized and resolved it.
+    pub async fn finish_with_target(
+        mut self,
+        outcome: AuditOutcome,
+        target: Option<&str>,
+    ) -> Result<()> {
+        if target.is_some()
+            && matches!(
+                outcome,
+                AuditOutcome::Attempted | AuditOutcome::Denied | AuditOutcome::Failed
+            )
+        {
+            return Err(ServiceError::new(400, "INVALID_AUDIT_TARGET"));
+        }
         // Keep a copy until the transition is confirmed. Cancellation or an uncertain
         // metadata commit then falls back to Unknown, never to repeating the operation.
-        let operation = self.operation.as_ref().expect("live audit guard").clone();
+        let mut operation = self.operation.as_ref().expect("live audit guard").clone();
+        if let Some(target) = target {
+            operation.target_id = Some(target.to_owned());
+        }
         let result = self
             .repository
             .finish_audit_operation(operation, outcome)
@@ -467,7 +486,7 @@ impl Repository {
                         .push(json!({"key":key,"expectedVersion":version(stored),"value":value}));
                 }
             }
-            changes.push(json!({"key":AUDIT_HEAD,"expectedVersion":version(&head),"value":{"format":1,"position":position,"count":count-removed as u64,"pending":pending}}));
+            changes.push(json!({"key":AUDIT_HEAD,"expectedVersion":version(&head),"value":{"format":1,"position":position,"count":count-removed as u64,"pending":pending,"coverageStartedAt":head["value"]["coverageStartedAt"]}}));
             match self.commit(changes).await {
                 Ok(()) => {
                     return Ok(AuditPurge {
@@ -723,7 +742,7 @@ impl Repository {
                 return Err(error("AUDIT_INDEX_CORRUPT"));
             }
             changes.extend([
-                json!({"key":AUDIT_HEAD,"expectedVersion":version(&head),"value":{"format":1,"position":next,"count":count+1-excess,"pending":next_pending}}),
+                json!({"key":AUDIT_HEAD,"expectedVersion":version(&head),"value":{"format":1,"position":next,"count":count+1-excess,"pending":next_pending,"coverageStartedAt":if head.is_null() { json!(timestamp) } else { head["value"]["coverageStartedAt"].clone() }}}),
                 json!({"key":record_key(next),"expectedVersion":null,"value":record}),
                 json!({"key":order_key(next),"expectedVersion":null,"value":{"sequence":next,"deadline":deadline}}),
                 json!({"key":expiry_key(deadline,next),"expectedVersion":null,"value":{"sequence":next,"deadline":deadline}}),

@@ -55,6 +55,28 @@ const base = '/api/v1/workspaces/ws_agentlab';
 const secret = 'retained-public-workspace-key';
 const privateWrite = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
 test(
+  'an unavailable audit journal rejects a file mutation before provider I/O',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
+  async (t) => {
+    const fixture = await productApiFixture(t, 'remote');
+    assert.equal((await fixture.request('/resources')).status, 200);
+    await fixture.stopRegionMetadata();
+    const calls = fixture.provider.calls;
+    const result = await fixture.request(
+      '/files/content?resourceId=fs_live&path=%2Fmust-not-exist',
+      {
+        method: 'PUT',
+        raw: Buffer.from('private-content'),
+        headers: { 'Content-Type': 'application/octet-stream' },
+      },
+    );
+    assert.equal(result.status, 503, JSON.stringify(result.body));
+    assert.equal(result.body.error.code, 'AUDIT_UNAVAILABLE');
+    assert.match(result.body.error.message, /did not start/);
+    assert.equal(fixture.provider.calls, calls);
+  },
+);
+test(
   'audit history journals covered effects without storing customer content',
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
   async (t) => {
@@ -83,6 +105,8 @@ test(
       ['succeeded', 'attempted'],
     );
     assert.equal(records[0].action, 'file.write');
+    assert.deepEqual(records[0].target, { type: 'filesystem', id: 'fs_shared' });
+    assert.equal(Object.hasOwn(records[1], 'target'), false);
     assert.equal(records[0].actor.kind, 'owner');
     assert.equal(records[0].operationId, records[1].operationId);
     assert.equal(records[1].resolution, 'succeeded');
@@ -118,6 +142,8 @@ test(
       deniedHistory.map((entry) => entry.outcome),
       ['denied', 'attempted'],
     );
+    assert.equal(deniedHistory[0].decision, 'denied');
+    assert.equal(Object.hasOwn(deniedHistory[0], 'target'), false);
     assert.equal(deniedHistory[0].actor.id, key.body.data.id);
     assert.equal(JSON.stringify(deniedHistory).includes('denied-private-canary'), false);
     assert.equal(JSON.stringify(deniedHistory).includes(key.body.secret), false);

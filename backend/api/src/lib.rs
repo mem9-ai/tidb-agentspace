@@ -533,6 +533,9 @@ fn error(error: ServiceError) -> Response {
         }
         "INVALID_KEY" => "API key is invalid, expired, or revoked.",
         "OWNER_REQUIRED" => "This action requires the workspace owner session.",
+        "AUDIT_UNAVAILABLE" => {
+            "Audit history is unavailable. This action did not start; try again when history is available."
+        }
         "SSO_REQUIRED" => "Sign in with your TiDB Account.",
         "SSO_NOT_AUTHORIZED" => "This account is not authorized for this workspace.",
         "SSO_VERIFICATION_FAILED" => "Could not verify the TiDB Account sign-in.",
@@ -804,6 +807,13 @@ async fn dispatch(
         return Ok((
             [("Content-Type", "application/json")],
             include_str!("../../../public/openapi.json"),
+        )
+            .into_response());
+    }
+    if path == "/owner-openapi.json" && method == Method::GET && app.product.is_some() {
+        return Ok((
+            [("Content-Type", "application/json")],
+            include_str!("../../../public/owner-openapi.json"),
         )
             .into_response());
     }
@@ -1201,9 +1211,9 @@ async fn dispatch(
             .and_then(|value| value.last_loss)
             .map(|value| value.to_rfc3339());
         let coverage = if matches!(stream, HistoryStream::Requests) {
-            json!({"status":"partial", "startedAt":null, "operations":["workspace", "resources", "files", "query", "other"], "exclusions":["Global activity", "Requests rejected before Workspace authentication or body parsing", "Requests whose safe actor identity is unavailable", "Requests rejected because audit intent could not be recorded", "Diagnostic writes may be delayed or lost"]})
+            json!({"status":"partial", "startedAt":page["coverageStartedAt"], "operations":["workspace", "resources", "files", "query", "other"], "exclusions":["Global requests are not included", "Requests rejected before Workspace authentication or body parsing are not included", "Requests whose safe actor identity is unavailable are not included", "Requests rejected because audit intent could not be recorded are not included", "Diagnostic writes may be delayed or lost"]})
         } else {
-            json!({"status":"partial", "startedAt":null, "operations":["workspace.update", "resource.create", "resource.delete", "resource.retry", "file.write", "file.delete", "query.execute", "database.import"], "exclusions":["Global activity", "Some failures and access denials are recorded as unknown", "Resource creation and setup acknowledgements do not confirm provider outcomes", "Target identities are not yet available"]})
+            json!({"status":"partial", "startedAt":page["coverageStartedAt"], "operations":["workspace.update", "resource.create", "resource.delete", "resource.retry", "file.write", "file.delete", "query.execute", "database.import"], "exclusions":["Global Key activity is not included", "Some failures and access denials are recorded as unknown", "Resource creation and setup acknowledgements do not confirm provider outcomes", "Targets for denied or unresolved operations are not shown"]})
         };
         // The process-local queue cannot prove loss totals across a restart.
         let mut response = Json(json!({
@@ -1232,9 +1242,13 @@ async fn dispatch(
         )
     });
     let workspace_id = app.workspace.repository().workspace_id().to_owned();
-    let mut parsed_for_audit = if method == Method::POST
-        && matches!(route, "/queries" | "/result-exports" | "/file-exports")
-    {
+    let mut parsed_for_audit = if matches!(
+        (method.as_str(), route),
+        (
+            "POST",
+            "/queries" | "/database-imports" | "/result-exports" | "/file-exports"
+        ) | ("PUT", "/files")
+    ) {
         Some(body())
     } else {
         None
@@ -1256,6 +1270,8 @@ async fn dispatch(
     } else {
         history_audit::action(method.as_str(), route, audit_input)
     };
+    let target_candidate =
+        history_audit::target_candidate(method.as_str(), route, &query, audit_input);
     let proven_scope_denial = audit_action.is_some_and(|action| {
         app.workspace
             .history_principal_snapshot(&credential)
@@ -1468,9 +1484,26 @@ async fn dispatch(
                 Ok(_) => AuditOutcome::Succeeded,
             }
         };
+        let target = match &result {
+            Ok(response) if response.status().as_u16() < 400 => match action {
+                AuditAction::WorkspaceUpdate => Some(workspace_id.clone()),
+                AuditAction::ResourceCreate => response
+                    .headers()
+                    .get("Location")
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| value.strip_prefix("resources/"))
+                    .map(str::to_owned),
+                _ => target_candidate,
+            },
+            _ => None,
+        };
         // A finished customer effect must not be retried because a history write timed out.
         // Dropping the guard preserves an unknown outcome for later reconciliation.
-        let _ = tokio::time::timeout(Duration::from_millis(500), guard.finish(outcome)).await;
+        let _ = tokio::time::timeout(
+            Duration::from_millis(500),
+            guard.finish_with_target(outcome, target.as_deref()),
+        )
+        .await;
     }
     if let Some(history) = history {
         let completion = if cancellation.is_cancelled() {
