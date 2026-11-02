@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { isBackendOnly, isUiOnlyPullRequest } from './ci-ui-scope.mjs';
+import { isBackendOnly, isUiOnlyChange } from './ci-ui-scope.mjs';
 
 test('only known native changes use API verification without a browser', () => {
   const native = ['backend/product/src/files.rs', 'server/rust-product.test.mjs'];
@@ -35,13 +35,15 @@ test('only known native changes use API verification without a browser', () => {
   assert.equal(isBackendOnly('push', 1, []), false);
 });
 
-test('only a proven UI-only PR merge candidate uses the fast path', () => {
+test('only proven UI-only PR and main changes use the fast path', () => {
   const ui = ['src/features/auth/SignInChoices.tsx', 'e2e/workspace.spec.mjs'];
-  assert.equal(isUiOnlyPullRequest('pull_request', 2, ui), true);
-  for (const event of ['push', 'merge_group', 'workflow_dispatch'])
-    assert.equal(isUiOnlyPullRequest(event, 2, ui), false);
-  for (const parents of [0, 1, 3])
-    assert.equal(isUiOnlyPullRequest('pull_request', parents, ui), false);
+  assert.equal(isUiOnlyChange('pull_request', 2, ui), true);
+  assert.equal(isUiOnlyChange('push', 1, ui), true);
+  assert.equal(isUiOnlyChange('push', 2, ui), true);
+  assert.equal(isUiOnlyChange('push', 0, ui), false);
+  for (const event of ['merge_group', 'workflow_dispatch'])
+    assert.equal(isUiOnlyChange(event, 2, ui), false);
+  for (const parents of [0, 1, 3]) assert.equal(isUiOnlyChange('pull_request', parents, ui), false);
   for (const file of [
     'backend/api/src/lib.rs',
     'src/api/client.ts',
@@ -53,13 +55,28 @@ test('only a proven UI-only PR merge candidate uses the fast path', () => {
     'scripts/ci-ui-scope.mjs',
     'e2e/workspace-fixture.mjs',
     'docs/decisions/0027-single-ci-evidence.md',
+    'docs/ci-cd.md',
+    'docs/console-publishing.md',
+    'docs/standards/intent-driven-development.md',
+    'docs/example.mjs',
   ])
-    assert.equal(isUiOnlyPullRequest('pull_request', 2, [...ui, file]), false, file);
-  assert.equal(isUiOnlyPullRequest('pull_request', 2, []), false);
-  assert.equal(isUiOnlyPullRequest('pull_request', 2, ['e2e/workspace.spec.mjs']), false);
-  assert.equal(isUiOnlyPullRequest('pull_request', 2, ['src/App.tsx', 'src/styles.css']), true);
+    for (const event of ['pull_request', 'push'])
+      assert.equal(isUiOnlyChange(event, 2, [...ui, file]), false, file);
+  assert.equal(isUiOnlyChange('pull_request', 2, []), false);
+  assert.equal(isUiOnlyChange('pull_request', 2, ['e2e/workspace.spec.mjs']), false);
+  assert.equal(isUiOnlyChange('pull_request', 2, ['src/App.tsx', 'src/styles.css']), true);
   assert.equal(
-    isUiOnlyPullRequest('pull_request', 2, [
+    isUiOnlyChange('pull_request', 2, [
+      'src/App.tsx',
+      'README.md',
+      'docs/decisions/0044-workspace-observability.md',
+      'docs/standards/product-experience.md',
+      'specs/gh-119/spec.md',
+    ]),
+    true,
+  );
+  assert.equal(
+    isUiOnlyChange('pull_request', 2, [
       'src/App.tsx',
       'src/features/navigation/workspace-route.ts',
       'src/features/navigation/workspace-route.test.mjs',
@@ -68,7 +85,7 @@ test('only a proven UI-only PR merge candidate uses the fast path', () => {
     true,
   );
   assert.equal(
-    isUiOnlyPullRequest('pull_request', 2, ['src/App.tsx', 'docs/screenshots/helper.mjs']),
+    isUiOnlyChange('pull_request', 2, ['src/App.tsx', 'docs/screenshots/helper.mjs']),
     false,
   );
 });
@@ -164,11 +181,14 @@ test('native PR renames and full main push ranges fail closed on Console inputs'
   const nativeHead = git('rev-parse', 'HEAD');
   // A main push can contain several commits. The final commit alone is insufficient.
   writeFileSync(join(directory, 'src/App.tsx'), 'console changed\n');
-  git('add', '.');
+  git('add', 'src/App.tsx');
   git('commit', '-qm', 'console');
   const consoleHead = git('rev-parse', 'HEAD');
+  assert.equal(classify('push', nativeHead), 'ui_only=true\nbackend_only=false\n');
+  for (const before of ['', 'HEAD^1', '0'.repeat(40), 'f'.repeat(40)])
+    assert.equal(classify('push', before), 'ui_only=false\nbackend_only=false\n');
   writeFileSync(join(directory, 'backend/product/src/lib.rs'), 'native changed again\n');
-  git('add', '.');
+  git('add', 'backend/product/src/lib.rs');
   git('commit', '-qm', 'native again');
   assert.equal(classify('push', consoleHead), 'ui_only=false\nbackend_only=true\n');
   assert.equal(classify('push', nativeHead), 'ui_only=false\nbackend_only=false\n');

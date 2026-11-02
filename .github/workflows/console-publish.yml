@@ -56,12 +56,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ steps.commit.outputs.sha }}
         run: node scripts/console-publish.mjs current "$SOURCE_SHA"
-      - name: Require the same-commit Console checks
-        if: steps.source.outputs.current == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ steps.commit.outputs.sha }}
-        run: node scripts/require-ci.mjs console "$SOURCE_SHA"
       - name: Select the pinned npm version
         if: steps.source.outputs.current == 'true'
         run: npm install --global npm@11.6.2 --ignore-scripts
@@ -70,6 +64,12 @@ jobs:
       - name: Build public Console without deployment credentials
         if: steps.source.outputs.current == 'true'
         run: env -i PATH="$PATH" HOME="$HOME" CI=true npm run build:console -- --base=/studio/
+      - name: Require the same-commit Console checks
+        if: steps.source.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.commit.outputs.sha }}
+        run: node scripts/require-ci.mjs console "$SOURCE_SHA"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.source.outputs.current == 'true'
         with:

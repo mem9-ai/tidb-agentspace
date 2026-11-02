@@ -5,15 +5,14 @@ import { fileURLToPath } from 'node:url';
 
 const uiFile = /^src\/(?!api\/).+\.(?:ts|tsx|css)$/;
 const companionFile =
-  /^(?:src\/(?!api\/).+\.test\.mjs|e2e\/[^/]+\.spec\.mjs|docs\/screenshots\/.+\.(?:png|jpe?g|webp)|docs\/standards\/(?:product-experience|browser-verification)\.md)$/;
+  /^(?:src\/(?!api\/).+\.test\.mjs|e2e\/[^/]+\.spec\.mjs|README\.md|docs\/screenshots\/.+\.(?:png|jpe?g|webp)|docs\/standards\/(?:product-experience|browser-verification)\.md|docs\/(?!standards\/|ci-cd\.md$|console-publishing\.md$|decisions\/0027-single-ci-evidence\.md$).+\.md|specs\/.+\.md)$/;
 const nativeSource = /^(?:backend\/(?!contracts\/)|meta-service\/).+\.rs$/;
 const nativeFile =
   /^(?:(?:backend|meta-service)\/.+\.(?:rs|toml)|Cargo\.(?:toml|lock)|rust-toolchain\.toml|\.cargo\/config\.toml|server\/(?:[^/]+\.test\.mjs|test-support\/.+)|docs\/(?:rust-backend|meta-service|native-backend-retirement)\.md)$/;
 
-export function isUiOnlyPullRequest(event, parents, files) {
+export function isUiOnlyChange(event, parents, files) {
   return (
-    event === 'pull_request' &&
-    parents === 2 &&
+    ((event === 'pull_request' && parents === 2) || (event === 'push' && parents >= 1)) &&
     files.length > 0 &&
     files.some((file) => uiFile.test(file)) &&
     files.every((file) => uiFile.test(file) || companionFile.test(file))
@@ -53,7 +52,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     })
       .split('\0')
       .filter(Boolean);
-    uiOnly = isUiOnlyPullRequest(event, parents, files);
+    uiOnly = isUiOnlyChange(event, parents, files);
     backendOnly = isBackendOnly(event, parents, files);
   } catch {
     console.log('Unable to classify the candidate; run native and browser checks.');

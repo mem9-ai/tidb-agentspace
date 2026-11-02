@@ -374,7 +374,7 @@ test('automatic checks execute once and releases require exact-commit native evi
   assert.equal(ci.jobs.metadata.needs, 'scope');
   assert.equal(
     ci.jobs.metadata.if,
-    "${{ !cancelled() && (github.event_name != 'pull_request' || (needs.scope.outputs.ui_only != 'true' && needs.scope.outputs.docs_only != 'true')) }}",
+    "${{ !cancelled() && needs.scope.outputs.ui_only != 'true' && needs.scope.outputs.docs_only != 'true' }}",
   );
   assert.deepEqual(ci.jobs['documentation-scope'].needs, ['scope', 'quality']);
   assert.equal(ci.jobs['documentation-scope'].name, 'Documentation-only scope');
@@ -449,7 +449,7 @@ test('automatic checks execute once and releases require exact-commit native evi
   assert.equal(productIntegration.needs, 'scope');
   assert.equal(
     productIntegration.if,
-    "${{ !cancelled() && needs.scope.outputs.full_partition == 'true' && needs.scope.outputs.history_only != 'true' && !contains(fromJSON('[\"tutorial\",\"database\",\"files\"]'), needs.scope.outputs.classic_profile) && (github.event_name != 'pull_request' || (needs.scope.outputs.ui_only != 'true' && needs.scope.outputs.docs_only != 'true')) }}",
+    "${{ !cancelled() && needs.scope.outputs.full_partition == 'true' && needs.scope.outputs.history_only != 'true' && !contains(fromJSON('[\"tutorial\",\"database\",\"files\"]'), needs.scope.outputs.classic_profile) && needs.scope.outputs.ui_only != 'true' && needs.scope.outputs.docs_only != 'true' }}",
   );
   assert.ok(!JSON.stringify(productIntegration).includes('secrets.'));
   assert.equal(productIntegration.steps[0].with['fetch-depth'], 0);

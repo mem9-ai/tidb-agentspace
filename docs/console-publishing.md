@@ -57,10 +57,11 @@ This makes pending-run ordering harmless for version selection.
 
 ## Checks and credential boundary
 
-Builds first verify the same resolved source SHA has passed Quality and Browser smoke in
-the trusted main CI run. They do not repeat `npm run check`. The pinned Node/npm and
-`npm ci` then build the distinct `/studio/` base-path variant in a clean environment. No publication key is exposed
-to npm or Vite. Only Console output transfers between the build and publishing jobs.
+The pinned Node/npm and `npm ci` build the distinct `/studio/` base-path variant in a
+main-only, read-only job while CI runs. Before uploading that artifact, the job verifies the
+same resolved source SHA passed Quality and Browser smoke in the trusted main CI run. It does
+not repeat `npm run check`. No publication key is exposed to npm or Vite. Only a gated Console
+output transfers between the build and publishing jobs.
 
 The website's existing importer enforces an allowlist of public static files, rejects symlinks
 and source maps, normalizes same-origin configuration, and records the exact source SHA plus
