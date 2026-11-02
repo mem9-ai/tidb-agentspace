@@ -151,6 +151,16 @@ async fn history_remains_workspace_scoped_and_survives_repository_reopen() {
         .finish_audit_operation(operation, AuditOutcome::Succeeded)
         .await
         .unwrap();
+    let unfinished = first
+        .begin_audit_operation(AuditIntent {
+            request_id: None,
+            actor_kind: ActorKind::Owner,
+            actor_id: "owner-a",
+            action: AuditAction::QueryWrite,
+            target_id: None,
+        })
+        .await
+        .unwrap();
     let page = first
         .history_page(HistoryStream::Requests, filter(None))
         .await
@@ -196,7 +206,21 @@ async fn history_remains_workspace_scoped_and_survives_repository_reopen() {
     );
     assert_eq!(
         reopened
-            .history_page(HistoryStream::Audit, filter(None))
+            .finish_audit_operation(unfinished, AuditOutcome::Succeeded)
+            .await
+            .unwrap_err()
+            .code,
+        "INVALID_AUDIT_TRANSITION"
+    );
+    let audit = reopened
+        .history_page(HistoryStream::Audit, filter(None))
+        .await
+        .unwrap();
+    assert_eq!(audit["data"][0]["outcome"], "attempted");
+    assert_eq!(audit["data"][0]["resolution"], "unknown");
+    assert_eq!(
+        reopened
+            .history_page(HistoryStream::Audit, filter(audit["nextCursor"].as_str()))
             .await
             .unwrap()["data"][0]["outcome"],
         "succeeded"
