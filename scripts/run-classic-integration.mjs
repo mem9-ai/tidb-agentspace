@@ -126,8 +126,8 @@ export function completedSuite(cases, result) {
     );
     if (start < 0 || end <= start) return false;
     const group = lines.slice(start + 1, end);
-    const declared = group.map((line) => /^    # Subtest: (.+)$/.exec(line)?.[1]).filter(Boolean);
-    const actual = group.map((line) => /^    ok \d+ - (.+)$/.exec(line)?.[1]).filter(Boolean);
+    const declared = group.map((line) => /^ {4}# Subtest: (.+)$/.exec(line)?.[1]).filter(Boolean);
+    const actual = group.map((line) => /^ {4}ok \d+ - (.+)$/.exec(line)?.[1]).filter(Boolean);
     return (
       actual.length === children.length &&
       declared.length === children.length &&
