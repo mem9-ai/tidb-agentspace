@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod observability_tests;
 mod repository;
 use chrono::{DateTime, SecondsFormat, Utc};
 pub use repository::Repository;
