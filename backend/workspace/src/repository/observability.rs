@@ -364,7 +364,10 @@ impl Repository {
             };
             let operation = self.get(&operation_key).await?;
             if starting && !operation.is_null()
-                || !starting && (operation["value"]["status"] != "pending" || pending == 0)
+                || !starting
+                    && (operation["value"]["status"] != "pending"
+                        || operation["value"]["writerId"] != self.guard.owner_id
+                        || pending == 0)
             {
                 return Err(ServiceError::new(409, "INVALID_AUDIT_TRANSITION"));
             }
@@ -468,12 +471,12 @@ impl Repository {
                 }
             }
             let operation_state = if starting {
-                json!({"status":"pending","attempt":record,"remaining":1})
+                json!({"status":"pending","attempt":record,"remaining":1,"writerId":self.guard.owner_id})
             } else {
                 if operation["value"]["remaining"] != 1 {
                     return Err(error("AUDIT_INDEX_CORRUPT"));
                 }
-                json!({"status":outcome,"attempt":operation["value"]["attempt"],"remaining":2})
+                json!({"status":outcome,"attempt":operation["value"]["attempt"],"remaining":2,"writerId":operation["value"]["writerId"]})
             };
             changes.extend([
                 json!({"key":AUDIT_HEAD,"expectedVersion":version(&head),"value":{"format":1,"position":next,"count":count+1-excess,"pending":next_pending}}),

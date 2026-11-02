@@ -172,6 +172,55 @@ impl Repository {
         if after.is_none() {
             next = None;
         }
+        if matches!(stream, HistoryStream::Audit) {
+            let mut keys = std::collections::BTreeSet::new();
+            for record in &data {
+                if record["outcome"] == "attempted" {
+                    let id = record["operationId"]
+                        .as_str()
+                        .and_then(|value| Uuid::parse_str(value).ok())
+                        .ok_or_else(|| error("HISTORY_INDEX_CORRUPT"))?;
+                    keys.insert(format!("{AUDIT_OPERATIONS}{id}"));
+                }
+            }
+            if !keys.is_empty() {
+                let operations = self
+                    .call(MetaRequest::Get {
+                        scope: self.scope.clone(),
+                        guard: Some(self.guard.clone()),
+                        keys: keys.into_iter().collect(),
+                    })
+                    .await?["records"]
+                    .clone();
+                for record in &mut data {
+                    if record["outcome"] != "attempted" {
+                        continue;
+                    }
+                    let id = record["operationId"]
+                        .as_str()
+                        .ok_or_else(|| error("HISTORY_INDEX_CORRUPT"))?;
+                    let operation = &operations[&format!("{AUDIT_OPERATIONS}{id}")];
+                    if operation.is_null() {
+                        return Err(error("HISTORY_INDEX_CORRUPT"));
+                    }
+                    let resolution = match operation["value"]["status"].as_str() {
+                        Some("pending") => {
+                            let writer = operation["value"]["writerId"]
+                                .as_str()
+                                .ok_or_else(|| error("HISTORY_INDEX_CORRUPT"))?;
+                            if writer == self.guard.owner_id {
+                                "inProgress"
+                            } else {
+                                "unknown"
+                            }
+                        }
+                        Some(value @ ("succeeded" | "denied" | "failed" | "unknown")) => value,
+                        _ => return Err(error("HISTORY_INDEX_CORRUPT")),
+                    };
+                    record["resolution"] = json!(resolution);
+                }
+            }
+        }
         let cursor = next.map(|sequence| {
             hex::encode(
                 serde_json::to_vec(&json!({"v":1,"sequence":sequence,"binding":binding}))

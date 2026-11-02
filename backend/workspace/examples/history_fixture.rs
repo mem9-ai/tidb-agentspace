@@ -89,6 +89,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         let audit = a.history_page(HistoryStream::Audit, page(None, 10)).await?;
         assert_eq!(audit["data"][0]["outcome"], "attempted");
+        assert_eq!(audit["data"][0]["resolution"], "unknown");
+        assert!(audit["data"][0].get("writerId").is_none());
         assert_eq!(audit["data"][1]["outcome"], "succeeded");
         assert!(
             b.history_page(HistoryStream::Requests, page(None, 10))

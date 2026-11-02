@@ -246,6 +246,7 @@ async fn uncertain_audit_intent_returns_no_permit_and_retains_attempt() {
         .unwrap();
     assert_eq!(page["data"].as_array().unwrap().len(), 1);
     assert_eq!(page["data"][0]["outcome"], "attempted");
+    assert_eq!(page["data"][0]["resolution"], "inProgress");
     workspace.close().await.unwrap();
     let reopened = Repository::open(metadata, "region:test", "workspace-a", false, None)
         .await
@@ -255,5 +256,7 @@ async fn uncertain_audit_intent_returns_no_permit_and_retains_attempt() {
         .await
         .unwrap();
     assert_eq!(recovered["data"][0]["outcome"], "attempted");
+    assert_eq!(recovered["data"][0]["resolution"], "unknown");
+    assert!(recovered["data"][0].get("writerId").is_none());
     reopened.close().await.unwrap();
 }
