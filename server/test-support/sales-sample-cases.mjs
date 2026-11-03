@@ -158,6 +158,29 @@ test(
 );
 
 test(
+  'concurrent same-key requests observe one sample attempt',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    const f = await productApiFixture(t, 'inProcess', undefined, {
+      fresh: true,
+      filesProvider: 'local',
+    });
+    assert.equal((await f.request('/resources')).status, 200);
+    const key = randomUUID();
+    const start = () =>
+      f.request('/sales-sample-attempts', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': key },
+        body: { fixture: 'us-sales-v1' },
+      });
+    const [first, replay] = await Promise.all([start(), start()]);
+    assert.deepEqual([first.status, replay.status].sort(), [200, 201]);
+    assert.equal(first.body.data.id, replay.body.data.id);
+    assert.equal((await f.request('/resources')).body.data.length, 1);
+  },
+);
+
+test(
   'sales sample uses the configured live provider and does not repeat an uncertain provision',
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
   async (t) => {
@@ -197,6 +220,29 @@ test(
       assert.equal(f.provider.creates, 1);
       assert.equal((await start()).body.data.id, result.body.data.id);
       assert.equal(f.provider.creates, 1);
+    });
+    await t.test('unacknowledged file write is observed without repeating it', async (child) => {
+      const f = await productApiFixture(child, 'inProcess', undefined, { fresh: true });
+      let writes = 0;
+      f.provider.writeRace = (path, files) => {
+        writes++;
+        files.set(path, Buffer.from(csv));
+        return { status: 503 };
+      };
+      const key = randomUUID();
+      const start = () =>
+        f.request('/sales-sample-attempts', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': key },
+          body: { fixture: 'us-sales-v1' },
+        });
+      const result = await start();
+      assert.equal(result.status, 201, JSON.stringify(result.body));
+      assert.equal(result.body.data.status, 'outcome_unknown');
+      const path = `/files/content?resourceId=${result.body.data.resourceId}&path=%2Fus-sales.csv&preview=1`;
+      assert.equal((await f.request(path)).body.content, csv);
+      assert.equal((await start()).body.data.id, result.body.data.id);
+      assert.equal(writes, 1);
     });
     await t.test('an existing destination is never overwritten', async (child) => {
       const f = await productApiFixture(child, 'inProcess', undefined, { fresh: true });
