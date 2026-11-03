@@ -209,7 +209,8 @@ test('table creation remains explicit when there is no database or when the file
   await workspace.open('#files?resourceId=fs_fixture&path=%2Fus-sales.csv&view=preview');
   await page.getByRole('button', { name: 'Create table', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create table from file' });
-  await expect(dialog.getByText('No active database is available.')).toBeVisible();
+  await expect(dialog.getByText('No database available for import')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Create database', exact: true })).toBeVisible();
   await expect(dialog.getByRole('link', { name: 'Open databases' })).toHaveAttribute(
     'href',
     '#databases',
@@ -222,4 +223,86 @@ test('table creation remains explicit when there is no database or when the file
   await expect(page.getByRole('button', { name: 'Create table', exact: true })).toHaveCount(0);
   expect(preparations).toHaveLength(0);
   expect(exports).toHaveLength(0);
+});
+
+test('@visual create a database and continue importing the same file', async ({
+  page,
+  context,
+  workspace,
+}, testInfo) => {
+  addSalesFile(workspace);
+  workspace.state.resources = workspace.state.resources.filter(
+    (resource) => resource.kind === 'filesystem',
+  );
+  const preparations = [];
+  const exports = [];
+  const creates = [];
+  await mockFileWork(context, { onPrepare: preparations, onExport: exports });
+  await context.route('**/api/**/resources', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    const body = route.request().postDataJSON();
+    creates.push(body);
+    const resource = {
+      ...body,
+      id: 'db_new',
+      regionId: 'region:local',
+      provider: 'tidb-cloud-zero',
+      status: 'provisioning',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
+    workspace.state.resources.push(resource);
+    return route.fulfill({ status: 201, json: { data: resource, mode: 'live' } });
+  });
+  await workspace.open('#files?resourceId=fs_fixture&path=%2Fus-sales.csv&view=preview');
+  await page.getByRole('button', { name: 'Create table', exact: true }).click();
+  let dialog = page.getByRole('dialog', { name: 'Create table from file' });
+  await expect(dialog.getByText('No database available for import')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Confirm and create table' })).toHaveCount(0);
+  if (process.env.NO_DATABASE_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.NO_DATABASE_SCREENSHOTS}-${testInfo.project.name}.png`,
+      animations: 'disabled',
+    });
+  await dialog.getByRole('button', { name: 'Create database', exact: true }).click();
+  let create = page.getByRole('dialog', { name: 'Create a database' });
+  await create.getByRole('button', { name: 'Cancel' }).click();
+  dialog = page.getByRole('dialog', { name: 'Create table from file' });
+  await expect(dialog.getByText('Original file · us-sales.csv')).toBeVisible();
+  expect(creates).toHaveLength(0);
+  await dialog.getByRole('button', { name: 'Create database', exact: true }).click();
+  create = page.getByRole('dialog', { name: 'Create a database' });
+  await create.getByRole('button', { name: 'Create database', exact: true }).click();
+  await expect(dialog.getByText('Database is not ready for import')).toBeVisible();
+  await expect(dialog.getByText('Original file · us-sales.csv')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Confirm and create table' })).toHaveCount(0);
+  expect(creates).toHaveLength(1);
+  let failStatusCheck = true;
+  await context.route('**/api/**/resources/db_new', async (route) => {
+    if (!failStatusCheck) return route.fallback();
+    failStatusCheck = false;
+    return route.fulfill({
+      status: 503,
+      json: { error: { code: 'UNAVAILABLE', message: 'Status is temporarily unavailable' } },
+    });
+  });
+  await dialog.getByRole('button', { name: 'Check status' }).click();
+  await expect(
+    dialog.getByRole('alert').filter({ hasText: 'Status is temporarily unavailable' }),
+  ).toBeVisible();
+  workspace.state.resources.find((resource) => resource.id === 'db_new').status = 'active';
+  await dialog.getByRole('button', { name: 'Check status' }).click();
+  await expect(dialog.getByLabel('Database', { exact: true })).toHaveValue('db_new');
+  await dialog.getByLabel('New table name').fill('sales_2026');
+  await dialog.getByRole('button', { name: 'Parse and review' }).click();
+  await expect(dialog.getByRole('region', { name: 'Parsed import sample' })).toContainText(
+    'California',
+  );
+  await dialog.getByRole('button', { name: 'Confirm and create table' }).click();
+  await expect(dialog.getByText('Table created')).toBeVisible();
+  expect(exports[0].target).toEqual({
+    kind: 'database',
+    resourceId: 'db_new',
+    table: 'sales_2026',
+  });
+  expect(workspace.state.files.find((file) => file.path === '/us-sales.csv').content).toBe(csv);
 });

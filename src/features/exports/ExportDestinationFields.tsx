@@ -1,12 +1,20 @@
 import { type ReactNode } from 'react';
 import { Alert, Button, Group, Loader, NativeSelect, Text, TextInput } from '@tidbcloud/uikit';
 import { useResourcePages } from '../resources/use-resource-pages';
+import type { Resource } from '../../api/client';
 export type DestinationKind = 'download' | 'filesystem' | 'database';
 const liveProviders = ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'];
-export function useExportDestination(kind: DestinationKind, resourceId: string) {
+export function useExportDestination(
+  kind: DestinationKind,
+  resourceId: string,
+  created?: Resource,
+) {
   const pages = useResourcePages(kind !== 'download', resourceId);
   const { resources, loading } = pages;
-  const targets = resources.filter(
+  const candidates = created
+    ? [...resources.filter((resource) => resource.id !== created.id), created]
+    : resources;
+  const targets = candidates.filter(
     (resource) =>
       resource.status === 'active' &&
       (kind === 'filesystem'

@@ -94,6 +94,14 @@ format/field/type confirmation, overwrite/discard decisions, provider limits and
 information remain explicit. Never auto-run customer SQL, auto-provision a resource, broaden
 a Key or discard work to save a click. Backend authorization remains authoritative.
 
+**Create table without a database (owner correction, 2026-11-03):** when a saved file has no
+available import destination, offer explicit database creation in the same journey and return to
+the original file. Preserve the file and entered import state, select the exact created resource,
+and distinguish a database that is still provisioning or cannot accept imports from one that is
+ready. Offer status checking and a route to setup details without automatically creating or
+retrying resources. Do not treat failed or incomplete destination loading as an empty list.
+Parsing, schema review and the final table write remain separate explicit actions.
+
 **Focused Overview and activity (owner correction, 2026-11-02):** a populated Overview
 prioritizes compact links to actual resources and resumable work. Avoid large empty resource-type
 cards and embedded API examples; keep creation and the dedicated connection guide reachable.
