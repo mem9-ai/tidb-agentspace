@@ -283,6 +283,54 @@ test('@visual database creation selects each type, generates a matching name and
   }
 });
 
+for (const kind of ['filesystem', 'duckdb']) {
+  test(`@visual ${kind} creation uses the configured default location and keeps it in Details`, async ({
+    page,
+    workspace,
+  }, testInfo) => {
+    workspace.state.capabilities[kind].regions = ['aws-us-east-1', 'aws-ap-southeast-1'];
+    await workspace.open(kind === 'filesystem' ? '#files' : '#databases');
+    await page
+      .getByRole('button', {
+        name: kind === 'filesystem' ? 'Create file system' : 'Create database',
+        exact: true,
+      })
+      .click();
+    const dialog = page.getByRole('dialog');
+    if (kind === 'duckdb')
+      await dialog.getByRole('combobox', { name: 'Resource type' }).selectOption(kind);
+    await expect(dialog.getByLabel('Provider data location')).toHaveCount(0);
+    await expect(dialog.getByText('AWS · Singapore')).toHaveCount(0);
+    if (kind === 'duckdb') {
+      const badge = dialog.getByText('Experimental', { exact: true });
+      await expect(badge).toBeVisible();
+      await expect
+        .poll(() => badge.evaluate((element) => element.scrollWidth <= element.clientWidth))
+        .toBe(true);
+    }
+    if (process.env.DEFAULT_LOCATION_SCREENSHOT) {
+      await page.screenshot({
+        path: `${process.env.DEFAULT_LOCATION_SCREENSHOT}-${kind}-${testInfo.project.name}.png`,
+        animations: 'disabled',
+      });
+    }
+    await dialog
+      .getByRole('button', {
+        name: kind === 'filesystem' ? 'Create file system' : 'Create database',
+        exact: true,
+      })
+      .click();
+    await expect(dialog).toHaveCount(0);
+    expect(
+      workspace.requests.find(
+        (request) => request.path.endsWith('/resources') && request.method === 'POST',
+      ).body,
+    ).toMatchObject({ kind, region: 'aws-us-east-1' });
+    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    await expect(page.getByText('Provider data location: AWS · N. Virginia')).toBeVisible();
+  });
+}
+
 test('automatic type changes preserve manual names; a conflict requires an explicit retry', async ({
   page,
   workspace,

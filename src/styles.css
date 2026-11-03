@@ -609,6 +609,7 @@ form > .modal-actions {
 .plan-selection > div {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
 }
 .plan-selection p {

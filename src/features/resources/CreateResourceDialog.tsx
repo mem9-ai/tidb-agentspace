@@ -166,38 +166,32 @@ export function CreateResourceDialog({
           onChange={(e) => setNameDraft({ value: e.target.value, automatic: false })}
           placeholder={`${kind}-…`}
         />
-        <NativeSelect
-          label="Provider data location"
-          disabled={busy}
-          description={
-            <>
-              {livePg
+        {kind !== 'filesystem' && !isDuckdb && (
+          <NativeSelect
+            label="Provider data location"
+            disabled={busy}
+            description={
+              livePg
                 ? 'db9 assigns the database region automatically.'
-                : isDuckdb
-                  ? 'Your DuckDB database runs in AWS Singapore.'
-                  : liveMysql
-                    ? 'TiDB Cloud Zero assigns the database region automatically.'
-                    : kind === 'filesystem'
-                      ? liveFiles
-                        ? 'Anonymous trial hosted in AWS Singapore.'
-                        : 'Defaults to AWS Singapore. The free-tier allowance applies per region.'
-                      : 'Available regions depend on the resource provider.'}
-            </>
-          }
-          value={selectedRegion}
-          onChange={(e) => {
-            const selected = data.capabilities[kind].regions.find(
-              (value) => value === e.target.value,
-            );
-            if (selected) setRegion(selected);
-          }}
-        >
-          {data.capabilities[kind].regions.map((r) => (
-            <option key={r} value={r}>
-              {region(r)}
-            </option>
-          ))}
-        </NativeSelect>
+                : liveMysql
+                  ? 'TiDB Cloud Zero assigns the database region automatically.'
+                  : 'Available regions depend on the resource provider.'
+            }
+            value={selectedRegion}
+            onChange={(e) => {
+              const selected = data.capabilities[kind].regions.find(
+                (value) => value === e.target.value,
+              );
+              if (selected) setRegion(selected);
+            }}
+          >
+            {data.capabilities[kind].regions.map((r) => (
+              <option key={r} value={r}>
+                {region(r)}
+              </option>
+            ))}
+          </NativeSelect>
+        )}
         <div className="plan-selection">
           <div>
             <Zap size={17} />
@@ -212,7 +206,7 @@ export function CreateResourceDialog({
                       ? 'Anonymous trial'
                       : 'Free tier'}
             </strong>
-            <Badge>
+            <Badge style={{ flexShrink: 0 }}>
               {livePg
                 ? 'Anonymous free tier'
                 : isDuckdb
@@ -263,7 +257,7 @@ export function CreateResourceDialog({
         {limited && (
           <Alert className="notice" color="peacock" icon={<CircleHelp size={17} />}>
             <span>
-              A file system for this provider already exists in this region.{' '}
+              A file system for this provider already exists at the default location.{' '}
               {existingFileSystem && (
                 <Anchor href={fileSystemHash(existingFileSystem.id)} onClick={onClose}>
                   Open {existingFileSystem.name}
