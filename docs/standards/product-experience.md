@@ -81,6 +81,14 @@ collection Quick Starts and tutorial flows remain available. The specification r
 proposed pairing, task evidence and account-copy capabilities separately from existing APIs.
 Revisit this direction after observing the complete real-agent journey and measured latency.
 
+**Database creation defaults (product choice from owner-provided feedback, 2026-11-03):** a database creation flow starts
+with MySQL, while PostgreSQL and the existing standalone DuckDB remain available through an
+explicit type choice. When the provider offers only one location, use that configured location
+without presenting a selector; actual location remains discoverable in Details. Creation remains
+an explicit action, and these Console defaults do not change existing resources or API choices.
+File analysis continues to use its existing DuckDB engine. Revisit whether standalone DuckDB
+creation should remain after its existing usage and migration paths are understood.
+
 Minimize required decisions and navigation, not safeguards. Permission selection, write intent,
 format/field/type confirmation, overwrite/discard decisions, provider limits and live/demo
 information remain explicit. Never auto-run customer SQL, auto-provision a resource, broaden
