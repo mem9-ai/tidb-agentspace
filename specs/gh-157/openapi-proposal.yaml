@@ -1,0 +1,272 @@
+openapi: 3.1.0
+info:
+  title: Proposed US sales sample operations
+  version: 0.1.0
+  description: >-
+    Design-only amendment for GH-157. These operations are not implemented or
+    advertised by the live service. The Region Agent and Portal operations share
+    domain behavior and use their respective existing authentication profiles.
+paths:
+  /api/v1/workspaces/{workspaceId}/sales-sample-attempts:
+    parameters: &workspace
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      operationId: startSalesSample
+      security:
+        - regionalAccess: []
+      description: >-
+        Explicitly create a durable attempt. Requires resources:write,
+        files:read and files:write with the workspace-wide resource grant. A
+        same-key replay observes the same attempt without resuming effects.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: &startBody
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartSalesSample'
+      responses: &startResponses
+        '200':
+          $ref: '#/components/responses/AttemptReplay'
+        '201':
+          $ref: '#/components/responses/AttemptCreated'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+    get:
+      operationId: listSalesSampleAttempts
+      security:
+        - regionalAccess: []
+      description: >-
+        Read the workspace's current fixture slot without starting or recovering
+        work. Inaccessible entries are omitted. Agent authority follows the
+        observation rules in the accepted GH-157 contract.
+      parameters: &fixtureParam
+        - $ref: '#/components/parameters/Fixture'
+      responses: &listResponses
+        '200':
+          description: Zero or one authorized current attempt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptList'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+  /api/v1/workspaces/{workspaceId}/sales-sample-attempts/{attemptId}:
+    parameters: &attemptParams
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/AttemptId'
+    get:
+      operationId: getSalesSampleAttempt
+      security:
+        - regionalAccess: []
+      description: >-
+        Observe one authorized attempt. Missing and unauthorized attempts have
+        the same 404 response. This request performs no provider effects.
+      responses: &getResponses
+        '200':
+          description: Authorized recorded attempt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptEnvelope'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+  /api/portal/v1/workspaces/{workspaceId}/sales-sample-attempts:
+    parameters: *workspace
+    post:
+      operationId: portalStartSalesSample
+      security: &portalSecurity
+        - localOwner: []
+        - accountOwner: []
+        - guestOwner: []
+      description: Explicit Guest or Owner action with existing session, origin and CSRF checks.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: *startBody
+      responses: *startResponses
+    get:
+      operationId: portalListSalesSampleAttempts
+      security: *portalSecurity
+      description: Read the authorized current fixture slot without provider effects.
+      parameters: *fixtureParam
+      responses: *listResponses
+  /api/portal/v1/workspaces/{workspaceId}/sales-sample-attempts/{attemptId}:
+    parameters: *attemptParams
+    get:
+      operationId: portalGetSalesSampleAttempt
+      security: *portalSecurity
+      description: Observe one authorized attempt without provider effects.
+      responses: *getResponses
+components:
+  securitySchemes:
+    regionalAccess:
+      type: http
+      scheme: bearer
+      bearerFormat: Region JWT
+    localOwner:
+      type: apiKey
+      in: cookie
+      name: aw_session
+    accountOwner:
+      type: apiKey
+      in: cookie
+      name: aw_account
+    guestOwner:
+      type: apiKey
+      in: cookie
+      name: aw_guest
+  parameters:
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    AttemptId:
+      name: attemptId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    Fixture:
+      name: fixture
+      in: query
+      required: true
+      schema:
+        const: us-sales-v1
+  schemas:
+    StartSalesSample:
+      type: object
+      additionalProperties: false
+      required: [fixture]
+      properties:
+        fixture:
+          const: us-sales-v1
+    SalesSampleAttempt:
+      type: object
+      additionalProperties: false
+      required:
+        [id, fixture, status, resourceId, path, fileVersion, errorCode, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        fixture:
+          const: us-sales-v1
+        status:
+          enum: [preparing, ready, failed, outcome_unknown]
+        resourceId:
+          type: [string, 'null']
+          minLength: 1
+        path:
+          type: [string, 'null']
+          enum: [/us-sales.csv, null]
+          description: Exact absolute workspace path when durably recorded.
+        fileVersion:
+          type: [string, 'null']
+          maxLength: 256
+          pattern: '^"[A-Za-z0-9-]+"$'
+          description: Original provider-confirmed strong validator, including quotes.
+        errorCode:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      allOf:
+        - if:
+            properties:
+              status:
+                const: ready
+          then:
+            properties:
+              resourceId:
+                type: string
+                minLength: 1
+              path:
+                const: /us-sales.csv
+              fileVersion:
+                type: string
+                minLength: 1
+    AttemptEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/SalesSampleAttempt'
+    AttemptList:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: array
+          maxItems: 1
+          items:
+            $ref: '#/components/schemas/SalesSampleAttempt'
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            requestId:
+              type: string
+  responses:
+    AttemptCreated:
+      description: Attempt record durably created; provider work may remain incomplete.
+      headers: &locationHeader
+        Location:
+          description: Relative URI of the attempt.
+          required: true
+          schema:
+            type: string
+      content: &attemptContent
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AttemptEnvelope'
+    AttemptReplay:
+      description: Existing attempt for the same caller, key and request; no effects restarted.
+      headers: *locationHeader
+      content: *attemptContent
+    Error:
+      description: Structured, non-disclosing request or service error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
