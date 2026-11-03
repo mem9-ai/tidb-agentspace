@@ -4,6 +4,8 @@
 - Task: [GH-157](https://github.com/mem9-ai/tidb.ai/issues/157); parent: [GH-150](https://github.com/mem9-ai/tidb.ai/issues/150).
 - Accepted journey: [GH-150 at `5ea06a3f9edfb6dbf471c217ee2cd1b112888ee1`](https://github.com/mem9-ai/tidb.ai/blob/5ea06a3f9edfb6dbf471c217ee2cd1b112888ee1/specs/gh-150/spec.md), especially AF-02, AF-03, AF-09 and AF-A1, AF-A2, AF-A6, AF-A7.
 - Source baseline: `9a766ba12573fc09a0338abade4f5b20b00f867f`.
+- Machine-readable design amendment: [OpenAPI proposal](openapi-proposal.yaml). It is not the
+  generated or published service contract.
 
 ## Outcome and boundary
 
