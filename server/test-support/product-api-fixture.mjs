@@ -12,7 +12,12 @@ import { workspaceFixture } from './workspace-fixture.mjs';
 
 // Two actual Workspace APIs share a Meta authority. Resource IDs and paths deliberately
 // collide, so isolation cannot pass merely because an unrelated ID was not found.
-export async function productApiFixture(t, transport, onSql, { missingBinding = false } = {}) {
+export async function productApiFixture(
+  t,
+  transport,
+  onSql,
+  { missingBinding = false, mysqlProvider = 'tidb-cloud-zero' } = {},
+) {
   const meta = await metaFixture();
   let provider, region;
   const children = [];
@@ -167,7 +172,7 @@ export async function productApiFixture(t, transport, onSql, { missingBinding = 
           product: {
             providers: {
               filesProvider: 'drive9-anonymous',
-              mysqlProvider: 'tidb-cloud-zero',
+              mysqlProvider,
               postgresProvider: 'db9-anonymous',
               testMode: true,
               drive9Endpoint: provider.origin,

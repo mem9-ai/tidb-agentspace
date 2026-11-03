@@ -57,6 +57,37 @@ const base = '/api/v1/workspaces/ws_agentlab';
 const secret = 'retained-public-workspace-key';
 const privateWrite = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
 test(
+  'MySQL capability names reflect the configured provider in Portal and Agent contexts',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  async (t) => {
+    for (const [provider, label] of [
+      ['tidb-cloud-zero', 'MySQL · TiDB Cloud Zero'],
+      ['local', 'MySQL demo'],
+    ]) {
+      await t.test(provider, async (child) => {
+        const fixture = await productApiFixture(child, 'inProcess', undefined, {
+          mysqlProvider: provider,
+        });
+        const portal = await fixture.request('/bootstrap');
+        assert.equal(portal.status, 200, JSON.stringify(portal.body));
+        assert.equal(portal.body.capabilities.mysql.provider, provider);
+        assert.equal(portal.body.capabilities.mysql.label, label);
+        const key = await fixture.issueKey({
+          name: 'capability-reader',
+          scopes: ['resources:read'],
+          resourceIds: ['db_live'],
+          expiresInDays: 7,
+        });
+        assert.equal(key.status, 201, JSON.stringify(key.body));
+        const agent = await fixture.request('/context', { token: key.body.secret });
+        assert.equal(agent.status, 200, JSON.stringify(agent.body));
+        assert.equal(agent.body.capabilities.mysql.provider, provider);
+        assert.equal(agent.body.capabilities.mysql.label, label);
+      });
+    }
+  },
+);
+test(
   'an unavailable audit journal rejects a file mutation before provider I/O',
   { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
   async (t) => {
