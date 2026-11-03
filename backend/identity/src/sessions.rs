@@ -251,10 +251,10 @@ impl Sessions {
         principal: Principal<'_>,
         current: i64,
     ) -> Result<Credentials> {
-        self.policies
-            .authorize_at(workspace, principal, current)
+        let policy = self
+            .policies
+            .authorized_policy_at(workspace, principal, current)
             .await?;
-        let policy = self.policy(workspace).await?;
         let expires_at = session_expiry(&policy, current)?;
         if expires_at <= current {
             return Err(error(401, "SESSION_UNAUTHORIZED"));
@@ -321,10 +321,10 @@ impl Sessions {
         secret: &str,
         current: i64,
     ) -> Result<GuestCredential> {
-        self.policies
-            .authorize_at(workspace, Principal::Guest { guest_id, secret }, current)
+        let policy = self
+            .policies
+            .authorized_policy_at(workspace, Principal::Guest { guest_id, secret }, current)
             .await?;
-        let policy = self.policy(workspace).await?;
         let expires_at = match &policy.identity {
             OwnerIdentity::Guest { expires_at, .. } if *expires_at > current => *expires_at,
             _ => return Err(error(401, "SESSION_UNAUTHORIZED")),
@@ -512,8 +512,52 @@ mod tests {
     use super::*;
     use crate::{
         regional::{OwnerIdentity, Policy, Principal},
-        tests::MemoryMeta,
+        tests::{MemoryMeta, group_key},
     };
+    use workspace_contracts::Call;
+
+    struct RevokeAfterGrant {
+        inner: Arc<MemoryMeta>,
+    }
+
+    impl Metadata for RevokeAfterGrant {
+        fn health(&self) -> Call<'_> {
+            self.inner.health()
+        }
+
+        fn execute(&self, request: MetaRequest) -> Call<'_> {
+            Box::pin(async move {
+                let policy_scope = match &request {
+                    MetaRequest::Commit { scope, changes, .. }
+                        if scope.family == "regional-session"
+                            && changes.iter().any(|change| {
+                                change["key"]
+                                    .as_str()
+                                    .is_some_and(|key| key.starts_with("grant/"))
+                            }) =>
+                    {
+                        let mut policy = scope.clone();
+                        policy.family = "regional-policy".into();
+                        Some(policy)
+                    }
+                    _ => None,
+                };
+                let result = self.inner.execute(request).await?;
+                if let Some(scope) = policy_scope {
+                    let mut groups = self.inner.groups.lock().unwrap();
+                    let record = groups
+                        .get_mut(&group_key(&scope))
+                        .unwrap()
+                        .get_mut("owner-policy")
+                        .unwrap();
+                    record["value"]["denied"] = json!(true);
+                    record["value"]["generation"] = json!(2);
+                    record["version"] = json!(Uuid::new_v4().to_string());
+                }
+                Ok(result)
+            })
+        }
+    }
 
     fn region() -> Arc<MemoryMeta> {
         Arc::new(MemoryMeta {
@@ -540,6 +584,33 @@ mod tests {
             issuer: "https://issuer.example",
             subject: "alice",
         }
+    }
+
+    #[tokio::test]
+    async fn guest_grant_does_not_escape_if_policy_is_revoked_during_issuance() {
+        let metadata = Arc::new(RevokeAfterGrant { inner: region() });
+        let sessions = Sessions::open(metadata, "region:a").await.unwrap();
+        let current = now().unwrap();
+        let mut policy = oidc_policy();
+        let guest_id = Uuid::new_v4().to_string();
+        let secret = [29u8; 32];
+        policy.identity = OwnerIdentity::Guest {
+            guest_id: guest_id.clone(),
+            verifier: hex::encode(Sha256::digest(secret)),
+            created_at: current,
+            expires_at: current + 86_400,
+        };
+        sessions
+            .policies
+            .install(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        assert!(
+            sessions
+                .issue_guest_browser(&policy.workspace_id, &guest_id, &hex::encode(secret))
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
