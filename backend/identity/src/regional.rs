@@ -246,6 +246,19 @@ impl Policies {
         principal: Principal<'_>,
         current: i64,
     ) -> Result<()> {
+        self.authorized_policy_at(workspace, principal, current)
+            .await
+            .map(|_| ())
+    }
+
+    /// Return the same policy snapshot used to authenticate the principal. Callers that make
+    /// changes must still recheck the durable policy at their existing effect boundary.
+    pub(crate) async fn authorized_policy_at(
+        &self,
+        workspace: &str,
+        principal: Principal<'_>,
+        current: i64,
+    ) -> Result<Policy> {
         let scope = self.scope(workspace)?;
         let (policy, _) = self
             .read(&scope)
@@ -294,6 +307,6 @@ impl Policies {
         if !authorized {
             return Err(error(403, "POLICY_DENIED"));
         }
-        Ok(())
+        Ok(policy)
     }
 }

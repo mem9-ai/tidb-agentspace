@@ -237,7 +237,9 @@ impl EmbeddedRegion {
                 )
                 .await
             {
-                Ok(()) => continue,
+                // A successful conditional commit proves this exact owner initialized the
+                // empty Workspace. A conflict still reloads and verifies the stored owner.
+                Ok(()) => return Ok(()),
                 Err(e) if e.code == "META_CONFLICT" => continue,
                 Err(e) => return Err(e),
             }
@@ -260,9 +262,11 @@ impl EmbeddedRegion {
                 .enqueue(&command.policy, &command.registration.operation_id)
                 .await?;
         }
+        let mut ready = false;
         for _ in 0..8 {
             let (mut current, version) = self.intent(command).await?;
             if current.ready {
+                ready = true;
                 break;
             }
             current.ready = true;
@@ -275,12 +279,19 @@ impl EmbeddedRegion {
                 )
                 .await;
             match result {
-                Ok(()) => continue,
+                // The acknowledgement is returned only after this conditional write or its
+                // committed receipt is confirmed; no second read is needed on success.
+                Ok(()) => {
+                    ready = true;
+                    break;
+                }
                 Err(e) if e.code == "META_CONFLICT" => continue,
                 Err(e) => return Err(e),
             }
         }
-        if !self.intent(command).await?.0.ready {
+        // A final read is still needed if every attempt conflicted: another initializer may
+        // have committed readiness on the last attempt.
+        if !ready && !self.intent(command).await?.0.ready {
             return Err(error(503, "REGION_INIT_CONFLICT"));
         }
         Ok(Acknowledgement {
@@ -304,6 +315,54 @@ impl RegionControl for EmbeddedRegion {
 mod tests {
     use super::*;
     use crate::{Directory, VerifiedIdentity, onboarding::Onboarding, tests::MemoryMeta};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use workspace_contracts::Call;
+
+    struct StopRedundantReads {
+        inner: Arc<MemoryMeta>,
+        workspace_committed: AtomicBool,
+        readiness_committed: AtomicBool,
+    }
+
+    impl Metadata for StopRedundantReads {
+        fn health(&self) -> Call<'_> {
+            self.inner.health()
+        }
+
+        fn execute(&self, request: MetaRequest) -> Call<'_> {
+            Box::pin(async move {
+                if let MetaRequest::Get { scope, .. } = &request
+                    && ((scope.family == "workspace"
+                        && self.workspace_committed.load(Ordering::SeqCst))
+                        || (scope.family == "regional-init"
+                            && self.readiness_committed.load(Ordering::SeqCst)))
+                {
+                    return Err(error(503, "TEST_READ_UNAVAILABLE"));
+                }
+                let (workspace, ready) = match &request {
+                    MetaRequest::Commit { scope, changes, .. } => (
+                        scope.family == "workspace"
+                            && changes
+                                .iter()
+                                .any(|change| change["key"] == "ownership/onboarding"),
+                        scope.family == "regional-init"
+                            && changes.iter().any(|change| {
+                                change["key"] == "intent" && change["value"]["ready"] == true
+                            }),
+                    ),
+                    _ => (false, false),
+                };
+                let result = self.inner.execute(request).await?;
+                if workspace {
+                    self.workspace_committed.store(true, Ordering::SeqCst);
+                }
+                if ready {
+                    self.readiness_committed.store(true, Ordering::SeqCst);
+                }
+                Ok(result)
+            })
+        }
+    }
 
     fn global() -> Arc<MemoryMeta> {
         Arc::new(MemoryMeta::default())
@@ -319,6 +378,42 @@ mod tests {
             issuer: "https://issuer.example",
             subject: "alice",
         }
+    }
+
+    #[tokio::test]
+    async fn confirmed_initialization_does_not_depend_on_redundant_reads() {
+        let underlying = region();
+        let regional = Arc::new(StopRedundantReads {
+            inner: underlying.clone(),
+            workspace_committed: AtomicBool::new(false),
+            readiness_committed: AtomicBool::new(false),
+        });
+        let embedded = Arc::new(EmbeddedRegion::open(regional, "region:a").await.unwrap());
+        let onboarding = Onboarding::new(Directory::open(global()).await.unwrap(), embedded);
+        let result = onboarding.personal(identity(), "region:a").await.unwrap();
+        let scope = Scope {
+            authority_id: "region:a".into(),
+            owner_kind: "workspace".into(),
+            owner_id: result.workspace_id.clone(),
+            family: "workspace".into(),
+            partition_id: "primary".into(),
+        };
+        let stored = underlying
+            .execute(MetaRequest::Get {
+                scope,
+                guard: None,
+                keys: vec!["state/workspace".into(), "ownership/onboarding".into()],
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            stored["records"]["state/workspace"]["value"]["id"],
+            result.workspace_id
+        );
+        assert_eq!(
+            stored["records"]["ownership/onboarding"]["value"]["userId"],
+            result.user_id
+        );
     }
 
     #[tokio::test]
