@@ -52,6 +52,8 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
 }, testInfo) => {
   workspace.requireSignIn({ guestEnabled: true });
   await page.goto('/');
+  await expect(page.locator('.sign-in-brand')).toHaveText('TiDB Agent Workspace');
+  await expect(page.locator('.sign-in-brand')).toBeVisible();
   await expect(
     page.getByRole('heading', { name: 'Give your agent a place to work', level: 1 }),
   ).toBeVisible();
