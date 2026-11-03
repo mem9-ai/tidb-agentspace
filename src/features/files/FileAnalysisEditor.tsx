@@ -13,6 +13,7 @@ import { legacyBashInput, bashPreviewCommand, bashSamples } from './bash-analysi
 import { isTabularFile } from './file-preview';
 import { useTutorialStore } from '../portal/TutorialProgressProvider';
 import { tutorialSample } from '../portal/tutorial-data';
+import type { DatabaseCreationContext } from '../resources/resource-creation';
 import './file-analysis.css';
 const FileExportDialog = lazy(() =>
   import('../exports/FileExportDialog').then((module) => ({ default: module.FileExportDialog })),
@@ -25,6 +26,7 @@ export function FileAnalysisEditor({
   cap,
   onRunningChange,
   onExportSaved,
+  databaseCreation,
   preview,
   editorId,
   expanded,
@@ -43,6 +45,7 @@ export function FileAnalysisEditor({
   cap: FileAnalysisCapabilities['engines'][number];
   onRunningChange: (running: boolean) => void;
   onExportSaved: () => Promise<void>;
+  databaseCreation: DatabaseCreationContext;
 }) {
   const bashHelpId = useId();
   const bashInput = cap.input ?? legacyBashInput;
@@ -324,6 +327,7 @@ export function FileAnalysisEditor({
             exitCode={result.exitCode}
             onClose={() => setExportOpen(false)}
             onSaved={onExportSaved}
+            databaseCreation={databaseCreation}
           />
         </Suspense>
       )}

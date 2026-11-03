@@ -18,7 +18,7 @@ import { FileContent, FilePreviewBoundary } from './FileContent';
 import { fileFormat, isImageFile, isTabularFile } from './file-preview';
 import { TabularFilePreview, useTabularPreview } from './TabularFilePreview';
 import type { FileView } from './file-location';
-import type { Data } from '../../api/client';
+import type { DatabaseCreationContext } from '../resources/resource-creation';
 
 const FileExportDialog = lazy(() =>
   import('../exports/FileExportDialog').then((module) => ({ default: module.FileExportDialog })),
@@ -74,12 +74,7 @@ export default function FilePreviewPanel({
   onDiscard: () => void;
   onAnalysisRunningChange: (running: boolean) => void;
   onExportSaved: () => Promise<void>;
-  databaseCreation: {
-    data: Data;
-    refresh: () => Promise<void>;
-    notify: (message: string) => void;
-    isGuest: boolean;
-  };
+  databaseCreation: DatabaseCreationContext;
 }) {
   const imageFile = isImageFile(path);
   const [mode, setMode] = useState<string | null>(
@@ -323,6 +318,7 @@ export default function FilePreviewPanel({
               onRefreshPreview={tablePreview.refresh}
               onRunningChange={reportRunning}
               onExportSaved={onExportSaved}
+              databaseCreation={databaseCreation}
             />
           </Suspense>
         )}
