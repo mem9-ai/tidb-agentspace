@@ -38,6 +38,9 @@ test('pairing and connection receipts do not accept untrusted actor or content f
   assert.equal(start({ workspaceId: 'ws_guest', verifierChallenge: 'a'.repeat(43) }), true);
   assert.equal(start({ workspaceId: '../other', verifierChallenge: 'a'.repeat(43) }), false);
   assert.equal(start({ workspaceId: 'ws_guest', verifierChallenge: 'short' }), false);
+  const verifier = schema('Verifier');
+  assert.equal(verifier({ workspaceId: 'ws_guest', verifier: 'a'.repeat(43) }), true);
+  assert.equal(verifier({ verifier: 'a'.repeat(43) }), false);
   const receipt = schema('Receipt');
   const value = {
     workspaceId: 'ws_guest',

@@ -277,8 +277,13 @@ components:
     Verifier:
       type: object
       additionalProperties: false
-      required: [verifier]
+      required: [workspaceId, verifier]
       properties:
+        workspaceId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9_.:-]+$'
         verifier:
           allOf: [{ $ref: '#/components/schemas/Digest' }]
           writeOnly: true
