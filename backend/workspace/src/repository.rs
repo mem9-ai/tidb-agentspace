@@ -2669,6 +2669,59 @@ mod concurrency_tests {
     }
 
     #[tokio::test]
+    async fn sample_resource_preparation_waits_for_an_inflight_backfill() {
+        let metadata = Arc::new(MetadataGate {
+            values: std::sync::Mutex::new(BTreeMap::from([(
+                "indexes/resource-v1/schema".into(),
+                json!({"version":"v1","value":{"format":1,"phase":"building","after":null,"position":0}}),
+            )])),
+            paused: Notify::new(),
+            resume: Notify::new(),
+            first: AtomicBool::new(false),
+            fail_backfill_once: AtomicBool::new(false),
+            fail_file_backfill_once: AtomicBool::new(false),
+            fail_event_backfill_once: AtomicBool::new(false),
+            forbid_event_scan: AtomicBool::new(false),
+            forbid_file_scan: AtomicBool::new(false),
+        });
+        let repository = Arc::new(Repository {
+            metadata: metadata.clone(),
+            scope: Scope {
+                authority_id: "region:test".into(),
+                owner_kind: "workspace".into(),
+                owner_id: "test".into(),
+                family: "workspace".into(),
+                partition_id: "primary".into(),
+            },
+            guard: WriterGuard {
+                owner_id: "test".into(),
+            },
+            queue: RwLock::new(()),
+            history_maintenance: tokio::sync::OnceCell::new(),
+            closed: AtomicBool::new(false),
+            resource_backfill_running: AtomicBool::new(true),
+            resource_backfill_error: std::sync::Mutex::new(None),
+        });
+        let mut preparation = tokio::spawn({
+            let repository = repository.clone();
+            async move { repository.prepare_sample_resource_index().await }
+        });
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(300), &mut preparation)
+                .await
+                .is_err()
+        );
+        metadata.values.lock().unwrap().insert(
+            "indexes/resource-v1/schema".into(),
+            json!({"version":"v2","value":{"format":1,"phase":"ready","after":null,"position":0}}),
+        );
+        repository
+            .resource_backfill_running
+            .store(false, Ordering::Release);
+        preparation.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
     async fn resource_index_backfill_resumes_without_double_counting() {
         let metadata = Arc::new(MetadataGate {
             values: std::sync::Mutex::new((0..1541).map(|n| {

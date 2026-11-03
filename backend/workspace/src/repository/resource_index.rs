@@ -59,6 +59,40 @@ fn counter(record: &Value, group: &str) -> Result<u64> {
 }
 
 impl Repository {
+    /// Prepare the index before recording a sample attempt. If migration takes too long,
+    /// the caller can retry explicitly without leaving an unrecoverable sample slot.
+    pub async fn prepare_sample_resource_index(self: &Arc<Self>) -> Result<()> {
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                let marker = self.get(SCHEMA).await?;
+                if !marker.is_null()
+                    && (marker["value"]["format"] != 1
+                        || !matches!(
+                            marker["value"]["phase"].as_str(),
+                            Some("ready" | "building")
+                        ))
+                {
+                    return Err(error("RESOURCE_INDEX_CORRUPT"));
+                }
+                if marker["value"]["phase"] == "ready" {
+                    return Ok(());
+                }
+                if let Some(failure) = self
+                    .resource_backfill_error
+                    .lock()
+                    .map_err(|_| error("RESOURCE_INDEX_RECOVERY_FAILED"))?
+                    .take()
+                {
+                    return Err(failure);
+                }
+                self.start_resource_backfill();
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .map_err(|_| error("RESOURCE_INDEX_MIGRATING"))?
+    }
+
     fn start_resource_backfill(self: &Arc<Self>) {
         if self.resource_backfill_running.swap(true, Ordering::AcqRel) {
             return;

@@ -115,3 +115,30 @@ test('@visual Guest starts a sales task, grants only its file system and returns
   await navigation.getByRole('link', { name: 'Databases', exact: true }).click();
   await expect(page).toHaveURL(/#databases$/);
 });
+
+test('Guest can retry while the workspace is still preparing', async ({ page, workspace }) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  const keys = [];
+  await page.route('**/sales-sample-attempts', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    keys.push(route.request().headers()['idempotency-key']);
+    if (keys.length > 1) return route.fallback();
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'RESOURCE_INDEX_MIGRATING', message: 'Preparing' } }),
+    });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  const task = page.getByRole('region', { name: 'US sales agent task' });
+  await task.getByRole('button', { name: 'Prepare sample' }).click();
+  await expect(
+    task.getByText('Your workspace is still getting ready. Try again in a moment.'),
+  ).toBeVisible();
+  await task.getByRole('button', { name: 'Try again' }).click();
+  await expect(task.getByText('Sample ready · /us-sales.csv')).toBeVisible();
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBeTruthy();
+  expect(keys[1]).toBe(keys[0]);
+});

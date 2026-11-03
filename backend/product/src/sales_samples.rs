@@ -102,6 +102,12 @@ impl Product {
             }
             return Err(err(400, "INVALID_INPUT"));
         }
+        // Resource-index backfill has no provider effects. Wait before reserving the
+        // sample slot, so a slow migration remains an explicitly retryable request.
+        // An idempotent replay observes its already-recorded attempt immediately.
+        if !repository.has_sales_sample_key(&p.id, key).await? {
+            repository.prepare_sample_resource_index().await?;
+        }
         let id = uuid::Uuid::new_v4().to_string();
         let now = timestamp();
         let attempt = json!({"id":id,"fixture":"us-sales-v1","status":"preparing","resourceId":null,"path":null,"fileVersion":null,"errorCode":null,"createdAt":now,"updatedAt":now,"writeIntent":false});

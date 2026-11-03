@@ -31,6 +31,7 @@ export function SalesSampleJourney({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [uncertain, setUncertain] = useState(false);
+  const [retryable, setRetryable] = useState(false);
   const [sampleResource, setSampleResource] = useState<Resource>();
   const [sampleFile, setSampleFile] = useState<
     'checking' | 'original' | 'changed' | 'missing' | 'unavailable'
@@ -43,6 +44,7 @@ export function SalesSampleJourney({
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+    setRetryable(false);
     try {
       const result = await workspaceApi.listSalesSampleAttempts();
       setAttempt(result.data[0] ?? null);
@@ -144,6 +146,7 @@ export function SalesSampleJourney({
     if (busy) return;
     setBusy(true);
     setError('');
+    setRetryable(false);
     try {
       const result = await workspaceApi.startSalesSample(idempotency.current);
       setAttempt(result.data);
@@ -155,11 +158,17 @@ export function SalesSampleJourney({
           'The sample was saved, but the workspace could not refresh. Check its status to continue.',
         );
       }
-    } catch {
-      setUncertain(true);
-      setError(
-        'We could not confirm whether the sample was created. Check its status before trying again.',
-      );
+    } catch (cause) {
+      if (cause instanceof WorkspaceApiError && cause.code === 'RESOURCE_INDEX_MIGRATING') {
+        setRetryable(true);
+        setUncertain(false);
+        setError('Your workspace is still getting ready. Try again in a moment.');
+      } else {
+        setUncertain(true);
+        setError(
+          'We could not confirm whether the sample was created. Check its status before trying again.',
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -329,7 +338,13 @@ export function SalesSampleJourney({
           <Alert color="red" role="alert">
             {error}
             <Group mt="sm">
-              <Button onClick={() => void load()}>Check status</Button>
+              {retryable ? (
+                <Button onClick={() => void start()} loading={busy}>
+                  Try again
+                </Button>
+              ) : (
+                <Button onClick={() => void load()}>Check status</Button>
+              )}
               {uncertain && (
                 <Text size="sm">The original request will not be repeated automatically.</Text>
               )}
