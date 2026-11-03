@@ -30,6 +30,7 @@ paths:
                 $ref: '#/components/schemas/Started'
         '400': &errorResponse
           $ref: '#/components/responses/Error'
+        '404': *errorResponse
         '429': *errorResponse
         '503': *errorResponse
   /v1/agent-pairing-attempts/{attemptId}/observations:
@@ -263,7 +264,7 @@ components:
       additionalProperties: false
       required: [workspaceId, verifierChallenge]
       properties:
-        workspaceId: { type: string, minLength: 1, maxLength: 128 }
+        workspaceId: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_.:-]+$' }
         verifierChallenge: { $ref: '#/components/schemas/Digest' }
     Started:
       type: object
