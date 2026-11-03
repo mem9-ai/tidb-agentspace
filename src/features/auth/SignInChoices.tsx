@@ -17,15 +17,18 @@ export function SignInChoices({
   guestLoading,
   guestError,
 }: SignInChoicesProps) {
+  const account = (
+    <Button fullWidth size="lg" variant={guestEnabled ? 'default' : 'filled'} onClick={onTiDBLogin}>
+      {label}
+    </Button>
+  );
   return (
     <Stack className="sign-in-choices" gap="sm">
-      <Button fullWidth size="lg" onClick={onTiDBLogin}>
-        {label}
-      </Button>
+      {!guestEnabled && account}
       <Button
         fullWidth
         size="lg"
-        variant="default"
+        variant={guestEnabled ? 'filled' : 'default'}
         h="auto"
         py="sm"
         aria-label="Continue as Guest"
@@ -36,7 +39,7 @@ export function SignInChoices({
       >
         <Stack component="span" gap={0} align="center">
           <span>Continue as Guest</span>
-          <Text id="guest-expiry" component="span" size="sm" fw={400}>
+          <Text id="guest-expiry" component="span" size="sm" fw={400} c="inherit">
             Workspace access expires after 24 hours
           </Text>
         </Stack>
@@ -46,6 +49,7 @@ export function SignInChoices({
           24-hour Guest access is coming soon.
         </Text>
       )}
+      {guestEnabled && account}
       {guestError && (
         <Text role="alert" c="red" size="sm">
           {guestError}
