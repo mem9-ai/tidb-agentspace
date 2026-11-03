@@ -66,7 +66,7 @@ export function WorkspaceLayout({
   const sidebar = (
     <div className="sidebar-content">
       <Button fullWidth variant="default" onClick={() => navigate('settings')}>
-        {isGuest ? 'Guest workspace' : 'Personal workspace'}
+        {isGuest ? 'Temporary workspace' : 'Personal workspace'}
       </Button>
       {!isHostedSession && !liveFiles && !liveDatabases && (
         <Text size="sm" c="carbon.7" mt={8}>
@@ -153,7 +153,7 @@ export function WorkspaceLayout({
           component="a"
           href="#settings"
           label={profileName}
-          description={isGuest ? 'Guest session' : 'Personal account'}
+          description={isGuest ? 'Temporary session' : 'Personal account'}
           onClick={() => setOpened(false)}
         />
         {onSignOut && (
@@ -279,7 +279,7 @@ export function WorkspaceLayout({
           </Text>
           <Text size="sm">
             {isGuest
-              ? 'Guest workspace · Access expires after 24 hours'
+              ? 'Temporary workspace · Access expires after 24 hours'
               : liveDatabases
                 ? 'Cloud usage is not measured'
                 : liveFiles

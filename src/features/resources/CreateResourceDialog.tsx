@@ -242,7 +242,7 @@ export function CreateResourceDialog({
               'A persistent DuckDB database for SQL analytics. Workspace Keys control access; trial service limits apply.'
             ) : liveMysql ? (
               isGuest ? (
-                'Guest workspace access ends 24 hours after the workspace was created. The database has a separate provider expiry within 30 days.'
+                'Temporary workspace access ends 24 hours after the workspace was created. The database has a separate provider expiry within 30 days.'
               ) : (
                 'No cloud account required. This real database expires within 30 days; export data before it expires.'
               )
