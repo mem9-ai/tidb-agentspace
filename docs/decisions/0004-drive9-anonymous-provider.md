@@ -43,8 +43,10 @@ Idempotency-Key or restarting reuses the binding. A network interruption or proc
 that leaves the creation outcome unknown must never automatically create a replacement.
 The resource exposes a generic recovery message. Operators must reconcile the tenant with
 Drive9 and restore its private binding; deleting the intent and retrying blindly is unsafe.
-A pending tenant's state can be refreshed in the Console. No automatic cloud provisioning
-runs at startup, during tests, or when opening an existing local resource.
+A pending tenant's state can be refreshed in the Console. The original prohibition on automatic
+cloud provisioning is superseded for a new Workspace's first Console entry by
+[ADR 0047](0047-default-file-system.md); tests and existing resources do not automatically
+provision replacements.
 
 Existing resources without a provider field remain local, including their IDs, regions,
 files, and key grants. They are not silently moved or relabeled. A live Singapore trial can

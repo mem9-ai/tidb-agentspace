@@ -35,7 +35,7 @@ const schemas = {
       provider: {
         enum: ['local', 'drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'],
         description:
-          'Missing on legacy local resources. db9-anonymous is PostgreSQL-compatible; its NUMERIC supports 28–29 significant digits. Provider compatibility limits apply.',
+          'Missing on legacy local resources. PostgreSQL-compatible databases support NUMERIC values of up to 28–29 significant digits. Provider compatibility limits apply.',
       },
       deletion: {
         type: 'object',
@@ -63,6 +63,7 @@ const schemas = {
         description: 'Negotiated gateway upload limit; zero means uploads are unavailable.',
       },
       connectionError: { type: 'string' },
+      isDefault: { type: 'boolean', description: 'The File System created for a new Workspace.' },
       expiresAt: {
         type: 'string',
         format: 'date-time',
@@ -519,10 +520,16 @@ const paths = {
     post: operation(
       'startSalesSample',
       'Explicitly prepare the US sales sample',
-      'resources:write, files:read and files:write; wildcard resource grant',
+      'files:read and files:write on the selected File System; without resourceId, resources:write and wildcard resource grant',
       {
         status: 201,
-        input: { ...object({ fixture: { const: 'us-sales-v1' } }), additionalProperties: false },
+        input: {
+          ...object(
+            { fixture: { const: 'us-sales-v1' }, resourceId: { type: 'string', minLength: 1 } },
+            ['fixture'],
+          ),
+          additionalProperties: false,
+        },
         output: object({ data: ref('SalesSampleAttempt') }),
         parameters: [
           {
@@ -674,8 +681,17 @@ const paths = {
           type: 'object',
           required: ['name', 'kind', 'region'],
           properties: {
-            name: { type: 'string', pattern: '^[a-z][a-z0-9-]{2,39}$' },
+            name: {
+              type: 'string',
+              pattern: '^[a-z][a-z0-9_-]{2,39}$',
+              description: 'Underscores are permitted for PostgreSQL resources only.',
+            },
             kind: { enum: ['mysql', 'postgresql', 'duckdb', 'filesystem'] },
+            onlyIfNew: {
+              type: 'boolean',
+              description:
+                'Owner-only File System creation if the Workspace has no resource history; requires an Idempotency-Key. A replay observes the original resource.',
+            },
             regionId: {
               type: 'string',
               description:
@@ -687,10 +703,24 @@ const paths = {
                 'Provider data location supported by the resource kind. This is separate from regionId. Zero MySQL uses automatic provider assignment.',
             },
           },
+          allOf: [
+            {
+              if: { properties: { kind: { const: 'postgresql' } }, required: ['kind'] },
+              else: { properties: { name: { pattern: '^[a-z][a-z0-9-]{2,39}$' } } },
+            },
+          ],
         },
         output: {
           type: 'object',
-          properties: { data: ref('Resource'), mode: { enum: ['demo', 'live'] } },
+          properties: {
+            data: ref('Resource'),
+            mode: { enum: ['demo', 'live'] },
+            initialTableSnapshot: {
+              ...ref('TableList'),
+              description:
+                'Optional DuckDB table list observed during initialization of a newly created database, provided only with queries:read. This is a snapshot at creation, not a current table list; refresh to observe later changes. Omitted on idempotent replays and other providers.',
+            },
+          },
         },
       },
     ),
@@ -1639,7 +1669,7 @@ paths[ws + '/resources/{resourceId}'].delete.responses[202].headers = {
   Location: { schema: str, description: 'URI of the retained resource and deletion status.' },
 };
 paths[ws + '/resources/{resourceId}'].delete.description +=
-  ' Local removal completes synchronously (200). Drive9/DuckDB and db9 may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; db9 requires operator reconciliation. Zero returns 405 unchanged. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.';
+  ' Local removal completes synchronously (200). Drive9/DuckDB and PostgreSQL may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; PostgreSQL requires operator reconciliation. Zero returns 405 unchanged. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.';
 paths['/api/auth/guest'] = {
   servers: [{ url: '/' }],
   post: {
@@ -1776,7 +1806,7 @@ const spec = {
     title: 'TiDB Agent Workspace · Local Prototype API',
     version: '0.1.0',
     description:
-      'A loopback Workspace gateway with opt-in real db9 PostgreSQL and TiDB Cloud Zero MySQL and Singapore Drive9 files. Existing local resources remain demos. Workspace Keys authorize actions and resources; upstream credentials stay internal. Zero trials expire; cloud usage is unmeasured. Production identity and public hosting are deferred.',
+      'A loopback Workspace gateway with opt-in PostgreSQL-compatible databases, TiDB Cloud Zero MySQL and Singapore Drive9 files. Existing local resources remain demos. Workspace Keys authorize actions and resources; upstream credentials stay internal. Zero trials expire; cloud usage is unmeasured. Production identity and public hosting are deferred.',
   },
   servers: [
     { url: '/api/v1', description: 'Standalone Workspace API; resolve against the API origin' },

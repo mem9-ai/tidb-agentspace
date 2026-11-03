@@ -19,6 +19,7 @@ fn visible_attempt(value: &Value) -> Value {
     let mut result = value.clone();
     if let Some(object) = result.as_object_mut() {
         object.remove("writeIntent");
+        object.remove("requestedResourceId");
     }
     result
 }
@@ -87,30 +88,50 @@ impl Product {
         if !canonical_uuid(key) {
             return Err(err(400, "INVALID_IDEMPOTENCY_KEY"));
         }
-        for scope in ["resources:write", "files:read", "files:write"] {
+        for scope in ["files:read", "files:write"] {
             p.scope(scope)?;
         }
-        if !p.has("*") {
-            return Err(err(403, "FORBIDDEN"));
-        }
-        if !input
-            .as_object()
-            .is_some_and(|obj| obj.len() == 1 && obj.get("fixture") == Some(&json!("us-sales-v1")))
-        {
+        if !input.as_object().is_some_and(|obj| {
+            obj.get("fixture") == Some(&json!("us-sales-v1"))
+                && obj
+                    .keys()
+                    .all(|key| key == "fixture" || key == "resourceId")
+                && obj
+                    .get("resourceId")
+                    .is_none_or(|value| value.as_str().is_some_and(|id| !id.is_empty()))
+        }) {
             if repository.has_sales_sample_key(&p.id, key).await? {
                 return Err(err(409, "IDEMPOTENCY_CONFLICT"));
             }
             return Err(err(400, "INVALID_INPUT"));
         }
+        let requested_resource = input["resourceId"].as_str();
+        if let Some(resource_id) = requested_resource {
+            if !p.has(resource_id) {
+                return Err(err(403, "FORBIDDEN"));
+            }
+            let resource = repository.resource(resource_id).await?;
+            if resource["kind"] != "filesystem"
+                || resource["status"] != "active"
+                || !resource["deletion"].is_null()
+            {
+                return Err(err(409, "SAMPLE_RESOURCE_NOT_READY"));
+            }
+        } else {
+            p.scope("resources:write")?;
+            if !p.has("*") {
+                return Err(err(403, "FORBIDDEN"));
+            }
+        }
         // Resource-index backfill has no provider effects. Wait before reserving the
         // sample slot, so a slow migration remains an explicitly retryable request.
         // An idempotent replay observes its already-recorded attempt immediately.
-        if !repository.has_sales_sample_key(&p.id, key).await? {
+        if requested_resource.is_none() && !repository.has_sales_sample_key(&p.id, key).await? {
             repository.prepare_sample_resource_index().await?;
         }
         let id = uuid::Uuid::new_v4().to_string();
         let now = timestamp();
-        let attempt = json!({"id":id,"fixture":"us-sales-v1","status":"preparing","resourceId":null,"path":null,"fileVersion":null,"errorCode":null,"createdAt":now,"updatedAt":now,"writeIntent":false});
+        let attempt = json!({"id":id,"fixture":"us-sales-v1","status":"preparing","resourceId":requested_resource,"requestedResourceId":requested_resource,"path":null,"fileVersion":null,"errorCode":null,"createdAt":now,"updatedAt":now,"writeIntent":false});
         let (attempt, created) = repository
             .begin_sales_sample(credential, &p.id, key, attempt)
             .await?;
@@ -118,7 +139,9 @@ impl Product {
             return Ok((200, Reply::Json(json!({"data":visible_attempt(&attempt)}))));
         }
         let id = text(&attempt, "id")?.to_owned();
-        let resource_id = format!("fs_{}", secret(6)?);
+        let resource_id = requested_resource
+            .map(str::to_owned)
+            .unwrap_or(format!("fs_{}", secret(6)?));
         let caps = self.capabilities();
         let region = caps["filesystem"]["regions"][0]
             .as_str()
@@ -129,12 +152,16 @@ impl Product {
             .await?;
         let event = json!({"id":uuid::Uuid::new_v4().to_string(),"action":"resource.created","resource":resource["name"],"resourceId":resource_id,"actor":p.actor,"at":timestamp(),"outcome":"success"});
         let operation = async {
-            let resource = repository
-                .create_indexed_resource(credential, None, "sales-sample-v1", resource, event)
-                .await?;
-            let current = self.workspace.authenticate(credential).await?;
-            current.scope("resources:write")?;
-            let resource = self.update_resource(resource, true).await?;
+            let resource = if requested_resource.is_some() {
+                repository.resource(&resource_id).await?
+            } else {
+                let resource = repository
+                    .create_indexed_resource(credential, None, "sales-sample-v1", resource, event)
+                    .await?;
+                let current = self.workspace.authenticate(credential).await?;
+                current.scope("resources:write")?;
+                self.update_resource(resource, true).await?
+            };
             if resource["status"] != "active" {
                 return Err(err(409, "SAMPLE_RESOURCE_NOT_READY"));
             }

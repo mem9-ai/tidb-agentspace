@@ -17,6 +17,21 @@ const ownerContract = JSON.parse(
 );
 const ajv = new Ajv2020({ strict: false, validateFormats: false, allErrors: true });
 
+test('resource name contract accepts underscores only for PostgreSQL', () => {
+  const schema =
+    contract.paths['/workspaces/{workspaceId}/resources'].post.requestBody.content[
+      'application/json'
+    ].schema;
+  const validate = ajv.compile({ ...schema, components: contract.components });
+  assert.equal(
+    validate({ kind: 'postgresql', name: 'tidb_pg-example', region: 'automatic' }),
+    true,
+  );
+  assert.equal(validate({ kind: 'mysql', name: 'tidb_pg-example', region: 'automatic' }), false);
+  assert.equal(validate({ kind: 'postgresql', name: '_tidb-pg', region: 'automatic' }), false);
+  assert.equal(validate({ kind: 'mysql', name: 'tidb-pg', region: 'automatic' }), true);
+});
+
 test('published regional owner contract exposes only owner-authenticated history operations', () => {
   assert.deepEqual(Object.keys(ownerContract.paths).sort(), [
     '/workspaces/{workspaceId}/audit-history',

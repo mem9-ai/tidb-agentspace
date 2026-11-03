@@ -1803,9 +1803,16 @@ test(
       } while (Date.now() < deadline);
       return result;
     };
-    const pg = await create('postgresql', 'known-postgres', 'pg');
+    const pg = await create('postgresql', 'tidb_pg-example', 'pg');
     assert.equal(pg.status, 201);
+    assert.equal(pg.body.data.name, 'tidb_pg-example');
     assert.equal(pg.body.data.status, 'active');
+    const invalidPg = await create('postgresql', '_tidb-pg', 'invalid-pg');
+    assert.equal(invalidPg.status, 400);
+    assert.equal(invalidPg.body.error.code, 'INVALID_NAME');
+    const invalidMysql = await create('mysql', 'tidb_pg-example', 'invalid-mysql');
+    assert.equal(invalidMysql.status, 400);
+    assert.equal(invalidMysql.body.error.code, 'INVALID_NAME');
     const mysql = await create('mysql', 'known-mysql', 'mysql');
     assert.equal(mysql.status, 201);
     assert.equal(mysql.body.data.status, 'active');

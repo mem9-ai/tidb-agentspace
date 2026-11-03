@@ -32,10 +32,20 @@ impl Repository {
                 _ => json!({"workspace":{"id":self.workspace_id()}}),
             };
             let principal = crate::principal(&state, credential)?;
-            for scope in ["resources:write", "files:read", "files:write"] {
+            for scope in ["files:read", "files:write"] {
                 principal.scope(scope)?;
             }
-            if !principal.has("*") || principal.id != actor {
+            if let Some(resource_id) = attempt["requestedResourceId"].as_str() {
+                if !principal.has(resource_id) {
+                    return Err(ServiceError::new(403, "FORBIDDEN"));
+                }
+            } else {
+                principal.scope("resources:write")?;
+                if !principal.has("*") {
+                    return Err(ServiceError::new(403, "FORBIDDEN"));
+                }
+            }
+            if principal.id != actor {
                 return Err(ServiceError::new(403, "FORBIDDEN"));
             }
             let records = self.get_many(vec![index.clone(), SLOT.into()]).await?;
@@ -46,6 +56,9 @@ impl Repository {
                 let stored = self.get(&attempt_key(id)).await?;
                 if stored.is_null() {
                     return Err(error("META_RECORD_CORRUPT"));
+                }
+                if stored["value"]["requestedResourceId"] != attempt["requestedResourceId"] {
+                    return Err(ServiceError::new(409, "IDEMPOTENCY_CONFLICT"));
                 }
                 return Ok((stored["value"].clone(), false));
             }

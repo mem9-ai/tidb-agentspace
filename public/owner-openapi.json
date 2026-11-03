@@ -399,7 +399,7 @@
               "duckdb-drive9",
               "db9-anonymous"
             ],
-            "description": "Missing on legacy local resources. db9-anonymous is PostgreSQL-compatible; its NUMERIC supports 28–29 significant digits. Provider compatibility limits apply."
+            "description": "Missing on legacy local resources. PostgreSQL-compatible databases support NUMERIC values of up to 28–29 significant digits. Provider compatibility limits apply."
           },
           "deletion": {
             "type": "object",
@@ -432,6 +432,10 @@
             "description": "Negotiated gateway upload limit; zero means uploads are unavailable."
           },
           "connectionError": { "type": "string" },
+          "isDefault": {
+            "type": "boolean",
+            "description": "The File System created for a new Workspace."
+          },
           "expiresAt": {
             "type": "string",
             "format": "date-time",
