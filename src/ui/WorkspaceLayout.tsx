@@ -170,7 +170,15 @@ export function WorkspaceLayout({
       </div>
     </div>
   );
-  const label = navigation.find((item) => item.id === active)?.label || 'Workspace';
+  const label =
+    (isGuest &&
+      new Map([
+        ['overview', 'Workspace'],
+        ['files', 'Files'],
+        ['keys', 'Access'],
+      ]).get(active)) ||
+    navigation.find((item) => item.id === active)?.label ||
+    'Workspace';
   return (
     <AppShell
       header={{ height: 80 }}
@@ -270,13 +278,15 @@ export function WorkspaceLayout({
             </Anchor>
           </Text>
           <Text size="sm">
-            {liveDatabases
-              ? 'Cloud usage is not measured'
-              : liveFiles
-                ? 'File storage is connected · Databases and telemetry are simulated'
-                : isHostedSession
-                  ? 'Create a resource to get started'
-                  : 'Local demo · Cloud resources and telemetry are simulated'}
+            {isGuest
+              ? 'Guest workspace · Access expires after 24 hours'
+              : liveDatabases
+                ? 'Cloud usage is not measured'
+                : liveFiles
+                  ? 'File storage is connected · Databases and telemetry are simulated'
+                  : isHostedSession
+                    ? 'Create a resource to get started'
+                    : 'Local demo · Cloud resources and telemetry are simulated'}
           </Text>
         </footer>
       </AppShell.Main>
