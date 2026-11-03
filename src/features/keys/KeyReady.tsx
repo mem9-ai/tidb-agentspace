@@ -57,7 +57,7 @@ export function KeyReady({
       {step === 'setup' ? (
         <>
           <h3 ref={stepHeading} tabIndex={-1} className="key-ready-heading">
-            {directLaunch ? '1 of 2 · Start your agent' : '1 of 2 · Prepare your terminal'}
+            {directLaunch ? '1 of 2 · Open a terminal' : '1 of 2 · Prepare your terminal'}
           </h3>
           {salesPrompt && !insufficientAccess && (
             <Select
@@ -86,12 +86,12 @@ export function KeyReady({
           {directLaunch ? (
             <>
               <Text>
-                Copy the command and run it in Bash or Zsh. It starts your agent with the sales task
-                and asks for the key privately. The command does not contain your key.
+                Copy the command, then paste and run it in a system terminal using Bash or Zsh. It
+                starts a new agent session and asks for your key privately.
               </Text>
               <Text size="sm">
-                Your agent must be installed and signed in. If it asks, allow access to the
-                Workspace and its connection guide.
+                If your agent is already open, open a new terminal or exit the agent first. Do not
+                paste this command into an agent chat. Your agent must be installed and signed in.
               </Text>
               <Button
                 variant="filled"
@@ -104,7 +104,7 @@ export function KeyReady({
                   });
                 }}
               >
-                Copy command
+                Copy terminal command
               </Button>
               <details>
                 <summary>Review command</summary>
@@ -164,7 +164,7 @@ export function KeyReady({
           </h3>
           <Text>
             {directLaunch
-              ? 'Run the copied command in your terminal. When it asks for your key, copy and paste this key, then press Enter. It won’t be visible as you type.'
+              ? 'Run the copied command in your terminal, outside the agent chat. When you see “Paste your Workspace Key”, copy and paste this key, then press Enter. It won’t be visible as you type.'
               : 'When prompted in the terminal, copy and paste this key, then press Enter. It won’t be visible as you type.'}
           </Text>
           <div className="secret-value">

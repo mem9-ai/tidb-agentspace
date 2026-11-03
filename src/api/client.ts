@@ -207,6 +207,15 @@ export const workspaceApi = {
   startSession: () => responseData(sessionClient.POST('/api/session', { body: {} })),
   startGuestSession: () => responseData(sessionClient.POST('/api/auth/guest')),
   endGuestSession: () => responseData(sessionClient.POST('/api/auth/guest/logout')),
+  selectGuestWorkspace: (id: string) => {
+    // The ID comes from the authenticated guest enrollment response; the subsequent bootstrap
+    // still enforces the browser session and workspace boundary on the server.
+    const selected = firstWorkspaceId({ data: [{ id }] });
+    clearWorkspace();
+    workspaceId = selected;
+    base = `${portalApiPath}/workspaces/${encodeURIComponent(selected)}`;
+    params = { path: { workspaceId: selected } };
+  },
   discoverWorkspace: async () => {
     clearWorkspace();
     let selectedWorkspace: string | undefined;

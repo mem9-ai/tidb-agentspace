@@ -27,12 +27,17 @@ for (const shell of ['/bin/bash', '/bin/zsh']) {
         PATH: `${directory}:/usr/bin:/bin`,
         TEST_PROMPT: join(directory, 'prompt'),
         TEST_KEY: join(directory, 'key'),
+        WORKSPACE_API_KEY: 'previous-session-key',
+        TEST_OLD_KEY: 'previous-session-key',
       };
-      delete env.WORKSPACE_API_KEY;
-      const child = spawn(shell, ['-c', `${command}; test -z "${'${WORKSPACE_API_KEY+x}'}"`], {
-        env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      const child = spawn(
+        shell,
+        ['-c', `${command}; test "$WORKSPACE_API_KEY" = "$TEST_OLD_KEY"`],
+        {
+          env,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        },
+      );
       let output = '';
       child.stdout.on('data', (chunk) => (output += chunk));
       child.stderr.on('data', (chunk) => (output += chunk));
