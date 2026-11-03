@@ -99,15 +99,17 @@ small {
 .page-heading p {
   margin-top: 8px;
 }
-.resource-grid > .first-value-choice {
-  margin-bottom: 0;
+.agent-first-start {
   display: flex;
   flex-direction: column;
   gap: 16px;
   align-items: flex-start;
 }
-.first-value-choice > button {
-  margin-top: auto;
+.agent-first-start h2 + p {
+  margin-top: 8px;
+}
+.agent-first-alternative {
+  margin-top: 12px;
 }
 .workspace-breadcrumbs,
 .workspace-mobile-crumb {
@@ -963,7 +965,7 @@ form > .modal-actions {
   }
 }
 
-/* Quick starts use the same steps in the overview and empty collections. */
+/* Quick starts remain available in empty resource collections. */
 .resource-quickstart {
   width: 100%;
   text-align: left;
