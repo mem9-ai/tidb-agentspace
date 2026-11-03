@@ -11,6 +11,17 @@ A Guest connects an external Agent without putting a Workspace Key in a prompt, 
 
 This contract covers authorization and connection, not an Agent's analysis or report provenance. GH-159 covers task evidence. Sign-in does not retain a Guest Workspace; GH-160 covers explicit account copying. Existing manual Key management remains available under its current policy.
 
+## Current capability and missing work
+
+| Capability                        | Current status                                                                                                                          | What this proposal adds                                                                   |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Guest Workspace and expiry        | Implemented with regional Guest policy and the co-located Global bridge.                                                                | Recheck and test that policy through pairing and logout races.                            |
+| Scoped Workspace Key              | Implemented through explicit manual creation and one-time secret display.                                                               | Issue the Key once to the verifier-bearing client after explicit approval.                |
+| US sales sample and file analysis | The durable sample and selected-file analysis exist after GH-171; analysis is independent of pairing.                                   | Supply a scoped connection to the selected sample; verified task evidence remains GH-159. |
+| Agent connection status           | No pairing-specific verified connection receipt is implemented. Generic request history is diagnostic and is not proof of this pairing. | Add a bounded, authenticated Region receipt tied to the issued Key version and principal. |
+| Codex/MCP client                  | No pairing client or Codex compatibility is established by this proposal.                                                               | Build and verify one isolated external client, including secret storage and recovery.     |
+| Guest retention                   | Guest access expires under the current policy; existing files can be downloaded.                                                        | No account transfer is implied; GH-160 defines a separate copy flow.                      |
+
 ## Authority and disclosure
 
 Global owns pairing and Key issuance. The Region remains authoritative for resource access and current Guest policy. Use the existing single-entry and Portal route families; no Agent receives Owner, Key-management or resource-creation privileges from pairing. Co-located Guest bridging follows ADR 0037; unsupported independent deployments fail closed and do not pretend to have connected an Agent.
