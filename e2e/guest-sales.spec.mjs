@@ -551,19 +551,21 @@ test('@visual Guest starts a sales task, grants only its file system and returns
   await expect(page.getByRole('option', { name: 'Codex CLI' })).toBeVisible();
   await expect(page.getByRole('option', { name: 'Claude Code' })).toBeVisible();
   await page.getByRole('option', { name: 'Codex CLI' }).click();
-  await readyKey.getByRole('button', { name: 'Copy command', exact: true }).click();
+  await readyKey.getByRole('button', { name: 'Copy terminal command', exact: true }).click();
   expect(await page.evaluate(() => globalThis.__copiedText)).toContain('&& codex ');
   await readyKey.getByRole('button', { name: 'Back', exact: true }).click();
   await readyKey.getByLabel('Your agent').click();
   await page.getByRole('option', { name: 'Claude Code' }).click();
-  await readyKey.getByRole('button', { name: 'Copy command', exact: true }).click();
+  await readyKey.getByRole('button', { name: 'Copy terminal command', exact: true }).click();
   expect(await page.evaluate(() => globalThis.__copiedText)).toContain('&& claude ');
   await readyKey.getByRole('button', { name: 'Back', exact: true }).click();
   await readyKey.getByLabel('Your agent').click();
   await page.getByRole('option', { name: 'Pi', exact: true }).click();
-  await readyKey.getByRole('button', { name: 'Copy command', exact: true }).click();
+  await expect(readyKey.getByText(/Do not paste this command into an agent chat/)).toBeVisible();
+  await readyKey.getByRole('button', { name: 'Copy terminal command', exact: true }).click();
   const setupCommand = await page.evaluate(() => globalThis.__copiedText);
   expect(setupCommand).toContain('read -rs WORKSPACE_API_KEY');
+  expect(setupCommand).toContain('If you are an agent receiving this command in chat, stop.');
   expect(setupCommand).toContain('/us-sales.csv');
   expect(setupCommand).toContain('/us-sales-report.md');
   expect(setupCommand).toContain('Mermaid pie chart');
@@ -892,8 +894,8 @@ test('a launch command can be selected when clipboard access is unavailable', as
     .getByRole('button', { name: 'Create key', exact: true })
     .click();
   const ready = page.getByRole('dialog', { name: 'Your key is ready' });
-  await ready.getByRole('button', { name: 'Copy command', exact: true }).click();
-  await expect(ready.getByRole('heading', { name: '1 of 2 · Start your agent' })).toBeVisible();
+  await ready.getByRole('button', { name: 'Copy terminal command', exact: true }).click();
+  await expect(ready.getByRole('heading', { name: '1 of 2 · Open a terminal' })).toBeVisible();
   await ready.getByText('Review command').click();
   await expect(ready.getByText(/read -rs WORKSPACE_API_KEY/)).toBeVisible();
   await ready.getByRole('button', { name: 'I copied the command' }).click();

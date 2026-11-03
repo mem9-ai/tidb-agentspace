@@ -326,10 +326,10 @@ function App() {
     setGuestLoading(true);
     setGuestError('');
     try {
-      await workspaceApi.startGuestSession();
-      setSso(await workspaceApi.authConfig());
-      await workspaceApi.discoverWorkspace();
+      const guest = await workspaceApi.startGuestSession();
+      workspaceApi.selectGuestWorkspace(guest.workspaceId);
       await refresh();
+      setSso((current) => ({ ...current, sessionKind: 'guest' }));
       setError('');
     } catch {
       setGuestError('Unable to start a temporary workspace. Please try again.');
