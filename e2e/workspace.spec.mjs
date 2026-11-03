@@ -26,11 +26,16 @@ test('cloud sign-in offers TiDB Account and clearly marks Guest access unavailab
 }) => {
   workspace.requireSignIn();
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Sign in to your workspace' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Give your agent a place to work', level: 1 }),
+  ).toBeVisible();
   const account = page.getByRole('button', { name: 'Continue with TiDB Account' });
   const guest = page.getByRole('button', { name: 'Continue as Guest' });
   await expect(account).toBeEnabled();
   await expect(guest).toBeDisabled();
+  expect(await account.evaluate((element) => element.offsetTop)).toBeLessThan(
+    await guest.evaluate((element) => element.offsetTop),
+  );
   await expect(page.getByText('24-hour Guest access is coming soon.')).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
@@ -42,15 +47,29 @@ test('cloud sign-in offers TiDB Account and clearly marks Guest access unavailab
 test('@visual Guest sign-in opens the Workspace when the server enables it', async ({
   page,
   workspace,
-}) => {
+}, testInfo) => {
   workspace.requireSignIn({ guestEnabled: true });
   await page.goto('/');
+  await expect(
+    page.getByRole('heading', { name: 'Give your agent a place to work', level: 1 }),
+  ).toBeVisible();
   const guest = page.getByRole('button', { name: 'Continue as Guest' });
   await expect(guest).toBeEnabled();
+  const account = page.getByRole('button', { name: 'Continue with TiDB Account' });
+  expect(await guest.evaluate((element) => element.offsetTop)).toBeLessThan(
+    await account.evaluate((element) => element.offsetTop),
+  );
   await expect(guest.getByText('Workspace access expires after 24 hours')).toBeVisible();
+  const expiryColor = await guest
+    .getByText('Workspace access expires after 24 hours')
+    .evaluate((element) => getComputedStyle(element).color);
+  expect(expiryColor).toBe(await guest.evaluate((element) => getComputedStyle(element).color));
   await expect(guest).toHaveAccessibleDescription('Workspace access expires after 24 hours');
   if (process.env.GUEST_SIGNIN_SCREENSHOT)
-    await page.screenshot({ path: process.env.GUEST_SIGNIN_SCREENSHOT });
+    await page.screenshot({
+      path: `${process.env.GUEST_SIGNIN_SCREENSHOT}-${testInfo.project.name}.png`,
+      animations: 'disabled',
+    });
   await guest.getByText('Workspace access expires after 24 hours').click();
   await expect(page.getByRole('combobox', { name: 'Color theme', exact: true })).toBeVisible();
   await page.goto('/#settings');
@@ -112,7 +131,7 @@ test('@visual Guest can cancel or confirm sign-out from the workspace navigation
   await page.goto('/');
   await page.getByRole('button', { name: 'Continue as Guest' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Give your agent a place to work' }),
+    page.getByRole('main').getByRole('heading', { name: 'Give your agent a place to work' }),
   ).toBeVisible();
 
   async function openSignOut() {
@@ -139,7 +158,7 @@ test('@visual Guest can cancel or confirm sign-out from the workspace navigation
   await expect(dialog.getByRole('alert')).toContainText('Unable to finish Guest sign-out');
   await expect(dialog.getByRole('button', { name: 'Sign out', exact: true })).toBeEnabled();
   await dialog.getByRole('button', { name: 'Sign out', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Sign in to your workspace' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continue as Guest' })).toBeVisible();
   expect(
     workspace.requests.filter(
       (request) => request.path === '/api/auth/guest/logout' && request.method === 'POST',

@@ -405,8 +405,10 @@ function App() {
         {error && sso.enabled && needsSignIn ? (
           // SSO is enabled and no session is active yet: prompt sign-in (no anonymous demo).
           <>
-            <Heading level={2}>Sign in to your workspace</Heading>
-            <Text component="p">Choose how you want to continue.</Text>
+            <Heading level={1}>Give your agent a place to work</Heading>
+            <Text component="p">
+              Store your files, connect your agent, and come back to its work.
+            </Text>
             {sso.loginPath && (
               <SignInChoices
                 label={sso.label || 'Continue with TiDB Account'}
