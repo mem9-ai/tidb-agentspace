@@ -79,7 +79,7 @@ export default function FilePreviewPanel({
   );
   const [expanded, setExpanded] = useState(initialView === 'analyze');
   const [analysisRunning, setAnalysisRunning] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
+  const [exportMode, setExportMode] = useState<'export' | 'table' | null>(null);
   const reportRunning = useCallback(
     (running: boolean) => {
       setAnalysisRunning(running);
@@ -101,10 +101,21 @@ export default function FilePreviewPanel({
           Download draft
         </Button>
       ) : (
-        <WorkspaceExportButton
-          disabled={busy || analysisRunning || loading}
-          onClick={() => setExportOpen(true)}
-        />
+        <>
+          {tabular && (
+            <Button
+              variant="filled"
+              disabled={busy || analysisRunning || loading}
+              onClick={() => setExportMode('table')}
+            >
+              Create table
+            </Button>
+          )}
+          <WorkspaceExportButton
+            disabled={busy || analysisRunning || loading}
+            onClick={() => setExportMode('export')}
+          />
+        </>
       )}
       {(mode === 'source' || dirty) && (
         <Button
@@ -328,14 +339,15 @@ export default function FilePreviewPanel({
           </div>
         </WorkspaceResultPanel>
       </div>
-      {exportOpen && (
+      {exportMode && (
         <Suspense fallback={<Loader aria-label="Loading original export" />}>
           <FileExportDialog
             source={{ kind: 'original', resourceId, path }}
             sourcePath={path}
+            createTable={exportMode === 'table'}
             size={tablePreview.data?.inputBytes ?? size}
             onDownloadOriginal={onDownload}
-            onClose={() => setExportOpen(false)}
+            onClose={() => setExportMode(null)}
             onSaved={onExportSaved}
           />
         </Suspense>

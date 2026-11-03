@@ -10,7 +10,10 @@
 
 ## User flow and authority
 
-Preview now shows one Export action in its content header, following the GH-84 owner correction.
+CSV and Parquet previews offer Create table directly alongside Export, following the 2026-11-03
+owner feedback; other previews retain Export. The direct action opens the same reviewed,
+conditional database import as the Export destination. The following GH-84 evidence describes
+the earlier single-action layout and remains relevant to the underlying export behavior.
 The dialog identifies Original file and includes Download original as its computer destination.
 Source drafts retain Download draft and Save changes in that header;
 save/discard before copying or importing the saved original. Run selects a result view whose
@@ -129,7 +132,9 @@ The implementation PR records its evaluated candidate, full quality gate, remote
 preview refresh. There is no persisted-data migration or production deployment. Rolling back
 code does not remove exported files or tables; do not repeat an uncertain write automatically.
 
-## Preview header correction (GH-84)
+## Preview header correction (GH-84, historical)
+
+The single-action assertion below predates the direct Create table action described above.
 
 The owner requested the same content-panel action pattern for Preview as for results. This
 small correction follows [GH-84](https://github.com/siddontang/tidb.ai/issues/84), against
