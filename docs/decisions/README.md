@@ -78,6 +78,8 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Proposed decisions
 
+- [0045: Verifier-bound Guest Agent pairing](0045-verifier-bound-agent-pairing.md) — proposed explicit approval, single-use scoped issuance and authenticated connection evidence.
+
 - [0034: Global Key authority and independently serving Regions](0034-openapi-security-authorities.md) — owner-confirmed Key/Token and regional autonomy direction; detailed implementation and security gates proposed.
 
 - [0035: Sparse-activity metadata scale](0035-sparse-scale-metadata.md) — proposed independent authority shards and Workspace resource partitioning; bounded resource page reads are a first slice.

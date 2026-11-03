@@ -1,0 +1,310 @@
+openapi: 3.1.0
+info:
+  title: Draft verifier-bound Guest Agent pairing
+  version: 0.1.0
+  description: >-
+    Design-only proposal for GH-158, not an implemented or published API. The
+    Region-authenticated connection receipt, admission controls, Guest logout
+    fencing and supported external client still require review before implementation.
+paths:
+  /v1/agent-pairing-attempts:
+    post:
+      operationId: createAgentPairingAttempt
+      security: []
+      description: >-
+        A bounded, rate-limited external client creates an attempt using a
+        Workspace identifier and SHA-256 verifier challenge. No Key is issued.
+        A lost response may leave an expiring attempt. Codes are not URL or log data.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Start'
+      responses:
+        '201':
+          description: One temporary attempt; the code is returned only in this response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Started'
+        '400': &errorResponse
+          $ref: '#/components/responses/Error'
+        '429': *errorResponse
+        '503': *errorResponse
+  /v1/agent-pairing-attempts/{attemptId}/observations:
+    parameters: &attemptPath
+      - $ref: '#/components/parameters/AttemptId'
+    post:
+      operationId: inspectAgentPairingAttempt
+      security: []
+      description: >-
+        The initiating client proves possession of its verifier in the request
+        body. The response never includes a Key or a user's identity.
+      requestBody: &verifierRequest
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Verifier'
+      responses:
+        '200':
+          description: Verifier-bound attempt state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Observation'
+        '400': *errorResponse
+        '404': *errorResponse
+        '429': *errorResponse
+        '503': *errorResponse
+  /v1/agent-pairing-attempts/{attemptId}/redemptions:
+    parameters: *attemptPath
+    post:
+      operationId: redeemAgentPairingAttempt
+      security: []
+      description: >-
+        The verifier-bearing client consumes one explicitly approved attempt.
+        The durable attempt receipt and Key are created atomically. A lost
+        response is unknown; a replay never returns a secret or creates a Key.
+      requestBody: *verifierRequest
+      responses:
+        '201':
+          description: Scoped Key delivered once to the initiating client.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Redeemed'
+        '400': *errorResponse
+        '404': *errorResponse
+        '409': *errorResponse
+        '410': *errorResponse
+        '429': *errorResponse
+        '503': *errorResponse
+  /api/portal/v1/workspaces/{workspaceId}/agent-pairing-lookups:
+    parameters: &workspacePath
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      operationId: lookupAgentPairingAttempt
+      security: &portalSecurity
+        - globalOwner: []
+        - guestOwner: []
+      description: >-
+        Authenticated lookup by a code in the body, never a URL. Wrong code,
+        missing attempt and wrong Workspace have non-disclosing responses.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Lookup'
+      responses: &portalResponses
+        '200':
+          description: Owner-visible attempt with a conditional version.
+          headers: &versionHeader
+            ETag:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerEnvelope'
+        '400': *errorResponse
+        '401': *errorResponse
+        '403': *errorResponse
+        '404': *errorResponse
+        '429': *errorResponse
+        '503': *errorResponse
+  /api/portal/v1/workspaces/{workspaceId}/agent-pairing-attempts/{attemptId}:
+    parameters: &portalAttemptPath
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/AttemptId'
+    get:
+      operationId: getOwnerAgentPairingAttempt
+      security: *portalSecurity
+      description: Inspect an authorized attempt and any issued Key identity without secrets.
+      responses: *portalResponses
+  /api/portal/v1/workspaces/{workspaceId}/agent-pairing-attempts/{attemptId}/approval:
+    parameters: *portalAttemptPath
+    post:
+      operationId: approveAgentPairingAttempt
+      security: *portalSecurity
+      description: >-
+        Explicit Guest/Owner approval of exact existing resources, actions and
+        expiry; never issues a Key. Requires current version and CSRF checks.
+      parameters: &ifMatch
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Approval'
+      responses: &mutationResponses
+        '200':
+          description: Durably updated authorized attempt.
+          headers: *versionHeader
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerEnvelope'
+        '400': *errorResponse
+        '401': *errorResponse
+        '403': *errorResponse
+        '404': *errorResponse
+        '409': *errorResponse
+        '410': *errorResponse
+        '412': *errorResponse
+        '428': *errorResponse
+        '503': *errorResponse
+  /api/portal/v1/workspaces/{workspaceId}/agent-pairing-attempts/{attemptId}/cancellation:
+    parameters: *portalAttemptPath
+    post:
+      operationId: cancelAgentPairingAttempt
+      security: *portalSecurity
+      description: Cancel an unconsumed attempt; an issued Key requires explicit revocation.
+      parameters: *ifMatch
+      responses: *mutationResponses
+components:
+  securitySchemes:
+    globalOwner: { type: apiKey, in: cookie, name: aw_global_owner }
+    guestOwner: { type: apiKey, in: cookie, name: aw_guest }
+  parameters:
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_.:-]+$' }
+    AttemptId:
+      name: attemptId
+      in: path
+      required: true
+      schema:
+        { type: string, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: { type: string, maxLength: 256 }
+  schemas:
+    Digest:
+      type: string
+      pattern: '^[A-Za-z0-9_-]{43}$'
+      description: Unpadded canonical base64url encoding of exactly 32 bytes.
+    Code:
+      type: string
+      pattern: '^[A-Z2-7]{12}$'
+      description: Twelve uniformly random base32 characters; never put it in a URL or log.
+    Start:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, verifierChallenge]
+      properties:
+        workspaceId: { type: string, minLength: 1, maxLength: 128 }
+        verifierChallenge: { $ref: '#/components/schemas/Digest' }
+    Started:
+      type: object
+      additionalProperties: false
+      required: [attemptId, code, expiresAt]
+      properties:
+        attemptId: { $ref: '#/components/parameters/AttemptId/schema' }
+        code: { $ref: '#/components/schemas/Code' }
+        expiresAt: { type: string, format: date-time }
+    Verifier:
+      type: object
+      additionalProperties: false
+      required: [verifier]
+      properties:
+        verifier:
+          allOf: [{ $ref: '#/components/schemas/Digest' }]
+          writeOnly: true
+          description: Locally retained 32-byte secret, never sent in a URL or log.
+    Lookup:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code: { $ref: '#/components/schemas/Code' }
+    Grants:
+      type: object
+      additionalProperties: false
+      required: [resourceIds, scopes, expiresAt]
+      properties:
+        resourceIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 128, not: { const: '*' } }
+        scopes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            enum: ['resources:read', 'files:read', 'files:analyze', 'files:write']
+        expiresAt: { type: string, format: date-time }
+    Approval:
+      type: object
+      additionalProperties: false
+      required: [confirmed, grants]
+      properties:
+        confirmed: { const: true }
+        grants: { $ref: '#/components/schemas/Grants' }
+    Status:
+      enum: [pending, approved, cancelled, expired, consumed]
+    Observation:
+      type: object
+      additionalProperties: false
+      required: [status, expiresAt, regionalStatus]
+      properties:
+        status: { $ref: '#/components/schemas/Status' }
+        expiresAt: { type: string, format: date-time }
+        regionalStatus: { enum: [null, pending, applied, unavailable] }
+    OwnerAttempt:
+      type: object
+      additionalProperties: false
+      required: [attemptId, workspaceId, status, expiresAt, grants, keyId, regionalStatus]
+      properties:
+        attemptId: { $ref: '#/components/parameters/AttemptId/schema' }
+        workspaceId: { type: string }
+        status: { $ref: '#/components/schemas/Status' }
+        expiresAt: { type: string, format: date-time }
+        grants: { oneOf: [{ $ref: '#/components/schemas/Grants' }, { type: 'null' }] }
+        keyId: { type: [string, 'null'] }
+        regionalStatus: { enum: [null, pending, applied, unavailable] }
+    OwnerEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/OwnerAttempt' }
+    Redeemed:
+      type: object
+      additionalProperties: false
+      required: [keyId, secret, regionalStatus]
+      properties:
+        keyId: { type: string }
+        secret:
+          {
+            type: string,
+            writeOnly: false,
+            description: One-time Workspace Key; never log or place in a prompt.,
+          }
+        regionalStatus: { enum: [pending, applied] }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            requestId: { type: string }
+  responses:
+    Error:
+      description: Structured, redacted and non-disclosing error; no Key or verifier.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
