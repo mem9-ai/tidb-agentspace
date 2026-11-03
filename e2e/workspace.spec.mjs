@@ -75,6 +75,7 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
       path: `${process.env.GUEST_SIGNIN_SCREENSHOT}-${testInfo.project.name}.png`,
       animations: 'disabled',
     });
+  const beforeGuest = workspace.requests.length;
   await guest.getByText('Workspace access expires after 24 hours').click();
   await expect(page.getByRole('combobox', { name: 'Color theme', exact: true })).toBeVisible();
   await page.goto('/#settings');
@@ -95,11 +96,38 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
       name: 'Cancel',
     })
     .click();
-  expect(workspace.requests).toEqual(
+  const guestRequests = workspace.requests.slice(beforeGuest);
+  expect(guestRequests).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ path: '/api/auth/guest', method: 'POST' }),
-      expect.objectContaining({ path: '/api/portal/v1/workspaces', method: 'GET' }),
+      expect.objectContaining({
+        path: `/api/portal/v1/workspaces/${workspace.state.workspace.id}/bootstrap`,
+        method: 'GET',
+      }),
     ]),
+  );
+  expect(guestRequests.filter((request) => request.path === '/api/auth/config')).toHaveLength(0);
+  expect(
+    guestRequests.filter((request) => request.path === '/api/portal/v1/workspaces'),
+  ).toHaveLength(0);
+});
+
+test('an invalid guest workspace cannot start a workspace request', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  await context.route('**/api/auth/guest', (route) =>
+    route.fulfill({ json: { workspaceId: '../another-workspace' } }),
+  );
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Try without an account' }).click();
+  await expect(
+    page.getByText('Unable to start a temporary workspace. Please try again.'),
+  ).toBeVisible();
+  expect(workspace.requests.filter((request) => request.path.endsWith('/bootstrap'))).toHaveLength(
+    0,
   );
 });
 

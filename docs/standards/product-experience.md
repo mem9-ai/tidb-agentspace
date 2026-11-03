@@ -130,7 +130,12 @@ the manual setup; clipboard, download and Key creation are not connection eviden
 The sales launch offers Pi, Codex CLI and Claude Code without changing the scoped Key grant.
 The copied command prompts for the Key and starts the selected local agent with the task; it
 contains no Key and scopes the exported value to the launched process. Keep manual command and
-existing-Key fallbacks. Reusable connection and file-operation instructions live in the portable
+existing-Key fallbacks. Explain that the command runs in a system terminal, not an existing
+agent chat: a reported Pi session treated the launcher as a message and reused its old environment.
+The launcher includes a stop instruction for agents that receive it as text; this is guidance,
+not a guaranteed execution boundary. Browser assertions verify the instruction and shell tests
+verify the freshly entered Key replaces an inherited value in the launched process. Revisit the
+manual step when verified pairing makes it unnecessary. Reusable connection and file-operation instructions live in the portable
 Workspace Skill delivered by the Console. The task points to that skill without placing the Key
 in the URL or the task; the agent must fetch it without credentials and stop if it is unavailable.
 This read does not install the skill into the user's environment. Report detection polls only
