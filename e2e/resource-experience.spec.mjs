@@ -527,7 +527,7 @@ test('@visual empty collections share one in-context create action and readable 
   expect(presentations[0]).toEqual(presentations[1]);
   await workspace.open('#overview');
   await expect(
-    page.getByRole('heading', { level: 1, name: 'Start with your data', exact: true }),
+    page.getByRole('heading', { level: 1, name: 'Give your agent a place to work', exact: true }),
   ).toBeVisible();
   const startingChoices = page.getByRole('region', { name: 'Get started', exact: true });
   if (process.env.QUICKSTART_SCREENSHOTS)
@@ -536,6 +536,10 @@ test('@visual empty collections share one in-context create action and readable 
       fullPage: true,
     });
   await expect(startingChoices.getByRole('button')).toHaveCount(2);
+  await expect(startingChoices.getByRole('link', { name: 'Connect an agent' })).toHaveAttribute(
+    'href',
+    '#connect',
+  );
   for (const collection of collections) {
     const create = startingChoices.getByRole('button', { name: collection.create, exact: true });
     await create.click();
@@ -587,7 +591,7 @@ test('Quick Start creates a database and reaches a first query result', async ({
 }) => {
   await workspace.open('#overview');
   const guide = page.getByRole('region', { name: 'Get started' });
-  await expect(guide.getByText('Run your first query')).toBeVisible();
+  await expect(guide.getByText('Need a database?')).toBeVisible();
   await guide.getByRole('button', { name: 'Create database', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create a database' });
   await dialog.getByRole('button', { name: 'Create database', exact: true }).click();
@@ -617,7 +621,10 @@ test('Guest sees expiry and File System Quick Start before creating a resource',
   await page.getByRole('button', { name: 'Continue as Guest' }).click();
   const guide = page.getByRole('region', { name: 'Get started' });
   await expect(guide.getByText(/Your Guest Workspace expires 24 hours/)).toBeVisible();
-  await expect(guide.getByText('Explore sample files', { exact: true })).toBeVisible();
+  await expect(guide.getByText('Start with a place for your files', { exact: true })).toBeVisible();
+  await guide.getByRole('link', { name: 'Connect an agent' }).click();
+  await expect(page.getByRole('heading', { name: 'Connect an agent', level: 1 })).toBeVisible();
+  await page.goto('/#overview');
   await page.goto('/#files');
   const empty = page.getByRole('region', { name: 'File Systems empty state' });
   await expect(empty.getByText(/Your Guest Workspace expires 24 hours/)).toBeVisible();

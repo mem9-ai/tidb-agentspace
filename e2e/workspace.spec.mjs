@@ -111,7 +111,9 @@ test('@visual Guest can cancel or confirm sign-out from the workspace navigation
   workspace.requireSignIn({ guestEnabled: true });
   await page.goto('/');
   await page.getByRole('button', { name: 'Continue as Guest' }).click();
-  await expect(page.getByRole('heading', { name: 'Start with your data' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Give your agent a place to work' }),
+  ).toBeVisible();
 
   async function openSignOut() {
     const openNavigation = page.getByRole('button', { name: 'Open navigation' });
