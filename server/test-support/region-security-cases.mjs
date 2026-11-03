@@ -535,7 +535,8 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
     return result.body.accessToken;
   };
   let token = await renew();
-  await data('Bearer ' + token);
+  await data('Bearer ' + token, renew);
+  token = await renew();
   const familyStatus = await request('/refresh-families/' + refresh.familyId, {
     token: 'Bearer ' + token,
   });
@@ -586,7 +587,7 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
     401,
   );
   token = await renew();
-  await data('Bearer ' + token);
+  await data('Bearer ' + token, renew);
   assert.deepEqual([...covered].sort(), [...securityOperations].sort());
   const shortExpiry = Math.floor(Date.now() / 1000) + 15;
   const shortKey = async () => {
