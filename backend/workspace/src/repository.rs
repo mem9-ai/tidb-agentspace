@@ -3,6 +3,7 @@ mod file_index;
 mod file_paths;
 pub mod observability;
 mod resource_index;
+mod sales_samples;
 mod setup_attempts;
 mod tutorials;
 use serde_json::{Value, json};

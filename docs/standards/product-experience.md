@@ -168,6 +168,14 @@ existing sample paths, customer edits, Workspace progress and uncertain-write re
 successful SQL query on the Workspace's CSV sample completes that tutorial without treating
 unrelated file queries as tutorial progress.
 
+**Guest Agent journey (owner correction 2026-11-03):** prioritize a concrete Agent task and
+its files over resource administration on the Guest entry screen. An explicit US sales sample
+creates a durable, versioned file without a database; returning observes the same attempt and
+never overwrites edits. Keep file access, Agent connection and Key management easy to find,
+while retaining advanced workflows. The current manual Key instructions and an observed report
+file do not prove an Agent connected, analyzed data or wrote that report. Verified pairing,
+task evidence and Guest-to-account copy remain proposed in [GH-150](../../specs/gh-150/spec.md).
+
 - Comparable screens share implemented primitives and state transitions, not independently
   copied markup. Reuse `WorkspacePageHeader`, `WorkspaceEmptyState`, `ResourceCollectionPage`
   and existing resource/browser/execution/results adapters where applicable.

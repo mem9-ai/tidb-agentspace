@@ -664,6 +664,108 @@ test(
 );
 
 test(
+  'Guest can authorize a scoped client to analyze the sample and save a report',
+  { skip: !enabled, timeout: 120000 },
+  async (t) => {
+    const f = await fixture(t, {}, 'globalApi', true);
+    const entered = await f.request('/studio/api/auth/guest', { method: 'POST' });
+    assert.equal(entered.status, 200, JSON.stringify(entered.body));
+    const workspace = entered.body.workspaceId;
+    const cookie = entered.headers['set-cookie']
+      .find((v) => v.startsWith('aw_guest='))
+      .split(';')[0];
+    const sample = await f.request(
+      `/studio/api/portal/v1/workspaces/${workspace}/sales-sample-attempts`,
+      {
+        method: 'POST',
+        cookie,
+        headers: { 'Idempotency-Key': randomUUID() },
+        body: { fixture: 'us-sales-v1' },
+      },
+    );
+    assert.equal(sample.status, 201, JSON.stringify(sample.body));
+    assert.equal(sample.body.data.status, 'ready', JSON.stringify(sample.body));
+    const resourceId = sample.body.data.resourceId;
+    const key = await f.request(`/studio/api/global/api/portal/v1/workspaces/${workspace}/keys`, {
+      method: 'POST',
+      cookie,
+      headers: { 'Idempotency-Key': randomUUID() },
+      body: {
+        name: 'sales-agent',
+        scopes: ['resources:read', 'files:read', 'files:analyze', 'files:write'],
+        resourceIds: [resourceId],
+        expiresAt: Math.floor(Date.now() / 1000) + 86400,
+      },
+    });
+    assert.equal(key.status, 201, JSON.stringify(key.body));
+    const issue = () =>
+      f.request('/studio/api/v1/token-issuances', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key.body.secret}` },
+        body: { audience: 'region' },
+      });
+    const token = await issue();
+    assert.equal(token.status, 201, JSON.stringify(token.body));
+    const authorization = { Authorization: `Bearer ${token.body.accessToken}` };
+    const root = `/studio/api/v1/workspaces/${workspace}`;
+    const analysis = await f.request(`${root}/file-analyses`, {
+      method: 'POST',
+      headers: authorization,
+      body: {
+        resourceId,
+        path: '/us-sales.csv',
+        engine: 'duckdb',
+        sql: 'SELECT state, SUM(sales_usd) AS sales FROM file GROUP BY state ORDER BY sales DESC',
+      },
+    });
+    assert.equal(analysis.status, 200, JSON.stringify(analysis.body));
+    assert.equal(analysis.body.readOnly, true);
+    assert.deepEqual(
+      analysis.body.rows.map((row) => [row.state, Number(row.sales)]),
+      [
+        ['California', 48000],
+        ['Texas', 20000],
+        ['New York', 12000],
+        ['Washington', 8000],
+        ['Florida', 7000],
+        ['Massachusetts', 5000],
+      ],
+    );
+    const report = await f.request(`${root}/files`, {
+      method: 'PUT',
+      headers: { ...authorization, 'If-None-Match': '*' },
+      body: {
+        resourceId,
+        path: '/us-sales-report.md',
+        type: 'file',
+        content: '# Sales report\nCalifornia: $48,000\n',
+      },
+    });
+    assert.equal(report.status, 200, JSON.stringify(report.body));
+    const freshToken = await issue();
+    assert.equal(freshToken.status, 201, JSON.stringify(freshToken.body));
+    const read = await f.request(
+      `${root}/files/content?resourceId=${resourceId}&path=%2Fus-sales-report.md&preview=1`,
+      {
+        headers: { Authorization: `Bearer ${freshToken.body.accessToken}` },
+      },
+    );
+    assert.equal(read.status, 200, JSON.stringify(read.body));
+    assert.match(read.body.content, /California: \$48,000/);
+    assert.equal(
+      (
+        await f.request(`${root}/files`, {
+          method: 'PUT',
+          headers: { ...authorization, 'If-None-Match': '*' },
+          body: { resourceId, path: '/us-sales-report.md', type: 'file', content: 'overwrite' },
+        })
+      ).status,
+      412,
+    );
+  },
+);
+
+test(
   'hosted Guest Key expires with its Workspace and logout denies Global and Region access',
   { skip: !enabled, timeout: 120000 },
   async (t) => {

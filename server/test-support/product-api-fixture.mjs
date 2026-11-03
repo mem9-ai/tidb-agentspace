@@ -16,7 +16,12 @@ export async function productApiFixture(
   t,
   transport,
   onSql,
-  { missingBinding = false, mysqlProvider = 'tidb-cloud-zero' } = {},
+  {
+    missingBinding = false,
+    mysqlProvider = 'tidb-cloud-zero',
+    fresh = false,
+    filesProvider = 'drive9-anonymous',
+  } = {},
 ) {
   const meta = await metaFixture();
   let provider, region;
@@ -76,6 +81,10 @@ export async function productApiFixture(
         status: 'failed',
         createdAt: state.workspace.createdAt,
       });
+    if (fresh) {
+      state.resources = [];
+      state.files = [];
+    }
     return state;
   });
   for (const state of states) {
@@ -171,7 +180,7 @@ export async function productApiFixture(
           security: globals[index].security,
           product: {
             providers: {
-              filesProvider: 'drive9-anonymous',
+              filesProvider,
               mysqlProvider,
               postgresProvider: 'db9-anonymous',
               testMode: true,

@@ -7,6 +7,7 @@ mod read_only;
 mod resource_locks;
 mod resource_pages;
 mod resources;
+mod sales_samples;
 mod setup_attempts;
 mod tutorials;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -257,6 +258,21 @@ impl Product {
                         input,
                         if_match,
                         if_none_match,
+                    },
+                )
+                .await;
+        }
+        if route == "/sales-sample-attempts" || route.starts_with("/sales-sample-attempts/") {
+            return self
+                .sales_sample_request(
+                    &credential,
+                    &p,
+                    sales_samples::SampleRequest {
+                        method,
+                        route,
+                        query,
+                        input,
+                        idempotency: idem,
                     },
                 )
                 .await;

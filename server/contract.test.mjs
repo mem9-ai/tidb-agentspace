@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import Ajv2020 from 'ajv/dist/2020.js';
@@ -106,6 +107,22 @@ test(
     await request('/workspaces');
     await request(workspace);
     await request(workspace + '/bootstrap');
+    await request(workspace + '/sales-sample-attempts', 'get', undefined, {
+      suffix: '?fixture=us-sales-v1',
+    });
+    const salesSample = await request(
+      workspace + '/sales-sample-attempts',
+      'post',
+      { fixture: 'us-sales-v1' },
+      { status: 201, headers: { 'Idempotency-Key': randomUUID() } },
+    );
+    // This shared fixture already uses its File System allowance; a failed attempt is still
+    // a successful creation of the durable attempt record and must match the same contract.
+    assert.equal(salesSample.result.data.status, 'failed');
+    assert.equal(salesSample.result.data.errorCode, 'FREE_TIER_LIMIT');
+    await request(workspace + '/sales-sample-attempts/{attemptId}', 'get', undefined, {
+      attemptId: salesSample.result.data.id,
+    });
     await request(workspace + '/tutorials');
     const tutorial = await request(
       workspace + '/tutorials/{resourceId}',

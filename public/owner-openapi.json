@@ -1179,6 +1179,51 @@
           "resource": { "$ref": "#/components/schemas/Resource" }
         }
       },
+      "SalesSampleAttempt": {
+        "type": "object",
+        "required": [
+          "id",
+          "fixture",
+          "status",
+          "resourceId",
+          "path",
+          "fileVersion",
+          "errorCode",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "fixture": { "const": "us-sales-v1" },
+          "status": { "enum": ["preparing", "ready", "failed", "outcome_unknown"] },
+          "resourceId": { "type": ["string", "null"], "minLength": 1 },
+          "path": { "type": ["string", "null"], "enum": ["/us-sales.csv", null] },
+          "fileVersion": {
+            "type": ["string", "null"],
+            "maxLength": 256,
+            "pattern": "^\"[A-Za-z0-9-]+\"$"
+          },
+          "errorCode": { "type": ["string", "null"] },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": { "properties": { "status": { "const": "ready" } } },
+            "then": {
+              "properties": {
+                "resourceId": { "type": "string", "minLength": 1 },
+                "path": { "const": "/us-sales.csv" },
+                "fileVersion": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        ]
+      },
       "TutorialInput": {
         "type": "object",
         "required": ["sampleId", "state"],

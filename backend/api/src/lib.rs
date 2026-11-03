@@ -1403,7 +1403,9 @@ async fn dispatch(
                         _=cancellation.cancelled()=>return Err(reject(499,if route.contains("analys")||route.contains("tabular-preview"){"ANALYSIS_CANCELED"}else{"SQL_CANCELED"})),
                     };
                     credential_for_response(&app, &headers, &credential).await?;
-                    let created_id = if method == Method::POST && status == 201 {
+                    let created_id = if method == Method::POST
+                        && (status == 201 || (status == 200 && route == "/sales-sample-attempts"))
+                    {
                         match &reply {
                             workspace_product::Reply::Json(v) => {
                                 if route.ends_with("-preparations") {
