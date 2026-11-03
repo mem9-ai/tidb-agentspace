@@ -29,6 +29,7 @@ export function FileExportDialog({
   onClose,
   onSaved,
   onDownloadOriginal,
+  createTable = false,
 }: {
   source: FileExportSource;
   sourcePath: string;
@@ -38,8 +39,9 @@ export function FileExportDialog({
   onClose: () => void;
   onSaved: () => Promise<void> | void;
   onDownloadOriginal?: () => void;
+  createTable?: boolean;
 }) {
-  const [kind, setKind] = useState<DestinationKind>('download');
+  const [kind, setKind] = useState<DestinationKind>(createTable ? 'database' : 'download');
   const [stream, setStream] = useState<'stdout' | 'stderr'>(
     initialSource.kind === 'output' ? initialSource.stream : 'stdout',
   );
@@ -209,9 +211,82 @@ export function FileExportDialog({
       : outcome?.kind === 'database'
         ? databaseEditorHash(outcome.resourceId, outcome.table)
         : undefined;
+  const separatorName = { ',': 'Comma', '\t': 'Tab', ';': 'Semicolon', '|': 'Pipe' }[delimiter];
+  const parsingSummary =
+    format === 'csv'
+      ? `CSV · ${separatorName} · ${header ? 'Header row' : 'No header row'}`
+      : format === 'parquet'
+        ? 'Parquet'
+        : 'Text · One row per line';
+  const parsingControls = (
+    <Stack gap="lg">
+      <NativeSelect
+        label="Input format"
+        value={format}
+        disabled={!!busy}
+        data={[
+          { value: 'csv', label: 'CSV' },
+          { value: 'lines', label: 'Text (one row per line)' },
+          ...(source.kind === 'original' ? [{ value: 'parquet', label: 'Parquet' }] : []),
+        ]}
+        onChange={(event) => {
+          const value = event.currentTarget.value;
+          if (value === 'csv' || value === 'parquet' || value === 'lines') {
+            setFormat(value);
+            invalidate();
+          }
+        }}
+      />
+      {format === 'csv' && (
+        <Group align="flex-end">
+          <NativeSelect
+            label="Separator"
+            value={delimiter}
+            disabled={!!busy}
+            data={[
+              { value: ',', label: 'Comma' },
+              { value: '\t', label: 'Tab' },
+              { value: ';', label: 'Semicolon' },
+              { value: '|', label: 'Pipe' },
+            ]}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              if (value === ',' || value === '\t' || value === ';' || value === '|') {
+                setDelimiter(value);
+                invalidate();
+              }
+            }}
+          />
+          <Checkbox
+            label="First row contains column names"
+            checked={header}
+            disabled={!!busy}
+            onChange={(event) => {
+              setHeader(event.currentTarget.checked);
+              invalidate();
+            }}
+          />
+        </Group>
+      )}
+      <Text size="sm" c="carbon.7">
+        {format === 'csv'
+          ? 'CSV keeps strings such as 001; empty unquoted cells become NULL. Quoted empty strings stay empty.'
+          : format === 'lines'
+            ? 'Each text line becomes one row in a TEXT field. No CSV or JSON interpretation is assumed.'
+            : 'Reads the original Parquet data and schema, not its 20-row preview.'}{' '}
+        Up to 1,000 rows and 100 columns; larger inputs are rejected instead of partially imported.
+      </Text>
+    </Stack>
+  );
   return (
     <WorkspaceModal
-      title={source.kind === 'original' ? 'Export original file' : 'Export command output'}
+      title={
+        createTable
+          ? 'Create table from file'
+          : source.kind === 'original'
+            ? 'Export original file'
+            : 'Export command output'
+      }
       size={kind === 'database' && review ? 900 : 560}
       busy={!!busy}
       onClose={onClose}
@@ -230,7 +305,9 @@ export function FileExportDialog({
             {bytes?.toLocaleString()} bytes
             {source.kind === 'output'
               ? ` · Last completed command · Exit ${exitCode ?? 0} · The command will not run again.`
-              : ' · Saved original; copies preserve its bytes.'}
+              : createTable
+                ? ' · Saved original; the file remains unchanged.'
+                : ' · Saved original; copies preserve its bytes.'}
           </Text>
         </div>
         {source.kind === 'output' && outputStreams && (
@@ -256,7 +333,13 @@ export function FileExportDialog({
           <>
             <Alert
               color="green"
-              title={outcome.kind === 'download' ? 'Download ready' : 'Export saved'}
+              title={
+                createTable
+                  ? 'Table created'
+                  : outcome.kind === 'download'
+                    ? 'Download ready'
+                    : 'Export saved'
+              }
             >
               {outcome.kind === 'download'
                 ? outcome.filename
@@ -313,67 +396,37 @@ export function FileExportDialog({
               }}
               busy={!!busy}
               state={destinationState}
+              showKindSelector={!createTable}
             />
+            {createTable &&
+              !destinationState.loading &&
+              !destinationState.loadError &&
+              !destinationState.targets.length &&
+              !destinationState.nextCursor &&
+              !destinationState.hasEarlier && (
+                <Text>
+                  No active database is available.{' '}
+                  <Button component="a" href="#databases" variant="subtle" onClick={onClose}>
+                    Open databases
+                  </Button>
+                </Text>
+              )}
             {kind === 'database' ? (
               <>
                 <Text fw={600}>Parse and review before importing</Text>
-                <NativeSelect
-                  label="Input format"
-                  value={format}
-                  disabled={!!busy}
-                  data={[
-                    { value: 'csv', label: 'CSV' },
-                    { value: 'lines', label: 'Text (one row per line)' },
-                    ...(source.kind === 'original' ? [{ value: 'parquet', label: 'Parquet' }] : []),
-                  ]}
-                  onChange={(event) => {
-                    const value = event.currentTarget.value;
-                    if (value === 'csv' || value === 'parquet' || value === 'lines') {
-                      setFormat(value);
-                      invalidate();
-                    }
-                  }}
-                />
-                {format === 'csv' && (
-                  <Group align="flex-end">
-                    <NativeSelect
-                      label="Separator"
-                      value={delimiter}
-                      disabled={!!busy}
-                      data={[
-                        { value: ',', label: 'Comma' },
-                        { value: '\t', label: 'Tab' },
-                        { value: ';', label: 'Semicolon' },
-                        { value: '|', label: 'Pipe' },
-                      ]}
-                      onChange={(event) => {
-                        const value = event.currentTarget.value;
-                        if (value === ',' || value === '\t' || value === ';' || value === '|') {
-                          setDelimiter(value);
-                          invalidate();
-                        }
-                      }}
-                    />
-                    <Checkbox
-                      label="First row contains column names"
-                      checked={header}
-                      disabled={!!busy}
-                      onChange={(event) => {
-                        setHeader(event.currentTarget.checked);
-                        invalidate();
-                      }}
-                    />
-                  </Group>
+                {createTable ? (
+                  <>
+                    <details className="file-parse-options">
+                      <summary>Parsing options · {parsingSummary}</summary>
+                      <div>{parsingControls}</div>
+                    </details>
+                    <Text size="sm" c="carbon.7">
+                      Up to 1,000 rows and 100 columns; larger files are not partially imported.
+                    </Text>
+                  </>
+                ) : (
+                  parsingControls
                 )}
-                <Text size="sm" c="carbon.7">
-                  {format === 'csv'
-                    ? 'CSV keeps strings such as 001; empty unquoted cells become NULL. Quoted empty strings stay empty.'
-                    : format === 'lines'
-                      ? 'Each text line becomes one row in a TEXT field. No CSV or JSON interpretation is assumed.'
-                      : 'Reads the original Parquet data and schema, not its 20-row preview.'}{' '}
-                  Up to 1,000 rows and 100 columns; larger inputs are rejected instead of partially
-                  imported.
-                </Text>
                 <Group>
                   <Button onClick={() => void parse()} disabled={!!busy} loading={busy === 'parse'}>
                     {review ? 'Parse again' : 'Parse and review'}
@@ -406,7 +459,11 @@ export function FileExportDialog({
               </Text>
             )}
             {error && (
-              <Alert color="red" title="Export could not finish" role="alert">
+              <Alert
+                color="red"
+                title={createTable ? 'Couldn’t create table' : 'Export could not finish'}
+                role="alert"
+              >
                 {error}
               </Alert>
             )}

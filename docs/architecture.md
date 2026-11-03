@@ -223,8 +223,8 @@ scans remain future work. See [ADR 0017](decisions/0017-preview-first-file-works
 [verification](file-workspace-verification.md) and the
 [file reading standard](standards/tiui-design-system.md#theme-responsive-behavior-and-interaction).
 
-Preview's content header has one Export entry for the saved original, including download in
-its labeled dialog; execution headers
+Preview's content header offers Export for the saved original, including download in its labeled
+dialog, and a direct Create table action for saved CSV/Parquet files; execution headers
 export only their completed SQL result or Bash stdout/stderr. All share computer, public File
 System and new database table destinations. Original/Bash database imports use explicit fixed
 parsing and reviewed fields/types before confirmation, with bounded five-minute, principal-bound
