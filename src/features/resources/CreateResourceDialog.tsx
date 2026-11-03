@@ -26,6 +26,7 @@ export function CreateResourceDialog({
   onClose,
   target,
   onCreated,
+  isGuest,
 }: {
   data: Data;
   refresh: () => Promise<void>;
@@ -33,6 +34,7 @@ export function CreateResourceDialog({
   onClose: () => void;
   target: ResourceCreationTarget;
   onCreated?: (resource: Resource) => void;
+  isGuest: boolean;
 }) {
   const context = resourceCreationContext(target, data.capabilities);
   const initialKind = context.initialKind;
@@ -51,6 +53,7 @@ export function CreateResourceDialog({
   const livePg = kind === 'postgresql';
   const isDuckdb = kind === 'duckdb';
   const unavailable = (isDuckdb || livePg) && data.capabilities[kind].available === false;
+  const locationUnavailable = !data.capabilities[kind].regions.includes(selectedRegion);
   function changeKind(k: ResourceKind) {
     setKind(k);
     setNameDraft((current) =>
@@ -125,6 +128,26 @@ export function CreateResourceDialog({
         )
       : undefined;
   const limited = !!existingFileSystem;
+  const kindName = (value: ResourceKind) =>
+    value === 'mysql'
+      ? data.capabilities.mysql.provider === 'tidb-cloud-zero'
+        ? 'MySQL · TiDB Cloud Zero'
+        : 'MySQL demo'
+      : value === 'postgresql'
+        ? 'PostgreSQL · db9'
+        : resourceKindLabels[value];
+  const kindSelect = (
+    <NativeSelect
+      label="Resource type"
+      value={kind}
+      disabled={busy}
+      onChange={(event) => {
+        const next = context.kinds.find((value) => value === event.currentTarget.value);
+        if (next) changeKind(next);
+      }}
+      data={context.kinds.map((value) => ({ value, label: kindName(value) }))}
+    />
+  );
   return (
     <Modal
       title={context.title}
@@ -133,28 +156,15 @@ export function CreateResourceDialog({
       busy={busy}
     >
       <form onSubmit={create}>
-        {context.kinds.length > 1 && (
-          <NativeSelect
-            label="Resource type"
-            value={kind}
-            disabled={busy}
-            onChange={(event) => {
-              const next = context.kinds.find((value) => value === event.currentTarget.value);
-              if (next) changeKind(next);
-            }}
-            data={context.kinds.map((value) => ({
-              value,
-              label:
-                value === 'mysql'
-                  ? data.capabilities.mysql.provider === 'tidb-cloud-zero'
-                    ? 'MySQL · TiDB Cloud Zero'
-                    : 'MySQL demo'
-                  : value === 'postgresql'
-                    ? 'PostgreSQL · db9'
-                    : resourceKindLabels[value],
-            }))}
-          />
-        )}
+        {context.kinds.length > 1 &&
+          (target === 'database' ? (
+            <details className="resource-type-options">
+              <summary>Database type · {kindName(kind)} · Change</summary>
+              <div>{kindSelect}</div>
+            </details>
+          ) : (
+            kindSelect
+          ))}
         <TextInput
           label="Resource name"
           disabled={busy}
@@ -166,7 +176,7 @@ export function CreateResourceDialog({
           onChange={(e) => setNameDraft({ value: e.target.value, automatic: false })}
           placeholder={`${kind}-…`}
         />
-        {kind !== 'filesystem' && !isDuckdb && (
+        {kind !== 'filesystem' && !isDuckdb && data.capabilities[kind].regions.length > 1 && (
           <NativeSelect
             label="Provider data location"
             disabled={busy}
@@ -224,7 +234,11 @@ export function CreateResourceDialog({
             ) : isDuckdb ? (
               'A persistent DuckDB database for SQL analytics. Workspace Keys control access; trial service limits apply.'
             ) : liveMysql ? (
-              'No cloud account required. This real database expires within 30 days; export data before it expires.'
+              isGuest ? (
+                'Guest workspace access ends 24 hours after the workspace was created. The database has a separate provider expiry within 30 days.'
+              ) : (
+                'No cloud account required. This real database expires within 30 days; export data before it expires.'
+              )
             ) : liveFiles ? (
               'Real file storage. Trial quotas are enforced by the service.'
             ) : (
@@ -254,6 +268,9 @@ export function CreateResourceDialog({
             operator.
           </Alert>
         )}
+        {locationUnavailable && (
+          <Alert color="yellow">No data location is available for this resource right now.</Alert>
+        )}
         {limited && (
           <Alert className="notice" color="peacock" icon={<CircleHelp size={17} />}>
             <span>
@@ -278,7 +295,7 @@ export function CreateResourceDialog({
           </Button>
           <Button
             variant="filled"
-            disabled={busy || limited || unavailable}
+            disabled={busy || limited || unavailable || locationUnavailable}
             loading={busy}
             leftSection={<Plus size={18} />}
             type="submit"
