@@ -83,7 +83,7 @@ export interface paths {
     put?: never;
     /**
      * Explicitly prepare the US sales sample
-     * @description Required Region access Token scope: resources:write, files:read and files:write; wildcard resource grant. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: files:read and files:write on the selected File System; without resourceId, resources:write and wildcard resource grant. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     post: operations['startSalesSample'];
     delete?: never;
@@ -853,7 +853,7 @@ export interface paths {
     post?: never;
     /**
      * Request removal and retain an observable deletion tombstone
-     * @description Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Local removal completes synchronously (200). Drive9/DuckDB and db9 may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; db9 requires operator reconciliation. Zero returns 405 unchanged. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.
+     * @description Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Local removal completes synchronously (200). Drive9/DuckDB and PostgreSQL may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; PostgreSQL requires operator reconciliation. Zero returns 405 unchanged. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.
      */
     delete: operations['deleteResource'];
     options?: never;
@@ -1106,7 +1106,7 @@ export interface components {
       status:
         'active' | 'provisioning' | 'failed' | 'suspended' | 'deleting' | 'deleted' | 'expired';
       /**
-       * @description Missing on legacy local resources. db9-anonymous is PostgreSQL-compatible; its NUMERIC supports 28–29 significant digits. Provider compatibility limits apply.
+       * @description Missing on legacy local resources. PostgreSQL-compatible databases support NUMERIC values of up to 28–29 significant digits. Provider compatibility limits apply.
        * @enum {unknown}
        */
       provider?:
@@ -1129,6 +1129,8 @@ export interface components {
       /** @description Negotiated gateway upload limit; zero means uploads are unavailable. */
       uploadLimitBytes?: number;
       connectionError?: string;
+      /** @description The File System created for a new Workspace. */
+      isDefault?: boolean;
       /**
        * Format: date-time
        * @description Zero expiry reported by the provider. No automatic renewal or replacement.
@@ -2352,6 +2354,7 @@ export interface operations {
         'application/json': {
           /** @constant */
           fixture: 'us-sales-v1';
+          resourceId?: string;
         };
       };
     };
@@ -3386,9 +3389,12 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': {
+          /** @description Underscores are permitted for PostgreSQL resources only. */
           name: string;
           /** @enum {unknown} */
           kind: 'mysql' | 'postgresql' | 'duckdb' | 'filesystem';
+          /** @description Owner-only File System creation if the Workspace has no resource history; requires an Idempotency-Key. A replay observes the original resource. */
+          onlyIfNew?: boolean;
           /** @description Optional Workspace Region; must match the current Region. Omit to use the default. */
           regionId?: string;
           /**
@@ -3396,7 +3402,7 @@ export interface operations {
            * @enum {string}
            */
           region: 'aws-us-east-1' | 'aws-us-west-2' | 'automatic' | 'aws-ap-southeast-1';
-        };
+        } & unknown;
       };
     };
     responses: {
@@ -3412,6 +3418,8 @@ export interface operations {
             data?: components['schemas']['Resource'];
             /** @enum {unknown} */
             mode?: 'demo' | 'live';
+            /** @description Optional DuckDB table list observed during initialization of a newly created database, provided only with queries:read. This is a snapshot at creation, not a current table list; refresh to observe later changes. Omitted on idempotent replays and other providers. */
+            initialTableSnapshot?: components['schemas']['TableList'];
           };
         };
       };

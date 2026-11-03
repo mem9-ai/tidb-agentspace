@@ -97,3 +97,9 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0032: REST workflow resources](0032-rest-workflow-resources.md) — addressable preparations, durable setup attempts and removal of historical command routes under GH-76.
 
 - [0036: Global-only Workspace Keys](0036-global-keys-only.md) — retire regional customer Keys, preserve resources/provider credentials, and expose the new Global/Region flow with complete examples.
+
+- [0045: DuckDB creation-time table snapshot](0045-duckdb-creation-table-snapshot.md) — reuse initialization to return an explicitly historical catalog snapshot without caching current tables.
+
+- [0046: PostgreSQL-compatible resource names](0046-postgresql-resource-names.md) — permit underscores for PostgreSQL Workspace names and use compatibility wording in the Console.
+
+- [0047: Default File System](0047-default-file-system.md) — provision a new Workspace's first File System once and reuse it for the sales sample.

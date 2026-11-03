@@ -117,15 +117,27 @@ query execution or concurrent multi-worker writing.
 
 Table browsing reads the selected `main` schema through DuckDB information/constraint/index
 functions. Identifiers use double quotes, and previews retain the existing 100-row bound.
-Details use one SELECT; a backend read-only reader is reused for browsing for at most 15 seconds
-idle / 60 seconds total. Every request is authorized again, with no result cache. An idle reader
-is released before customer SQL or switching databases; native errors/cancellation dispose it.
-Customer SQL and file-source queries remain disposable. See [ADR 0012](decisions/0012-duckdb-catalog-reader.md).
+The current Rust runtime uses disposable workers for catalog and customer SQL; it does not retain
+the reusable reader described in the historical ADR 0012. Every request is authorized again and
+there is no live table-result cache. A new database can return its initialization-time catalog
+snapshot in its create response, labeled as such; current tables still require an authorized
+read. See [ADR 0045](decisions/0045-duckdb-creation-table-snapshot.md).
 
 A real Singapore check on 2026-10-28 measured table details at 26,434 ms before this fix.
 After a cold list (5,370 ms), details took 29 ms, repeated details 16 ms and 100-row preview
 300 ms. These are individual local observations, not a latency SLA. Cold attachment remains
 several seconds, and ordinary customer SQL still pays that cost.
+
+On 2026-11-03, an independent local preview compared two real, temporary DuckDB databases. Before
+ADR 0045, creation took 15,011 ms and the first current-table request took 6,056 ms; the SQL
+button became available 6,211 ms after creation. With the creation-time snapshot, creation took
+11,193 ms and the snapshot and SQL button were ready 198 ms after creation, without a separate
+table-list request. The first `SELECT 1` took 7,545 ms; the subsequent current-table request
+still took 6,447 ms. A real `CREATE TABLE` followed by a refresh returned the new table. These
+single observations are not a controlled benchmark or an SLA; the optimization removes a separate
+initial attachment rather than making an ordinary current-table request faster. Deletion requests
+for both trial databases were accepted and Guest cleanup was scheduled; physical deletion was not
+confirmed by the provider during the observation window.
 The editor uses TiUI SQL Editor with standard SQL highlighting; execution is DuckDB's dialect,
 not MySQL or PG protocol support. Cloud usage/allowances are unmeasured (null).
 

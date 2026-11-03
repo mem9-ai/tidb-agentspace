@@ -4,6 +4,11 @@
 - Reproduction and scope: [GH-39](https://github.com/siddontang/tidb.ai/issues/39).
 - Amends: [ADR 0008](0008-duckdb-private-storage.md) for **server-generated browsing SQL only**.
 
+Rust runtime amendment: the retired implementation's reusable reader below is not present in the
+current Rust runtime. [ADR 0021](0021-native-rust-computation.md) uses disposable workers, and
+[ADR 0045](0045-duckdb-creation-table-snapshot.md) reuses the initialization operation only for
+an explicitly labeled creation-time table snapshot.
+
 ## Context and decision
 
 A table-details request previously ran four sequential statements in four disposable native

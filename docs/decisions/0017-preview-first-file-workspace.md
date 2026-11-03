@@ -26,6 +26,11 @@ Over-budget/invalid files retain Download and navigation. Add a saved-byte diges
 and optionally to analysis results; warn when their versions differ rather than silently
 comparing incompatible data. Canceling reads/execution cleans snapshots as before.
 
+The metadata `version` used for conditional writes is an opaque ETag; analysis `fileVersion`
+is a saved-byte SHA-256 digest. Do not compare these values directly. When a sample records an
+ETag, recheck metadata before and after analysis; this detects a changed saved version, but is
+not an atomic snapshot precondition on the analysis request.
+
 No persisted data, grant or credential migration. Legacy analyze links expand tools; old APIs
 can still analyze, with a recoverable unavailable tabular preview. Rolling back code restores
 the previous UI/API without changing saved files. Verify the specification's worker/HTTP

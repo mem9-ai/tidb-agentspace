@@ -355,6 +355,40 @@ impl Repository {
         resource: Value,
         event: Value,
     ) -> Result<Value> {
+        self.create_indexed_resource_inner(credential, slot, fingerprint, resource, event, false)
+            .await
+    }
+
+    /// Reserve the first resource only in a Workspace with no resource history. Replays of
+    /// the same idempotency slot observe the original resource, including after deletion.
+    pub async fn create_initial_resource(
+        self: &Arc<Self>,
+        credential: &Credential,
+        slot: &str,
+        fingerprint: &str,
+        resource: Value,
+        event: Value,
+    ) -> Result<Value> {
+        self.create_indexed_resource_inner(
+            credential,
+            Some(slot),
+            fingerprint,
+            resource,
+            event,
+            true,
+        )
+        .await
+    }
+
+    async fn create_indexed_resource_inner(
+        self: &Arc<Self>,
+        credential: &Credential,
+        slot: Option<&str>,
+        fingerprint: &str,
+        resource: Value,
+        event: Value,
+        initial_only: bool,
+    ) -> Result<Value> {
         let slot_key = slot.map(idempotency_key);
         for attempt in 0..8 {
             let (marker, _lock, state) = loop {
@@ -415,6 +449,9 @@ impl Repository {
                         return Err(ServiceError::new(503, "RESOURCE_INDEX_MIGRATING"));
                     }
                     continue;
+                }
+                if initial_only && marker["value"]["position"].as_u64() != Some(0) {
+                    return Err(ServiceError::new(409, "WORKSPACE_NOT_NEW"));
                 }
                 break (marker, lock, state);
             };

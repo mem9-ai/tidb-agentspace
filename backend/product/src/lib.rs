@@ -72,6 +72,27 @@ pub enum Reply {
         filename: String,
     },
 }
+fn creation_reply(
+    data: Value,
+    is_live: bool,
+    is_new: bool,
+    principal: Option<&Principal>,
+    snapshot: Option<Value>,
+) -> Value {
+    let mut reply = json!({"data":data,"mode":if is_live{"live"}else{"demo"}});
+    if is_new
+        && reply["data"]["kind"] == "duckdb"
+        && reply["data"]["status"] == "active"
+        && principal.is_some_and(|p| {
+            p.scope("queries:read").is_ok()
+                && reply["data"]["id"].as_str().is_some_and(|id| p.has(id))
+        })
+        && let Some(snapshot) = snapshot
+    {
+        reply["initialTableSnapshot"] = snapshot;
+    }
+    reply
+}
 impl Product {
     pub async fn new(workspace: Arc<Workspace>, config: Config) -> Result<Self> {
         config.validate()?;
@@ -115,7 +136,7 @@ impl Product {
     }
     pub fn capabilities(&self) -> Value {
         let c = &self.providers.config;
-        json!({"mysql":{"label":if c.mysql_provider==ZERO{"MySQL · TiDB Cloud Zero"}else{"MySQL demo"},"regions":if c.mysql_provider==ZERO{vec!["automatic"]}else{vec!["aws-us-east-1","aws-us-west-2"]},"storageGiB":if c.mysql_provider==ZERO{Value::Null}else{json!(5)},"monthlyRU":if c.mysql_provider==ZERO{Value::Null}else{json!(50_000_000)},"preview":false,"provider":c.mysql_provider},"postgresql":{"label":"PostgreSQL · db9","regions":["automatic"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":c.postgres_provider==DB9,"provider":DB9},"duckdb":{"label":"DuckDB","regions":["aws-ap-southeast-1"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":self.execute.available,"provider":DUCKDB},"filesystem":{"label":"TiDB Cloud File System","regions":if c.files_provider==DRIVE9{vec!["aws-ap-southeast-1"]}else{vec!["aws-ap-southeast-1","aws-us-west-2"]},"storageGiB":if c.files_provider==DRIVE9{Value::Null}else{json!(2)},"maxFiles":if c.files_provider==DRIVE9{Value::Null}else{json!(2000)},"preview":true,"provider":c.files_provider}})
+        json!({"mysql":{"label":if c.mysql_provider==ZERO{"MySQL · TiDB Cloud Zero"}else{"MySQL demo"},"regions":if c.mysql_provider==ZERO{vec!["automatic"]}else{vec!["aws-us-east-1","aws-us-west-2"]},"storageGiB":if c.mysql_provider==ZERO{Value::Null}else{json!(5)},"monthlyRU":if c.mysql_provider==ZERO{Value::Null}else{json!(50_000_000)},"preview":false,"provider":c.mysql_provider},"postgresql":{"label":"PostgreSQL Compatible","regions":["automatic"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":c.postgres_provider==DB9,"provider":DB9},"duckdb":{"label":"DuckDB","regions":["aws-ap-southeast-1"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":self.execute.available,"provider":DUCKDB},"filesystem":{"label":"TiDB Cloud File System","regions":if c.files_provider==DRIVE9{vec!["aws-ap-southeast-1"]}else{vec!["aws-ap-southeast-1","aws-us-west-2"]},"storageGiB":if c.files_provider==DRIVE9{Value::Null}else{json!(2)},"maxFiles":if c.files_provider==DRIVE9{Value::Null}else{json!(2000)},"preview":true,"provider":c.files_provider}})
     }
     pub async fn mode(&self) -> Result<&'static str> {
         let config = &self.providers.config;
@@ -131,15 +152,31 @@ impl Product {
         )
     }
     pub async fn update_resource(&self, resource: Value, provision: bool) -> Result<Value> {
+        Ok(self
+            .update_resource_with_snapshot(resource, provision)
+            .await?
+            .0)
+    }
+    async fn update_resource_with_snapshot(
+        &self,
+        resource: Value,
+        provision: bool,
+    ) -> Result<(Value, Option<Value>)> {
         if !resource["deletion"].is_null() || !live(&resource) {
-            return Ok(resource);
+            return Ok((resource, None));
         }
         let id = text(&resource, "id")?.to_owned();
+        let mut snapshot = None;
         let info = if provision {
             if resource["provider"] == DRIVE9 {
                 self.providers.provision_files(&id).await
             } else if resource["provider"] == DUCKDB {
-                self.setup_duckdb(&resource).await
+                self.setup_duckdb_with_snapshot(&resource)
+                    .await
+                    .map(|(info, tables)| {
+                        snapshot = tables;
+                        info
+                    })
             } else {
                 self.providers.provision_database(&resource).await
             }
@@ -154,7 +191,8 @@ impl Product {
                 value
             }
         };
-        self.workspace
+        let saved = self
+            .workspace
             .repository()
             .update_resource(&id, |current| {
                 current
@@ -169,9 +207,13 @@ impl Product {
                 }
                 Ok(current.clone())
             })
-            .await
+            .await?;
+        Ok((saved, snapshot))
     }
     async fn setup_duckdb(&self, r: &Value) -> Result<Value> {
+        Ok(self.setup_duckdb_with_snapshot(r).await?.0)
+    }
+    async fn setup_duckdb_with_snapshot(&self, r: &Value) -> Result<(Value, Option<Value>)> {
         self.execute.verify()?;
         let id = text(r, "id")?;
         let mut b = self.providers.binding("duckdb", id).await?;
@@ -180,27 +222,32 @@ impl Product {
             self.providers.save_binding("duckdb", id, b.clone()).await?;
         }
         if b["state"] == "ready" {
-            return self.providers.status(r).await;
+            return Ok((self.providers.status(r).await?, None));
         }
         let info = self
             .providers
             .provision_files(text(&b, "storageId")?)
             .await?;
         if info["status"] != "active" {
-            return Ok(
+            return Ok((
                 json!({"status":"provisioning","connectionError":"Database storage is not ready. Retry setup later."}),
-            );
+                None,
+            ));
         }
         let connection = self
             .providers
             .file_connection(text(&b, "storageId")?)
             .await?;
-        self.execute
-            .database(id, connection, "SELECT 1 AS connected", json!([]), false)
+        let catalog = self.execute
+            .database(id, connection, "SELECT table_name AS name, table_type AS type FROM information_schema.tables WHERE table_catalog = current_database() AND table_schema = 'main' ORDER BY table_name LIMIT 501", json!([]), false)
             .await?;
+        let rows = catalog["rows"]
+            .as_array()
+            .ok_or_else(|| err(502, "INVALID_METADATA"))?;
+        let snapshot = json!({"data":rows.iter().take(500).collect::<Vec<_>>(),"truncated":rows.len()>500,"mode":"live"});
         b["state"] = json!("ready");
         self.providers.save_binding("duckdb", id, b).await?;
-        self.providers.status(r).await
+        Ok((self.providers.status(r).await?, Some(snapshot)))
     }
     pub async fn record(
         &self,
@@ -366,6 +413,12 @@ impl Product {
                 let kind = text(&input, "kind").map_err(|_| err(400, "INVALID_KIND"))?;
                 let name = text(&input, "name").map_err(|_| err(400, "INVALID_NAME"))?;
                 let region = text(&input, "region").map_err(|_| err(400, "UNSUPPORTED_REGION"))?;
+                let initial = match input.get("onlyIfNew") {
+                    None | Some(Value::Bool(false)) => false,
+                    Some(Value::Bool(true)) if !p.owner => return Err(err(403, "OWNER_REQUIRED")),
+                    Some(Value::Bool(true)) if kind == "filesystem" && idem.is_some() => true,
+                    _ => return Err(err(400, "INVALID_INPUT")),
+                };
                 let authority = self.workspace.repository().authority_id().to_owned();
                 if input
                     .get("regionId")
@@ -379,7 +432,12 @@ impl Product {
                 {
                     return Err(err(400, "INVALID_KIND"));
                 }
-                if !regex::Regex::new(r"^[a-z][a-z0-9-]{2,39}$")
+                let name_pattern = if kind == "postgresql" {
+                    r"^[a-z][a-z0-9_-]{2,39}$"
+                } else {
+                    r"^[a-z][a-z0-9-]{2,39}$"
+                };
+                if !regex::Regex::new(name_pattern)
                     .expect("regex")
                     .is_match(name)
                 {
@@ -405,30 +463,55 @@ impl Product {
                     "postgresql" => DB9,
                     _ => DUCKDB,
                 };
-                let resource = json!({"id":format!("{}_{}",if kind=="filesystem"{"fs"}else{"db"},secret(6)?),"name":name,"kind":kind,"region":region,"regionId":authority,"status":if provider=="local"{"active"}else{"provisioning"},"provider":provider,"createdAt":timestamp()});
+                let mut resource = json!({"id":format!("{}_{}",if kind=="filesystem"{"fs"}else{"db"},secret(6)?),"name":name,"kind":kind,"region":region,"regionId":authority,"status":if provider=="local"{"active"}else{"provisioning"},"provider":provider,"createdAt":timestamp()});
+                if initial {
+                    resource["isDefault"] = json!(true);
+                }
+                let new_id = text(&resource, "id")?.to_owned();
                 let event = json!({"id":uuid::Uuid::new_v4().to_string(),"action":"resource.created","resource":name,"resourceId":resource["id"],"actor":p.actor,"at":timestamp(),"outcome":"success"});
-                let resource = self
-                    .workspace
-                    .repository()
-                    .create_indexed_resource(
-                        &credential,
-                        slot.as_deref(),
-                        &fingerprint,
-                        resource,
-                        event,
-                    )
-                    .await?;
+                let repository = self.workspace.repository();
+                let resource = if initial {
+                    // Index preparation has no provider effects; wait before reserving an
+                    // automatic first resource so a fresh Workspace need not be retried.
+                    repository.prepare_sample_resource_index().await?;
+                    repository
+                        .create_initial_resource(
+                            &credential,
+                            slot.as_deref()
+                                .expect("initial request requires idempotency"),
+                            &fingerprint,
+                            resource,
+                            event,
+                        )
+                        .await?
+                } else {
+                    repository
+                        .create_indexed_resource(
+                            &credential,
+                            slot.as_deref(),
+                            &fingerprint,
+                            resource,
+                            event,
+                        )
+                        .await?
+                };
                 let is_live = live(&resource);
                 let authorized = self.workspace.authenticate(&credential).await?;
                 authorized.scope("resources:write")?;
                 if !authorized.has("*") {
                     return Err(err(403, "WORKSPACE_GRANT_REQUIRED"));
                 }
-                let data = self.update_resource(resource, true).await?;
-                return Ok((
-                    201,
-                    Reply::Json(json!({"data":data,"mode":if is_live{"live"}else{"demo"}})),
-                ));
+                let is_new = resource["id"] == new_id;
+                let (data, snapshot) = self.update_resource_with_snapshot(resource, true).await?;
+                // Setup can take seconds. Do not disclose the catalog from an expired, revoked,
+                // or narrowed credential; creation itself may already have taken effect.
+                let current = if snapshot.is_some() {
+                    self.workspace.authenticate(&credential).await.ok()
+                } else {
+                    None
+                };
+                let reply = creation_reply(data, is_live, is_new, current.as_ref(), snapshot);
+                return Ok((201, Reply::Json(reply)));
             }
             ("GET", "/usage") => {
                 p.scope("usage:read")?;
@@ -783,6 +866,81 @@ fn fingerprint(bytes: &[u8]) -> Result<String> {
 #[cfg(test)]
 mod execute_config_tests {
     use super::*;
+
+    #[test]
+    fn initial_catalog_requires_a_new_resource_and_table_read_permission() {
+        let resource = json!({"id":"db_new","kind":"duckdb","status":"active"});
+        let snapshot =
+            json!({"data":[{"name":"orders","type":"BASE TABLE"}],"truncated":false,"mode":"live"});
+        let principal = |scopes: Vec<&str>| Principal {
+            owner: false,
+            actor: "key:test".into(),
+            id: "key-test".into(),
+            scopes: scopes.into_iter().map(str::to_owned).collect(),
+            resource_ids: vec!["*".into()],
+            expires_at: None,
+        };
+        let write_only = principal(vec!["resources:write"]);
+        let read = principal(vec!["resources:write", "queries:read"]);
+        let execute = principal(vec!["resources:write", "queries:execute"]);
+        assert!(
+            creation_reply(
+                resource.clone(),
+                true,
+                true,
+                Some(&write_only),
+                Some(snapshot.clone())
+            )["initialTableSnapshot"]
+                .is_null()
+        );
+        assert!(
+            creation_reply(
+                resource.clone(),
+                true,
+                false,
+                Some(&read),
+                Some(snapshot.clone())
+            )["initialTableSnapshot"]
+                .is_null()
+        );
+        assert!(creation_reply(resource.clone(), true, true, None, Some(snapshot.clone()))["initialTableSnapshot"].is_null());
+        let mut narrowed = read.clone();
+        narrowed.resource_ids = vec!["other".into()];
+        assert!(
+            creation_reply(
+                resource.clone(),
+                true,
+                true,
+                Some(&narrowed),
+                Some(snapshot.clone())
+            )["initialTableSnapshot"]
+                .is_null()
+        );
+        assert!(
+            creation_reply(
+                json!({"id":"db_new","kind":"duckdb","status":"provisioning"}),
+                true,
+                true,
+                Some(&read),
+                Some(snapshot.clone())
+            )["initialTableSnapshot"]
+                .is_null()
+        );
+        assert_eq!(
+            creation_reply(
+                resource.clone(),
+                true,
+                true,
+                Some(&read),
+                Some(snapshot.clone())
+            )["initialTableSnapshot"],
+            snapshot
+        );
+        assert_eq!(
+            creation_reply(resource, true, true, Some(&execute), Some(snapshot.clone()))["initialTableSnapshot"],
+            snapshot
+        );
+    }
 
     #[test]
     fn execute_configuration_uses_one_name_and_rejects_obsolete_fields() {

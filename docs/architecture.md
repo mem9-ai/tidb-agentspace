@@ -45,7 +45,7 @@ customer.
 
 The first-run path is: create/open a Workspace, add one resource, create a scoped Workspace
 Key, complete a useful request from an agent, then inspect the resulting data and usage.
-A new workspace should not require provisioning every resource type. The prototype preseeds a MySQL demo and local File System; real resources are explicitly created. PostgreSQL is available through the opt-in db9 adapter; TiDB Cloud PG Starter remains planned.
+A new Workspace does not require provisioning every resource type. On first authenticated account or temporary-session Console entry, a new Workspace automatically prepares one default File System; other resources remain explicit. The atomic first-resource condition prevents this from recreating resources in Workspaces with prior resource history. PostgreSQL is available through the opt-in db9 adapter; TiDB Cloud PG Starter remains planned. See [ADR 0047](decisions/0047-default-file-system.md).
 
 Supabase's project-level grouping is a useful product reference; TiDB Workspace groups an
 optional mix of three distinct resource types. [Supabase Platform](https://supabase.com/docs/guides/platform)
@@ -137,7 +137,7 @@ TiDB File System support does not imply those scale capabilities without a confo
 
 ## Console information architecture
 
-Guest Overview offers an explicit US sales sample backed by a durable sample attempt and a
+Guest Overview offers an explicit US sales sample in the default File System, backed by a durable sample attempt and a
 scoped manual Key flow. It observes the original sample version and any report file without
 claiming their provenance. The Agent pairing, verified task evidence and account-copy journey in
 [GH-150](../specs/gh-150/spec.md) remain proposed; the sample does not establish that aha.
