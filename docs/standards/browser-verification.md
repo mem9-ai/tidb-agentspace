@@ -42,7 +42,8 @@ suite. The covered journeys include:
 
 - Actual sidebar entry from Databases and a selected File System, with zero/one/multiple
   resources, collection reload/history and unavailable resource links; never auto-select.
-- Four contextual creation forms, type-prefixed names, readable fields and focus return.
+- Four contextual creation forms, readable File System suggestions, type-prefixed database names,
+  readable fields and focus return.
 - Automatic/manual name transitions, empty-name submission, explicit conflict retry and
   exact returned-resource navigation.
 - Explicit Key resource/action grants, creation payload and one-time synthetic secret display.

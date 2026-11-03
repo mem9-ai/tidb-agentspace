@@ -419,6 +419,12 @@ for (const kind of ['filesystem', 'duckdb']) {
       })
       .click();
     const dialog = page.getByRole('dialog');
+    let suggestedName;
+    if (kind === 'filesystem') {
+      const name = dialog.getByRole('textbox', { name: 'Resource name' });
+      await expect(name).toHaveValue(/^[a-z]+-[a-z]+$/);
+      suggestedName = await name.inputValue();
+    }
     if (kind === 'duckdb') {
       await dialog.getByText(/^Database type ·/).click();
       await dialog.getByRole('combobox', { name: 'Resource type' }).selectOption(kind);
@@ -450,6 +456,13 @@ for (const kind of ['filesystem', 'duckdb']) {
         (request) => request.path.endsWith('/resources') && request.method === 'POST',
       ).body,
     ).toMatchObject({ kind, region: 'aws-us-east-1' });
+    if (kind === 'filesystem') {
+      expect(
+        workspace.requests.find(
+          (request) => request.path.endsWith('/resources') && request.method === 'POST',
+        ).body.name,
+      ).toBe(suggestedName);
+    }
     await page.getByRole('button', { name: 'Details', exact: true }).click();
     await expect(page.getByText('Provider data location: AWS · N. Virginia')).toBeVisible();
   });
@@ -474,7 +487,7 @@ test('automatic type changes preserve manual names; a conflict requires an expli
   await expect(name).toHaveValue('my-custom-name');
   await name.fill('');
   await kind.selectOption('filesystem');
-  await expect(name).toHaveValue(/^filesystem-/);
+  await expect(name).toHaveValue(/^[a-z]+-[a-z]+$/);
   await name.fill('');
   workspace.rejectNextName();
   await dialog.getByRole('button', { name: 'Create file system', exact: true }).click();
@@ -482,7 +495,7 @@ test('automatic type changes preserve manual names; a conflict requires an expli
   const creates = () =>
     workspace.requests.filter((r) => r.path.endsWith('/resources') && r.method === 'POST');
   expect(creates()).toHaveLength(1);
-  await expect(name).toHaveValue(/^filesystem-/);
+  await expect(name).toHaveValue(/^[a-z]+-[a-z]+(?:-\d+)?$/);
   expect(await name.inputValue()).not.toBe(creates()[0].body.name);
   await dialog.getByRole('button', { name: 'Create file system', exact: true }).click();
   await expect(page).toHaveURL(/#files\?resourceId=fixture_filesystem_1$/);

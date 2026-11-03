@@ -222,9 +222,10 @@ domain differences. See the [cross-page audit](../product-experience-audit.md).
   The database collection chooser contains only supported database kinds. Only the global
   resource action offers both databases and File System. Keep action labels and accessible
   names specific, reset region/errors and suggest a fresh automatic name when reopening,
-  and lock the form while creating. Automatic names use the resource kind as their prefix
-  (`mysql-`, `postgresql-`, `duckdb-`, `filesystem-`), a random suffix and a check against all
-  known Workspace resource names (owner correction, GH-31). Update automatic names on type
+  and lock the form while creating. File System suggestions use two readable words, such as
+  `quiet-harbor` (owner correction, 2026-11-03); database suggestions use the resource kind
+  (`mysql-`, `postgresql-`, `duckdb-`) and a random suffix. Check all suggestions against known
+  Workspace resource names (owner correction, GH-31). Update automatic names on type
   changes; preserve nonempty manual names. Leaving the field empty generates a name at submit.
   Server uniqueness validation remains authoritative for concurrent creates. On an explicit
   `NAME_EXISTS` response, offer another automatic name for an explicit retry; retain manual
