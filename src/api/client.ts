@@ -216,7 +216,7 @@ export const workspaceApi = {
     base = `${portalApiPath}/workspaces/${encodeURIComponent(selected)}`;
     params = { path: { workspaceId: selected } };
   },
-  discoverWorkspace: async () => {
+  discoverWorkspace: async (signal?: AbortSignal) => {
     clearWorkspace();
     let selectedWorkspace: string | undefined;
     if (distributedGlobalBase) {
@@ -234,6 +234,7 @@ export const workspaceApi = {
       const issued = await globalResult(
         await global.POST('/api/portal/v1/workspaces/{workspaceId}/regional-session-tickets', {
           params: { path: { workspaceId: hint }, header: { Origin: window.location.origin } },
+          signal,
         }),
       );
       const region = new URL(issued.region.apiOrigin);
@@ -255,6 +256,7 @@ export const workspaceApi = {
         redirect: 'error',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticket: issued.ticket }),
+        signal,
       });
       if (!exchange.ok)
         throw new WorkspaceApiError('Unable to establish the Workspace session.', exchange.status);
@@ -266,6 +268,7 @@ export const workspaceApi = {
         established.workspaceId !== hint
       )
         throw new Error('The Workspace session does not match.');
+      signal?.throwIfAborted();
       selectedWorkspace = hint;
       apiBaseUrl = regionalBase;
       client = createWorkspaceClient(apiBaseUrl, fetch, portalApiPath);
@@ -283,7 +286,8 @@ export const workspaceApi = {
         },
       };
     }
-    const id = firstWorkspaceId(await responseData(client.GET('/workspaces')));
+    const id = firstWorkspaceId(await responseData(client.GET('/workspaces', { signal })));
+    signal?.throwIfAborted();
     if (selectedWorkspace && id !== selectedWorkspace)
       throw new Error('The Workspace returned by the Region does not match.');
     workspaceId = id;
