@@ -278,7 +278,7 @@ test('@visual database creation defaults to MySQL without asking for type or loc
   await workspace.open('#databases');
   await page.getByRole('button', { name: 'Create database', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create a database' });
-  await expect(dialog.getByText('Database type · MySQL · TiDB Cloud Zero · Change')).toBeVisible();
+  await expect(dialog.getByLabel('Database type: MySQL · TiDB Cloud Zero. Change')).toBeVisible();
   await expect(dialog.getByRole('combobox', { name: 'Resource type' })).toHaveCount(0);
   await expect(dialog.getByLabel('Provider data location')).toHaveCount(0);
   expect(
@@ -309,7 +309,7 @@ test('@visual database creation defaults to MySQL without asking for type or loc
 test('@visual database creation selects each type, generates a matching name and restores focus', async ({
   page,
   workspace,
-}) => {
+}, testInfo) => {
   workspace.addResources();
   workspace.state.resources = workspace.state.resources.filter((r) => r.kind === 'filesystem');
   await workspace.open();
@@ -328,8 +328,18 @@ test('@visual database creation selects each type, generates a matching name and
     await trigger.click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toHaveAccessibleName('Create a database');
+    await expect(dialog.getByText('Create a database', { exact: true })).toBeFocused();
     await expect(dialog.getByRole('combobox', { name: 'Resource type' })).toHaveCount(0);
-    await dialog.getByText(/^Database type ·/).click();
+    if (process.env.DATABASE_DISCLOSURE_SCREENSHOTS && kind === 'mysql')
+      await page.screenshot({
+        path: `${process.env.DATABASE_DISCLOSURE_SCREENSHOTS}-${testInfo.project.name}.png`,
+        animations: 'disabled',
+      });
+    const disclosure = dialog.locator('summary');
+    await disclosure.focus();
+    await expect(disclosure).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(dialog.getByRole('combobox', { name: 'Resource type' })).toBeVisible();
     await dialog.getByRole('combobox', { name: 'Resource type' }).selectOption(kind);
     const name = dialog.getByRole('textbox', { name: 'Resource name', exact: true });
     await expect(name).toHaveValue(new RegExp(`^${kind}-[a-f0-9]{16}$`));
@@ -426,7 +436,7 @@ for (const kind of ['filesystem', 'duckdb']) {
       suggestedName = await name.inputValue();
     }
     if (kind === 'duckdb') {
-      await dialog.getByText(/^Database type ·/).click();
+      await dialog.getByLabel(/^Database type:/).click();
       await dialog.getByRole('combobox', { name: 'Resource type' }).selectOption(kind);
     }
     await expect(dialog.getByLabel('Provider data location')).toHaveCount(0);

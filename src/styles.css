@@ -611,9 +611,37 @@ form > .modal-actions {
   border: 1px solid var(--border);
   border-radius: 8px;
 }
+.workspace-modal-title:focus {
+  outline: none;
+}
+.resource-type-options {
+  margin-bottom: 20px;
+}
 .resource-type-options summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  list-style: none;
   cursor: pointer;
   font-weight: 600;
+}
+.resource-type-options summary::-webkit-details-marker {
+  display: none;
+}
+.resource-type-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.resource-type-options[open] .resource-type-change svg {
+  transform: rotate(180deg);
 }
 .resource-type-options > div {
   margin-top: 12px;
