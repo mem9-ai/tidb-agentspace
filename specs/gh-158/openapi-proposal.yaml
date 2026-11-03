@@ -166,10 +166,66 @@ paths:
       description: Cancel an unconsumed attempt; an issued Key requires explicit revocation.
       parameters: *ifMatch
       responses: *mutationResponses
+  /api/v1/workspaces/{workspaceId}/agent-connection-receipts:
+    parameters: *workspacePath
+    post:
+      operationId: createAgentConnectionReceipt
+      security:
+        - regionalAccess: []
+      description: >-
+        Record one bounded receipt after verifying the Region Token, deriving
+        its Key ID from trusted authentication and authorizing files:read on
+        the selected File System. A client may not nominate an actor or Key.
+        Repetition does not extend the Key, Guest or receipt expiry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [resourceId]
+              properties:
+                resourceId: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200': &receiptResponse
+          description: Authenticated connection receipt; this does not prove a task or report.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReceiptEnvelope' }
+        '201': *receiptResponse
+        '400': *errorResponse
+        '401': *errorResponse
+        '403': *errorResponse
+        '404': *errorResponse
+        '503': *errorResponse
+  /api/portal/v1/workspaces/{workspaceId}/agent-connection-receipts/{keyId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/KeyId'
+    get:
+      operationId: getAgentConnectionReceipt
+      security:
+        - regionalLocalOwner: []
+        - regionalAccountOwner: []
+        - guestOwner: []
+      description: >-
+        Inspect one authorized regional receipt by the Key ID associated with
+        the Global pairing. Missing and unauthorized records are indistinguishable.
+        The receipt is historical and does not imply current Key validity.
+      responses:
+        '200': *receiptResponse
+        '401': *errorResponse
+        '403': *errorResponse
+        '404': *errorResponse
+        '503': *errorResponse
 components:
   securitySchemes:
     globalOwner: { type: apiKey, in: cookie, name: aw_global_owner }
     guestOwner: { type: apiKey, in: cookie, name: aw_guest }
+    regionalLocalOwner: { type: apiKey, in: cookie, name: aw_session }
+    regionalAccountOwner: { type: apiKey, in: cookie, name: aw_account }
+    regionalAccess: { type: http, scheme: bearer, bearerFormat: Region JWT }
   parameters:
     WorkspaceId:
       name: workspaceId
@@ -178,6 +234,12 @@ components:
       schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_.:-]+$' }
     AttemptId:
       name: attemptId
+      in: path
+      required: true
+      schema:
+        { type: string, pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' }
+    KeyId:
+      name: keyId
       in: path
       required: true
       schema:
@@ -234,11 +296,13 @@ components:
         resourceIds:
           type: array
           minItems: 1
+          maxItems: 16
           uniqueItems: true
           items: { type: string, minLength: 1, maxLength: 128, not: { const: '*' } }
         scopes:
           type: array
           minItems: 1
+          maxItems: 4
           uniqueItems: true
           items:
             enum: ['resources:read', 'files:read', 'files:analyze', 'files:write']
@@ -278,6 +342,23 @@ components:
       required: [data]
       properties:
         data: { $ref: '#/components/schemas/OwnerAttempt' }
+    Receipt:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, keyId, resourceId, regionId, observedAt, expiresAt]
+      properties:
+        workspaceId: { type: string }
+        keyId: { $ref: '#/components/parameters/KeyId/schema' }
+        resourceId: { type: string }
+        regionId: { type: string }
+        observedAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+    ReceiptEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Receipt' }
     Redeemed:
       type: object
       additionalProperties: false
