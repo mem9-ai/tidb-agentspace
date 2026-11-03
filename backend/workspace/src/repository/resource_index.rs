@@ -86,7 +86,9 @@ impl Repository {
                     return Err(failure);
                 }
                 self.start_resource_backfill();
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                while self.resource_backfill_running.load(Ordering::Acquire) {
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
             }
         })
         .await
