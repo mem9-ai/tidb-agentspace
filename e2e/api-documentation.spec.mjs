@@ -2,6 +2,55 @@ import { test, expect } from './workspace-fixture.mjs';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
+test('@visual agent connection explains scoped access and copies instructions without a key', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: async (value) => (globalThis.__copiedText = value) },
+    });
+  });
+  workspace.addResources();
+  await workspace.open('#connect');
+  await expect(page.getByRole('heading', { name: 'Connect an agent', level: 1 })).toBeVisible();
+  await expect(page.getByText(/File write access also permits/)).toBeVisible();
+  await expect(page.getByText(/Copying instructions does not confirm a connection/)).toBeVisible();
+  if (process.env.AGENT_CONNECT_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.AGENT_CONNECT_SCREENSHOTS}/${testInfo.project.name}.png`,
+      fullPage: true,
+      animations: 'disabled',
+    });
+  await page.getByRole('button', { name: 'Copy agent instructions' }).click();
+  const copied = await page.evaluate(() => globalThis.__copiedText);
+  expect(copied).toContain('http://127.0.0.1:4389/api');
+  expect(copied).toContain('WORKSPACE_API_KEY');
+  expect(copied).not.toContain('sk-');
+  await page.getByRole('button', { name: 'Create API key' }).click();
+  await expect(page.getByRole('dialog', { name: 'Create API key' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'See the API documentation' })).toHaveAttribute(
+    'href',
+    '#api',
+  );
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true);
+});
+
+test('agent connection does not copy placeholder instructions when the endpoint is unavailable', async ({
+  page,
+  workspace,
+}) => {
+  workspace.state.globalApiUnavailable = true;
+  await workspace.open('#connect');
+  await expect(
+    page.getByText('Couldn’t load the API endpoint. Refresh to try again.'),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Copy agent instructions' })).toHaveCount(0);
+});
+
 test('@visual API docs use one configured endpoint with runnable examples and complete reference', async ({
   page,
   workspace,
