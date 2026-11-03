@@ -62,4 +62,7 @@ test('pairing and connection receipts do not accept untrusted actor or content f
     { regionalAccountOwner: [] },
     { guestOwner: [] },
   ]);
+  const redemption = spec.paths['/v1/agent-pairing-attempts/{attemptId}/redemptions'].post;
+  assert.equal(redemption.responses['201'].headers['Cache-Control'].schema.const, 'no-store');
+  assert.equal(spec.components.responses.Error.headers['Cache-Control'].schema.const, 'no-store');
 });

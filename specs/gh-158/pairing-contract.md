@@ -27,6 +27,10 @@ Global stores a challenge and verifier for the random Key, never either plaintex
 
 If a redemption response is lost, the attempt might have been consumed. A replay must never issue another Key or return the original secret. The owner can inspect the attempt and associated Key ID, revoke it using existing Key management, wait for applied regional revocation, then explicitly start a new attempt. A timeout or failed delivery never reports a successful connection. Starting a new attempt does not implicitly revoke an earlier one.
 
+## Transport and caching
+
+Require TLS for hosted pairing and explicitly configured loopback-only HTTP for isolated development. Validate the configured Global and Region origins before sending a verifier or Key, and never automatically forward either secret across a redirect. Use `Cache-Control: no-store` for pairing, approval, observation and redemption responses, including errors. No response or redirect URL contains the code, verifier or Workspace Key. Define a strict request-size cap and redact request/response bodies at reverse proxies, application diagnostics and failure handling. Browser approval requires the existing trusted Origin and CSRF protections; a wildcard CORS rule or another Workspace's session does not grant approval.
+
 ## Code indexing and bounded state
 
 Store a versioned HMAC-SHA-256 digest of the normalized code and Workspace ID using an unambiguous, length-prefixed encoding, never the code itself. The index and attempt are committed atomically within the Workspace's Global Key metadata partition, with collision detection and a newly generated code on collision. Keep the index-key material in the existing protected Global secret boundary; retain the previous key version only long enough to look up still-live attempts during rotation. Do not reuse a key from token signing or any provider credential. Both code and verifier checks must avoid disclosing which comparison failed. A successful lookup is allowed only after matching Guest/Owner Workspace authentication and the existing origin/CSRF checks.

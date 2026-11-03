@@ -24,6 +24,10 @@ paths:
       responses:
         '201':
           description: One temporary attempt; the code is returned only in this response.
+          headers: &noStoreHeader
+            Cache-Control:
+              required: true
+              schema: { const: no-store }
           content:
             application/json:
               schema:
@@ -51,6 +55,7 @@ paths:
       responses:
         '200':
           description: Verifier-bound attempt state.
+          headers: *noStoreHeader
           content:
             application/json:
               schema:
@@ -72,6 +77,7 @@ paths:
       responses:
         '201':
           description: Scoped Key delivered once to the initiating client.
+          headers: *noStoreHeader
           content:
             application/json:
               schema:
@@ -107,6 +113,9 @@ paths:
               required: true
               schema:
                 type: string
+            Cache-Control:
+              required: true
+              schema: { const: no-store }
           content:
             application/json:
               schema:
@@ -191,6 +200,7 @@ paths:
       responses:
         '200': &receiptResponse
           description: Authenticated connection receipt; this does not prove a task or report.
+          headers: *noStoreHeader
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ReceiptEnvelope' }
@@ -392,6 +402,7 @@ components:
   responses:
     Error:
       description: Structured, redacted and non-disclosing error; no Key or verifier.
+      headers: *noStoreHeader
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
