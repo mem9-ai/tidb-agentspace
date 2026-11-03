@@ -56,7 +56,7 @@ small {
   margin-left: auto;
 }
 .theme-picker {
-  width: 168px;
+  width: 184px;
   flex-shrink: 0;
 }
 .sidebar-content {
@@ -605,6 +605,13 @@ form > .modal-actions {
   background: var(--surface-subtle);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+.resource-type-options summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.resource-type-options > div {
+  margin-top: 12px;
 }
 .plan-selection > div {
   display: flex;

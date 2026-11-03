@@ -545,6 +545,7 @@ test('@visual empty collections share one in-context create action and readable 
     await create.click();
     const dialog = page.getByRole('dialog', { name: collection.dialog, exact: true });
     await expect(dialog).toBeVisible();
+    if (collection.hash === '#databases') await dialog.getByText(/^Database type ·/).click();
     const kind = dialog.getByRole('combobox', { name: 'Resource type', exact: true });
     if (collection.hash === '#databases') {
       expect(

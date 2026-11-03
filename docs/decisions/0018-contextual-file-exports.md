@@ -5,10 +5,12 @@
 - Extends ADR 0013 and 0017 without changing read-only analysis or existing SQL export contracts.
 
 Preview actions target the saved original; result actions target the completed SQL result or
-chosen Bash stream. Following the GH-84 owner correction, Preview has one Export action in
-its content header. Download original is a destination inside the explicitly labeled original
-file dialog. This supersedes the former standalone Download original / Export original footer
-placement without changing source/output authority or the accepted export API.
+chosen Bash stream. Following the 2026-11-03 owner feedback on the file-centered Workspace,
+CSV and Parquet previews offer **Create table** directly in addition to Export. This opens the
+same database-targeted preparation and explicit review; the original remains unchanged. Other
+files retain Export, and output actions remain separate. This supersedes GH-84's single-action
+rule for tabular previews without changing the export API or the original/output authority.
+Download original remains a destination inside the explicitly labeled original file dialog.
 Draft download/save stays explicit in the preview/source header. A source footer must not appear under output.
 Raw downloads/copies preserve bytes. Export never reruns SQL or Bash.
 

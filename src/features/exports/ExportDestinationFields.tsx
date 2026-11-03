@@ -35,6 +35,7 @@ export function ExportDestinationFields({
   onTableChange,
   busy,
   state,
+  showKindSelector = true,
   children,
 }: {
   kind: DestinationKind;
@@ -47,25 +48,28 @@ export function ExportDestinationFields({
   onTableChange: (table: string) => void;
   busy: boolean;
   state: ReturnType<typeof useExportDestination>;
+  showKindSelector?: boolean;
   children?: ReactNode;
 }) {
   return (
     <>
-      <NativeSelect
-        label="Destination"
-        value={kind}
-        disabled={busy}
-        onChange={(event) => {
-          const value = event.currentTarget.value;
-          if (value === 'download' || value === 'filesystem' || value === 'database')
-            onKindChange(value);
-        }}
-        data={[
-          { value: 'download', label: 'Download to your computer' },
-          { value: 'filesystem', label: 'Workspace File System' },
-          { value: 'database', label: 'Workspace database' },
-        ]}
-      />
+      {showKindSelector && (
+        <NativeSelect
+          label="Destination"
+          value={kind}
+          disabled={busy}
+          onChange={(event) => {
+            const value = event.currentTarget.value;
+            if (value === 'download' || value === 'filesystem' || value === 'database')
+              onKindChange(value);
+          }}
+          data={[
+            { value: 'download', label: 'Download to your computer' },
+            { value: 'filesystem', label: 'Workspace File System' },
+            { value: 'database', label: 'Workspace database' },
+          ]}
+        />
+      )}
       {children}
       {kind !== 'download' && (
         <>

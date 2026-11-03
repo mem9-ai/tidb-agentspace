@@ -6,6 +6,8 @@ test('@visual workspace settings and resource creation focus on customer choices
   workspace,
 }, testInfo) => {
   workspace.addResources();
+  workspace.state.capabilities.mysql.provider = 'local';
+  workspace.state.capabilities.mysql.regions = ['aws-us-east-1', 'aws-us-west-2'];
   await workspace.open('#settings');
   await expect(page.getByLabel('Default region')).toHaveCount(0);
   await expect(page.getByLabel('Workspace ID', { exact: true })).toBeVisible();
@@ -267,6 +269,41 @@ for (const count of [0, 1, 2]) {
   });
 }
 
+test('@visual database creation defaults to MySQL without asking for type or location', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  await workspace.open('#databases');
+  await page.getByRole('button', { name: 'Create database', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create a database' });
+  await expect(dialog.getByText('Database type · MySQL · TiDB Cloud Zero · Change')).toBeVisible();
+  await expect(dialog.getByRole('combobox', { name: 'Resource type' })).toHaveCount(0);
+  await expect(dialog.getByLabel('Provider data location')).toHaveCount(0);
+  expect(
+    workspace.requests.filter(
+      (request) => request.method === 'POST' && request.path.endsWith('/resources'),
+    ),
+  ).toHaveLength(0);
+  if (process.env.DEFAULT_DATABASE_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.DEFAULT_DATABASE_SCREENSHOTS}/${testInfo.project.name}.png`,
+      animations: 'disabled',
+    });
+  await dialog.getByRole('button', { name: 'Create database', exact: true }).click();
+  await expect
+    .poll(
+      () =>
+        workspace.requests.filter(
+          (request) => request.method === 'POST' && request.path.endsWith('/resources'),
+        ).length,
+    )
+    .toBe(1);
+  const create = workspace.requests.find(
+    (request) => request.method === 'POST' && request.path.endsWith('/resources'),
+  );
+  expect(create.body).toMatchObject({ kind: 'mysql', region: 'automatic' });
+});
+
 test('@visual database creation selects each type, generates a matching name and restores focus', async ({
   page,
   workspace,
@@ -289,6 +326,8 @@ test('@visual database creation selects each type, generates a matching name and
     await trigger.click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toHaveAccessibleName('Create a database');
+    await expect(dialog.getByRole('combobox', { name: 'Resource type' })).toHaveCount(0);
+    await dialog.getByText(/^Database type ·/).click();
     await dialog.getByRole('combobox', { name: 'Resource type' }).selectOption(kind);
     const name = dialog.getByRole('textbox', { name: 'Resource name', exact: true });
     await expect(name).toHaveValue(new RegExp(`^${kind}-[a-f0-9]{16}$`));
@@ -300,6 +339,68 @@ test('@visual database creation selects each type, generates a matching name and
     await dialog.getByRole('button', { name: 'Close dialog' }).press('Escape');
     await expect(trigger).toBeFocused();
   }
+});
+
+test('database creation does not submit when no provider location is available', async ({
+  page,
+  workspace,
+}) => {
+  workspace.state.capabilities.mysql.regions = [];
+  await workspace.open('#databases');
+  await page.getByRole('button', { name: 'Create database', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create a database' });
+  await expect(
+    dialog.getByText('No data location is available for this resource right now.'),
+  ).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Create database', exact: true })).toBeDisabled();
+  expect(
+    workspace.requests.filter(
+      (request) => request.method === 'POST' && request.path.endsWith('/resources'),
+    ),
+  ).toHaveLength(0);
+});
+
+test('@visual Guest database creation distinguishes Workspace access from provider expiry', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  await expect(page.getByRole('main')).toBeVisible();
+  await page.goto('/#databases');
+  const theme = page.getByRole('combobox', { name: 'Color theme' });
+  const themeText = await theme.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const text = element.selectedOptions[0]?.textContent || '';
+    return {
+      text,
+      textWidth: context.measureText(text).width,
+      availableWidth:
+        element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+    };
+  });
+  expect(themeText.text).toBe('System');
+  expect(themeText.textWidth).toBeLessThanOrEqual(themeText.availableWidth);
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true);
+  await page.getByRole('button', { name: 'Create database', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create a database' });
+  await expect(
+    dialog.getByText(
+      'Guest workspace access ends 24 hours after the workspace was created. The database has a separate provider expiry within 30 days.',
+    ),
+  ).toBeVisible();
+  if (process.env.DEFAULT_DATABASE_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.DEFAULT_DATABASE_SCREENSHOTS}/guest-${testInfo.project.name}.png`,
+      animations: 'disabled',
+    });
 });
 
 for (const kind of ['filesystem', 'duckdb']) {
@@ -316,8 +417,10 @@ for (const kind of ['filesystem', 'duckdb']) {
       })
       .click();
     const dialog = page.getByRole('dialog');
-    if (kind === 'duckdb')
+    if (kind === 'duckdb') {
+      await dialog.getByText(/^Database type ·/).click();
       await dialog.getByRole('combobox', { name: 'Resource type' }).selectOption(kind);
+    }
     await expect(dialog.getByLabel('Provider data location')).toHaveCount(0);
     await expect(dialog.getByText('AWS · Singapore')).toHaveCount(0);
     if (kind === 'duckdb') {

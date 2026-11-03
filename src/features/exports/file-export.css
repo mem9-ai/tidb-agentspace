@@ -1,6 +1,13 @@
 .file-export-source {
   overflow-wrap: anywhere;
 }
+.file-parse-options summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.file-parse-options > div {
+  margin-top: 16px;
+}
 .import-review {
   min-width: 0;
 }
