@@ -310,6 +310,7 @@ test('automatic checks execute once and releases require exact-commit native evi
   for (const path of [
     'backend/api/src/lib.rs',
     'meta-service/src/main.rs',
+    'specs/gh-150/fixtures/us-sales.csv',
     'Cargo.toml',
     'Cargo.lock',
     'rust-toolchain.toml',

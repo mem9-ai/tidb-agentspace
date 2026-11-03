@@ -31,7 +31,7 @@ the Key's action and resource grants. Do not create, modify or delete data unles
 
 - GET /resources/{resourceId}/tables lists database tables. POST /queries runs one SQL statement;
   use readOnly:true for reads. Never blindly retry an uncertain write.
-- GET /files lists files. PUT /files creates or updates a text file. Read GET /files/metadata
+- GET /files lists files; GET /files/content reads a selected file. PUT /files creates or updates a text file. Read GET /files/metadata
   first; use If-Match for updates and If-None-Match: * for create-only writes.
 - POST /file-analyses runs analysis only with the necessary file read and analyze permissions.
 - POST /database-import-preparations creates a review. Inspect the result and obtain explicit

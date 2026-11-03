@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createMetaClient } from './meta/client.mjs';
@@ -183,6 +183,29 @@ test(
     await provision(first, 'mysql');
     await provision(second, 'postgresql');
     await provision(second, 'filesystem');
+    const sampleGuest = await create();
+    const sampleKey = randomUUID();
+    const sampleStart = await request(
+      `/api/portal/v1/workspaces/${sampleGuest.workspaceId}/sales-sample-attempts`,
+      {
+        cookie: sampleGuest.cookie,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': sampleKey },
+        body: JSON.stringify({ fixture: 'us-sales-v1' }),
+      },
+    );
+    assert.equal(sampleStart.status, 201);
+    const sample = (await sampleStart.json()).data;
+    assert.equal(sample.status, 'ready', JSON.stringify(sample));
+    assert.equal(
+      (
+        await request(
+          `/api/portal/v1/workspaces/${sampleGuest.workspaceId}/sales-sample-attempts/${sample.id}`,
+          { cookie: first.cookie },
+        )
+      ).status,
+      404,
+    );
     const marker = await request(`/api/portal/v1/workspaces/${first.workspaceId}/resources`, {
       cookie: first.cookie,
     });
@@ -251,6 +274,12 @@ test(
       s3: { ...globalConfig.s3, prefix: 'intentionally-offline-root' },
     });
     await start();
+    const resumedSample = await request(
+      `/api/portal/v1/workspaces/${sampleGuest.workspaceId}/sales-sample-attempts/${sample.id}`,
+      { cookie: sampleGuest.cookie },
+    );
+    assert.equal(resumedSample.status, 200);
+    assert.equal((await resumedSample.json()).data.fileVersion, sample.fileVersion);
     const resumed = await request('/api/auth/guest', { method: 'POST', cookie: first.cookie });
     assert.equal(resumed.status, 200);
     assert.equal((await resumed.json()).workspaceId, first.workspaceId);

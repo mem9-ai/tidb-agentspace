@@ -307,6 +307,33 @@ schemas.ResourceSetupAttempt = object({
   errorCode: { type: ['string', 'null'] },
   resource: ref('Resource'),
 });
+const sampleUuidPattern = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+schemas.SalesSampleAttempt = {
+  ...object({
+    id: { type: 'string', pattern: sampleUuidPattern },
+    fixture: { const: 'us-sales-v1' },
+    status: { enum: ['preparing', 'ready', 'failed', 'outcome_unknown'] },
+    resourceId: { type: ['string', 'null'], minLength: 1 },
+    path: { type: ['string', 'null'], enum: ['/us-sales.csv', null] },
+    fileVersion: { type: ['string', 'null'], maxLength: 256, pattern: '^"[A-Za-z0-9-]+"$' },
+    errorCode: { type: ['string', 'null'] },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
+  }),
+  additionalProperties: false,
+  allOf: [
+    {
+      if: { properties: { status: { const: 'ready' } } },
+      then: {
+        properties: {
+          resourceId: { type: 'string', minLength: 1 },
+          path: { const: '/us-sales.csv' },
+          fileVersion: { type: 'string', minLength: 1 },
+        },
+      },
+    },
+  ],
+};
 schemas.TutorialInput = {
   ...object({
     sampleId: { type: 'string', pattern: '^[a-f0-9]{32}$' },
@@ -487,6 +514,55 @@ const paths = {
       owner: true,
       output: ref('Bootstrap'),
     }),
+  },
+  [ws + '/sales-sample-attempts']: {
+    post: operation(
+      'startSalesSample',
+      'Explicitly prepare the US sales sample',
+      'resources:write, files:read and files:write; wildcard resource grant',
+      {
+        status: 201,
+        input: { ...object({ fixture: { const: 'us-sales-v1' } }), additionalProperties: false },
+        output: object({ data: ref('SalesSampleAttempt') }),
+        parameters: [
+          {
+            name: 'Idempotency-Key',
+            in: 'header',
+            required: true,
+            schema: { type: 'string', pattern: sampleUuidPattern },
+          },
+        ],
+      },
+    ),
+    get: operation(
+      'listSalesSampleAttempts',
+      'Observe the current US sales sample without creating one',
+      'files:read on the selected File System',
+      {
+        output: object({ data: { type: 'array', maxItems: 1, items: ref('SalesSampleAttempt') } }),
+        parameters: [
+          { name: 'fixture', in: 'query', required: true, schema: { const: 'us-sales-v1' } },
+        ],
+      },
+    ),
+  },
+  [ws + '/sales-sample-attempts/{attemptId}']: {
+    parameters: [
+      {
+        name: 'attemptId',
+        in: 'path',
+        required: true,
+        schema: { type: 'string', pattern: sampleUuidPattern },
+      },
+    ],
+    get: operation(
+      'getSalesSampleAttempt',
+      'Observe one US sales sample attempt',
+      'files:read on the selected File System',
+      {
+        output: object({ data: ref('SalesSampleAttempt') }),
+      },
+    ),
   },
   [ws + '/tutorials']: {
     get: operation(
@@ -1740,6 +1816,20 @@ const spec = {
     schemas,
   },
 };
+const salesSampleCreate = spec.paths[ws + '/sales-sample-attempts'].post;
+salesSampleCreate.responses[200] = response(
+  object({ data: ref('SalesSampleAttempt') }),
+  'Existing attempt; no provider effects are restarted',
+);
+for (const status of [200, 201]) {
+  salesSampleCreate.responses[status].headers = {
+    Location: {
+      required: true,
+      schema: { type: 'string' },
+      description: 'Relative URI of the observed sample attempt.',
+    },
+  };
+}
 extendRegionalSecurityContract(spec);
 const portalSpec = structuredClone(spec);
 portalSpec.info.title = 'Workspace Portal API';
