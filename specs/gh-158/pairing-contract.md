@@ -27,6 +27,12 @@ Global stores a challenge and verifier for the random Key, never either plaintex
 
 If a redemption response is lost, the attempt might have been consumed. A replay must never issue another Key or return the original secret. The owner can inspect the attempt and associated Key ID, revoke it using existing Key management, wait for applied regional revocation, then explicitly start a new attempt. A timeout or failed delivery never reports a successful connection. Starting a new attempt does not implicitly revoke an earlier one.
 
+## Guest logout and the two-authority boundary
+
+Global Key metadata and the Region Guest policy do not share one transaction. Do not claim they do. The Region's durable Guest-policy denial is the logout linearization point. Redemption checks current policy before issuance and rechecks it after the atomic Global Key commit before releasing the one-time secret. If the latter check fails or is unavailable, return no secret and preserve the issued Key ID as a denied or unknown outcome. This can leave a Key record, but it is not a usable connection and must remain subject to cleanup and the Guest's original expiry.
+
+The system must independently deny Global Key exchange after durable Guest denial and reject every Region data admission against the current Guest policy. A Token issued before or racing with logout must fail Region admission after logout completes; any already admitted operation follows the existing drain policy. Region policy installation for the new Key must not reactivate a denied Guest. These checks must use authoritative, monotonic policy state across replicas, not a cached browser session or a best-effort callback. Where that guarantee cannot be enforced for a deployment topology, pairing stays disabled there. Native races must place logout before, during and immediately after the Global commit, before and after token exchange, and before and during regional admission. They must establish that no usable credential survives acknowledged logout, even if an orphan Global Key record exists.
+
 ## Required operations
 
 The following are proposed operation identities; exact JSON schemas and errors must be reviewed in a separate OpenAPI amendment before code is written.
