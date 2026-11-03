@@ -4,6 +4,7 @@ import { workspaceApi, type FileAnalysisCapabilities } from '../../api/client';
 import { FileAnalysisEditor } from './FileAnalysisEditor';
 import { IconChevronDown, IconChevronRight } from '@tidbcloud/uikit/icons';
 import './file-analysis.css';
+import type { DatabaseCreationContext } from '../resources/resource-creation';
 
 type AnalysisEngine = NonNullable<FileAnalysisCapabilities['engine']>;
 
@@ -12,6 +13,7 @@ export default function FileAnalysisPanel({
   path,
   onRunningChange,
   onExportSaved,
+  databaseCreation,
   preview,
   expanded,
   onExpandedChange,
@@ -31,6 +33,7 @@ export default function FileAnalysisPanel({
   path: string;
   onRunningChange: (running: boolean) => void;
   onExportSaved: () => Promise<void>;
+  databaseCreation: DatabaseCreationContext;
 }) {
   const descriptionId = useId();
   const [cap, setCap] = useState<FileAnalysisCapabilities | null>(null);
@@ -189,6 +192,7 @@ export default function FileAnalysisPanel({
             onRefreshPreview={onRefreshPreview}
             onRunningChange={setBusy}
             onExportSaved={onExportSaved}
+            databaseCreation={databaseCreation}
           />
         </div>
       ))}

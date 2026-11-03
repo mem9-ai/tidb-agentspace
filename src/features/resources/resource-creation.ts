@@ -2,6 +2,12 @@ import type { Data, Resource } from '../../api/client';
 
 export type ResourceKind = Resource['kind'];
 export type ResourceCreationTarget = ResourceKind | 'resource' | 'database';
+export type DatabaseCreationContext = {
+  data: Data;
+  refresh: () => Promise<void>;
+  notify: (message: string) => void;
+  isGuest: boolean;
+};
 export const resourceKindLabels: Record<ResourceKind, string> = {
   mysql: 'MySQL',
   postgresql: 'PostgreSQL',

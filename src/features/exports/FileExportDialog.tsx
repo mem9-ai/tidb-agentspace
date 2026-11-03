@@ -7,13 +7,13 @@ import {
   type FileExportSource,
   type FileExportPreparation,
   type FileExportParsing,
-  type Data,
   type Resource,
 } from '../../api/client';
 import { WorkspaceApiError } from '../../api/transport';
 import { WorkspaceModal } from '../../ui/WorkspaceModal';
 import {
   ExportDestinationFields,
+  ExportKindSelect,
   useExportDestination,
   type DestinationKind,
 } from './ExportDestinationFields';
@@ -22,6 +22,7 @@ import { useSnapshotDownload } from './snapshot-download';
 import { fileHash } from '../files/file-location';
 import { databaseEditorHash } from '../navigation/workspace-route';
 import { CreateResourceDialog } from '../resources/CreateResourceDialog';
+import type { DatabaseCreationContext } from '../resources/resource-creation';
 import './file-export.css';
 export function FileExportDialog({
   source: initialSource,
@@ -44,12 +45,7 @@ export function FileExportDialog({
   onSaved: () => Promise<void> | void;
   onDownloadOriginal?: () => void;
   createTable?: boolean;
-  databaseCreation?: {
-    data: Data;
-    refresh: () => Promise<void>;
-    notify: (message: string) => void;
-    isGuest: boolean;
-  };
+  databaseCreation?: DatabaseCreationContext;
 }) {
   const [kind, setKind] = useState<DestinationKind>(createTable ? 'database' : 'download');
   const [stream, setStream] = useState<'stdout' | 'stderr'>(
@@ -112,6 +108,11 @@ export function FileExportDialog({
   function invalidate() {
     setReview(null);
     setFields([]);
+    setError('');
+  }
+  function changeKind(value: DestinationKind) {
+    setKind(value);
+    setResourceId('');
     setError('');
   }
   async function checkDatabase() {
@@ -306,7 +307,7 @@ export function FileExportDialog({
     </Stack>
   );
   const noDatabase =
-    createTable &&
+    kind === 'database' &&
     !destinationState.loading &&
     !destinationState.loadError &&
     ((!destinationState.targets.length &&
@@ -380,6 +381,9 @@ export function FileExportDialog({
         )}
         {noDatabase ? (
           <>
+            {!createTable && (
+              <ExportKindSelect kind={kind} onKindChange={changeKind} busy={!!busy} />
+            )}
             <Alert
               color="peacock"
               title={
@@ -391,7 +395,9 @@ export function FileExportDialog({
               <Text>
                 {createdDatabase
                   ? `${createdDatabase.name} · ${createdDatabase.status}. This database can't be used for import. Check its status or open it for details.`
-                  : 'Create a database, then continue with this file.'}
+                  : source.kind === 'original'
+                    ? 'Create a database, then continue with this file.'
+                    : 'Create a database, then continue with this output.'}
               </Text>
             </Alert>
             {error && (
@@ -479,11 +485,7 @@ export function FileExportDialog({
           <>
             <ExportDestinationFields
               kind={kind}
-              onKindChange={(value) => {
-                setKind(value);
-                setResourceId('');
-                setError('');
-              }}
+              onKindChange={changeKind}
               resourceId={resourceId}
               onResourceChange={(value) => {
                 setResourceId(value);

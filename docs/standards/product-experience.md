@@ -94,9 +94,10 @@ format/field/type confirmation, overwrite/discard decisions, provider limits and
 information remain explicit. Never auto-run customer SQL, auto-provision a resource, broaden
 a Key or discard work to save a click. Backend authorization remains authoritative.
 
-**Create table without a database (owner correction, 2026-11-03):** when a saved file has no
-available import destination, offer explicit database creation in the same journey and return to
-the original file. Preserve the file and entered import state, select the exact created resource,
+**Create table without a database (owner correction, 2026-11-03):** when a saved file or Bash
+output has no available import destination, offer explicit database creation in the same journey
+from both Create table and Export; retain the option to change export destination. Return to
+the original file or output. Preserve the source and entered import state, select the exact created resource,
 and distinguish a database that is still provisioning or cannot accept imports from one that is
 ready. Offer status checking and a route to setup details without automatically creating or
 retrying resources. Do not treat failed or incomplete destination loading as an empty list.

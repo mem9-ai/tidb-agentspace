@@ -306,3 +306,134 @@ test('@visual create a database and continue importing the same file', async ({
   });
   expect(workspace.state.files.find((file) => file.path === '/us-sales.csv').content).toBe(csv);
 });
+
+test('@visual export a file to a newly created database without losing the source', async ({
+  page,
+  context,
+  workspace,
+}, testInfo) => {
+  addSalesFile(workspace);
+  workspace.state.resources = workspace.state.resources.filter(
+    (resource) => resource.kind === 'filesystem',
+  );
+  const preparations = [];
+  const exports = [];
+  const creates = [];
+  await mockFileWork(context, { onPrepare: preparations, onExport: exports });
+  await context.route('**/api/**/resources', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    const body = route.request().postDataJSON();
+    creates.push(body);
+    const resource = {
+      ...body,
+      id: 'db_new',
+      regionId: 'region:local',
+      provider: 'tidb-cloud-zero',
+      status: 'active',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
+    workspace.state.resources.push(resource);
+    return route.fulfill({ status: 201, json: { data: resource, mode: 'live' } });
+  });
+  await workspace.open('#files?resourceId=fs_fixture&path=%2Fus-sales.csv&view=preview');
+  await page.getByRole('button', { name: 'Export', exact: true }).filter({ visible: true }).click();
+  let dialog = page.getByRole('dialog', { name: 'Export original file' });
+  await dialog.getByLabel('Destination', { exact: true }).selectOption('database');
+  await expect(dialog.getByText('No database available for import')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Confirm and create table' })).toHaveCount(0);
+  if (process.env.EXPORT_NO_DATABASE_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.EXPORT_NO_DATABASE_SCREENSHOTS}-${testInfo.project.name}.png`,
+      animations: 'disabled',
+    });
+  await dialog.getByLabel('Destination', { exact: true }).selectOption('download');
+  await expect(dialog.getByRole('button', { name: 'Download original' })).toBeVisible();
+  await dialog.getByLabel('Destination', { exact: true }).selectOption('filesystem');
+  await expect(dialog.getByLabel('New file path')).toBeVisible();
+  await dialog.getByLabel('Destination', { exact: true }).selectOption('database');
+  await expect(dialog.getByText('No database available for import')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Create database', exact: true }).click();
+  let create = page.getByRole('dialog', { name: 'Create a database' });
+  await create.getByRole('button', { name: 'Cancel' }).click();
+  dialog = page.getByRole('dialog', { name: 'Export original file' });
+  await expect(dialog.getByText('Original file · us-sales.csv')).toBeVisible();
+  expect(creates).toHaveLength(0);
+  await dialog.getByRole('button', { name: 'Create database', exact: true }).click();
+  create = page.getByRole('dialog', { name: 'Create a database' });
+  await create.getByRole('button', { name: 'Create database', exact: true }).click();
+  await expect(dialog.getByLabel('Database', { exact: true })).toHaveValue('db_new');
+  await dialog.getByLabel('New table name').fill('sales_2026');
+  await dialog.getByRole('button', { name: 'Parse and review' }).click();
+  await expect(dialog.getByRole('region', { name: 'Parsed import sample' })).toContainText(
+    'California',
+  );
+  await dialog.getByRole('button', { name: 'Confirm and create table' }).click();
+  await expect(dialog.getByText('Export saved')).toBeVisible();
+  expect(creates).toHaveLength(1);
+  expect(exports[0].target).toEqual({
+    kind: 'database',
+    resourceId: 'db_new',
+    table: 'sales_2026',
+  });
+  expect(workspace.state.files.find((file) => file.path === '/us-sales.csv').content).toBe(csv);
+});
+
+test('Bash output can start database creation and return to the same output', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  addSalesFile(workspace, '/activity.log');
+  workspace.state.resources = workspace.state.resources.filter(
+    (resource) => resource.kind === 'filesystem',
+  );
+  await context.route('**/api/**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/file-analyses/capabilities'))
+      return route.fulfill({
+        json: {
+          engine: 'bash',
+          available: true,
+          engines: [
+            {
+              engine: 'bash',
+              available: true,
+              reason: '',
+              input: { path: '/workspace/input.log', workingDirectory: '/workspace', aliases: [] },
+            },
+          ],
+        },
+      });
+    if (url.pathname.endsWith('/file-analyses') && route.request().method() === 'POST')
+      return route.fulfill({
+        json: {
+          engine: 'bash',
+          stdout: 'California,120\n',
+          stderr: '',
+          exitCode: 0,
+          inputBytes: 20,
+          durationMs: 1,
+        },
+      });
+    return route.fallback();
+  });
+  await workspace.open('#files?resourceId=fs_fixture&path=%2Factivity.log&view=analyze');
+  await page.getByRole('button', { name: 'Run command' }).click();
+  const output = page.getByRole('tabpanel', { name: 'Command output' });
+  await expect(output.getByText('California,120')).toBeVisible();
+  await output.getByRole('button', { name: 'Export', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Export command output' });
+  await dialog.getByLabel('Destination', { exact: true }).selectOption('database');
+  await expect(dialog.getByText('No database available for import')).toBeVisible();
+  await expect(
+    dialog.getByText('Create a database, then continue with this output.'),
+  ).toBeVisible();
+  await dialog.getByRole('button', { name: 'Create database', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Create a database' })
+    .getByRole('button', { name: 'Cancel' })
+    .click();
+  await expect(dialog.getByText('Standard output · activity.log')).toBeVisible();
+  await dialog.getByLabel('Destination', { exact: true }).selectOption('download');
+  await expect(dialog.getByRole('button', { name: 'Download output' })).toBeVisible();
+});

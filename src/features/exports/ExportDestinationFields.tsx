@@ -1,9 +1,36 @@
-import { type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Alert, Button, Group, Loader, NativeSelect, Text, TextInput } from '@tidbcloud/uikit';
 import { useResourcePages } from '../resources/use-resource-pages';
 import type { Resource } from '../../api/client';
 export type DestinationKind = 'download' | 'filesystem' | 'database';
 const liveProviders = ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'];
+export function ExportKindSelect({
+  kind,
+  onKindChange,
+  busy,
+}: {
+  kind: DestinationKind;
+  onKindChange: (kind: DestinationKind) => void;
+  busy: boolean;
+}) {
+  return (
+    <NativeSelect
+      label="Destination"
+      value={kind}
+      disabled={busy}
+      onChange={(event) => {
+        const value = event.currentTarget.value;
+        if (value === 'download' || value === 'filesystem' || value === 'database')
+          onKindChange(value);
+      }}
+      data={[
+        { value: 'download', label: 'Download to your computer' },
+        { value: 'filesystem', label: 'Workspace File System' },
+        { value: 'database', label: 'Workspace database' },
+      ]}
+    />
+  );
+}
 export function useExportDestination(
   kind: DestinationKind,
   resourceId: string,
@@ -11,6 +38,8 @@ export function useExportDestination(
 ) {
   const pages = useResourcePages(kind !== 'download', resourceId);
   const { resources, loading } = pages;
+  const [loadedKind, setLoadedKind] = useState<DestinationKind | null>(null);
+  useEffect(() => setLoadedKind(kind), [kind]);
   const candidates = created
     ? [...resources.filter((resource) => resource.id !== created.id), created]
     : resources;
@@ -24,7 +53,7 @@ export function useExportDestination(
   return {
     targets,
     destination: targets.find((resource) => resource.id === resourceId),
-    loading,
+    loading: loading || (kind !== 'download' && loadedKind !== kind),
     loadError: pages.error,
     retry: pages.retry,
     nextCursor: pages.nextCursor,
@@ -61,23 +90,7 @@ export function ExportDestinationFields({
 }) {
   return (
     <>
-      {showKindSelector && (
-        <NativeSelect
-          label="Destination"
-          value={kind}
-          disabled={busy}
-          onChange={(event) => {
-            const value = event.currentTarget.value;
-            if (value === 'download' || value === 'filesystem' || value === 'database')
-              onKindChange(value);
-          }}
-          data={[
-            { value: 'download', label: 'Download to your computer' },
-            { value: 'filesystem', label: 'Workspace File System' },
-            { value: 'database', label: 'Workspace database' },
-          ]}
-        />
-      )}
+      {showKindSelector && <ExportKindSelect kind={kind} onKindChange={onKindChange} busy={busy} />}
       {children}
       {kind !== 'download' && (
         <>
