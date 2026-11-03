@@ -8,6 +8,9 @@ correctness and review of their changes, regardless of which agent produced them
 
 ## Reproducible setup
 
+Install Bash and zsh to run the agent launch compatibility tests. On Ubuntu, install zsh with
+`sudo apt-get install zsh` before running the checks.
+
 Install the exact Node version in `.node-version` using your preferred version manager.
 `.nvmrc` is provided for nvm users. Use npm 11.6.2, declared in `package.json`:
 
