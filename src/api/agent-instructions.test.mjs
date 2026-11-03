@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { agentInstructions } from './agent-instructions.ts';
+import { parse } from 'yaml';
+import { agentInstructions, workspaceSkillTask, workspaceSkillUrl } from './agent-instructions.ts';
 
 test('downloaded agent instructions reference current OpenAPI operations and mounted origins', async () => {
   const contract = JSON.parse(
@@ -30,4 +31,37 @@ test('downloaded agent instructions reference current OpenAPI operations and mou
   );
   assert.match(text, /Idempotency-Key/);
   assert.match(text, /If-Match/);
+});
+
+test('task points to the portable skill without exposing credentials', () => {
+  const task = 'Analyze /us-sales.csv and write /us-sales-report.md.';
+  const skill = workspaceSkillUrl('https://workspace.example', '/studio/');
+  const text = workspaceSkillTask('https://workspace.example/studio/api', skill, task);
+  assert.ok(text.includes('https://workspace.example/studio/api'));
+  assert.ok(text.includes('https://workspace.example/studio/skills/drive9-workspace/SKILL.md'));
+  assert.ok(text.includes(task));
+  assert.match(text, /unauthenticated GET/);
+  assert.match(text, /If the skill is unavailable, stop/);
+  assert.doesNotMatch(text, /POST \/file-analyses/);
+  assert.equal(workspaceSkillUrl('https://workspace.example', '/studio'), skill);
+  assert.equal(workspaceSkillUrl('https://workspace.example', '/studio/index.html'), skill);
+});
+
+test('published Workspace skill is portable and preserves credential and write safeguards', async () => {
+  const skill = await readFile(
+    new URL('../../console/public/skills/drive9-workspace/SKILL.md', import.meta.url),
+    'utf8',
+  );
+  const match = /^---\n([\s\S]*?)\n---\n/.exec(skill);
+  assert.ok(match, 'skill has YAML frontmatter');
+  const metadata = parse(match[1]);
+  assert.equal(metadata.name, 'drive9-workspace');
+  assert.ok(typeof metadata.description === 'string' && metadata.description.length > 0);
+  assert.ok(metadata.description.length <= 1024);
+  assert.match(skill, /Do not follow the\s+307 redirect/);
+  assert.match(skill, /Verify the response's region origin, path, and ID/);
+  assert.match(skill, /If-None-Match: \*/);
+  assert.match(skill, /If-Match/);
+  assert.match(skill, /rather than blindly retrying/);
+  assert.doesNotMatch(skill, /awk_[A-Za-z0-9]+/);
 });

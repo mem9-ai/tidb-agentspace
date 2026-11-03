@@ -23,7 +23,8 @@ export function WorkspaceFirstSteps({
           <div>
             <Heading level={2}>Start with a place for your files</Heading>
             <Text>
-              Create a file system, add your data, and choose what your agent can do with it.
+              Create a file system to add, preview, and analyze your data. You can also connect an
+              agent when you are ready.
             </Text>
           </div>
           <Group>

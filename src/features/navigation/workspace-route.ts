@@ -19,6 +19,7 @@ export type WorkspaceRoute = {
   fileLink?: string;
   tutorialResourceId?: string;
   tutorialKind?: 'database' | 'filesystem';
+  showSalesExample?: boolean;
 };
 
 export function tutorialHash(resourceId: string): string {
@@ -50,6 +51,13 @@ export function tableSelectSql(
 export function parseWorkspaceRoute(hash: string): WorkspaceRoute {
   const value = hash.replace(/^#/, '');
   if (value === 'monitoring' || value === 'activity') return { page: 'overview' };
+  if (value.startsWith('overview?')) {
+    const query = new URLSearchParams(value.slice(9));
+    return {
+      page: 'overview',
+      ...(query.get('example') === 'sales' ? { showSalesExample: true } : {}),
+    };
+  }
   if (value.startsWith('tutorials?')) {
     const query = new URLSearchParams(value.slice(10));
     const resourceId = query.get('resourceId');

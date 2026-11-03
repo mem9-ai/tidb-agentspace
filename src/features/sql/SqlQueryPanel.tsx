@@ -19,6 +19,7 @@ type Props = {
   renderResults: (results: React.ReactNode) => React.ReactNode;
   database: DatabaseResource;
   readBusy: boolean;
+  readBusyReason?: string;
   execute: (sql: string) => Promise<QueryResult>;
   onComplete: () => Promise<void>;
   onExportSaved: () => Promise<void>;
@@ -31,6 +32,7 @@ export function SqlQueryPanel({
   renderResults,
   database,
   readBusy,
+  readBusyReason,
   execute,
   onComplete,
   onExportSaved,
@@ -90,6 +92,11 @@ export function SqlQueryPanel({
   ];
   return (
     <div className="workspace-tool">
+      {readBusyReason && (
+        <Alert color="peacock" role="status">
+          {readBusyReason} You can run SQL when this finishes.
+        </Alert>
+      )}
       <WorkspaceExecutionPanel
         busy={busy}
         disabled={readBusy || !database.id || database.status !== 'active' || !sql.trim()}

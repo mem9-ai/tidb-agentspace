@@ -213,7 +213,8 @@ export const test = base.extend({
       if (path === '/sales-sample-attempts' && method === 'GET')
         return reply({ data: salesSample ? [salesSample] : [] });
       if (path === '/sales-sample-attempts' && method === 'POST') {
-        const resource = {
+        const resource = (body.resourceId &&
+          state.resources.find((item) => item.id === body.resourceId)) || {
           id: 'fs_sales',
           name: 'sales-workspace',
           kind: 'filesystem',
@@ -223,7 +224,7 @@ export const test = base.extend({
           status: 'active',
           createdAt,
         };
-        state.resources.push(resource);
+        if (!body.resourceId) state.resources.push(resource);
         state.files.push({
           id: 'sales-file',
           resourceId: resource.id,
@@ -266,7 +267,48 @@ export const test = base.extend({
             })
           : reply({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404);
       }
+      if (
+        path === '/files/tabular-preview' &&
+        method === 'GET' &&
+        url.searchParams.get('resourceId') === 'fs_sales' &&
+        url.searchParams.get('path') === '/us-sales.csv'
+      )
+        return reply({
+          columns: ['state', 'sales_usd'],
+          columnTypes: ['VARCHAR', 'BIGINT'],
+          schema: [
+            { column_name: 'state', column_type: 'VARCHAR' },
+            { column_name: 'sales_usd', column_type: 'BIGINT' },
+          ],
+          rows: [{ state: 'California', sales_usd: '48000' }],
+          rowCount: 1,
+          totalRows: null,
+          typesInferred: true,
+          truncated: false,
+        });
       if (path === '/resources' && method === 'POST') {
+        if (body.onlyIfNew) {
+          const existing = state.resources.find((item) => item.isDefault);
+          if (existing) return reply({ data: existing, mode: 'demo' }, 201);
+          if (state.resources.length)
+            return reply(
+              { error: { code: 'WORKSPACE_NOT_NEW', message: 'Workspace is not new' } },
+              409,
+            );
+          const resource = {
+            id: 'fs_sales',
+            name: body.name,
+            kind: 'filesystem',
+            region: body.region,
+            regionId: state.workspace.defaultRegionId,
+            provider: 'local',
+            status: 'active',
+            isDefault: true,
+            createdAt,
+          };
+          state.resources.push(resource);
+          return reply({ data: resource, mode: 'demo' }, 201);
+        }
         if (rejectAutomaticName) {
           rejectAutomaticName = false;
           return reply({ error: { code: 'NAME_EXISTS', message: 'Fixture conflict' } }, 409);
@@ -386,6 +428,7 @@ export const test = base.extend({
           createdAt: new Date().toISOString(),
           expiresAt: new Date(body.expiresAt * 1000).toISOString(),
           revokedAt: null,
+          regionalStatus: state.keyCreateRegionalStatus || 'applied',
         };
         state.keys.push(key);
         return reply(

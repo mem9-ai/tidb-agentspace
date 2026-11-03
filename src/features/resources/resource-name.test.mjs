@@ -7,8 +7,13 @@ const fixedId = () => '01234567-89ab-4cde-8f01-23456789abcd';
 test('database names identify each resource kind and fit the public name contract', () => {
   for (const kind of ['mysql', 'postgresql', 'duckdb']) {
     const name = generateResourceName(kind, [], fixedId);
-    assert.ok(name.startsWith(kind + '-'));
-    assert.match(name, /^[a-z][a-z0-9-]{2,39}$/);
+    assert.ok(
+      name.startsWith((kind === 'mysql' ? 'tidb' : kind === 'postgresql' ? 'tidb_pg' : kind) + '-'),
+    );
+    assert.match(
+      name,
+      kind === 'postgresql' ? /^[a-z][a-z0-9_-]{2,39}$/ : /^[a-z][a-z0-9-]{2,39}$/,
+    );
   }
 });
 

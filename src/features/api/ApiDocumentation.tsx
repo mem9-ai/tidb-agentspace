@@ -168,6 +168,18 @@ export function ApiDocumentation({
           <Text size="sm">
             Copying instructions does not confirm a connection. You can revoke a key from API keys.
           </Text>
+          <details>
+            <summary>Example: connect Pi</summary>
+            <Text mt="sm">
+              After creating a key, follow the terminal setup shown with it. In the same Bash or Zsh
+              terminal, run <code>pi</code> to start a new Pi session. Copy the agent instructions
+              above and paste them into Pi with your task. Pi must have a model configured and
+              access to the Workspace API.
+            </Text>
+            <Text size="sm" mt="sm">
+              The key stays in the terminal environment. Do not paste it into Pi or a chat.
+            </Text>
+          </details>
         </Paper>
         <Text>
           Want to connect with code? <Anchor href="#api">See the API documentation</Anchor>.

@@ -190,122 +190,36 @@ async function tutorialApi(
   return { calls, connectContext: (other) => other.route('**/api/**', handler) };
 }
 
-test('@visual Workspace tutorials resume in an isolated browser with no browser progress or duplicate sample writes', async ({
+test('@visual the sales tutorial leads to the shared example without creating files', async ({
   page,
   context,
   workspace,
-  browser,
 }, testInfo) => {
   workspace.addResources();
-  workspace.state.resources[0].provider = 'tidb-cloud-zero';
-  const tutorial = await tutorialApi(context, workspace);
-  const { calls } = tutorial;
+  const { calls } = await tutorialApi(context, workspace);
   await workspace.open('#tutorials');
-  const database = page.locator('#tutorial-database');
-  const files = page.locator('#tutorial-filesystem');
-  await expect(page.getByRole('tab', { name: 'File System', exact: true })).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
-  await page.getByRole('tab', { name: 'Database', exact: true }).click();
-  await expect(database.getByRole('button', { name: 'Create database', exact: true })).toHaveCount(
-    0,
-  );
-  await expect(
-    database.getByRole('button', { name: 'Run tutorial query', exact: true }),
-  ).toBeDisabled();
-  await database.getByRole('button', { name: 'Load sample orders', exact: true }).click();
-  await database.getByRole('button', { name: 'Run tutorial query', exact: true }).click();
-  await expect(database.getByRole('region', { name: 'Query result data' })).toContainText('240');
-  await page.getByRole('tab', { name: 'File System', exact: true }).click();
-  await files.getByRole('button', { name: 'Open sample CSV', exact: true }).click();
-  await expect(page).toHaveURL(/tutorial-orders-.*\.csv.*view=analyze/);
-  await page.getByRole('button', { name: 'Run query', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Query result data' })).toContainText('APAC');
-  await expect.poll(() => workspace.tutorials.get('fs_fixture')?.state).toBe('completed');
-  const originalTable = calls.find((call) => call.action === 'seed').table;
-  const originalPath = calls.find((call) => call.action === 'file').path;
-  const before = calls.length;
-  await page.close();
-  const freshContext = await browser.newContext({
-    viewport: testInfo.project.use.viewport,
-    colorScheme: testInfo.project.metadata.theme,
-  });
-  try {
-    await workspace.connectContext(freshContext);
-    await tutorial.connectContext(freshContext);
-    const reopened = await freshContext.newPage();
-    await reopened.goto('/#overview');
-    const resume = reopened.getByRole('region', { name: 'Your tutorials', exact: true });
-    await expect(resume.getByText('Completed', { exact: true })).toHaveCount(2);
-    expect(
-      await reopened.evaluate(() =>
-        Object.keys(localStorage).filter((key) => key.startsWith('workspace-tutorial:')),
-      ),
-    ).toEqual([]);
-    await expect(resume).toContainText('saved in this Workspace');
-    if (process.env.TUTORIAL_SCREENSHOTS) {
-      await resume.scrollIntoViewIfNeeded();
-      await reopened.screenshot({
-        path: `${process.env.TUTORIAL_SCREENSHOTS}/resume-${testInfo.project.name}.png`,
-        fullPage: false,
-      });
-    }
-    await resume
-      .locator('.tutorial-resume-card')
-      .filter({ hasText: 'mysql-fixture' })
-      .getByRole('link', { name: 'Revisit tutorial', exact: true })
-      .click();
-    await expect(reopened).toHaveURL(/#tutorials\?resourceId=db_fixture$/);
-    await expect(reopened.locator('#tutorial-database')).toContainText(originalTable);
-    await expect(
-      reopened.locator('#tutorial-database').getByText('Tutorial completed', { exact: true }),
-    ).toBeVisible();
-    expect(calls).toHaveLength(before);
-    await reopened
-      .locator('#tutorial-database')
-      .getByRole('button', { name: 'Run tutorial query', exact: true })
-      .click();
-    await expect(
-      reopened.locator('#tutorial-database').getByRole('region', { name: 'Query result data' }),
-    ).toContainText('240');
-    await reopened.goto('/#overview');
-    await reopened
-      .getByRole('region', { name: 'Your tutorials', exact: true })
-      .locator('.tutorial-resume-card')
-      .filter({ hasText: 'filesystem-fixture' })
-      .getByRole('link', { name: 'Revisit tutorial', exact: true })
-      .click();
-    await expect(reopened).toHaveURL(/#tutorials\?resourceId=fs_fixture$/);
-    await reopened.getByRole('button', { name: 'Open sample CSV', exact: true }).click();
-    await expect
-      .poll(() => new URLSearchParams(new URL(reopened.url()).hash.split('?')[1]).get('path'))
-      .toBe(originalPath);
-    await reopened.getByRole('button', { name: 'Run query', exact: true }).click();
-    await expect(reopened.getByRole('region', { name: 'Query result data' })).toContainText('APAC');
-    expect(calls.filter((call) => call.action === 'file')).toHaveLength(1);
-    expect(calls.filter((call) => call.action === 'seed')).toHaveLength(1);
-    await expect
-      .poll(() => reopened.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
-      .toBe(true);
-  } finally {
-    await freshContext.close();
-  }
+  const tutorial = page.locator('#tutorial-filesystem');
+  await expect(tutorial.getByRole('heading', { name: 'Explore US sales' })).toBeVisible();
+  await expect(tutorial).toContainText('Markdown report with a Mermaid chart');
+  await expect(page.getByRole('tab', { name: 'Markdown', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'Logs · Bash', exact: true })).toHaveCount(0);
+  if (process.env.TUTORIAL_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.TUTORIAL_SCREENSHOTS}/sales-${testInfo.project.name}.png`,
+    });
+  await tutorial.getByRole('link', { name: 'Explore the sales example' }).click();
+  await expect(page).toHaveURL(/#overview\?example=sales$/);
+  await expect(page.getByRole('region', { name: 'Explore US sales' })).toBeVisible();
+  expect(calls.filter((call) => call.action === 'file')).toHaveLength(0);
 });
 
-test('tutorial creation selects the returned resource and continues with included data', async ({
+test('database tutorial creation selects the returned resource', async ({
   page,
   context,
   workspace,
 }) => {
-  const { calls } = await tutorialApi(context, workspace);
+  await tutorialApi(context, workspace);
   await workspace.open('#tutorials');
-  await expect(page.getByRole('tab', { name: 'CSV', exact: true })).toBeVisible();
-  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
-  await expect(
-    page.locator('#tutorial-filesystem').getByRole('button', { name: 'Create File System' }),
-  ).toBeVisible();
-  expect(calls).toHaveLength(0);
   await page.getByRole('tab', { name: 'Database', exact: true }).click();
   await page
     .locator('#tutorial-database')
@@ -315,15 +229,10 @@ test('tutorial creation selects the returned resource and continues with include
     .getByRole('dialog')
     .getByRole('button', { name: 'Create database', exact: true })
     .click();
-  await expect(page).toHaveURL(/#tutorials\?resourceId=fixture_mysql_0$/);
+  await expect(page).toHaveURL(/#tutorials\?resourceId=fixture_postgresql_0$/);
   await expect(page.getByRole('combobox', { name: 'Tutorial database', exact: true })).toHaveValue(
-    'fixture_mysql_0',
+    'fixture_postgresql_0',
   );
-  await expect(
-    page
-      .locator('#tutorial-database')
-      .getByRole('button', { name: 'Create database', exact: true }),
-  ).toBeEnabled();
   await page
     .locator('#tutorial-database')
     .getByRole('button', { name: 'Run tutorial query', exact: true })
@@ -331,38 +240,9 @@ test('tutorial creation selects the returned resource and continues with include
   await expect(
     page.locator('#tutorial-database').getByText('Your first result is ready', { exact: true }),
   ).toBeVisible();
-  await expect(page.locator('#tutorial-filesystem')).toHaveCount(0);
-  await page.getByRole('link', { name: 'All tutorials', exact: true }).click();
-  await page
-    .locator('#tutorial-filesystem')
-    .getByRole('button', { name: 'Create File System', exact: true })
-    .click();
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: 'Create file system', exact: true })
-    .click();
-  await expect(page).toHaveURL(/#tutorials\?resourceId=fixture_filesystem_1$/);
-  await expect(
-    page.getByRole('combobox', { name: 'Tutorial File System', exact: true }),
-  ).toHaveValue('fixture_filesystem_1');
-  await expect(
-    page.locator('#tutorial-filesystem').getByRole('button', { name: 'Create File System' }),
-  ).toHaveCount(0);
-  await expect(page.getByRole('tab', { name: 'Markdown', exact: true })).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
-  await page.getByRole('tab', { name: 'CSV', exact: true }).click();
-  await page.getByRole('button', { name: 'Open sample CSV', exact: true }).click();
-  await expect(page).toHaveURL(/tutorial-orders-.*\.csv.*view=analyze/);
-  await page.getByRole('button', { name: 'Run query', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Query result data' })).toContainText('APAC');
-  expect(calls.filter((call) => call.action === 'analyze')[0].resourceId).toBe(
-    'fixture_filesystem_1',
-  );
 });
 
-test('an unavailable tutorial resource offers recovery and creation', async ({
+test('the sales tutorial explains which workspace the example uses', async ({
   page,
   workspace,
 }) => {
@@ -370,10 +250,8 @@ test('an unavailable tutorial resource offers recovery and creation', async ({
   workspace.state.resources[1].connectionError = 'Connection unavailable. Try again.';
   await workspace.open('#tutorials?resourceId=fs_fixture');
   const tutorial = page.locator('#tutorial-filesystem');
-  await expect(tutorial.getByText('Connection unavailable. Try again.')).toBeVisible();
-  await expect(tutorial.getByRole('button', { name: 'Refresh status' })).toBeEnabled();
-  await expect(tutorial.getByRole('button', { name: 'Create File System' })).toBeEnabled();
-  await expect(tutorial.getByRole('button', { name: 'Open sample CSV' })).toBeDisabled();
+  await expect(tutorial).toContainText('a File System in your workspace');
+  await expect(tutorial.getByRole('link', { name: 'Explore the sales example' })).toBeVisible();
 });
 
 test('only the saved CSV sample completes the tutorial, and a progress failure keeps the result', async ({
@@ -425,79 +303,31 @@ test('only the saved CSV sample completes the tutorial, and a progress failure k
   expect(workspace.tutorials.get('fs_fixture').state).toBe('ready');
 });
 
-test('@visual saving a tutorial sample shows activity without reporting an uncertain outcome or running another step', async ({
+test('@visual saving a database sample shows activity without repeating the write', async ({
   page,
   context,
   workspace,
-}, testInfo) => {
+}) => {
   workspace.addResources();
-  workspace.state.resources[0].name = 'sales-demo';
-  workspace.state.resources[1].name = 'demo-files';
-  workspace.state.profile.name = 'Developer';
   workspace.state.resources[0].provider = 'tidb-cloud-zero';
-  let releaseDatabase, releaseFile;
-  const databasePending = new Promise((resolve) => {
-    releaseDatabase = resolve;
+  let release;
+  const pending = new Promise((resolve) => {
+    release = resolve;
   });
-  const filePending = new Promise((resolve) => {
-    releaseFile = resolve;
-  });
-  const { calls } = await tutorialApi(context, workspace, {
-    beforeSeed: () => databasePending,
-    beforeFileSave: () => filePending,
-  });
+  const { calls } = await tutorialApi(context, workspace, { beforeSeed: () => pending });
   try {
-    await workspace.open('#tutorials');
-    for (const [kind, button] of [
-      ['database', 'Load sample orders'],
-      ['filesystem', 'Open sample CSV'],
-    ]) {
-      await page
-        .getByRole('tab', { name: kind === 'database' ? 'Database' : 'File System', exact: true })
-        .click();
-      const card = page.locator(`#tutorial-${kind}`);
-      await card.getByRole('button', { name: button, exact: true }).click();
-      await expect
-        .poll(() => calls.some((call) => call.action === (kind === 'database' ? 'seed' : 'file')))
-        .toBe(true);
-      await expect(card.getByRole('status')).toContainText(
-        kind === 'database' ? 'Saving the sample' : 'Opening the sample',
-      );
-      await expect(
-        card.getByRole('button', {
-          name: kind === 'database' ? 'Saving sample data…' : 'Opening sample…',
-          exact: true,
-        }),
-      ).toBeDisabled();
-      await expect(
-        card.getByRole('button', { name: 'Check saved sample', exact: true }),
-      ).toHaveCount(0);
-      await expect(card.getByText(/The save outcome is unconfirmed/)).toHaveCount(0);
-      if (kind === 'database') {
-        const run = card.getByRole('button', { name: 'Run tutorial query', exact: true });
-        await expect(run).toBeDisabled();
-        await expect(run).not.toHaveAttribute('data-loading', 'true');
-      }
-    }
-    releaseDatabase();
-    releaseFile();
-    await expect(page).toHaveURL(/tutorial-orders-.*\.csv.*view=analyze/);
-    await page.goto('/#tutorials?resourceId=db_fixture');
-    const database = page.locator('#tutorial-database');
-    await expect(database.getByText('Sample data ready', { exact: true })).toBeVisible();
-    await expect(database.locator('.tutorial-artifact .code-example')).not.toBeVisible();
-    await database.getByText('Sample location', { exact: true }).click();
-    await expect(database.locator('.tutorial-artifact .code-example')).toContainText(
-      calls.find((call) => call.action === 'seed').table,
-    );
-    if (process.env.EXPERIENCE_SCREENSHOTS)
-      await page.screenshot({
-        path: `${process.env.EXPERIENCE_SCREENSHOTS}/tutorials-${testInfo.project.name}.png`,
-        animations: 'disabled',
-      });
+    await workspace.open('#tutorials?resourceId=db_fixture');
+    const card = page.locator('#tutorial-database');
+    await card.getByRole('button', { name: 'Load sample orders', exact: true }).click();
+    await expect.poll(() => calls.some((call) => call.action === 'seed')).toBe(true);
+    await expect(card.getByRole('status')).toContainText('Saving the sample');
+    await expect(card.getByRole('button', { name: 'Saving sample data…' })).toBeDisabled();
+    await expect(card.getByRole('button', { name: 'Run tutorial query' })).toBeDisabled();
+    release();
+    await expect(card.getByText('Sample data ready', { exact: true })).toBeVisible();
+    expect(calls.filter((call) => call.action === 'seed')).toHaveLength(1);
   } finally {
-    releaseDatabase();
-    releaseFile();
+    release();
   }
 });
 
@@ -619,6 +449,8 @@ test('unavailable progress blocks sample writes and unknown save acknowledgement
     return route.fallback();
   });
   await workspace.open('#tutorials');
+  await expect(page.getByRole('link', { name: 'Explore the sales example' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Database', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Could not load or migrate');
   await expect(page.getByRole('button', { name: 'Load sample orders', exact: true })).toHaveCount(
     0,
@@ -626,7 +458,6 @@ test('unavailable progress blocks sample writes and unknown save acknowledgement
   expect(calls).toHaveLength(0);
   unavailable = false;
   await page.getByRole('button', { name: 'Retry tutorial progress', exact: true }).click();
-  await page.getByRole('tab', { name: 'Database', exact: true }).click();
   const database = page.locator('#tutorial-database');
   await database.getByRole('button', { name: 'Load sample orders', exact: true }).click();
   await expect(database.getByRole('alert')).toContainText('No sample action was retried');
@@ -676,48 +507,79 @@ test('legacy browser migration retains uncertain sample identity and Workspace s
   await resume
     .locator('.tutorial-resume-card')
     .filter({ hasText: 'filesystem-fixture' })
-    .getByRole('link', { name: 'Continue tutorial', exact: true })
+    .getByRole('link', { name: 'Check earlier sample', exact: true })
     .click();
-  await expect(page.getByRole('button', { name: 'Check saved sample', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'Check saved sample', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('saved sample could not be found');
+  await expect(page).toHaveURL(/tutorial-orders-b{32}\.csv/);
   expect(workspace.tutorials.get('db_fixture').sampleId).toBe('c'.repeat(32));
   expect(workspace.tutorials.get('fs_fixture').state).toBe('attempted');
   expect(calls).toHaveLength(0);
 });
 
-test('@visual file journeys open independently and reuse Workspace samples without replacing edits', async ({
+test('existing tutorial files remain available after the tutorial changes', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  workspace.addResources();
+  const id = 'a'.repeat(32);
+  const samplePath = `/tutorial-orders-${id}.csv`;
+  workspace.tutorials.set('fs_fixture', {
+    resourceId: 'fs_fixture',
+    sampleId: id,
+    state: 'ready',
+    version: '"tutorial-' + 'b'.repeat(32) + '"',
+    updatedAt: '2026-10-31T00:00:00Z',
+  });
+  workspace.state.files.push({
+    id: samplePath,
+    resourceId: 'fs_fixture',
+    path: samplePath,
+    type: 'file',
+    content: ordersCsv,
+    size: ordersCsv.length,
+    updatedAt: '2026-01-01T00:00:00Z',
+  });
+  await tutorialApi(context, workspace);
+  await workspace.open('#overview');
+  await page
+    .getByRole('region', { name: 'Your tutorials' })
+    .getByRole('link', { name: 'Open earlier sample' })
+    .click();
+  await expect(page).toHaveURL(/tutorial-orders-.*\.csv/);
+  await expect(
+    page.getByRole('complementary', { name: `tutorial-orders-${id}.csv` }),
+  ).toBeVisible();
+  expect(workspace.state.files.find((file) => file.path === samplePath).content).toBe(ordersCsv);
+});
+
+test('tutorial links to the sales journey without creating a legacy sample', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  workspace.addResources();
+  const { calls } = await tutorialApi(context, workspace);
+  await workspace.open('#tutorials?resourceId=fs_fixture');
+  await page.getByRole('link', { name: 'Explore the sales example' }).click();
+  await expect(page).toHaveURL(/#overview\?example=sales$/);
+  expect(calls.filter((call) => call.action === 'file')).toHaveLength(0);
+});
+
+test('database sample progress resumes in a fresh browser without repeating its write', async ({
   page,
   context,
   workspace,
   browser,
 }, testInfo) => {
   workspace.addResources();
-  workspace.state.resources.find((resource) => resource.id === 'fs_fixture').name = 'Project files';
-  workspace.state.profile.name = 'Developer';
+  workspace.state.resources[0].provider = 'tidb-cloud-zero';
   const api = await tutorialApi(context, workspace);
-  const { calls } = api;
-  await workspace.open('#tutorials?resourceId=fs_fixture');
-  const tutorial = page.locator('#tutorial-filesystem');
-  if (process.env.EXPERIENCE_SCREENSHOTS)
-    await page.screenshot({
-      path: `${process.env.EXPERIENCE_SCREENSHOTS}/file-csv-${testInfo.project.name}.png`,
-      fullPage: true,
-    });
-  await tutorial.getByRole('tab', { name: 'Markdown', exact: true }).click();
-  if (process.env.EXPERIENCE_SCREENSHOTS)
-    await page.screenshot({
-      path: `${process.env.EXPERIENCE_SCREENSHOTS}/file-tutorial-${testInfo.project.name}.png`,
-      fullPage: true,
-    });
-  await tutorial.getByRole('button', { name: 'Open sample notes' }).click();
-  await expect(page.getByRole('heading', { name: 'Project handoff' })).toBeVisible();
-  const notes = workspace.state.files.find((file) => file.path.endsWith('-notes.md'));
-  expect(notes).toBeTruthy();
-  expect(calls.filter((call) => call.action === 'file' && call.path.endsWith('.csv'))).toHaveLength(
-    0,
-  );
-  notes.content = '# My own handoff\n';
+  await workspace.open('#tutorials?resourceId=db_fixture');
+  const tutorial = page.locator('#tutorial-database');
+  await tutorial.getByRole('button', { name: 'Load sample orders' }).click();
+  await tutorial.getByRole('button', { name: 'Run tutorial query' }).click();
+  await expect(tutorial.getByRole('region', { name: 'Query result data' })).toContainText('240');
+  const table = api.calls.find((call) => call.action === 'seed').table;
   const fresh = await browser.newContext({
     viewport: testInfo.project.use.viewport,
     colorScheme: testInfo.project.metadata.theme,
@@ -729,58 +591,12 @@ test('@visual file journeys open independently and reuse Workspace samples witho
     await reopened.goto('/#overview');
     await reopened
       .getByRole('region', { name: 'Your tutorials' })
-      .getByRole('link', { name: 'Continue tutorial' })
+      .getByRole('link', { name: 'Revisit tutorial' })
       .click();
-    await reopened.getByRole('tab', { name: 'Markdown' }).click();
-    await reopened.getByRole('button', { name: 'Open sample notes' }).click();
-    await expect(reopened.getByRole('heading', { name: 'My own handoff' })).toBeVisible();
+    await expect(reopened.locator('#tutorial-database')).toContainText(table);
+    await expect(reopened.getByText('Tutorial completed', { exact: true })).toBeVisible();
+    expect(api.calls.filter((call) => call.action === 'seed')).toHaveLength(1);
   } finally {
     await fresh.close();
   }
-  expect(calls.filter((call) => call.action === 'file' && call.path === notes.path)).toHaveLength(
-    1,
-  );
-  await page.goto('/#tutorials?resourceId=fs_fixture');
-  await tutorial.getByRole('tab', { name: 'Logs · Bash' }).click();
-  if (process.env.EXPERIENCE_SCREENSHOTS)
-    await page.screenshot({
-      path: `${process.env.EXPERIENCE_SCREENSHOTS}/file-log-${testInfo.project.name}.png`,
-      fullPage: true,
-    });
-  await tutorial.getByRole('button', { name: 'Open sample log' }).click();
-  await expect(page).toHaveURL(/activity.log.*view=analyze/);
-  await page.getByRole('button', { name: 'Editor tools' }).click();
-  await page.getByRole('menuitem', { name: 'Find errors' }).click();
-  await page.getByRole('button', { name: 'Run command' }).click();
-  await expect(page.getByText('2:2026-10-30T09:01:00Z ERROR APAC sync timed out')).toBeVisible();
-  expect(
-    workspace.state.files.some(
-      (file) => file.path.endsWith('-activity.log') && file.content.includes('ERROR'),
-    ),
-  ).toBe(true);
-});
-
-test('file examples do not write when Workspace progress cannot be saved', async ({
-  page,
-  context,
-  workspace,
-}) => {
-  workspace.addResources();
-  const { calls } = await tutorialApi(context, workspace);
-  await context.route('**/api/**', async (route) => {
-    if (
-      route.request().method() === 'PUT' &&
-      new URL(route.request().url()).pathname.endsWith('/tutorials/fs_fixture')
-    )
-      return route.fulfill({
-        status: 503,
-        json: { error: { code: 'UNAVAILABLE', message: 'Unavailable' } },
-      });
-    return route.fallback();
-  });
-  await workspace.open('#tutorials?resourceId=fs_fixture');
-  await page.getByRole('tab', { name: 'Markdown', exact: true }).click();
-  await page.getByRole('button', { name: 'Open sample notes' }).click();
-  await expect(page.getByRole('alert')).toContainText('No sample action was retried');
-  expect(calls.filter((call) => call.action === 'file')).toHaveLength(0);
 });

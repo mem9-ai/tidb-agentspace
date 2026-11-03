@@ -95,7 +95,7 @@ the accepted [GH-103 specification](../../specs/gh-103/spec.md) and
 destination query grant; Workspace files additionally require source read/analyze grants.
 Preserve the explicit review, destination-bound preparation and create-only write boundaries.
 
-For DuckDB browsing performance, follow [ADR 0012](../decisions/0012-duckdb-catalog-reader.md): reuse only bounded server-generated read-only catalog sessions. Do not turn customer SQL or file-source workers into shared sessions to reduce attachment cost. Measure cold and warm paths separately and retain authorization on every request.
+For DuckDB browsing performance, follow [ADR 0045](../decisions/0045-duckdb-creation-table-snapshot.md) and the disposable-worker boundary in [ADR 0021](../decisions/0021-native-rust-computation.md). The reusable reader in ADR 0012 was retired. Do not turn customer SQL or file-source workers into shared sessions to reduce attachment cost. Measure cold and warm paths separately and retain authorization on every request.
 
 For preview-first file UI and bounded tabular samples, follow
 [ADR 0017](../decisions/0017-preview-first-file-workspace.md) and the

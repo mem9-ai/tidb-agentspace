@@ -6,8 +6,6 @@ test('@visual workspace settings and resource creation focus on customer choices
   workspace,
 }, testInfo) => {
   workspace.addResources();
-  workspace.state.capabilities.mysql.provider = 'local';
-  workspace.state.capabilities.mysql.regions = ['aws-us-east-1', 'aws-us-west-2'];
   await workspace.open('#settings');
   await expect(page.getByLabel('Default region')).toHaveCount(0);
   await expect(page.getByLabel('Workspace ID', { exact: true })).toBeVisible();
@@ -15,7 +13,10 @@ test('@visual workspace settings and resource creation focus on customer choices
   await page.getByRole('button', { name: /create database/i }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByLabel('Workspace region')).toHaveCount(0);
-  await expect(dialog.getByLabel('Provider data location')).toBeVisible();
+  await expect(dialog.getByLabel('Provider data location')).toHaveCount(0);
+  await expect(dialog.getByRole('combobox', { name: 'Database type' })).toHaveCount(0);
+  await expect(dialog.getByText('PostgreSQL Compatible', { exact: true })).toBeVisible();
+  await expect(dialog).not.toContainText(/db9|TiDB Cloud Starter/i);
   if (process.env.REGION_VISUAL_DIR)
     await page.screenshot({
       path: `${process.env.REGION_VISUAL_DIR}/${testInfo.project.name}.png`,
@@ -29,7 +30,7 @@ test('cloud sign-in offers TiDB Account and clearly marks Guest access unavailab
   workspace.requireSignIn();
   await page.goto('/');
   await expect(
-    page.getByRole('heading', { name: 'Give your agent a place to work', level: 1 }),
+    page.getByRole('heading', { name: 'Work with your data, your way', level: 1 }),
   ).toBeVisible();
   const account = page.getByRole('button', { name: 'Continue with TiDB Account' });
   const guest = page.getByRole('button', { name: 'Try without an account' });
@@ -55,7 +56,7 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
   await expect(page.locator('.sign-in-brand')).toHaveText('TiDB Agent Workspace');
   await expect(page.locator('.sign-in-brand')).toBeVisible();
   await expect(
-    page.getByRole('heading', { name: 'Give your agent a place to work', level: 1 }),
+    page.getByRole('heading', { name: 'Work with your data, your way', level: 1 }),
   ).toBeVisible();
   const guest = page.getByRole('button', { name: 'Try without an account' });
   await expect(guest).toBeEnabled();
@@ -111,12 +112,11 @@ test('Guest API key creation explains the Workspace expiry', async ({ page, work
   await page.getByRole('button', { name: 'Create API key', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
   await expect(
-    dialog.getByText(
-      'This key expires within 24 hours, when you sign out, or when your temporary workspace expires.',
-    ),
+    dialog.getByText('Expires with your temporary workspace (within 24 hours), or on sign-out.'),
   ).toBeVisible();
   await expect(dialog.getByRole('combobox', { name: 'Expiration' })).toHaveCount(0);
   await dialog.getByLabel('Key name').fill('guest-agent');
+  await dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }).check();
   const start = Math.floor(Date.now() / 1000);
   await dialog.getByRole('button', { name: 'Create key', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Your key is ready' })).toBeVisible();
@@ -135,7 +135,7 @@ test('@visual Guest can cancel or confirm sign-out from the workspace navigation
   await page.goto('/');
   await page.getByRole('button', { name: 'Try without an account' }).click();
   await expect(
-    page.getByRole('main').getByRole('heading', { name: 'Give your agent a place to work' }),
+    page.getByRole('main').getByRole('heading', { name: 'Work with your data, your way' }),
   ).toBeVisible();
 
   async function openSignOut() {
@@ -273,93 +273,95 @@ for (const count of [0, 1, 2]) {
   });
 }
 
-test('@visual database creation defaults to MySQL without asking for type or location', async ({
+test('@visual database creation offers PostgreSQL without an engine choice', async ({
   page,
   workspace,
 }, testInfo) => {
   await workspace.open('#databases');
-  await page.getByRole('button', { name: 'Create database', exact: true }).click();
+  const trigger = page.getByRole('button', { name: 'Create database', exact: true });
+  await trigger.click();
   const dialog = page.getByRole('dialog', { name: 'Create a database' });
-  await expect(dialog.getByLabel('Database type: MySQL · TiDB Cloud Zero. Change')).toBeVisible();
-  await expect(dialog.getByRole('combobox', { name: 'Resource type' })).toHaveCount(0);
+  await expect(dialog.getByText('Create a database', { exact: true })).toBeFocused();
+  await expect(dialog.getByRole('combobox', { name: 'Database type' })).toHaveCount(0);
   await expect(dialog.getByLabel('Provider data location')).toHaveCount(0);
-  expect(
-    workspace.requests.filter(
-      (request) => request.method === 'POST' && request.path.endsWith('/resources'),
-    ),
-  ).toHaveLength(0);
+  const name = dialog.getByRole('textbox', { name: 'Resource name', exact: true });
+  await expect(name).toHaveValue(/^tidb_pg-[a-f0-9]{16}$/);
+  expect(await name.evaluate((element) => element.checkValidity())).toBe(true);
+  await name.fill('invalid.name');
+  expect(await name.evaluate((element) => element.checkValidity())).toBe(false);
+  await name.fill('tidb_pg-example');
+  expect(await name.evaluate((element) => element.checkValidity())).toBe(true);
+  await expect(name).toHaveCSS('font-size', '16px');
+  await expect(name).toHaveCSS('height', '48px');
+  await expect(dialog.getByText('PostgreSQL Compatible', { exact: true })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    .toBe(true);
   if (process.env.DEFAULT_DATABASE_SCREENSHOTS)
     await page.screenshot({
       path: `${process.env.DEFAULT_DATABASE_SCREENSHOTS}/${testInfo.project.name}.png`,
       animations: 'disabled',
     });
-  await dialog.getByRole('button', { name: 'Create database', exact: true }).click();
-  await expect
-    .poll(
-      () =>
-        workspace.requests.filter(
-          (request) => request.method === 'POST' && request.path.endsWith('/resources'),
-        ).length,
-    )
-    .toBe(1);
-  const create = workspace.requests.find(
-    (request) => request.method === 'POST' && request.path.endsWith('/resources'),
-  );
-  expect(create.body).toMatchObject({ kind: 'mysql', region: 'automatic' });
+  await dialog.getByRole('button', { name: 'Close dialog' }).press('Escape');
+  await expect(trigger).toBeFocused();
 });
 
-test('@visual database creation selects each type, generates a matching name and restores focus', async ({
+for (const [kind, region] of [['postgresql', 'automatic']]) {
+  test(`creating ${kind} sends the selected kind and default provider location`, async ({
+    page,
+    workspace,
+  }) => {
+    await workspace.open('#databases');
+    await page.getByRole('button', { name: 'Create database', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Create a database' });
+    await dialog.getByRole('button', { name: 'Create database', exact: true }).click();
+    await expect
+      .poll(() =>
+        workspace.requests.some((r) => r.method === 'POST' && r.path.endsWith('/resources')),
+      )
+      .toBe(true);
+    const create = workspace.requests.find(
+      (r) => r.method === 'POST' && r.path.endsWith('/resources'),
+    );
+    expect(create.body).toMatchObject({ kind, region });
+  });
+}
+
+test('@visual an unavailable PostgreSQL provider cannot create a database', async ({
   page,
   workspace,
-}, testInfo) => {
-  workspace.addResources();
-  workspace.state.resources = workspace.state.resources.filter((r) => r.kind === 'filesystem');
-  await workspace.open();
-  expect(workspace.requests).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ path: '/api/portal/v1/workspaces', method: 'GET' }),
-      expect.objectContaining({
-        path: `/api/portal/v1/workspaces/${workspace.state.workspace.id}/bootstrap`,
-        method: 'GET',
-      }),
-    ]),
-  );
+}) => {
+  workspace.state.capabilities.duckdb.available = false;
+  workspace.state.capabilities.postgresql.available = false;
   await workspace.open('#databases');
-  for (const kind of ['mysql', 'postgresql', 'duckdb']) {
-    const trigger = page.getByRole('button', { name: 'Create database', exact: true });
-    await trigger.click();
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toHaveAccessibleName('Create a database');
-    await expect(dialog.getByText('Create a database', { exact: true })).toBeFocused();
-    await expect(dialog.getByRole('combobox', { name: 'Resource type' })).toHaveCount(0);
-    if (process.env.DATABASE_DISCLOSURE_SCREENSHOTS && kind === 'mysql')
-      await page.screenshot({
-        path: `${process.env.DATABASE_DISCLOSURE_SCREENSHOTS}-${testInfo.project.name}.png`,
-        animations: 'disabled',
-      });
-    const disclosure = dialog.locator('summary');
-    await disclosure.focus();
-    await expect(disclosure).toBeFocused();
-    await page.keyboard.press('Space');
-    await expect(dialog.getByRole('combobox', { name: 'Resource type' })).toBeVisible();
-    await dialog.getByRole('combobox', { name: 'Resource type' }).selectOption(kind);
-    const name = dialog.getByRole('textbox', { name: 'Resource name', exact: true });
-    await expect(name).toHaveValue(new RegExp(`^${kind}-[a-f0-9]{16}$`));
-    await expect(name).toHaveCSS('font-size', '16px');
-    await expect(name).toHaveCSS('height', '48px');
-    await expect
-      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
-      .toBe(true);
-    await dialog.getByRole('button', { name: 'Close dialog' }).press('Escape');
-    await expect(trigger).toBeFocused();
-  }
+  await page.getByRole('button', { name: 'Create database', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create a database' });
+  await expect(dialog.getByText(/PostgreSQL-compatible databases are unavailable/)).toBeVisible();
+  await expect(dialog.getByRole('combobox', { name: 'Database type' })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Create database', exact: true })).toBeDisabled();
+  expect(
+    workspace.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/resources')),
+  ).toHaveLength(0);
+});
+
+test('database creation uses PostgreSQL when DuckDB is unavailable', async ({
+  page,
+  workspace,
+}) => {
+  workspace.state.capabilities.duckdb.available = false;
+  await workspace.open('#databases');
+  await page.getByRole('button', { name: 'Create database', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create a database' });
+  await expect(dialog.getByRole('combobox', { name: 'Database type' })).toHaveCount(0);
+  await expect(dialog.getByText('PostgreSQL Compatible', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Create database', exact: true })).toBeEnabled();
 });
 
 test('database creation does not submit when no provider location is available', async ({
   page,
   workspace,
 }) => {
-  workspace.state.capabilities.mysql.regions = [];
+  workspace.state.capabilities.postgresql.regions = [];
   await workspace.open('#databases');
   await page.getByRole('button', { name: 'Create database', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create a database' });
@@ -368,9 +370,7 @@ test('database creation does not submit when no provider location is available',
   ).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Create database', exact: true })).toBeDisabled();
   expect(
-    workspace.requests.filter(
-      (request) => request.method === 'POST' && request.path.endsWith('/resources'),
-    ),
+    workspace.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/resources')),
   ).toHaveLength(0);
 });
 
@@ -406,9 +406,7 @@ test('@visual Guest database creation distinguishes Workspace access from provid
   await page.getByRole('button', { name: 'Create database', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create a database' });
   await expect(
-    dialog.getByText(
-      'Temporary workspace access ends 24 hours after the workspace was created. The database has a separate provider expiry within 30 days.',
-    ),
+    dialog.getByText('Temporary workspace access ends 24 hours after it was created.'),
   ).toBeVisible();
   if (process.env.DEFAULT_DATABASE_SCREENSHOTS)
     await page.screenshot({
@@ -417,7 +415,7 @@ test('@visual Guest database creation distinguishes Workspace access from provid
     });
 });
 
-for (const kind of ['filesystem', 'duckdb']) {
+for (const kind of ['filesystem']) {
   test(`@visual ${kind} creation uses the configured default location and keeps it in Details`, async ({
     page,
     workspace,
@@ -437,19 +435,8 @@ for (const kind of ['filesystem', 'duckdb']) {
       await expect(name).toHaveValue(/^[a-z]+-[a-z]+$/);
       suggestedName = await name.inputValue();
     }
-    if (kind === 'duckdb') {
-      await dialog.getByLabel(/^Database type:/).click();
-      await dialog.getByRole('combobox', { name: 'Resource type' }).selectOption(kind);
-    }
     await expect(dialog.getByLabel('Provider data location')).toHaveCount(0);
     await expect(dialog.getByText('AWS · Singapore')).toHaveCount(0);
-    if (kind === 'duckdb') {
-      const badge = dialog.getByText('Experimental', { exact: true });
-      await expect(badge).toBeVisible();
-      await expect
-        .poll(() => badge.evaluate((element) => element.scrollWidth <= element.clientWidth))
-        .toBe(true);
-    }
     if (process.env.DEFAULT_LOCATION_SCREENSHOT) {
       await page.screenshot({
         path: `${process.env.DEFAULT_LOCATION_SCREENSHOT}-${kind}-${testInfo.project.name}.png`,
@@ -492,10 +479,13 @@ test('automatic type changes preserve manual names; a conflict requires an expli
   const dialog = page.getByRole('dialog');
   const kind = dialog.getByRole('combobox', { name: 'Resource type' });
   const name = dialog.getByRole('textbox', { name: 'Resource name', exact: true });
-  await kind.selectOption('postgresql');
-  await expect(name).toHaveValue(/^postgresql-/);
+  await expect(kind.locator('option')).toHaveCount(2);
+  await expect(kind.locator('option')).toHaveText(['PostgreSQL Compatible', 'File System']);
+  await expect(name).toHaveValue(/^tidb_pg-/);
   await name.fill('my-custom-name');
-  await kind.selectOption('duckdb');
+  await kind.selectOption('filesystem');
+  await expect(name).toHaveValue('my-custom-name');
+  await kind.selectOption('postgresql');
   await expect(name).toHaveValue('my-custom-name');
   await name.fill('');
   await kind.selectOption('filesystem');
@@ -544,12 +534,15 @@ test('Key creation sends explicit resource/action grants and reveals its synthet
   await page.getByRole('button', { name: 'Create API key', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
   await dialog.getByRole('textbox', { name: 'Key name' }).fill('file-reader');
-  await dialog.getByRole('checkbox', { name: 'mysql-fixture', exact: true }).uncheck();
-  await expect(dialog.getByRole('checkbox', { name: /resources:write/ })).toBeDisabled();
-  await dialog.getByRole('checkbox', { name: /usage:read/ }).uncheck();
+  await expect(dialog.getByRole('button', { name: 'Create key', exact: true })).toBeDisabled();
+  await dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }).check();
+  await expect(dialog.getByRole('checkbox', { name: /resources:write/ })).toHaveCount(0);
+  await dialog.getByRole('checkbox', { name: /files:read/ }).check();
   await dialog.getByRole('combobox', { name: 'Expiration' }).selectOption('7');
   await dialog.getByRole('button', { name: 'Create key', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'Your key is ready' })).toBeVisible();
+  const readyKey = page.getByRole('dialog', { name: 'Your key is ready' });
+  await expect(readyKey).toBeVisible();
+  await readyKey.getByRole('button', { name: 'Continue to key' }).click();
   const secret = page.getByText('synthetic-browser-key-never-valid-on-a-provider', { exact: true });
   await expect(secret).toBeVisible();
   expect(
@@ -563,9 +556,96 @@ test('Key creation sends explicit resource/action grants and reveals its synthet
   const issued = workspace.requests.find((r) => r.path.endsWith('/keys') && r.method === 'POST');
   expect(issued.path).toContain('/api/global/api/');
   expect(issued.body.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000) + 6 * 86400);
-  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await readyKey.getByRole('button', { name: 'Close dialog' }).click();
+  await expect(readyKey.getByRole('alert')).toContainText('full key cannot be shown again');
+  await readyKey.getByRole('button', { name: 'Close without copying' }).click();
   await expect(secret).toHaveCount(0);
   await expect(page.getByRole('cell', { name: /^file-reader/ })).toBeVisible();
+});
+
+test('@visual key permissions follow resource types and restore a specific selection', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  workspace.addResources();
+  await workspace.open('#keys');
+  await page.getByRole('button', { name: 'Create API key', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
+  await dialog.getByLabel('Key name').fill('mixed-agent');
+  await expect(
+    dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }),
+  ).not.toBeChecked();
+  await expect(
+    dialog.getByRole('checkbox', { name: 'mysql-fixture', exact: true }),
+  ).not.toBeChecked();
+  await dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }).check();
+  await expect(dialog.getByRole('checkbox', { name: /queries:read/ })).toHaveCount(0);
+  await dialog.getByRole('checkbox', { name: /files:read/ }).check();
+  if (process.env.KEY_PERMISSIONS_SCREENSHOTS)
+    await page.screenshot({
+      path: `${process.env.KEY_PERMISSIONS_SCREENSHOTS}-files-${testInfo.project.name}.png`,
+      animations: 'disabled',
+    });
+  await dialog.getByRole('checkbox', { name: 'mysql-fixture', exact: true }).check();
+  await dialog.getByRole('checkbox', { name: /queries:read/ }).check();
+  await dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }).uncheck();
+  await expect(dialog.getByRole('checkbox', { name: /files:read/ })).toHaveCount(0);
+  await expect(dialog.getByRole('status')).toContainText('files:read');
+  await expect(dialog.getByRole('checkbox', { name: /queries:read/ })).toBeChecked();
+  await dialog.getByText('Advanced resource access').click();
+  const all = dialog.getByRole('checkbox', { name: 'All current and future resources' });
+  await all.check();
+  await expect(
+    dialog.getByText(/All current and future resources, subject to the permissions below/),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText(/Only selected resources; future resources are excluded/),
+  ).toHaveCount(0);
+  await dialog.getByText('Workspace · Discover resources').click();
+  await dialog.getByRole('checkbox', { name: /resources:write/ }).check();
+  await all.uncheck();
+  await expect(dialog.getByRole('status')).toContainText('resources:write');
+  await expect(dialog.getByRole('checkbox', { name: 'mysql-fixture', exact: true })).toBeChecked();
+  await expect(
+    dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }),
+  ).not.toBeChecked();
+  await expect(dialog.getByRole('checkbox', { name: /resources:write/ })).toHaveCount(0);
+  await expect(dialog.getByRole('checkbox', { name: /files:read/ })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Create key', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Your key is ready' })).toBeVisible();
+  expect(
+    workspace.requests.findLast((entry) => entry.method === 'POST' && entry.path.endsWith('/keys'))
+      .body,
+  ).toMatchObject({
+    resourceIds: ['db_fixture'],
+    scopes: ['resources:read', 'queries:read'],
+  });
+});
+
+test('a created key leads to agent instructions after it is copied', async ({
+  page,
+  workspace,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: async (value) => (globalThis.__copiedText = value) },
+    });
+  });
+  workspace.addResources();
+  await workspace.open('#keys');
+  await page.getByRole('button', { name: 'Create API key', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
+  await dialog.getByLabel('Key name').fill('agent-access');
+  await dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }).check();
+  await dialog.getByRole('checkbox', { name: /files:read/ }).check();
+  await dialog.getByRole('button', { name: 'Create key', exact: true }).click();
+  const ready = page.getByRole('dialog', { name: 'Your key is ready' });
+  await ready.getByRole('button', { name: 'Continue to key' }).click();
+  await ready.getByRole('button', { name: 'Copy key', exact: true }).click();
+  await ready.getByRole('button', { name: 'I’ve added the key' }).click();
+  await expect(page).toHaveURL(/#connect$/);
+  await expect(page.getByRole('heading', { name: 'Connect an agent', level: 1 })).toBeVisible();
+  await expect(page.getByText('synthetic-browser-key-never-valid-on-a-provider')).toHaveCount(0);
 });
 
 test('@visual an agent Key can be limited to read-only SQL on a selected database', async ({
@@ -577,9 +657,8 @@ test('@visual an agent Key can be limited to read-only SQL on a selected databas
   await page.getByRole('button', { name: 'Create API key', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
   await dialog.getByRole('textbox', { name: 'Key name' }).fill('database-reader');
-  await dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }).uncheck();
-  await dialog.getByRole('checkbox', { name: /files:read/ }).uncheck();
-  await dialog.getByRole('checkbox', { name: /usage:read/ }).uncheck();
+  await dialog.getByRole('checkbox', { name: 'mysql-fixture', exact: true }).check();
+  await expect(dialog.getByRole('checkbox', { name: /files:read/ })).toHaveCount(0);
   await dialog.getByRole('checkbox', { name: /queries:read/ }).check();
   await expect(dialog.getByRole('checkbox', { name: /queries:execute/ })).not.toBeChecked();
   if (process.env.KEY_READ_SCREENSHOT) {

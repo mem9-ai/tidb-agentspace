@@ -15,6 +15,11 @@ test('tutorial links resume the exact resource through reload and history', () =
       tutorialResourceId: resourceId,
     });
   }
+  assert.deepEqual(parseWorkspaceRoute('#overview?example=sales'), {
+    page: 'overview',
+    showSalesExample: true,
+  });
+  assert.deepEqual(parseWorkspaceRoute('#overview?example=unknown'), { page: 'overview' });
   assert.deepEqual(parseWorkspaceRoute('#connect'), { page: 'connect' });
   assert.deepEqual(parseWorkspaceRoute('#activity'), { page: 'overview' });
   assert.deepEqual(parseWorkspaceRoute('#monitoring'), { page: 'overview' });

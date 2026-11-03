@@ -7,7 +7,7 @@ const steps: Record<QuickStartKind, { title: string; description: string }[]> = 
   database: [
     {
       title: 'Create a database',
-      description: 'Choose a database type and review its service details.',
+      description: 'Review the PostgreSQL database details.',
     },
     {
       title: 'Run your first query',
