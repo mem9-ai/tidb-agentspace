@@ -405,7 +405,7 @@ function App() {
         {error && sso.enabled && needsSignIn ? (
           // SSO is enabled and no session is active yet: prompt sign-in (no anonymous demo).
           <>
-            <Heading level={2}>Give your agent a place to work</Heading>
+            <Heading level={1}>Give your agent a place to work</Heading>
             <Text component="p">
               Store your files, connect your agent, and come back to its work.
             </Text>

@@ -27,7 +27,7 @@ test('cloud sign-in offers TiDB Account and clearly marks Guest access unavailab
   workspace.requireSignIn();
   await page.goto('/');
   await expect(
-    page.getByRole('heading', { name: 'Give your agent a place to work' }),
+    page.getByRole('heading', { name: 'Give your agent a place to work', level: 1 }),
   ).toBeVisible();
   const account = page.getByRole('button', { name: 'Continue with TiDB Account' });
   const guest = page.getByRole('button', { name: 'Continue as Guest' });
@@ -50,6 +50,9 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
 }, testInfo) => {
   workspace.requireSignIn({ guestEnabled: true });
   await page.goto('/');
+  await expect(
+    page.getByRole('heading', { name: 'Give your agent a place to work', level: 1 }),
+  ).toBeVisible();
   const guest = page.getByRole('button', { name: 'Continue as Guest' });
   await expect(guest).toBeEnabled();
   const account = page.getByRole('button', { name: 'Continue with TiDB Account' });
@@ -128,7 +131,7 @@ test('@visual Guest can cancel or confirm sign-out from the workspace navigation
   await page.goto('/');
   await page.getByRole('button', { name: 'Continue as Guest' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Give your agent a place to work' }),
+    page.getByRole('main').getByRole('heading', { name: 'Give your agent a place to work' }),
   ).toBeVisible();
 
   async function openSignOut() {
