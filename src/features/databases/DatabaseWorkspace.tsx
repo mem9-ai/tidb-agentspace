@@ -1,4 +1,4 @@
-import { useReducer, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { Button, Group, Paper, Stack, Text } from '@tidbcloud/uikit';
 import { workspaceApi, type Resource } from '../../api/client';
 import { DatabaseWorkspaceHeader } from './DatabaseWorkspaceHeader';
@@ -15,8 +15,10 @@ import { DatabaseTableList, TableInspector } from './DatabaseBrowser';
 import { createQueryDraft, queryDraftReducer } from './query-draft';
 import { useTableMetadata } from './use-table-metadata';
 import { DatabaseImportDialog } from '../imports/DatabaseImportDialog';
+import { forgetInitialTables, initialTables } from './initial-table-snapshot';
 
 type Props = {
+  workspaceId: string;
   database: Resource;
   databases: Resource[];
   routeLocation: WorkspaceRoute;
@@ -26,6 +28,7 @@ type Props = {
   onRetry: () => void;
 };
 export function DatabaseWorkspace({
+  workspaceId,
   database,
   databases,
   routeLocation,
@@ -56,7 +59,11 @@ export function DatabaseWorkspace({
   );
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [listingBusy, setListingBusy] = useState(true);
+  const [initialSnapshot, setInitialSnapshot] = useState(() =>
+    initialTables(workspaceId, database.id),
+  );
+  useEffect(() => forgetInitialTables(workspaceId, database.id), [workspaceId, database.id]);
+  const [listingBusy, setListingBusy] = useState(!initialSnapshot);
   const [rowBusy, setRowBusy] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
@@ -64,6 +71,11 @@ export function DatabaseWorkspace({
   const [collapsedTable, setCollapsedTable] = useState<string | null>(null);
   const waitingForRead = busy || listingBusy || rowBusy || importBusy;
   const metadata = useTableMetadata(database.id, tableName, revision, waitingForRead);
+  function refreshTables() {
+    setInitialSnapshot(undefined);
+    setListingBusy(true);
+    setRevision((value) => value + 1);
+  }
   const editor = useRef<HTMLDivElement>(null);
   const showEditor = () => {
     setOutputView('Query results');
@@ -109,8 +121,7 @@ export function DatabaseWorkspace({
           onClose={() => setImportOpen(false)}
           onBusyChange={setImportBusy}
           onSaved={async () => {
-            setListingBusy(true);
-            setRevision((value) => value + 1);
+            refreshTables();
             await refresh();
           }}
         />
@@ -137,10 +148,8 @@ export function DatabaseWorkspace({
           }}
           onQuery={queryTable}
           onLoadingChange={setListingBusy}
-          onRefresh={() => {
-            setListingBusy(true);
-            setRevision((value) => value + 1);
-          }}
+          initialSnapshot={initialSnapshot}
+          onRefresh={refreshTables}
         />
         <div className="database-editor-area" ref={editor}>
           <SqlQueryPanel
@@ -151,11 +160,24 @@ export function DatabaseWorkspace({
               importBusy ||
               (database.kind === 'duckdb' && (listingBusy || metadata.loading || rowBusy))
             }
+            readBusyReason={
+              importBusy
+                ? 'Importing data…'
+                : database.kind === 'duckdb' && listingBusy
+                  ? 'Connecting to DuckDB and loading tables…'
+                  : database.kind === 'duckdb' && metadata.loading
+                    ? 'Loading table details from DuckDB…'
+                    : database.kind === 'duckdb' && rowBusy
+                      ? 'Loading table data from DuckDB…'
+                      : undefined
+            }
             execute={(sql) => workspaceApi.query({ resourceId: database.id, sql })}
-            onComplete={refresh}
+            onComplete={async () => {
+              if (initialSnapshot) refreshTables();
+              await refresh();
+            }}
             onExportSaved={async () => {
-              setListingBusy(true);
-              setRevision((value) => value + 1);
+              refreshTables();
               await refresh();
             }}
             onRunningChange={setBusy}

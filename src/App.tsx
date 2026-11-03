@@ -29,6 +29,7 @@ import { WorkspaceEmptyState as Empty } from './ui/WorkspaceEmptyState';
 import { WorkspaceFirstSteps } from './features/resources/WorkspaceFirstSteps';
 import { GuestExpiryNotice } from './features/resources/ResourceQuickStart';
 import { SalesSampleJourney } from './features/portal/SalesSampleJourney';
+import { useDefaultFileSystem } from './features/portal/useDefaultFileSystem';
 import {
   useRemoteFiles,
   downloadRemoteFile,
@@ -47,7 +48,6 @@ import {
   Alert,
   Badge,
   Button,
-  Checkbox,
   Loader,
   NativeSelect,
   Paper,
@@ -59,14 +59,13 @@ import {
   UnstyledButton,
   Anchor,
   Notification,
-  Fieldset,
   Group,
 } from '@tidbcloud/uikit';
 import { WorkspaceModal as Modal } from './ui/WorkspaceModal';
 import { CodeExample as Code } from './ui/CodeExample';
 import { ChoiceTabs } from './ui/ChoiceTabs';
 import { Heading } from './ui/WorkspaceHeading';
-import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   IconArrowRight as ArrowRight,
   IconArrowUpRight as ArrowUpRight,
@@ -88,6 +87,12 @@ import {
 } from '@tidbcloud/uikit/icons';
 import type { IconProps } from '@tidbcloud/uikit/icons';
 import { ResourceAccessPicker } from './features/keys/ResourceAccessPicker';
+import {
+  KeyPermissions,
+  permitsSalesTask,
+  retainApplicablePermissions,
+} from './features/keys/KeyPermissions';
+import { KeyReady } from './features/keys/KeyReady';
 import { WorkspaceLayout } from './ui/WorkspaceLayout';
 import { DatabaseWorkspace } from './features/databases/DatabaseWorkspace';
 import {
@@ -122,16 +127,6 @@ const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string 
   settings: { label: 'Settings', icon: Settings, group: 'Manage' },
 };
 
-const allScopes: CreateKeyInput['scopes'] = [
-  'resources:read',
-  'resources:write',
-  'files:read',
-  'files:analyze',
-  'files:write',
-  'queries:read',
-  'queries:execute',
-  'usage:read',
-];
 function go(route: Route) {
   location.hash = route;
 }
@@ -180,7 +175,24 @@ function App() {
   const [resolvedResourceKey, setResolvedResourceKey] = useState('');
   const [tutorialCreation, setTutorialCreation] = useState(false);
   const [keyPreset, setKeyPreset] = useState<Resource>();
+  const [salesPrompt, setSalesPrompt] = useState<string>();
+  const [sampleKey, setSampleKey] = useState<{
+    workspaceId: string;
+    resourceId: string;
+    suitable: boolean;
+    pending: boolean;
+    launchPrepared?: boolean;
+  }>();
   const route = routeLocation.page;
+  const visibleData = useMemo(
+    () =>
+      data && {
+        ...data,
+        resources: data.resources.filter((resource) => resource.kind !== 'duckdb'),
+        usage: data.usage.filter((item) => item.kind !== 'duckdb'),
+      },
+    [data],
+  );
   const selectedResourceId =
     routeLocation.databaseId ??
     parseFileSystemLocation('#' + (routeLocation.fileLink || 'files'))?.resourceId;
@@ -190,7 +202,7 @@ function App() {
   const selectedLoaded = Boolean(
     data?.resources.some((resource) => resource.id === selectedResourceId),
   );
-  const resourceName = data?.resources.find(
+  const resourceName = visibleData?.resources.find(
     (resource) =>
       resource.id === selectedResourceId &&
       (route === 'files' ? resource.kind === 'filesystem' : resource.kind !== 'filesystem'),
@@ -225,6 +237,11 @@ function App() {
     setResourceLookupFailure('');
     setResolvedResourceKey('');
   }, []);
+  const defaultFileSystem = useDefaultFileSystem(
+    data,
+    refresh,
+    sso.sessionKind === 'guest' || sso.sessionKind === 'account',
+  );
   const loadMoreResources = useCallback(async () => {
     const cursor = data?.resourceNextCursor;
     if (!cursor || resourcePageBusy) return;
@@ -345,8 +362,10 @@ function App() {
     try {
       await navigator.clipboard.writeText(value);
       notify('Copied to clipboard');
+      return true;
     } catch {
-      notify('Clipboard unavailable. Select and copy the text.');
+      notify('Clipboard unavailable. Use the on-screen alternative.');
+      return false;
     }
   }
   async function finishSignOut() {
@@ -375,7 +394,7 @@ function App() {
     }
   }
   const shared = {
-    data: data!,
+    data: visibleData!,
     refresh,
     notify,
     copy,
@@ -413,9 +432,9 @@ function App() {
         {error && sso.enabled && needsSignIn ? (
           // SSO is enabled and no session is active yet: prompt sign-in (no anonymous demo).
           <>
-            <Heading level={1}>Give your agent a place to work</Heading>
+            <Heading level={1}>Work with your data, your way</Heading>
             <Text component="p">
-              Store your files, connect your agent, and come back to its work.
+              Explore files and databases yourself, or connect an agent to help.
             </Text>
             {sso.loginPath && (
               <SignInChoices
@@ -450,13 +469,13 @@ function App() {
     <TutorialProgressProvider
       key={data.workspace.id}
       workspaceId={data.workspace.id}
-      resourceIds={data.resources.map((resource) => resource.id)}
+      resourceIds={visibleData!.resources.map((resource) => resource.id)}
     >
       <WorkspaceLayout
         isHostedSession={sso.sessionKind === 'account' || sso.sessionKind === 'guest'}
-        liveFiles={data.resources.some((r) => r.provider === 'drive9-anonymous')}
-        liveDatabases={data.resources.some((r) =>
-          ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(r.provider || ''),
+        liveFiles={visibleData!.resources.some((r) => r.provider === 'drive9-anonymous')}
+        liveDatabases={visibleData!.resources.some((r) =>
+          ['tidb-cloud-zero', 'db9-anonymous'].includes(r.provider || ''),
         )}
         workspaceName={data.workspace.name}
         profileName={data.profile.name}
@@ -480,8 +499,13 @@ function App() {
           {route === 'overview' && (
             <Overview
               {...shared}
-              onAuthorize={(resource) => {
+              defaultFileSystem={defaultFileSystem}
+              showSalesExample={routeLocation.showSalesExample === true}
+              sampleKey={sampleKey?.workspaceId === data.workspace.id ? sampleKey : undefined}
+              isAuthorizing={modal === 'key' && Boolean(keyPreset)}
+              onAuthorize={(resource, prompt) => {
                 setKeyPreset(resource);
+                setSalesPrompt(prompt);
                 setModal('key');
               }}
             />
@@ -503,11 +527,11 @@ function App() {
             <>
               <PageHeading
                 title="Tutorials"
-                description="Explore sample files and data, try analysis, and see your first result."
+                description="Explore a guided example with your agent or on your own."
               />
               <DataTutorials
                 key={data.workspace.id}
-                data={data}
+                data={visibleData!}
                 resourceId={routeLocation.tutorialResourceId}
                 kind={routeLocation.tutorialKind}
                 refresh={refresh}
@@ -587,14 +611,36 @@ function App() {
         <CreateKey
           {...shared}
           preset={keyPreset}
+          salesPrompt={salesPrompt}
+          onCreated={
+            keyPreset
+              ? (key) => {
+                  setSampleKey({
+                    workspaceId: data.workspace.id,
+                    resourceId: keyPreset.id,
+                    suitable: permitsSalesTask(key, keyPreset.id),
+                    pending: key.regionalStatus === 'pending',
+                  });
+                }
+              : undefined
+          }
+          onContinue={(launchPrepared) => {
+            setModal(null);
+            if (keyPreset && launchPrepared)
+              setSampleKey((current) => (current ? { ...current, launchPrepared: true } : current));
+            if (!keyPreset) location.hash = 'connect';
+            setKeyPreset(undefined);
+            setSalesPrompt(undefined);
+          }}
           onClose={() => {
             setModal(null);
             setKeyPreset(undefined);
+            setSalesPrompt(undefined);
           }}
         />
       )}
       {modal === 'search' && (
-        <SearchModal data={data} onClose={() => setModal(null)} onConnect={setConnection} />
+        <SearchModal data={visibleData!} onClose={() => setModal(null)} onConnect={setConnection} />
       )}
       {connection && (
         <Connection resource={connection} copy={copy} onClose={() => setConnection(null)} />
@@ -606,7 +652,7 @@ type Shared = {
   data: PortalData;
   refresh: () => Promise<void>;
   notify: (s: string) => void;
-  copy: (s: string) => void;
+  copy: (s: string) => Promise<boolean>;
   onCreate: (target?: ResourceCreationTarget) => void;
   onConnect: (r: Resource) => void;
   isGuest: boolean;
@@ -621,7 +667,17 @@ function Overview({
   refresh,
   copy,
   onAuthorize,
-}: Shared & { onAuthorize: (resource: Resource) => void }) {
+  sampleKey,
+  isAuthorizing,
+  defaultFileSystem,
+  showSalesExample,
+}: Shared & {
+  onAuthorize: (resource: Resource, prompt?: string) => void;
+  sampleKey?: { resourceId: string; suitable: boolean; pending: boolean; launchPrepared?: boolean };
+  isAuthorizing: boolean;
+  showSalesExample: boolean;
+  defaultFileSystem: { preparing: boolean; error: boolean; retry: () => Promise<void> };
+}) {
   const hasResources =
     data.resources.length > 0 || Boolean(data.resourceNextCursor || data.resourceWindowTruncated);
   const resources = [...data.resources].sort(
@@ -631,11 +687,11 @@ function Overview({
     <>
       <PageHeading
         eyebrow="YOUR WORKSPACE"
-        title={hasResources && !isGuest ? data.workspace.name : 'Give your agent a place to work'}
+        title={hasResources && !isGuest ? data.workspace.name : 'Work with your data, your way'}
         description={
           hasResources && !isGuest
             ? 'Your files, data, and agents. All in one place.'
-            : 'Keep your files in one workspace, connect your agent, and return to its work.'
+            : 'Connect an agent to work with your files and data, or explore them yourself.'
         }
         actions={
           hasResources && !isGuest ? (
@@ -650,13 +706,30 @@ function Overview({
           ) : undefined
         }
       />
-      {isGuest && (
-        <>
-          <GuestExpiryNotice />
-          <SalesSampleJourney data={data} refresh={refresh} copy={copy} onAuthorize={onAuthorize} />
-        </>
+      {isGuest && <GuestExpiryNotice />}
+      {defaultFileSystem.preparing && <Text role="status">Preparing your workspace…</Text>}
+      {defaultFileSystem.error && (
+        <Alert color="yellow" title="Your files are not ready">
+          We couldn’t finish preparing your workspace. Try again to check its status.
+          <Group mt="sm">
+            <Button onClick={() => void defaultFileSystem.retry()}>Try again</Button>
+          </Group>
+        </Alert>
       )}
-      {!hasResources && !isGuest && (
+      {
+        <SalesSampleJourney
+          key={showSalesExample ? 'sales-example' : 'overview'}
+          data={data}
+          refresh={refresh}
+          copy={copy}
+          onAuthorize={onAuthorize}
+          sampleKey={sampleKey}
+          isAuthorizing={isAuthorizing}
+          preparingWorkspace={defaultFileSystem.preparing || defaultFileSystem.error}
+          showCompleted={showSalesExample}
+        />
+      }
+      {!hasResources && !isGuest && !defaultFileSystem.preparing && !defaultFileSystem.error && (
         <WorkspaceFirstSteps onCreate={onCreate} showDatabase showFileSystem isGuest={isGuest} />
       )}
       {hasResources && (
@@ -791,6 +864,8 @@ function DatabaseDetail({
   return (
     <section className="database-page">
       <DatabaseWorkspace
+        key={database.id}
+        workspaceId={data.workspace.id}
         onConnect={() => onConnect(database)}
         onRetry={async () => {
           try {
@@ -2017,26 +2092,57 @@ function CreateKey({
   resourcePageBusy,
   resourcePageError,
   preset,
-}: Shared & { onClose: () => void; preset?: Resource }) {
+  onCreated,
+  onContinue,
+  salesPrompt,
+}: Shared & {
+  onClose: () => void;
+  onContinue: (launchPrepared: boolean) => void;
+  salesPrompt?: string;
+  preset?: Resource;
+  onCreated?: (key: ApiKey) => void;
+}) {
   const [name, setName] = useState(preset ? 'sales-agent' : ''),
     [scopes, setScopes] = useState<CreateKeyInput['scopes']>(
       preset
         ? ['resources:read', 'files:read', 'files:analyze', 'files:write']
-        : ['resources:read', 'files:read', 'usage:read'],
+        : ['resources:read'],
     ),
-    [resourceIds, setResourceIds] = useState(
-      preset ? [preset.id] : data.resources.map((resource) => resource.id),
-    ),
+    [resourceIds, setResourceIds] = useState(preset ? [preset.id] : []),
     [expires, setExpires] = useState<CreateKeyInput['expiresInDays']>(30),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [secret, setSecret] = useState('');
+  const [scopeNotice, setScopeNotice] = useState('');
+  const [keyCopied, setKeyCopied] = useState(false);
+  const [launchPrepared, setLaunchPrepared] = useState(false);
+  const [createdKey, setCreatedKey] = useState<ApiKey>();
+  const [closeIntent, setCloseIntent] = useState<'close' | 'continue' | null>(null);
   const availableResources =
     preset && !data.resources.some((resource) => resource.id === preset.id)
       ? [...data.resources, preset]
       : data.resources;
   const visibleResourceIds = new Set(availableResources.map((resource) => resource.id));
   const hiddenSelections = resourceIds.filter((id) => id !== '*' && !visibleResourceIds.has(id));
+  const activeScopes = retainApplicablePermissions(scopes, resourceIds, availableResources);
+  const excludedScopes = scopes.filter((scope) => !activeScopes.includes(scope));
+  function changeResourceIds(ids: string[]) {
+    setResourceIds(ids);
+    const retained = retainApplicablePermissions(activeScopes, ids, availableResources);
+    const removed = scopes.filter((scope) => !retained.includes(scope));
+    setScopes(retained);
+    setScopeNotice(
+      removed.length ? `Removed permissions that no longer apply: ${removed.join(', ')}.` : '',
+    );
+  }
+  function finish(intent: 'close' | 'continue') {
+    if (secret && !keyCopied) {
+      setCloseIntent(intent);
+      return;
+    }
+    if (intent === 'continue') onContinue(launchPrepared);
+    else onClose();
+  }
   async function create(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -2044,11 +2150,13 @@ function CreateKey({
     try {
       const result = await workspaceApi.createKey({
         name,
-        scopes,
+        scopes: activeScopes,
         resourceIds,
         expiresInDays: isGuest ? 1 : expires,
       });
       setSecret(result.secret);
+      setCreatedKey(result.data);
+      onCreated?.(result.data);
       await refresh();
       notify('API key created');
     } catch (e) {
@@ -2062,37 +2170,57 @@ function CreateKey({
       title={secret ? 'Your key is ready' : 'Create API key'}
       description={
         secret
-          ? 'Copy it now. You won’t be able to view the full key again.'
-          : 'Give one workflow exactly the access it needs.'
+          ? 'This is the only time the full key is shown.'
+          : preset
+            ? undefined
+            : 'Give one workflow exactly the access it needs.'
       }
-      onClose={onClose}
+      onClose={() => finish('close')}
     >
       {secret ? (
         <>
-          <div className="secret-value">
-            <KeyRound size={20} />
-            <code>{secret}</code>
+          <div hidden={Boolean(closeIntent)}>
+            <KeyReady
+              secret={secret}
+              copy={copy}
+              onCopied={() => setKeyCopied(true)}
+              onDownload={() => download('workspace-key.txt', secret)}
+              onContinue={() => finish('continue')}
+              hidden={Boolean(closeIntent)}
+              insufficientAccess={Boolean(
+                preset && createdKey && !permitsSalesTask(createdKey, preset.id),
+              )}
+              accessPending={createdKey?.regionalStatus === 'pending'}
+              salesPrompt={salesPrompt}
+              onLaunchCopied={setLaunchPrepared}
+            />
           </div>
-          <Alert className="notice" color="peacock" icon={<ShieldCheck size={17} />}>
-            <span>
-              Save this in your secret manager as WORKSPACE_API_KEY. Your agent can exchange it for
-              an access token. See API documentation for examples.
-            </span>
-          </Alert>
-          <div className="modal-actions">
-            <Button
-              leftSection={React.createElement(Copy, { size: 18 })}
-              onClick={() => copy(secret)}
-            >
-              Copy key
-            </Button>
-            <Button variant="filled" onClick={onClose}>
-              Done
-            </Button>
-          </div>
+          {closeIntent && (
+            <>
+              <Alert color="yellow" role="alert">
+                You haven’t copied the key using the button. Make sure you saved it before leaving;
+                the full key cannot be shown again.
+              </Alert>
+              <div className="modal-actions">
+                <Button autoFocus onClick={() => setCloseIntent(null)}>
+                  Go back
+                </Button>
+                <Button
+                  variant="filled"
+                  onClick={() =>
+                    closeIntent === 'continue' ? onContinue(launchPrepared) : onClose()
+                  }
+                >
+                  {closeIntent === 'continue'
+                    ? 'Continue without copying'
+                    : 'Close without copying'}
+                </Button>
+              </div>
+            </>
+          )}
         </>
       ) : (
-        <form onSubmit={create}>
+        <form className="key-create-form" onSubmit={create}>
           <TextInput
             label="Key name"
             required
@@ -2105,21 +2233,19 @@ function CreateKey({
           <ResourceAccessPicker
             resources={availableResources}
             resourceIds={resourceIds}
-            onChange={(ids) => {
-              setResourceIds(ids);
-              if (!ids.includes('*'))
-                setScopes((current) => current.filter((scope) => scope !== 'resources:write'));
-            }}
+            onChange={changeResourceIds}
           />
           {hiddenSelections.length > 0 && (
             <Group mt="sm">
               <Text size="sm">
-                {hiddenSelections.length} selected resources are outside the loaded window.
+                {hiddenSelections.length} selected{' '}
+                {hiddenSelections.length === 1 ? 'resource is' : 'resources are'} outside the loaded
+                window.
               </Text>
               <Button
                 type="button"
                 onClick={() =>
-                  setResourceIds((ids) => ids.filter((id) => visibleResourceIds.has(id)))
+                  changeResourceIds(resourceIds.filter((id) => visibleResourceIds.has(id)))
                 }
               >
                 Clear hidden selections
@@ -2146,47 +2272,23 @@ function CreateKey({
             </Group>
           )}
           {resourcePageError && <Alert color="red">{resourcePageError}</Alert>}
-          <Fieldset legend="Allowed actions">
-            <div className="scope-picker">
-              {allScopes.map((s) => (
-                <Checkbox
-                  label={
-                    <span>
-                      <code>{s}</code>
-                      <small>
-                        {
-                          (
-                            {
-                              'resources:read': 'Discover workspace resources',
-                              'resources:write': 'Create resources',
-                              'files:read': 'Read files and context',
-                              'files:analyze': 'Analyze files (read-only SQL and Bash)',
-                              'files:write': 'Create, edit, and delete files',
-                              'queries:read': 'Read-only SQL on permitted databases',
-                              'queries:execute': 'Read and write SQL on permitted databases',
-                              'usage:read': 'Read usage and allowances',
-                            } as Record<string, string>
-                          )[s]
-                        }
-                      </small>
-                    </span>
-                  }
-                  className="permission-choice"
-                  key={s}
-
-                  checked={scopes.includes(s)}
-                  disabled={s === 'resources:write' && !resourceIds.includes('*')}
-                  onChange={(e) =>
-                    setScopes(e.target.checked ? [...scopes, s] : scopes.filter((v) => v !== s))
-                  }
-                />
-              ))}
-            </div>
-          </Fieldset>
+          <KeyPermissions
+            resources={availableResources}
+            resourceIds={resourceIds}
+            scopes={activeScopes}
+            notice={
+              excludedScopes.length
+                ? `Permissions that no longer apply will not be granted: ${excludedScopes.join(', ')}.`
+                : scopeNotice
+            }
+            onChange={(next) => {
+              setScopes(next);
+              setScopeNotice('');
+            }}
+          />
           {isGuest ? (
             <Text component="p">
-              This key expires within 24 hours, when you sign out, or when your temporary workspace
-              expires.
+              Expires with your temporary workspace (within 24 hours), or on sign-out.
             </Text>
           ) : (
             <NativeSelect
@@ -2215,7 +2317,7 @@ function CreateKey({
               variant="filled"
               leftSection={React.createElement(KeyRound, { size: 18 })}
               loading={busy}
-              disabled={busy || !scopes.length || !resourceIds.length}
+              disabled={busy || !activeScopes.length || !resourceIds.length}
               type="submit"
             >
               {busy ? 'Creating…' : 'Create key'}
@@ -2316,7 +2418,7 @@ function Connection({
             : r.provider === 'duckdb-drive9'
               ? 'SQL runs in your persistent DuckDB database through the Workspace API. Use this database resource and queries:execute; internal storage and credentials are managed by the service.'
               : r.provider === 'db9-anonymous'
-                ? 'SQL runs on a real db9 PostgreSQL-compatible database through the Workspace API. Use queries:execute and this resource grant; native credentials stay inside the service. Check db9 type compatibility before relying on full PostgreSQL behavior.'
+                ? 'SQL runs on a PostgreSQL-compatible database through the Workspace API. Use queries:execute and this resource grant; native credentials stay inside the service. PostgreSQL compatibility has limits.'
                 : r.provider === 'tidb-cloud-zero'
                   ? 'SQL runs on a temporary TiDB Cloud Zero database through the Workspace API. This key action permits reads and writes within the internal database role; connection credentials remain private.'
                   : 'Provider credentials are handled by the service. This resource uses a local demo provider; native database connections and file mounts are not available yet.'}

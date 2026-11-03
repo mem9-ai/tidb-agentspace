@@ -311,17 +311,18 @@ export const workspaceApi = {
         params: { ...params, query: { fixture: 'us-sales-v1' } },
       }),
     ),
-  startSalesSample: (idempotencyKey: string) =>
+  startSalesSample: (idempotencyKey: string, resourceId?: string) =>
     responseData(
       client.POST('/workspaces/{workspaceId}/sales-sample-attempts', {
         params: { ...params, header: { 'Idempotency-Key': idempotencyKey } },
-        body: { fixture: 'us-sales-v1' },
+        body: { fixture: 'us-sales-v1', ...(resourceId ? { resourceId } : {}) },
       }),
     ),
-  fileMetadata: (resourceId: string, path: string) =>
+  fileMetadata: (resourceId: string, path: string, signal?: AbortSignal) =>
     responseData(
       client.GET('/workspaces/{workspaceId}/files/metadata', {
         params: { ...params, query: { resourceId, path } },
+        signal,
       }),
     ),
   endDistributedSession: async () => {

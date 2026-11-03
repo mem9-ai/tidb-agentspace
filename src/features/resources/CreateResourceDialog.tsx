@@ -1,7 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { Alert, Anchor, Badge, Button, NativeSelect, Text, TextInput } from '@tidbcloud/uikit';
 import {
-  IconChevronDown,
   IconHelpCircle as CircleHelp,
   IconPlus as Plus,
   IconZap as Zap,
@@ -9,7 +8,6 @@ import {
 import { workspaceApi, type Data, type Resource } from '../../api/client';
 import { WorkspaceApiError } from '../../api/transport';
 import { WorkspaceModal as Modal } from '../../ui/WorkspaceModal';
-import { regionLabel as region } from './regions';
 import { fileSystemHash } from '../files/file-location';
 import { databaseEditorHash } from '../navigation/workspace-route';
 import { generateResourceName } from './resource-name';
@@ -17,7 +15,7 @@ import {
   resourceCreationContext,
   resourceKindLabels,
   type ResourceCreationTarget,
-  type ResourceKind,
+  type CreatableResourceKind,
 } from './resource-creation';
 
 export function CreateResourceDialog({
@@ -39,7 +37,7 @@ export function CreateResourceDialog({
 }) {
   const context = resourceCreationContext(target, data.capabilities);
   const initialKind = context.initialKind;
-  const [kind, setKind] = useState<ResourceKind>(initialKind),
+  const [kind, setKind] = useState<CreatableResourceKind>(initialKind),
     [nameDraft, setNameDraft] = useState(() => ({
       value: generateResourceName(initialKind, data.resources),
       automatic: true,
@@ -50,12 +48,10 @@ export function CreateResourceDialog({
   const createId = useRef(crypto.randomUUID());
   const liveFiles =
     kind === 'filesystem' && data.capabilities.filesystem.provider === 'drive9-anonymous';
-  const liveMysql = kind === 'mysql' && data.capabilities.mysql.provider === 'tidb-cloud-zero';
-  const livePg = kind === 'postgresql';
-  const isDuckdb = kind === 'duckdb';
-  const unavailable = (isDuckdb || livePg) && data.capabilities[kind].available === false;
+  const isPostgres = kind === 'postgresql';
+  const unavailable = kind !== 'filesystem' && data.capabilities[kind].available === false;
   const locationUnavailable = !data.capabilities[kind].regions.includes(selectedRegion);
-  function changeKind(k: ResourceKind) {
+  function changeKind(k: CreatableResourceKind) {
     setKind(k);
     setNameDraft((current) =>
       current.automatic || !current.value
@@ -82,15 +78,11 @@ export function CreateResourceDialog({
       );
       await refresh();
       notify(
-        isDuckdb
-          ? 'DuckDB database requested'
-          : livePg
-            ? 'PostgreSQL database requested'
-            : liveMysql
-              ? 'Zero database requested'
-              : liveFiles
-                ? 'Trial File System requested'
-                : 'Demo resource created',
+        isPostgres
+          ? 'PostgreSQL database requested'
+          : liveFiles
+            ? 'Trial File System requested'
+            : 'Demo resource created',
       );
       onClose();
       const resource = created.data;
@@ -129,17 +121,11 @@ export function CreateResourceDialog({
         )
       : undefined;
   const limited = !!existingFileSystem;
-  const kindName = (value: ResourceKind) =>
-    value === 'mysql'
-      ? data.capabilities.mysql.provider === 'tidb-cloud-zero'
-        ? 'MySQL · TiDB Cloud Zero'
-        : 'MySQL demo'
-      : value === 'postgresql'
-        ? 'PostgreSQL · db9'
-        : resourceKindLabels[value];
+  const kindName = (value: CreatableResourceKind) =>
+    value === 'postgresql' ? 'PostgreSQL Compatible' : resourceKindLabels[value];
   const kindSelect = (
     <NativeSelect
-      label="Resource type"
+      label={target === 'database' ? 'Database type' : 'Resource type'}
       value={kind}
       disabled={busy}
       onChange={(event) => {
@@ -152,128 +138,69 @@ export function CreateResourceDialog({
   return (
     <Modal
       title={context.title}
-      description="Add a building block to your agent workspace."
+      description={
+        target === 'database'
+          ? 'Create a PostgreSQL-compatible database for your workspace.'
+          : 'Add a building block to your agent workspace.'
+      }
       onClose={onClose}
       busy={busy}
       focusTitle={target === 'database'}
     >
       <form onSubmit={create}>
-        {context.kinds.length > 1 &&
-          (target === 'database' ? (
-            <details className="resource-type-options">
-              <summary aria-label={`Database type: ${kindName(kind)}. Change`}>
-                <span>{kindName(kind)}</span>
-                <span className="resource-type-change">
-                  Change <IconChevronDown size={18} aria-hidden />
-                </span>
-              </summary>
-              <div>{kindSelect}</div>
-            </details>
-          ) : (
-            kindSelect
-          ))}
-        <TextInput
-          label="Resource name"
-          disabled={busy}
-          description="Start with a letter. Use 3–40 lowercase letters, numbers, and hyphens. Leave blank for an automatic name."
-          pattern="[a-z][a-z0-9-]{2,39}"
-          minLength={3}
-          maxLength={40}
-          value={nameDraft.value}
-          onChange={(e) => setNameDraft({ value: e.target.value, automatic: false })}
-          placeholder={kind === 'filesystem' ? 'e.g. quiet-harbor' : `${kind}-…`}
-        />
-        {kind !== 'filesystem' && !isDuckdb && data.capabilities[kind].regions.length > 1 && (
-          <NativeSelect
-            label="Provider data location"
+        {context.kinds.length > 1 && kindSelect}
+        {unavailable && (
+          <Alert color="yellow">PostgreSQL-compatible databases are unavailable right now.</Alert>
+        )}
+        {!unavailable && (
+          <TextInput
+            label="Resource name"
             disabled={busy}
             description={
-              livePg
-                ? 'db9 assigns the database region automatically.'
-                : liveMysql
-                  ? 'TiDB Cloud Zero assigns the database region automatically.'
-                  : 'Available regions depend on the resource provider.'
+              isPostgres
+                ? 'Start with a letter. Use 3–40 lowercase letters, numbers, hyphens, and underscores. Leave blank for an automatic name.'
+                : 'Start with a letter. Use 3–40 lowercase letters, numbers, and hyphens. Leave blank for an automatic name.'
             }
-            value={selectedRegion}
-            onChange={(e) => {
-              const selected = data.capabilities[kind].regions.find(
-                (value) => value === e.target.value,
-              );
-              if (selected) setRegion(selected);
-            }}
-          >
-            {data.capabilities[kind].regions.map((r) => (
-              <option key={r} value={r}>
-                {region(r)}
-              </option>
-            ))}
-          </NativeSelect>
+            pattern={isPostgres ? '[a-z][a-z0-9_\\-]{2,39}' : '[a-z][a-z0-9\\-]{2,39}'}
+            minLength={3}
+            maxLength={40}
+            value={nameDraft.value}
+            onChange={(e) => setNameDraft({ value: e.target.value, automatic: false })}
+            placeholder={kind === 'filesystem' ? 'e.g. quiet-harbor' : 'e.g. tidb_pg-sales'}
+          />
         )}
-        <div className="plan-selection">
-          <div>
-            <Zap size={17} />
-            <strong>
-              {livePg
-                ? 'PostgreSQL database'
-                : isDuckdb
-                  ? 'DuckDB database'
-                  : liveMysql
-                    ? 'Temporary MySQL database'
-                    : liveFiles
-                      ? 'Anonymous trial'
-                      : 'Free tier'}
-            </strong>
-            <Badge style={{ flexShrink: 0 }}>
-              {livePg
-                ? 'Anonymous free tier'
-                : isDuckdb
-                  ? 'Experimental'
-                  : liveMysql
-                    ? 'Zero'
-                    : kind === 'mysql'
-                      ? 'Demo'
-                      : 'Preview'}
-            </Badge>
-          </div>
-          <Text component="p">
-            {livePg ? (
-              'A real PostgreSQL-compatible database from db9. No account or card required. Anonymous provider quotas apply; usage is not measured here.'
-            ) : isDuckdb ? (
-              'A persistent DuckDB database for SQL analytics. Workspace Keys control access; trial service limits apply.'
-            ) : liveMysql ? (
-              isGuest ? (
-                'Temporary workspace access ends 24 hours after the workspace was created. The database has a separate provider expiry within 30 days.'
+        {!unavailable && (
+          <div className="plan-selection">
+            <div>
+              <Zap size={17} />
+              <strong>
+                {isPostgres ? 'PostgreSQL Compatible' : liveFiles ? 'Anonymous trial' : 'Free tier'}
+              </strong>
+              <Badge style={{ flexShrink: 0 }}>Preview</Badge>
+            </div>
+            <Text component="p">
+              {isPostgres ? (
+                'Run SQL and work with tables using PostgreSQL-compatible syntax. Trial limits apply.'
+              ) : liveFiles ? (
+                'Real file storage. Trial quotas are enforced by the service.'
               ) : (
-                'No cloud account required. This real database expires within 30 days; export data before it expires.'
-              )
-            ) : liveFiles ? (
-              'Real file storage. Trial quotas are enforced by the service.'
-            ) : (
-              <>
-                {data.capabilities[kind].storageGiB} GiB storage
-                {kind === 'filesystem'
-                  ? ' · 2,000 files'
-                  : ` · ${data.capabilities[kind].monthlyRU! / 1000000}M RU / month`}
-              </>
-            )}
-          </Text>
-          <small>
-            {livePg
-              ? 'Internal credentials stay in the backend. Use your Workspace Key for SQL and schema access.'
-              : isDuckdb
-                ? 'Create tables, run SQL and browse your data from this database.'
-                : liveMysql
-                  ? 'Creates a real TiDB Cloud Zero database. Internal credentials stay in the backend. Use Workspace Keys for access.'
-                  : liveFiles
-                    ? 'Creates a real trial File System. Internal credentials are managed by the Workspace service.'
-                    : 'Local simulation. No real cloud resource will be provisioned.'}
-          </small>
-        </div>
-        {unavailable && (
-          <Alert color="yellow">
-            This database provider is not configured on this server. Contact your workspace
-            operator.
-          </Alert>
+                <>
+                  {data.capabilities[kind].storageGiB} GiB storage
+                  {' · 2,000 files'}
+                </>
+              )}
+            </Text>
+            <small>
+              {isPostgres
+                ? 'Use your Workspace Key for SQL and schema access. Provider credentials stay in the backend.'
+                : liveFiles
+                  ? 'Creates a real trial File System. Internal credentials are managed by the Workspace service.'
+                  : 'Local simulation. No real cloud resource will be provisioned.'}
+            </small>
+          </div>
+        )}
+        {isGuest && kind !== 'filesystem' && !unavailable && (
+          <Text size="sm">Temporary workspace access ends 24 hours after it was created.</Text>
         )}
         {locationUnavailable && (
           <Alert color="yellow">No data location is available for this resource right now.</Alert>

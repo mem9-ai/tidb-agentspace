@@ -14,7 +14,7 @@ import {
   Typography,
 } from '@tidbcloud/uikit';
 import { IconCode02, IconRefreshCw01, IconSearchLg, IconDatabase01 } from '@tidbcloud/uikit/icons';
-import { workspaceApi, type Resource, type TableDetail } from '../../api/client';
+import { workspaceApi, type Resource, type TableDetail, type TableList } from '../../api/client';
 import { ChoiceTabs } from '../../ui/ChoiceTabs';
 import { Heading } from '../../ui/WorkspaceHeading';
 import { WorkspaceBrowserPanel } from '../../ui/WorkspaceBrowserPanel';
@@ -24,12 +24,17 @@ import { readDatabase } from './database-read';
 import './database-browser.css';
 import { tutorialHash } from '../navigation/workspace-route';
 
-function useRead<T>(load: (signal: AbortSignal) => Promise<T>, refreshVersion = 0) {
+function useRead<T>(load: (signal: AbortSignal) => Promise<T>, refreshVersion = 0, initial?: T) {
   const [state, setState] = useState<{ data?: T; error?: string; loading: boolean }>({
-    loading: true,
+    data: initial,
+    loading: !initial,
   });
   const [revision, setRevision] = useState(0);
   useEffect(() => {
+    if (initial) {
+      setState({ data: initial, loading: false });
+      return;
+    }
     const controller = new AbortController();
     setState({ loading: true });
     readDatabase(load, controller.signal).then(
@@ -46,7 +51,7 @@ function useRead<T>(load: (signal: AbortSignal) => Promise<T>, refreshVersion = 
       },
     );
     return () => controller.abort();
-  }, [load, revision, refreshVersion]);
+  }, [load, revision, refreshVersion, initial]);
   return { ...state, retry: () => setRevision((value) => value + 1) };
 }
 function Loading({ children }: { children: string }) {
@@ -291,6 +296,7 @@ export function DatabaseTableList({
   onQuery,
   onRefresh,
   onLoadingChange,
+  initialSnapshot,
 }: {
   database: Resource;
   revision: number;
@@ -305,12 +311,13 @@ export function DatabaseTableList({
   onQuery: (name: string) => void;
   onRefresh: () => void;
   onLoadingChange: (loading: boolean) => void;
+  initialSnapshot?: TableList;
 }) {
   const load = useCallback(
     (signal: AbortSignal) => workspaceApi.tables(database.id, signal),
     [database.id],
   );
-  const listing = useRead(load, revision);
+  const listing = useRead(load, revision, initialSnapshot);
   useEffect(() => {
     onLoadingChange(listing.loading);
   }, [listing.loading, onLoadingChange]);
@@ -360,6 +367,14 @@ export function DatabaseTableList({
       }
     >
       <Stack gap="sm" p={8}>
+        {initialSnapshot && (
+          <>
+            <Text size="sm">Tables when created. Load current tables to see later changes.</Text>
+            <Button onClick={onRefresh} disabled={busy || waiting}>
+              Load current tables
+            </Button>
+          </>
+        )}
         {!['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
           database.provider || '',
         ) && <Badge>Local demo</Badge>}
@@ -378,10 +393,13 @@ export function DatabaseTableList({
               <Text>
                 {listing.data?.data.length
                   ? 'No matching tables.'
-                  : 'No tables yet. Try the sample orders, import a file, or create a table in SQL Editor.'}
+                  : initialSnapshot
+                    ? 'No tables when created.'
+                    : 'No tables yet. Try the sample orders, import a file, or create a table in SQL Editor.'}
               </Text>
             )}
-            {!listing.data?.data.length &&
+            {!initialSnapshot &&
+              !listing.data?.data.length &&
               database.status === 'active' &&
               !database.connectionError && (
                 <Button

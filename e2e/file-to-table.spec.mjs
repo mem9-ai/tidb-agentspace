@@ -15,6 +15,33 @@ function addSalesFile(workspace, path = '/us-sales.csv') {
   });
 }
 
+test('a standalone DuckDB is not offered as a file import destination', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  addSalesFile(workspace);
+  await mockFileWork(context, { onPrepare: [], onExport: [] });
+  workspace.state.resources = workspace.state.resources.filter(
+    (resource) => resource.kind === 'filesystem',
+  );
+  workspace.state.resources.push({
+    id: 'db_hidden_duck',
+    name: 'hidden-duckdb',
+    kind: 'duckdb',
+    region: 'aws-ap-southeast-1',
+    provider: 'duckdb-drive9',
+    status: 'active',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  });
+  await workspace.open('#files?resourceId=fs_fixture&path=%2Fus-sales.csv&view=preview');
+  await page.getByRole('button', { name: 'Create table', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create table from file' });
+  await expect(dialog.getByText('No database available for import')).toBeVisible();
+  await expect(dialog.getByText('hidden-duckdb')).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Create database', exact: true })).toBeVisible();
+});
+
 async function mockFileWork(context, { onPrepare, onExport }) {
   await context.route('**/api/**', async (route) => {
     const request = route.request();
@@ -246,7 +273,7 @@ test('@visual create a database and continue importing the same file', async ({
       ...body,
       id: 'db_new',
       regionId: 'region:local',
-      provider: 'tidb-cloud-zero',
+      provider: 'db9-anonymous',
       status: 'provisioning',
       createdAt: '2026-01-01T00:00:00.000Z',
     };
@@ -265,6 +292,8 @@ test('@visual create a database and continue importing the same file', async ({
     });
   await dialog.getByRole('button', { name: 'Create database', exact: true }).click();
   let create = page.getByRole('dialog', { name: 'Create a database' });
+  await expect(create.getByRole('combobox', { name: 'Database type' })).toHaveCount(0);
+  await expect(create.getByText('PostgreSQL Compatible', { exact: true })).toBeVisible();
   await create.getByRole('button', { name: 'Cancel' }).click();
   dialog = page.getByRole('dialog', { name: 'Create table from file' });
   await expect(dialog.getByText('Original file · us-sales.csv')).toBeVisible();
@@ -328,7 +357,7 @@ test('@visual export a file to a newly created database without losing the sourc
       ...body,
       id: 'db_new',
       regionId: 'region:local',
-      provider: 'tidb-cloud-zero',
+      provider: 'db9-anonymous',
       status: 'active',
       createdAt: '2026-01-01T00:00:00.000Z',
     };

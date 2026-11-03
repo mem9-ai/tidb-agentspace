@@ -1,4 +1,4 @@
-import { Alert, Anchor, Button, Group, Text } from '@tidbcloud/uikit';
+import { Alert, Button, Group, Text } from '@tidbcloud/uikit';
 import { IconUpload01 } from '@tidbcloud/uikit/icons';
 import type { Resource } from '../../api/client';
 import {
@@ -34,11 +34,11 @@ export function DatabaseWorkspaceHeader({
 }) {
   const provider =
     database.provider === 'db9-anonymous'
-      ? 'PostgreSQL · db9'
+      ? 'PostgreSQL compatible · Trial'
       : database.provider === 'duckdb-drive9'
         ? 'DuckDB · Experimental'
         : database.provider === 'tidb-cloud-zero'
-          ? 'MySQL · TiDB Cloud Zero'
+          ? 'TiDB Cloud Zero · MySQL compatible'
           : `${resourceKindLabels[database.kind]} · Local demo`;
   const expiry = database.expiresAt ? new Date(database.expiresAt) : null;
   const live = ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
@@ -64,14 +64,8 @@ export function DatabaseWorkspaceHeader({
               <Text>Provider data location: {regionLabel(database.region)}</Text>
               {database.kind === 'postgresql' && (
                 <Text>
-                  db9 is PostgreSQL-compatible. NUMERIC supports up to 28–29 significant digits.{' '}
-                  <Anchor
-                    href="https://db9.ai/docs/sql/data-types/"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Data type compatibility
-                  </Anchor>
+                  PostgreSQL compatibility has limits. NUMERIC supports up to 28–29 significant
+                  digits.
                 </Text>
               )}
               {expiry && (

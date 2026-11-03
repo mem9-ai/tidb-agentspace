@@ -344,6 +344,28 @@ test('a directly linked database outside the first page keeps query results afte
   await expect(page).toHaveURL(/#databases\/db_fixture\/sql$/);
 });
 
+for (const [kind, provider] of [['postgresql', 'db9-anonymous']]) {
+  test(`an existing ${kind} database remains accessible and queryable`, async ({
+    page,
+    workspace,
+  }) => {
+    workspace.state.resources = [{ ...structuredClone(sampleResources[0]), kind, provider }];
+    await workspace.open('#databases');
+    await expect(page.getByRole('table', { name: 'Databases' })).not.toContainText(/db9/i);
+    await page
+      .getByRole('table', { name: 'Databases' })
+      .getByRole('link', { name: 'mysql-fixture', exact: true })
+      .click();
+    await expect(page).toHaveURL(/#databases\/db_fixture\/sql$/);
+    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Database details' })).toBeVisible();
+    await expect(page.locator('body')).not.toContainText(/db9/i);
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Run query', exact: true }).click();
+    await expect(page.getByText('agent_started', { exact: true })).toBeVisible();
+  });
+}
+
 test('a directly linked local File System loads its own files outside the first page', async ({
   page,
   workspace,
@@ -414,6 +436,11 @@ test('resource windows stay bounded and disclose selections from earlier pages',
     id: `db_window_${String(index).padStart(4, '0')}`,
     name: `window-database-${String(index).padStart(4, '0')}`,
   }));
+  resources[399] = {
+    ...resources[399],
+    kind: 'filesystem',
+    name: 'window-files-0399',
+  };
   workspace.state.resources = resources.slice(0, 100);
   workspace.state.resourceNextCursor = 'window-1';
   for (let pageNumber = 1; pageNumber <= 3; pageNumber++) {
@@ -426,16 +453,26 @@ test('resource windows stay bounded and disclose selections from earlier pages',
   await workspace.open('#keys');
   await page.getByRole('button', { name: 'Create API key', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
+  await dialog.getByRole('checkbox', { name: 'window-database-0000' }).check();
+  await dialog.getByRole('checkbox', { name: /queries:read/ }).check();
   for (let pageNumber = 0; pageNumber < 3; pageNumber++)
     await dialog.getByRole('button', { name: 'Load more resources' }).click();
   await expect(dialog.getByRole('checkbox', { name: 'window-database-0000' })).toHaveCount(0);
-  await expect(dialog.getByRole('checkbox', { name: 'window-database-0399' })).toBeVisible();
-  await expect(
-    dialog.getByText('100 selected resources are outside the loaded window.'),
-  ).toBeVisible();
+  await expect(dialog.getByRole('checkbox', { name: 'window-files-0399' })).toBeVisible();
+  await expect(dialog.getByText('1 selected resource is outside the loaded window.')).toBeVisible();
+  await expect(dialog.getByRole('checkbox', { name: /queries:read/ })).toBeChecked();
+  await dialog.getByRole('checkbox', { name: 'window-files-0399' }).check();
+  await dialog.getByRole('checkbox', { name: /files:write/ }).check();
+  await dialog.getByRole('checkbox', { name: 'window-files-0399' }).uncheck();
+  await dialog.getByText('Advanced resource access').click();
+  const allResources = dialog.getByRole('checkbox', { name: 'All current and future resources' });
+  await allResources.check();
+  await allResources.uncheck();
+  await expect(dialog.getByText('1 selected resource is outside the loaded window.')).toBeVisible();
+  await expect(dialog.getByRole('checkbox', { name: /queries:read/ })).toBeChecked();
   if (process.env.SCALE_SCREENSHOTS) {
     await dialog
-      .getByText('100 selected resources are outside the loaded window.')
+      .getByText('1 selected resource is outside the loaded window.')
       .scrollIntoViewIfNeeded();
     await page.screenshot({
       path: `${process.env.SCALE_SCREENSHOTS}/resource-window-${testInfo.project.name}.png`,
@@ -443,7 +480,15 @@ test('resource windows stay bounded and disclose selections from earlier pages',
   }
   await dialog.getByRole('button', { name: 'Back to first resources' }).click();
   await expect(dialog.getByRole('checkbox', { name: 'window-database-0000' })).toBeChecked();
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(dialog.getByRole('checkbox', { name: /files:write/ })).toHaveCount(0);
+  await expect(dialog.getByRole('status')).toContainText('files:write');
+  await dialog.getByLabel('Key name').fill('window-agent');
+  await dialog.getByRole('button', { name: 'Create key', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Your key is ready' })).toBeVisible();
+  expect(
+    workspace.requests.findLast((entry) => entry.method === 'POST' && entry.path.endsWith('/keys'))
+      .body,
+  ).toMatchObject({ resourceIds: ['db_window_0000'], scopes: ['resources:read', 'queries:read'] });
 });
 
 test('Key inventory pages keep a bounded window with a route back to the first page', async ({
@@ -527,7 +572,7 @@ test('@visual empty collections share one in-context create action and readable 
   expect(presentations[0]).toEqual(presentations[1]);
   await workspace.open('#overview');
   await expect(
-    page.getByRole('heading', { level: 1, name: 'Give your agent a place to work', exact: true }),
+    page.getByRole('heading', { level: 1, name: 'Work with your data, your way', exact: true }),
   ).toBeVisible();
   const startingChoices = page.getByRole('region', { name: 'Get started', exact: true });
   if (process.env.QUICKSTART_SCREENSHOTS)
@@ -545,16 +590,11 @@ test('@visual empty collections share one in-context create action and readable 
     await create.click();
     const dialog = page.getByRole('dialog', { name: collection.dialog, exact: true });
     await expect(dialog).toBeVisible();
-    if (collection.hash === '#databases') await dialog.getByLabel(/^Database type:/).click();
-    const kind = dialog.getByRole('combobox', { name: 'Resource type', exact: true });
     if (collection.hash === '#databases') {
-      expect(
-        await kind
-          .locator('option')
-          .evaluateAll((options) => options.map((option) => option.value)),
-      ).toEqual(['mysql', 'postgresql', 'duckdb']);
+      await expect(dialog.getByRole('combobox', { name: 'Database type' })).toHaveCount(0);
+      await expect(dialog.getByText('PostgreSQL Compatible', { exact: true })).toBeVisible();
     } else {
-      await expect(kind).toHaveCount(0);
+      await expect(dialog.getByRole('combobox', { name: 'Resource type' })).toHaveCount(0);
     }
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(create).toBeFocused();
@@ -596,7 +636,7 @@ test('Quick Start creates a database and reaches a first query result', async ({
   await guide.getByRole('button', { name: 'Create database', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create a database' });
   await dialog.getByRole('button', { name: 'Create database', exact: true }).click();
-  await expect(page).toHaveURL(/#databases\/fixture_mysql_0\/sql$/);
+  await expect(page).toHaveURL(/#databases\/fixture_postgresql_0\/sql$/);
   const run = page.getByRole('button', { name: 'Run query', exact: true });
   await expect(run).toBeEnabled();
   expect(workspace.requests.filter((request) => request.path.endsWith('/queries'))).toHaveLength(0);
@@ -607,7 +647,7 @@ test('Quick Start creates a database and reaches a first query result', async ({
       expect.objectContaining({
         path: `/api/portal/v1/workspaces/${workspace.state.workspace.id}/queries`,
         method: 'POST',
-        body: expect.objectContaining({ resourceId: 'fixture_mysql_0' }),
+        body: expect.objectContaining({ resourceId: 'fixture_postgresql_0' }),
       }),
     ]),
   );
@@ -620,20 +660,14 @@ test('Guest sees expiry and can use their own files from the sample entry', asyn
   workspace.requireSignIn({ guestEnabled: true });
   await page.goto('/');
   await page.getByRole('button', { name: 'Try without an account' }).click();
-  const guide = page.getByRole('region', { name: 'US sales agent task' });
+  const guide = page.getByRole('region', { name: 'Explore US sales' });
   await expect(page.getByText(/Your temporary workspace expires 24 hours/)).toBeVisible();
-  await expect(guide.getByRole('button', { name: 'Prepare sample' })).toBeVisible();
+  await expect(guide.getByRole('button', { name: 'Explore sample' })).toBeVisible();
   await page.goto('/#connect');
   await expect(page.getByRole('heading', { name: 'Connect an agent', level: 1 })).toBeVisible();
   await page.goto('/#overview');
   await guide.getByRole('link', { name: 'Use your own files' }).click();
-  const empty = page.getByRole('region', { name: 'File Systems empty state' });
-  await expect(empty.getByText(/Your temporary workspace expires 24 hours/)).toBeVisible();
-  await expect(empty.getByText('Preview and explore', { exact: true })).toBeVisible();
-  await empty.getByRole('button', { name: 'Create file system' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Create a File System' });
-  await dialog.getByRole('button', { name: 'Create file system', exact: true }).click();
-  await expect(page).toHaveURL(/#files\?resourceId=fixture_filesystem_0$/);
+  await expect(page).toHaveURL(/#files\?resourceId=fs_sales$/);
   await expect(page.getByRole('button', { name: 'Upload', exact: true })).toBeVisible();
   expect(
     workspace.requests.some(
@@ -787,8 +821,10 @@ test('Connect opens scoped Key creation directly and the empty Keys page has one
   await expect(page).toHaveURL(/#connect$/);
   await expect(
     dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }),
-  ).toBeChecked();
-  await expect(dialog.getByRole('checkbox', { name: 'mysql-fixture', exact: true })).toBeChecked();
+  ).not.toBeChecked();
+  await expect(
+    dialog.getByRole('checkbox', { name: 'mysql-fixture', exact: true }),
+  ).not.toBeChecked();
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await workspace.open('#keys');
   await expect(page.getByRole('button', { name: 'Create API key', exact: true })).toHaveCount(1);

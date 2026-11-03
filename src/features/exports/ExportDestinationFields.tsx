@@ -3,7 +3,7 @@ import { Alert, Button, Group, Loader, NativeSelect, Text, TextInput } from '@ti
 import { useResourcePages } from '../resources/use-resource-pages';
 import type { Resource } from '../../api/client';
 export type DestinationKind = 'download' | 'filesystem' | 'database';
-const liveProviders = ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'];
+const liveProviders = ['tidb-cloud-zero', 'db9-anonymous'];
 export function ExportKindSelect({
   kind,
   onKindChange,
@@ -48,7 +48,9 @@ export function useExportDestination(
       resource.status === 'active' &&
       (kind === 'filesystem'
         ? resource.kind === 'filesystem'
-        : resource.kind !== 'filesystem' && liveProviders.includes(resource.provider || '')),
+        : resource.kind !== 'filesystem' &&
+          resource.kind !== 'duckdb' &&
+          liveProviders.includes(resource.provider || '')),
   );
   return {
     targets,

@@ -1,7 +1,8 @@
 import type { Data, Resource } from '../../api/client';
 
 export type ResourceKind = Resource['kind'];
-export type ResourceCreationTarget = ResourceKind | 'resource' | 'database';
+export type CreatableResourceKind = 'postgresql' | 'filesystem';
+export type ResourceCreationTarget = CreatableResourceKind | 'resource' | 'database';
 export type DatabaseCreationContext = {
   data: Data;
   refresh: () => Promise<void>;
@@ -9,7 +10,7 @@ export type DatabaseCreationContext = {
   isGuest: boolean;
 };
 export const resourceKindLabels: Record<ResourceKind, string> = {
-  mysql: 'MySQL',
+  mysql: 'TiDB',
   postgresql: 'PostgreSQL',
   duckdb: 'DuckDB',
   filesystem: 'File System',
@@ -23,18 +24,15 @@ export function resourceCreationContext(
   target: ResourceCreationTarget,
   capabilities: CreationCapabilities,
 ) {
-  const kinds: ResourceKind[] =
+  const kinds: CreatableResourceKind[] =
     target === 'resource'
-      ? ['mysql', 'postgresql', 'duckdb', 'filesystem']
+      ? ['postgresql', 'filesystem']
       : target === 'database'
-        ? ['mysql', 'postgresql', 'duckdb']
+        ? ['postgresql']
         : [target];
-  const choices = kinds.filter(
-    (kind) => kind !== 'postgresql' || capabilities.postgresql.available || target === kind,
-  );
-  const initialKind = choices[0];
+  const initialKind = kinds.find((kind) => capabilities[kind].available !== false) ?? kinds[0];
   return {
-    kinds: choices,
+    kinds,
     initialKind,
     initialRegion: capabilities[initialKind].regions[0],
     title:

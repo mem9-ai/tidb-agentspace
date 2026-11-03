@@ -45,7 +45,7 @@ export function TutorialResume({ data }: { data: Data }) {
           return (
             <Paper withBorder p="md" key={resource.id} className="tutorial-resume-card">
               <div className="tutorial-resume-identity">
-                <Heading level={3}>{files ? 'Analyze sample files' : 'Query sample data'}</Heading>
+                <Heading level={3}>{files ? 'Earlier file sample' : 'Query sample data'}</Heading>
                 <Text size="sm">{resource.name}</Text>
               </div>
               <Badge color={!available ? 'yellow' : progress.completed ? 'green' : 'carbon'}>
@@ -62,10 +62,20 @@ export function TutorialResume({ data }: { data: Data }) {
                         : 'Started'}
               </Badge>
               <Group gap="xs">
-                <Button component="a" href={tutorialHash(resource.id)} variant="default">
-                  {progress.completed ? 'Revisit tutorial' : 'Continue tutorial'}
+                <Button
+                  component="a"
+                  href={files ? href : tutorialHash(resource.id)}
+                  variant="default"
+                >
+                  {files
+                    ? progress.ready
+                      ? 'Open earlier sample'
+                      : 'Check earlier sample'
+                    : progress.completed
+                      ? 'Revisit tutorial'
+                      : 'Continue tutorial'}
                 </Button>
-                {progress.ready && available && (
+                {!files && progress.ready && available && (
                   <Button component="a" href={href} variant="subtle">
                     Open sample
                   </Button>

@@ -16,18 +16,9 @@ import { Heading } from '../../ui/WorkspaceHeading';
 import { CodeExample } from '../../ui/CodeExample';
 import { WorkspaceQueryResults } from '../../ui/WorkspaceQueryResults';
 import { databaseEditorHash, tutorialHash } from '../navigation/workspace-route';
-import { fileHash } from '../files/file-location';
-import {
-  databaseTutorial,
-  fileExamples,
-  type FileExampleKind,
-  liveDatabase,
-  matchesTotals,
-  ordersCsv,
-} from './tutorial-data';
+import { databaseTutorial, liveDatabase, matchesTotals, ordersCsv } from './tutorial-data';
 import './tutorials.css';
 import { loadDatabaseSample } from './tutorial-import';
-import { openFileExample } from './tutorial-file-examples';
 import type { TutorialProgress, TutorialStore } from './tutorial-progress';
 import { TutorialProgressStatus, useTutorialStore } from './TutorialProgressProvider';
 
@@ -58,11 +49,8 @@ export function DataTutorials({
 }: Props) {
   const { store, loading, error: progressError } = useTutorialStore();
   const [databaseId, setDatabaseId] = useState(() => store.readSelection('database'));
-  const [filesystemId, setFilesystemId] = useState(() => store.readSelection('filesystem'));
   const [databaseBusy, setDatabaseBusy] = useState(false);
-  const [filesystemBusy, setFilesystemBusy] = useState(false);
   const [activeKind, setActiveKind] = useState<'filesystem' | 'database'>('filesystem');
-  const [fileJourney, setFileJourney] = useState<FileExampleKind>('csv');
   const target = data.resources.find((resource) => resource.id === resourceId);
   const targetId = target?.id;
   const targetKind = target?.kind;
@@ -81,8 +69,7 @@ export function DataTutorials({
         : 'database'
       : requestedKind;
     if (targetId && kind) {
-      if (kind === 'filesystem') setFilesystemId(targetId);
-      else setDatabaseId(targetId);
+      if (kind === 'database') setDatabaseId(targetId);
       store.saveSelection(kind, targetId);
     }
     if (kind) {
@@ -91,7 +78,6 @@ export function DataTutorials({
       card?.focus({ preventScroll: true });
     }
   }, [targetId, targetKind, requestedKind, store, loading]);
-  if (loading || progressError) return <TutorialProgressStatus />;
   if (resourceId && !target)
     return (
       <Alert color="yellow" mb="xl" title="Tutorial resource unavailable">
@@ -122,28 +108,62 @@ export function DataTutorials({
           </Tabs.List>
         )}
         {kinds.map((kind) => {
-          const resources = data.resources.filter((resource) =>
-            kind === 'filesystem' ? resource.kind === 'filesystem' : resource.kind !== 'filesystem',
-          );
-          const selectedId =
-            target && (target.kind === 'filesystem') === (kind === 'filesystem')
-              ? target.id
-              : kind === 'filesystem'
-                ? filesystemId
-                : databaseId;
-          const busy = kind === 'filesystem' ? filesystemBusy : databaseBusy;
+          if (kind === 'filesystem') {
+            return (
+              <Tabs.Panel value="filesystem" key="filesystem">
+                <Paper
+                  withBorder
+                  p="xl"
+                  className="data-tutorial"
+                  id="tutorial-filesystem"
+                  tabIndex={-1}
+                >
+                  <Group justify="space-between" gap="sm">
+                    <Group gap="sm">
+                      <IconFolder size={24} />
+                      <Badge color="peacock">Hands-on tutorial</Badge>
+                    </Group>
+                    {focusedKind && (
+                      <Button component="a" href="#tutorials" variant="subtle">
+                        All tutorials
+                      </Button>
+                    )}
+                  </Group>
+                  <Heading level={2}>Explore US sales</Heading>
+                  <Text component="p">
+                    Explore a sales file yourself or ask your agent to analyze it and create a
+                    Markdown report with a Mermaid chart.
+                  </Text>
+                  <Text component="p" size="sm" mt="sm">
+                    The example uses a File System in your workspace. Open the agent’s report to
+                    preview the writing and chart together.
+                  </Text>
+                  <Button component="a" href="#overview?example=sales" variant="filled" mt="md">
+                    Explore the sales example
+                  </Button>
+                </Paper>
+              </Tabs.Panel>
+            );
+          }
+          if (loading || progressError) {
+            return (
+              <Tabs.Panel value="database" key="database">
+                <TutorialProgressStatus />
+              </Tabs.Panel>
+            );
+          }
+          const resources = data.resources.filter((resource) => resource.kind !== 'filesystem');
+          const selectedId = target?.kind !== 'filesystem' && target ? target.id : databaseId;
+          const busy = databaseBusy;
           const selected =
             resources.find((resource) => resource.id === selectedId) ??
-            resources.find(
-              (resource) =>
-                resource.status === 'active' && (kind === 'filesystem' || liveDatabase(resource)),
-            ) ??
+            resources.find((resource) => resource.status === 'active' && liveDatabase(resource)) ??
             resources[0];
           const canCreate =
             !selected ||
             selected.status !== 'active' ||
             !!selected.connectionError ||
-            (kind === 'database' && !liveDatabase(selected));
+            !liveDatabase(selected);
           return (
             <Tabs.Panel value={kind} key={kind}>
               <Paper
@@ -155,11 +175,7 @@ export function DataTutorials({
               >
                 <Group justify="space-between" gap="sm">
                   <Group gap="sm">
-                    {kind === 'filesystem' ? (
-                      <IconFolder size={24} />
-                    ) : (
-                      <IconDatabase01 size={24} />
-                    )}
+                    <IconDatabase01 size={24} />
                     <Badge color="peacock">Hands-on tutorial</Badge>
                   </Group>
                   {focusedKind && (
@@ -173,59 +189,27 @@ export function DataTutorials({
                     </Button>
                   )}
                 </Group>
-                <Heading level={2}>
-                  {kind === 'filesystem' ? 'Explore your File System' : 'Query sample data'}
-                </Heading>
+                <Heading level={2}>Query sample data</Heading>
                 <Text component="p">
-                  {kind === 'filesystem'
-                    ? 'Choose an example to preview files, analyze data with SQL, or find errors with Bash.'
-                    : 'Load a small dataset, run your first query, and check the result here.'}
+                  Load a small dataset, run your first query, and check the result here.
                 </Text>
-                <Tabs
-                  value={kind === 'filesystem' ? fileJourney : 'csv'}
-                  onChange={(value) => {
-                    if (value === 'csv' || value === 'notes' || value === 'log')
-                      setFileJourney(value);
-                  }}
-                  keepMounted
-                >
-                  {kind === 'filesystem' && (
-                    <Tabs.List aria-label="File examples" className="tutorial-tabs" mt="lg">
-                      <Tabs.Tab value="csv" disabled={busy}>
-                        CSV
-                      </Tabs.Tab>
-                      <Tabs.Tab value="notes" disabled={busy}>
-                        Markdown
-                      </Tabs.Tab>
-                      <Tabs.Tab value="log" disabled={busy}>
-                        Logs · Bash
-                      </Tabs.Tab>
-                    </Tabs.List>
-                  )}
+                <Tabs value="csv" keepMounted>
                   <Stack gap="lg" mt="lg">
                     <div>
                       <Heading level={3}>
-                        {kind === 'filesystem'
-                          ? selected
-                            ? 'Choose a File System'
-                            : 'Create a File System'
-                          : canCreate
-                            ? '1. Choose or create a database'
-                            : '1. Choose a database'}
+                        {canCreate ? '1. Choose or create a database' : '1. Choose a database'}
                       </Heading>
                       {resources.length > 0 && (
                         <NativeSelect
                           mt="sm"
-                          label={
-                            kind === 'filesystem' ? 'Tutorial File System' : 'Tutorial database'
-                          }
+                          label={'Tutorial database'}
                           value={selected?.id ?? ''}
                           title={selected?.name}
                           disabled={busy}
                           onChange={(event) => {
                             const id = event.currentTarget.value;
-                            (kind === 'filesystem' ? setFilesystemId : setDatabaseId)(id);
-                            store.saveSelection(kind, id);
+                            setDatabaseId(id);
+                            store.saveSelection('database', id);
                             location.hash = tutorialHash(id);
                           }}
                           data={resources.map((resource) => ({
@@ -239,9 +223,9 @@ export function DataTutorials({
                           mt="sm"
                           variant={selected ? 'default' : 'filled'}
                           disabled={busy}
-                          onClick={() => onCreate(kind === 'filesystem' ? 'filesystem' : 'mysql')}
+                          onClick={() => onCreate('mysql')}
                         >
-                          Create {kind === 'filesystem' ? 'File System' : 'database'}
+                          Create database
                         </Button>
                       )}
                       {!selected && (
@@ -257,15 +241,11 @@ export function DataTutorials({
                         store={store}
                         refresh={refresh}
                         copy={copy}
-                        onRunningChange={
-                          kind === 'filesystem' ? setFilesystemBusy : setDatabaseBusy
-                        }
+                        onRunningChange={setDatabaseBusy}
                       />
                     ) : (
                       <Text c="carbon.7">
-                        {kind === 'filesystem'
-                          ? 'Next: choose an example and explore a sample file. No upload or API key needed.'
-                          : 'Next: load the included sample and run a query. No upload or API key needed.'}
+                        Next: load the included sample and run a query. No upload or API key needed.
                       </Text>
                     )}
                   </Stack>
@@ -294,9 +274,7 @@ function TutorialSteps({
 }) {
   const [initialSample] = useState(freshSample);
   const sample = store.readSample(resource.id) ?? initialSample;
-  const [action, setAction] = useState<
-    'prepare' | 'query' | 'verify' | 'reset' | FileExampleKind | null
-  >(null);
+  const [action, setAction] = useState<'prepare' | 'query' | 'verify' | 'reset' | null>(null);
   const busy = action !== null;
   const running = useRef(false);
   const [error, setError] = useState('');
@@ -309,7 +287,7 @@ function TutorialSteps({
   const active = resource.status === 'active';
   const available = active && !resource.connectionError;
   const ready = sample.ready || demo;
-  async function run(action: 'prepare' | 'query' | 'verify' | 'reset' | FileExampleKind) {
+  async function run(action: 'prepare' | 'query' | 'verify' | 'reset') {
     if (running.current || !available) return;
     running.current = true;
     setAction(action);
@@ -322,32 +300,7 @@ function TutorialSteps({
       progress = await store.saveSample(resource.id, { ...next, version: progress.version });
     }
     try {
-      if (action === 'csv' || action === 'notes' || action === 'log') {
-        if (!progress.version) await updateSample(progress);
-        const examplePath = await openFileExample(
-          workspaceApi,
-          resource.id,
-          resource.provider,
-          sample.id,
-          action,
-          action === 'csv'
-            ? async () => {
-                if (progress.attempted)
-                  throw new Error(
-                    'The saved sample could not be found. Check the File System or use a new sample name.',
-                  );
-                await updateSample({ ...progress, attempted: true });
-              }
-            : undefined,
-        );
-        if (action === 'csv' && !progress.ready)
-          await updateSample({ ...progress, attempted: true, ready: true });
-        location.hash = fileHash(
-          resource.id,
-          examplePath,
-          action === 'notes' ? 'preview' : 'analyze',
-        );
-      } else if (action === 'reset') {
+      if (action === 'reset') {
         await updateSample(freshSample());
       } else if (action === 'prepare') {
         if (sample.attempted || demo) return;
@@ -542,55 +495,6 @@ function TutorialSteps({
           </Stack>
         </Tabs.Panel>
       )}
-      {files &&
-        (['csv', 'notes', 'log'] as const).map((kind) => (
-          <Tabs.Panel value={kind} pt="lg" key={kind}>
-            <Heading level={3}>{fileExamples[kind].title}</Heading>
-            <Text mt="sm">{fileExamples[kind].description}</Text>
-            <Text mt="sm" size="sm">
-              The sample is saved in this File System when you open it. Your edits are kept when you
-              return.
-            </Text>
-            <Button
-              mt="md"
-              loading={action === kind}
-              disabled={busy || !available}
-              onClick={() => void run(kind)}
-            >
-              {action === kind
-                ? 'Opening sample…'
-                : kind === 'csv'
-                  ? sample.attempted && !sample.ready
-                    ? 'Check saved sample'
-                    : 'Open sample CSV'
-                  : kind === 'notes'
-                    ? 'Open sample notes'
-                    : 'Open sample log'}
-            </Button>
-            {action === kind && (
-              <Text mt="sm" size="sm" role="status">
-                Opening the sample in this File System.
-              </Text>
-            )}
-            {kind === 'csv' && sample.attempted && !sample.ready && !busy && (
-              <>
-                <Text mt="sm" size="sm">
-                  The save outcome is unconfirmed. Check the existing sample before continuing.
-                </Text>
-                {error && (
-                  <Button
-                    mt="sm"
-                    variant="subtle"
-                    disabled={busy}
-                    onClick={() => void run('reset')}
-                  >
-                    Use a new sample name (keep the previous sample)
-                  </Button>
-                )}
-              </>
-            )}
-          </Tabs.Panel>
-        ))}
       {error && (
         <Alert color="red" role="alert">
           {error}

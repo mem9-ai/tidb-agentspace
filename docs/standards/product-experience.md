@@ -59,11 +59,19 @@ The core journeys are Create database → run a query; Create File System → up
 preview/analyze a file; and choose permissions → create a Key → use the provided API example.
 These are design paths, not measured cloud-latency guarantees. Default safe optional inputs
 such as supported regions and generated resource names. Console exploration does not require
-connecting an agent first. Keep alternative resource kinds discoverable without inventing
-availability or hiding provider constraints.
+connecting an agent first. Do not invent provider availability or hide provider constraints.
 
-For new and Guest Workspaces, lead the Overview with files and a reachable agent connection
-guide; keep database creation available as a secondary action. The individual empty collections
+Name TiDB Cloud Zero as TiDB and describe MySQL compatibility as a capability. Local
+simulation must be visibly identified and must not imply that a Zero instance was created.
+Do not present simulated locations as meaningful choices. Per owner direction, the Console's
+database creation flow offers PostgreSQL through db9, with unavailability clearly identified.
+Existing TiDB resources remain accessible; standalone DuckDB resources are not shown in the
+Console, and DuckDB file analysis remains
+available. This is a Console experience decision, not removal of backend capabilities; revisit it
+on owner direction.
+
+For new and Guest Workspaces, lead the Overview with a useful file experience that offers both
+agent and self-service paths; keep database creation available as a secondary action. The individual empty collections
 retain their Quick Starts. Explain the Guest expiry where applicable; remove the Overview guide
 once resources exist. Creation and execution remain explicit.
 On the temporary-workspace entry, use “Try without an account” for the action and
@@ -72,29 +80,87 @@ perform real operations. Show the 24-hour access limit with the action without r
 Explain the actual consequence of signing out before ending a Guest session; do not promise
 cleanup that the service has not implemented.
 
-**Agent-first onboarding (owner direction, 2026-11-03; proposed implementation):** lead a new
-Guest to one concrete file-based US sales task. The first useful result is an actual agent's
-durable, inspectable report; completing the journey additionally requires a separate agent
-session to continue from the saved data and report. Guest creation and resource writes remain
-explicit; selected resource/action permissions and real provider location remain truthful.
-The Overview starts with files and agent connection; the new sales task and the rest of the
-accepted [GH-150 specification](../../specs/gh-150/spec.md) remain to be implemented. Existing
-collection Quick Starts and tutorial flows remain available. The specification records
-proposed pairing, task evidence and account-copy capabilities separately from existing APIs.
-Revisit this direction after observing the complete real-agent journey and measured latency.
+**People and agent onboarding (owner direction, 2026-11-03):** a Guest can explore the US sales
+sample and obtain a real read-only analysis without installing an agent or creating a key. Offer a
+separate agent path using the same saved sample. An agent's durable, inspectable report and a
+separate session continuing its work remain the agent journey's goals, not proof supplied by the
+self-service result. The self-service sales journey must also reach a durable result: compare
+sales by state, examine the leading state's products, and explicitly save a report from the actual
+results. Re-entry offers an existing report without overwriting it or attributing it to an agent.
+Show each finding and the next action before lengthy result tables; after an explicit analysis,
+bring the next action into view without moving focus away if the user has already moved elsewhere.
+When returning to Overview, hide the sales guide once the manual report exists or both Agent
+report files exist; never interrupt an active guide. Tutorials can reopen it explicitly without
+creating or overwriting files. File existence is only a presentation signal, not proof of the
+writer, execution, or report quality; an unavailable check must not hide the guide.
+As of the owner correction on 2026-11-03, present the agent path first and
+make self-service equally discoverable; after sample creation, let users switch paths without
+discarding an in-progress or completed self-service result. On entering a new Workspace, prepare
+one default File System automatically and retain the first-use guide; an explicitly selected sample
+uses that File System. Show preparation and recovery honestly. Guest entry, sample creation and
+execution remain explicit. Preserve
+existing collection Quick Starts and database tutorial flow. This owner correction supersedes the
+agent-only entry emphasis of [GH-150](../../specs/gh-150/spec.md); the specification's proposed
+pairing and account features are not implied to be implemented. Revisit with observed use.
 
-**Database creation defaults (product choice from owner-provided feedback, 2026-11-03):** a database creation flow starts
-with MySQL, while PostgreSQL and the existing standalone DuckDB remain available through an
-explicit type choice. When the provider offers only one location, use that configured location
-without presenting a selector; actual location remains discoverable in Details. Creation remains
-an explicit action, and these Console defaults do not change existing resources or API choices.
-File analysis continues to use its existing DuckDB engine. Revisit whether standalone DuckDB
-creation should remain after its existing usage and migration paths are understood.
+For the current sales sample, reveal the next action in sequence: review agent access,
+start an agent with the task, then wait for a report. Opening the
+sample must remain safe and returning must offer an existing-Key path without creating another
+Key. A Key with insufficient grants does not advance the guided path; a pending grant is labeled.
+Keep a downloadable task fallback if clipboard access fails. A copied task and a found report do
+not prove that an agent connected or authored the report. Recheck the original sample before
+offering its task, and never expose the Key in copied instructions.
+
+Key creation separates resource selection from actions and presents plain-language permissions
+grouped by the selected resource types. A file-only selection does not show database actions.
+Workspace-wide access explicitly includes future resources and is distinct from the permission
+to create resources. General Key creation starts with no resources selected; a contextual task
+may preselect only the resource and actions it needs. Changing resource selection clears actions
+that no longer apply, while selections outside the loaded resource window remain disclosed and
+are not silently discarded. Review the actual grants and expiry before creation.
+
+After creating a Key, make its next use concrete before closing the reveal-once view. For agents
+that inherit a local terminal environment, provide a copyable setup command that prompts for the
+Key without embedding it in the command or task; explain that a new agent session must inherit
+that environment. Offer secret settings as an alternative. Plain-text key download is explicit,
+states the storage risk, and does not claim the browser saved a file or connected an agent.
+Confirm before dismissing an uncopied reveal-once Key. Revisit when verified pairing replaces
+the manual setup; clipboard, download and Key creation are not connection evidence.
+
+The sales launch offers Pi, Codex CLI and Claude Code without changing the scoped Key grant.
+The copied command prompts for the Key and starts the selected local agent with the task; it
+contains no Key and scopes the exported value to the launched process. Keep manual command and
+existing-Key fallbacks. Reusable connection and file-operation instructions live in the portable
+Workspace Skill delivered by the Console. The task points to that skill without placing the Key
+in the URL or the task; the agent must fetch it without credentials and stop if it is unavailable.
+This read does not install the skill into the user's environment. Report detection polls only
+while the waiting view is active, slows down
+over time and pauses in hidden tabs; preserve a manual retry and do not infer agent identity or
+successful authorization from a file's existence. This is a manual credential handoff, not the
+proposed one-time pairing flow. Revisit when a verified pairing and activity API is available.
+
+For the follow-up after the first report, copying the task must show the next step and an
+observable destination. Explain how to start a fresh authorized agent session, check the
+follow-up file while waiting, offer a manual check and a download when copying fails, and restore
+the waiting or found state on return. An existing file is offered for inspection, not presented
+as proof that this agent ran the task. Do not overwrite an existing report or expose the Key.
+
+**Database creation (owner direction, 2026-11-03):** the Console creates PostgreSQL through db9
+without an engine choice. Existing standalone DuckDB databases are hidden from Console discovery,
+direct navigation, and import destinations; existing data and backend capabilities remain intact.
+File analysis continues to use DuckDB. Use the
+configured location without a selector; actual location remains discoverable in Details. Creation
+remains explicit, and unavailable PostgreSQL must be clearly identified.
+
+When a persistent DuckDB database is unavailable, distinguish it from read-only DuckDB file
+analysis and provide a route to Files. Do not imply that the storage-backed database was created
+or enable a provider merely to remove the message.
 
 Minimize required decisions and navigation, not safeguards. Permission selection, write intent,
 format/field/type confirmation, overwrite/discard decisions, provider limits and live/demo
-information remain explicit. Never auto-run customer SQL, auto-provision a resource, broaden
-a Key or discard work to save a click. Backend authorization remains authoritative.
+information remain explicit. Except for the new Workspace's default File System described above,
+never auto-provision a resource. Never auto-run customer SQL, broaden a Key or discard work to
+save a click. Backend authorization remains authoritative.
 
 **Create table without a database (owner correction, 2026-11-03):** when a saved file or Bash
 output has no available import destination, offer explicit database creation in the same journey
@@ -154,25 +220,18 @@ and an execution audit. Verify both complete flows, create handoff, isolated-bro
 resource identity, unavailable persistence, conflicts and error/draft states. See
 [implementation and evidence](../tutorial-verification.md) and [ADR 0033](../decisions/0033-workspace-tutorial-progress.md).
 
-**Focused file journeys (owner correction 2026-11-02):** lead Tutorials with the File System,
-and separate file examples by the outcome a user wants, such as SQL analysis, Markdown preview
-and Bash. Each example must be independently accessible without first completing another one;
-keep the database tutorial discoverable and retain Workspace-backed sample identity and safe
-re-entry. When an available resource is selected, lead directly to its examples; offer creation
-when a resource is missing or unavailable, and keep failure recovery explicit. Verify first use,
-switching journeys, cross-browser return and narrow layouts. Revisit
-the grouping as supported file formats and real usage develop.
-
-**Consistent file examples (owner correction 2026-11-02):** CSV, Markdown and log tutorials
-offer the same direct open-sample flow. Open CSV and logs in the file workspace with analysis
-available and Markdown in preview; do not automatically execute a query or command. Preserve
-existing sample paths, customer edits, Workspace progress and uncertain-write recovery. A
-successful SQL query on the Workspace's CSV sample completes that tutorial without treating
-unrelated file queries as tutorial progress.
+**One file example (owner correction 2026-11-03):** the File System tutorial leads to the
+same US sales journey offered on Overview, with a self-service route and an Agent route. The Agent
+task requests a Markdown report containing a Mermaid chart grounded in actual query results; an
+existing report is never replaced just to produce a chart. Preview uses the existing isolated
+Markdown and Mermaid renderers. Do not create separate Markdown and log tutorial samples as a
+precondition to the journey. Preserve earlier sample files and their saved identity; direct users
+to review a previous sample without replaying uncertain writes. This replaces the separate file
+examples introduced on 2026-11-02; the database tutorial remains available.
 
 **Guest Agent journey (owner correction 2026-11-03):** prioritize a concrete Agent task and
 its files over resource administration on the Guest entry screen. An explicit US sales sample
-creates a durable, versioned file without a database; returning observes the same attempt and
+creates a durable, versioned file in the default File System without a database; returning observes the same attempt and
 never overwrites edits. Keep file access, Agent connection and Key management easy to find,
 while retaining advanced workflows. The current manual Key instructions and an observed report
 file do not prove an Agent connected, analyzed data or wrote that report. Verified pairing,
