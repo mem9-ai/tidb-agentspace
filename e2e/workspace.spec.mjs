@@ -369,6 +369,37 @@ test('Key creation sends explicit resource/action grants and reveals its synthet
   await expect(page.getByRole('cell', { name: /^file-reader/ })).toBeVisible();
 });
 
+test('@visual an agent Key can be limited to read-only SQL on a selected database', async ({
+  page,
+  workspace,
+}, testInfo) => {
+  workspace.addResources();
+  await workspace.open('#keys');
+  await page.getByRole('button', { name: 'Create API key', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
+  await dialog.getByRole('textbox', { name: 'Key name' }).fill('database-reader');
+  await dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }).uncheck();
+  await dialog.getByRole('checkbox', { name: /files:read/ }).uncheck();
+  await dialog.getByRole('checkbox', { name: /usage:read/ }).uncheck();
+  await dialog.getByRole('checkbox', { name: /queries:read/ }).check();
+  await expect(dialog.getByRole('checkbox', { name: /queries:execute/ })).not.toBeChecked();
+  if (process.env.KEY_READ_SCREENSHOT) {
+    await page.screenshot({
+      path: `${process.env.KEY_READ_SCREENSHOT}-${testInfo.project.name}.png`,
+      animations: 'disabled',
+    });
+  }
+  await dialog.getByRole('button', { name: 'Create key', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Your key is ready' })).toBeVisible();
+  expect(
+    workspace.requests.find((r) => r.path.endsWith('/keys') && r.method === 'POST').body,
+  ).toMatchObject({
+    name: 'database-reader',
+    scopes: ['resources:read', 'queries:read'],
+    resourceIds: ['db_fixture'],
+  });
+});
+
 test('@visual File System opens its collection; Markdown preview, draft protection and original download work inline', async ({
   page,
   workspace,
