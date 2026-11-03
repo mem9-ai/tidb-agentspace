@@ -1,0 +1,211 @@
+use super::*;
+
+const FIXTURE: &str = include_str!("../../../specs/gh-150/fixtures/us-sales.csv");
+const PATH: &str = "/us-sales.csv";
+
+pub(super) struct SampleRequest<'a> {
+    pub method: &'a str,
+    pub route: &'a str,
+    pub query: &'a BTreeMap<String, String>,
+    pub input: Value,
+    pub idempotency: Option<&'a str>,
+}
+
+fn canonical_uuid(value: &str) -> bool {
+    uuid::Uuid::parse_str(value).is_ok_and(|id| id.to_string() == value)
+}
+
+fn visible_attempt(value: &Value) -> Value {
+    let mut result = value.clone();
+    if let Some(object) = result.as_object_mut() {
+        object.remove("writeIntent");
+    }
+    result
+}
+
+fn can_observe(p: &Principal, attempt: &Value) -> bool {
+    if p.owner {
+        return true;
+    }
+    if p.scope("files:read").is_err() {
+        return false;
+    }
+    if let Some(id) = attempt["resourceId"].as_str() {
+        return p.has(id);
+    }
+    p.has("*") && p.scope("resources:write").is_ok() && p.scope("files:write").is_ok()
+}
+
+impl Product {
+    pub(super) async fn sales_sample_request(
+        &self,
+        credential: &Credential,
+        p: &Principal,
+        request: SampleRequest<'_>,
+    ) -> Result<(u16, Reply)> {
+        let SampleRequest {
+            method,
+            route,
+            query,
+            input,
+            idempotency,
+        } = request;
+        let repository = self.workspace.repository();
+        if method == "GET" && route == "/sales-sample-attempts" {
+            if query.len() != 1 || query.get("fixture").map(String::as_str) != Some("us-sales-v1") {
+                return Err(err(400, "INVALID_INPUT"));
+            }
+            let attempt = repository.current_sales_sample().await?;
+            let data = attempt
+                .filter(|value| can_observe(p, value))
+                .map(|value| visible_attempt(&value))
+                .into_iter()
+                .collect::<Vec<_>>();
+            return Ok((200, Reply::Json(json!({"data":data}))));
+        }
+        if method == "GET" {
+            let id = route
+                .strip_prefix("/sales-sample-attempts/")
+                .filter(|id| canonical_uuid(id))
+                .ok_or_else(|| err(404, "NOT_FOUND"))?;
+            if !query.is_empty() {
+                return Err(err(400, "INVALID_INPUT"));
+            }
+            let attempt = repository.sales_sample(id).await?;
+            if !can_observe(p, &attempt) {
+                return Err(err(404, "NOT_FOUND"));
+            }
+            return Ok((200, Reply::Json(json!({"data":visible_attempt(&attempt)}))));
+        }
+        if method != "POST" || route != "/sales-sample-attempts" {
+            return Err(err(404, "NOT_FOUND"));
+        }
+        if !query.is_empty() {
+            return Err(err(400, "INVALID_INPUT"));
+        }
+        let key = idempotency.ok_or_else(|| err(400, "IDEMPOTENCY_KEY_REQUIRED"))?;
+        if !canonical_uuid(key) {
+            return Err(err(400, "INVALID_IDEMPOTENCY_KEY"));
+        }
+        for scope in ["resources:write", "files:read", "files:write"] {
+            p.scope(scope)?;
+        }
+        if !p.has("*") {
+            return Err(err(403, "FORBIDDEN"));
+        }
+        if !input
+            .as_object()
+            .is_some_and(|obj| obj.len() == 1 && obj.get("fixture") == Some(&json!("us-sales-v1")))
+        {
+            if repository.has_sales_sample_key(&p.id, key).await? {
+                return Err(err(409, "IDEMPOTENCY_CONFLICT"));
+            }
+            return Err(err(400, "INVALID_INPUT"));
+        }
+        // Resource-index backfill has no provider effects. Wait before reserving the
+        // sample slot, so a slow migration remains an explicitly retryable request.
+        // An idempotent replay observes its already-recorded attempt immediately.
+        if !repository.has_sales_sample_key(&p.id, key).await? {
+            repository.prepare_sample_resource_index().await?;
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = timestamp();
+        let attempt = json!({"id":id,"fixture":"us-sales-v1","status":"preparing","resourceId":null,"path":null,"fileVersion":null,"errorCode":null,"createdAt":now,"updatedAt":now,"writeIntent":false});
+        let (attempt, created) = repository
+            .begin_sales_sample(credential, &p.id, key, attempt)
+            .await?;
+        if !created {
+            return Ok((200, Reply::Json(json!({"data":visible_attempt(&attempt)}))));
+        }
+        let id = text(&attempt, "id")?.to_owned();
+        let resource_id = format!("fs_{}", secret(6)?);
+        let caps = self.capabilities();
+        let region = caps["filesystem"]["regions"][0]
+            .as_str()
+            .ok_or_else(|| err(503, "SERVICE_UNAVAILABLE"))?;
+        let resource = json!({"id":resource_id,"name":format!("sales-{}",&id[..8]),"kind":"filesystem","region":region,"regionId":repository.authority_id(),"status":if self.providers.config.files_provider=="local"{"active"}else{"provisioning"},"provider":self.providers.config.files_provider,"createdAt":timestamp()});
+        repository
+            .update_sales_sample(&id, json!({"resourceId":resource_id}))
+            .await?;
+        let event = json!({"id":uuid::Uuid::new_v4().to_string(),"action":"resource.created","resource":resource["name"],"resourceId":resource_id,"actor":p.actor,"at":timestamp(),"outcome":"success"});
+        let operation = async {
+            let resource = repository
+                .create_indexed_resource(credential, None, "sales-sample-v1", resource, event)
+                .await?;
+            let current = self.workspace.authenticate(credential).await?;
+            current.scope("resources:write")?;
+            let resource = self.update_resource(resource, true).await?;
+            if resource["status"] != "active" {
+                return Err(err(409, "SAMPLE_RESOURCE_NOT_READY"));
+            }
+            self.context(
+                credential,
+                "files:write",
+                Some((&resource_id, Some("filesystem"))),
+            )
+            .await?;
+            repository
+                .update_sales_sample(&id, json!({"path":PATH,"writeIntent":true}))
+                .await?;
+            let input =
+                json!({"resourceId":resource_id,"path":PATH,"type":"file","content":FIXTURE});
+            self.files(
+                credential,
+                p,
+                files::FileRequest {
+                    method: "PUT",
+                    route: "/files",
+                    query: &BTreeMap::new(),
+                    input,
+                    raw: &[],
+                    if_match: None,
+                    if_none_match: Some("*"),
+                },
+            )
+            .await?;
+            let query = BTreeMap::from([
+                ("resourceId".into(), resource_id.clone()),
+                ("path".into(), PATH.into()),
+            ]);
+            let metadata = || files::FileRequest {
+                method: "GET",
+                route: "/files/metadata",
+                query: &query,
+                input: json!({}),
+                raw: &[],
+                if_match: None,
+                if_none_match: None,
+            };
+            let (_, first_metadata) = self.files(credential, p, metadata()).await?;
+            let version = match first_metadata {
+                Reply::Entity { etag, .. } => etag,
+                _ => return Err(err(409, "FILE_VERSION_UNAVAILABLE")),
+            };
+            let (_, bytes) = self
+                .snapshot(credential, &resource, PATH, false, FIXTURE.len())
+                .await?;
+            if bytes != FIXTURE.as_bytes() {
+                return Err(err(409, "FILE_CHANGED"));
+            }
+            let (_, last_metadata) = self.files(credential, p, metadata()).await?;
+            if !matches!(last_metadata, Reply::Entity { etag, .. } if etag == version) {
+                return Err(err(409, "FILE_CHANGED"));
+            }
+            repository
+                .update_sales_sample(&id, json!({"status":"ready","fileVersion":version}))
+                .await
+        }
+        .await;
+        let result = match operation {
+            Ok(value) => value,
+            Err(error) => {
+                let current = repository.sales_sample(&id).await?;
+                let uncertain = current["writeIntent"] == true
+                    || error.status >= 500
+                    || error.code == "SAMPLE_RESOURCE_NOT_READY";
+                repository.update_sales_sample(&id, json!({"status":if uncertain {"outcome_unknown"} else {"failed"},"errorCode":error.code})).await?
+            }
+        };
+        Ok((201, Reply::Json(json!({"data":visible_attempt(&result)}))))
+    }
+}

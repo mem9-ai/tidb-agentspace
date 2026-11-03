@@ -16,6 +16,7 @@ on:
     paths:
       - 'backend/**'
       - 'meta-service/**'
+      - 'specs/gh-150/fixtures/us-sales.csv'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'rust-toolchain.toml'

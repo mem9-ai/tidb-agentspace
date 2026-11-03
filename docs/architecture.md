@@ -137,6 +137,11 @@ TiDB File System support does not imply those scale capabilities without a confo
 
 ## Console information architecture
 
+Guest Overview offers an explicit US sales sample backed by a durable sample attempt and a
+scoped manual Key flow. It observes the original sample version and any report file without
+claiming their provenance. The Agent pairing, verified task evidence and account-copy journey in
+[GH-150](../specs/gh-150/spec.md) remain proposed; the sample does not establish that aha.
+
 Tutorials (`#tutorials`) provides executable database and File System samples with expected
 results. Overview retains attempted/completed tutorials; resource headers return to the exact
 sample through `#tutorials?resourceId=…`. Progress is stored as encrypted Workspace/resource records

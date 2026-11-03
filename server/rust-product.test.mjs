@@ -2,6 +2,7 @@ import { restWorkflowCases } from './test-support/rest-workflow-cases.mjs';
 import { tutorialCases } from './test-support/tutorial-cases.mjs';
 import { revokeAndConfirmRegion } from './test-support/revoke-confirm.mjs';
 import './test-support/tutorial-sample-cases.mjs';
+import './test-support/sales-sample-cases.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Ajv2020 from 'ajv/dist/2020.js';

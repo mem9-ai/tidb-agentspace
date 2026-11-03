@@ -71,6 +71,7 @@ export const test = base.extend({
     const historyPages = { audit: new Map(), requests: new Map() };
     let tutorialRevision = 0;
     let rejectAutomaticName = false;
+    let salesSample = null;
     let signInRequired = false;
     let guestEnabled = false;
     let guestCleanupEnabled = false;
@@ -208,6 +209,62 @@ export const test = base.extend({
         };
         tutorials.set(resourceId, record);
         return reply({ data: record }, prior ? 200 : 201);
+      }
+      if (path === '/sales-sample-attempts' && method === 'GET')
+        return reply({ data: salesSample ? [salesSample] : [] });
+      if (path === '/sales-sample-attempts' && method === 'POST') {
+        const resource = {
+          id: 'fs_sales',
+          name: 'sales-workspace',
+          kind: 'filesystem',
+          region: 'aws-ap-southeast-1',
+          regionId: 'region:local',
+          provider: 'local',
+          status: 'active',
+          createdAt,
+        };
+        state.resources.push(resource);
+        state.files.push({
+          id: 'sales-file',
+          resourceId: resource.id,
+          path: '/us-sales.csv',
+          type: 'file',
+          content: 'state,sales_usd\nCalifornia,48000\n',
+          size: 35,
+          version: '"sales-version"',
+          updatedAt: createdAt,
+        });
+        salesSample = {
+          id: 'a1b2c3d4-1111-4111-8111-111111111111',
+          fixture: 'us-sales-v1',
+          status: 'ready',
+          resourceId: resource.id,
+          path: '/us-sales.csv',
+          fileVersion: '"sales-version"',
+          errorCode: null,
+          createdAt,
+          updatedAt: createdAt,
+        };
+        return reply({ data: salesSample }, 201);
+      }
+      if (path === '/files/metadata' && method === 'GET') {
+        const file = state.files.find(
+          (item) =>
+            item.resourceId === url.searchParams.get('resourceId') &&
+            item.path === url.searchParams.get('path'),
+        );
+        return file
+          ? reply({
+              data: {
+                resourceId: file.resourceId,
+                path: file.path,
+                type: file.type,
+                size: file.size,
+                version: file.version || '"fixture-version"',
+                conditionalWrites: true,
+              },
+            })
+          : reply({ error: { code: 'NOT_FOUND', message: 'Not found' } }, 404);
       }
       if (path === '/resources' && method === 'POST') {
         if (rejectAutomaticName) {

@@ -74,6 +74,14 @@ small {
 .sidebar-content > * {
   flex-shrink: 0;
 }
+.sidebar-more {
+  margin-top: 20px;
+}
+.sidebar-more summary {
+  cursor: pointer;
+  padding: 8px;
+  color: var(--muted);
+}
 .sidebar-bottom {
   margin-top: auto;
   padding-top: 32px;

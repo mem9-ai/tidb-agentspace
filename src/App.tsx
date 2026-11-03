@@ -27,6 +27,8 @@ import {
 import { WorkspacePageHeader as PageHeading } from './ui/WorkspacePageHeader';
 import { WorkspaceEmptyState as Empty } from './ui/WorkspaceEmptyState';
 import { WorkspaceFirstSteps } from './features/resources/WorkspaceFirstSteps';
+import { GuestExpiryNotice } from './features/resources/ResourceQuickStart';
+import { SalesSampleJourney } from './features/portal/SalesSampleJourney';
 import {
   useRemoteFiles,
   downloadRemoteFile,
@@ -177,6 +179,7 @@ function App() {
   const [resourceLookupFailure, setResourceLookupFailure] = useState('');
   const [resolvedResourceKey, setResolvedResourceKey] = useState('');
   const [tutorialCreation, setTutorialCreation] = useState(false);
+  const [keyPreset, setKeyPreset] = useState<Resource>();
   const route = routeLocation.page;
   const selectedResourceId =
     routeLocation.databaseId ??
@@ -474,7 +477,15 @@ function App() {
         isGuest={sso.sessionKind === 'guest'}
       >
         <div key={route}>
-          {route === 'overview' && <Overview {...shared} />}
+          {route === 'overview' && (
+            <Overview
+              {...shared}
+              onAuthorize={(resource) => {
+                setKeyPreset(resource);
+                setModal('key');
+              }}
+            />
+          )}
           {(route === 'databases' || route === 'files') &&
           lookupKey &&
           !selectedLoaded &&
@@ -572,7 +583,16 @@ function App() {
           }
         />
       )}
-      {modal === 'key' && <CreateKey {...shared} onClose={() => setModal(null)} />}
+      {modal === 'key' && (
+        <CreateKey
+          {...shared}
+          preset={keyPreset}
+          onClose={() => {
+            setModal(null);
+            setKeyPreset(undefined);
+          }}
+        />
+      )}
       {modal === 'search' && (
         <SearchModal data={data} onClose={() => setModal(null)} onConnect={setConnection} />
       )}
@@ -594,7 +614,14 @@ type Shared = {
   resourcePageBusy: boolean;
   resourcePageError: string;
 };
-function Overview({ data, onCreate, isGuest }: Shared) {
+function Overview({
+  data,
+  onCreate,
+  isGuest,
+  refresh,
+  copy,
+  onAuthorize,
+}: Shared & { onAuthorize: (resource: Resource) => void }) {
   const hasResources =
     data.resources.length > 0 || Boolean(data.resourceNextCursor || data.resourceWindowTruncated);
   const resources = [...data.resources].sort(
@@ -604,14 +631,14 @@ function Overview({ data, onCreate, isGuest }: Shared) {
     <>
       <PageHeading
         eyebrow="YOUR WORKSPACE"
-        title={hasResources ? data.workspace.name : 'Give your agent a place to work'}
+        title={hasResources && !isGuest ? data.workspace.name : 'Give your agent a place to work'}
         description={
-          hasResources
+          hasResources && !isGuest
             ? 'Your files, data, and agents. All in one place.'
             : 'Keep your files in one workspace, connect your agent, and return to its work.'
         }
         actions={
-          hasResources ? (
+          hasResources && !isGuest ? (
             <Group>
               <Button component="a" href="#connect" variant="default">
                 Connect an agent
@@ -623,7 +650,13 @@ function Overview({ data, onCreate, isGuest }: Shared) {
           ) : undefined
         }
       />
-      {!hasResources && (
+      {isGuest && (
+        <>
+          <GuestExpiryNotice />
+          <SalesSampleJourney data={data} refresh={refresh} copy={copy} onAuthorize={onAuthorize} />
+        </>
+      )}
+      {!hasResources && !isGuest && (
         <WorkspaceFirstSteps onCreate={onCreate} showDatabase showFileSystem isGuest={isGuest} />
       )}
       {hasResources && (
@@ -1983,19 +2016,26 @@ function CreateKey({
   loadMoreResources,
   resourcePageBusy,
   resourcePageError,
-}: Shared & { onClose: () => void }) {
-  const [name, setName] = useState(''),
-    [scopes, setScopes] = useState<CreateKeyInput['scopes']>([
-      'resources:read',
-      'files:read',
-      'usage:read',
-    ]),
-    [resourceIds, setResourceIds] = useState(data.resources.map((resource) => resource.id)),
+  preset,
+}: Shared & { onClose: () => void; preset?: Resource }) {
+  const [name, setName] = useState(preset ? 'sales-agent' : ''),
+    [scopes, setScopes] = useState<CreateKeyInput['scopes']>(
+      preset
+        ? ['resources:read', 'files:read', 'files:analyze', 'files:write']
+        : ['resources:read', 'files:read', 'usage:read'],
+    ),
+    [resourceIds, setResourceIds] = useState(
+      preset ? [preset.id] : data.resources.map((resource) => resource.id),
+    ),
     [expires, setExpires] = useState<CreateKeyInput['expiresInDays']>(30),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [secret, setSecret] = useState('');
-  const visibleResourceIds = new Set(data.resources.map((resource) => resource.id));
+  const availableResources =
+    preset && !data.resources.some((resource) => resource.id === preset.id)
+      ? [...data.resources, preset]
+      : data.resources;
+  const visibleResourceIds = new Set(availableResources.map((resource) => resource.id));
   const hiddenSelections = resourceIds.filter((id) => id !== '*' && !visibleResourceIds.has(id));
   async function create(e: React.FormEvent) {
     e.preventDefault();
@@ -2063,7 +2103,7 @@ function CreateKey({
             onChange={(e) => setName(e.target.value)}
           />
           <ResourceAccessPicker
-            resources={data.resources}
+            resources={availableResources}
             resourceIds={resourceIds}
             onChange={(ids) => {
               setResourceIds(ids);

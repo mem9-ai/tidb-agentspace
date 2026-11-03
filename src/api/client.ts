@@ -12,6 +12,7 @@ import type { components as GlobalComponents } from './global-schema';
 
 export type Resource = components['schemas']['Resource'];
 export type Tutorial = components['schemas']['Tutorial'];
+export type SalesSampleAttempt = components['schemas']['SalesSampleAttempt'];
 export type AuditHistory =
   operations['listAuditHistory']['responses'][200]['content']['application/json'];
 export type RequestHistory =
@@ -304,6 +305,25 @@ export const workspaceApi = {
     return (await response.json()) as SsoAuthConfig;
   },
   bootstrap: () => responseData(client.GET('/workspaces/{workspaceId}/bootstrap', { params })),
+  listSalesSampleAttempts: () =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/sales-sample-attempts', {
+        params: { ...params, query: { fixture: 'us-sales-v1' } },
+      }),
+    ),
+  startSalesSample: (idempotencyKey: string) =>
+    responseData(
+      client.POST('/workspaces/{workspaceId}/sales-sample-attempts', {
+        params: { ...params, header: { 'Idempotency-Key': idempotencyKey } },
+        body: { fixture: 'us-sales-v1' },
+      }),
+    ),
+  fileMetadata: (resourceId: string, path: string) =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/files/metadata', {
+        params: { ...params, query: { resourceId, path } },
+      }),
+    ),
   endDistributedSession: async () => {
     if (!distributedGlobalBase) return false;
     const region = await fetch(apiBaseUrl + '/api/auth/tidbcloud/logout', {

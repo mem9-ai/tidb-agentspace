@@ -53,8 +53,10 @@ export function WorkspaceLayout({
   children,
 }: Props) {
   const [opened, setOpened] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   useEffect(() => {
     setOpened(false);
+    setMoreOpen(['databases', 'tutorials', 'api', 'billing', 'settings'].includes(active));
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [active, databaseId, databaseView, fileSystemId]);
   const navigate = (page: string) => {
@@ -64,7 +66,7 @@ export function WorkspaceLayout({
   const sidebar = (
     <div className="sidebar-content">
       <Button fullWidth variant="default" onClick={() => navigate('settings')}>
-        Personal workspace
+        {isGuest ? 'Guest workspace' : 'Personal workspace'}
       </Button>
       {!isHostedSession && !liveFiles && !liveDatabases && (
         <Text size="sm" c="carbon.7" mt={8}>
@@ -72,27 +74,79 @@ export function WorkspaceLayout({
         </Text>
       )}
       <nav aria-label="Main navigation">
-        {['Workspace', 'Build', 'Manage'].map((group) => (
-          <Stack key={group} gap={6} mt={24}>
-            <Text size="sm" fw={600} c="carbon.7">
-              {group}
-            </Text>
-            {navigation
-              .filter((item) => item.group === group)
-              .map((item) => (
-                <NavLink
-                  component="a"
-                  key={item.id}
-                  href={`#${item.id}`}
-                  active={active === item.id}
-                  aria-current={active === item.id ? 'page' : undefined}
-                  label={item.label}
-                  leftSection={<item.icon size={20} />}
-                  onClick={() => setOpened(false)}
-                />
-              ))}
-          </Stack>
-        ))}
+        {isGuest ? (
+          <>
+            <Stack gap={6} mt={24}>
+              {navigation
+                .filter((item) => ['overview', 'files', 'connect', 'keys'].includes(item.id))
+                .map((item) => (
+                  <NavLink
+                    component="a"
+                    key={item.id}
+                    href={`#${item.id}`}
+                    active={active === item.id}
+                    aria-current={active === item.id ? 'page' : undefined}
+                    label={
+                      item.id === 'overview'
+                        ? 'Workspace'
+                        : item.id === 'files'
+                          ? 'Files'
+                          : item.id === 'keys'
+                            ? 'Access'
+                            : item.label
+                    }
+                    leftSection={<item.icon size={20} />}
+                    onClick={() => setOpened(false)}
+                  />
+                ))}
+            </Stack>
+            <details
+              className="sidebar-more"
+              open={moreOpen}
+              onToggle={(event) => setMoreOpen(event.currentTarget.open)}
+            >
+              <summary>More</summary>
+              {navigation
+                .filter((item) =>
+                  ['databases', 'tutorials', 'api', 'billing', 'settings'].includes(item.id),
+                )
+                .map((item) => (
+                  <NavLink
+                    component="a"
+                    key={item.id}
+                    href={`#${item.id}`}
+                    active={active === item.id}
+                    aria-current={active === item.id ? 'page' : undefined}
+                    label={item.label}
+                    leftSection={<item.icon size={20} />}
+                    onClick={() => setOpened(false)}
+                  />
+                ))}
+            </details>
+          </>
+        ) : (
+          ['Workspace', 'Build', 'Manage'].map((group) => (
+            <Stack key={group} gap={6} mt={24}>
+              <Text size="sm" fw={600} c="carbon.7">
+                {group}
+              </Text>
+              {navigation
+                .filter((item) => item.group === group)
+                .map((item) => (
+                  <NavLink
+                    component="a"
+                    key={item.id}
+                    href={`#${item.id}`}
+                    active={active === item.id}
+                    aria-current={active === item.id ? 'page' : undefined}
+                    label={item.label}
+                    leftSection={<item.icon size={20} />}
+                    onClick={() => setOpened(false)}
+                  />
+                ))}
+            </Stack>
+          ))
+        )}
       </nav>
       <div className="sidebar-bottom">
         <NavLink
@@ -116,7 +170,15 @@ export function WorkspaceLayout({
       </div>
     </div>
   );
-  const label = navigation.find((item) => item.id === active)?.label || 'Workspace';
+  const label =
+    (isGuest &&
+      new Map([
+        ['overview', 'Workspace'],
+        ['files', 'Files'],
+        ['keys', 'Access'],
+      ]).get(active)) ||
+    navigation.find((item) => item.id === active)?.label ||
+    'Workspace';
   return (
     <AppShell
       header={{ height: 80 }}
@@ -216,13 +278,15 @@ export function WorkspaceLayout({
             </Anchor>
           </Text>
           <Text size="sm">
-            {liveDatabases
-              ? 'Cloud usage is not measured'
-              : liveFiles
-                ? 'File storage is connected · Databases and telemetry are simulated'
-                : isHostedSession
-                  ? 'Create a resource to get started'
-                  : 'Local demo · Cloud resources and telemetry are simulated'}
+            {isGuest
+              ? 'Guest workspace · Access expires after 24 hours'
+              : liveDatabases
+                ? 'Cloud usage is not measured'
+                : liveFiles
+                  ? 'File storage is connected · Databases and telemetry are simulated'
+                  : isHostedSession
+                    ? 'Create a resource to get started'
+                    : 'Local demo · Cloud resources and telemetry are simulated'}
           </Text>
         </footer>
       </AppShell.Main>
