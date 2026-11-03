@@ -48,6 +48,11 @@ small {
   color: var(--ink);
   letter-spacing: -1px;
 }
+.sign-in-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 .workspace-breadcrumbs {
   flex: 1;
   min-width: 0;

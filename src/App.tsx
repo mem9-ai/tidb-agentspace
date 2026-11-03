@@ -401,7 +401,12 @@ function App() {
   if (!data)
     return (
       <div className="loading-screen">
-        <div className="brand-mark">T</div>
+        <div className="sign-in-brand">
+          <span className="brand-mark">TiDB</span>{' '}
+          <Text span fw={600}>
+            Agent Workspace
+          </Text>
+        </div>
         {error && sso.enabled && needsSignIn ? (
           // SSO is enabled and no session is active yet: prompt sign-in (no anonymous demo).
           <>
