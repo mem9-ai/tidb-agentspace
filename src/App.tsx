@@ -830,6 +830,7 @@ function FileWorkspace({
   notify,
   onConnect,
   onCreate,
+  isGuest,
   resource,
 }: Shared & { resource: Resource }) {
   const systems = data.resources.filter((r) => r.kind === 'filesystem');
@@ -1237,6 +1238,7 @@ function FileWorkspace({
               key={editing.id}
               path={editing.path}
               resourceId={editing.resourceId}
+              databaseCreation={{ data, refresh, notify, isGuest }}
               initialView={previewView}
               onViewChange={(view) =>
                 history.replaceState(null, '', fileHash(editing.resourceId, editing.path, view))

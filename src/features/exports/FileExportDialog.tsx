@@ -7,6 +7,8 @@ import {
   type FileExportSource,
   type FileExportPreparation,
   type FileExportParsing,
+  type Data,
+  type Resource,
 } from '../../api/client';
 import { WorkspaceApiError } from '../../api/transport';
 import { WorkspaceModal } from '../../ui/WorkspaceModal';
@@ -19,6 +21,7 @@ import { ImportReview, type ReviewedField } from './ImportReview';
 import { useSnapshotDownload } from './snapshot-download';
 import { fileHash } from '../files/file-location';
 import { databaseEditorHash } from '../navigation/workspace-route';
+import { CreateResourceDialog } from '../resources/CreateResourceDialog';
 import './file-export.css';
 export function FileExportDialog({
   source: initialSource,
@@ -30,6 +33,7 @@ export function FileExportDialog({
   onSaved,
   onDownloadOriginal,
   createTable = false,
+  databaseCreation,
 }: {
   source: FileExportSource;
   sourcePath: string;
@@ -40,6 +44,12 @@ export function FileExportDialog({
   onSaved: () => Promise<void> | void;
   onDownloadOriginal?: () => void;
   createTable?: boolean;
+  databaseCreation?: {
+    data: Data;
+    refresh: () => Promise<void>;
+    notify: (message: string) => void;
+    isGuest: boolean;
+  };
 }) {
   const [kind, setKind] = useState<DestinationKind>(createTable ? 'database' : 'download');
   const [stream, setStream] = useState<'stdout' | 'stderr'>(
@@ -82,7 +92,10 @@ export function FileExportDialog({
   const pending = useRef(false),
     controller = useRef<AbortController | null>(null);
   const reviewSection = useRef<HTMLDivElement | null>(null);
-  const destinationState = useExportDestination(kind, resourceId);
+  const [creatingDatabase, setCreatingDatabase] = useState(false);
+  const [createdDatabase, setCreatedDatabase] = useState<Resource>();
+  const [checkingDatabase, setCheckingDatabase] = useState(false);
+  const destinationState = useExportDestination(kind, resourceId, createdDatabase);
   const download = useSnapshotDownload();
   const outputText = source.kind === 'output' ? source.text : '';
   const bytes = useMemo(
@@ -100,6 +113,20 @@ export function FileExportDialog({
     setReview(null);
     setFields([]);
     setError('');
+  }
+  async function checkDatabase() {
+    if (!createdDatabase || checkingDatabase) return;
+    setCheckingDatabase(true);
+    setError('');
+    try {
+      const result = await workspaceApi.resource(createdDatabase.id);
+      setCreatedDatabase(result.data);
+      destinationState.retry();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to check the database.');
+    } finally {
+      setCheckingDatabase(false);
+    }
   }
   async function parse() {
     if (pending.current) return;
@@ -278,6 +305,28 @@ export function FileExportDialog({
       </Text>
     </Stack>
   );
+  const noDatabase =
+    createTable &&
+    !destinationState.loading &&
+    !destinationState.loadError &&
+    ((!destinationState.targets.length &&
+      !destinationState.nextCursor &&
+      !destinationState.hasEarlier) ||
+      (createdDatabase?.id === resourceId && !destinationState.destination));
+  if (creatingDatabase && databaseCreation) {
+    return (
+      <CreateResourceDialog
+        {...databaseCreation}
+        target="database"
+        onClose={() => setCreatingDatabase(false)}
+        onCreated={(resource) => {
+          setCreatedDatabase(resource);
+          setResourceId(resource.id);
+          destinationState.retry();
+        }}
+      />
+    );
+  }
   return (
     <WorkspaceModal
       title={
@@ -329,7 +378,63 @@ export function FileExportDialog({
             }}
           />
         )}
-        {outcome ? (
+        {noDatabase ? (
+          <>
+            <Alert
+              color="peacock"
+              title={
+                createdDatabase
+                  ? 'Database is not ready for import'
+                  : 'No database available for import'
+              }
+            >
+              <Text>
+                {createdDatabase
+                  ? `${createdDatabase.name} · ${createdDatabase.status}. This database can't be used for import. Check its status or open it for details.`
+                  : 'Create a database, then continue with this file.'}
+              </Text>
+            </Alert>
+            {error && (
+              <Alert color="red" role="alert">
+                {error}
+              </Alert>
+            )}
+            <Group justify="flex-end">
+              <Button onClick={onClose}>Cancel</Button>
+              {createdDatabase && destinationState.targets.length > 0 && (
+                <Button
+                  onClick={() => {
+                    setCreatedDatabase(undefined);
+                    setResourceId('');
+                  }}
+                >
+                  Choose another database
+                </Button>
+              )}
+              <Button
+                component="a"
+                href={createdDatabase ? databaseEditorHash(createdDatabase.id) : '#databases'}
+                variant="subtle"
+                onClick={onClose}
+              >
+                {createdDatabase ? 'Open database' : 'Open databases'}
+              </Button>
+              {createdDatabase ? (
+                <Button
+                  variant="filled"
+                  onClick={() => void checkDatabase()}
+                  loading={checkingDatabase}
+                >
+                  Check status
+                </Button>
+              ) : databaseCreation ? (
+                <Button variant="filled" onClick={() => setCreatingDatabase(true)}>
+                  Create database
+                </Button>
+              ) : null}
+            </Group>
+          </>
+        ) : outcome ? (
           <>
             <Alert
               color="green"
@@ -398,19 +503,6 @@ export function FileExportDialog({
               state={destinationState}
               showKindSelector={!createTable}
             />
-            {createTable &&
-              !destinationState.loading &&
-              !destinationState.loadError &&
-              !destinationState.targets.length &&
-              !destinationState.nextCursor &&
-              !destinationState.hasEarlier && (
-                <Text>
-                  No active database is available.{' '}
-                  <Button component="a" href="#databases" variant="subtle" onClick={onClose}>
-                    Open databases
-                  </Button>
-                </Text>
-              )}
             {kind === 'database' ? (
               <>
                 <Text fw={600}>Parse and review before importing</Text>
