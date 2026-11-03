@@ -33,6 +33,13 @@ region manifest or copy one provider/mode's limits into another.
 
 ## Decision
 
+**Owner correction, 2026-11-03:** File System and DuckDB creation use the first configured
+provider location without presenting a location selector. Keep the actual location in resource
+Details and collection metadata, preserve existing resources in every location, and continue
+sending the explicit provider location to the API. This changes the Console default journey;
+it does not alter the public region contract, imply US data residency, or relocate any resource.
+The region-selection screenshots and Console observations below describe the earlier behavior.
+
 - Add `aws-ap-southeast-1` to this demo's File System regions and place it first, making it
   the default for the Console's create form and new seeded workspaces. Keep Oregon available.
 - Continue requiring an explicit region in resource-creation requests. The first entry in
