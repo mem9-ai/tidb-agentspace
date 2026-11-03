@@ -168,13 +168,13 @@ export function CreateResourceDialog({
         <TextInput
           label="Resource name"
           disabled={busy}
-          description="3–40 lowercase letters, numbers, and hyphens. Leave blank for an automatic name."
+          description="Start with a letter. Use 3–40 lowercase letters, numbers, and hyphens. Leave blank for an automatic name."
           pattern="[a-z][a-z0-9-]{2,39}"
           minLength={3}
           maxLength={40}
           value={nameDraft.value}
           onChange={(e) => setNameDraft({ value: e.target.value, automatic: false })}
-          placeholder={`${kind}-…`}
+          placeholder={kind === 'filesystem' ? 'e.g. quiet-harbor' : `${kind}-…`}
         />
         {kind !== 'filesystem' && !isDuckdb && data.capabilities[kind].regions.length > 1 && (
           <NativeSelect
