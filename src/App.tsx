@@ -126,6 +126,7 @@ const allScopes: CreateKeyInput['scopes'] = [
   'files:read',
   'files:analyze',
   'files:write',
+  'queries:read',
   'queries:execute',
   'usage:read',
 ];
@@ -2112,6 +2113,7 @@ function CreateKey({
                               'files:read': 'Read files and context',
                               'files:analyze': 'Analyze files (read-only SQL and Bash)',
                               'files:write': 'Create, edit, and delete files',
+                              'queries:read': 'Read-only SQL on permitted databases',
                               'queries:execute': 'Read and write SQL on permitted databases',
                               'usage:read': 'Read usage and allowances',
                             } as Record<string, string>
