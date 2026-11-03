@@ -21,7 +21,7 @@ const steps: Record<QuickStartKind, { title: string; description: string }[]> = 
   filesystem: [
     {
       title: 'Create a File System',
-      description: 'Choose a region and review the available service.',
+      description: 'Review the available service and create your file system.',
     },
     {
       title: 'Explore sample files',
