@@ -6,6 +6,7 @@ test('image validation covers native/build/delivery inputs and excludes Console/
   for (const path of [
     'backend/api/src/lib.rs',
     'meta-service/src/main.rs',
+    'specs/gh-150/fixtures/us-sales.csv',
     'Cargo.lock',
     'Cargo.toml',
     'rust-toolchain.toml',
