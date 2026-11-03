@@ -343,7 +343,18 @@ components:
     OwnerAttempt:
       type: object
       additionalProperties: false
-      required: [attemptId, workspaceId, status, expiresAt, grants, keyId, regionalStatus]
+      required:
+        [
+          attemptId,
+          workspaceId,
+          status,
+          expiresAt,
+          grants,
+          keyId,
+          keyVersion,
+          principalId,
+          regionalStatus,
+        ]
       properties:
         attemptId: { $ref: '#/components/parameters/AttemptId/schema' }
         workspaceId: { type: string }
@@ -351,6 +362,8 @@ components:
         expiresAt: { type: string, format: date-time }
         grants: { oneOf: [{ $ref: '#/components/schemas/Grants' }, { type: 'null' }] }
         keyId: { type: [string, 'null'] }
+        keyVersion: { type: [integer, 'null'], minimum: 1 }
+        principalId: { type: [string, 'null'], maxLength: 128 }
         regionalStatus: { enum: [null, pending, applied, unavailable] }
     OwnerEnvelope:
       type: object
@@ -361,10 +374,13 @@ components:
     Receipt:
       type: object
       additionalProperties: false
-      required: [workspaceId, keyId, resourceId, regionId, observedAt, expiresAt]
+      required:
+        [workspaceId, keyId, keyVersion, principalId, resourceId, regionId, observedAt, expiresAt]
       properties:
         workspaceId: { type: string }
         keyId: { $ref: '#/components/parameters/KeyId/schema' }
+        keyVersion: { type: integer, minimum: 1 }
+        principalId: { type: string, minLength: 1, maxLength: 128 }
         resourceId: { type: string }
         regionId: { type: string }
         observedAt: { type: string, format: date-time }

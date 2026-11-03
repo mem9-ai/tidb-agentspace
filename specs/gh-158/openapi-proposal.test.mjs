@@ -45,6 +45,8 @@ test('pairing and connection receipts do not accept untrusted actor or content f
   const value = {
     workspaceId: 'ws_guest',
     keyId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    keyVersion: 1,
+    principalId: 'agent-test',
     resourceId: 'fs_sales',
     regionId: 'region:test',
     observedAt: '2026-11-03T00:00:00Z',
@@ -54,6 +56,10 @@ test('pairing and connection receipts do not accept untrusted actor or content f
   for (const extra of [{ actor: 'claimed-agent' }, { sql: 'SELECT 1' }, { secret: 'secret' }])
     assert.equal(receipt({ ...value, ...extra }), false);
   const token = spec.paths['/api/v1/workspaces/{workspaceId}/agent-connection-receipts'].post;
+  const receiptRequest = ajv.compile(token.requestBody.content['application/json'].schema);
+  assert.equal(receiptRequest({ resourceId: 'fs_sales' }), true);
+  assert.equal(receiptRequest({ resourceId: 'fs_sales', principalId: 'claimed-agent' }), false);
+  assert.equal(receiptRequest({ resourceId: 'fs_sales', keyVersion: 2 }), false);
   assert.deepEqual(token.security, [{ regionalAccess: [] }]);
   const owner =
     spec.paths['/api/portal/v1/workspaces/{workspaceId}/agent-connection-receipts/{keyId}'].get;
