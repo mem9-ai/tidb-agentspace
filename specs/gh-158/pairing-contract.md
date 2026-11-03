@@ -33,6 +33,10 @@ Global Key metadata and the Region Guest policy do not share one transaction. Do
 
 The system must independently deny Global Key exchange after durable Guest denial and reject every Region data admission against the current Guest policy. A Token issued before or racing with logout must fail Region admission after logout completes; any already admitted operation follows the existing drain policy. Region policy installation for the new Key must not reactivate a denied Guest. These checks must use authoritative, monotonic policy state across replicas, not a cached browser session or a best-effort callback. Where that guarantee cannot be enforced for a deployment topology, pairing stays disabled there. Native races must place logout before, during and immediately after the Global commit, before and after token exchange, and before and during regional admission. They must establish that no usable credential survives acknowledged logout, even if an orphan Global Key record exists.
 
+## First external client
+
+Target Codex CLI with an MCP connection first, while retaining a client-neutral pairing API. The local sidecar or MCP transport owns the verifier and Key; prompts contain the task and non-secret Workspace identity only. The proposed client must explain exactly what is installed and where credentials are stored, offer an explicit disconnect, and avoid modifying an existing user Agent configuration silently. Use a disposable isolated client profile for acceptance; never use or overwrite a user's real credentials or MCP configuration as test data. Pin a minimum supported Codex version only after observing an actual complete connection and task, not merely from CLI help or a mocked MCP client. Select and review the MCP transport, local secret-store behavior, dependency distribution and recovery before implementation; no one-line setup or real-client compatibility is claimed yet.
+
 ## Required operations
 
 The following are proposed operation identities; exact JSON schemas and errors must be reviewed in a separate OpenAPI amendment before code is written.
