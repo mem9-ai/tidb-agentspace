@@ -1,6 +1,7 @@
 //! Canonical immutable grant snapshots shared by Global intent and local Region admission.
 use crate::{regional_key_policy::KeyPolicies, regional_refresh::CeilingVerifier};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{future::Future, pin::Pin};
 use workspace_contracts::{MetaRequest, Result, ServiceError};
@@ -113,20 +114,7 @@ impl Grant {
     }
 }
 impl KeyPolicies {
-    pub async fn grant(&self, workspace: &str, key: &str, reference: &str) -> Result<Grant> {
-        if !id(reference) {
-            return Err(ServiceError::new(403, "CEILING_DENIED"));
-        }
-        let path = format!("grants/{reference}");
-        let response = self
-            .metadata_port()
-            .execute(MetaRequest::Get {
-                scope: self.scope(workspace, key)?,
-                guard: None,
-                keys: vec![path.clone()],
-            })
-            .await?;
-        let record = &response["records"][&path];
+    fn decode_grant(record: &Value, reference: &str) -> Result<Grant> {
         if record.is_null() {
             return Err(ServiceError::new(403, "CEILING_DENIED"));
         }
@@ -141,6 +129,58 @@ impl KeyPolicies {
         }
         Ok(grant)
     }
+
+    pub async fn grant(&self, workspace: &str, key: &str, reference: &str) -> Result<Grant> {
+        if !id(reference) {
+            return Err(ServiceError::new(403, "CEILING_DENIED"));
+        }
+        let path = format!("grants/{reference}");
+        let response = self
+            .metadata_port()
+            .execute(MetaRequest::Get {
+                scope: self.scope(workspace, key)?,
+                guard: None,
+                keys: vec![path.clone()],
+            })
+            .await?;
+        Self::decode_grant(&response["records"][&path], reference)
+    }
+
+    /// Fetch both immutable snapshots in the same scoped metadata read. Each reference is
+    /// validated independently, including when a Token has a narrower grant than its Key.
+    pub async fn grant_pair(
+        &self,
+        workspace: &str,
+        key: &str,
+        first: &str,
+        second: &str,
+    ) -> Result<(Grant, Grant)> {
+        if !id(first) || !id(second) {
+            return Err(ServiceError::new(403, "CEILING_DENIED"));
+        }
+        let first_path = format!("grants/{first}");
+        let second_path = format!("grants/{second}");
+        let keys = if first == second {
+            vec![first_path.clone()]
+        } else {
+            vec![first_path.clone(), second_path.clone()]
+        };
+        let response = self
+            .metadata_port()
+            .execute(MetaRequest::Get {
+                scope: self.scope(workspace, key)?,
+                guard: None,
+                keys,
+            })
+            .await?;
+        let first_grant = Self::decode_grant(&response["records"][&first_path], first)?;
+        let second_grant = if first == second {
+            first_grant.clone()
+        } else {
+            Self::decode_grant(&response["records"][&second_path], second)?
+        };
+        Ok((first_grant, second_grant))
+    }
 }
 impl CeilingVerifier for KeyPolicies {
     fn check<'a>(
@@ -152,8 +192,7 @@ impl CeilingVerifier for KeyPolicies {
         ceiling: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(async move {
-            let active = self.grant(workspace, key, grant).await?;
-            let ceiling = self.grant(workspace, key, ceiling).await?;
+            let (active, ceiling) = self.grant_pair(workspace, key, grant, ceiling).await?;
             if active.region_id != region || !ceiling.subset_of(&active) {
                 return Err(ServiceError::new(403, "CEILING_DENIED"));
             }
@@ -164,6 +203,111 @@ impl CeilingVerifier for KeyPolicies {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::{MemoryMeta, group_key};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use workspace_contracts::{Call, Metadata};
+
+    struct CountGrantReads {
+        inner: Arc<MemoryMeta>,
+        reads: AtomicUsize,
+    }
+
+    impl Metadata for CountGrantReads {
+        fn health(&self) -> Call<'_> {
+            self.inner.health()
+        }
+
+        fn execute(&self, request: MetaRequest) -> Call<'_> {
+            if let MetaRequest::Get { keys, .. } = &request
+                && keys.iter().any(|key| key.starts_with("grants/"))
+            {
+                self.reads.fetch_add(1, Ordering::SeqCst);
+            }
+            self.inner.execute(request)
+        }
+    }
+
+    #[tokio::test]
+    async fn grant_pair_reads_both_snapshots_once_and_rejects_missing_or_tampered_records() {
+        let inner = Arc::new(MemoryMeta {
+            authority: Some("region:a".into()),
+            ..Default::default()
+        });
+        let metadata = Arc::new(CountGrantReads {
+            inner: inner.clone(),
+            reads: AtomicUsize::new(0),
+        });
+        let policies = KeyPolicies::open(metadata.clone(), "region:a")
+            .await
+            .unwrap();
+        let key = uuid::Uuid::new_v4().to_string();
+        let scope = policies.scope("ws_test", &key).unwrap();
+        let active = Grant {
+            region_id: "region:a".into(),
+            scopes: vec!["files:read".into(), "files:write".into()],
+            resource_ids: vec!["fs1".into()],
+        };
+        let ceiling = Grant {
+            scopes: vec!["files:read".into()],
+            ..active.clone()
+        };
+        let active_ref = active.reference().unwrap();
+        let ceiling_ref = ceiling.reference().unwrap();
+        inner
+            .execute(MetaRequest::Commit {
+                scope: scope.clone(),
+                guard: None,
+                mutation_id: uuid::Uuid::new_v4().to_string(),
+                changes: vec![
+                    serde_json::json!({"key":format!("grants/{active_ref}"),"expectedVersion":null,"value":active}),
+                    serde_json::json!({"key":format!("grants/{ceiling_ref}"),"expectedVersion":null,"value":ceiling}),
+                ],
+            })
+            .await
+            .unwrap();
+        let (stored_active, stored_ceiling) = policies
+            .grant_pair("ws_test", &key, &active_ref, &ceiling_ref)
+            .await
+            .unwrap();
+        assert_eq!(metadata.reads.load(Ordering::SeqCst), 1);
+        assert_eq!(stored_active, active);
+        assert_eq!(stored_ceiling, ceiling);
+        assert!(stored_ceiling.subset_of(&stored_active));
+        let (same_a, same_b) = policies
+            .grant_pair("ws_test", &key, &active_ref, &active_ref)
+            .await
+            .unwrap();
+        assert_eq!(metadata.reads.load(Ordering::SeqCst), 2);
+        assert_eq!(same_a, same_b);
+        assert_eq!(
+            policies
+                .grant_pair("ws_test", &key, &active_ref, "missing")
+                .await
+                .unwrap_err()
+                .code,
+            "CEILING_DENIED"
+        );
+        inner
+            .groups
+            .lock()
+            .unwrap()
+            .get_mut(&group_key(&scope))
+            .unwrap()
+            .get_mut(&format!("grants/{ceiling_ref}"))
+            .unwrap()["value"]["resourceIds"] = serde_json::json!(["*"]);
+        assert_eq!(
+            policies
+                .grant_pair("ws_test", &key, &active_ref, &ceiling_ref)
+                .await
+                .unwrap_err()
+                .code,
+            "GRANT_CORRUPT"
+        );
+    }
+
     #[test]
     fn intersections_never_expand_actions_resources_or_region() {
         let a = Grant {
@@ -189,8 +333,7 @@ mod tests {
     }
     #[tokio::test]
     async fn grant_snapshot_and_policy_install_together_and_reject_tampered_bindings() {
-        use crate::{regional_key_policy::KeyPolicy, tests::MemoryMeta};
-        use std::sync::Arc;
+        use crate::regional_key_policy::KeyPolicy;
         let metadata = Arc::new(MemoryMeta {
             authority: Some("region:a".into()),
             ..Default::default()

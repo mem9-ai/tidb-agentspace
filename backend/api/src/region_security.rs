@@ -805,13 +805,14 @@ impl Runtime {
         {
             return Err(error(401, "CREDENTIAL_REVOKED"));
         }
-        let grant = self
+        let (grant, active) = self
             .policies
-            .grant(token.workspace_id(), token.key_id(), token.grant_ref())
-            .await?;
-        let active = self
-            .policies
-            .grant(token.workspace_id(), token.key_id(), &policy.grant_ref)
+            .grant_pair(
+                token.workspace_id(),
+                token.key_id(),
+                token.grant_ref(),
+                &policy.grant_ref,
+            )
             .await?;
         if !grant.subset_of(&active) {
             return Err(error(403, "CEILING_DENIED"));
