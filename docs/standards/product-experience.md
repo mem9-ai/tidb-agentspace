@@ -69,6 +69,16 @@ On Guest sign-in, show the 24-hour access limit with the Guest action without re
 Explain the actual consequence of signing out before ending a Guest session; do not promise
 cleanup that the service has not implemented.
 
+**Agent-first onboarding (owner direction, 2026-11-03; proposed implementation):** lead a new
+Guest to one concrete file-based US sales task. The first useful result is an actual agent's
+durable, inspectable report; completing the journey additionally requires a separate agent
+session to continue from the saved data and report. Guest creation and resource writes remain
+explicit; selected resource/action permissions and real provider location remain truthful.
+The current parallel Quick Starts and tutorial flows remain implemented until the accepted
+[GH-150 specification](../../specs/gh-150/spec.md) replaces them. The specification records
+proposed pairing, task evidence and account-copy capabilities separately from existing APIs.
+Revisit this direction after observing the complete real-agent journey and measured latency.
+
 Minimize required decisions and navigation, not safeguards. Permission selection, write intent,
 format/field/type confirmation, overwrite/discard decisions, provider limits and live/demo
 information remain explicit. Never auto-run customer SQL, auto-provision a resource, broaden

@@ -1,0 +1,18 @@
+{
+  "currency": "USD",
+  "orderCount": 240,
+  "totalSales": 100000,
+  "salesByState": {
+    "California": 48000,
+    "Texas": 20000,
+    "New York": 12000,
+    "Washington": 8000,
+    "Florida": 7000,
+    "Massachusetts": 5000
+  },
+  "californiaTopProduct": {
+    "product": "Monitors",
+    "sales": 18000,
+    "share": 0.375
+  }
+}

@@ -1,0 +1,241 @@
+order_id,order_date,state,product,quantity,sales_usd
+1,2026-01-01,California,Monitors,1,1755
+2,2026-02-02,California,Monitors,2,1765
+3,2026-03-03,California,Monitors,3,1775
+4,2026-01-04,California,Monitors,1,1785
+5,2026-02-05,California,Monitors,2,1795
+6,2026-03-06,California,Monitors,3,1805
+7,2026-01-07,California,Monitors,1,1815
+8,2026-02-08,California,Monitors,2,1825
+9,2026-03-09,California,Monitors,3,1835
+10,2026-01-10,California,Monitors,1,1845
+11,2026-02-11,California,Keyboards,2,955
+12,2026-03-12,California,Keyboards,3,965
+13,2026-01-13,California,Keyboards,1,975
+14,2026-02-14,California,Keyboards,2,985
+15,2026-03-15,California,Keyboards,3,995
+16,2026-01-16,California,Keyboards,1,1005
+17,2026-02-17,California,Keyboards,2,1015
+18,2026-03-18,California,Keyboards,3,1025
+19,2026-01-19,California,Keyboards,1,1035
+20,2026-02-20,California,Keyboards,2,1045
+21,2026-03-21,California,Headsets,3,955
+22,2026-01-22,California,Headsets,1,965
+23,2026-02-23,California,Headsets,2,975
+24,2026-03-24,California,Headsets,3,985
+25,2026-01-25,California,Headsets,1,995
+26,2026-02-26,California,Headsets,2,1005
+27,2026-03-27,California,Headsets,3,1015
+28,2026-01-28,California,Headsets,1,1025
+29,2026-02-01,California,Headsets,2,1035
+30,2026-03-02,California,Headsets,3,1045
+31,2026-01-03,California,Webcams,1,955
+32,2026-02-04,California,Webcams,2,965
+33,2026-03-05,California,Webcams,3,975
+34,2026-01-06,California,Webcams,1,985
+35,2026-02-07,California,Webcams,2,995
+36,2026-03-08,California,Webcams,3,1005
+37,2026-01-09,California,Webcams,1,1015
+38,2026-02-10,California,Webcams,2,1025
+39,2026-03-11,California,Webcams,3,1035
+40,2026-01-12,California,Webcams,1,1045
+41,2026-01-01,Texas,Monitors,1,455
+42,2026-02-02,Texas,Monitors,2,465
+43,2026-03-03,Texas,Monitors,3,475
+44,2026-01-04,Texas,Monitors,1,485
+45,2026-02-05,Texas,Monitors,2,495
+46,2026-03-06,Texas,Monitors,3,505
+47,2026-01-07,Texas,Monitors,1,515
+48,2026-02-08,Texas,Monitors,2,525
+49,2026-03-09,Texas,Monitors,3,535
+50,2026-01-10,Texas,Monitors,1,545
+51,2026-02-11,Texas,Keyboards,2,455
+52,2026-03-12,Texas,Keyboards,3,465
+53,2026-01-13,Texas,Keyboards,1,475
+54,2026-02-14,Texas,Keyboards,2,485
+55,2026-03-15,Texas,Keyboards,3,495
+56,2026-01-16,Texas,Keyboards,1,505
+57,2026-02-17,Texas,Keyboards,2,515
+58,2026-03-18,Texas,Keyboards,3,525
+59,2026-01-19,Texas,Keyboards,1,535
+60,2026-02-20,Texas,Keyboards,2,545
+61,2026-03-21,Texas,Headsets,3,455
+62,2026-01-22,Texas,Headsets,1,465
+63,2026-02-23,Texas,Headsets,2,475
+64,2026-03-24,Texas,Headsets,3,485
+65,2026-01-25,Texas,Headsets,1,495
+66,2026-02-26,Texas,Headsets,2,505
+67,2026-03-27,Texas,Headsets,3,515
+68,2026-01-28,Texas,Headsets,1,525
+69,2026-02-01,Texas,Headsets,2,535
+70,2026-03-02,Texas,Headsets,3,545
+71,2026-01-03,Texas,Webcams,1,455
+72,2026-02-04,Texas,Webcams,2,465
+73,2026-03-05,Texas,Webcams,3,475
+74,2026-01-06,Texas,Webcams,1,485
+75,2026-02-07,Texas,Webcams,2,495
+76,2026-03-08,Texas,Webcams,3,505
+77,2026-01-09,Texas,Webcams,1,515
+78,2026-02-10,Texas,Webcams,2,525
+79,2026-03-11,Texas,Webcams,3,535
+80,2026-01-12,Texas,Webcams,1,545
+81,2026-01-01,New York,Monitors,1,255
+82,2026-02-02,New York,Monitors,2,265
+83,2026-03-03,New York,Monitors,3,275
+84,2026-01-04,New York,Monitors,1,285
+85,2026-02-05,New York,Monitors,2,295
+86,2026-03-06,New York,Monitors,3,305
+87,2026-01-07,New York,Monitors,1,315
+88,2026-02-08,New York,Monitors,2,325
+89,2026-03-09,New York,Monitors,3,335
+90,2026-01-10,New York,Monitors,1,345
+91,2026-02-11,New York,Keyboards,2,255
+92,2026-03-12,New York,Keyboards,3,265
+93,2026-01-13,New York,Keyboards,1,275
+94,2026-02-14,New York,Keyboards,2,285
+95,2026-03-15,New York,Keyboards,3,295
+96,2026-01-16,New York,Keyboards,1,305
+97,2026-02-17,New York,Keyboards,2,315
+98,2026-03-18,New York,Keyboards,3,325
+99,2026-01-19,New York,Keyboards,1,335
+100,2026-02-20,New York,Keyboards,2,345
+101,2026-03-21,New York,Headsets,3,255
+102,2026-01-22,New York,Headsets,1,265
+103,2026-02-23,New York,Headsets,2,275
+104,2026-03-24,New York,Headsets,3,285
+105,2026-01-25,New York,Headsets,1,295
+106,2026-02-26,New York,Headsets,2,305
+107,2026-03-27,New York,Headsets,3,315
+108,2026-01-28,New York,Headsets,1,325
+109,2026-02-01,New York,Headsets,2,335
+110,2026-03-02,New York,Headsets,3,345
+111,2026-01-03,New York,Webcams,1,255
+112,2026-02-04,New York,Webcams,2,265
+113,2026-03-05,New York,Webcams,3,275
+114,2026-01-06,New York,Webcams,1,285
+115,2026-02-07,New York,Webcams,2,295
+116,2026-03-08,New York,Webcams,3,305
+117,2026-01-09,New York,Webcams,1,315
+118,2026-02-10,New York,Webcams,2,325
+119,2026-03-11,New York,Webcams,3,335
+120,2026-01-12,New York,Webcams,1,345
+121,2026-01-01,Washington,Monitors,1,155
+122,2026-02-02,Washington,Monitors,2,165
+123,2026-03-03,Washington,Monitors,3,175
+124,2026-01-04,Washington,Monitors,1,185
+125,2026-02-05,Washington,Monitors,2,195
+126,2026-03-06,Washington,Monitors,3,205
+127,2026-01-07,Washington,Monitors,1,215
+128,2026-02-08,Washington,Monitors,2,225
+129,2026-03-09,Washington,Monitors,3,235
+130,2026-01-10,Washington,Monitors,1,245
+131,2026-02-11,Washington,Keyboards,2,155
+132,2026-03-12,Washington,Keyboards,3,165
+133,2026-01-13,Washington,Keyboards,1,175
+134,2026-02-14,Washington,Keyboards,2,185
+135,2026-03-15,Washington,Keyboards,3,195
+136,2026-01-16,Washington,Keyboards,1,205
+137,2026-02-17,Washington,Keyboards,2,215
+138,2026-03-18,Washington,Keyboards,3,225
+139,2026-01-19,Washington,Keyboards,1,235
+140,2026-02-20,Washington,Keyboards,2,245
+141,2026-03-21,Washington,Headsets,3,155
+142,2026-01-22,Washington,Headsets,1,165
+143,2026-02-23,Washington,Headsets,2,175
+144,2026-03-24,Washington,Headsets,3,185
+145,2026-01-25,Washington,Headsets,1,195
+146,2026-02-26,Washington,Headsets,2,205
+147,2026-03-27,Washington,Headsets,3,215
+148,2026-01-28,Washington,Headsets,1,225
+149,2026-02-01,Washington,Headsets,2,235
+150,2026-03-02,Washington,Headsets,3,245
+151,2026-01-03,Washington,Webcams,1,155
+152,2026-02-04,Washington,Webcams,2,165
+153,2026-03-05,Washington,Webcams,3,175
+154,2026-01-06,Washington,Webcams,1,185
+155,2026-02-07,Washington,Webcams,2,195
+156,2026-03-08,Washington,Webcams,3,205
+157,2026-01-09,Washington,Webcams,1,215
+158,2026-02-10,Washington,Webcams,2,225
+159,2026-03-11,Washington,Webcams,3,235
+160,2026-01-12,Washington,Webcams,1,245
+161,2026-01-01,Florida,Monitors,1,130
+162,2026-02-02,Florida,Monitors,2,140
+163,2026-03-03,Florida,Monitors,3,150
+164,2026-01-04,Florida,Monitors,1,160
+165,2026-02-05,Florida,Monitors,2,170
+166,2026-03-06,Florida,Monitors,3,180
+167,2026-01-07,Florida,Monitors,1,190
+168,2026-02-08,Florida,Monitors,2,200
+169,2026-03-09,Florida,Monitors,3,210
+170,2026-01-10,Florida,Monitors,1,220
+171,2026-02-11,Florida,Keyboards,2,130
+172,2026-03-12,Florida,Keyboards,3,140
+173,2026-01-13,Florida,Keyboards,1,150
+174,2026-02-14,Florida,Keyboards,2,160
+175,2026-03-15,Florida,Keyboards,3,170
+176,2026-01-16,Florida,Keyboards,1,180
+177,2026-02-17,Florida,Keyboards,2,190
+178,2026-03-18,Florida,Keyboards,3,200
+179,2026-01-19,Florida,Keyboards,1,210
+180,2026-02-20,Florida,Keyboards,2,220
+181,2026-03-21,Florida,Headsets,3,130
+182,2026-01-22,Florida,Headsets,1,140
+183,2026-02-23,Florida,Headsets,2,150
+184,2026-03-24,Florida,Headsets,3,160
+185,2026-01-25,Florida,Headsets,1,170
+186,2026-02-26,Florida,Headsets,2,180
+187,2026-03-27,Florida,Headsets,3,190
+188,2026-01-28,Florida,Headsets,1,200
+189,2026-02-01,Florida,Headsets,2,210
+190,2026-03-02,Florida,Headsets,3,220
+191,2026-01-03,Florida,Webcams,1,130
+192,2026-02-04,Florida,Webcams,2,140
+193,2026-03-05,Florida,Webcams,3,150
+194,2026-01-06,Florida,Webcams,1,160
+195,2026-02-07,Florida,Webcams,2,170
+196,2026-03-08,Florida,Webcams,3,180
+197,2026-01-09,Florida,Webcams,1,190
+198,2026-02-10,Florida,Webcams,2,200
+199,2026-03-11,Florida,Webcams,3,210
+200,2026-01-12,Florida,Webcams,1,220
+201,2026-01-01,Massachusetts,Monitors,1,80
+202,2026-02-02,Massachusetts,Monitors,2,90
+203,2026-03-03,Massachusetts,Monitors,3,100
+204,2026-01-04,Massachusetts,Monitors,1,110
+205,2026-02-05,Massachusetts,Monitors,2,120
+206,2026-03-06,Massachusetts,Monitors,3,130
+207,2026-01-07,Massachusetts,Monitors,1,140
+208,2026-02-08,Massachusetts,Monitors,2,150
+209,2026-03-09,Massachusetts,Monitors,3,160
+210,2026-01-10,Massachusetts,Monitors,1,170
+211,2026-02-11,Massachusetts,Keyboards,2,80
+212,2026-03-12,Massachusetts,Keyboards,3,90
+213,2026-01-13,Massachusetts,Keyboards,1,100
+214,2026-02-14,Massachusetts,Keyboards,2,110
+215,2026-03-15,Massachusetts,Keyboards,3,120
+216,2026-01-16,Massachusetts,Keyboards,1,130
+217,2026-02-17,Massachusetts,Keyboards,2,140
+218,2026-03-18,Massachusetts,Keyboards,3,150
+219,2026-01-19,Massachusetts,Keyboards,1,160
+220,2026-02-20,Massachusetts,Keyboards,2,170
+221,2026-03-21,Massachusetts,Headsets,3,80
+222,2026-01-22,Massachusetts,Headsets,1,90
+223,2026-02-23,Massachusetts,Headsets,2,100
+224,2026-03-24,Massachusetts,Headsets,3,110
+225,2026-01-25,Massachusetts,Headsets,1,120
+226,2026-02-26,Massachusetts,Headsets,2,130
+227,2026-03-27,Massachusetts,Headsets,3,140
+228,2026-01-28,Massachusetts,Headsets,1,150
+229,2026-02-01,Massachusetts,Headsets,2,160
+230,2026-03-02,Massachusetts,Headsets,3,170
+231,2026-01-03,Massachusetts,Webcams,1,80
+232,2026-02-04,Massachusetts,Webcams,2,90
+233,2026-03-05,Massachusetts,Webcams,3,100
+234,2026-01-06,Massachusetts,Webcams,1,110
+235,2026-02-07,Massachusetts,Webcams,2,120
+236,2026-03-08,Massachusetts,Webcams,3,130
+237,2026-01-09,Massachusetts,Webcams,1,140
+238,2026-02-10,Massachusetts,Webcams,2,150
+239,2026-03-11,Massachusetts,Webcams,3,160
+240,2026-01-12,Massachusetts,Webcams,1,170
