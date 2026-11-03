@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { Alert, Anchor, Badge, Button, NativeSelect, Text, TextInput } from '@tidbcloud/uikit';
 import {
+  IconChevronDown,
   IconHelpCircle as CircleHelp,
   IconPlus as Plus,
   IconZap as Zap,
@@ -154,12 +155,18 @@ export function CreateResourceDialog({
       description="Add a building block to your agent workspace."
       onClose={onClose}
       busy={busy}
+      focusTitle={target === 'database'}
     >
       <form onSubmit={create}>
         {context.kinds.length > 1 &&
           (target === 'database' ? (
             <details className="resource-type-options">
-              <summary>Database type · {kindName(kind)} · Change</summary>
+              <summary aria-label={`Database type: ${kindName(kind)}. Change`}>
+                <span>{kindName(kind)}</span>
+                <span className="resource-type-change">
+                  Change <IconChevronDown size={18} aria-hidden />
+                </span>
+              </summary>
               <div>{kindSelect}</div>
             </details>
           ) : (

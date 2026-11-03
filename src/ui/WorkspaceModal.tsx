@@ -10,6 +10,7 @@ export function WorkspaceModal({
   wide = false,
   size,
   busy = false,
+  focusTitle = false,
 }: {
   title: string;
   description?: string;
@@ -18,6 +19,7 @@ export function WorkspaceModal({
   wide?: boolean;
   size?: number;
   busy?: boolean;
+  focusTitle?: boolean;
 }) {
   // These dialogs unmount on close; TiUI's opened-state transition cannot return focus then.
   const [trigger] = useState(() => document.activeElement);
@@ -34,7 +36,15 @@ export function WorkspaceModal({
       onClose={() => {
         if (!busy) onClose();
       }}
-      title={title}
+      title={
+        focusTitle ? (
+          <span className="workspace-modal-title" tabIndex={-1} data-autofocus="">
+            {title}
+          </span>
+        ) : (
+          title
+        )
+      }
       size={size ?? (wide ? 900 : 680)}
       padding={24}
       centered

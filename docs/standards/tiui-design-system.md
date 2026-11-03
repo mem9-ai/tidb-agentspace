@@ -220,7 +220,10 @@ domain differences. See the [cross-page audit](../product-experience-audit.md).
   the current route or falling back to MySQL. File System entry points and individual resource
   cards open a kind-specific form with a matching title and region; omit a redundant type picker.
   The database collection chooser contains only supported database kinds. Only the global
-  resource action offers both databases and File System. Keep action labels and accessible
+  resource action offers both databases and File System. In the default database dialog, make the
+  optional type change a clearly separated keyboard-operable disclosure, and initially focus the
+  dialog title rather than visually highlighting that optional choice (owner correction,
+  2026-11-03). Keep action labels and accessible
   names specific, reset region/errors and suggest a fresh automatic name when reopening,
   and lock the form while creating. File System suggestions use two readable words, such as
   `quiet-harbor` (owner correction, 2026-11-03); database suggestions use the resource kind
