@@ -62,9 +62,10 @@ such as supported regions and generated resource names. Console exploration does
 connecting an agent first. Keep alternative resource kinds discoverable without inventing
 availability or hiding provider constraints.
 
-For new and Guest Workspaces, offer independent database and File System Quick Starts while
-each category has no resources. Explain the first useful result and the Guest expiry where
-applicable; remove each guide once its resource exists. Creation and execution remain explicit.
+For new and Guest Workspaces, lead the Overview with files and a reachable agent connection
+guide; keep database creation available as a secondary action. The individual empty collections
+retain their Quick Starts. Explain the Guest expiry where applicable; remove the Overview guide
+once resources exist. Creation and execution remain explicit.
 On Guest sign-in, show the 24-hour access limit with the Guest action without requiring hover.
 Explain the actual consequence of signing out before ending a Guest session; do not promise
 cleanup that the service has not implemented.
@@ -74,8 +75,9 @@ Guest to one concrete file-based US sales task. The first useful result is an ac
 durable, inspectable report; completing the journey additionally requires a separate agent
 session to continue from the saved data and report. Guest creation and resource writes remain
 explicit; selected resource/action permissions and real provider location remain truthful.
-The current parallel Quick Starts and tutorial flows remain implemented until the accepted
-[GH-150 specification](../../specs/gh-150/spec.md) replaces them. The specification records
+The Overview starts with files and agent connection; the new sales task and the rest of the
+accepted [GH-150 specification](../../specs/gh-150/spec.md) remain to be implemented. Existing
+collection Quick Starts and tutorial flows remain available. The specification records
 proposed pairing, task evidence and account-copy capabilities separately from existing APIs.
 Revisit this direction after observing the complete real-agent journey and measured latency.
 
