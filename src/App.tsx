@@ -596,17 +596,22 @@ function Overview({ data, onCreate, isGuest }: Shared) {
     <>
       <PageHeading
         eyebrow="YOUR WORKSPACE"
-        title={hasResources ? data.workspace.name : 'Start with your data'}
+        title={hasResources ? data.workspace.name : 'Give your agent a place to work'}
         description={
           hasResources
             ? 'Your files, data, and agents. All in one place.'
-            : 'Store and explore files, query data, and connect your agent in one workspace.'
+            : 'Keep your files in one workspace, connect your agent, and return to its work.'
         }
         actions={
           hasResources ? (
-            <Button variant="filled" leftSection={<Plus size={18} />} onClick={() => onCreate()}>
-              Create resource
-            </Button>
+            <Group>
+              <Button component="a" href="#connect" variant="default">
+                Connect an agent
+              </Button>
+              <Button variant="filled" leftSection={<Plus size={18} />} onClick={() => onCreate()}>
+                Create resource
+              </Button>
+            </Group>
           ) : undefined
         }
       />
