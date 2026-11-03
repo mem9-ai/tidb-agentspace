@@ -89,7 +89,7 @@ export function ApiDocumentation({
     let active = true;
     setOperations([]);
     setSelected('');
-    if (settings?.endpoint)
+    if (!connect && settings?.endpoint)
       void Promise.all(
         [settings.endpoint, apiBaseUrl].map(async (root) => {
           const response = await fetch(root + '/openapi.json', { redirect: 'error' });
@@ -106,7 +106,7 @@ export function ApiDocumentation({
     return () => {
       active = false;
     };
-  }, [settings?.endpoint]);
+  }, [connect, settings?.endpoint]);
   const setup = `export WORKSPACE_ENDPOINT='${settings?.endpoint || 'YOUR_API_ENDPOINT'}'\n# Set WORKSPACE_API_KEY to your API key.`;
   const example = `import { connectWorkspace } from './workspace-agent.mjs';\n\nconst workspace = await connectWorkspace({\n  endpoint: process.env.WORKSPACE_ENDPOINT,\n  apiKey: process.env.WORKSPACE_API_KEY,\n});\n\nconsole.log(await workspace.listResources());`;
   const filtered = operations.filter((o) =>
@@ -125,6 +125,55 @@ export function ApiDocumentation({
     link.download = 'WORKSPACE.md';
     link.click();
     URL.revokeObjectURL(url);
+  }
+  if (connect) {
+    return (
+      <>
+        <WorkspacePageHeader
+          title="Connect an agent"
+          description="Give your agent access to the workspace resources you choose."
+        />
+        <Paper className="panel api-guide" p={24} withBorder>
+          <Heading level={2}>1. Choose access</Heading>
+          <Text>
+            Create a Workspace API key and select the resources and actions your agent needs.
+            Analyzing files requires file read and analyze access. File write access also permits
+            editing and deleting files in the selected resources.
+          </Text>
+          <Group>
+            <Button variant="filled" onClick={onNewKey}>
+              Create API key
+            </Button>
+            <Anchor href="#keys">Manage existing keys</Anchor>
+          </Group>
+        </Paper>
+        <Paper className="panel api-guide" p={24} withBorder>
+          <Heading level={2}>2. Give your agent the instructions</Heading>
+          <Text>
+            Save the key in your agent’s environment or secret manager as WORKSPACE_API_KEY, then
+            share these instructions. The instructions do not include your key.
+          </Text>
+          {error ? (
+            <Alert color="yellow">Couldn’t load the API endpoint. Refresh to try again.</Alert>
+          ) : !settings ? (
+            <Text role="status">Loading connection details…</Text>
+          ) : (
+            <Group>
+              <Button variant="filled" onClick={() => copy(agentInstructions(settings.endpoint))}>
+                Copy agent instructions
+              </Button>
+              <Button onClick={downloadInstructions}>Download instructions</Button>
+            </Group>
+          )}
+          <Text size="sm">
+            Copying instructions does not confirm a connection. You can revoke a key from API keys.
+          </Text>
+        </Paper>
+        <Text>
+          Want to connect with code? <Anchor href="#api">See the API documentation</Anchor>.
+        </Text>
+      </>
+    );
   }
   return (
     <>
