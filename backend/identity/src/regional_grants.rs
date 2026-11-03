@@ -155,7 +155,11 @@ impl KeyPolicies {
         first: &str,
         second: &str,
     ) -> Result<(Grant, Grant)> {
-        if !id(first) || !id(second) {
+        if !id(first) {
+            return Err(ServiceError::new(403, "CEILING_DENIED"));
+        }
+        let scope = self.scope(workspace, key)?;
+        if !id(second) {
             return Err(ServiceError::new(403, "CEILING_DENIED"));
         }
         let first_path = format!("grants/{first}");
@@ -168,7 +172,7 @@ impl KeyPolicies {
         let response = self
             .metadata_port()
             .execute(MetaRequest::Get {
-                scope: self.scope(workspace, key)?,
+                scope,
                 guard: None,
                 keys,
             })
