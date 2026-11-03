@@ -66,7 +66,9 @@ For new and Guest Workspaces, lead the Overview with files and a reachable agent
 guide; keep database creation available as a secondary action. The individual empty collections
 retain their Quick Starts. Explain the Guest expiry where applicable; remove the Overview guide
 once resources exist. Creation and execution remain explicit.
-On Guest sign-in, show the 24-hour access limit with the Guest action without requiring hover.
+On the temporary-workspace entry, use “Try without an account” for the action and
+“Temporary workspace” for the resulting workspace; avoid “demo” because this session can
+perform real operations. Show the 24-hour access limit with the action without requiring hover.
 Explain the actual consequence of signing out before ending a Guest session; do not promise
 cleanup that the service has not implemented.
 

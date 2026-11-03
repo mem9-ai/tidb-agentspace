@@ -31,14 +31,14 @@ export function SignInChoices({
         variant={guestEnabled ? 'filled' : 'default'}
         h="auto"
         py="sm"
-        aria-label="Continue as Guest"
+        aria-label="Try without an account"
         aria-describedby={guestEnabled ? 'guest-expiry' : 'guest-expiry guest-access-note'}
         disabled={!guestEnabled || guestLoading}
         loading={guestLoading}
         onClick={onGuestLogin}
       >
         <Stack component="span" gap={0} align="center">
-          <span>Continue as Guest</span>
+          <span>Try without an account</span>
           <Text id="guest-expiry" component="span" size="sm" fw={400} c="inherit">
             Workspace access expires after 24 hours
           </Text>
@@ -46,7 +46,7 @@ export function SignInChoices({
       </Button>
       {!guestEnabled && (
         <Text id="guest-access-note" size="sm" ta="center">
-          24-hour Guest access is coming soon.
+          Trying without an account is coming soon.
         </Text>
       )}
       {guestEnabled && account}

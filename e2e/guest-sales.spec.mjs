@@ -6,12 +6,12 @@ test('@visual Guest starts a sales task, grants only its file system and returns
 }, testInfo) => {
   workspace.requireSignIn({ guestEnabled: true });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  await page.getByRole('button', { name: 'Try without an account' }).click();
   const task = page.getByRole('region', { name: 'US sales agent task' });
   await expect(
     task.getByRole('heading', { name: 'Let your agent explore US sales' }),
   ).toBeVisible();
-  await expect(page.getByText('Guest workspace · Access expires after 24 hours')).toBeVisible();
+  await expect(page.getByText('Temporary workspace · Access expires after 24 hours')).toBeVisible();
   if (await page.getByRole('button', { name: 'Open navigation' }).isVisible()) {
     await expect(page.locator('.workspace-mobile-crumb')).toHaveText('Workspace');
   }
@@ -130,7 +130,7 @@ test('Guest can retry while the workspace is still preparing', async ({ page, wo
     });
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  await page.getByRole('button', { name: 'Try without an account' }).click();
   const task = page.getByRole('region', { name: 'US sales agent task' });
   await task.getByRole('button', { name: 'Prepare sample' }).click();
   await expect(

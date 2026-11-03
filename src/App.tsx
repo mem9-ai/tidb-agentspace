@@ -315,7 +315,7 @@ function App() {
       await refresh();
       setError('');
     } catch {
-      setGuestError('Unable to start Guest access. Please try again.');
+      setGuestError('Unable to start a temporary workspace. Please try again.');
     } finally {
       setGuestLoading(false);
     }
@@ -370,7 +370,7 @@ function App() {
       await workspaceApi.endGuestSession();
       window.location.reload();
     } catch {
-      setGuestSignOutError('Unable to finish Guest sign-out. Try again or refresh this page.');
+      setGuestSignOutError('Unable to sign out. Try again or refresh this page.');
       setGuestSignOutBusy(false);
     }
   }
@@ -530,14 +530,14 @@ function App() {
       </WorkspaceLayout>
       {confirmGuestSignOut && (
         <Modal
-          title="Sign out of Guest?"
+          title="Leave this temporary workspace?"
           size={480}
           busy={guestSignOutBusy}
           onClose={() => setConfirmGuestSignOut(false)}
         >
           <Text>
-            Signing out ends this Guest session and requests deletion of its resources. You won’t be
-            able to reopen this session in this browser. Save anything you need first.
+            Signing out ends this temporary session and requests deletion of its resources. You
+            won’t be able to reopen this session in this browser. Save anything you need first.
           </Text>
           {guestSignOutError && (
             <Alert color="red" role="alert" mt="md">
@@ -1961,14 +1961,14 @@ function WorkspaceSettings({
               <div className="account-session-summary">
                 <strong>
                   {sso.sessionKind === 'guest'
-                    ? 'Guest session'
+                    ? 'Temporary session'
                     : sso.enabled
                       ? 'TiDB Account session'
                       : 'Local session'}
                 </strong>
                 <Text component="p">
                   {sso.sessionKind === 'guest'
-                    ? 'Your Guest workspace expires 24 hours after it was created.'
+                    ? 'Your temporary workspace expires 24 hours after it was created.'
                     : sso.enabled
                       ? 'Signed in with your TiDB Account. This is your personal workspace.'
                       : 'Local development session. Your workspace uses the configured local storage.'}
@@ -2185,7 +2185,7 @@ function CreateKey({
           </Fieldset>
           {isGuest ? (
             <Text component="p">
-              This key expires within 24 hours, when you sign out, or when your Guest workspace
+              This key expires within 24 hours, when you sign out, or when your temporary workspace
               expires.
             </Text>
           ) : (

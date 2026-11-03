@@ -32,13 +32,13 @@ test('cloud sign-in offers TiDB Account and clearly marks Guest access unavailab
     page.getByRole('heading', { name: 'Give your agent a place to work', level: 1 }),
   ).toBeVisible();
   const account = page.getByRole('button', { name: 'Continue with TiDB Account' });
-  const guest = page.getByRole('button', { name: 'Continue as Guest' });
+  const guest = page.getByRole('button', { name: 'Try without an account' });
   await expect(account).toBeEnabled();
   await expect(guest).toBeDisabled();
   expect(await account.evaluate((element) => element.offsetTop)).toBeLessThan(
     await guest.evaluate((element) => element.offsetTop),
   );
-  await expect(page.getByText('24-hour Guest access is coming soon.')).toBeVisible();
+  await expect(page.getByText('Trying without an account is coming soon.')).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     .toBe(true);
@@ -57,7 +57,7 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
   await expect(
     page.getByRole('heading', { name: 'Give your agent a place to work', level: 1 }),
   ).toBeVisible();
-  const guest = page.getByRole('button', { name: 'Continue as Guest' });
+  const guest = page.getByRole('button', { name: 'Try without an account' });
   await expect(guest).toBeEnabled();
   const account = page.getByRole('button', { name: 'Continue with TiDB Account' });
   expect(await guest.evaluate((element) => element.offsetTop)).toBeLessThan(
@@ -78,18 +78,18 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
   await expect(page.getByRole('combobox', { name: 'Color theme', exact: true })).toBeVisible();
   await page.goto('/#settings');
   const settings = page.getByRole('main');
-  await expect(settings.getByText('Guest session', { exact: true })).toBeVisible();
+  await expect(settings.getByText('Temporary session', { exact: true })).toBeVisible();
   await expect(
-    page.getByText('Your Guest workspace expires 24 hours after it was created.'),
+    page.getByText('Your temporary workspace expires 24 hours after it was created.'),
   ).toBeVisible();
   await expect(settings.getByRole('button', { name: 'Sign out' })).toBeVisible();
   if (process.env.GUEST_SETTINGS_SCREENSHOT) {
-    await settings.getByText('Guest session', { exact: true }).scrollIntoViewIfNeeded();
+    await settings.getByText('Temporary session', { exact: true }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: process.env.GUEST_SETTINGS_SCREENSHOT });
   }
   await settings.getByRole('button', { name: 'Sign out' }).click();
   await page
-    .getByRole('dialog', { name: 'Sign out of Guest?' })
+    .getByRole('dialog', { name: 'Leave this temporary workspace?' })
     .getByRole('button', {
       name: 'Cancel',
     })
@@ -106,13 +106,13 @@ test('Guest API key creation explains the Workspace expiry', async ({ page, work
   workspace.requireSignIn({ guestEnabled: true });
   workspace.addResources();
   await page.goto('/');
-  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  await page.getByRole('button', { name: 'Try without an account' }).click();
   await workspace.open('#keys');
   await page.getByRole('button', { name: 'Create API key', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
   await expect(
     dialog.getByText(
-      'This key expires within 24 hours, when you sign out, or when your Guest workspace expires.',
+      'This key expires within 24 hours, when you sign out, or when your temporary workspace expires.',
     ),
   ).toBeVisible();
   await expect(dialog.getByRole('combobox', { name: 'Expiration' })).toHaveCount(0);
@@ -133,7 +133,7 @@ test('@visual Guest can cancel or confirm sign-out from the workspace navigation
 }) => {
   workspace.requireSignIn({ guestEnabled: true });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  await page.getByRole('button', { name: 'Try without an account' }).click();
   await expect(
     page.getByRole('main').getByRole('heading', { name: 'Give your agent a place to work' }),
   ).toBeVisible();
@@ -142,7 +142,7 @@ test('@visual Guest can cancel or confirm sign-out from the workspace navigation
     const openNavigation = page.getByRole('button', { name: 'Open navigation' });
     if (await openNavigation.isVisible()) await openNavigation.click();
     await page.getByRole('button', { name: 'Sign out', exact: true }).click();
-    return page.getByRole('dialog', { name: 'Sign out of Guest?' });
+    return page.getByRole('dialog', { name: 'Leave this temporary workspace?' });
   }
   let dialog = await openSignOut();
   await expect(
@@ -159,10 +159,10 @@ test('@visual Guest can cancel or confirm sign-out from the workspace navigation
   dialog = await openSignOut();
   workspace.rejectNextGuestLogout();
   await dialog.getByRole('button', { name: 'Sign out', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toContainText('Unable to finish Guest sign-out');
+  await expect(dialog.getByRole('alert')).toContainText('Unable to sign out');
   await expect(dialog.getByRole('button', { name: 'Sign out', exact: true })).toBeEnabled();
   await dialog.getByRole('button', { name: 'Sign out', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Continue as Guest' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Try without an account' })).toBeVisible();
   expect(
     workspace.requests.filter(
       (request) => request.path === '/api/auth/guest/logout' && request.method === 'POST',
@@ -176,9 +176,11 @@ test('Guest sign-out is not offered until the backend supports cleanup', async (
 }) => {
   workspace.requireSignIn({ guestEnabled: true, guestCleanupEnabled: false });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  await page.getByRole('button', { name: 'Try without an account' }).click();
   await page.goto('/#settings');
-  await expect(page.getByRole('main').getByText('Guest session', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('main').getByText('Temporary session', { exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toHaveCount(0);
 });
 
@@ -378,7 +380,7 @@ test('@visual Guest database creation distinguishes Workspace access from provid
 }, testInfo) => {
   workspace.requireSignIn({ guestEnabled: true });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Continue as Guest' }).click();
+  await page.getByRole('button', { name: 'Try without an account' }).click();
   await expect(page.getByRole('main')).toBeVisible();
   await page.goto('/#databases');
   const theme = page.getByRole('combobox', { name: 'Color theme' });
@@ -405,7 +407,7 @@ test('@visual Guest database creation distinguishes Workspace access from provid
   const dialog = page.getByRole('dialog', { name: 'Create a database' });
   await expect(
     dialog.getByText(
-      'Guest workspace access ends 24 hours after the workspace was created. The database has a separate provider expiry within 30 days.',
+      'Temporary workspace access ends 24 hours after the workspace was created. The database has a separate provider expiry within 30 days.',
     ),
   ).toBeVisible();
   if (process.env.DEFAULT_DATABASE_SCREENSHOTS)
