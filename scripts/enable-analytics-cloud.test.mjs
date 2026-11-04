@@ -328,7 +328,11 @@ test('missing or ambiguous existing storage stops before any preparation and nev
   ]) {
     const f = fixture();
     const kubectl = (args, input) =>
-      args[1] === 'storageclass' ? JSON.stringify({ items }) : f.dependencies.kubectl(args, input);
+      args[1] === 'storageclass'
+        ? JSON.stringify({ items })
+        : args[1] === 'pvc'
+          ? JSON.stringify({ items: [] })
+          : f.dependencies.kubectl(args, input);
     await assert.rejects(
       enableAnalytics(options, { ...f.dependencies, kubectl }),
       /unambiguous existing/,
