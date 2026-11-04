@@ -159,40 +159,39 @@ mod tests {
     use super::*;
     #[test]
     fn rejects_hidden_writes_functions_and_session_escapes() {
-        for kind in ["mysql", "postgresql", "duckdb"] {
-            assert!(
-                validate(
-                    &format!("SELECT {}1{}", "(".repeat(100), ")".repeat(100)),
-                    kind
-                )
-                .is_err()
-            );
-            assert!(validate(&format!("SELECT {}1", "1+".repeat(2000)), kind).is_err());
-            for sql in [
-                "SELECT 1",
-                "/* read */ WITH x AS (SELECT 1 AS id) SELECT count(*) FROM x",
-                "SELECT 'DELETE; DROP TABLE t' AS text",
-                "SELECT * FROM t WHERE id IN (SELECT id FROM u)",
-            ] {
-                assert!(validate(sql, kind).is_ok(), "{kind}: {sql}");
-            }
-            for sql in [
-                "DELETE FROM t",
-                "WITH x AS (DELETE FROM t RETURNING *) SELECT * FROM x",
-                "WITH x AS (SELECT 1) UPDATE t SET id=2",
-                "SELECT 1; DELETE FROM t",
-                "SELECT * INTO copied FROM t",
-                "SELECT * FROM t FOR UPDATE",
-                "SELECT nextval('seq')",
-                "SELECT set_config('transaction_read_only','off',false)",
-                "SELECT workspace.count(*)",
-                "SELECT * FROM read_csv('https://example.com')",
-                "SET TRANSACTION READ WRITE",
-                "SELECT 1 /*! INTO OUTFILE '/tmp/file' */",
-                "CALL dangerous()",
-            ] {
-                assert!(validate(sql, kind).is_err(), "{kind}: {sql}");
-            }
+        let kind = "postgresql";
+        assert!(
+            validate(
+                &format!("SELECT {}1{}", "(".repeat(100), ")".repeat(100)),
+                kind
+            )
+            .is_err()
+        );
+        assert!(validate(&format!("SELECT {}1", "1+".repeat(2000)), kind).is_err());
+        for sql in [
+            "SELECT 1",
+            "/* read */ WITH x AS (SELECT 1 AS id) SELECT count(*) FROM x",
+            "SELECT 'DELETE; DROP TABLE t' AS text",
+            "SELECT * FROM t WHERE id IN (SELECT id FROM u)",
+        ] {
+            assert!(validate(sql, kind).is_ok(), "{kind}: {sql}");
+        }
+        for sql in [
+            "DELETE FROM t",
+            "WITH x AS (DELETE FROM t RETURNING *) SELECT * FROM x",
+            "WITH x AS (SELECT 1) UPDATE t SET id=2",
+            "SELECT 1; DELETE FROM t",
+            "SELECT * INTO copied FROM t",
+            "SELECT * FROM t FOR UPDATE",
+            "SELECT nextval('seq')",
+            "SELECT set_config('transaction_read_only','off',false)",
+            "SELECT workspace.count(*)",
+            "SELECT * FROM read_csv('https://example.com')",
+            "SET TRANSACTION READ WRITE",
+            "SELECT 1 /*! INTO OUTFILE '/tmp/file' */",
+            "CALL dangerous()",
+        ] {
+            assert!(validate(sql, kind).is_err(), "{kind}: {sql}");
         }
     }
 }

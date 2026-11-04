@@ -142,23 +142,3 @@ pub async fn execute(b: &Value, sql: &str) -> Result<Value> {
     result.drop_result().await.map_err(safe)?;
     Ok(json!({"columns":names,"rowCount":rows.len(),"rows":rows,"affectedRows":affected}))
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[tokio::test]
-    #[ignore = "standalone MySQL databases are retired; restore provider verification before enabling"]
-    async fn connection_race_ignores_failed_candidates_and_drops_losers_before_sql() {
-        let attempts = (0..3)
-            .map(|n| async move {
-                if n == 0 {
-                    Err(err(502, "SQL_EXECUTION_FAILED"))
-                } else if n == 1 {
-                    Ok(42)
-                } else {
-                    std::future::pending().await
-                }
-            })
-            .collect::<FuturesUnordered<_>>();
-        assert_eq!(first_success(attempts).await.unwrap(), 42);
-    }
-}
