@@ -15,11 +15,7 @@ marker="cache_probe_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
 printf '999999,2026-01-01,California,%s,1,1\n' "$marker" >> "$fixture"
 start=$SECONDS
 docker buildx build --platform linux/amd64 --load --progress plain \
-  --tag workspace-api:cache-benchmark . > "$scratch/build.log" 2>&1 || {
-    cat "$scratch/build.log"
-    exit 1
-  }
-cat "$scratch/build.log"
+  --tag workspace-api:cache-benchmark . 2>&1 | tee "$scratch/build.log"
 printf 'Incremental image rebuild: %s seconds\n' "$((SECONDS - start))"
 # The lower-level crate build must come from the previous build's layer cache.
 layer="$(grep -E '^#[0-9]+ \[builder [^]]+\] RUN find backend/contracts ' "$scratch/build.log" | head -n 1 | cut -d ' ' -f 1)"

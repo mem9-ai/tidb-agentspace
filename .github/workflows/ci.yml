@@ -418,4 +418,5 @@ jobs:
           ' "$RUNNER_TEMP/native-runtime-info.json"
       - name: Benchmark incremental native image rebuild
         if: ${{ steps.changes.outputs.changed == 'true' && contains(github.event.pull_request.body, '[benchmark-native-cache]') }}
+        timeout-minutes: 10
         run: bash scripts/benchmark-native-image-cache.sh

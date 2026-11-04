@@ -570,6 +570,7 @@ test('automatic checks execute once and releases require exact-commit native evi
     "${{ steps.changes.outputs.changed == 'true' && contains(github.event.pull_request.body, '[benchmark-native-cache]') }}",
   );
   assert.equal(cacheProbe.run, 'bash scripts/benchmark-native-image-cache.sh');
+  assert.equal(cacheProbe['timeout-minutes'], 10);
   const smoke = ci.jobs.image.steps.find(
     (step) => step.name === 'Run the final native image without network or writable root',
   );

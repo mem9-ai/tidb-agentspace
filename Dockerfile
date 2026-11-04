@@ -39,18 +39,17 @@ COPY meta-service ./meta-service
 RUN find backend/contracts backend/meta-client backend/workspace backend/identity \
     backend/providers backend/execute meta-service \
     -path meta-service/target -prune -o -type f -exec touch {} + \
-    && cargo build --release --locked --lib --target-dir /source/meta-service/target \
-    -p workspace-providers -p workspace-execute -p workspace-meta-service
+    && cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend
 
 COPY backend/product ./backend/product
 COPY specs/gh-150/fixtures/us-sales.csv ./specs/gh-150/fixtures/us-sales.csv
 RUN find backend/product -type f -exec touch {} + \
-    && cargo build --release --locked --lib --target-dir /source/meta-service/target -p workspace-product
+    && cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend
 
 COPY backend/api ./backend/api
 COPY public/openapi.json public/owner-openapi.json public/global-openapi.json public/agent-entry-openapi.json ./public/
 RUN find backend/api -type f -exec touch {} + \
-    && cargo build --release --locked --lib --target-dir /source/meta-service/target -p workspace-api
+    && cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend
 
 # Copy the complete workspace for the final binary, including any new crates.
 COPY backend ./backend
