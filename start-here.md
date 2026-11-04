@@ -223,6 +223,10 @@ The portable Playwright smoke suite asserts behavior; screenshots support visual
 [ADR 0027](docs/decisions/0027-single-ci-evidence.md) records single-gate CI ownership and
 exact-commit evidence consumption by delivery workflows.
 
+For product acquisition, activation/retention metrics and the verified PingCAP
+Admin boundary, read [product analytics](docs/product-analytics.md). Capture is opt-in
+at deployment; HTTP operational monitoring remains separate.
+
 ## Find the implementation
 
 For executable sample data, tutorial creation handoff and Workspace-persisted cross-browser re-entry from Overview

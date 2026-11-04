@@ -422,6 +422,8 @@ export const workspaceApi = {
         : client
       ).PUT('/workspaces/{workspaceId}/files', { params, body }),
     ),
+  saveReport: (body: WriteFileInput) =>
+    responseData(client.POST('/workspaces/{workspaceId}/reports', { params, body })),
   createSampleFile: (body: WriteFileInput) =>
     responseData(
       client.PUT('/workspaces/{workspaceId}/files', {

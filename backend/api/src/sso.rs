@@ -186,6 +186,15 @@ pub(crate) struct VerifiedLogin {
     claims: Value,
 }
 impl VerifiedLogin {
+    pub(crate) fn verified_email(&self) -> Option<&str> {
+        if self.claims["email_verified"] == true {
+            self.claims["email"]
+                .as_str()
+                .filter(|value| email(value).is_some())
+        } else {
+            None
+        }
+    }
     pub(crate) fn identity(&self) -> (&str, &str) {
         (&self.issuer, &self.subject)
     }

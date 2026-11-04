@@ -1856,6 +1856,27 @@ for (const status of [200, 201]) {
   };
 }
 extendRegionalSecurityContract(spec);
+// Explicit report creation is create-only file persistence, not proof of author or quality.
+spec.paths[ws + '/reports'] = {
+  parameters: structuredClone(spec.paths[ws + '/files'].parameters),
+  post: structuredClone(spec.paths[ws + '/files'].put),
+};
+spec.paths[ws + '/reports'].post.operationId = 'saveReport';
+spec.paths[ws + '/reports'].post.summary =
+  'Save a report as a new file; existing files are never overwritten';
+spec.paths[ws + '/reports'].post.parameters = (
+  spec.paths[ws + '/reports'].post.parameters || []
+).filter((p) => !['If-Match', 'If-None-Match'].includes(p.name));
+spec.paths[ws + '/reports'].post.responses[201] = spec.paths[ws + '/reports'].post.responses[200];
+delete spec.paths[ws + '/reports'].post.responses[200];
+spec.paths[ws + '/reports'].post.responses[201].headers = {
+  Location: {
+    required: true,
+    schema: { type: 'string' },
+    description:
+      'Relative file metadata URI; retrieve report bytes through files/content with the same authorization.',
+  },
+};
 const portalSpec = structuredClone(spec);
 portalSpec.info.title = 'Workspace Portal API';
 portalSpec.servers[0] = { url: '/api/portal/v1', description: 'Session-authenticated Portal API' };
@@ -2014,3 +2035,16 @@ if (process.argv.includes('--check')) {
     process.exitCode = 1;
   }
 } else await writeFile(entryTarget, entryRendered);
+
+const { operatorContract } = await import('../tools/api-contract/operator-contract.mjs');
+const operatorTarget = new URL('../public/operator-openapi.json', import.meta.url);
+const operatorRendered = await format(JSON.stringify(operatorContract()), {
+  ...(await resolveConfig(fileURLToPath(operatorTarget))),
+  parser: 'json',
+});
+if (process.argv.includes('--check')) {
+  if ((await readFile(operatorTarget, 'utf8')) !== operatorRendered) {
+    console.error('Operator contract drifted. Run npm run api:generate.');
+    process.exitCode = 1;
+  }
+} else await writeFile(operatorTarget, operatorRendered);

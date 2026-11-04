@@ -14,7 +14,13 @@ import { assertSessionContract } from './test-support/assert-session-contract.mj
 
 const enabled = process.env.WORKSPACE_BACKEND_TEST === '1';
 const base = '/api/v1/workspaces/ws_agentlab';
-async function fixture(t, overrides = {}, managed = false, stripPublicPrefix = false) {
+async function fixture(
+  t,
+  overrides = {},
+  managed = false,
+  stripPublicPrefix = false,
+  analytics = false,
+) {
   const metadata = await metaFixture();
   let provider;
   let child;
@@ -179,6 +185,26 @@ async function fixture(t, overrides = {}, managed = false, stripPublicPrefix = f
       allowLoopbackHttp: true,
     };
   }
+  let analyticsPolicy;
+  let analyticsSettings;
+  if (analytics) {
+    const key = resolve(metadata.directory, 'analytics-key');
+    analyticsPolicy = resolve(metadata.directory, 'analytics-operators.json');
+    await writeFile(key, Buffer.alloc(32, 7), { mode: 0o600 });
+    await writeFile(
+      analyticsPolicy,
+      JSON.stringify({ subjects: [], verifiedEmailDomains: ['pingcap.com'] }),
+      { mode: 0o600 },
+    );
+    config.analytics = { enabled: true, pseudonymKeyFile: key };
+    analyticsSettings = {
+      pseudonymKeyFile: key,
+      operatorsFile: analyticsPolicy,
+      returnUrl: 'https://studio.example.test/studio/admin',
+      browserEnabled: true,
+      campaigns: ['launch'],
+    };
+  }
   const file = resolve(metadata.directory, 'api.json');
   const plan = resolve(metadata.directory, 'plan.json');
   const services = [];
@@ -214,6 +240,7 @@ async function fixture(t, overrides = {}, managed = false, stripPublicPrefix = f
     profile.api.security.regionConnection.origin = `https://127.0.0.1:${controlPort}`;
     profile.global.regionConnection.bind = `127.0.0.1:${controlPort}`;
     Object.assign(config, profile.api);
+    if (analyticsSettings) profile.global.analytics = analyticsSettings;
     const globalFile = resolve(metadata.directory, 'global-api.json');
     await writeFile(globalFile, JSON.stringify(profile.global), { mode: 0o600 });
     services.push({ kind: 'global', configFile: globalFile });
@@ -294,15 +321,15 @@ async function fixture(t, overrides = {}, managed = false, stripPublicPrefix = f
     if (child.exitCode !== null) throw Error(log);
     assert.equal((await request('/api/health')).status, 200);
   });
-  async function flow() {
-    const r = await request('/studio/api/auth/tidbcloud/login');
+  async function flow(operator = false) {
+    const r = await request('/studio/api/auth/tidbcloud/login' + (operator ? '?operator=1' : ''));
     assert.equal(r.status, 302);
     const url = new URL(r.headers.location);
     assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
     control.challenge = url.searchParams.get('code_challenge');
     control.nonce = url.searchParams.get('nonce');
     return {
-      cookie: r.headers['set-cookie'][0].split(';')[0],
+      cookie: r.headers['set-cookie'].map((v) => v.split(';')[0]).join('; '),
       state: url.searchParams.get('state'),
       response: r,
     };
@@ -367,6 +394,7 @@ async function fixture(t, overrides = {}, managed = false, stripPublicPrefix = f
   }
   return {
     origin,
+    analyticsPolicy,
     request,
     flow,
     callback,
@@ -375,6 +403,32 @@ async function fixture(t, overrides = {}, managed = false, stripPublicPrefix = f
     config,
     child,
     close,
+    async restartHost() {
+      await metadata.stop(child);
+      const resumed = {
+        ...config,
+        initializeWorkspace: false,
+        security: { ...config.security, initializeClock: false },
+      };
+      await writeFile(file, JSON.stringify(resumed), { mode: 0o600 });
+      const globalFile = resolve(metadata.directory, 'global-api.json');
+      const globalConfig = JSON.parse(
+        await (await import('node:fs/promises')).readFile(globalFile, 'utf8'),
+      );
+      globalConfig.initializeClock = false;
+      await writeFile(globalFile, JSON.stringify(globalConfig), { mode: 0o600 });
+      start();
+      try {
+        await until(async () => {
+          if (child.exitCode !== null || child.signalCode) throw Error(log);
+          assert.equal((await request('/api/health')).status, 200);
+        });
+      } catch (error) {
+        throw new Error('Restart failed: ' + String(error) + ' ' + log.slice(-4000), {
+          cause: error,
+        });
+      }
+    },
     restartWithoutGlobal,
     purgeLegacy,
     stopHost,
@@ -1597,5 +1651,182 @@ test(
       region.client.close();
       await region.stop();
     }
+  },
+);
+
+test(
+  'product analytics: durable browser capture, verified PingCAP Admin, revocation and real report outcomes',
+  { skip: !enabled, timeout: 90000 },
+  async (t) => {
+    const f = await fixture(t, {}, 'globalApi', false, true);
+    const path = '/studio/api/global';
+    assert.equal((await f.request(path + '/operator/analytics/summary')).status, 401);
+    assert.equal(
+      (
+        await f.request(path + '/operator/analytics/summary', {
+          headers: { Authorization: 'Bearer customer-key' },
+        })
+      ).status,
+      403,
+    );
+    const sessionId = randomUUID();
+    const event = {
+      id: randomUUID(),
+      event: {
+        name: 'public_page_view',
+        page: 'home',
+        source: 'social',
+        device: 'desktop',
+        campaign: 'launch',
+      },
+    };
+    const batch = { version: 1, sessionId, events: [event] };
+    const ingest = await f.request(path + '/analytics/events', { method: 'POST', body: batch });
+    assert.equal(ingest.status, 202);
+    assert.equal(
+      (await f.request(path + '/analytics/events', { method: 'POST', body: batch })).status,
+      202,
+    );
+    assert.equal(
+      (
+        await f.request(path + '/analytics/events', {
+          method: 'POST',
+          body: { ...batch, workspaceId: 'forged' },
+        })
+      ).status,
+      422,
+    );
+    assert.equal(
+      (
+        await f.request(path + '/analytics/events', {
+          method: 'POST',
+          body: batch,
+          headers: { Origin: 'https://evil.test' },
+        })
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await f.request(path + '/analytics/events', {
+          method: 'POST',
+          body: batch,
+          headers: { 'Sec-GPC': '1' },
+        })
+      ).status,
+      204,
+    );
+    f.control.claims = { email: 'alice@pingcap.com', email_verified: false };
+    let login = await f.flow(true);
+    assert.equal((await f.callback(login)).status, 403);
+    for (const email of [
+      'alice@pingcap.com.evil.test',
+      'alice@sub.pingcap.com',
+      'alice@example.org',
+    ]) {
+      f.control.claims = { email, email_verified: true };
+      login = await f.flow(true);
+      assert.equal((await f.callback(login)).status, 403);
+    }
+    f.control.claims = { email: 'alice@pingcap.com', email_verified: true };
+    login = await f.flow(true);
+    const accepted = await f.callback(login);
+    assert.equal(accepted.status, 303);
+    assert.equal(accepted.headers.location, 'https://studio.example.test/studio/admin');
+    const admin = accepted.headers['set-cookie']
+      .find((v) => v.startsWith('aw_operator='))
+      .split(';')[0];
+    assert.match(
+      accepted.headers['set-cookie'].join(';'),
+      /HttpOnly; SameSite=Strict; Secure; Path=\/studio\//,
+    );
+    assert.equal((await f.callback(login)).status, 400);
+    const normal = await f.flow();
+    const account = await f.callback(normal, {
+      cookie: normal.cookie + '; ' + ingest.headers['set-cookie'][0].split(';')[0],
+    });
+    const owner = account.headers['set-cookie'].map((v) => v.split(';')[0]).join('; ');
+    assert.equal((await f.request(path + '/operator/session', { cookie: owner })).status, 401);
+    const listed = await f.request('/studio/api/v1/workspaces', { cookie: owner });
+    assert.equal(listed.status, 200);
+    const ownBase = '/api/v1/workspaces/' + listed.body.data[0].id;
+    const resource = await f.request('/studio' + ownBase + '/resources', {
+      method: 'POST',
+      cookie: owner,
+      body: { name: 'report-files', kind: 'filesystem', region: 'aws-ap-southeast-1' },
+    });
+    assert.equal(resource.status, 201, JSON.stringify(resource.body));
+    const report = {
+      resourceId: resource.body.data.id,
+      path: '/findings.md',
+      type: 'file',
+      content: '# Findings\nVerified report save',
+    };
+    const saved = await f.request('/studio' + ownBase + '/reports', {
+      method: 'POST',
+      cookie: owner,
+      body: report,
+    });
+    assert.equal(saved.status, 201);
+    assert.equal(
+      (
+        await f.request('/studio' + ownBase + '/reports', {
+          method: 'POST',
+          cookie: owner,
+          body: report,
+        })
+      ).status,
+      412,
+    );
+    await until(async () => {
+      const summary = await f.request(
+        path +
+          '/operator/analytics/summary?from=' +
+          new Date().toISOString().slice(0, 10) +
+          '&to=' +
+          new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+        { cookie: admin },
+      );
+      assert.equal(summary.status, 200);
+      assert.equal(summary.body.missingRegions.length, 0);
+      assert.equal(summary.body.authorities[0].sessions, 1);
+      assert.equal(summary.body.authorities[0].trials, 1);
+      assert.equal(summary.body.authorities[0].counts.pageViews, 1);
+      assert.equal(summary.body.authorities[1].counts.events['report_saved:success'], 1);
+      assert.equal(summary.body.authorities[1].firstUseCampaigns.launch, 1);
+      assert.equal(summary.body.authorities[1].counts.events['report_saved:failure'], 1);
+      assert.ok(!JSON.stringify(summary.body).includes('Verified report save'));
+    });
+    await writeFile(f.analyticsPolicy, JSON.stringify({ subjects: [], verifiedEmailDomains: [] }), {
+      mode: 0o600,
+    });
+    assert.equal((await f.request(path + '/operator/session', { cookie: admin })).status, 403);
+    await writeFile(
+      f.analyticsPolicy,
+      JSON.stringify({ subjects: [], verifiedEmailDomains: ['pingcap.com'] }),
+      { mode: 0o600 },
+    );
+    assert.equal(
+      (await f.request(path + '/operator/auth/logout', { method: 'POST', cookie: admin })).status,
+      204,
+    );
+    assert.equal((await f.request(path + '/operator/session', { cookie: admin })).status, 401);
+    await f.restartHost();
+    const reopened = await f.callback(await f.flow(true));
+    assert.equal(reopened.status, 303);
+    const reopenedAdmin = reopened.headers['set-cookie']
+      .find((v) => v.startsWith('aw_operator='))
+      .split(';')[0];
+    const persisted = await f.request(
+      path +
+        '/operator/analytics/summary?from=' +
+        new Date().toISOString().slice(0, 10) +
+        '&to=' +
+        new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+      { cookie: reopenedAdmin },
+    );
+    assert.equal(persisted.status, 200);
+    assert.equal(persisted.body.authorities[0].counts.pageViews, 1);
+    assert.equal(persisted.body.authorities[1].counts.events['report_saved:success'], 1);
   },
 );

@@ -1,0 +1,1934 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Product analytics and Admin API",
+    "version": "1.0.0",
+    "description": "Separate platform authority. TiDB Cloud OIDC with a verified pingcap.com email is required for Admin. Workspace Keys and personal Owner sessions grant no access. Business actions use native outcomes; browser events are untrusted. HTTP monitoring is excluded."
+  },
+  "servers": [{ "url": "/api/global" }],
+  "paths": {
+    "/analytics/config": {
+      "get": {
+        "operationId": "getProductAnalyticsConfig",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "campaigns": { "type": "array", "items": { "type": "string" } },
+                    "policy": { "const": "session_only" },
+                    "version": { "const": 1 }
+                  },
+                  "required": ["enabled", "campaigns", "policy", "version"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/analytics/events": {
+      "post": {
+        "operationId": "ingestProductEvents",
+        "security": [],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "accepted": { "const": true } },
+                  "required": ["accepted"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "204": { "description": "Optional collection suppressed by Global Privacy Control." },
+          "400": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Untrusted optional browser events only. Exact trusted Origin and application/json required; no account or Workspace authorization is established. 202 means durable acceptance; identical event retries are deduplicated for the retained window. GPC suppression returns 204.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "version": { "const": 1 },
+                  "sessionId": { "type": "string", "format": "uuid" },
+                  "events": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string", "format": "uuid" },
+                        "event": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "name": { "const": "public_page_view" },
+                                "page": {
+                                  "enum": [
+                                    "home",
+                                    "get_started",
+                                    "sales_guide",
+                                    "api_docs",
+                                    "workspace"
+                                  ]
+                                },
+                                "source": {
+                                  "enum": [
+                                    "search",
+                                    "ai_referral",
+                                    "social",
+                                    "other",
+                                    "direct_or_unknown"
+                                  ]
+                                },
+                                "device": { "enum": ["mobile", "desktop"] },
+                                "campaign": { "type": ["string", "null"] }
+                              },
+                              "required": ["name", "page", "source", "device"],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "name": { "const": "try_clicked" },
+                                "page": {
+                                  "enum": [
+                                    "home",
+                                    "get_started",
+                                    "sales_guide",
+                                    "api_docs",
+                                    "workspace"
+                                  ]
+                                }
+                              },
+                              "required": ["name", "page"],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "name": { "const": "sign_in_clicked" },
+                                "page": {
+                                  "enum": [
+                                    "home",
+                                    "get_started",
+                                    "sales_guide",
+                                    "api_docs",
+                                    "workspace"
+                                  ]
+                                }
+                              },
+                              "required": ["name", "page"],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "name": { "const": "journey_selected" },
+                                "journey": { "enum": ["agent", "self_service"] }
+                              },
+                              "required": ["name", "journey"],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "name": { "const": "helpful_vote" },
+                                "helpful": { "type": "boolean" }
+                              },
+                              "required": ["name", "helpful"],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["id", "event"],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": ["version", "sessionId", "events"],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/analytics/session": {
+      "delete": {
+        "operationId": "clearAnalyticsAttribution",
+        "security": [],
+        "responses": {
+          "204": { "description": "Pending attribution cleared. Exact trusted Origin required." },
+          "403": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/operator/session": {
+      "get": {
+        "operationId": "getOperatorSession",
+        "security": [{ "operatorSession": [] }],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "operator": { "const": true } },
+                  "required": ["operator"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/operator/auth/login": {
+      "get": {
+        "operationId": "beginOperatorLogin",
+        "security": [],
+        "responses": {
+          "303": {
+            "description": "Redirect to the existing TiDB Cloud code/PKCE login with operator mode. The existing registered callback verifies the flow before issuing a distinct Admin session. No customer Workspace is created."
+          }
+        }
+      }
+    },
+    "/operator/auth/logout": {
+      "post": {
+        "operationId": "endOperatorSession",
+        "security": [{ "operatorSession": [] }],
+        "responses": {
+          "204": { "description": "Revoked and cleared. Exact trusted Origin required." },
+          "401": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/operator/analytics/breakdowns/{kind}": {
+      "parameters": [
+        {
+          "name": "kind",
+          "in": "path",
+          "required": true,
+          "schema": { "enum": ["acquisition", "funnel", "retention", "outcomes"] }
+        }
+      ],
+      "get": {
+        "operationId": "getProductInsightBreakdown",
+        "security": [{ "operatorSession": [] }],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorities": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "firstUseSources": {
+                            "type": "object",
+                            "additionalProperties": { "type": "integer", "minimum": 0 }
+                          },
+                          "firstUseCampaigns": {
+                            "type": "object",
+                            "additionalProperties": { "type": "integer", "minimum": 0 }
+                          },
+                          "authority": { "type": "string" },
+                          "from": { "type": "string" },
+                          "to": { "type": "string" },
+                          "timezone": { "const": "UTC" },
+                          "counts": {
+                            "type": "object",
+                            "properties": {
+                              "pageViews": { "type": "integer", "minimum": 0 },
+                              "tryClicks": { "type": "integer", "minimum": 0 },
+                              "signInClicks": { "type": "integer", "minimum": 0 },
+                              "ready": { "type": "integer", "minimum": 0 },
+                              "successes": { "type": "integer", "minimum": 0 },
+                              "failures": { "type": "integer", "minimum": 0 },
+                              "helpful": { "type": "integer", "minimum": 0 },
+                              "votes": { "type": "integer", "minimum": 0 },
+                              "events": {
+                                "type": "object",
+                                "additionalProperties": { "type": "integer", "minimum": 0 }
+                              },
+                              "sources": {
+                                "type": "object",
+                                "additionalProperties": { "type": "integer", "minimum": 0 }
+                              },
+                              "campaigns": {
+                                "type": "object",
+                                "additionalProperties": { "type": "integer", "minimum": 0 }
+                              },
+                              "journeys": {
+                                "type": "object",
+                                "additionalProperties": { "type": "integer", "minimum": 0 }
+                              }
+                            },
+                            "required": [
+                              "pageViews",
+                              "tryClicks",
+                              "signInClicks",
+                              "ready",
+                              "successes",
+                              "failures",
+                              "helpful",
+                              "votes",
+                              "events",
+                              "sources",
+                              "campaigns",
+                              "journeys"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "sessions": { "type": "integer", "minimum": 0 },
+                          "trials": { "type": "integer", "minimum": 0 },
+                          "activeWorkspaces": { "type": "integer", "minimum": 0 },
+                          "apiWorkspaces": { "type": "integer", "minimum": 0 },
+                          "cohorts": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "actor": { "type": "string" },
+                                "ready": { "type": "integer", "minimum": 0 },
+                                "eligible": { "type": "integer", "minimum": 0 },
+                                "activated": { "type": "integer", "minimum": 0 },
+                                "d1Eligible": { "type": "integer", "minimum": 0 },
+                                "d1Returned": { "type": "integer", "minimum": 0 },
+                                "d7Eligible": { "type": "integer", "minimum": 0 },
+                                "d7Returned": { "type": "integer", "minimum": 0 }
+                              },
+                              "required": [
+                                "actor",
+                                "ready",
+                                "eligible",
+                                "activated",
+                                "d1Eligible",
+                                "d1Returned",
+                                "d7Eligible",
+                                "d7Returned"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "timeToValueSeconds": {
+                            "type": "object",
+                            "additionalProperties": { "type": "integer", "minimum": 0 }
+                          },
+                          "generatedAt": { "type": "integer", "minimum": 0 },
+                          "unconfirmedEvents": { "type": "integer", "minimum": 0 },
+                          "coverage": { "type": "string" }
+                        },
+                        "required": [
+                          "firstUseSources",
+                          "firstUseCampaigns",
+                          "authority",
+                          "from",
+                          "to",
+                          "timezone",
+                          "counts",
+                          "sessions",
+                          "trials",
+                          "activeWorkspaces",
+                          "apiWorkspaces",
+                          "cohorts",
+                          "timeToValueSeconds",
+                          "generatedAt",
+                          "unconfirmedEvents",
+                          "coverage"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "missingRegions": { "type": "array", "items": { "type": "string" } },
+                    "definitionsVersion": { "const": 1 },
+                    "timezone": { "const": "UTC" },
+                    "partial": { "type": "boolean" },
+                    "monitoring": { "const": "not_included" }
+                  },
+                  "required": [
+                    "authorities",
+                    "missingRegions",
+                    "definitionsVersion",
+                    "timezone",
+                    "partial",
+                    "monitoring"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": { "type": "string", "format": "date" },
+            "description": "Inclusive UTC date. Maximum 31-day range, within the retained window."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": { "type": "string", "format": "date" },
+            "description": "Exclusive UTC date. Maximum 31-day range, within the retained window."
+          }
+        ]
+      }
+    },
+    "/operator/analytics/summary": {
+      "get": {
+        "operationId": "getProductInsights",
+        "security": [{ "operatorSession": [] }],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorities": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "firstUseSources": {
+                            "type": "object",
+                            "additionalProperties": { "type": "integer", "minimum": 0 }
+                          },
+                          "firstUseCampaigns": {
+                            "type": "object",
+                            "additionalProperties": { "type": "integer", "minimum": 0 }
+                          },
+                          "authority": { "type": "string" },
+                          "from": { "type": "string" },
+                          "to": { "type": "string" },
+                          "timezone": { "const": "UTC" },
+                          "counts": {
+                            "type": "object",
+                            "properties": {
+                              "pageViews": { "type": "integer", "minimum": 0 },
+                              "tryClicks": { "type": "integer", "minimum": 0 },
+                              "signInClicks": { "type": "integer", "minimum": 0 },
+                              "ready": { "type": "integer", "minimum": 0 },
+                              "successes": { "type": "integer", "minimum": 0 },
+                              "failures": { "type": "integer", "minimum": 0 },
+                              "helpful": { "type": "integer", "minimum": 0 },
+                              "votes": { "type": "integer", "minimum": 0 },
+                              "events": {
+                                "type": "object",
+                                "additionalProperties": { "type": "integer", "minimum": 0 }
+                              },
+                              "sources": {
+                                "type": "object",
+                                "additionalProperties": { "type": "integer", "minimum": 0 }
+                              },
+                              "campaigns": {
+                                "type": "object",
+                                "additionalProperties": { "type": "integer", "minimum": 0 }
+                              },
+                              "journeys": {
+                                "type": "object",
+                                "additionalProperties": { "type": "integer", "minimum": 0 }
+                              }
+                            },
+                            "required": [
+                              "pageViews",
+                              "tryClicks",
+                              "signInClicks",
+                              "ready",
+                              "successes",
+                              "failures",
+                              "helpful",
+                              "votes",
+                              "events",
+                              "sources",
+                              "campaigns",
+                              "journeys"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "sessions": { "type": "integer", "minimum": 0 },
+                          "trials": { "type": "integer", "minimum": 0 },
+                          "activeWorkspaces": { "type": "integer", "minimum": 0 },
+                          "apiWorkspaces": { "type": "integer", "minimum": 0 },
+                          "cohorts": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "actor": { "type": "string" },
+                                "ready": { "type": "integer", "minimum": 0 },
+                                "eligible": { "type": "integer", "minimum": 0 },
+                                "activated": { "type": "integer", "minimum": 0 },
+                                "d1Eligible": { "type": "integer", "minimum": 0 },
+                                "d1Returned": { "type": "integer", "minimum": 0 },
+                                "d7Eligible": { "type": "integer", "minimum": 0 },
+                                "d7Returned": { "type": "integer", "minimum": 0 }
+                              },
+                              "required": [
+                                "actor",
+                                "ready",
+                                "eligible",
+                                "activated",
+                                "d1Eligible",
+                                "d1Returned",
+                                "d7Eligible",
+                                "d7Returned"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "timeToValueSeconds": {
+                            "type": "object",
+                            "additionalProperties": { "type": "integer", "minimum": 0 }
+                          },
+                          "generatedAt": { "type": "integer", "minimum": 0 },
+                          "unconfirmedEvents": { "type": "integer", "minimum": 0 },
+                          "coverage": { "type": "string" }
+                        },
+                        "required": [
+                          "firstUseSources",
+                          "firstUseCampaigns",
+                          "authority",
+                          "from",
+                          "to",
+                          "timezone",
+                          "counts",
+                          "sessions",
+                          "trials",
+                          "activeWorkspaces",
+                          "apiWorkspaces",
+                          "cohorts",
+                          "timeToValueSeconds",
+                          "generatedAt",
+                          "unconfirmedEvents",
+                          "coverage"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "missingRegions": { "type": "array", "items": { "type": "string" } },
+                    "definitionsVersion": { "const": 1 },
+                    "timezone": { "const": "UTC" },
+                    "partial": { "type": "boolean" },
+                    "monitoring": { "const": "not_included" }
+                  },
+                  "required": [
+                    "authorities",
+                    "missingRegions",
+                    "definitionsVersion",
+                    "timezone",
+                    "partial",
+                    "monitoring"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": { "type": "string", "format": "date" },
+            "description": "Inclusive UTC date. Maximum 31-day range, within the retained window."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": { "type": "string", "format": "date" },
+            "description": "Exclusive UTC date. Maximum 31-day range, within the retained window."
+          }
+        ]
+      }
+    },
+    "/operator/analytics/coverage": {
+      "get": {
+        "operationId": "getProductAnalyticsCoverage",
+        "security": [{ "operatorSession": [] }],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorities": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "firstUseSources": {
+                            "type": "object",
+                            "additionalProperties": { "type": "integer", "minimum": 0 }
+                          },
+                          "firstUseCampaigns": {
+                            "type": "object",
+                            "additionalProperties": { "type": "integer", "minimum": 0 }
+                          },
+                          "authority": { "type": "string" },
+                          "from": { "type": "string" },
+                          "to": { "type": "string" },
+                          "timezone": { "const": "UTC" },
+                          "counts": {
+                            "type": "object",
+                            "properties": {
+                              "pageViews": { "type": "integer", "minimum": 0 },
+                              "tryClicks": { "type": "integer", "minimum": 0 },
+                              "signInClicks": { "type": "integer", "minimum": 0 },
+                              "ready": { "type": "integer", "minimum": 0 },
+                              "successes": { "type": "integer", "minimum": 0 },
+                              "failures": { "type": "integer", "minimum": 0 },
+                              "helpful": { "type": "integer", "minimum": 0 },
+                              "votes": { "type": "integer", "minimum": 0 },
+                              "events": {
+                                "type": "object",
+                                "additionalProperties": { "type": "integer", "minimum": 0 }
+                              },
+                              "sources": {
+                                "type": "object",
+                                "additionalProperties": { "type": "integer", "minimum": 0 }
+                              },
+                              "campaigns": {
+                                "type": "object",
+                                "additionalProperties": { "type": "integer", "minimum": 0 }
+                              },
+                              "journeys": {
+                                "type": "object",
+                                "additionalProperties": { "type": "integer", "minimum": 0 }
+                              }
+                            },
+                            "required": [
+                              "pageViews",
+                              "tryClicks",
+                              "signInClicks",
+                              "ready",
+                              "successes",
+                              "failures",
+                              "helpful",
+                              "votes",
+                              "events",
+                              "sources",
+                              "campaigns",
+                              "journeys"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "sessions": { "type": "integer", "minimum": 0 },
+                          "trials": { "type": "integer", "minimum": 0 },
+                          "activeWorkspaces": { "type": "integer", "minimum": 0 },
+                          "apiWorkspaces": { "type": "integer", "minimum": 0 },
+                          "cohorts": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "actor": { "type": "string" },
+                                "ready": { "type": "integer", "minimum": 0 },
+                                "eligible": { "type": "integer", "minimum": 0 },
+                                "activated": { "type": "integer", "minimum": 0 },
+                                "d1Eligible": { "type": "integer", "minimum": 0 },
+                                "d1Returned": { "type": "integer", "minimum": 0 },
+                                "d7Eligible": { "type": "integer", "minimum": 0 },
+                                "d7Returned": { "type": "integer", "minimum": 0 }
+                              },
+                              "required": [
+                                "actor",
+                                "ready",
+                                "eligible",
+                                "activated",
+                                "d1Eligible",
+                                "d1Returned",
+                                "d7Eligible",
+                                "d7Returned"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "timeToValueSeconds": {
+                            "type": "object",
+                            "additionalProperties": { "type": "integer", "minimum": 0 }
+                          },
+                          "generatedAt": { "type": "integer", "minimum": 0 },
+                          "unconfirmedEvents": { "type": "integer", "minimum": 0 },
+                          "coverage": { "type": "string" }
+                        },
+                        "required": [
+                          "firstUseSources",
+                          "firstUseCampaigns",
+                          "authority",
+                          "from",
+                          "to",
+                          "timezone",
+                          "counts",
+                          "sessions",
+                          "trials",
+                          "activeWorkspaces",
+                          "apiWorkspaces",
+                          "cohorts",
+                          "timeToValueSeconds",
+                          "generatedAt",
+                          "unconfirmedEvents",
+                          "coverage"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "missingRegions": { "type": "array", "items": { "type": "string" } },
+                    "definitionsVersion": { "const": 1 },
+                    "timezone": { "const": "UTC" },
+                    "partial": { "type": "boolean" },
+                    "monitoring": { "const": "not_included" }
+                  },
+                  "required": [
+                    "authorities",
+                    "missingRegions",
+                    "definitionsVersion",
+                    "timezone",
+                    "partial",
+                    "monitoring"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": { "type": "string", "format": "date" },
+            "description": "Inclusive UTC date. Maximum 31-day range, within the retained window."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": { "type": "string", "format": "date" },
+            "description": "Exclusive UTC date. Maximum 31-day range, within the retained window."
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "operatorSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "aw_operator",
+        "description": "Host-only Secure HttpOnly SameSite=Strict session, one-hour maximum; current private policy is checked on every read."
+      }
+    },
+    "schemas": {
+      "ProductInsights": {
+        "type": "object",
+        "properties": {
+          "authorities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "firstUseSources": {
+                  "type": "object",
+                  "additionalProperties": { "type": "integer", "minimum": 0 }
+                },
+                "firstUseCampaigns": {
+                  "type": "object",
+                  "additionalProperties": { "type": "integer", "minimum": 0 }
+                },
+                "authority": { "type": "string" },
+                "from": { "type": "string" },
+                "to": { "type": "string" },
+                "timezone": { "const": "UTC" },
+                "counts": {
+                  "type": "object",
+                  "properties": {
+                    "pageViews": { "type": "integer", "minimum": 0 },
+                    "tryClicks": { "type": "integer", "minimum": 0 },
+                    "signInClicks": { "type": "integer", "minimum": 0 },
+                    "ready": { "type": "integer", "minimum": 0 },
+                    "successes": { "type": "integer", "minimum": 0 },
+                    "failures": { "type": "integer", "minimum": 0 },
+                    "helpful": { "type": "integer", "minimum": 0 },
+                    "votes": { "type": "integer", "minimum": 0 },
+                    "events": {
+                      "type": "object",
+                      "additionalProperties": { "type": "integer", "minimum": 0 }
+                    },
+                    "sources": {
+                      "type": "object",
+                      "additionalProperties": { "type": "integer", "minimum": 0 }
+                    },
+                    "campaigns": {
+                      "type": "object",
+                      "additionalProperties": { "type": "integer", "minimum": 0 }
+                    },
+                    "journeys": {
+                      "type": "object",
+                      "additionalProperties": { "type": "integer", "minimum": 0 }
+                    }
+                  },
+                  "required": [
+                    "pageViews",
+                    "tryClicks",
+                    "signInClicks",
+                    "ready",
+                    "successes",
+                    "failures",
+                    "helpful",
+                    "votes",
+                    "events",
+                    "sources",
+                    "campaigns",
+                    "journeys"
+                  ],
+                  "additionalProperties": false
+                },
+                "sessions": { "type": "integer", "minimum": 0 },
+                "trials": { "type": "integer", "minimum": 0 },
+                "activeWorkspaces": { "type": "integer", "minimum": 0 },
+                "apiWorkspaces": { "type": "integer", "minimum": 0 },
+                "cohorts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "actor": { "type": "string" },
+                      "ready": { "type": "integer", "minimum": 0 },
+                      "eligible": { "type": "integer", "minimum": 0 },
+                      "activated": { "type": "integer", "minimum": 0 },
+                      "d1Eligible": { "type": "integer", "minimum": 0 },
+                      "d1Returned": { "type": "integer", "minimum": 0 },
+                      "d7Eligible": { "type": "integer", "minimum": 0 },
+                      "d7Returned": { "type": "integer", "minimum": 0 }
+                    },
+                    "required": [
+                      "actor",
+                      "ready",
+                      "eligible",
+                      "activated",
+                      "d1Eligible",
+                      "d1Returned",
+                      "d7Eligible",
+                      "d7Returned"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "timeToValueSeconds": {
+                  "type": "object",
+                  "additionalProperties": { "type": "integer", "minimum": 0 }
+                },
+                "generatedAt": { "type": "integer", "minimum": 0 },
+                "unconfirmedEvents": { "type": "integer", "minimum": 0 },
+                "coverage": { "type": "string" }
+              },
+              "required": [
+                "firstUseSources",
+                "firstUseCampaigns",
+                "authority",
+                "from",
+                "to",
+                "timezone",
+                "counts",
+                "sessions",
+                "trials",
+                "activeWorkspaces",
+                "apiWorkspaces",
+                "cohorts",
+                "timeToValueSeconds",
+                "generatedAt",
+                "unconfirmedEvents",
+                "coverage"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "missingRegions": { "type": "array", "items": { "type": "string" } },
+          "definitionsVersion": { "const": 1 },
+          "timezone": { "const": "UTC" },
+          "partial": { "type": "boolean" },
+          "monitoring": { "const": "not_included" }
+        },
+        "required": [
+          "authorities",
+          "missingRegions",
+          "definitionsVersion",
+          "timezone",
+          "partial",
+          "monitoring"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

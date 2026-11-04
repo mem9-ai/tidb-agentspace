@@ -1,5 +1,8 @@
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { Admin } from './features/analytics/Admin';
+import { AnalyticsPreference } from './features/analytics/AnalyticsPreference';
+import { startAnalytics } from './features/analytics/capture';
 import { WorkspaceThemeProvider } from './features/theme/WorkspaceThemeProvider';
 import '@tidbcloud/uikit/style.css';
 import './theme.css';
@@ -23,9 +26,17 @@ async function start() {
     if (!response.ok) throw new Error('Unable to load config.json.');
     const config: unknown = await response.json();
     configureApi(config);
+    if (!window.location.pathname.replace(/\/$/, '').endsWith('/admin')) void startAnalytics();
     root.render(
       <WorkspaceThemeProvider>
-        <App />
+        {window.location.pathname.replace(/\/$/, '').endsWith('/admin') ? (
+          <Admin />
+        ) : (
+          <>
+            <App />
+            <AnalyticsPreference />
+          </>
+        )}
       </WorkspaceThemeProvider>,
     );
   } catch (error) {

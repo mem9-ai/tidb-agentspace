@@ -1,7 +1,7 @@
 # ADR 0049: Product analytics and operator authority
 
-- Status: Proposed for [GH-182](https://github.com/mem9-ai/tidb.ai/issues/182);
-  no runtime or deployment changes.
+- Status: Accepted design for [GH-182](https://github.com/mem9-ai/tidb.ai/issues/182);
+  runtime integration is delivered by GH-184; deployment is separate.
 - Date: 2026-11-04.
 - Contract and acceptance: [launch specification](../../specs/gh-182/spec.md).
 
@@ -13,12 +13,14 @@ outcomes and return usage across Workspaces, including API use. Reusing Owner
 permissions or raw customer history for this purpose would change its authority
 and privacy boundary. The owner requires designated TiDB Cloud accounts only.
 
-## Proposed decision
+## Decision
 
 Introduce a distinct operator identity/session and aggregate product-analytics
-domain. Reuse TiDB Account verification but authorize exact verified issuer/subject
-pairs from private configuration on every operator request. No personal Owner,
-Workspace Key, email-domain rule or first-user bootstrap grants operator access.
+domain. Reuse TiDB Cloud account verification and require a verified email in exactly
+`pingcap.com`, per the owner's 2026-11-04 amendment to the original exact-account
+proposal. Bind sessions to verified issuer/subject and recheck private policy on every
+read. Other domains, unverified email, personal Owner status, Workspace Keys and
+first-user bootstrap grant no operator access.
 Operator rights provide analytics aggregates only, with no customer content,
 credential retrieval, impersonation or arbitrary regional metadata access.
 
@@ -35,19 +37,19 @@ Workspace identity. Rotations explicitly break linkage; disclose that measuremen
 boundary and expire old key material after the retention window. No browser can
 choose a trusted pseudonym or business success event.
 
-Regions submit versioned summary snapshots over the existing authenticated
-control-plane trust framework with a dedicated analytics-publish capability. Freeze
-the concrete adapter and generated internal contract before implementation. Tokens
-must bind producer authority, operator-analytics audience and short expiry; they
-cannot authorize Workspace APIs or metadata reads. An explicit producer registry
-rejects unknown Regions. Do not share customer or operator session credentials.
+Global requests bounded, query-scoped summaries over the existing TLS 1.3/mTLS
+control connection, with distinct typed Analytics frames, UUID correlation and the
+registered Region certificate. No customer/session token is reused for this private
+transport. A response contains aggregate counts only and is checked against the
+expected Region. Missing/disabled sources remain explicit gaps. One operator read
+runs at a time; Region reads run concurrently with finite deadlines. No raw-event
+replication or second Global event store is introduced.
 
-Summary identity is `(producer, UTC day/cohort day, metric version, dimensions)`.
-Include monotonic revision, snapshot time, coverage counters and bounded metric
-values. Replace the previous snapshot transactionally, never add each retry to the
-total. Identical retries are no-ops; stale revisions cannot overwrite newer data.
-Reject invalid dimensions, oversized snapshots and mismatched producer/authority.
-Retention reports use counts of eligible/returning Workspaces, not their identities.
+The same authenticated control transport carries distinct Attribution frames after
+verified onboarding, solely to attach approved campaign/source dimensions. It grants
+no Workspace or Meta API access. See [the runtime guide](../product-analytics.md)
+for the concrete protocol, retention and current operational limits.
+
 For acquisition-to-trial linkage, Global issues an opaque single-use handoff with
 a ten-minute expiry bound to the originating browser session and its collection
 choice. After verified Workspace authorization, Global consumes it and sends only
@@ -81,8 +83,8 @@ unavailable; do not hide these limits. Partial data is useful only with visible 
 ## Verification, rollout and recovery
 
 Native tests must cover ordinary-account denial before analytics access, revoked
-operator grants, session replay/expiry, producer impersonation, summary replay and
-revision conflicts, expiry after restart, canary-secret redaction and no changes to
+operator grants, session replay/expiry, producer impersonation, correlation mismatch and
+replayed attribution, expiry after restart, canary-secret redaction and no changes to
 customer ownership. The specification defines metric fixtures and browser checks.
 
 Deploy capture and dashboards behind independent flags only after the collection

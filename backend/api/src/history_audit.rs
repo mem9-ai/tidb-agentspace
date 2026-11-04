@@ -30,7 +30,7 @@ pub fn target_candidate(
     input: &Value,
 ) -> Option<String> {
     let value = match (method, route) {
-        ("PUT", "/files") | ("POST", "/queries" | "/database-imports") => {
+        ("PUT", "/files") | ("POST", "/reports" | "/queries" | "/database-imports") => {
             input["resourceId"].as_str()
         }
         ("PUT", "/files/content") | ("DELETE", "/files/entry") => {
@@ -65,7 +65,7 @@ pub fn action(method: &str, route: &str, input: &Value) -> Option<AuditAction> {
     match (method, route) {
         ("PATCH", "/settings") => Some(AuditAction::WorkspaceUpdate),
         ("POST", "/resources") => Some(AuditAction::ResourceCreate),
-        ("PUT", "/files" | "/files/content") => Some(AuditAction::FileWrite),
+        ("PUT", "/files" | "/files/content") | ("POST", "/reports") => Some(AuditAction::FileWrite),
         ("DELETE", "/files/entry") => Some(AuditAction::FileDelete),
         ("POST", "/database-imports") => Some(AuditAction::DatabaseImport),
         // A non-read-only query can mutate; the label does not assert that it did.

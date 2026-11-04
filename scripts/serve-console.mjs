@@ -30,6 +30,11 @@ export function createConsoleServer({
         return;
       }
       res.setHeader('Cache-Control', 'no-store');
+      if (
+        !path.startsWith('/discover/') &&
+        !['/robots.txt', '/sitemap.xml', '/llms.txt'].includes(path)
+      )
+        res.setHeader('X-Robots-Tag', 'noindex');
       if (path === '/config.json' && apiOrigin !== undefined) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ apiOrigin }));
@@ -41,13 +46,24 @@ export function createConsoleServer({
       try {
         content = await readFile(location);
       } catch {
-        if (extname(path)) {
-          res.writeHead(404);
-          res.end('Not found.');
-          return;
+        if (path.startsWith('/discover/')) {
+          try {
+            location = resolve(root, '.' + path, 'index.html');
+            content = await readFile(location);
+          } catch {
+            res.writeHead(404);
+            res.end('Page not found.');
+            return;
+          }
+        } else {
+          if (extname(path)) {
+            res.writeHead(404);
+            res.end('Not found.');
+            return;
+          }
+          location = resolve(root, 'index.html');
+          content = await readFile(location);
         }
-        location = resolve(root, 'index.html');
-        content = await readFile(location);
       }
       res.writeHead(200, {
         'Content-Type':
@@ -57,6 +73,8 @@ export function createConsoleServer({
             '.css': 'text/css',
             '.svg': 'image/svg+xml',
             '.json': 'application/json',
+            '.xml': 'application/xml',
+            '.txt': 'text/plain; charset=utf-8',
             '.woff2': 'font/woff2',
           }[extname(location)] || 'application/octet-stream',
       });

@@ -5,7 +5,7 @@
 | Field               | Value                                                                                                                                                                                                                                 |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Feature             | GH-182                                                                                                                                                                                                                                |
-| Status              | Proposed; no analytics, operator access or publication is implemented by this design PR                                                                                                                                               |
+| Status              | Accepted by the owner; implementation and verification tracked in GH-184; live enablement separate                                                                                                                                    |
 | Parent intent       | [GH-182](https://github.com/mem9-ai/tidb.ai/issues/182); keep open through implementation and launch readiness                                                                                                                        |
 | Contributors        | Product intent: Siddon Tang; specification: local coding agent                                                                                                                                                                        |
 | Maintainer          | Project owner                                                                                                                                                                                                                         |
@@ -14,9 +14,12 @@
 | Dependencies        | [ADR 0044](../../docs/decisions/0044-workspace-observability.md), [Global API](../../docs/global-public-api.md), [TiUI](../../docs/standards/tiui-design-system.md), [API verification](../../docs/standards/openapi-verification.md) |
 | Acceptance baseline | LAUNCH-01 through LAUNCH-12 below; proposed until specification acceptance                                                                                                                                                            |
 
-The owner confirmed on 2026-11-04 that only explicitly designated TiDB Cloud
-accounts may access the operator dashboard. Signing into a personal Workspace
-does not grant platform access. All other defaults below are proposals.
+The owner accepted this design on 2026-11-04 and then clarified two requirements:
+Admin uses TiDB Cloud login with a verified email in exactly `pingcap.com`; HTTP
+operational monitoring is deferred. These amendments supersede the original exact
+account allowlist and web-vital/HTTP monitoring scope. The UI entry is `/admin`.
+Signing into a personal Workspace does not grant platform access. Runtime details
+and measured limitations are maintained in [product analytics](../../docs/product-analytics.md).
 
 ## Outcome and scope
 
@@ -42,7 +45,7 @@ for initial launch. Revisit storage based on measured load and retention cost.
 | Source          | Events                                                                   | Meaning                                                                                                                                            |
 | --------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Browser         | `public_page_view`, `try_clicked`, `sign_in_clicked`, `journey_selected` | Public page and explicit entry intent; journey is agent or self-service                                                                            |
-| Browser         | `helpful_vote`, `web_vital`                                              | Optional yes/no answer after a useful result; LCP, INP or CLS, without raw DOM or text                                                             |
+| Browser         | `helpful_vote`                                                           | Optional yes/no answer after a useful result; web-vital and HTTP monitoring deferred by owner                                                      |
 | Verified server | `workspace_ready`, `sign_in_completed`, `sample_ready`                   | Actual completed onboarding/sample setup, with guest/account actor classification                                                                  |
 | Verified server | `operation_completed`                                                    | Fixed operation enum, outcome, duration and safe error category for resource creation, file preview/read/write, query, analysis, import and export |
 | Verified server | `report_saved`                                                           | Successful explicit first-party tutorial report save; generic file existence or writes cannot claim an agent report                                |
@@ -166,12 +169,14 @@ show uncertainty rather than promising an audit-complete product funnel.
 ### LAUNCH-06: Designated TiDB Account operators only
 
 Reuse verified TiDB Account OIDC code/PKCE verification, with a distinct operator
-session and explicit configured `(issuer, subject)` allowlist. No email-domain
-wildcards, first-user admin, Workspace-owner inheritance or Git-email inference.
-Missing allowlist denies all access. Personal onboarding remains unrestricted by
+session bound to verified `(issuer, subject)` and a verified email in exactly
+`pingcap.com`, plus current private policy. Reject unverified email, other domains
+and suffix/subdomain lookalikes. No first-user admin, Workspace-owner inheritance
+or Git-email inference.
+Missing private policy denies all access. Personal onboarding remains unrestricted by
 operator grants, and operator login never adds Workspace ownership.
 
-Require authenticated operator session and current allowlist membership on every
+Require authenticated operator session and current private-policy membership on every
 analytics read, including pagination and exports. Reuse existing state/nonce/replay,
 trusted-origin, host-only Secure HttpOnly SameSite cookie and CSRF protections.
 Maximum operator session lifetime is one hour; logout/revocation ends access.
@@ -187,7 +192,7 @@ separately from the measured product usage, so viewing analytics does not inflat
 
 ### LAUNCH-07: A small, useful operator dashboard
 
-Proposed Console route: `/operator`; direct visits offer “Sign in with TiDB Account”.
+Console route: `/admin`; direct visits offer “Sign in with TiDB Account”.
 Keep the route out of regular customer navigation. The first view is “Product
 insights”: visits, active Workspaces, activation and return usage, followed by the
 entry-to-result funnel, acquisition table, friction and ingestion coverage.

@@ -1,3 +1,4 @@
+import { capture } from '../analytics/capture';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Anchor, Button, Group, Paper, Stack, Tabs, Text } from '@tidbcloud/uikit';
 import { IconFolder } from '@tidbcloud/uikit/icons';
@@ -590,6 +591,7 @@ export function SalesSampleJourney({
               <Button
                 variant="filled"
                 onClick={() => {
+                  capture({ name: 'journey_selected', journey: 'agent' });
                   setMode('agent');
                   void start();
                 }}

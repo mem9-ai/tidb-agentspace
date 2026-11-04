@@ -1,3 +1,4 @@
+import { capture } from '../analytics/capture';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Group, Text } from '@tidbcloud/uikit';
 import { workspaceApi, type FileAnalysisResult } from '../../api/client';
@@ -30,6 +31,7 @@ export function SalesSelfService({
   onFileChanged: () => void;
   active: boolean;
 }) {
+  const [feedback, setFeedback] = useState(false);
   const [states, setStates] = useState<FileAnalysisResult | null>(null);
   const [products, setProducts] = useState<FileAnalysisResult | null>(null);
   const [error, setError] = useState('');
@@ -135,7 +137,7 @@ export function SalesSelfService({
         return;
       }
       writeStarted = true;
-      await workspaceApi.createSampleFile({
+      await workspaceApi.saveReport({
         resourceId,
         path: reportPath,
         type: 'file',
@@ -189,6 +191,29 @@ export function SalesSelfService({
       )}
       {report === 'checking' && active && (
         <Text role="status">Checking for an existing report…</Text>
+      )}
+      {report === 'saved' && (
+        <Group>
+          <Text>Was this result useful?</Text>
+          {feedback ? (
+            <Text>Thanks for your feedback.</Text>
+          ) : (
+            <>
+              {[true, false].map((helpful) => (
+                <Button
+                  key={String(helpful)}
+                  variant="subtle"
+                  onClick={() => {
+                    capture({ name: 'helpful_vote', helpful });
+                    setFeedback(true);
+                  }}
+                >
+                  {helpful ? 'Yes' : 'No'}
+                </Button>
+              ))}
+            </>
+          )}
+        </Group>
       )}
       {(report === 'saved' || report === 'existing') && (
         <Text role="status">

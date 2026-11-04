@@ -68,12 +68,12 @@ test('@visual Guest explores the sample and gets a sales result without an agent
   workspace.requireSignIn({ guestEnabled: true });
   const analyses = [];
   const reportWrites = [];
-  await context.route('**/files', async (route) => {
+  await context.route('**/reports', async (route) => {
     const request = route.request();
-    if (request.method() !== 'PUT' || request.postDataJSON()?.path !== '/my-us-sales-report.md')
+    if (request.method() !== 'POST' || request.postDataJSON()?.path !== '/my-us-sales-report.md')
       return route.fallback();
     const body = request.postDataJSON();
-    reportWrites.push({ body, precondition: request.headers()['if-none-match'] });
+    reportWrites.push({ body, createOnly: request.method() === 'POST' });
     workspace.state.files.push({
       ...body,
       id: 'manual-report',
@@ -184,7 +184,7 @@ test('@visual Guest explores the sample and gets a sales result without an agent
   await expect(sample.getByText('Report saved.')).toBeVisible();
   await expect(sample.getByRole('link', { name: 'Open report' })).toBeFocused();
   expect(reportWrites).toHaveLength(1);
-  expect(reportWrites[0].precondition).toBe('*');
+  expect(reportWrites[0].createOnly).toBe(true);
   expect(reportWrites[0].body.content).toContain('California with $48,000.00');
   expect(reportWrites[0].body.content).toContain('Monitors with $18,000.00');
   expect(reportWrites[0].body.content).toContain('Source: /us-sales.csv');
@@ -352,12 +352,12 @@ for (const failure of ['lost response', 'provider not ready']) {
         },
       });
     });
-    await context.route('**/files', (route) => {
+    await context.route('**/reports', (route) => {
       const request = route.request();
-      if (request.method() !== 'PUT' || request.postDataJSON()?.path !== '/my-us-sales-report.md')
+      if (request.method() !== 'POST' || request.postDataJSON()?.path !== '/my-us-sales-report.md')
         return route.fallback();
       writes++;
-      expect(request.headers()['if-none-match']).toBe('*');
+      expect(request.method()).toBe('POST');
       if (failure === 'provider not ready')
         return route.fulfill({
           status: 409,

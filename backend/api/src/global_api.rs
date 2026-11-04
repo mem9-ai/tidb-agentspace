@@ -1,4 +1,5 @@
 //! Independent Global public management API. Data-plane operations have no routes here.
+mod analytics_routes;
 use crate::{
     MetaBinding,
     access_signer::{AccessSigner, Issuance, SigningConfig},
@@ -48,6 +49,8 @@ pub struct RegionDescriptor {
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
+    #[serde(default)]
+    pub analytics: Option<crate::analytics::operator::Config>,
     pub bind: SocketAddr,
     pub metadata: MetaBinding,
     pub public_origin: String,
@@ -84,6 +87,15 @@ impl Config {
     pub fn validate(&self) -> Result<()> {
         ensure!(self.bind.is_ipv4(), "IPv4 listener required");
         let local = self.bind.ip().is_loopback();
+        if let Some(settings) = &self.analytics {
+            let mut origins = self.console_origins.clone();
+            origins.push(self.public_origin.clone());
+            settings.validate(&origins, local)?;
+            anyhow::ensure!(
+                settings.pseudonym_key_file != self.signing_key_file,
+                "Dedicated analytics key required"
+            );
+        }
         let url = sso::endpoint(&self.public_origin, local)?;
         ensure!(
             url.origin().ascii_serialization() == self.public_origin,
@@ -256,7 +268,17 @@ struct LocalGuestAuthority {
     region: String,
     sessions: Arc<crate::regional_guest::RegionalGuest>,
 }
+struct Acquisition {
+    attribution: Option<crate::analytics::Attribution>,
+    session: String,
+    expires: Instant,
+}
 struct App {
+    acquisition: Mutex<BTreeMap<String, Acquisition>>,
+    analytics: Option<crate::analytics::Store>,
+    operators: Option<crate::analytics::operator::Operators>,
+    analytics_limits: Mutex<BTreeMap<String, (Instant, u32)>>,
+    analytics_reads: Semaphore,
     config: Config,
     trusted_host_origins: Vec<String>,
     metadata: Arc<dyn Metadata>,
@@ -320,6 +342,30 @@ impl PortalSessions {
         .map_err(|_| err(503, "SESSION_UNAVAILABLE"))?;
         value.set_sensitive(true);
         Ok(value)
+    }
+    pub(crate) async fn trial(&self, headers: &HeaderMap, workspace: &str, region: &str) {
+        self.app.attribute_trial(headers, workspace, region).await;
+    }
+    pub(crate) async fn operator_login(
+        &self,
+        login: &sso::VerifiedLogin,
+    ) -> workspace_contracts::Result<Response> {
+        let operators = self
+            .app
+            .operators
+            .as_ref()
+            .ok_or_else(|| err(404, "OPERATOR_UNAVAILABLE"))?;
+        let cookie = operators.establish(login).await?;
+        let mut response = StatusCode::SEE_OTHER.into_response();
+        response.headers_mut().insert(
+            header::LOCATION,
+            operators
+                .return_url()
+                .parse()
+                .map_err(|_| err(503, "OPERATOR_UNAVAILABLE"))?,
+        );
+        response.headers_mut().append(header::SET_COOKIE, cookie);
+        Ok(response)
     }
     pub(crate) async fn establish(
         &self,
@@ -633,10 +679,42 @@ impl GlobalServer {
             Some(TcpListener::bind(config.bind).await?)
         };
         let trusted_host_origins = vec![config.public_origin.clone()];
+        let analytics = config
+            .analytics
+            .as_ref()
+            .map(|settings| {
+                crate::analytics::Store::new(
+                    metadata.clone(),
+                    "global",
+                    private_file(&settings.pseudonym_key_file)
+                        .map_err(|_| err(503, "ANALYTICS_KEY_UNAVAILABLE"))?,
+                )
+            })
+            .transpose()?;
+        let cookie_path = config
+            .public_path
+            .strip_suffix("/api/global")
+            .unwrap_or(&config.public_path);
+        let operators = config
+            .analytics
+            .clone()
+            .map(|settings| {
+                crate::analytics::operator::Operators::new(
+                    settings,
+                    cookie_path,
+                    config.public_origin.starts_with("https:"),
+                )
+            })
+            .transpose()?;
         Ok(Self {
             listener,
             app: Arc::new(App {
                 config,
+                acquisition: Mutex::new(BTreeMap::new()),
+                analytics,
+                operators,
+                analytics_limits: Mutex::new(BTreeMap::new()),
+                analytics_reads: Semaphore::new(1),
                 trusted_host_origins,
                 metadata,
                 keys,
@@ -750,6 +828,36 @@ fn hex_bytes(s: &str) -> Result<[u8; 32]> {
     Ok(key)
 }
 impl App {
+    async fn attribute_trial(&self, headers: &HeaderMap, workspace: &str, region: &str) {
+        if let Some(token) = cookie(headers, "aw_acquisition")
+            && let Some(handoff) = self
+                .acquisition
+                .lock()
+                .await
+                .remove(token)
+                .filter(|v| v.expires > Instant::now())
+        {
+            if let Some(store) = &self.analytics {
+                store.record("trial", &handoff.session, "browser", "trial", true);
+            }
+            if let (Some(hub), Some(attribution)) = (&self.region_connection, handoff.attribution) {
+                let hub = hub.clone();
+                let workspace = workspace.to_owned();
+                let region = region.to_owned();
+                let analytics = self.analytics.clone();
+                tokio::spawn(async move {
+                    if hub
+                        .attribute(&region, workspace, attribution)
+                        .await
+                        .is_err()
+                        && let Some(store) = analytics
+                    {
+                        store.mark_unconfirmed();
+                    }
+                });
+            }
+        }
+    }
     fn sync_scope(region: &str) -> Scope {
         Scope::system(
             "global",
@@ -1353,6 +1461,9 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
         if query.insert(k.into_owned(), v.into_owned()).is_some() {
             return Err(err(400, "DUPLICATE_QUERY"));
         }
+    }
+    if path.starts_with("/analytics/") || path.starts_with("/operator/") {
+        return analytics_routes::handle(app, &path, &method, &h, &query, request).await;
     }
     if path == "/api/health" && method == Method::GET {
         app.metadata.health().await?;
@@ -2051,9 +2162,16 @@ async fn auth(
             let mut response = StatusCode::SEE_OTHER.into_response();
             response.headers_mut().insert(
                 header::LOCATION,
-                format!("{portal}/api/auth/tidbcloud/login")
-                    .parse()
-                    .map_err(|_| err(503, "SSO_UNAVAILABLE"))?,
+                format!(
+                    "{portal}/api/auth/tidbcloud/login{}",
+                    if query.get("operator").is_some_and(|v| v == "1") {
+                        "?operator=1"
+                    } else {
+                        ""
+                    }
+                )
+                .parse()
+                .map_err(|_| err(503, "SSO_UNAVAILABLE"))?,
             );
             return Ok(response);
         }
@@ -2153,6 +2271,9 @@ async fn auth(
             url.parse().map_err(|_| err(503, "SSO_UNAVAILABLE"))?,
         );
         r.headers_mut().append(header::SET_COOKIE,format!("aw_global_flow={flow}; HttpOnly; SameSite=Lax;{secure} Path={}/api/auth/tidbcloud; Max-Age=600",app.config.public_path).parse().map_err(|_|err(503,"SSO_UNAVAILABLE"))?);
+        if query.get("operator").is_some_and(|v| v == "1") {
+            r.headers_mut().append(header::SET_COOKIE,format!("aw_operator_flow={flow}; HttpOnly; SameSite=Lax;{secure} Path={}/api/auth/tidbcloud; Max-Age=600",app.config.public_path).parse().map_err(|_|err(503,"SSO_UNAVAILABLE"))?);
+        }
         return Ok(r);
     }
     if path == "/api/auth/tidbcloud/callback" && *method == Method::GET {
@@ -2167,6 +2288,23 @@ async fn auth(
             return Err(err(401, "SSO_STATE_INVALID"));
         }
         let login = sso.callback(flow, query).await?;
+        if cookie(h, "aw_operator_flow") == Some(flow) {
+            let operators = app
+                .operators
+                .as_ref()
+                .ok_or_else(|| err(404, "OPERATOR_UNAVAILABLE"))?;
+            let session = operators.establish(&login).await?;
+            let mut response = StatusCode::SEE_OTHER.into_response();
+            response.headers_mut().insert(
+                header::LOCATION,
+                operators
+                    .return_url()
+                    .parse()
+                    .map_err(|_| err(503, "OPERATOR_UNAVAILABLE"))?,
+            );
+            response.headers_mut().append(header::SET_COOKIE, session);
+            return Ok(response);
+        }
         let (issuer, subject) = login.identity();
         let workspace = if let Some(workspace) = login_flow.workspace {
             workspace
@@ -2199,6 +2337,8 @@ async fn auth(
                 &Uuid::new_v4().to_string(),
             )
             .await?;
+        app.attribute_trial(h, &workspace, &session.assignment.region_id)
+            .await;
         let mut r = json_response(
             StatusCode::OK,
             json!({"workspaceId":workspace,"regionId":session.assignment.region_id,"expiresAt":session.expires_at}),
