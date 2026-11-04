@@ -37,7 +37,8 @@ same create-only File API; older deployments retain their normal file behavior.
 ## Storage and retention
 
 Run a dedicated single-writer analytics process per producing authority, using its own
-SlateDB 0.17/S3 root, encryption key, pseudonym key and producer token. API producers
+SlateDB 0.17 storage root, encryption key, pseudonym key and producer token. Hosted
+enablement uses dedicated persistent volumes; an explicit private S3 adapter remains available. API producers
 have only a remote analytics client. The analytics crate has no Meta service/client
 dependency and exposes no Meta protocol, writer owner, security clock or takeover path.
 The role loader rejects a mixed analytics/business/Meta process. Do not grant the
@@ -57,10 +58,10 @@ two retries using identical IDs. Overflow/unresolved delivery is unconfirmed cov
 there is no disk spool or replay-complete broker in the business process.
 
 The separate service commits to SlateDB memory atomically and asynchronously flushes
-its WAL to its private S3 root, normally at a one-second interval. It does not await
+its WAL to its private storage root, normally at a one-second interval. It does not await
 per-write durability. Public collection returns
 `202 {"accepted":true,"durability":"queued"}` after service acceptance; this is **not**
-a durable S3 receipt. A process crash can lose producer queues and recent analytics
+a durable storage receipt. A process crash can lose producer queues and recent analytics
 writes; displayed totals can recede. The flush interval is not a production RPO.
 Retained IDs deduplicate retries; no dedup promise survives loss of an unflushed
 receipt. Browser batches commit individual events; a failed batch can be partially
@@ -173,7 +174,18 @@ process. Its private configuration has no Meta binding:
 }
 ```
 
-Use a dedicated IAM identity scoped to this bucket/root; explicit S3 credentials are
+For hosted volume storage, replace the entire `s3` object with:
+
+```json
+{ "local": { "directory": "/var/lib/analytics", "prefix": "analytics/global" } }
+```
+
+The directory must exist on its dedicated persistent mount. Configure exactly one
+storage adapter. There is no automatic creation of directories, buckets or cloud
+identities by the analytics process.
+
+For an explicitly selected private S3 installation, use a dedicated identity scoped
+to this bucket/root; explicit S3 credentials are
 optional when workload identity is configured. Encryption keys are 32 random bytes
 encoded as hex; pseudonym keys are at least 32 random raw bytes; producer tokens are
 32–128 ASCII token characters (64 hex characters works). Keep key/token/config files
@@ -250,15 +262,15 @@ same-commit full CI evidence and serialize against the configured API deployment
 They reuse its digest-pinned native image, public SSO callback and existing business
 configuration. There is no customer/Meta initialization or data reset.
 
-Enablement creates one private S3 bucket, narrowly scoped IAM role and Kubernetes
-ServiceAccount per authority. The EKS cluster must already have its OIDC provider;
-trust binds its exact namespace, ServiceAccount and STS audience. The pinned native
-object-store client supports refreshable web identity credentials. No Meta storage
-key or short-lived GitHub deployment credential is copied into these Pods.
-Bucket-wide listing applies only to that authority's new analytics bucket; object
-access is restricted to its dedicated analytics root. Public access is blocked and
-S3 server-side encryption is enabled. The processes additionally encrypt records
-with independent keys. Existing buckets, roles and records are not repurposed.
+Enablement creates one private 5 GiB `ReadWriteOnce` PVC per authority through the
+cluster's existing default StorageClass. SlateDB uses the pinned local filesystem
+object-store adapter with fsync enabled. Its directory is mounted only into that
+authority's initializer and service, with separate keys and tokens. No new S3 bucket,
+IAM identity, OIDC provider, cloud credential or AWS management API is required by
+analytics. The existing protected deployment mechanism still supplies cluster access.
+A missing or ambiguous default StorageClass stops preparation; no ephemeral-disk or
+Meta fallback is used. Volume creation/attachment and restart recovery must be
+observed on the actual target before claiming live availability.
 
 An immutable operator-only preparation Secret retains the exact candidate for
 reconciliation after a transport failure. It is never mounted into serving Pods.
@@ -268,7 +280,7 @@ Certificate CA signing keys are discarded after private preparation. Prepared Jo
 initialize each new analytics root once, close it, then single-replica `Recreate`
 Deployments start independently. Only after both are ready does a resourceVersion-
 guarded API configuration switch enable collection and Admin. A changed target,
-failed/uncertain initializer, unexpected ownership or broadened existing IAM policy
+failed/uncertain initializer, unexpected ownership or changed persistent volume
 stops activation. Existing configuration and prepared resources remain available
 for explicit inspection; never blindly reset or repeat a failed initializer.
 
@@ -278,7 +290,7 @@ gh workflow run global-configure.yml --ref main -f operation=enable-analytics
 gh workflow run global-configure.yml --ref main -f operation=verify-analytics
 ```
 
-The cloud action verifies service readiness, ordinary API health, unauthenticated
+The operator action verifies service readiness, ordinary API health, unauthenticated
 Admin denial and enabled capture. It deliberately reports real-account login as
 unverified. Live acceptance additionally requires a clean browser to show Admin
 without Guest initialization, the owner's real TiDB Cloud/PingCAP sign-in, and
@@ -318,7 +330,8 @@ SEO foundations for AI features; `llms.txt` is an optional index, not a ranking 
 
 ## Verification
 
-Native tests use synthetic OIDC identities and isolated RustFS/S3. They cover verified
+Native tests use synthetic OIDC identities, isolated RustFS/S3 and a persistent
+local directory for the Global analytics process. They cover verified
 PingCAP login/denial, ordinary-account/Key denial, replay, policy removal, logout,
 duplicate capture across graceful service restart, GPC, origin rejection, report save/non-overwrite and
 source-to-result summaries. Domain fixtures cover dedup across midnight, redaction,

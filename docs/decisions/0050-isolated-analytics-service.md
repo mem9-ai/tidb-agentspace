@@ -21,7 +21,7 @@ native role loader rejects any plan that combines analytics with Meta, Global or
 Workspace roles. Reuse the native executable and pinned SlateDB library, not the
 Meta service, protocol, owner record, security clock or recovery machinery.
 
-Each analytics process owns a dedicated S3 root, installation marker, encryption
+Each analytics process owns a dedicated storage root, installation marker, encryption
 key, pseudonym key and producer token. Hosted communication requires TLS 1.3/mTLS
 plus an authority-bound token. The private protocol accepts typed observations,
 approved attribution and bounded summary queries; it exposes no arbitrary KV/Meta
@@ -41,7 +41,7 @@ atomically to its own SlateDB memory state. It does not await each write handle'
 object-store durability. SlateDB asynchronously flushes its WAL at a one-second
 interval; this interval is not a production RPO promise. Browser collection returns
 `202 {"accepted":true,"durability":"queued"}` only after validation and acceptance
-by this process. It does not claim that S3 has acknowledged the data. A crash may
+by this process. It does not claim that persistent storage has acknowledged the data. A crash may
 lose producer queues or recent analytics writes, and displayed totals can recede.
 Retained IDs deduplicate retries; lost, unflushed receipts provide no such promise.
 
@@ -61,14 +61,30 @@ never rely on these observations.
 
 Raw events stay in their producing authority. Field allowlists, keyed pseudonyms,
 GPC/opt-out, 30 daily detail partitions and 90 identity-free aggregate partitions
-remain unchanged. Dedicated analytics IAM should permit only its own bucket/root;
-do not give it Meta storage credentials. Logical expiry is enforced on reads and by
-cleanup; physical object/version/backup reclamation remains an operator lifecycle
-policy. The initial implementation did not authorize live provisioning or migration.
-The owner's subsequent explicit live-enablement request is tracked in GH-193: use
-independent private buckets and namespace/ServiceAccount-bound EKS workload roles.
-Preserve existing business storage, identities and provider configuration. Deployment
-remains a protected operator action and requires observed real-account acceptance.
+remain unchanged. The owner rejected additional AWS resource/permission setup on
+2026-11-04. Hosted enablement uses two independent `ReadWriteOnce` persistent volume
+claims through the cluster's one existing default StorageClass. Each single-writer
+process uses the pinned object-store local filesystem adapter with fsync enabled,
+mounted only into that authority's initializer and analytics process. No analytics
+bucket, IAM role, OIDC provider, projected cloud token or Meta credential is created
+or reused. The existing protected cluster-access mechanism is retained; this does
+not migrate or remove the application's existing cloud infrastructure.
+
+The optional S3 storage adapter remains supported for explicitly configured private
+installations. Exactly one of `local` and `s3` must be selected; there is no implicit
+fallback. Local directories must already exist and must not be symlinks. Hosted
+volumes are never `emptyDir` or host paths. The deployment stops before business
+configuration activation if durable cluster storage is unavailable. Volume loss can
+lose analytics history; this lower-availability service has no replication or backup
+claim. Do not automatically delete its PVC or reset its installation to recover.
+
+Logical expiry is enforced on reads and cleanup. Physical object/file reclamation
+and storage backup lifecycle remain operator policy. The rejected AWS preparation
+is left untouched for inspection and is not used by the volume profile. No AWS
+analytics resources were created by the denied enablement attempt. Live enablement
+remains tracked in GH-193 and requires observed real-account acceptance. The owner
+retains TiDB Cloud SSO and the verified `pingcap.com` restriction; no password login
+is introduced.
 
 Capture remains disabled until explicitly configured. Previous shared-Meta config
 names are rejected rather than silently selecting the old store. New code neither
@@ -79,7 +95,7 @@ cleaner; do not delete or reset unrelated Meta records as part of this change.
 ## Verification
 
 Native acceptance runs real, separately hosted analytics processes with mTLS and
-isolated S3 roots. It checks producer/authority denial, TLS downgrade/hostname/client
+isolated S3 roots and a real persistent-directory adapter. It checks producer/authority denial, TLS downgrade/hostname/client
 certificate denial, normal product login/write and startup while analytics is down,
 missing producer credentials, explicit Admin unavailability, independent recovery
 and zero analytics records in the main Meta namespace. Domain/storage fixtures

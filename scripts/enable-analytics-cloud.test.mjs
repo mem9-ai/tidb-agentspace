@@ -5,7 +5,11 @@ import test from 'node:test';
 import { parse } from 'yaml';
 import { digest, managedBy, prepareAnalytics } from './analytics-cloud-profile.mjs';
 import { readTarget } from './cutover-global-cloud.mjs';
-import { enableAnalytics, waitForInitialization } from './enable-analytics-cloud.mjs';
+import {
+  clusterStorage,
+  enableAnalytics,
+  waitForInitialization,
+} from './enable-analytics-cloud.mjs';
 
 const options = {
   namespace: 'dev',
@@ -14,10 +18,7 @@ const options = {
   cluster: 'test-cluster',
   operation: 'enable-analytics',
 };
-const identity = {
-  account: '123456789012',
-  issuer: 'https://oidc.eks.us-west-2.amazonaws.com/id/TESTCLUSTER',
-};
+const storageClass = 'existing-storage';
 const encode = (v) => Buffer.from(typeof v === 'string' ? v : JSON.stringify(v)).toString('base64');
 const decode = (v) => JSON.parse(Buffer.from(v, 'base64').toString());
 const text = (v) => Buffer.from(v, 'base64').toString();
@@ -120,14 +121,23 @@ function fixture() {
     ['deployment/studio', source],
     ['secret/original', original],
   ]);
-  const roles = new Map(),
-    buckets = new Map(),
-    events = [];
+  const events = [];
   let failJob = false,
-    denyRole = false,
+    denyVolume = false,
     drift = false;
   const kubectl = (args, input) => {
     if (args[0] === 'get') {
+      if (args[1] === 'storageclass')
+        return JSON.stringify({
+          items: [
+            {
+              metadata: {
+                name: storageClass,
+                annotations: { 'storageclass.kubernetes.io/is-default-class': 'true' },
+              },
+            },
+          ],
+        });
       const key = args[1].includes('/') ? args[1] : `${args[1]}/${args[2]}`;
       const object = objects.get(key);
       if (!object) throw missing('(NotFound)');
@@ -146,6 +156,8 @@ function fixture() {
     events.push({ kind: 'kube', args });
     if (args[0] === 'create') {
       const object = JSON.parse(input);
+      if (denyVolume && object.kind === 'PersistentVolumeClaim')
+        throw missing('Forbidden private-canary');
       const key = `${object.kind.toLowerCase()}/${object.metadata.name}`;
       assert.ok(!objects.has(key));
       if (object.kind === 'Deployment') object.status = { availableReplicas: 1 };
@@ -159,71 +171,6 @@ function fixture() {
     }
     return '';
   };
-  const aws = (args) => {
-    events.push({ kind: 'aws', args });
-    const value = (key) => args[args.indexOf(key) + 1];
-    if (args[0] === 'sts') return JSON.stringify({ Account: identity.account });
-    if (args[0] === 'eks')
-      return JSON.stringify({ cluster: { identity: { oidc: { issuer: identity.issuer } } } });
-    if (args[0] === 'iam') {
-      if (denyRole) throw missing('AccessDenied private-credential-canary');
-      const name = value('--role-name');
-      const role = roles.get(name);
-      switch (args[1]) {
-        case 'get-open-id-connect-provider':
-          return JSON.stringify({ ClientIDList: ['sts.amazonaws.com'] });
-        case 'get-role':
-          if (!role) throw missing('NoSuchEntity');
-          return JSON.stringify({ Role: role });
-        case 'create-role': {
-          const document = JSON.parse(
-            readFileSync(value('--assume-role-policy-document').slice(7)),
-          );
-          const tags = args.slice(args.indexOf('--tags') + 1, args.indexOf('--output')).map((v) => {
-            const [Key, Value] = v.replace('Key=', '').split(',Value=');
-            return { Key, Value };
-          });
-          roles.set(name, {
-            Arn: `arn:aws:iam::${identity.account}:role/${name}`,
-            AssumeRolePolicyDocument: document,
-            Tags: tags,
-          });
-          return '{}';
-        }
-        case 'put-role-policy':
-          role.policy = JSON.parse(readFileSync(value('--policy-document').slice(7)));
-          return '{}';
-        case 'list-attached-role-policies':
-          return JSON.stringify({ AttachedPolicies: [] });
-        case 'list-role-policies':
-          return JSON.stringify({ PolicyNames: role.policy ? ['analytics-storage'] : [] });
-        case 'get-role-policy':
-          return JSON.stringify({ PolicyDocument: role.policy });
-        default:
-          assert.fail('Unexpected IAM operation');
-      }
-    }
-    if (args[0] === 's3api') {
-      const bucket = value('--bucket');
-      switch (args[1]) {
-        case 'get-bucket-tagging':
-          if (!buckets.has(bucket)) throw missing('NoSuchBucket');
-          return JSON.stringify({ TagSet: buckets.get(bucket) });
-        case 'create-bucket':
-          buckets.set(bucket, []);
-          return '{}';
-        case 'put-bucket-tagging':
-          buckets.set(bucket, JSON.parse(value('--tagging')).TagSet);
-          return '{}';
-        case 'put-public-access-block':
-        case 'put-bucket-encryption':
-          return '{}';
-        default:
-          assert.fail('Unexpected S3 operation');
-      }
-    }
-    assert.fail('Unexpected AWS operation');
-  };
   const request = async (url) => {
     if (url.endsWith('/api/auth/config'))
       return Response.json({ globalApi: { apiPathPrefix: '/studio/api/global' } });
@@ -234,7 +181,6 @@ function fixture() {
   };
   const dependencies = {
     kubectl,
-    aws,
     request,
     prepare: (t, o, i) => prepareAnalytics(t, o, i, fakeCertificates),
   };
@@ -242,15 +188,13 @@ function fixture() {
     source,
     original,
     objects,
-    roles,
-    buckets,
     events,
     dependencies,
     failJob: () => {
       failJob = true;
     },
-    denyRole: () => {
-      denyRole = true;
+    denyVolume: () => {
+      denyVolume = true;
     },
     drift: () => {
       drift = true;
@@ -264,16 +208,25 @@ test('private profiles isolate Global and Region, preserve business bytes and us
   const prepared = await prepareAnalytics(
     readTarget(options, f.dependencies.kubectl),
     options,
-    identity,
+    storageClass,
   );
   assert.deepEqual(f.original.data, prior);
   assert.equal(prepared.entries.length, 2);
-  assert.notEqual(prepared.entries[0].bucket, prepared.entries[1].bucket);
+  assert.notEqual(
+    prepared.entries[0].volume.metadata.name,
+    prepared.entries[1].volume.metadata.name,
+  );
   for (const entry of prepared.entries) {
     const config = decode(entry.secret.data['config.json']);
     assert.equal(config.authorityId, entry.authority);
-    assert.notEqual(config.s3.bucket, 'main-meta-private');
-    assert.equal(config.s3.accessKeyId, undefined);
+    assert.equal(config.s3, undefined);
+    assert.equal(config.local.directory, '/var/lib/analytics');
+    assert.equal(entry.volume.spec.storageClassName, storageClass);
+    assert.deepEqual(entry.volume.spec.accessModes, ['ReadWriteOnce']);
+    assert.deepEqual(entry.deployment.spec.template.spec.containers[0].env, undefined);
+    assert.ok(!JSON.stringify(entry).includes('AWS_'));
+    assert.ok(!JSON.stringify(entry).includes('serviceAccountToken'));
+    assert.equal(entry.account.automountServiceAccountToken, false);
     const contents = Object.fromEntries(
       Object.entries(entry.secret.data).map(([k, v]) => [k, text(v)]),
     );
@@ -303,11 +256,6 @@ test('private profiles isolate Global and Region, preserve business bytes and us
     assert.deepEqual(client.keyUsage, ['1.3.6.1.5.5.7.3.2']);
     for (const secret of ['encryption-key', 'pseudonym-key', 'server.key'])
       assert.ok(!Object.values(prepared.apiSecret.data).includes(entry.secret.data[secret]));
-    assert.ok(!JSON.stringify(entry.policy).includes('main-meta-private'));
-    assert.equal(
-      entry.trust.Statement[0].Condition.StringEquals[`${identity.issuer.slice(8)}:sub`],
-      `system:serviceaccount:dev:${entry.name}`,
-    );
   }
   for (const key of [
     'global.json',
@@ -346,8 +294,7 @@ test('activation waits for both independent initializers and readiness, then onl
   await enableAnalytics(options, f.dependencies);
   assert.equal(f.events.filter((e) => e.args[0] === 'create').length, creates);
   assert.equal(f.events.filter((e) => e.args[0] === 'patch').length, patches);
-  assert.equal(f.roles.size, 2);
-  assert.equal(f.buckets.size, 2);
+  assert.equal([...f.objects.values()].filter((o) => o.kind === 'PersistentVolumeClaim').length, 2);
   const writes = f.events.length;
   await enableAnalytics({ ...options, operation: 'restart-analytics' }, f.dependencies);
   const restartEvents = f.events.slice(writes);
@@ -359,7 +306,7 @@ test('activation waits for both independent initializers and readiness, then onl
 });
 
 test('permission denial, failed initialization and concurrent target changes never activate the business config', async () => {
-  for (const failure of ['denyRole', 'failJob', 'drift']) {
+  for (const failure of ['denyVolume', 'failJob', 'drift']) {
     const f = fixture();
     f[failure]();
     await assert.rejects(enableAnalytics(options, f.dependencies));
@@ -369,17 +316,65 @@ test('permission denial, failed initialization and concurrent target changes nev
   }
 });
 
-test('resume preserves prepared credentials and rejects broadened IAM policies or extra runtime containers', async () => {
+test('missing or ambiguous existing storage stops before any preparation and never provisions cloud resources', async () => {
+  for (const items of [
+    [],
+    [1, 2].map((n) => ({
+      metadata: {
+        name: `storage-${n}`,
+        annotations: { 'storageclass.kubernetes.io/is-default-class': 'true' },
+      },
+    })),
+  ]) {
+    const f = fixture();
+    const kubectl = (args, input) =>
+      args[1] === 'storageclass' ? JSON.stringify({ items }) : f.dependencies.kubectl(args, input);
+    await assert.rejects(
+      enableAnalytics(options, { ...f.dependencies, kubectl }),
+      /existing default cluster storage/,
+    );
+    assert.equal(f.events.length, 0);
+  }
+  assert.throws(() =>
+    clusterStorage(() => {
+      throw missing('Forbidden');
+    }),
+  );
+});
+
+test('rejected AWS preparation is retained untouched and cannot select the volume profile', async () => {
+  const f = fixture();
+  const owner = digest({
+    namespace: options.namespace,
+    deployment: options.deployment,
+    uid: f.source.metadata.uid,
+  }).slice(0, 12);
+  const old = {
+    kind: 'Secret',
+    metadata: { name: `analytics-state-${owner}` },
+    data: { 'prepared.json': encode({ format: 1, privateKey: 'old-private-canary' }) },
+  };
+  f.objects.set(`secret/${old.metadata.name}`, old);
+  const before = digest(old);
+  await enableAnalytics(options, f.dependencies);
+  assert.equal(digest(old), before);
+  assert.ok(f.objects.has(`secret/analytics-volume-state-${owner}`));
+  const script = readFileSync(new URL('./enable-analytics-cloud.mjs', import.meta.url), 'utf8');
+  assert.ok(!script.includes("command('aws'"));
+  assert.ok(!f.events.some((e) => ['delete', 'reset'].includes(e.args[0])));
+});
+
+test('resume preserves prepared credentials and rejects changed persistent volumes or extra runtime containers', async () => {
   const f = fixture();
   await enableAnalytics(options, f.dependencies);
   const state = [...f.objects.values()].find((o) =>
-    o.metadata?.name?.startsWith('analytics-state-'),
+    o.metadata?.name?.startsWith('analytics-volume-state-'),
   );
   const before = digest(state.data);
-  const role = [...f.roles.values()][0];
-  role.policy.Statement.push({ Effect: 'Allow', Action: '*', Resource: '*' });
-  await assert.rejects(enableAnalytics(options, f.dependencies), /storage boundary/);
-  role.policy.Statement.pop();
+  const volume = [...f.objects.values()].find((o) => o.kind === 'PersistentVolumeClaim');
+  volume.spec.storageClassName = 'unexpected-storage';
+  await assert.rejects(enableAnalytics(options, f.dependencies), /volume differs/);
+  volume.spec.storageClassName = storageClass;
   const deployment = [...f.objects.values()].find(
     (o) => o.kind === 'Deployment' && o.metadata.name.startsWith('analytics-'),
   );

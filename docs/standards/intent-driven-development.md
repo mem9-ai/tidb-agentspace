@@ -93,6 +93,12 @@ local details, but must not silently choose a new billing rule, weaken a permiss
 or expand product scope. Route those decisions to the responsible maintainer while continuing
 independent work.
 
+The owner's 2026-11-04 delivery correction reinforces the smallest useful path:
+reuse available deployment capabilities before adding infrastructure, credentials or
+permission dependencies. Service independence alone does not require new cloud
+resources. Explain a necessary delivery choice and its evidence before implementing
+it; do not present a newly introduced dependency as an unavoidable user requirement.
+
 ### Design public APIs as the product foundation
 
 Every supported customer business capability must have a documented OpenAPI path and authorization model.

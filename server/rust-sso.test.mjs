@@ -201,7 +201,13 @@ async function fixture(
     const analyticsTls = await metadataCertificates(metadata.directory);
     const regional = await analyticsFixture(metadata, region.server, 'regional', analyticsTls);
     analyticsServices.push(regional);
-    const acquisition = await analyticsFixture(metadata, global.server, 'global', analyticsTls);
+    const acquisition = await analyticsFixture(
+      metadata,
+      global.server,
+      'global',
+      analyticsTls,
+      true,
+    );
     analyticsServices.push(acquisition);
     config.analytics = { enabled: true, service: regional.client };
     analyticsSettings = {

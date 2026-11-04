@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { writeFile, readFile } from 'node:fs/promises';
+import { writeFile, readFile, mkdir } from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
 import { resolve } from 'node:path';
 import { port, until } from './meta-fixture.mjs';
 
 // A real separate process/root/key/token; never a Meta engine or in-process API role.
-export async function analyticsFixture(metadata, reference, name, tls) {
+export async function analyticsFixture(metadata, reference, name, tls, local = false) {
   const listen = await port();
   const endpoint = `${tls ? 'https' : 'http'}://127.0.0.1:${listen}`;
   const identity = tls
@@ -54,11 +54,14 @@ export async function analyticsFixture(metadata, reference, name, tls) {
   await writeFile(tokenFile, randomBytes(32).toString('hex'), { mode: 0o600 });
   await writeFile(encryptionKeyFile, randomBytes(32).toString('hex'), { mode: 0o600 });
   await writeFile(pseudonymKeyFile, randomBytes(32), { mode: 0o600 });
+  if (local) await mkdir(root, { mode: 0o700 });
   const config = {
     authorityId: reference.authorityId,
     installationId: `analytics-${name}`,
     bind: `127.0.0.1:${listen}`,
-    s3: { ...reference.s3, prefix: `analytics/${name}`, allowLoopbackHttp: Boolean(tls) },
+    ...(local
+      ? { local: { directory: root, prefix: `analytics/${name}` } }
+      : { s3: { ...reference.s3, prefix: `analytics/${name}`, allowLoopbackHttp: Boolean(tls) } }),
     tokenFile,
     encryptionKeyFile,
     pseudonymKeyFile,
