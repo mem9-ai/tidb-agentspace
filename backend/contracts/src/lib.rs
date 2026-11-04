@@ -39,6 +39,34 @@ pub struct WriterGuard {
     pub owner_id: String,
 }
 
+/// A bounded read within one workspace, for an authority-local consistent snapshot.
+#[derive(Clone)]
+pub struct MetaRead {
+    pub scope: Scope,
+    pub guard: Option<WriterGuard>,
+    pub keys: Vec<String>,
+}
+
+pub fn validate_meta_reads(reads: &[MetaRead]) -> Result<()> {
+    let Some(first) = reads.first() else {
+        return Err(ServiceError::new(400, "META_INVALID_REQUEST"));
+    };
+    if reads.len() > 8
+        || first.scope.owner_kind != "workspace"
+        || reads.iter().any(|read| {
+            read.scope.authority_id != first.scope.authority_id
+                || read.scope.owner_kind != first.scope.owner_kind
+                || read.scope.owner_id != first.scope.owner_id
+                || read.scope.partition_id != first.scope.partition_id
+                || read.keys.is_empty()
+        })
+        || reads.iter().map(|read| read.keys.len()).sum::<usize>() > 512
+    {
+        return Err(ServiceError::new(400, "META_INVALID_REQUEST"));
+    }
+    Ok(())
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase", deny_unknown_fields)]
 pub enum MetaRequest {
@@ -99,11 +127,31 @@ pub type Call<'a> = Pin<Box<dyn Future<Output = Result<Value>> + Send + 'a>>;
 pub trait Metadata: Send + Sync {
     fn execute(&self, request: MetaRequest) -> Call<'_>;
     fn health(&self) -> Call<'_>;
+
+    /// Remote/older implementations keep their existing fenced reads; embedded engines may
+    /// override this with one snapshot without changing the metadata wire protocol.
+    fn read_workspace_scopes(&self, reads: Vec<MetaRead>) -> Call<'_> {
+        Box::pin(async move {
+            validate_meta_reads(&reads)?;
+            let mut results = Vec::with_capacity(reads.len());
+            for read in reads {
+                results.push(
+                    self.execute(MetaRequest::Get {
+                        scope: read.scope,
+                        guard: read.guard,
+                        keys: read.keys,
+                    })
+                    .await?,
+                );
+            }
+            Ok(json!({"results": results}))
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Scope;
+    use super::{MetaRead, Scope, validate_meta_reads};
 
     #[test]
     fn system_scope_is_bound_to_its_authority_and_has_no_workspace_owner() {
@@ -113,5 +161,30 @@ mod tests {
         assert_eq!(scope.owner_id, "control-plane");
         assert_eq!(scope.family, "runtime-state");
         assert_eq!(scope.partition_id, "clock");
+    }
+
+    #[test]
+    fn grouped_reads_require_one_workspace_and_bounded_keys() {
+        let scope = Scope {
+            authority_id: "region:a".into(),
+            owner_kind: "workspace".into(),
+            owner_id: "workspace-a".into(),
+            family: "workspace".into(),
+            partition_id: "primary".into(),
+        };
+        let read = MetaRead {
+            scope,
+            guard: None,
+            keys: vec!["item".into()],
+        };
+        let mut policy = read.clone();
+        policy.scope.family = "regional-policy".into();
+        assert!(validate_meta_reads(&[read.clone(), policy.clone()]).is_ok());
+        policy.scope.owner_id = "workspace-b".into();
+        assert!(validate_meta_reads(&[read.clone(), policy]).is_err());
+        assert!(validate_meta_reads(&[]).is_err());
+        let mut excessive = read;
+        excessive.keys = vec!["item".into(); 513];
+        assert!(validate_meta_reads(&[excessive]).is_err());
     }
 }

@@ -330,6 +330,53 @@ impl Engine {
         }
         Ok(transaction)
     }
+
+    /// Read related workspace scopes at one durable snapshot, with the same owner barrier
+    /// and per-scope writer checks as separate reads. No snapshot survives this call.
+    pub async fn read_workspace_scopes(
+        &self,
+        reads: Vec<workspace_contracts::MetaRead>,
+    ) -> Outcome<Value> {
+        workspace_contracts::validate_meta_reads(&reads)
+            .map_err(|_| Failure(400, "META_INVALID_REQUEST"))?;
+        let _serving = self.lifecycle.read().await;
+        let prefixes = reads
+            .iter()
+            .map(|read| {
+                if read.keys.iter().any(|key| !record_key(key, false)) {
+                    return Err(Failure(400, "META_INVALID_REQUEST"));
+                }
+                self.prefix(&read.scope)
+            })
+            .collect::<Outcome<Vec<_>>>()?;
+        let tx = self.transaction(&reads[0].scope).await?;
+        let mut results = Vec::with_capacity(reads.len());
+        let mut bytes = 0;
+        for (read, prefix) in reads.into_iter().zip(prefixes) {
+            self.guard(
+                &tx,
+                &prefix,
+                read.guard.as_ref(),
+                read.keys.iter().all(|key| key == "system/writer"),
+            )
+            .await?;
+            let mut records = serde_json::Map::new();
+            for key in read.keys {
+                let value = self
+                    .get(&tx, &Self::record_path(&prefix, &key))
+                    .await?
+                    .unwrap_or(Value::Null);
+                bytes += serde_json::to_vec(&value).map_err(corrupt)?.len();
+                if bytes > 18 * 1024 * 1024 {
+                    return Err(Failure(413, "META_LIMIT_EXCEEDED"));
+                }
+                records.insert(key, value);
+            }
+            results.push(json!({"records": records}));
+        }
+        self.barrier().await?;
+        Ok(json!({"results": results}))
+    }
     fn record_path(prefix: &str, key: &str) -> String {
         format!("{prefix}data/{}", hex::encode(key))
     }

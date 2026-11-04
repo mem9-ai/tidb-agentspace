@@ -28,6 +28,34 @@ const commit = (s, changes, mutationId = randomUUID()) => ({
   changes,
 });
 const get = (s, keys) => ({ op: 'get', scope: s, keys });
+test(
+  'embedded workspace snapshot preserves isolation, revocation and writer fencing',
+  options,
+  async (t) => {
+    const fixture = await metaFixture();
+    t.after(() => fixture.close());
+    const service = await fixture.service('snapshot');
+    const configuration = resolve(fixture.directory, 'snapshot-in-process.json');
+    await writeFile(configuration, JSON.stringify(service.server), { mode: 0o600 });
+    await service.stop();
+    service.client.close();
+    await execFileAsync(
+      'cargo',
+      [
+        'run',
+        '--quiet',
+        '--locked',
+        '-p',
+        'workspace-meta-service',
+        '--example',
+        'workspace_read_snapshot',
+        '--',
+        configuration,
+      ],
+      { timeout: 90000 },
+    );
+  },
+);
 test('inactive history is isolated and survives a real metadata restart', options, async (t) => {
   const fixture = await metaFixture();
   t.after(() => fixture.close());
