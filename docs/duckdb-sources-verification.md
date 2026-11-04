@@ -1,9 +1,13 @@
 # DuckDB Workspace file source verification
 
+> Historical report: the standalone DuckDB database is retired and its manual verification
+> script has been removed. File System analysis remains supported; see
+> [ADR 0048](decisions/0048-postgresql-only-databases.md).
+
 Historical Console evidence: [GH-50](https://github.com/siddontang/tidb.ai/issues/50) removes
-the custom database picker/counter in favor of the native database workspace. The API and its
-snapshot/authorization verification remain applicable; earlier Console picker screenshots below
-describe the GH-34 baseline. See the [ADR amendment](decisions/0009-duckdb-file-sources.md#console-presentation-amendment).
+the custom database picker/counter in favor of the native database workspace. At the time,
+the API and its snapshot/authorization verification applied; earlier Console picker screenshots
+below describe the GH-34 baseline. See the [ADR amendment](decisions/0009-duckdb-file-sources.md#console-presentation-amendment).
 
 Date: 2026-10-28. Baseline: [GH-34 revision 1](../specs/gh-34/spec.md), accepted at
 `8fcab93ef90843fc3b80cba4743f4ee963871c00`. Uses the existing pinned DuckDB 2.0.0 native
