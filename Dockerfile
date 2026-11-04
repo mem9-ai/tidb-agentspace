@@ -37,7 +37,8 @@ COPY backend/providers ./backend/providers
 COPY backend/execute ./backend/execute
 COPY meta-service ./meta-service
 RUN find backend/contracts backend/meta-client backend/workspace backend/identity \
-    backend/providers backend/execute meta-service -type f -exec touch {} + \
+    backend/providers backend/execute meta-service \
+    -path meta-service/target -prune -o -type f -exec touch {} + \
     && cargo build --release --locked --lib --target-dir /source/meta-service/target \
     -p workspace-providers -p workspace-execute -p workspace-meta-service
 
