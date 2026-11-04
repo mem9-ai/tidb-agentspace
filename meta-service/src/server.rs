@@ -226,4 +226,26 @@ impl workspace_contracts::Metadata for MetaService {
                 .map_err(|e| workspace_contracts::ServiceError::new(e.0, e.1))
         })
     }
+
+    fn read_workspace_scopes(
+        &self,
+        reads: Vec<workspace_contracts::MetaRead>,
+    ) -> workspace_contracts::Call<'_> {
+        let engine = self.state.engine.clone();
+        let capacity = self.state.capacity.clone();
+        Box::pin(async move {
+            let permit = capacity
+                .try_acquire_owned()
+                .map_err(|_| workspace_contracts::ServiceError::new(429, "META_BUSY"))?;
+            tokio::spawn(async move {
+                let _permit = permit;
+                engine
+                    .read_workspace_scopes(reads)
+                    .await
+                    .map_err(|e| workspace_contracts::ServiceError::new(e.0, e.1))
+            })
+            .await
+            .map_err(|_| workspace_contracts::ServiceError::new(503, "META_UNAVAILABLE"))?
+        })
+    }
 }

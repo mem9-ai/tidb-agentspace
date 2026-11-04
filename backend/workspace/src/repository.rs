@@ -17,7 +17,9 @@ use std::{
 };
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use workspace_contracts::{MetaRequest, Metadata, Result, Scope, ServiceError, WriterGuard};
+use workspace_contracts::{
+    MetaRead, MetaRequest, Metadata, Result, Scope, ServiceError, WriterGuard,
+};
 
 fn error(code: &str) -> ServiceError {
     ServiceError::new(503, code)
@@ -174,7 +176,27 @@ impl Repository {
     /// ownership marker or policy fails closed. The caller must still authenticate the
     /// specific session or Key, and reauthorize long-running work at effect boundaries.
     pub async fn managed_owner(&self) -> Result<(String, u64)> {
-        let ownership = self.get("ownership/onboarding").await?;
+        if self.closed.load(Ordering::Acquire) {
+            return Err(error("META_WRITER_CLOSED"));
+        }
+        let mut policy_scope = self.scope.clone();
+        policy_scope.family = "regional-policy".into();
+        let response = self
+            .metadata
+            .read_workspace_scopes(vec![
+                MetaRead {
+                    scope: self.scope.clone(),
+                    guard: Some(self.guard.clone()),
+                    keys: vec!["ownership/onboarding".into()],
+                },
+                MetaRead {
+                    scope: policy_scope,
+                    guard: None,
+                    keys: vec!["owner-policy".into()],
+                },
+            ])
+            .await?;
+        let ownership = &response["results"][0]["records"]["ownership/onboarding"];
         let marker = &ownership["value"];
         let user = marker["userId"]
             .as_str()
@@ -188,16 +210,7 @@ impl Repository {
         {
             return Err(error("MANAGED_POLICY_MISSING"));
         }
-        let mut scope = self.scope.clone();
-        scope.family = "regional-policy".into();
-        let response = self
-            .call(MetaRequest::Get {
-                scope,
-                guard: None,
-                keys: vec!["owner-policy".into()],
-            })
-            .await?;
-        let policy = &response["records"]["owner-policy"]["value"];
+        let policy = &response["results"][1]["records"]["owner-policy"]["value"];
         let generation = policy["generation"]
             .as_u64()
             .filter(|v| *v > 0)

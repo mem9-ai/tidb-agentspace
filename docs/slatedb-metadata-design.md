@@ -362,6 +362,13 @@ Track commit and durable-frontier latency, receipt resolution, conflicts, owner/
 
 Current fresh-read owner checks add object-store round trips. Measure those barriers alongside WAL flushes and cold caches before optimizing them; replacing them must preserve displaced-reader safety. The initial engine uses default settings. Expose reviewed tuning for cache budgets, flush batching and compaction only with durability, bounded-memory and latency evidence. An operator should not infer service latency or cost from object-storage capacity alone.
 
+The embedded metadata service can read the Workspace ownership marker and its regional policy
+in one bounded, durable snapshot. Both installation-owner barriers and each scope's writer guard
+remain in force; grouping is restricted to the same Workspace and authority. This does not cache
+authorization or remove the existing checks before effects and responses. Remote metadata retains
+the existing sequential fenced reads; the metadata wire protocol is unchanged. The isolated RustFS
+snapshot test verifies scope and writer rejection and that policy revocation is observed.
+
 Test with independent temporary storage and credentials. Functional RustFS tests verify an S3 path, not every compatible provider's conditional-write, consistency or durability behavior. Qualify the exact production object store and failure model before offering recovery guarantees.
 
 ## Implementation and iteration
