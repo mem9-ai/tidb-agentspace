@@ -87,10 +87,11 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
       providers: {
         filesProvider: 'drive9-anonymous',
         mysqlProvider: 'tidb-cloud-zero',
-        postgresProvider: 'local',
+        postgresProvider: 'db9-anonymous',
         testMode: true,
         drive9Endpoint: provider.origin,
         zeroEndpoint: provider.origin + '/zero',
+        db9Endpoint: provider.origin + '/customer',
         sqlFixture: provider.origin + '/sql',
       },
     },
@@ -230,14 +231,14 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
     },
   });
   assert.equal(setupAccess.status, 201, JSON.stringify(setupAccess.body));
-  const mysql = await request('/resources', {
+  const pg = await request('/resources', {
     method: 'POST',
     token: 'Bearer ' + setupAccess.body.accessToken,
-    body: { kind: 'mysql', name: 'continuity-db', region: 'automatic' },
+    body: { kind: 'postgresql', name: 'continuity-db', region: 'automatic' },
   });
-  assert.equal(mysql.status, 201, JSON.stringify(mysql.body));
-  assert.equal(mysql.body.data.status, 'active');
-  assert.equal(mysql.body.data.regionId, metadata.server.authorityId);
+  assert.equal(pg.status, 201, JSON.stringify(pg.body));
+  assert.equal(pg.body.data.status, 'active');
+  assert.equal(pg.body.data.regionId, metadata.server.authorityId);
   const fs = await request('/resources', {
     method: 'POST',
     token: 'Bearer ' + setupAccess.body.accessToken,
@@ -255,14 +256,14 @@ export async function regionSecurityCases(t, fixture, metadata, workspace, globa
     method: 'POST',
     token: 'Bearer ' + setupAccess.body.accessToken,
     body: {
-      kind: 'mysql',
+      kind: 'postgresql',
       name: 'wrong-region',
       region: 'automatic',
       regionId: 'region:elsewhere',
     },
   });
   assert.equal(misplaced.status, 400);
-  const resources = [mysql.body.data.id, fs.body.data.id];
+  const resources = [pg.body.data.id, fs.body.data.id];
   assert.equal((await request('/keys', { method: 'POST', body: {} })).status, 404);
   assert.equal(
     (await request('/resources', { token: 'Bearer retired-workspace-key' })).status,

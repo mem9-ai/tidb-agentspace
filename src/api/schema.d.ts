@@ -3392,13 +3392,13 @@ export interface operations {
           /** @description Underscores are permitted for PostgreSQL resources only. */
           name: string;
           /** @enum {unknown} */
-          kind: 'mysql' | 'postgresql' | 'duckdb' | 'filesystem';
+          kind: 'postgresql' | 'filesystem';
           /** @description Owner-only File System creation if the Workspace has no resource history; requires an Idempotency-Key. A replay observes the original resource. */
           onlyIfNew?: boolean;
           /** @description Optional Workspace Region; must match the current Region. Omit to use the default. */
           regionId?: string;
           /**
-           * @description Provider data location supported by the resource kind. This is separate from regionId. Zero MySQL uses automatic provider assignment.
+           * @description Provider data location supported by the resource kind. This is separate from regionId.
            * @enum {string}
            */
           region: 'aws-us-east-1' | 'aws-us-west-2' | 'automatic' | 'aws-ap-southeast-1';
@@ -3418,8 +3418,6 @@ export interface operations {
             data?: components['schemas']['Resource'];
             /** @enum {unknown} */
             mode?: 'demo' | 'live';
-            /** @description Optional DuckDB table list observed during initialization of a newly created database, provided only with queries:read. This is a snapshot at creation, not a current table list; refresh to observe later changes. Omitted on idempotent replays and other providers. */
-            initialTableSnapshot?: components['schemas']['TableList'];
           };
         };
       };
@@ -6760,7 +6758,7 @@ export interface operations {
            * @default false
            */
           readOnly?: boolean;
-          /** @description DuckDB only: query-scoped CSV/JSON/NDJSON/Parquet snapshots as files.NAME. Nonempty sources require files:read, files:analyze and every source File System grant in addition to database query access. SELECT only; 16 MiB combined input and a shared 15-second deadline. Sources are not persisted. */
+          /** @description Reserved for the retired standalone DuckDB database capability; nonempty sources are not supported. Use File System analysis for DuckDB SQL over files. */
           sources?: {
             /** @description Unique source table name in the per-query files catalog. */
             name: string;
@@ -6768,7 +6766,7 @@ export interface operations {
             /** @description Exact absolute Workspace file path; no globs, traversal, external URLs or native paths. */
             path: string;
           }[];
-          /** @description queries:read grants a constrained parsed read-only SELECT/CTE/VALUES subset; unknown functions, locks, writes and multiple statements are rejected before provider I/O. queries:execute also permits reads and writes. readOnly:true constrains a full-access caller. Live Zero/DuckDB: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n]. */
+          /** @description queries:read grants a constrained parsed read-only SELECT/CTE/VALUES subset; unknown functions, locks, writes and multiple statements are rejected before provider I/O. queries:execute also permits reads and writes. readOnly:true constrains a full-access caller. One statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. */
           sql: string;
         };
       };

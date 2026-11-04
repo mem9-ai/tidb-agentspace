@@ -42,12 +42,12 @@ test('distributed Portal exchanges a verified login for a regional session and s
   });
 
   await page.goto(`/?portal_workspace=${id}#databases`);
-  await expect(page.getByText('mysql-fixture', { exact: true })).toBeVisible();
+  await expect(page.getByText('postgresql-fixture', { exact: true })).toBeVisible();
   await expect(page).not.toHaveURL(/portal_workspace/);
   expect(issued).toBe(1);
   expect(exchanged).toBe(1);
   await page.reload();
-  await expect(page.getByText('mysql-fixture', { exact: true })).toBeVisible();
+  await expect(page.getByText('postgresql-fixture', { exact: true })).toBeVisible();
   expect(issued).toBe(2);
   expect(exchanged).toBe(2);
   const openNavigation = page.getByRole('button', { name: 'Open navigation' });

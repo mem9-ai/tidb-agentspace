@@ -5,18 +5,16 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { revokeAndConfirmRegion } from './revoke-confirm.mjs';
 
 export async function restWorkflowCases(t, transport) {
-  let setupFault,
-    tableName = 'demo_table';
+  let tableName = 'demo_table';
   const f = await productApiFixture(
     t,
     transport,
     async ({ sql }) => {
-      if (setupFault && sql.startsWith('CREATE DATABASE')) return setupFault();
-      if (sql.includes('AS recordKind'))
+      if (/FROM information_schema\.tables/i.test(sql))
         return {
           body: {
-            columns: ['recordKind', 'name', 'type'],
-            rows: [{ recordKind: 'table', name: tableName, type: 'BASE TABLE' }],
+            columns: ['name', 'type'],
+            rows: [{ name: tableName, type: 'BASE TABLE' }],
             rowCount: 1,
           },
         };
@@ -359,97 +357,114 @@ export async function restWorkflowCases(t, transport) {
   );
 
   await t.test(
-    'safe setup resumes saved bindings and unknown creation is reconciled without replacement',
-    async () => {
-      setupFault = () => ({ status: 503, body: { error: { code: 'SQL_EXECUTION_FAILED' } } });
-      const resource = await request(
-        '/resources',
-        {
-          method: 'POST',
-          token,
-          headers: { 'Idempotency-Key': 'partial-setup-resource' },
-          body: { name: 'partial-setup', kind: 'mysql', region: 'automatic' },
+    'PostgreSQL setup resumes saved bindings and reconciles unknown creation without replacement',
+    async (child) => {
+      let failSetup = true;
+      const fixture = await productApiFixture(
+        child,
+        transport,
+        async ({ sql }) => {
+          if (failSetup && sql.startsWith('CREATE SCHEMA'))
+            return { status: 503, body: { error: { code: 'SQL_EXECUTION_FAILED' } } };
         },
-        201,
+        { fresh: true },
       );
+      const create = (name, idempotency) =>
+        fixture.request('/resources', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': idempotency },
+          body: { name, kind: 'postgresql', region: 'automatic' },
+        });
+      const setup = (id, idempotency) =>
+        fixture.request(`/resources/${id}/setup-attempts`, {
+          method: 'POST',
+          headers: { 'Idempotency-Key': idempotency },
+        });
+      const resource = await create('partial-setup', 'partial-resource');
+      assert.equal(resource.status, 201, JSON.stringify(resource.body));
       assert.notEqual(resource.body.data.status, 'active');
       const id = resource.body.data.id;
-      const keys = [`bindings/zero/${id}`, `credentials/zero/${id}`];
-      const saved = await f.records(keys),
-        creations = { ...f.provider.nativeCreates };
-      setupFault = undefined;
+      const keys = [`bindings/db9/${id}`, `credentials/db9/${id}`];
+      const saved = await fixture.records(keys);
+      const creations = { ...fixture.provider.nativeCreates };
+      failSetup = false;
       const completed = await setup(id, 'resume');
+      assert.equal(completed.status, 201, JSON.stringify(completed.body));
       assert.equal(completed.body.data.status, 'succeeded');
-      assert.equal(completed.body.data.resource.id, id);
-      const after = await f.records(keys);
+      const after = await fixture.records(keys);
       assert.deepEqual(after[keys[1]].value.connection, saved[keys[1]].value.connection);
       assert.equal(after[keys[0]].value.instanceId, saved[keys[0]].value.instanceId);
-      assert.deepEqual(f.provider.nativeCreates, creations);
-      f.provider.lost = true;
-      const unknown = await request(
-        '/resources',
-        {
-          method: 'POST',
-          token,
-          headers: { 'Idempotency-Key': 'lost-resource' },
-          body: { name: 'lost-setup', kind: 'mysql', region: 'automatic' },
-        },
-        201,
-      );
-      f.provider.lost = false;
-      const attempts = await setup(unknown.body.data.id, 'unknown');
-      assert.equal(attempts.body.data.status, 'outcome-unknown');
-      const before = f.provider.calls;
-      await f.restart({ crash: true });
-      assert.deepEqual((await setup(unknown.body.data.id, 'unknown')).body, attempts.body);
-      assert.equal(f.provider.calls, before);
+      assert.deepEqual(fixture.provider.nativeCreates, creations);
+      fixture.provider.lost = true;
+      const unknown = await create('lost-setup', 'lost-resource');
+      fixture.provider.lost = false;
+      assert.equal(unknown.status, 201, JSON.stringify(unknown.body));
+      assert.notEqual(unknown.body.data.status, 'active');
+      const recovered = await setup(unknown.body.data.id, 'reconcile');
+      assert.equal(recovered.status, 201, JSON.stringify(recovered.body));
+      assert.equal(recovered.body.data.status, 'succeeded');
+      const before = fixture.provider.calls;
+      await fixture.restart({ crash: true });
+      assert.deepEqual((await setup(unknown.body.data.id, 'reconcile')).body, recovered.body);
+      assert.equal(fixture.provider.calls, before);
     },
   );
 
   await t.test(
-    'a crash during setup retains the pre-effect journal and never replays it',
-    async () => {
-      setupFault = () => ({ status: 503, body: { error: { code: 'SQL_EXECUTION_FAILED' } } });
-      const resource = await request(
-        '/resources',
-        {
-          method: 'POST',
-          token,
-          headers: { 'Idempotency-Key': 'crash-resource' },
-          body: { name: 'crash-setup', kind: 'mysql', region: 'automatic' },
+    'a crash during PostgreSQL setup never replays an uncertain write',
+    async (child) => {
+      let setupFault = () => ({ status: 503, body: { error: { code: 'SQL_EXECUTION_FAILED' } } });
+      const fixture = await productApiFixture(
+        child,
+        transport,
+        async ({ sql }) => {
+          if (setupFault && sql.startsWith('CREATE SCHEMA')) return setupFault();
         },
-        201,
+        { fresh: true },
       );
-      const id = resource.body.data.id;
-      let entered, release;
-      const started = new Promise((r) => {
-        entered = r;
+      const resource = await fixture.request('/resources', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'crash-resource' },
+        body: { name: 'crash-setup', kind: 'postgresql', region: 'automatic' },
       });
-      const blocked = new Promise((r) => {
-        release = r;
+      assert.equal(resource.status, 201, JSON.stringify(resource.body));
+      const id = resource.body.data.id;
+      const setup = (key) =>
+        fixture.request(`/resources/${id}/setup-attempts`, {
+          method: 'POST',
+          headers: { 'Idempotency-Key': key },
+        });
+      let entered, release;
+      const started = new Promise((resolve) => {
+        entered = resolve;
+      });
+      const blocked = new Promise((resolve) => {
+        release = resolve;
       });
       setupFault = async () => {
         entered();
         await blocked;
         return undefined;
       };
-      const active = setup(id, 'crashed').catch((error) => ({ error }));
+      const active = setup('crashed').catch((error) => ({ error }));
       await started;
-      const observed = await request(`/resources/${id}/setup-attempts`, { token });
+      const observed = await fixture.request(`/resources/${id}/setup-attempts`);
+      assert.equal(observed.status, 200);
       assert.equal(observed.body.data.length, 1);
       assert.equal(observed.body.data[0].status, 'outcome-unknown');
-      const before = f.provider.statements.length;
+      const before = fixture.provider.statements.length;
       try {
-        await f.restart({ crash: true });
+        await fixture.restart({ crash: true });
       } finally {
         release();
       }
       await active;
       setupFault = undefined;
-      const replay = await setup(id, 'crashed');
+      const replay = await setup('crashed');
       assert.deepEqual(replay.body.data, observed.body.data[0]);
-      assert.equal(f.provider.statements.length, before);
-      assert.equal((await setup(id, 'explicit-new-attempt')).body.data.status, 'succeeded');
+      assert.equal(fixture.provider.statements.length, before);
+      const next = await setup('explicit-new-attempt');
+      assert.equal(next.body.data.status, 'succeeded');
     },
   );
 
@@ -462,7 +477,7 @@ export async function restWorkflowCases(t, transport) {
         'rows',
         'report/setup',
         'literal%2Fname',
-        'quote` /百分号',
+        'quote" /百分号',
       ]) {
         tableName = name;
         const details = await request(`/resources/db_live/tables/${encodeURIComponent(name)}`, {
@@ -471,7 +486,7 @@ export async function restWorkflowCases(t, transport) {
         assert.equal(details.body.name, name);
         assert.equal(
           details.body.query,
-          `SELECT * FROM \`${name.replaceAll('`', '``')}\` LIMIT 100;`,
+          `SELECT * FROM "workspace"."${name.replaceAll('"', '""')}" LIMIT 100;`,
         );
       }
       const before = f.provider.calls;

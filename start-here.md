@@ -15,8 +15,8 @@ consumer product clarity and care, consistent shared interactions and minimum co
 
 The project has two connected goals:
 
-1. Build an independent TiDB workspace for developers and agents. MySQL, opt-in db9 PostgreSQL, DuckDB and File System are
-   currently available; persistent TiDB Cloud Starter integrations remain planned. Resource
+1. Build an independent TiDB workspace for developers and agents. PostgreSQL-compatible databases and File Systems are currently available; standalone MySQL
+   and DuckDB databases are retired under [ADR 0048](docs/decisions/0048-postgresql-only-databases.md). Persistent TiDB Cloud Starter integrations remain planned. Resource
    types have distinct capabilities. Customers use a Workspace Key; backend services manage
    provider credentials. The README and accepted decisions own current provider availability.
 2. Make intent, specifications, and acceptance cases useful open source contributions.
@@ -77,13 +77,13 @@ note. An intent contribution can start with a user problem and a concrete exampl
 
 [ADR 0026](docs/decisions/0026-native-hosted-studio.md) makes Rust the only hosted/local serving runtime, including SSO and `/studio`. All API build/start commands select Rust; Node remains Console/build/operator tooling and native integration fixtures; the old Node business implementation and dedicated tests are removed. The owner permits fresh native S3 roots and keys without migrating old data. Follow [native deployment](docs/native-studio-deployment.md) for bootstrap, local login and live verification.
 
-| Area                | Current interpretation                                                                                                                                                                                                                                                                                                                        |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Product runtime     | Independently runnable Console and API in a loopback-only prototype. MySQL, PostgreSQL, DuckDB and Files support explicit live-provider modes; labeled local demo behavior also exists. PostgreSQL is available through opt-in db9; retired simulated PG remains hidden. Read the README for current availability, limits, and configuration. |
-| Public API          | [Generated OpenAPI](public/openapi.json) and [client types](src/api/schema.d.ts) describe the implemented HTTP surface. The [contract generator](server/generate-openapi.mjs) is the editable source.                                                                                                                                         |
-| Product target      | Persistent Starter/PG, production identity, telemetry, billing, SDK/CLI/MCP, and public delivery include proposed work. Use the architecture, README, and accepted decisions to assess each capability.                                                                                                                                       |
-| Contribution system | GitHub forms, labels, versioned specs, local checks and PR/CI procedures support the current local agent. `/agent` comments are handoff requests; execution stays in the already running session.                                                                                                                                             |
-| Delivery            | [CI/CD policy](docs/ci-cd.md) distinguishes accepted specs, passing checks, merged source, packaged artifacts, and verified deployments.                                                                                                                                                                                                      |
+| Area                | Current interpretation                                                                                                                                                                                                                                                                                                  |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product runtime     | Independently runnable Console and API in a loopback-only prototype. File Systems support local and live-provider modes. PostgreSQL is available through opt-in db9; standalone MySQL and DuckDB databases and retired simulated PG remain hidden. Read the README for current availability, limits, and configuration. |
+| Public API          | [Generated OpenAPI](public/openapi.json) and [client types](src/api/schema.d.ts) describe the implemented HTTP surface. The [contract generator](server/generate-openapi.mjs) is the editable source.                                                                                                                   |
+| Product target      | Persistent Starter/PG, production identity, telemetry, billing, SDK/CLI/MCP, and public delivery include proposed work. Use the architecture, README, and accepted decisions to assess each capability.                                                                                                                 |
+| Contribution system | GitHub forms, labels, versioned specs, local checks and PR/CI procedures support the current local agent. `/agent` comments are handoff requests; execution stays in the already running session.                                                                                                                       |
+| Delivery            | [CI/CD policy](docs/ci-cd.md) distinguishes accepted specs, passing checks, merged source, packaged artifacts, and verified deployments.                                                                                                                                                                                |
 
 Distinguish **verified implementation**, **accepted project rule**, and **proposal**. Check
 relevant behavior against current source, contracts, and tests. When documents disagree,
@@ -182,16 +182,14 @@ All saved-file, SQL-result and Bash-output entry buttons reuse
 [WorkspaceExportButton](src/ui/WorkspaceExportButton.tsx) for a consistent Export label and appearance.
 File System Upload uses actual transfer progress and separate server-save acknowledgement;
 follow [upload feedback and recovery](docs/drive9-verification.md#upload-progress-and-recovery-gh-99).
-Database-owned Import from local CSV/Parquet or Workspace files is implemented for MySQL,
-opt-in db9 PostgreSQL and DuckDB. Follow the accepted [GH-103 contract](specs/gh-103/spec.md),
+Database-owned Import from local CSV/Parquet or Workspace files is implemented for
+PostgreSQL. Follow the accepted [GH-103 contract](specs/gh-103/spec.md),
 [ADR 0023](docs/decisions/0023-database-import-workspace.md) and
 [verification/API usage](docs/database-import-verification.md). Source/review/write phases share
 TiUI controls; new preparations bind their principal and destination, including through legacy export routes.
 
-DuckDB uses tidbfs native database mode, with ordinary Tables and SQL in the Console; see
-[customer experience](docs/duckdb-databases.md#customer-experience). For the separate optional
-query-source API over CSV/JSON/Parquet, read [file sources](docs/duckdb-databases.md#workspace-file-sources),
-[ADR 0009](docs/decisions/0009-duckdb-file-sources.md) and [GH-34](specs/gh-34/spec.md).
+Standalone DuckDB databases are retired under [ADR 0048](docs/decisions/0048-postgresql-only-databases.md).
+DuckDB remains available for bounded File System analysis under [ADR 0010](docs/decisions/0010-read-only-file-analysis.md).
 File System navigation starts with the global resource list (`#files`), followed by a selected
 resource (`#files?resourceId=…`). See [navigation verification](docs/filesystem-list-verification.md)
 for the list/return flow and preserved file links.

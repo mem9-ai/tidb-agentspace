@@ -1,9 +1,12 @@
 # TiDB Workspace: product and service architecture
 
-Design baseline: 2026-10-27. This is the proposed architecture for an independent developer
-and agent product. The repository currently implements a loopback-only interactive prototype
-with demo databases and an opt-in real Singapore Drive9 anonymous File System. Anonymous Zero MySQL and native DuckDB with private dedicated storage are implemented; db9 PostgreSQL is available through explicit opt-in. Persistent TiDB Cloud Starter/PG support below remains proposed; see [ADR 0006](decisions/0006-zero-sql-gateway.md). See [ADR 0004](decisions/0004-drive9-anonymous-provider.md) for the implemented provider boundary. See [ADR 0001](decisions/0001-unified-workspace-key.md) for the
-accepted single-key authorization model.
+Design baseline: 2026-10-27. This describes the proposed architecture for an independent developer
+and agent product. Current database support is PostgreSQL-compatible resources through opt-in
+db9. Standalone MySQL and DuckDB databases are retired under [ADR 0048](decisions/0048-postgresql-only-databases.md);
+DuckDB remains available for bounded File System analysis. Later descriptions of MySQL or
+standalone DuckDB as active resources are historical or proposed, not current capability.
+The opt-in Drive9 File System boundary is [ADR 0004](decisions/0004-drive9-anonymous-provider.md),
+and the accepted single-key authorization model is [ADR 0001](decisions/0001-unified-workspace-key.md).
 
 The [intent driven development system](standards/intent-driven-development.md) records the
 API-first and agent-experience direction, specification contributions, and proposed delivery

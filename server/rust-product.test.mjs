@@ -58,34 +58,115 @@ const base = '/api/v1/workspaces/ws_agentlab';
 const secret = 'retained-public-workspace-key';
 const privateWrite = (path, value) => writeFile(path, JSON.stringify(value), { mode: 0o600 });
 test(
-  'MySQL capability names reflect the configured provider in Portal and Agent contexts',
-  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 180000 },
+  'retired databases cannot be created, discovered, queried, imported into, or set up',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 120000 },
   async (t) => {
-    for (const [provider, label] of [
-      ['tidb-cloud-zero', 'MySQL · TiDB Cloud Zero'],
-      ['local', 'MySQL demo'],
+    const fixture = await productApiFixture(t, 'remote');
+    const preserved = await Promise.all([
+      fixture.storedResource('db_retired_mysql'),
+      fixture.binding('zero', 'db_retired_mysql'),
+      fixture.storedResource('db_duck'),
+      fixture.binding('duckdb', 'db_duck'),
+    ]);
+    const key = await fixture.issueKey({
+      name: 'retired-database-denial',
+      scopes: ['resources:read', 'queries:execute'],
+      resourceIds: ['db_retired_mysql', 'db_duck'],
+      expiresInDays: 7,
+    });
+    assert.equal(key.status, 201, JSON.stringify(key.body));
+    const before = fixture.provider.calls;
+    const listed = await fixture.request('/resources');
+    assert.equal(listed.status, 200);
+    assert.equal(listed.body.capabilities.mysql.available, false);
+    assert.equal(listed.body.capabilities.duckdb.available, false);
+    assert.ok(listed.body.data.some((resource) => resource.id === 'db_pg'));
+    assert.ok(listed.body.data.some((resource) => resource.id === 'fs_shared'));
+    assert.ok(listed.body.data.every((resource) => !['mysql', 'duckdb'].includes(resource.kind)));
+    for (const [kind, id] of [
+      ['mysql', 'db_retired_mysql'],
+      ['duckdb', 'db_duck'],
     ]) {
-      await t.test(provider, async (child) => {
-        const fixture = await productApiFixture(child, 'inProcess', undefined, {
-          mysqlProvider: provider,
-        });
-        const portal = await fixture.request('/bootstrap');
-        assert.equal(portal.status, 200, JSON.stringify(portal.body));
-        assert.equal(portal.body.capabilities.mysql.provider, provider);
-        assert.equal(portal.body.capabilities.mysql.label, label);
-        const key = await fixture.issueKey({
-          name: 'capability-reader',
-          scopes: ['resources:read'],
-          resourceIds: ['db_live'],
-          expiresInDays: 7,
-        });
-        assert.equal(key.status, 201, JSON.stringify(key.body));
-        const agent = await fixture.request('/context', { token: key.body.secret });
-        assert.equal(agent.status, 200, JSON.stringify(agent.body));
-        assert.equal(agent.body.capabilities.mysql.provider, provider);
-        assert.equal(agent.body.capabilities.mysql.label, label);
+      const create = await fixture.request('/resources', {
+        method: 'POST',
+        body: { kind, name: 'retired-db', region: 'automatic' },
       });
+      assert.equal(create.status, 400);
+      assert.equal(create.body.error.code, 'INVALID_KIND');
+      const query = await fixture.request('/queries', {
+        method: 'POST',
+        body: { resourceId: id, sql: 'SELECT 1' },
+      });
+      assert.equal(query.status, 404);
+      const agentQuery = await fixture.request('/queries', {
+        method: 'POST',
+        token: key.body.secret,
+        body: { resourceId: id, sql: 'SELECT 1' },
+      });
+      assert.equal(agentQuery.status, 404);
+      assert.equal((await fixture.request(`/resources/${id}/tables`)).status, 404);
+      const setup = await fixture.request(`/resources/${id}/setup-attempts`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'retired' },
+      });
+      assert.equal(setup.status, 404, JSON.stringify(setup.body));
+      const preparation = await fixture.request('/database-import-preparations', {
+        method: 'POST',
+        body: {
+          resourceId: id,
+          source: { resourceId: 'fs_shared', path: '/identity.txt' },
+          parsing: { format: 'csv', header: true, delimiter: ',' },
+        },
+      });
+      assert.equal(preparation.status, 404);
+      for (const [sourceResourceId, target] of [
+        [id, { kind: 'download', format: 'csv' }],
+        ['db_pg', { kind: 'database', resourceId: id, table: 'retired_target' }],
+      ]) {
+        const result = await fixture.request('/result-exports', {
+          method: 'POST',
+          body: { sourceResourceId, result: { columns: ['n'], rows: [{ n: 1 }] }, target },
+        });
+        assert.equal(result.status, 404, JSON.stringify(result.body));
+      }
     }
+    assert.equal(fixture.provider.calls, before);
+    assert.deepEqual(
+      await Promise.all([
+        fixture.storedResource('db_retired_mysql'),
+        fixture.binding('zero', 'db_retired_mysql'),
+        fixture.storedResource('db_duck'),
+        fixture.binding('duckdb', 'db_duck'),
+      ]),
+      preserved,
+    );
+    const pg = await fixture.request('/queries', {
+      method: 'POST',
+      body: { resourceId: 'db_pg', sql: 'SELECT 1' },
+    });
+    assert.equal(pg.status, 200, JSON.stringify(pg.body));
+    const write = await fixture.request('/files', {
+      method: 'PUT',
+      headers: { 'If-None-Match': '*' },
+      body: {
+        resourceId: 'fs_shared',
+        path: '/retirement-test.csv',
+        type: 'file',
+        content: 'state,sales\nCA,10\n',
+      },
+    });
+    assert.equal(write.status, 200, JSON.stringify(write.body));
+    const analysis = await fixture.request('/file-analyses', {
+      method: 'POST',
+      body: {
+        resourceId: 'fs_shared',
+        path: '/retirement-test.csv',
+        engine: 'duckdb',
+        sql: 'SELECT * FROM file',
+      },
+    });
+    assert.equal(analysis.status, 200, JSON.stringify(analysis.body));
+    assert.equal(analysis.body.rows.length, 1);
   },
 );
 test(
@@ -648,12 +729,15 @@ test(
     const fixture = await productApiFixture(t, 'remote');
     const regionId = fixture.endpoints.regionId;
     const storedBefore = await fixture.storedResource('db_live');
-    const bindingBefore = await fixture.binding('zero', 'db_live');
+    const bindingBefore = await fixture.binding('db9', 'db_live');
+    const retiredBefore = await fixture.storedResource('db_retired_mysql');
+    const retiredBindingBefore = await fixture.binding('zero', 'db_retired_mysql');
     assert.equal(storedBefore.regionId, undefined);
     const bootstrap = await fixture.request('/bootstrap');
     assert.equal(bootstrap.body.workspace.defaultRegionId, regionId);
     validateResponse(new URL(bootstrap.url).pathname, 'GET', bootstrap.status, bootstrap.body);
     const original = bootstrap.body.resources.find((resource) => resource.id === 'db_live');
+    assert.ok(!bootstrap.body.resources.some((resource) => resource.id === 'db_retired_mysql'));
     assert.equal(original.regionId, regionId);
     assert.equal(original.region, 'automatic');
     const detail = await fixture.request('/resources/fs_live');
@@ -688,7 +772,9 @@ test(
     assert.equal(after.body.data.id, original.id);
     assert.equal(after.body.data.regionId, regionId);
     assert.equal(after.body.data.region, original.region);
-    assert.deepEqual(await fixture.binding('zero', 'db_live'), bindingBefore);
+    assert.deepEqual(await fixture.binding('db9', 'db_live'), bindingBefore);
+    assert.deepEqual(await fixture.storedResource('db_retired_mysql'), retiredBefore);
+    assert.deepEqual(await fixture.binding('zero', 'db_retired_mysql'), retiredBindingBefore);
   },
 );
 test(
@@ -726,7 +812,7 @@ test(
       const existing = await fixture.request('/resources', {
         method: 'POST',
         headers: { 'Idempotency-Key': 'index-readiness' },
-        body: { kind: 'mysql', name: 'fixture-mysql', region: 'automatic' },
+        body: { kind: 'postgresql', name: 'fixture-postgresql', region: 'automatic' },
       });
       if (existing.status === 503 && existing.body.error?.code === 'RESOURCE_INDEX_MIGRATING')
         throw new Error('Resource index is still migrating');
@@ -737,7 +823,7 @@ test(
       fixture.request('/resources', {
         method: 'POST',
         headers: { 'Idempotency-Key': 'concurrent-same' },
-        body: { kind: 'mysql', name: 'concurrent-same', region: 'automatic' },
+        body: { kind: 'postgresql', name: 'concurrent-same', region: 'automatic' },
       });
     const results = await Promise.all([create(), create()]);
     assert.deepEqual(
@@ -758,9 +844,9 @@ test(
       fixture.request('/resources', {
         method: 'POST',
         headers: { 'Idempotency-Key': key },
-        body: { kind: 'mysql', name, region: 'automatic' },
+        body: { kind: 'postgresql', name, region: 'automatic' },
       });
-    const existing = await create('fixture-mysql', 'existing');
+    const existing = await create('fixture-postgresql', 'existing');
     assert.equal(existing.status, 409);
     assert.equal(existing.body.error.code, 'NAME_EXISTS');
     const concurrent = await Promise.all([
@@ -773,10 +859,9 @@ test(
     assert.equal((await create('indexed-race', winnerKey)).body.data.id, winner.body.data.id);
     assert.equal((await create('changed-name', winnerKey)).body.error.code, 'IDEMPOTENCY_CONFLICT');
     assert.equal((await create('indexed-two', 'two')).status, 201);
-    assert.equal((await create('indexed-three', 'three')).status, 201);
     assert.equal((await create('indexed-limit', 'limit')).body.error.code, 'FREE_TIER_LIMIT');
-    assert.equal((await fixture.request('/resources/db_memory', { method: 'DELETE' })).status, 200);
-    assert.equal((await create('fixture-mysql', 'reused')).status, 201);
+    assert.equal((await fixture.request('/resources/db_memory', { method: 'DELETE' })).status, 202);
+    assert.equal((await create('fixture-postgresql', 'reused')).body.error.code, 'NAME_EXISTS');
   },
 );
 test(
@@ -794,7 +879,7 @@ test(
     assert.ok(bootstrap.body.resourceNextCursor);
     const query = await fixture.request('/queries', {
       method: 'POST',
-      body: { resourceId: 'db_scale_00000000', sql: 'SELECT 1' },
+      body: { resourceId: 'db_live', sql: 'SELECT 1' },
     });
     assert.equal(query.status, 200, JSON.stringify(query.body));
     const usage = await fixture.request('/usage?limit=10');
@@ -823,14 +908,14 @@ test(
     const key = await fixture.issueKey({
       name: 'scale-key',
       scopes: ['resources:read'],
-      resourceIds: ['db_scale_00000000'],
+      resourceIds: ['fs_scale_00000000'],
       expiresInDays: 7,
     });
     assert.equal(key.status, 201, JSON.stringify(key.body));
     const allowed = await fixture.request('/resources?limit=1', { token: key.body.secret });
     assert.deepEqual(
       allowed.body.data.map((resource) => resource.id),
-      ['db_scale_00000000'],
+      ['fs_scale_00000000'],
     );
     assert.equal((await fixture.request('/keys')).status, 404);
     assert.equal((await fixture.request('/events')).status, 200);
@@ -856,7 +941,7 @@ test(
       const page = await fixture.request(`/resources?${query}`);
       assert.equal(page.status, 200, JSON.stringify(page.body));
       assert.ok(page.body.data.length <= 512);
-      count += page.body.data.filter((resource) => resource.id.startsWith('db_scale_')).length;
+      count += page.body.data.filter((resource) => resource.id.startsWith('fs_scale_')).length;
       cursor = page.body.nextCursor;
     } while (cursor);
     assert.equal(count, 4100);
@@ -882,11 +967,11 @@ test(
       body: { kind: 'postgresql', name: 'scale-1', region: 'automatic' },
     });
     assert.equal(duplicate.body.error.code, 'NAME_EXISTS');
-    const deleted = await fixture.request('/resources/db_scale_00000000', { method: 'DELETE' });
+    const deleted = await fixture.request('/resources/fs_scale_00000000', { method: 'DELETE' });
     assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
     assert.equal(deleted.body.data.status, 'deleted');
     assert.equal(
-      (await fixture.request('/resources/db_scale_00000000')).body.data.status,
+      (await fixture.request('/resources/fs_scale_00000000')).body.data.status,
       'deleted',
     );
     const defaultPage = await fixture.request('/resources');
@@ -1054,11 +1139,11 @@ async function scenarios(request, provider, global) {
     return r;
   }
   const boot = await run(base + '/bootstrap');
-  assert.equal(boot.body.resources.length, 6);
+  assert.equal(boot.body.resources.length, 5);
   assert.equal(boot.body.mode, 'hybrid');
   assert.equal(JSON.stringify(boot.body).includes(nativeSecret), false);
   const resources = await run(base + '/resources', { token: secret });
-  assert.equal(resources.body.data.length, 6);
+  assert.equal(resources.body.data.length, 5);
   const paged = [];
   let cursor;
   do {
@@ -1086,7 +1171,7 @@ async function scenarios(request, provider, global) {
     await run(base + `/resources/${id}/tables`);
     const beforeMetadata = provider.statements.length;
     const table = await run(base + `/resources/${id}/tables/demo_table`);
-    if (id === 'db_live') assert.equal(provider.statements.length - beforeMetadata, 1);
+    assert.ok(provider.statements.length > beforeMetadata);
     assert.equal(table.body.columns[0].key, 'PRI');
     assert.equal(table.body.indexes[0].columns[0].name, 'id');
     assert.equal(table.body.recordKind, undefined);
@@ -1517,8 +1602,17 @@ for (const transport of ['remote', 'inProcess']) {
         },
         {
           id: 'db_live',
+          kind: 'postgresql',
+          name: 'live-postgres-primary',
+          status: 'active',
+          region: 'automatic',
+          provider: 'db9-anonymous',
+          createdAt: state.workspace.createdAt,
+        },
+        {
+          id: 'db_retired_mysql',
           kind: 'mysql',
-          name: 'live-mysql',
+          name: 'retired-mysql',
           status: 'active',
           region: 'automatic',
           provider: 'tidb-cloud-zero',
@@ -1575,7 +1669,7 @@ for (const transport of ['remote', 'inProcess']) {
         },
         {
           bindings: {
-            db_live: {
+            db_retired_mysql: {
               state: 'ready',
               instanceId: 'original-mysql',
               expiresAt: new Date(Date.now() + 86400000).toISOString(),
@@ -1594,6 +1688,32 @@ for (const transport of ['remote', 'inProcess']) {
         { bindings: { db_duck: { state: 'ready', storageId: 'private_duck' } } },
         {
           bindings: {
+            db_live: {
+              state: 'ready',
+              instanceId: 'original-postgres',
+              connection: {
+                kind: 'postgresql',
+                region: 'automatic',
+                host: 'pg.db9.io',
+                port: 5432,
+                user: 'tenant.wabcdef123456',
+                password: nativeSecret,
+                database: 'postgres',
+              },
+            },
+            db_memory: {
+              state: 'ready',
+              instanceId: 'original-postgres',
+              connection: {
+                kind: 'postgresql',
+                region: 'automatic',
+                host: 'pg.db9.io',
+                port: 5432,
+                user: 'tenant.wabcdef123456',
+                password: nativeSecret,
+                database: 'postgres',
+              },
+            },
             db_pg: {
               state: 'ready',
               instanceId: 'original-postgres',
@@ -1696,7 +1816,7 @@ for (const transport of ['remote', 'inProcess']) {
       assert.equal(fileSystemDetail.body.data.uploadLimitBytes, 1048576);
       const databaseDetail = await request(base + '/resources/db_live');
       assert.equal(databaseDetail.status, 200);
-      assert.equal(databaseDetail.body.data.expiresAt, raw[2].bindings.db_live.expiresAt);
+      assert.equal(databaseDetail.body.data.provider, 'db9-anonymous');
       const schema = await fetch(`http://127.0.0.1:${bind}/openapi.json`);
       assert.equal(schema.status, 200);
       assert.deepEqual(await schema.json(), JSON.parse(await readFile('public/openapi.json')));
@@ -1722,9 +1842,10 @@ for (const transport of ['remote', 'inProcess']) {
         final.resources,
         state.resources.map((resource) => ({
           ...resource,
-          ...(resource.id !== 'db_duck' ? { regionId: 'region:complete' } : {}),
+          ...(!['db_duck', 'db_retired_mysql'].includes(resource.id)
+            ? { regionId: 'region:complete' }
+            : {}),
           ...(resource.id === 'fs_live' ? { uploadLimitBytes: 1048576 } : {}),
-          ...(resource.id === 'db_live' ? { expiresAt: raw[2].bindings.db_live.expiresAt } : {}),
         })),
       );
       assert.deepEqual(final.keys, []);
@@ -1812,19 +1933,16 @@ test(
     assert.equal(invalidPg.body.error.code, 'INVALID_NAME');
     const invalidMysql = await create('mysql', 'tidb_pg-example', 'invalid-mysql');
     assert.equal(invalidMysql.status, 400);
-    assert.equal(invalidMysql.body.error.code, 'INVALID_NAME');
-    const mysql = await create('mysql', 'known-mysql', 'mysql');
-    assert.equal(mysql.status, 201);
-    assert.equal(mysql.body.data.status, 'active');
-    assert.equal((await create('mysql', 'known-mysql', 'mysql')).body.data.id, mysql.body.data.id);
-    assert.equal((await create('mysql', 'changed-name', 'mysql')).status, 409);
+    assert.equal(invalidMysql.body.error.code, 'INVALID_KIND');
+    assert.equal(
+      (await create('postgresql', 'tidb_pg-example', 'pg')).body.data.id,
+      pg.body.data.id,
+    );
+    assert.equal((await create('postgresql', 'changed-name', 'pg')).status, 409);
     provider.lost = true;
     const unknownPg = await create('postgresql', 'unknown-postgres', 'lost-pg');
     assert.equal(unknownPg.status, 201);
     assert.notEqual(unknownPg.body.data.status, 'active');
-    const unknownZero = await create('mysql', 'unknown-mysql', 'lost-zero');
-    assert.equal(unknownZero.status, 201);
-    assert.notEqual(unknownZero.body.data.status, 'active');
     const unknownFile = await create('filesystem', 'unknown-files', 'lost-file');
     assert.equal(unknownFile.status, 201);
     assert.notEqual(unknownFile.body.data.status, 'active');
@@ -1839,26 +1957,18 @@ test(
     assert.equal(recovered.status, 201);
     assert.equal(recovered.body.data.status, 'succeeded');
     assert.equal(recovered.body.data.resource.status, 'active');
-    assert.notEqual(
-      (
-        await request(base + `/resources/${unknownZero.body.data.id}/setup-attempts`, {
-          method: 'POST',
-          headers: { 'Idempotency-Key': 'restore-zero' },
-        })
-      ).body.data.status,
-      'succeeded',
-    );
     await create('filesystem', 'unknown-files', 'lost-file');
-    assert.deepEqual(provider.nativeCreates, { zero: 2, db9: 2, account: 1 });
+    assert.deepEqual(provider.nativeCreates, { zero: 0, db9: 2, account: 1 });
     assert.equal(provider.creates, 1);
     const unavailable = await request(base + '/resources', {
       method: 'POST',
       body: { kind: 'duckdb', name: 'unavailable-duckdb', region: 'aws-ap-southeast-1' },
     });
-    assert.equal(unavailable.status, 503);
+    assert.equal(unavailable.status, 400);
+    assert.equal(unavailable.body.error.code, 'INVALID_KIND');
     assert.equal(provider.creates, 1);
     const list = await request(base + '/resources');
-    assert.equal(list.body.data.length, 5);
+    assert.equal(list.body.data.length, 3);
     assert.equal(JSON.stringify(list.body).includes(nativeSecret), false);
   },
 );

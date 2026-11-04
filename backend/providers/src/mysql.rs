@@ -146,6 +146,7 @@ pub async fn execute(b: &Value, sql: &str) -> Result<Value> {
 mod tests {
     use super::*;
     #[tokio::test]
+    #[ignore = "standalone MySQL databases are retired; restore provider verification before enabling"]
     async fn connection_race_ignores_failed_candidates_and_drops_losers_before_sql() {
         let attempts = (0..3)
             .map(|n| async move {

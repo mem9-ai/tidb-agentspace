@@ -196,50 +196,19 @@ export async function authorizationCases(
     },
   );
 
-  await t.test(
-    'DuckDB selected sources require independent read/analyze grants and private storage stays hidden',
-    async () => {
-      const sql = {
-        resourceId: 'db_duck',
-        sql: 'SELECT * FROM input',
-        sources: [{ name: 'input', resourceId: 'fs_live', path: '/live.csv' }],
-      };
-      const unselected = await key('coverage-db-only', ['db_duck']);
-      const readOnly = await key(
-        'coverage-source-readonly',
-        ['db_duck', 'fs_live'],
-        ['queries:execute', 'files:read'],
-      );
-      const wildcard = await key('coverage-wildcard', ['*']);
-      const before = provider.calls;
-      await request(
-        '/queries',
-        { method: 'POST', token: unselected.secret, body: sql },
-        403,
-        'RESOURCE_ACCESS_DENIED',
-      );
-      await request(
-        '/queries',
-        { method: 'POST', token: readOnly.secret, body: sql },
-        403,
-        'INSUFFICIENT_SCOPE',
-      );
-      await request(
-        '/files?resourceId=hidden-storage',
-        { token: wildcard.secret },
-        404,
-        'NOT_FOUND',
-      );
-      // Global grants contain explicit IDs; Region validates resource ownership before I/O.
-      const privateGrant = await f.issueKey({
-        name: 'private-store',
-        resourceIds: ['hidden-storage'],
-        scopes: ['files:read'],
-        expiresInDays: 7,
-      });
-      assert.equal(privateGrant.status, 503);
-      assert.equal(privateGrant.body.error.code, 'POLICY_DELIVERY_UNKNOWN');
-      assert.equal(provider.calls, before);
-    },
-  );
+  await t.test('retired DuckDB private storage stays hidden', async () => {
+    const wildcard = await key('coverage-wildcard', ['*']);
+    const before = provider.calls;
+    await request('/files?resourceId=hidden-storage', { token: wildcard.secret }, 404, 'NOT_FOUND');
+    // Global grants contain explicit IDs; Region validates resource ownership before I/O.
+    const privateGrant = await f.issueKey({
+      name: 'private-store',
+      resourceIds: ['hidden-storage'],
+      scopes: ['files:read'],
+      expiresInDays: 7,
+    });
+    assert.equal(privateGrant.status, 503);
+    assert.equal(privateGrant.body.error.code, 'POLICY_DELIVERY_UNKNOWN');
+    assert.equal(provider.calls, before);
+  });
 }

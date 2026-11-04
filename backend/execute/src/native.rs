@@ -724,6 +724,7 @@ mod tests {
         assert!(conn.prepare("SELECT * FROM injected").is_err());
     }
     #[test]
+    #[ignore = "standalone DuckDB databases are retired; restore provider verification before enabling"]
     fn native_database_preserves_values_and_persists_without_node() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("db.duckdb");

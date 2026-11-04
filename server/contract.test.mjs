@@ -27,9 +27,14 @@ test('resource name contract accepts underscores only for PostgreSQL', () => {
     validate({ kind: 'postgresql', name: 'tidb_pg-example', region: 'automatic' }),
     true,
   );
-  assert.equal(validate({ kind: 'mysql', name: 'tidb_pg-example', region: 'automatic' }), false);
+  assert.equal(
+    validate({ kind: 'filesystem', name: 'tidb_pg-example', region: 'automatic' }),
+    false,
+  );
   assert.equal(validate({ kind: 'postgresql', name: '_tidb-pg', region: 'automatic' }), false);
-  assert.equal(validate({ kind: 'mysql', name: 'tidb-pg', region: 'automatic' }), true);
+  assert.equal(validate({ kind: 'filesystem', name: 'my-files', region: 'automatic' }), true);
+  for (const kind of ['mysql', 'duckdb'])
+    assert.equal(validate({ kind, name: 'retired-db', region: 'automatic' }), false);
 });
 
 test('published regional owner contract exposes only owner-authenticated history operations', () => {
@@ -171,11 +176,11 @@ test(
     });
     await request(workspace + '/resources/{resourceId}/tables/{tableName}', 'get', undefined, {
       resourceId: 'db_memory',
-      tableName: 'agent_events',
+      tableName: 'demo_table',
     });
     await request(workspace + '/resources/{resourceId}/tables/{tableName}/rows', 'get', undefined, {
       resourceId: 'db_memory',
-      tableName: 'agent_events',
+      tableName: 'demo_table',
     });
     await request(workspace + '/resources/{resourceId}/tables/{tableName}', 'get', undefined, {
       resourceId: 'db_memory',
@@ -187,13 +192,13 @@ test(
     const database = await request(
       workspace + '/resources',
       'post',
-      { name: 'contract-db', kind: 'mysql', region: 'automatic' },
+      { name: 'contract-db', kind: 'postgresql', region: 'automatic' },
       { status: 201 },
     );
     await request(
       workspace + '/resources',
       'post',
-      { name: 'contract-db2', kind: 'mysql', region: 'unavailable' },
+      { name: 'contract-db2', kind: 'postgresql', region: 'unavailable' },
       { status: 400 },
     );
     await request(workspace + '/files', 'get', undefined, { suffix: '?resourceId=fs_shared' });
@@ -370,6 +375,7 @@ test(
     );
     await request(workspace + '/resources/{resourceId}', 'delete', undefined, {
       resourceId: 'db_memory',
+      status: 202,
     });
     const allJsonOperations = Object.values(contract.paths)
       .flatMap((item) =>

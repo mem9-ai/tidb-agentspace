@@ -180,7 +180,6 @@ test(
     };
     await provision(first, 'postgresql');
     await provision(first, 'filesystem');
-    await provision(first, 'mysql');
     await provision(second, 'postgresql');
     await provision(second, 'filesystem');
     const sampleGuest = await create();

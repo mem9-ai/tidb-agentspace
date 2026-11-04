@@ -348,6 +348,9 @@ impl Product {
     ) -> Result<(Principal, Value)> {
         let p = principal(state, credential)?;
         let source = p.resource(state, source_id, None)?;
+        if retired_database(&source) {
+            return Err(err(404, "NOT_FOUND"));
+        }
         if source["status"] == "deleting" || source["status"] == "deleted" {
             return Err(err(409, "RESOURCE_DELETING"));
         }
@@ -376,6 +379,9 @@ impl Product {
             text(target, "resourceId").map_err(|_| invalid())?,
             None,
         )?;
+        if retired_database(&destination) {
+            return Err(err(404, "NOT_FOUND"));
+        }
         if target["kind"] == "filesystem" {
             p.scope("files:write")?;
             if destination["kind"] != "filesystem"

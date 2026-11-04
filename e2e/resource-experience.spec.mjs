@@ -354,7 +354,7 @@ for (const [kind, provider] of [['postgresql', 'db9-anonymous']]) {
     await expect(page.getByRole('table', { name: 'Databases' })).not.toContainText(/db9/i);
     await page
       .getByRole('table', { name: 'Databases' })
-      .getByRole('link', { name: 'mysql-fixture', exact: true })
+      .getByRole('link', { name: 'postgresql-fixture', exact: true })
       .click();
     await expect(page).toHaveURL(/#databases\/db_fixture\/sql$/);
     await page.getByRole('button', { name: 'Details', exact: true }).click();
@@ -610,7 +610,7 @@ test('populated Overview stays focused on existing resources and keeps creation 
   page,
   workspace,
 }) => {
-  for (const existingKind of ['mysql', 'filesystem']) {
+  for (const existingKind of ['postgresql', 'filesystem']) {
     workspace.state.resources = structuredClone(
       sampleResources.filter((resource) => resource.kind === existingKind),
     );
@@ -681,7 +681,7 @@ test('@visual populated collections share metadata, exact-resource entry, connec
   workspace,
 }) => {
   workspace.addResources();
-  workspace.state.resources[0].name = 'mysql-resource-with-a-long-name-for-agents';
+  workspace.state.resources[0].name = 'postgresql-resource-with-a-long-name-for-agents';
   workspace.state.resources[1].name = 'filesystem-resource-with-a-long-name-1234';
   for (const collection of collections) {
     const resource = workspace.state.resources.find((item) => item.id === collection.id);
@@ -823,7 +823,7 @@ test('Connect opens scoped Key creation directly and the empty Keys page has one
     dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }),
   ).not.toBeChecked();
   await expect(
-    dialog.getByRole('checkbox', { name: 'mysql-fixture', exact: true }),
+    dialog.getByRole('checkbox', { name: 'postgresql-fixture', exact: true }),
   ).not.toBeChecked();
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await workspace.open('#keys');

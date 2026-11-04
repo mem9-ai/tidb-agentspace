@@ -16,7 +16,7 @@ const scopes = [
   'queries:execute',
   'usage:read',
 ];
-const resources = ['fs_shared', 'fs_live', 'db_live', 'db_pg', 'db_duck'];
+const resources = ['fs_shared', 'fs_live', 'db_live', 'db_pg'];
 const parsing = { format: 'csv', header: true, delimiter: ',' };
 const rowset = (rows) => ({
   columns: ['id', 'decimal', 'nullable', 'enabled', 'binary'],
@@ -129,48 +129,45 @@ export async function productApiCases(t, transport) {
   };
   await authorizationCases(t, context);
   await fileCases(t, context);
-  await t.test(
-    'MySQL and PostgreSQL writes, reads and unknown outcomes are not retried',
-    async () => {
-      for (const id of ['db_live', 'db_pg']) {
-        const before = provider.statements.length;
-        const written = await query(id, 'INSERT INTO coverage_roundtrip VALUES (1)');
-        assert.deepEqual(written.body.columns, []);
-        assert.deepEqual(written.body.rows, []);
-        assert.equal(written.body.affectedRows, 1);
-        assert.equal(written.body.mode, 'live');
-        assert.deepEqual((await query(id, 'SELECT * FROM coverage_roundtrip')).body.rows, [row]);
-        await query(id, 'UPDATE coverage_roundtrip SET enabled = false');
-        assert.deepEqual((await query(id, 'SELECT * FROM coverage_roundtrip')).body.rows, [
-          { ...row, enabled: false },
-        ]);
-        await query(id, 'DELETE FROM coverage_roundtrip');
-        const empty = await query(id, 'SELECT * FROM coverage_roundtrip');
-        assert.deepEqual(empty.body.rows, []);
-        assert.equal(empty.body.rowCount, 0);
-        assert.equal(provider.statements.length - before, 6);
-        let applied = 0;
-        faults.sql = (sql) =>
-          sql === 'INSERT INTO coverage_unknown VALUES (1)'
-            ? (applied++, { disconnect: true })
-            : undefined;
-        const calls = provider.statements.length;
-        await request(
-          '/queries',
-          {
-            method: 'POST',
-            token,
-            body: { resourceId: id, sql: 'INSERT INTO coverage_unknown VALUES (1)' },
-          },
-          502,
-          'SQL_EXECUTION_FAILED',
-        );
-        assert.equal(applied, 1);
-        assert.equal(provider.statements.length, calls + 1);
-        faults.sql = undefined;
-      }
-    },
-  );
+  await t.test('PostgreSQL writes, reads and unknown outcomes are not retried', async () => {
+    for (const id of ['db_live', 'db_pg']) {
+      const before = provider.statements.length;
+      const written = await query(id, 'INSERT INTO coverage_roundtrip VALUES (1)');
+      assert.deepEqual(written.body.columns, []);
+      assert.deepEqual(written.body.rows, []);
+      assert.equal(written.body.affectedRows, 1);
+      assert.equal(written.body.mode, 'live');
+      assert.deepEqual((await query(id, 'SELECT * FROM coverage_roundtrip')).body.rows, [row]);
+      await query(id, 'UPDATE coverage_roundtrip SET enabled = false');
+      assert.deepEqual((await query(id, 'SELECT * FROM coverage_roundtrip')).body.rows, [
+        { ...row, enabled: false },
+      ]);
+      await query(id, 'DELETE FROM coverage_roundtrip');
+      const empty = await query(id, 'SELECT * FROM coverage_roundtrip');
+      assert.deepEqual(empty.body.rows, []);
+      assert.equal(empty.body.rowCount, 0);
+      assert.equal(provider.statements.length - before, 6);
+      let applied = 0;
+      faults.sql = (sql) =>
+        sql === 'INSERT INTO coverage_unknown VALUES (1)'
+          ? (applied++, { disconnect: true })
+          : undefined;
+      const calls = provider.statements.length;
+      await request(
+        '/queries',
+        {
+          method: 'POST',
+          token,
+          body: { resourceId: id, sql: 'INSERT INTO coverage_unknown VALUES (1)' },
+        },
+        502,
+        'SQL_EXECUTION_FAILED',
+      );
+      assert.equal(applied, 1);
+      assert.equal(provider.statements.length, calls + 1);
+      faults.sql = undefined;
+    }
+  });
 
   await exportCases(t, context);
   await importCases(t, context);

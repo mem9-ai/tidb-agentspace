@@ -165,7 +165,7 @@ async fn main() -> anyhow::Result<()> {
         format!("/api/portal/v1/workspaces/{}/resources", guests[0].0),
         Some(guests[0].1.clone()),
     )
-    .json(&json!({"kind":"mysql","name":"guest-database","region":"aws-us-east-1"}))
+    .json(&json!({"kind":"filesystem","name":"guest-files","region":"aws-ap-southeast-1"}))
     .send()
     .await?;
     anyhow::ensure!(

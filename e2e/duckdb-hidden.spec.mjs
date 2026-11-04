@@ -45,7 +45,7 @@ test('standalone DuckDB is hidden from collections and direct navigation', async
   await expect(page.getByText('hidden-duckdb')).toHaveCount(0);
   await page.goto('/#databases');
   await expect(page.getByRole('link', { name: 'hidden-duckdb' })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'mysql-fixture', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'postgresql-fixture', exact: true })).toBeVisible();
   await page.goto('/#databases/db_hidden_duck/sql');
   await expect(page.getByText('Database unavailable', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Run query', exact: true })).toHaveCount(0);
@@ -53,6 +53,34 @@ test('standalone DuckDB is hidden from collections and direct navigation', async
     workspace.requests.some((request) => request.path.includes('/db_hidden_duck/tables')),
   ).toBe(false);
   expect(workspace.state.resources.some((resource) => resource.id === 'db_hidden_duck')).toBe(true);
+});
+
+test('retired MySQL is hidden and cannot be opened by a direct link', async ({
+  page,
+  workspace,
+}) => {
+  workspace.addResources();
+  workspace.state.resources.push({
+    id: 'db_retired_mysql',
+    name: 'retired-mysql',
+    kind: 'mysql',
+    region: 'automatic',
+    regionId: 'region:local',
+    provider: 'tidb-cloud-zero',
+    status: 'active',
+    createdAt: '2026-11-03T00:00:00.000Z',
+  });
+  await workspace.open('#databases');
+  await expect(page.getByText('retired-mysql')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'postgresql-fixture', exact: true })).toBeVisible();
+  await page.goto('/#databases/db_retired_mysql/sql');
+  await expect(page.getByText('Database unavailable', { exact: true })).toBeVisible();
+  expect(
+    workspace.requests.some((request) => request.path.includes('/db_retired_mysql/tables')),
+  ).toBe(false);
+  expect(workspace.state.resources.some((resource) => resource.id === 'db_retired_mysql')).toBe(
+    true,
+  );
 });
 
 test('a hidden DuckDB resolved outside the first page cannot be opened', async ({

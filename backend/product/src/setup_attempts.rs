@@ -20,6 +20,9 @@ impl Product {
         let repository = self.workspace.repository();
         let r = repository.resource(id).await?;
         let r = p.resource(&json!({"resources":[r]}), id, None)?;
+        if retired_database(&r) {
+            return Err(err(404, "NOT_FOUND"));
+        }
         if method == "GET" && parts.len() == 4 {
             uuid::Uuid::parse_str(parts[3]).map_err(|_| err(404, "NOT_FOUND"))?;
             let value = repository.setup_attempt(id, parts[3]).await?;

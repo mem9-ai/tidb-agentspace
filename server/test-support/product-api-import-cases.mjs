@@ -114,7 +114,7 @@ export async function importCases(
       );
       assert.equal(provider.calls, before);
       for (const [id, quote] of [
-        ['db_live', '`'],
+        ['db_live', '"'],
         ['db_pg', '"'],
       ]) {
         const review = (

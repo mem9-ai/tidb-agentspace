@@ -125,6 +125,9 @@ impl Product {
         let value = if let Some((id, kind)) = id {
             let resource = self.workspace.repository().resource(id).await?;
             let r = p.resource(&json!({"resources":[resource]}), id, kind)?;
+            if retired_database(&r) {
+                return Err(err(404, "NOT_FOUND"));
+            }
             if r["status"] == "deleting" || r["status"] == "deleted" {
                 return Err(err(409, "RESOURCE_DELETING"));
             }
@@ -136,7 +139,7 @@ impl Product {
     }
     pub fn capabilities(&self) -> Value {
         let c = &self.providers.config;
-        json!({"mysql":{"label":if c.mysql_provider==ZERO{"MySQL · TiDB Cloud Zero"}else{"MySQL demo"},"regions":if c.mysql_provider==ZERO{vec!["automatic"]}else{vec!["aws-us-east-1","aws-us-west-2"]},"storageGiB":if c.mysql_provider==ZERO{Value::Null}else{json!(5)},"monthlyRU":if c.mysql_provider==ZERO{Value::Null}else{json!(50_000_000)},"preview":false,"provider":c.mysql_provider},"postgresql":{"label":"PostgreSQL Compatible","regions":["automatic"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":c.postgres_provider==DB9,"provider":DB9},"duckdb":{"label":"DuckDB","regions":["aws-ap-southeast-1"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":self.execute.available,"provider":DUCKDB},"filesystem":{"label":"TiDB Cloud File System","regions":if c.files_provider==DRIVE9{vec!["aws-ap-southeast-1"]}else{vec!["aws-ap-southeast-1","aws-us-west-2"]},"storageGiB":if c.files_provider==DRIVE9{Value::Null}else{json!(2)},"maxFiles":if c.files_provider==DRIVE9{Value::Null}else{json!(2000)},"preview":true,"provider":c.files_provider}})
+        json!({"mysql":{"label":if c.mysql_provider==ZERO{"MySQL · TiDB Cloud Zero"}else{"MySQL demo"},"regions":if c.mysql_provider==ZERO{vec!["automatic"]}else{vec!["aws-us-east-1","aws-us-west-2"]},"storageGiB":if c.mysql_provider==ZERO{Value::Null}else{json!(5)},"monthlyRU":if c.mysql_provider==ZERO{Value::Null}else{json!(50_000_000)},"preview":false,"available":false,"provider":c.mysql_provider},"postgresql":{"label":"PostgreSQL Compatible","regions":["automatic"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":c.postgres_provider==DB9,"provider":DB9},"duckdb":{"label":"DuckDB","regions":["aws-ap-southeast-1"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":false,"provider":DUCKDB},"filesystem":{"label":"TiDB Cloud File System","regions":if c.files_provider==DRIVE9{vec!["aws-ap-southeast-1"]}else{vec!["aws-ap-southeast-1","aws-us-west-2"]},"storageGiB":if c.files_provider==DRIVE9{Value::Null}else{json!(2)},"maxFiles":if c.files_provider==DRIVE9{Value::Null}else{json!(2000)},"preview":true,"provider":c.files_provider}})
     }
     pub async fn mode(&self) -> Result<&'static str> {
         let config = &self.providers.config;
@@ -411,6 +414,9 @@ impl Product {
                     return Err(err(403, "WORKSPACE_GRANT_REQUIRED"));
                 }
                 let kind = text(&input, "kind").map_err(|_| err(400, "INVALID_KIND"))?;
+                if matches!(kind, "mysql" | "duckdb") {
+                    return Err(err(400, "INVALID_KIND"));
+                }
                 let name = text(&input, "name").map_err(|_| err(400, "INVALID_NAME"))?;
                 let region = text(&input, "region").map_err(|_| err(400, "UNSUPPORTED_REGION"))?;
                 let initial = match input.get("onlyIfNew") {
@@ -681,9 +687,12 @@ pub fn text<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
 pub fn live(r: &Value) -> bool {
     [DRIVE9, ZERO, DB9, DUCKDB].contains(&r["provider"].as_str().unwrap_or(""))
 }
+fn retired_database(r: &Value) -> bool {
+    matches!(r["kind"].as_str(), Some("mysql" | "duckdb"))
+}
 pub fn visible_resource(r: &Value) -> bool {
     match r["kind"].as_str() {
-        Some("mysql" | "filesystem" | "duckdb") => true,
+        Some("filesystem") => true,
         Some("postgresql") => r["provider"] == DB9,
         _ => false,
     }
@@ -868,6 +877,7 @@ mod execute_config_tests {
     use super::*;
 
     #[test]
+    #[ignore = "standalone DuckDB databases are retired; restore provider verification before enabling"]
     fn initial_catalog_requires_a_new_resource_and_table_read_permission() {
         let resource = json!({"id":"db_new","kind":"duckdb","status":"active"});
         let snapshot =

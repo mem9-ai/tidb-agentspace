@@ -4,17 +4,10 @@ import { generateResourceName } from './resource-name.ts';
 
 const fixedId = () => '01234567-89ab-4cde-8f01-23456789abcd';
 
-test('database names identify each resource kind and fit the public name contract', () => {
-  for (const kind of ['mysql', 'postgresql', 'duckdb']) {
-    const name = generateResourceName(kind, [], fixedId);
-    assert.ok(
-      name.startsWith((kind === 'mysql' ? 'tidb' : kind === 'postgresql' ? 'tidb_pg' : kind) + '-'),
-    );
-    assert.match(
-      name,
-      kind === 'postgresql' ? /^[a-z][a-z0-9_-]{2,39}$/ : /^[a-z][a-z0-9-]{2,39}$/,
-    );
-  }
+test('PostgreSQL database names fit the public name contract', () => {
+  const name = generateResourceName('postgresql', [], fixedId);
+  assert.ok(name.startsWith('tidb_pg-'));
+  assert.match(name, /^[a-z][a-z0-9_-]{2,39}$/);
 });
 
 test('file system suggestions use readable words and fit the public name contract', () => {
@@ -31,13 +24,13 @@ test('file system suggestions use readable words and fit the public name contrac
 });
 
 test('all occupied workspace names are avoided even when entropy repeats', () => {
-  const root = generateResourceName('duckdb', [], fixedId);
+  const root = generateResourceName('postgresql', [], fixedId);
   const resources = Object.freeze(
     [root, `${root}-2`, `${root}-3`, 'another-resource'].map((name) => Object.freeze({ name })),
   );
-  const name = generateResourceName('duckdb', resources, fixedId);
+  const name = generateResourceName('postgresql', resources, fixedId);
   assert.ok(!resources.some((resource) => resource.name === name));
-  assert.match(name, /^[a-z][a-z0-9-]{2,39}$/);
+  assert.match(name, /^[a-z][a-z0-9_-]{2,39}$/);
   assert.equal(resources.length, 4);
 });
 
