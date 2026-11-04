@@ -6,10 +6,9 @@ import { fileURLToPath } from 'node:url';
 const documentation =
   /^(?:README\.md|(?:docs|specs)\/.+\.md|docs\/screenshots\/.+\.(?:png|jpe?g|webp))$/;
 
-export function isDocumentationOnly(event, parents, files) {
+export function isDocumentationOnly(event, parents, files, verifiedBaseline = false) {
   return (
-    event === 'pull_request' &&
-    parents === 2 &&
+    ((event === 'pull_request' && parents === 2) || (event === 'push' && verifiedBaseline)) &&
     files.length > 0 &&
     files.every((file) => documentation.test(file))
   );
@@ -24,18 +23,23 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       })
         .trim()
         .split(/\s+/).length - 1;
-    if (process.env.GITHUB_EVENT_NAME !== 'pull_request' || parents !== 2)
+    const event = process.env.GITHUB_EVENT_NAME;
+    let base = 'HEAD^1';
+    let verifiedBaseline = false;
+    if (event === 'push') {
+      base = process.env.BEFORE_SHA ?? '';
+      if (!/^[a-f0-9]{40}$/.test(base)) throw new Error('Invalid push baseline.');
+      execFileSync('git', ['merge-base', '--is-ancestor', base, 'HEAD'], { stdio: 'pipe' });
+      verifiedBaseline = true;
+    } else if (event !== 'pull_request' || parents !== 2) {
       throw new Error('Not a known merge candidate.');
-    const files = execFileSync(
-      'git',
-      ['diff', '--name-only', '--no-renames', '-z', 'HEAD^1', 'HEAD'],
-      {
-        encoding: 'utf8',
-      },
-    )
+    }
+    const files = execFileSync('git', ['diff', '--name-only', '--no-renames', '-z', base, 'HEAD'], {
+      encoding: 'utf8',
+    })
       .split('\0')
       .filter(Boolean);
-    docsOnly = isDocumentationOnly(process.env.GITHUB_EVENT_NAME, parents, files);
+    docsOnly = isDocumentationOnly(event, parents, files, verifiedBaseline);
   } catch {
     console.log('Unable to classify documentation; run native and browser checks.');
   }

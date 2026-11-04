@@ -355,7 +355,18 @@ test('automatic checks execute once and releases require exact-commit native evi
     'dev-smoke',
   ]);
   assert.equal(workflow.on.workflow_dispatch.inputs.verification.default, 'full');
-  assert.equal(workflow.jobs.deploy.needs, 'verify');
+  assert.deepEqual(workflow.jobs.deploy.needs, ['verify', 'prebuild']);
+  assert.match(workflow.jobs.deploy.if, /needs\.verify\.result == 'success'/);
+  assert.equal(workflow.jobs.prebuild.environment, undefined);
+  assert.deepEqual(workflow.jobs.prebuild.permissions, { contents: 'read' });
+  assert.ok(!JSON.stringify(workflow.jobs.prebuild).includes('secrets.'));
+  const prebuild = workflow.jobs.prebuild.steps.find((step) =>
+    step.uses?.startsWith('docker/build-push-action@'),
+  );
+  assert.equal(prebuild.with.push, false);
+  assert.match(prebuild.with['cache-to'], /native-api-prewarm-\$\{\{ github\.sha \}\}/);
+  const publish = workflow.jobs.deploy.steps.find((step) => step.name === 'Build and push image');
+  assert.match(publish.with['cache-from'], /native-api-prewarm-\$\{\{ github\.sha \}\}/);
   assert.equal(workflow.jobs.deploy.environment, 'dev');
   assert.equal(workflow.jobs.verify.environment, undefined);
   assert.equal(workflow.jobs.verify.permissions['actions'], 'read');
@@ -592,10 +603,29 @@ test('main pushes and default manual runs publish and deploy; inspection is expl
         ? (requested ?? workflow.on.workflow_dispatch.inputs.operation.default)
         : undefined;
     const github = { event_name: event, ref, event: { inputs: { operation } } };
+    const condition = deployment.if.replace(/^\$\{\{\s*/, '').replace(/\s*\}\}$/, '');
+    const context = {
+      github,
+      always: () => true,
+      cancelled: () => false,
+      needs: { verify: { result: 'success' } },
+    };
     for (const step of [build, rollout]) {
-      const runs =
-        runInNewContext(deployment.if, { github }) && runInNewContext(step.if, { github });
+      const runs = runInNewContext(condition, context) && runInNewContext(step.if, { github });
       assert.equal(runs, expected, `${event} on ${ref} (${operation ?? 'no operation'})`);
+    }
+    assert.equal(
+      runInNewContext(condition, { ...context, needs: { verify: { result: 'failure' } } }),
+      false,
+    );
+    if (event === 'push' && ref === 'refs/heads/main') {
+      assert.equal(
+        runInNewContext(condition, {
+          ...context,
+          needs: { verify: { result: 'success' }, prebuild: { result: 'failure' } },
+        }),
+        true,
+      );
     }
   }
 });

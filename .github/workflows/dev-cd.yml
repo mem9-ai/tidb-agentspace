@@ -90,13 +90,38 @@ jobs:
           GATE: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy' && inputs.verification == 'dev-smoke' && 'dev-smoke' || inputs.operation == 'inspect' && 'console' || 'full' }}
         run: node scripts/require-ci.mjs "$GATE" "$SOURCE_SHA"
 
+  prebuild:
+    name: Warm the exact-revision image cache
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.operation == 'deploy')
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Build without publishing or deployment credentials
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          provenance: false
+          pull: true
+          push: false
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
+          cache-to: type=gha,scope=native-api-prewarm-${{ github.sha }},version=2,mode=max,timeout=3m,ignore-error=true
+
   deploy:
     name: Build and deploy to dev
     runs-on: ubuntu-24.04
     timeout-minutes: 75
-    needs: verify
-    # PR validation belongs to CI; this workflow never runs a PR deployment.
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [verify, prebuild]
+    # Cache warming is optional; exact-revision CI remains mandatory.
+    if: ${{ always() && !cancelled() && needs.verify.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     # Serialize by the actual deployment target, NOT the source ref: every
     # deploy run (main push or any manual ref) shares this one constant group,
     # so two runs cannot update the single dev Deployment at the same time.
@@ -179,7 +204,9 @@ jobs:
           push: true
           tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           labels: org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
+          cache-from: |
+            type=gha,scope=native-api-prewarm-${{ github.sha }},version=2,timeout=3m
+            type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
           cache-to: type=gha,scope=native-api-linux-amd64-v1,version=2,mode=max,timeout=3m,ignore-error=true
       - name: Record immutable image digest
         if: github.event.inputs.operation != 'inspect' && github.event.inputs.operation != 'recover'
