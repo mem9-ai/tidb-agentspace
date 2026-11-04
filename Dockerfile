@@ -30,7 +30,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY backend ./backend
 COPY meta-service ./meta-service
 COPY specs/gh-150/fixtures/us-sales.csv ./specs/gh-150/fixtures/us-sales.csv
-COPY public/openapi.json public/owner-openapi.json public/global-openapi.json public/agent-entry-openapi.json ./public/
+COPY public/openapi.json public/owner-openapi.json public/global-openapi.json public/agent-entry-openapi.json public/operator-openapi.json ./public/
 RUN cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend \
     && /source/meta-service/target/release/workspace-backend runtime-info
 
