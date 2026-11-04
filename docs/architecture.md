@@ -262,6 +262,11 @@ throughout the app.
 
 ## Backend boundaries
 
+Product analytics uses an independent, lower-availability SlateDB service under
+[ADR 0050](decisions/0050-isolated-analytics-service.md). API completion hooks only enqueue
+bounded asynchronous observations. Analytics has separate processes, roots and credentials;
+it never uses the business Meta engine or supplies authoritative permissions/billing state.
+
 Implemented DuckDB file queries use explicit query-scoped CSV/JSON/Parquet sources, authorized
 with database query access plus read/analyze access to every public File System. The backend
 loads bounded private snapshots and materializes an in-memory catalog before disabling external

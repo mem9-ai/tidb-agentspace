@@ -8,6 +8,9 @@ Read the applicable standard before implementation. They apply to Codex, Claude 
 Cursor, Copilot, and other tools through the root [AGENTS.md](../../AGENTS.md); no personal
 plugin, skill, or conversation history is required.
 
+Approximate product analytics is outside authoritative System State: use the separate
+SlateDB service in [ADR 0050](../decisions/0050-isolated-analytics-service.md), not Meta.
+
 Product flows and cross-page reviews also follow [product experience](product-experience.md):
 consumer product clarity and care, consistent interactions and minimum complete paths to useful value.
 

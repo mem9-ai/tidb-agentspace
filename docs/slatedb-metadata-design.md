@@ -101,6 +101,10 @@ Object storage latency is part of the durable-write path. Batching amortizes obj
 
 ### Choosing when to wait for durability
 
+Product analytics is the explicit approximate-data exception in [ADR 0050](decisions/0050-isolated-analytics-service.md):
+it uses a separately hosted SlateDB service, not the authoritative Meta service described here.
+Its queued acknowledgments, loss tolerance and lower availability do not relax the Meta rules below.
+
 `async` execution and asynchronous durability are different decisions. A Rust `.await`
 on SlateDB or Meta yields the executor while waiting; it does not require a blocking thread.
 The durability decision is whether the caller can proceed before the acknowledged state can

@@ -2,7 +2,7 @@
 
 - Status: Accepted design for [GH-182](https://github.com/mem9-ai/tidb.ai/issues/182);
   runtime integration is delivered by GH-184; deployment is separate.
-- Date: 2026-11-04.
+- Date: 2026-11-04. Storage/acknowledgment amended by [ADR 0050](0050-isolated-analytics-service.md).
 - Contract and acceptance: [launch specification](../../specs/gh-182/spec.md).
 
 ## Context
@@ -25,10 +25,11 @@ Operator rights provide analytics aggregates only, with no customer content,
 credential retrieval, impersonation or arbitrary regional metadata access.
 
 Global captures public acquisition and verified login events. Regions capture
-verified business outcomes in a separate, bounded metadata namespace; existing
-Workspace history, its retention and its authorization remain unchanged. Raw
-events stay within their producing authority. Use existing metadata services
-initially; do not provision another database without measured need.
+verified business outcomes in a separate, bounded analytics domain; existing
+Workspace history, its retention and its authorization remain unchanged. Raw events
+stay within their producing authority. The owner superseded the original shared-Meta
+choice: use the independent asynchronous SlateDB service in [ADR 0050](0050-isolated-analytics-service.md),
+with dedicated process/storage/credentials and lower availability than Meta.
 
 Each authority owns a private analytics-specific pseudonym key, distinct from
 encryption, access-signing and customer keys. Region-qualified Workspace pseudonyms

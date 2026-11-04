@@ -64,3 +64,7 @@ select `metadataSecurityState:true`; the cloud reset/bootstrap candidate uses no
 The existing filesystem mode remains available only for old explicitly configured installations.
 See the current test and deployment results rather than interpreting this decision as evidence
 that a live cloud installation has already been switched.
+
+Approximate product analytics is not authoritative System State. The owner requires the
+separate, asynchronous SlateDB service in [ADR 0050](0050-isolated-analytics-service.md);
+its availability and durability must not become Meta dependencies.
