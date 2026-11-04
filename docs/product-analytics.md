@@ -127,6 +127,13 @@ a personal Workspace or add Workspace ownership. Policy is read on every operato
 request; removing a domain/identity takes effect for existing sessions immediately.
 Process restart invalidates Admin sessions and requires another login.
 
+Admin's **Open workspace** action uses the existing normal Workspace account SSO
+entry when configured. It must not silently reopen an existing Guest workspace.
+The authentication configuration is reused while refreshing insights. Admin access
+does not grant customer Workspace ownership or convert Guest data; the ordinary
+account callback establishes the appropriate Workspace session. Local installations
+without SSO retain their Console entry.
+
 Bounded structured `operator_security` diagnostics record allowed/denied sign-in,
 denied requests and authorized aggregate reads separately from product usage.
 Only fixed event labels and timestamps are emitted, without identities, claims,
