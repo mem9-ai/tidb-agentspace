@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use uuid::Uuid;
-use workspace_contracts::{MetaRequest, Metadata, Result, Scope};
+use workspace_contracts::{MetaRead, MetaRequest, Metadata, Result, Scope};
 
 use crate::{
     error, now,
@@ -124,6 +124,10 @@ impl Sessions {
                 keys: vec![key.into()],
             })
             .await?;
+        Self::decode_read(&response, key)
+    }
+
+    fn decode_read(response: &Value, key: &str) -> Result<Option<(Value, String)>> {
         let record = response["records"]
             .get(key)
             .ok_or_else(|| error(503, "SESSION_RECORD_CORRUPT"))?;
@@ -400,11 +404,44 @@ impl Sessions {
         current: i64,
     ) -> Result<GuestAccess> {
         let scope = self.scope(workspace)?;
-        let (grant, _, _) = self.grant(&scope, credential).await?;
+        let policy_scope = self.policies.scope(workspace)?;
+        let grant_key = format!("grant/{}", digest(credential)?);
+        let response = self
+            .metadata
+            .read_workspace_scopes(vec![
+                MetaRead {
+                    scope,
+                    guard: None,
+                    keys: vec![grant_key.clone()],
+                },
+                MetaRead {
+                    scope: policy_scope.clone(),
+                    guard: None,
+                    keys: vec!["owner-policy".into()],
+                },
+            ])
+            .await?;
+        let results = response["results"]
+            .as_array()
+            .filter(|items| items.len() == 2)
+            .ok_or_else(|| error(503, "SESSION_RECORD_CORRUPT"))?;
+        let (value, _) = Self::decode_read(&results[0], &grant_key)?
+            .ok_or_else(|| error(401, "SESSION_UNAUTHORIZED"))?;
+        let grant: Grant =
+            serde_json::from_value(value).map_err(|_| error(503, "SESSION_RECORD_CORRUPT"))?;
+        if grant.revoked {
+            return Err(error(401, "SESSION_UNAUTHORIZED"));
+        }
         if grant.kind != GrantKind::GuestBrowser {
             return Err(error(401, "SESSION_UNAUTHORIZED"));
         }
-        let policy = self.policy(workspace).await?;
+        let (policy, _) = self
+            .policies
+            .decode_read(&policy_scope, &results[1])?
+            .ok_or_else(|| error(403, "POLICY_NOT_INSTALLED"))?;
+        if policy.denied {
+            return Err(error(403, "POLICY_DENIED"));
+        }
         Self::matches(&policy, &grant.user_id, grant.generation, current)?;
         let expires_at = match policy.identity {
             OwnerIdentity::Guest { expires_at, .. } => expires_at,
@@ -514,10 +551,67 @@ mod tests {
         regional::{OwnerIdentity, Policy, Principal},
         tests::{MemoryMeta, group_key},
     };
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use workspace_contracts::Call;
 
     struct RevokeAfterGrant {
         inner: Arc<MemoryMeta>,
+    }
+
+    struct CountGroupedReads {
+        inner: Arc<MemoryMeta>,
+        count: AtomicUsize,
+    }
+
+    struct RevokeAfterRead {
+        inner: Arc<MemoryMeta>,
+    }
+
+    impl Metadata for RevokeAfterRead {
+        fn health(&self) -> Call<'_> {
+            self.inner.health()
+        }
+        fn execute(&self, request: MetaRequest) -> Call<'_> {
+            Box::pin(async move {
+                let policy_scope = match &request {
+                    MetaRequest::Get { scope, keys, .. }
+                        if scope.family == "regional-session"
+                            && keys.iter().any(|key| key.starts_with("grant/")) =>
+                    {
+                        let mut policy = scope.clone();
+                        policy.family = "regional-policy".into();
+                        Some(policy)
+                    }
+                    _ => None,
+                };
+                let result = self.inner.execute(request).await?;
+                if let Some(scope) = policy_scope {
+                    let mut groups = self.inner.groups.lock().unwrap();
+                    let record = groups
+                        .get_mut(&group_key(&scope))
+                        .unwrap()
+                        .get_mut("owner-policy")
+                        .unwrap();
+                    record["value"]["denied"] = json!(true);
+                    record["value"]["generation"] = json!(2);
+                    record["version"] = json!(Uuid::new_v4().to_string());
+                }
+                Ok(result)
+            })
+        }
+    }
+
+    impl Metadata for CountGroupedReads {
+        fn health(&self) -> Call<'_> {
+            self.inner.health()
+        }
+        fn execute(&self, request: MetaRequest) -> Call<'_> {
+            self.inner.execute(request)
+        }
+        fn read_workspace_scopes(&self, reads: Vec<MetaRead>) -> Call<'_> {
+            self.count.fetch_add(1, Ordering::SeqCst);
+            self.inner.read_workspace_scopes(reads)
+        }
     }
 
     impl Metadata for RevokeAfterGrant {
@@ -608,6 +702,89 @@ mod tests {
         assert!(
             sessions
                 .issue_guest_browser(&policy.workspace_id, &guest_id, &hex::encode(secret))
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn guest_auth_groups_current_grant_and_policy_and_still_rejects_revocation() {
+        let metadata = Arc::new(CountGroupedReads {
+            inner: region(),
+            count: AtomicUsize::new(0),
+        });
+        let sessions = Sessions::open(metadata.clone(), "region:a").await.unwrap();
+        let current = now().unwrap();
+        let mut policy = oidc_policy();
+        let guest_id = Uuid::new_v4().to_string();
+        let secret = [27u8; 32];
+        policy.identity = OwnerIdentity::Guest {
+            guest_id: guest_id.clone(),
+            verifier: hex::encode(Sha256::digest(secret)),
+            created_at: current,
+            expires_at: current + 86_400,
+        };
+        sessions
+            .policies
+            .install(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        let browser = sessions
+            .issue_guest_browser(&policy.workspace_id, &guest_id, &hex::encode(secret))
+            .await
+            .unwrap();
+        assert!(
+            sessions
+                .authenticate_guest_credential(&policy.workspace_id, &browser.token)
+                .await
+                .is_ok()
+        );
+        assert_eq!(metadata.count.load(Ordering::SeqCst), 1);
+        assert!(
+            sessions
+                .authenticate_guest_credential(&Uuid::new_v4().to_string(), &browser.token)
+                .await
+                .is_err()
+        );
+        sessions
+            .revoke(&policy.workspace_id, &browser.token)
+            .await
+            .unwrap();
+        assert!(
+            sessions
+                .authenticate_guest_credential(&policy.workspace_id, &browser.token)
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn sequential_fallback_denies_guest_revoked_between_grant_and_policy_reads() {
+        let sessions = Sessions::open(Arc::new(RevokeAfterRead { inner: region() }), "region:a")
+            .await
+            .unwrap();
+        let current = now().unwrap();
+        let mut policy = oidc_policy();
+        let guest_id = Uuid::new_v4().to_string();
+        let secret = [28u8; 32];
+        policy.identity = OwnerIdentity::Guest {
+            guest_id: guest_id.clone(),
+            verifier: hex::encode(Sha256::digest(secret)),
+            created_at: current,
+            expires_at: current + 86_400,
+        };
+        sessions
+            .policies
+            .install(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        let browser = sessions
+            .issue_guest_browser(&policy.workspace_id, &guest_id, &hex::encode(secret))
+            .await
+            .unwrap();
+        assert!(
+            sessions
+                .authenticate_guest_credential(&policy.workspace_id, &browser.token)
                 .await
                 .is_err()
         );

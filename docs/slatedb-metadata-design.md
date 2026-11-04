@@ -368,6 +368,8 @@ remain in force; grouping is restricted to the same Workspace and authority. Thi
 authorization or remove the existing checks before effects and responses. Remote metadata retains
 the existing sequential fenced reads; the metadata wire protocol is unchanged. The isolated RustFS
 snapshot test verifies scope and writer rejection and that policy revocation is observed.
+Guest credential validation also reads the session grant and current policy through this same
+bounded mechanism; the sequential fallback still denies a policy revoked between its two reads.
 
 Test with independent temporary storage and credentials. Functional RustFS tests verify an S3 path, not every compatible provider's conditional-write, consistency or durability behavior. Qualify the exact production object store and failure model before offering recovery guarantees.
 
