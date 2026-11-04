@@ -426,7 +426,7 @@ jobs:
   image-cache-transfer:
     name: Native image cache transfer
     needs: image
-    if: ${{ github.event_name == 'pull_request' && needs.image.result == 'success' && needs.image.outputs.image_built == 'true' && contains(github.event.pull_request.body, '[benchmark-native-cache]') }}
+    if: ${{ github.event_name == 'pull_request' && needs.image.result == 'success' && needs.image.outputs.image_built == 'true' && contains(github.event.pull_request.body, '[benchmark-cache-transfer]') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

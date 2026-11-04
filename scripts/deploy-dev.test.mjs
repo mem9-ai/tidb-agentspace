@@ -599,7 +599,7 @@ test('automatic checks execute once and releases require exact-commit native evi
   const cacheTransfer = ci.jobs['image-cache-transfer'];
   assert.equal(cacheTransfer.needs, 'image');
   assert.match(cacheTransfer.if, /needs\.image\.outputs\.image_built == 'true'/);
-  assert.match(cacheTransfer.if, /\[benchmark-native-cache\]/);
+  assert.match(cacheTransfer.if, /\[benchmark-cache-transfer\]/);
   assert.equal(cacheTransfer.environment, undefined);
   assert.ok(!JSON.stringify(cacheTransfer).includes('secrets.'));
   const transferBuild = cacheTransfer.steps.find((step) =>
