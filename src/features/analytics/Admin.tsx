@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Anchor,
@@ -13,7 +13,7 @@ import {
   Text,
   Title,
 } from '@tidbcloud/uikit';
-import { globalApiSettings } from '../../api/client';
+import { apiBaseUrl, globalApiSettings, workspaceApi } from '../../api/client';
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -215,6 +215,8 @@ export function Admin() {
     }
   });
   const [base, setBase] = useState('');
+  const authConfig = useRef<ReturnType<typeof workspaceApi.authConfig>>();
+  const [workspaceHref, setWorkspaceHref] = useState<string>();
   const [state, setState] = useState<'loading' | 'signed-out' | 'denied' | 'ready' | 'error'>(
     'loading',
   );
@@ -225,7 +227,19 @@ export function Admin() {
       setState('loading');
       setError('');
       try {
-        const settings = await globalApiSettings();
+        const auth = await (authConfig.current ??= workspaceApi.authConfig());
+        const settings = await globalApiSettings(auth);
+        let workspaceUrl = import.meta.env.BASE_URL;
+        if (auth.enabled && auth.loginPath) {
+          const login = new URL(auth.loginUrl || apiBaseUrl + auth.loginPath, window.location.href);
+          if (login.searchParams.has('returnTo'))
+            login.searchParams.set(
+              'returnTo',
+              new URL(import.meta.env.BASE_URL, window.location.href).href,
+            );
+          workspaceUrl = login.href;
+        }
+        setWorkspaceHref(workspaceUrl);
         setBase(settings.baseUrl);
         const now = new Date();
         const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -253,6 +267,7 @@ export function Admin() {
         setData(decode(result));
         setState('ready');
       } catch (e) {
+        authConfig.current = undefined;
         if (!signal?.aborted) {
           setError(e instanceof Error ? e.message : 'Usage data is unavailable.');
           setState('error');
@@ -276,7 +291,9 @@ export function Admin() {
           </Text>
           <Title order={1}>Product insights</Title>
         </div>
-        <Anchor href={import.meta.env.BASE_URL}>Open workspace</Anchor>
+        <Anchor href={workspaceHref} aria-disabled={!workspaceHref}>
+          Open workspace
+        </Anchor>
       </Group>
       <Text c="dimmed">
         Understand how people discover the product, reach a useful result, and return. All dates use
