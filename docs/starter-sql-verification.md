@@ -1,5 +1,8 @@
 # Zero SQL verification
 
+> Historical report: standalone MySQL/TiDB Zero is retired and its manual verification script
+> has been removed. See [ADR 0048](decisions/0048-postgresql-only-databases.md).
+
 Date: 2026-10-28. Real anonymous TiDB Cloud Zero MySQL and Singapore Drive9 were verified.
 PG is intentionally disabled; no equivalent anonymous PG service is assumed. See
 [ADR 0006](decisions/0006-zero-sql-gateway.md) for scope, credential boundaries and recovery.

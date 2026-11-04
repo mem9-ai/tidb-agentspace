@@ -1,5 +1,8 @@
 # DuckDB verification
 
+> Historical report: the standalone DuckDB database is retired and its manual verification
+> script has been removed. See [ADR 0048](decisions/0048-postgresql-only-databases.md).
+
 Date: 2026-10-28. Acceptance baseline: [GH-28 revision 1](../specs/gh-28/spec.md), accepted
 at source `47c59cd7c0b34e05b7a285f8f20b6d6877dfe567`. Runtime: DuckDB 2.0.0 via
 `@duckdb/node-api@2.0.0-r.1`, native tidbfs from drive9-ai/duckdb revision

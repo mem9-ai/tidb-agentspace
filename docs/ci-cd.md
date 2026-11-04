@@ -5,7 +5,7 @@
 [ADR 0026](decisions/0026-native-hosted-studio.md) makes Rust the only serving runtime. For application changes, `Quality` builds the Console and checks Console/tooling/contracts; `Rust backend and S3 integration` builds/tests all native phases, and applicable `Browser smoke` builds the same candidate and asserts Console journeys in parallel. Documentation-only PRs use the scoped checks described below. Internal backend changes use [OpenAPI behavior verification](standards/openapi-verification.md) without frontend retesting. Dev CD packages a native-only Linux amd64 image, the currently verified Linux static DuckDB target. Node is not present in that image. [Native deployment](native-studio-deployment.md) defines fresh S3 roots/keys and the one-time target bootstrap.
 
 - `.github/workflows/ci.yml`: clean installation and `npm run check` on non-documentation PRs, pushes to
-  `main`, merge-queue candidates, and manual requests. Documentation-only PRs run scoped Quality
+  `main`, merge-queue candidates, and manual requests. Documentation-only PRs and verified main push ranges run scoped Quality
   checks and do not upload a Console artifact. Browser smoke builds the same SHA independently
   to avoid waiting for Quality. Native image
   verification runs in parallel for PR image-input changes.
@@ -103,6 +103,11 @@ The comparison includes both sides of renames; unknown paths, source, contracts,
 workflow files, missing policy and ambiguous merge candidates fall back to both jobs. Deployment
 evidence continues to require the existing same-commit checks.
 
+The same narrow documentation allowlist applies to a main push only when its entire
+`before..HEAD` range is available and the baseline is an ancestor. Renames include both paths;
+missing or uncertain history falls back to full checks. Documentation-only evidence does not
+authorize an API or Console release: use a full same-revision CI run when one is needed.
+
 For native-only PR/main changes, the trusted-base policy may skip Browser smoke. At least
 one allowlisted native source must change, and every path must belong to native implementation,
 build inputs, native test fixtures or specified backend guides. Console/client code, public
@@ -162,8 +167,11 @@ independently, but only the primary job saves it. The baseline unsharded integra
 measure partitioned CI on comparable runners before claiming a speedup.
 
 Dev CD no longer triggers on PRs or repeats quality/native commands. Its read-only verify
-job runs `scripts/require-ci.mjs full "$SOURCE_SHA"`, then the existing protected dev job
-builds/pushes and updates the image. Console publishing consumes `console` evidence (Quality
+job runs `scripts/require-ci.mjs full "$SOURCE_SHA"`. In parallel, an unprivileged main-only
+job warms an image cache named for that exact SHA, without publishing or deployment credentials.
+The protected dev job still builds, pushes and updates only after CI succeeds; it can fall
+back to the usual build if cache warming fails. Cache contents never count as CI evidence.
+Console publishing consumes `console` evidence (Quality
 and Browser smoke) before its independent `/studio/` build; unrelated Rust work can still
 be running. Source freshness, website checks, protected branches and exact-tree merge checks
 remain in place. The manual internal-artifact workflow retains isolated verification.

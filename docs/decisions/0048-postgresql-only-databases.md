@@ -32,6 +32,11 @@ customer database capability. Earlier decisions describing database support, inc
 [ADR 0006](0006-zero-sql-gateway.md) and [ADR 0008](0008-duckdb-private-storage.md), are
 historical for the retired customer operations.
 
+Provider-specific standalone MySQL and DuckDB acceptance scripts and disabled unit tests are
+removed rather than run or kept as dormant tests. The active read-only SQL checks cover
+PostgreSQL; File System DuckDB analysis and retirement/lifecycle security checks remain covered.
+Historical verification reports describe past runs, not currently executable acceptance commands.
+
 ## Verification
 
 Native API acceptance must verify that retired resource creation and operations are rejected

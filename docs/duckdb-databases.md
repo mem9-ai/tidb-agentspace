@@ -1,9 +1,14 @@
 # DuckDB databases
 
+> Historical design and verification notes: standalone DuckDB databases have been retired
+> under [ADR 0048](decisions/0048-postgresql-only-databases.md). File System analysis still
+> uses DuckDB. Provider-specific manual acceptance scripts and tests have been removed; a
+> future restoration requires new verification before the provider can be enabled.
+
 The Rust API uses the private deployment described in the
 [Rust runtime guide](rust-backend.md), with record metadata under [ADR 0024](decisions/0024-fresh-record-metadata.md).
 
-Status: implemented for the loopback prototype. [ADR 0008](decisions/0008-duckdb-private-storage.md)
+Historical status: implemented for the loopback prototype before retirement. [ADR 0008](decisions/0008-duckdb-private-storage.md)
 and [GH-28](../specs/gh-28/spec.md) define the accepted isolation and acceptance boundary.
 
 ## Customer experience
@@ -185,28 +190,12 @@ Expiry/revocation is checked before reads, native execution and returning file-d
 No request or SQL is retried automatically. These controls retain the trusted loopback boundary;
 they do not supply OS isolation for public untrusted SQL. Native remote storage remains experimental.
 
-See [file query evidence](duckdb-sources-verification.md) for format/permission/cleanup tests and
-real-service/browser checks. Run explicit task-owned acceptance with:
-
-```sh
-node scripts/verify-duckdb-sources.mjs http://127.0.0.1:4318 DUCKDB_ID FILESYSTEM_ID
-```
-
-It uploads synthetic CSV/JSON/NDJSON/Parquet to a new task directory, verifies real queries and
-Key denials, revokes verification keys and retains examples. To reconcile/recheck an existing
-sample directory, pass its exact `/duckdb-query-demo-XXXXXXXX` as the fourth argument; that
-mode only reads existing examples and never repeats file creation.
+See [historical file query evidence](duckdb-sources-verification.md) for the former
+format, permission, cleanup, real-service and browser checks. The retired database's manual
+acceptance script is no longer included.
 
 ## Database verification
 
-See [verification evidence](duckdb-verification.md) for requirement mappings, live results,
-checked viewports and screenshots. Explicit operator acceptance can run:
-
-```sh
-node scripts/verify-duckdb.mjs http://127.0.0.1:4318 DUCKDB_ID MYSQL_ID FILESYSTEM_ID
-```
-
-The script uses only Workspace APIs, creates/revokes verification keys, removes its uniquely
-named test table and retains a verification Markdown file. Use task-owned data and scoped
-resources. It never reads native credentials or provisions resources. No public cloud deletion
-or automatic orphan cleanup is introduced by this feature.
+See [historical verification evidence](duckdb-verification.md) for requirement mappings,
+live results, checked viewports and screenshots. The retired database's manual acceptance
+script is no longer included.
