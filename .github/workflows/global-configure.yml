@@ -4,11 +4,21 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Inspect configuration or explicitly reset this installation and enable Global
+        description: Inspect, enable independent analytics, or explicitly configure Global
         required: true
         default: inspect
         type: choice
-        options: [inspect, reset-and-enable-global, activate-prepared, repair-probes]
+        options:
+          [
+            inspect,
+            inspect-analytics,
+            enable-analytics,
+            verify-analytics,
+            restart-analytics,
+            reset-and-enable-global,
+            activate-prepared,
+            repair-probes,
+          ]
 
 permissions:
   contents: read
@@ -83,4 +93,8 @@ jobs:
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
       - name: Configure the single-service Global and Region deployment
+        if: inputs.operation != 'inspect-analytics' && inputs.operation != 'enable-analytics' && inputs.operation != 'verify-analytics' && inputs.operation != 'restart-analytics'
         run: node scripts/cutover-global-cloud.mjs
+      - name: Configure independent analytics without changing business metadata
+        if: inputs.operation == 'inspect-analytics' || inputs.operation == 'enable-analytics' || inputs.operation == 'verify-analytics' || inputs.operation == 'restart-analytics'
+        run: node scripts/enable-analytics-cloud.mjs

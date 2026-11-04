@@ -20,6 +20,12 @@ Native `api.json` accepts the existing `TIDB_SSO_*` environment settings when it
 
 ## Fresh dev configuration
 
+Product analytics is enabled independently through the protected operator actions in
+[the analytics runbook](product-analytics.md#hosted-enablement-and-live-acceptance).
+It reuses the reviewed native image but creates separate analytics processes, private
+storage and workload identities. Ordinary image CD still does not activate capture,
+alter Admin policy or initialize any analytics or business storage.
+
 Prepare an owner-only input file outside Git with these fields. Keep actual values/credentials in existing secret storage, never in PRs, images or chat:
 
 ```json

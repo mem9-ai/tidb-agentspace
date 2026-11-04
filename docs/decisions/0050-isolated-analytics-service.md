@@ -64,7 +64,11 @@ GPC/opt-out, 30 daily detail partitions and 90 identity-free aggregate partition
 remain unchanged. Dedicated analytics IAM should permit only its own bucket/root;
 do not give it Meta storage credentials. Logical expiry is enforced on reads and by
 cleanup; physical object/version/backup reclamation remains an operator lifecycle
-policy. No live data migration, storage reset or new cloud resource is authorized.
+policy. The initial implementation did not authorize live provisioning or migration.
+The owner's subsequent explicit live-enablement request is tracked in GH-193: use
+independent private buckets and namespace/ServiceAccount-bound EKS workload roles.
+Preserve existing business storage, identities and provider configuration. Deployment
+remains a protected operator action and requires observed real-account acceptance.
 
 Capture remains disabled until explicitly configured. Previous shared-Meta config
 names are rejected rather than silently selecting the old store. New code neither
