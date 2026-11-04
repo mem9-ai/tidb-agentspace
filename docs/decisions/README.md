@@ -80,6 +80,8 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Proposed decisions
 
+- [0049: Product analytics and operator authority](0049-product-analytics-operator-boundary.md) — proposed launch measurement, aggregate-only operator access and authority-local event retention for [GH-182](../../specs/gh-182/spec.md); not implemented.
+
 - [0034: Global Key authority and independently serving Regions](0034-openapi-security-authorities.md) — owner-confirmed Key/Token and regional autonomy direction; detailed implementation and security gates proposed.
 
 - [0035: Sparse-activity metadata scale](0035-sparse-scale-metadata.md) — proposed independent authority shards and Workspace resource partitioning; bounded resource page reads are a first slice.
