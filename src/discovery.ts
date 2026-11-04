@@ -13,6 +13,24 @@ import { configureApi } from './api/client';
 async function start() {
   const base = document.body.dataset.base || '/';
   const page = document.body.dataset.page;
+  const button = document.getElementById('analytics-choice');
+  const status = document.getElementById('analytics-choice-status');
+  const update = () => {
+    if (button)
+      button.textContent = analyticsDisabled()
+        ? 'Enable optional analytics'
+        : 'Turn optional analytics off';
+    if (status)
+      status.textContent = analyticsDisabled()
+        ? 'Optional browser analytics is off.'
+        : 'Optional session-only browser analytics is on.';
+  };
+  button?.addEventListener('click', () => {
+    void setAnalyticsDisabled(!analyticsDisabled()).then(update);
+    update();
+  });
+  update();
+  button?.removeAttribute('disabled');
   try {
     const response = await fetch(base + 'config.json', { cache: 'no-store' });
     if (response.ok) {
@@ -29,21 +47,5 @@ async function start() {
       .querySelector('[data-analytics="try"]')
       ?.addEventListener('click', () => capture({ name: 'try_clicked', page }));
   }
-  const button = document.getElementById('analytics-choice');
-  const status = document.getElementById('analytics-choice-status');
-  const update = () => {
-    if (button)
-      button.textContent = analyticsDisabled()
-        ? 'Enable optional analytics'
-        : 'Turn optional analytics off';
-    if (status)
-      status.textContent = analyticsDisabled()
-        ? 'Optional browser analytics is off.'
-        : 'Optional session-only browser analytics is on.';
-  };
-  button?.addEventListener('click', () => {
-    void setAnalyticsDisabled(!analyticsDisabled()).then(update);
-  });
-  update();
 }
 void start();
