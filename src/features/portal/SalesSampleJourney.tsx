@@ -391,7 +391,13 @@ export function SalesSampleJourney({
             <Tabs
               value={mode}
               onChange={(value) => {
-                if (value === 'agent' || value === 'self') setMode(value);
+                if ((value === 'agent' || value === 'self') && value !== mode) {
+                  capture({
+                    name: 'journey_selected',
+                    journey: value === 'agent' ? 'agent' : 'self_service',
+                  });
+                  setMode(value);
+                }
               }}
               keepMounted
             >
@@ -607,6 +613,7 @@ export function SalesSampleJourney({
               <Button
                 variant="default"
                 onClick={() => {
+                  capture({ name: 'journey_selected', journey: 'self_service' });
                   setMode('self');
                   void start();
                 }}
