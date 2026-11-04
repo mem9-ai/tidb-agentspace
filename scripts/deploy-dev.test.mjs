@@ -321,6 +321,7 @@ test('automatic checks execute once and releases require exact-commit native evi
     'public/owner-openapi.json',
     'public/global-openapi.json',
     'public/agent-entry-openapi.json',
+    'public/operator-openapi.json',
     'package.json',
     'package-lock.json',
     '.node-version',

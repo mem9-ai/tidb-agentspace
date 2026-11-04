@@ -1,4 +1,5 @@
 pub mod access_signer;
+pub mod analytics;
 pub mod global_api;
 mod global_local_sessions;
 pub mod global_login;
@@ -75,6 +76,8 @@ pub struct GlobalEntry {
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
+    #[serde(default)]
+    pub analytics: Option<analytics::Settings>,
     pub bind: SocketAddr,
     pub workspace_id: String,
     pub authority_id: String,
@@ -140,6 +143,16 @@ impl Config {
     }
     pub fn validate(&self) -> Result<()> {
         let result = self;
+        if let Some(settings) = &self.analytics {
+            anyhow::ensure!(
+                settings.pseudonym_key_file.is_absolute()
+                    && self
+                        .security
+                        .as_ref()
+                        .is_none_or(|s| s.regional_signing_key_file != settings.pseudonym_key_file),
+                "Dedicated absolute analytics key file required"
+            );
+        }
         if (result.insecure_loopback && !result.bind.ip().is_loopback())
             || !result.bind.is_ipv4()
             || result.workspace_id.is_empty()
@@ -222,6 +235,7 @@ struct Session {
 }
 #[derive(Clone)]
 struct App {
+    analytics: Option<analytics::Store>,
     workspace: Arc<Workspace>,
     product: Option<Arc<workspace_product::Product>>,
     config: Config,
@@ -308,6 +322,19 @@ impl WorkspaceServer {
             config.initialize_workspace = true;
             config.recover_writer_owner = None;
         }
+        let analytics = config
+            .analytics
+            .as_ref()
+            .filter(|c| c.enabled)
+            .map(|c| {
+                analytics::Store::new(
+                    metadata.clone(),
+                    &config.authority_id,
+                    private_file(&c.pseudonym_key_file)
+                        .map_err(|_| reject(503, "ANALYTICS_KEY_UNAVAILABLE"))?,
+                )
+            })
+            .transpose()?;
         let metadata_port_for_security = metadata.clone();
         let repository = Repository::open(
             metadata,
@@ -379,6 +406,7 @@ impl WorkspaceServer {
             listener,
             history_worker,
             app: App {
+                analytics,
                 workspace,
                 product,
                 config,
@@ -429,11 +457,14 @@ impl WorkspaceServer {
     ) -> Result<()> {
         let (history_stop, history_receiver) = tokio::sync::watch::channel(false);
         let history_task = tokio::spawn(self.history_worker.run(history_receiver));
-        let connection = self
+        let mut connection = self
             .app
             .security
             .as_ref()
             .and_then(|r| r.region_connection());
+        if let Some(connection) = &mut connection {
+            connection.analytics = self.app.analytics.clone();
+        }
         let control = self
             .app
             .security
@@ -480,6 +511,7 @@ impl WorkspaceServer {
                     connection.descriptor,
                     connection.installer,
                     connection.initializer,
+                    connection.analytics,
                     connection_stop,
                 )
                 .await
@@ -1265,6 +1297,12 @@ async fn dispatch(
         Credential::SessionOwner { .. } | Credential::LocalDemoOwner => true,
         Credential::Bearer(_) => false,
     };
+    let analytics_operation =
+        if method == Method::PUT && route == "/files" && audit_input["purpose"] == "report" {
+            Some("report_saved")
+        } else {
+            analytics::operation(method.as_str(), route)
+        };
     let audit_action = if route == "/queries" && !write_capable {
         None
     } else {
@@ -1506,6 +1544,31 @@ async fn dispatch(
             guard.finish_with_target(outcome, target.as_deref()),
         )
         .await;
+    }
+    if let (Some(store), Some(actor), Some(operation)) =
+        (&app.analytics, &actor, analytics_operation)
+    {
+        let status = match &result {
+            Ok(r) => r.status().as_u16(),
+            Err(e) => e.status,
+        };
+        let kind = if matches!(
+            actor.kind,
+            workspace_domain::observability::ActorKind::WorkspaceKey
+        ) {
+            "api"
+        } else if app.current_guest.is_some() {
+            "guest"
+        } else {
+            "account"
+        };
+        store.record(
+            &request_id.to_string(),
+            &workspace_id,
+            kind,
+            operation,
+            (200..300).contains(&status),
+        );
     }
     if let Some(history) = history {
         let completion = if cancellation.is_cancelled() {
@@ -1793,6 +1856,22 @@ async fn auth_route(
         };
         return match runtime.entry.enter(headers, peer.ip()).await {
             Ok(result) => {
+                if result.set_cookie.is_some() {
+                    if let Some(store) = &app.analytics {
+                        store.record(
+                            "workspace_ready",
+                            &result.workspace_id,
+                            "guest",
+                            "workspace_ready",
+                            true,
+                        );
+                    }
+                    if let Some(global) = &app.portal_sessions {
+                        global
+                            .trial(headers, &result.workspace_id, &app.config.authority_id)
+                            .await;
+                    }
+                }
                 let mut response = Json(json!({"workspaceId":result.workspace_id})).into_response();
                 if let Some(value) = result.set_cookie {
                     response.headers_mut().append("Set-Cookie", value);
@@ -1984,6 +2063,15 @@ async fn auth_route(
             Ok((url, flow)) => {
                 let mut r = redirect(&url);
                 set_cookie(&mut r, flow_cookie(&flow, 600));
+                if query.get("operator").is_some_and(|v| v == "1") {
+                    set_cookie(
+                        &mut r,
+                        format!(
+                            "aw_operator_flow={flow}; HttpOnly; SameSite=Lax;{secure} Path={}/api/auth/tidbcloud; Max-Age=600",
+                            app.config.public_path
+                        ),
+                    );
+                }
                 r
             }
             Err(e) => error(e),
@@ -1993,6 +2081,17 @@ async fn auth_route(
         let verified = sso
             .callback(cookie(headers, "aw_sso_flow").unwrap_or_default(), query)
             .await;
+        if cookie(headers, "aw_operator_flow") == cookie(headers, "aw_sso_flow")
+            && cookie(headers, "aw_operator_flow").is_some()
+        {
+            return match verified {
+                Ok(login) => match &app.portal_sessions {
+                    Some(global) => global.operator_login(&login).await.unwrap_or_else(error),
+                    None => error(reject(404, "OPERATOR_UNAVAILABLE")),
+                },
+                Err(e) => error(e),
+            };
+        }
         if let Some(runtime) = &app.guest_runtime {
             let result = match verified {
                 Err(e) => Err(e),
@@ -2000,8 +2099,40 @@ async fn auth_route(
                     let (issuer, subject) = login.identity();
                     match &runtime.account_onboarding {
                         None => Err(reject(503, "ACCOUNT_ONBOARDING_UNAVAILABLE")),
-                        Some(onboarding) => match onboarding.personal(issuer, subject).await {
-                            Ok(registration) => {
+                        Some(onboarding) => match onboarding
+                            .personal_with_creation(issuer, subject)
+                            .await
+                        {
+                            Ok((registration, fresh)) => {
+                                if let Some(store) = &app.analytics {
+                                    if fresh {
+                                        store.record(
+                                            &registration.operation_id,
+                                            &registration.workspace_id,
+                                            "account",
+                                            "workspace_ready",
+                                            true,
+                                        );
+                                    }
+                                    if app.portal_sessions.is_none() {
+                                        store.record(
+                                            &uuid::Uuid::new_v4().to_string(),
+                                            &registration.workspace_id,
+                                            "account",
+                                            "sign_in_completed",
+                                            true,
+                                        );
+                                    }
+                                }
+                                if let Some(global) = &app.portal_sessions {
+                                    global
+                                        .trial(
+                                            headers,
+                                            &registration.workspace_id,
+                                            &app.config.authority_id,
+                                        )
+                                        .await;
+                                }
                                 let regional_cookie = runtime
                                     .account
                                     .establish(&registration.workspace_id, issuer, subject)

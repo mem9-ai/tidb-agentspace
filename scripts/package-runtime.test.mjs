@@ -46,6 +46,7 @@ test(
       'owner-openapi.json',
       'global-openapi.json',
       'agent-entry-openapi.json',
+      'operator-openapi.json',
     ]) {
       assert.deepEqual(
         JSON.parse(await readFile(resolve(directory, 'unpack/api', contract), 'utf8')),

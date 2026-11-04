@@ -91,6 +91,10 @@ export const test = base.extend({
       if (url.pathname === '/openapi.json') return route.fulfill({ json: regionalContract });
       if (url.pathname === '/api/openapi.json') return route.fulfill({ json: globalContract });
       if (!url.pathname.startsWith('/api/')) return route.continue();
+      if (url.pathname === '/api/global/analytics/config')
+        return route.fulfill({
+          json: { enabled: false, campaigns: [], policy: 'session_only', version: 1 },
+        });
       const method = request.method();
       const body = request.postDataJSON();
       requests.push({

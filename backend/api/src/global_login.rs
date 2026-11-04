@@ -60,6 +60,20 @@ impl GlobalGuest {
     }
 
     /// The identity is supplied exclusively by the verified OIDC callback.
+    pub(crate) async fn personal_with_creation(
+        &self,
+        issuer: &str,
+        subject: &str,
+    ) -> Result<(Registration, bool)> {
+        let existing = self
+            .directory
+            .status(VerifiedIdentity { issuer, subject })
+            .await?;
+        let fresh =
+            existing.is_none_or(|(_, state)| state != workspace_identity::Provisioning::Ready);
+        let registration = self.personal(issuer, subject).await?;
+        Ok((registration, fresh))
+    }
     pub(crate) async fn personal(&self, issuer: &str, subject: &str) -> Result<Registration> {
         self.onboarding
             .personal(VerifiedIdentity { issuer, subject }, &self.region)

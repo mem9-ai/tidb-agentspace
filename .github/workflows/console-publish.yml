@@ -16,6 +16,8 @@ on:
       - 'tsconfig*.json'
       - 'vite.config.*'
       - 'scripts/console-publish*.mjs'
+      - 'scripts/public-discovery.mjs'
+      - 'scripts/discovery-markup.mjs'
       - '.github/workflows/console-publish.yml'
   workflow_dispatch:
 

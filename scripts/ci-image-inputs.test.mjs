@@ -17,6 +17,7 @@ test('image validation covers native/build/delivery inputs and excludes Console/
     'public/owner-openapi.json',
     'public/global-openapi.json',
     'public/agent-entry-openapi.json',
+    'public/operator-openapi.json',
     'package-lock.json',
     '.github/workflows/ci.yml',
     '.github/workflows/dev-cd.yml',

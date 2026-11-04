@@ -1,5 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { Admin } from './features/analytics/Admin';
+import { AnalyticsPreference } from './features/analytics/AnalyticsPreference';
 import { WorkspaceThemeProvider } from './features/theme/WorkspaceThemeProvider';
 import '@tidbcloud/uikit/style.css';
 import './theme.css';
@@ -25,7 +27,14 @@ async function start() {
     configureApi(config);
     root.render(
       <WorkspaceThemeProvider>
-        <App />
+        {window.location.pathname.replace(/\/$/, '').endsWith('/admin') ? (
+          <Admin />
+        ) : (
+          <>
+            <App />
+            <AnalyticsPreference />
+          </>
+        )}
       </WorkspaceThemeProvider>,
     );
   } catch (error) {

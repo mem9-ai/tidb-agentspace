@@ -1,3 +1,4 @@
+import { capture } from '../analytics/capture';
 import { Button, Stack, Text } from '@tidbcloud/uikit';
 
 type SignInChoicesProps = {
@@ -18,7 +19,15 @@ export function SignInChoices({
   guestError,
 }: SignInChoicesProps) {
   const account = (
-    <Button fullWidth size="lg" variant={guestEnabled ? 'default' : 'filled'} onClick={onTiDBLogin}>
+    <Button
+      fullWidth
+      size="lg"
+      variant={guestEnabled ? 'default' : 'filled'}
+      onClick={() => {
+        capture({ name: 'sign_in_clicked', page: 'workspace' });
+        onTiDBLogin();
+      }}
+    >
       {label}
     </Button>
   );
@@ -35,7 +44,10 @@ export function SignInChoices({
         aria-describedby={guestEnabled ? 'guest-expiry' : 'guest-expiry guest-access-note'}
         disabled={!guestEnabled || guestLoading}
         loading={guestLoading}
-        onClick={onGuestLogin}
+        onClick={() => {
+          capture({ name: 'try_clicked', page: 'workspace' });
+          onGuestLogin();
+        }}
       >
         <Stack component="span" gap={0} align="center">
           <span>Try without an account</span>
