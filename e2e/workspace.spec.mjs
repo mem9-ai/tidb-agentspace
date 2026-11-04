@@ -47,6 +47,68 @@ test('cloud sign-in offers TiDB Account and clearly marks Guest access unavailab
   await expect(page).toHaveURL(/\/api\/auth\/tidbcloud\/login$/);
 });
 
+test('workspace discovery can proceed while hosted sign-in configuration is pending', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  let releaseConfig;
+  const configReady = new Promise((resolve) => {
+    releaseConfig = resolve;
+  });
+  await context.route('**/api/auth/config', async (route) => {
+    await configReady;
+    await route.fallback();
+  });
+  try {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect
+      .poll(() =>
+        workspace.requests.some((request) => request.path === '/api/portal/v1/workspaces'),
+      )
+      .toBe(true);
+  } finally {
+    releaseConfig();
+  }
+  await expect(page.getByRole('button', { name: 'Try without an account' })).toBeVisible();
+});
+
+test('failed auth configuration cancels discovery before retrying', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  let firstConfig = true;
+  let firstDiscovery = true;
+  let releaseDiscovery;
+  const blocked = new Promise((resolve) => {
+    releaseDiscovery = resolve;
+  });
+  await context.route('**/api/auth/config', async (route) => {
+    if (firstConfig) {
+      firstConfig = false;
+      await route.abort('failed');
+    } else await route.fallback();
+  });
+  await context.route('**/api/portal/v1/workspaces', async (route) => {
+    if (firstDiscovery) {
+      firstDiscovery = false;
+      await blocked;
+    }
+    await route.fallback().catch(() => undefined);
+  });
+  try {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Couldn’t open your workspace' })).toBeVisible();
+    await page.getByRole('button', { name: 'Try again' }).click();
+    await expect(page.getByRole('button', { name: 'Try without an account' })).toBeVisible();
+  } finally {
+    releaseDiscovery();
+  }
+});
+
 test('@visual Guest sign-in opens the Workspace when the server enables it', async ({
   page,
   workspace,

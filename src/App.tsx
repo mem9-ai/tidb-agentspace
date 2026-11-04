@@ -312,10 +312,29 @@ function App() {
     try {
       setError('');
       setNeedsSignIn(false);
-      const auth = await workspaceApi.authConfig();
+      // Existing hosted sessions can discover their Workspace while auth configuration loads.
+      // Capture failures immediately; local demo mode must establish its session before retrying.
+      const controller = new AbortController();
+      const discovery = workspaceApi.discoverWorkspace(controller.signal).then(
+        () => ({ ok: true as const }),
+        (cause: unknown) => ({ ok: false as const, cause }),
+      );
+      let auth;
+      try {
+        auth = await workspaceApi.authConfig();
+      } catch (cause) {
+        controller.abort();
+        await discovery;
+        throw cause;
+      }
       setSso(auth);
-      if (!auth.enabled) await workspaceApi.startSession();
-      await workspaceApi.discoverWorkspace();
+      const result = await discovery;
+      if (!auth.enabled) {
+        await workspaceApi.startSession();
+        await workspaceApi.discoverWorkspace();
+      } else if (!result.ok) {
+        throw result.cause;
+      }
       await refresh();
     } catch (e) {
       setError((e as Error).message);
