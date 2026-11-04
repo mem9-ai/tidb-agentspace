@@ -360,7 +360,8 @@ and all checks. Keep the workflows' token permissions read-only.
 
 CI builds with `--timings` and retains the HTML report from
 `meta-service/target/cargo-timings/` for seven days, with a distinct artifact name per run
-attempt. To evaluate a cache change, compare an initial miss with a rerun of the Rust job
+attempt. Failed runs retain their reports; superseded, cancelled runs do not delay the next
+candidate by uploading obsolete reports. To evaluate a cache change, compare an initial miss with a rerun of the Rust job
 on the same commit and a fresh hosted runner. Record the action's exact/fallback cache hit,
 cache size, restore/save overhead, build/Clippy/test steps and total job duration. A PR-local
 rerun proves same-PR reuse; verify the subsequent `main` seed separately before claiming
@@ -386,7 +387,15 @@ Automatic API release paths cover backend/metadata sources, root Cargo/toolchain
 
 The SSO fixture also showed long tail latency: its main case took 180.55s in the earlier dependency-update run and 0.86s in the first optimized quality-gate run. Cleanup hooks previously closed dependencies before their API client. Cleanup now stops that API with the existing bounded process helper, closes the fake provider's active connections, then closes metadata. A live regression holds a provider response open and verifies teardown does not wait for its client watchdog; removing connection reaping makes this case fail. All authentication assertions remain intact. This changes test fixtures only, not product session timeouts or production shutdown policy.
 
-The Dockerfile uses pinned `cargo-chef` 0.1.77 to separate the release dependency graph from application source. The same pinned Rust version, working directory, Cargo configuration, locked dependencies and verified DuckDB inputs apply to cooking and the final build. Pass the explicit `/source/meta-service/target` directory to both commands: the initial Linux probe compiled into the configured directory but cargo-chef tried to clean its default `/source/target/release` and failed. Source-only edits rebuild application crates; manifest/lockfile/toolchain/native input changes invalidate affected layers. The final image smoke check validates the real executable's exact version, static linkage, Linux target and pinned DuckDB checksum, rejecting an empty dependency skeleton.
+The Dockerfile uses pinned `cargo-chef` 0.1.77 to separate the release dependency graph from application source. The same pinned Rust version, working directory, Cargo configuration, locked dependencies and verified DuckDB inputs apply to cooking and the final build. Pass the explicit `/source/meta-service/target` directory to both commands: the initial Linux probe compiled into the configured directory but cargo-chef tried to clean its default `/source/target/release` and failed. Real lower-level crates, the product layer and the API layer are built separately before the final binary, allowing unchanged lower layers to be reused on later source edits. Each stage selects the same final package to avoid rebuilding dependencies under different feature sets; earlier stages can use cargo-chef's placeholder sources for later layers. Source files are touched before their layer is compiled so Cargo cannot mistake a dependency skeleton or an old timestamp for current source; any newly added backend crate is likewise touched for the final build. Manifest/lockfile/toolchain/native input changes invalidate affected layers. The final image smoke check validates the real executable's exact version, static linkage, Linux target and pinned DuckDB checksum, rejecting an empty dependency skeleton.
+
+For an explicit incremental-build experiment, include `[benchmark-native-cache]` in the PR
+description. The unprivileged image job then makes a second local build after modifying only a
+synthetic sales fixture, verifies that the lower-level build layer was reused and that the final
+executable contains the changed fixture, and restores the fixture. It reports elapsed build time.
+This opt-in probe runs no deployment and has no cloud credentials; ordinary PRs do not run it.
+The probe establishes same-runner reuse and freshness, not a cross-run cache hit; confirm the
+separate GitHub Actions cache export/import in build logs when measuring later runs.
 
 The pinned Docker build action imports/exports GitHub cache v2 with `mode=max`, including intermediate dependency layers. Main deployment continues to use `native-api-linux-amd64-v1`. PR image checks import a PR-specific scope first and the main scope as a fallback, and export only to the PR scope. This is intended to make subsequent builds of the same PR reuse its dependency layers without publishing an untrusted PR cache to main. Ordinary cache mounts are not sufficient to persist those layers across fresh hosted runners. Cache transfer has a three-minute bound; failed export is non-fatal and a miss still builds fully. Base images are resolved with `pull:true`. No deployment files, credentials or product state enter the Docker context or cache.
 

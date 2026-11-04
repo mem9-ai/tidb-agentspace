@@ -27,11 +27,41 @@ COPY --from=planner /source/recipe.json ./recipe.json
 RUN cargo chef cook --release --locked --target-dir /source/meta-service/target \
     -p workspace-backend --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock ./
+# Keep stable lower-level crates in separately cached layers. Every layer builds
+# real sources (not cargo-chef's dependency skeleton) with the final toolchain.
+COPY backend/contracts ./backend/contracts
+COPY backend/meta-client ./backend/meta-client
+COPY backend/workspace ./backend/workspace
+COPY backend/identity ./backend/identity
+COPY backend/providers ./backend/providers
+COPY backend/execute ./backend/execute
+COPY meta-service ./meta-service
+RUN find backend/contracts backend/meta-client backend/workspace backend/identity \
+    backend/providers backend/execute meta-service \
+    -path meta-service/target -prune -o -type f -exec touch {} + \
+    && cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend
+
+COPY backend/product ./backend/product
+COPY specs/gh-150/fixtures/us-sales.csv ./specs/gh-150/fixtures/us-sales.csv
+RUN find backend/product -type f -exec touch {} + \
+    && cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend
+
+COPY backend/api ./backend/api
+COPY public/openapi.json public/owner-openapi.json public/global-openapi.json public/agent-entry-openapi.json public/operator-openapi.json ./public/
+RUN find backend/api -type f -exec touch {} + \
+    && cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend
+
+# Copy the complete workspace for the final binary, including any new crates.
 COPY backend ./backend
 COPY meta-service ./meta-service
-COPY specs/gh-150/fixtures/us-sales.csv ./specs/gh-150/fixtures/us-sales.csv
-COPY public/openapi.json public/owner-openapi.json public/global-openapi.json public/agent-entry-openapi.json public/operator-openapi.json ./public/
-RUN cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend \
+RUN find backend/host -type f -exec touch {} + \
+    && for manifest in backend/*/Cargo.toml; do \
+      case "$manifest" in \
+        backend/contracts/*|backend/meta-client/*|backend/workspace/*|backend/identity/*|backend/providers/*|backend/execute/*|backend/product/*|backend/api/*|backend/host/*) ;; \
+        *) find "$(dirname "$manifest")" -type f -exec touch {} + ;; \
+      esac; \
+    done \
+    && cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend \
     && /source/meta-service/target/release/workspace-backend runtime-info
 
 FROM debian:bookworm-slim AS runtime
