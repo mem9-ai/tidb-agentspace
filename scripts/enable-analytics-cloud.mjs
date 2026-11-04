@@ -31,17 +31,24 @@ function managed(object, owner) {
     throw new AnalyticsCloudError('Existing analytics resource has different ownership.');
 }
 // Use the existing cluster storage provider. No bucket, IAM or cloud identity operations.
-export function clusterStorage(kubectl) {
+export function clusterStorage(kubectl, namespace) {
   const classes = JSON.parse(kubectl(['get', 'storageclass', '-o', 'json'])).items || [];
   const defaults = classes.filter(
     (entry) =>
       entry.metadata?.annotations?.['storageclass.kubernetes.io/is-default-class'] === 'true',
   );
-  if (defaults.length !== 1)
-    throw new AnalyticsCloudError(
-      'Exactly one existing default cluster storage class is required.',
+  if (defaults.length === 1) return defaults[0].metadata.name;
+  if (defaults.length === 0) {
+    const volumes = JSON.parse(kubectl(['get', 'pvc', '-n', namespace, '-o', 'json'])).items || [];
+    const bound = new Set(
+      volumes.filter((v) => v.status?.phase === 'Bound').map((v) => v.spec?.storageClassName),
     );
-  return defaults[0].metadata.name;
+    const used = classes.filter((c) => bound.has(c.metadata?.name));
+    if (used.length === 1) return used[0].metadata.name;
+  }
+  throw new AnalyticsCloudError(
+    'One unambiguous existing default or namespace-bound storage class is required.',
+  );
 }
 
 // API-server defaults may add fields, but every supplied field and complete list must
@@ -206,7 +213,7 @@ export async function enableAnalytics(
   if (options.operation === 'inspect-analytics') {
     return {
       globalConfigured: Boolean(target.api.security),
-      storageClass: clusterStorage(kubectl),
+      storageClass: clusterStorage(kubectl, namespace),
       analyticsPrepared: Boolean(state),
       regionalCapture: target.api.analytics?.enabled === true,
       globalCapture: target.plan.services.some(
@@ -236,7 +243,7 @@ export async function enableAnalytics(
   } else {
     if (options.operation !== 'enable-analytics')
       throw new AnalyticsCloudError('Analytics has not been prepared.');
-    prepared = await prepare(target, options, clusterStorage(kubectl));
+    prepared = await prepare(target, options, clusterStorage(kubectl, namespace));
     const record = {
       apiVersion: 'v1',
       kind: 'Secret',

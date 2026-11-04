@@ -63,7 +63,8 @@ Raw events stay in their producing authority. Field allowlists, keyed pseudonyms
 GPC/opt-out, 30 daily detail partitions and 90 identity-free aggregate partitions
 remain unchanged. The owner rejected additional AWS resource/permission setup on
 2026-11-04. Hosted enablement uses two independent `ReadWriteOnce` persistent volume
-claims through the cluster's one existing default StorageClass. Each single-writer
+claims through the cluster's unique default StorageClass or the unique class already
+bound in the target namespace when no default exists. Each single-writer
 process uses the pinned object-store local filesystem adapter with fsync enabled,
 mounted only into that authority's initializer and analytics process. No analytics
 bucket, IAM role, OIDC provider, projected cloud token or Meta credential is created

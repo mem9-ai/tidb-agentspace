@@ -331,7 +331,7 @@ test('missing or ambiguous existing storage stops before any preparation and nev
       args[1] === 'storageclass' ? JSON.stringify({ items }) : f.dependencies.kubectl(args, input);
     await assert.rejects(
       enableAnalytics(options, { ...f.dependencies, kubectl }),
-      /existing default cluster storage/,
+      /unambiguous existing/,
     );
     assert.equal(f.events.length, 0);
   }
@@ -340,6 +340,24 @@ test('missing or ambiguous existing storage stops before any preparation and nev
       throw missing('Forbidden');
     }),
   );
+});
+
+test('without a default, reuses only a unique storage class already bound in the target namespace', () => {
+  const calls = [];
+  const kubectl = (args) => {
+    calls.push(args);
+    return JSON.stringify({
+      items:
+        args[1] === 'storageclass'
+          ? [{ metadata: { name: 'gp2' } }, { metadata: { name: 'gp3' } }]
+          : [
+              { spec: { storageClassName: 'gp3' }, status: { phase: 'Bound' } },
+              { spec: { storageClassName: 'gp2' }, status: { phase: 'Pending' } },
+            ],
+    });
+  };
+  assert.equal(clusterStorage(kubectl, 'dev'), 'gp3');
+  assert.deepEqual(calls[1], ['get', 'pvc', '-n', 'dev', '-o', 'json']);
 });
 
 test('rejected AWS preparation is retained untouched and cannot select the volume profile', async () => {

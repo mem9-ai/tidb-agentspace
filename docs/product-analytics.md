@@ -263,12 +263,13 @@ They reuse its digest-pinned native image, public SSO callback and existing busi
 configuration. There is no customer/Meta initialization or data reset.
 
 Enablement creates one private 5 GiB `ReadWriteOnce` PVC per authority through the
-cluster's existing default StorageClass. SlateDB uses the pinned local filesystem
+cluster's existing StorageClass. SlateDB uses the pinned local filesystem
 object-store adapter with fsync enabled. Its directory is mounted only into that
 authority's initializer and service, with separate keys and tokens. No new S3 bucket,
 IAM identity, OIDC provider, cloud credential or AWS management API is required by
 analytics. The existing protected deployment mechanism still supplies cluster access.
-A missing or ambiguous default StorageClass stops preparation; no ephemeral-disk or
+Use the unique default class or, without a default, the unique class already bound
+in this namespace. Ambiguous or unavailable storage stops preparation; no ephemeral-disk or
 Meta fallback is used. Volume creation/attachment and restart recovery must be
 observed on the actual target before claiming live availability.
 
