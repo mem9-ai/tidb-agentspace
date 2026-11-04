@@ -21,7 +21,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-// ../../../Users/siddon/eng/tidb.ai/node_modules/openapi-fetch/dist/index.mjs
+// node_modules/openapi-fetch/dist/index.mjs
 var PATH_PARAM_RE = /\{[^{}]+\}/g;
 var supportsRequestInitExt = () => {
 	return typeof process === "object" && Number.parseInt(process?.versions?.node?.substring(0, 2)) >= 18 && process.versions.undici;

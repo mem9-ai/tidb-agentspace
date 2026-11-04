@@ -14,6 +14,7 @@ test('public discovery has readable initial HTML, correct canonical paths, priva
     assert.ok(parse(html));
     assert.ok(html.includes(page.heading));
     assert.match(html, /<h1\b/);
+    assert.match(html, /:root\[data-mantine-color-scheme=dark\]\{--mantine-color-/);
     assert.ok(html.includes(`rel="canonical" href="https://example.test/studio/${page.path}"`));
     assert.match(html, /name="description"/);
     assert.match(html, /property="og:title"/);

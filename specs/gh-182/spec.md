@@ -12,7 +12,7 @@
 | Source baseline     | `f8fc201715aad9d10a04bdd9668b0acc85e632d4` (implementation must pin the accepted specification's full merge SHA)                                                                                                                      |
 | Risk                | New pseudonymous behavior collection and cross-Workspace aggregate access; public search exposure                                                                                                                                     |
 | Dependencies        | [ADR 0044](../../docs/decisions/0044-workspace-observability.md), [Global API](../../docs/global-public-api.md), [TiUI](../../docs/standards/tiui-design-system.md), [API verification](../../docs/standards/openapi-verification.md) |
-| Acceptance baseline | LAUNCH-01 through LAUNCH-12 below; proposed until specification acceptance                                                                                                                                                            |
+| Acceptance baseline | LAUNCH-01 through LAUNCH-12 below, with the owner's monitoring and Admin amendments; implementation evidence and remaining launch checks are recorded in GH-184                                                                       |
 
 The owner accepted this design on 2026-11-04 and then clarified two requirements:
 Admin uses TiDB Cloud login with a verified email in exactly `pingcap.com`; HTTP
@@ -42,13 +42,13 @@ for initial launch. Revisit storage based on measured load and retention cost.
 
 ### LAUNCH-01: Collect a small, versioned event vocabulary
 
-| Source          | Events                                                                   | Meaning                                                                                                                                            |
-| --------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser         | `public_page_view`, `try_clicked`, `sign_in_clicked`, `journey_selected` | Public page and explicit entry intent; journey is agent or self-service                                                                            |
-| Browser         | `helpful_vote`                                                           | Optional yes/no answer after a useful result; web-vital and HTTP monitoring deferred by owner                                                      |
-| Verified server | `workspace_ready`, `sign_in_completed`, `sample_ready`                   | Actual completed onboarding/sample setup, with guest/account actor classification                                                                  |
-| Verified server | `operation_completed`                                                    | Fixed operation enum, outcome, duration and safe error category for resource creation, file preview/read/write, query, analysis, import and export |
-| Verified server | `report_saved`                                                           | Successful explicit first-party tutorial report save; generic file existence or writes cannot claim an agent report                                |
+| Source          | Events                                                                   | Meaning                                                                                                                                      |
+| --------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser         | `public_page_view`, `try_clicked`, `sign_in_clicked`, `journey_selected` | Public page and explicit entry intent; journey is agent or self-service                                                                      |
+| Browser         | `helpful_vote`                                                           | Optional yes/no answer after a useful result; web-vital and HTTP monitoring deferred by owner                                                |
+| Verified server | `workspace_ready`, `sign_in_completed`, `sample_ready`                   | Actual completed onboarding/sample setup, with guest/account actor classification                                                            |
+| Verified server | `operation_completed`                                                    | Fixed operation enum and outcome for resource creation, file preview/read/write, query, analysis, import and export; request timing deferred |
+| Verified server | `report_saved`                                                           | Successful explicit first-party tutorial report save; generic file existence or writes cannot claim an agent report                          |
 
 Server outcomes are emitted from shared domain/transport completion hooks so REST
 and Console use the same definitions. Do not infer success from button clicks,
@@ -59,10 +59,10 @@ specifications; do not invent an `agent_connected` event from a copy action.
 
 Browser events accept only versioned, per-event typed fields: random event/session
 IDs, fixed page/journey enums, coarse device class, bounded approved campaign IDs,
-referrer category and numeric vital values/ratings. No arbitrary property bags.
+referrer category. No arbitrary property bags or browser vital measurements.
 Unknown fields/events and unsupported versions fail validation. Server events add
-trusted timestamps, environment, authority, pseudonymous Workspace/actor IDs,
-operation enum, outcome, request ID and duration. Client submissions cannot supply
+trusted timestamps, authority, pseudonymous Workspace/actor IDs,
+operation enum and outcome. Client submissions cannot supply
 trusted outcomes, identity, environment, request linkage or operator flags.
 
 ### LAUNCH-02: Define visitors and attribution honestly
@@ -99,8 +99,8 @@ complete days, with Today, 7 days and 30 days available. Today is explicitly par
 | Time to value          | Median and p90 from server Workspace readiness to first useful result among activated Workspaces; show sample count and never treat non-activators as zero seconds            |
 | API adoption           | Distinct Workspaces with successful Key-authenticated meaningful operations; kept separate from browser visits and human counts                                               |
 | Active and returning   | Meaningful success per Workspace/day; D1 and D7 retention are activity in UTC day +1/+7 from first meaningful-success day / eligible activated cohort, split by guest/account |
-| Friction               | Attempts, successes, failures, safe failure categories and p50/p95 durations by operation; exclude routine polling and identify insufficient samples                          |
-| Experience             | Helpful yes / answered votes and LCP/INP/CLS distributions, separately with sample counts; do not claim these measure satisfaction for everyone                               |
+| Friction               | Successes and failures by operation; exclude routine polling. HTTP timing and operational failure diagnostics are deferred by the owner                                       |
+| Experience             | Helpful yes / answered votes with sample counts; do not claim these measure satisfaction for everyone. Browser vitals are deferred                                            |
 
 An ordered conversion funnel counts only sessions/Workspaces with the required
 preceding step. Browser-only intent and authoritative results are distinguishable.

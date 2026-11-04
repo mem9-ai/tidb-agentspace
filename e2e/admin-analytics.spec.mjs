@@ -144,6 +144,30 @@ test('@visual public discovery is readable, measures approved sources and respec
   await expect(
     page.getByRole('heading', { name: 'From a question to a useful result.' }),
   ).toBeVisible();
+  const contrasts = await page.locator('main').evaluate((main) => {
+    const luminance = (color) => {
+      const rgb = color
+        .match(/[\d.]+/g)
+        .slice(0, 3)
+        .map(Number);
+      return rgb
+        .map((value) => {
+          const channel = value / 255;
+          return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+        })
+        .reduce((total, value, index) => total + value * [0.2126, 0.7152, 0.0722][index], 0);
+    };
+    const background = luminance(getComputedStyle(document.body).backgroundColor);
+    return ['h1', 'p', '[data-analytics="try"]'].map((selector) => {
+      const style = getComputedStyle(main.querySelector(selector));
+      const text = luminance(style.color);
+      const surface = selector.includes('data-analytics')
+        ? luminance(style.backgroundColor)
+        : background;
+      return (Math.max(text, surface) + 0.05) / (Math.min(text, surface) + 0.05);
+    });
+  });
+  for (const contrast of contrasts) expect(contrast).toBeGreaterThanOrEqual(4.5);
   await expect.poll(() => events.length).toBe(1);
   expect(events[0].event).toMatchObject({ name: 'public_page_view', campaign: 'launch' });
   expect(JSON.stringify(events)).not.toContain('must-not-be-captured');

@@ -2,12 +2,29 @@ import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { parseFragment } from 'parse5';
 import { Anchor, Button, Group, Paper, Text, Typography } from '@tidbcloud/uikit';
-import { ThemeProvider } from '@tidbcloud/uikit/theme';
+import { ThemeProvider, useTheme } from '@tidbcloud/uikit/theme';
 import { useWorkspaceThemeOverrides } from '../src/ui/workspace-theme.ts';
 
 function DiscoveryTheme({ children }) {
   const theme = useWorkspaceThemeOverrides();
-  return h(ThemeProvider, { colorScheme: 'auto', theme }, children);
+  const dark = useTheme('dark');
+  // TiUI resolves one palette per provider render. Static pages need the upstream
+  // dark tokens too, without waiting for React hydration or copying its palette.
+  const darkTokens = Object.entries(dark.colors)
+    .flatMap(([name, shades]) =>
+      shades.map((value, shade) => `--mantine-color-${name}-${shade}:${value}`),
+    )
+    .join(';');
+  return h(
+    ThemeProvider,
+    { colorScheme: 'light', theme },
+    h(
+      'style',
+      null,
+      `:root[data-mantine-color-scheme=dark]{${darkTokens};--mantine-color-white:${dark.white};--mantine-color-black:${dark.black}}`,
+    ),
+    children,
+  );
 }
 
 // Build-time rendering of owned editorial content. Controls and theme stay TiUI-owned.
