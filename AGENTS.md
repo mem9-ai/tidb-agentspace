@@ -40,14 +40,12 @@ follow its task-specific references before implementation. Keep detailed rules c
   identifiers, comments, and shared engineering documentation use English.
 - Read `docs/architecture.md` for the proposed product. Distinguish proposed behavior from
   what the running prototype implements.
-- MySQL, opt-in db9 PostgreSQL, DuckDB and File System are available; TiDB Cloud PG Starter remains planned. Read
-  [the Zero SQL boundary](docs/decisions/0006-zero-sql-gateway.md) before database work.
-  The proposed Starter protocols and File System are separate resource types with their
-  own endpoints, credentials, regional availability, and capabilities.
+- PostgreSQL through db9 is the only available database. Standalone MySQL and DuckDB databases
+  are retired under [ADR 0048](docs/decisions/0048-postgresql-only-databases.md); preserve
+  existing bindings and supported cleanup. TiDB Cloud PG Starter remains planned.
 - PostgreSQL through db9 follows [ADR 0011](docs/decisions/0011-db9-postgres.md): private anonymous credentials, restricted native roles, verified TLS and explicit compatibility limits. Retired simulated PG records stay hidden.
-- DuckDB owns dedicated private storage; read [the DuckDB boundary](docs/decisions/0008-duckdb-private-storage.md).
-  Never publish its backing filesystem as a customer resource, Key target, file API or usage row.
-  File query sources follow [ADR 0009](docs/decisions/0009-duckdb-file-sources.md): authorize every selected public File System and read/analyze action before I/O; keep snapshots query-scoped and credentials internal.
+- DuckDB remains the bounded File System analysis engine. Private storage bindings of retired
+  standalone DuckDB databases remain internal and cannot become public File System resources.
 - Customers use one Workspace Key for the public product API, with both action and resource
   permissions. The service manages upstream cloud keys and native data credentials internally.
   Never require customers to supply provider keys or expose those secrets to a browser or agent.

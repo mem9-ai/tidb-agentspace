@@ -314,7 +314,7 @@ for (const count of [0, 1, 2]) {
     workspace,
   }) => {
     workspace.addResources();
-    const database = workspace.state.resources.find((resource) => resource.kind === 'mysql');
+    const database = workspace.state.resources.find((resource) => resource.kind === 'postgresql');
     const first = workspace.state.resources.find((resource) => resource.kind === 'filesystem');
     const systems = [first, { ...first, id: 'fs_second', name: 'second-filesystem' }];
     workspace.state.resources = [database, ...systems.slice(0, count)];
@@ -367,6 +367,7 @@ test('@visual database creation offers PostgreSQL without an engine choice', asy
   page,
   workspace,
 }, testInfo) => {
+  workspace.state.capabilities.duckdb.available = false;
   await workspace.open('#databases');
   const trigger = page.getByRole('button', { name: 'Create database', exact: true });
   await trigger.click();
@@ -384,6 +385,7 @@ test('@visual database creation offers PostgreSQL without an engine choice', asy
   await expect(name).toHaveCSS('font-size', '16px');
   await expect(name).toHaveCSS('height', '48px');
   await expect(dialog.getByText('PostgreSQL Compatible', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Create database', exact: true })).toBeEnabled();
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     .toBe(true);
@@ -421,7 +423,6 @@ test('@visual an unavailable PostgreSQL provider cannot create a database', asyn
   page,
   workspace,
 }) => {
-  workspace.state.capabilities.duckdb.available = false;
   workspace.state.capabilities.postgresql.available = false;
   await workspace.open('#databases');
   await page.getByRole('button', { name: 'Create database', exact: true }).click();
@@ -432,19 +433,6 @@ test('@visual an unavailable PostgreSQL provider cannot create a database', asyn
   expect(
     workspace.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/resources')),
   ).toHaveLength(0);
-});
-
-test('database creation uses PostgreSQL when DuckDB is unavailable', async ({
-  page,
-  workspace,
-}) => {
-  workspace.state.capabilities.duckdb.available = false;
-  await workspace.open('#databases');
-  await page.getByRole('button', { name: 'Create database', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Create a database' });
-  await expect(dialog.getByRole('combobox', { name: 'Database type' })).toHaveCount(0);
-  await expect(dialog.getByText('PostgreSQL Compatible', { exact: true })).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Create database', exact: true })).toBeEnabled();
 });
 
 test('database creation does not submit when no provider location is available', async ({
@@ -666,7 +654,7 @@ test('@visual key permissions follow resource types and restore a specific selec
     dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }),
   ).not.toBeChecked();
   await expect(
-    dialog.getByRole('checkbox', { name: 'mysql-fixture', exact: true }),
+    dialog.getByRole('checkbox', { name: 'postgresql-fixture', exact: true }),
   ).not.toBeChecked();
   await dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }).check();
   await expect(dialog.getByRole('checkbox', { name: /queries:read/ })).toHaveCount(0);
@@ -676,7 +664,7 @@ test('@visual key permissions follow resource types and restore a specific selec
       path: `${process.env.KEY_PERMISSIONS_SCREENSHOTS}-files-${testInfo.project.name}.png`,
       animations: 'disabled',
     });
-  await dialog.getByRole('checkbox', { name: 'mysql-fixture', exact: true }).check();
+  await dialog.getByRole('checkbox', { name: 'postgresql-fixture', exact: true }).check();
   await dialog.getByRole('checkbox', { name: /queries:read/ }).check();
   await dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }).uncheck();
   await expect(dialog.getByRole('checkbox', { name: /files:read/ })).toHaveCount(0);
@@ -695,7 +683,9 @@ test('@visual key permissions follow resource types and restore a specific selec
   await dialog.getByRole('checkbox', { name: /resources:write/ }).check();
   await all.uncheck();
   await expect(dialog.getByRole('status')).toContainText('resources:write');
-  await expect(dialog.getByRole('checkbox', { name: 'mysql-fixture', exact: true })).toBeChecked();
+  await expect(
+    dialog.getByRole('checkbox', { name: 'postgresql-fixture', exact: true }),
+  ).toBeChecked();
   await expect(
     dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }),
   ).not.toBeChecked();
@@ -747,7 +737,7 @@ test('@visual an agent Key can be limited to read-only SQL on a selected databas
   await page.getByRole('button', { name: 'Create API key', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
   await dialog.getByRole('textbox', { name: 'Key name' }).fill('database-reader');
-  await dialog.getByRole('checkbox', { name: 'mysql-fixture', exact: true }).check();
+  await dialog.getByRole('checkbox', { name: 'postgresql-fixture', exact: true }).check();
   await expect(dialog.getByRole('checkbox', { name: /files:read/ })).toHaveCount(0);
   await dialog.getByRole('checkbox', { name: /queries:read/ }).check();
   await expect(dialog.getByRole('checkbox', { name: /queries:execute/ })).not.toBeChecked();

@@ -7,6 +7,8 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Accepted decisions
 
+- [0048: PostgreSQL-only databases](0048-postgresql-only-databases.md) — retire standalone MySQL and DuckDB databases while retaining File System analysis and existing resource cleanup.
+
 - [0039: Manual dev smoke release](0039-dev-smoke-release.md) — explicitly selected basic
   dev acceptance with trusted same-commit Quality, protected image deployment and health checks.
 

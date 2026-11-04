@@ -40,7 +40,7 @@ export function databaseTablesHash(resourceId: string, tableName?: string): stri
 }
 export function tableSelectSql(
   name: string,
-  dialect: 'mysql' | 'duckdb' | 'postgresql' = 'mysql',
+  dialect: 'mysql' | 'duckdb' | 'postgresql' = 'postgresql',
 ): string {
   if (dialect === 'postgresql')
     return `SELECT * FROM "workspace"."${name.replaceAll('"', '""')}" LIMIT 100;`;

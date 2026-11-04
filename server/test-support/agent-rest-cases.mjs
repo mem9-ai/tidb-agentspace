@@ -346,7 +346,7 @@ export async function agentRestCases(t, transport) {
     async () => {
       const detail = (await request('/resources/db_live', { token })).body.data;
       assert.equal(detail.id, 'db_live');
-      assert.equal(detail.capabilities.delete, false);
+      assert.equal(detail.capabilities.delete, true);
       assert.ok(detail.allowedActions.includes('queries:read'));
       assert.equal(detail.allowedActions.includes('queries:execute'), false);
       const restricted = await key(['resources:read', 'resources:write'], ['fs_shared']);
@@ -372,9 +372,10 @@ export async function agentRestCases(t, transport) {
       assert.equal(cross.status, 401);
       assert.equal(f.provider.calls, before);
       await request('/resources/missing', { token: full.secret }, 403, 'RESOURCE_ACCESS_DENIED');
+      const oldKey = await key(['resources:read', 'resources:write'], ['db_retired_mysql']);
       const unsupported = await request(
-        '/resources/db_live',
-        { method: 'DELETE', token: full.secret },
+        '/resources/db_retired_mysql',
+        { method: 'DELETE', token: oldKey.secret },
         405,
         'RESOURCE_DELETE_UNSUPPORTED',
       );
@@ -387,8 +388,8 @@ export async function agentRestCases(t, transport) {
   const bindingKeys = [
     'bindings/drive9/fs_live',
     'credentials/drive9/fs_live',
-    'bindings/zero/db_live',
-    'credentials/zero/db_live',
+    'bindings/db9/db_live',
+    'credentials/db9/db_live',
   ];
   const beforeBindings = await f.records(bindingKeys);
   await t.test(
@@ -444,7 +445,7 @@ export async function agentRestCases(t, transport) {
       const deleting = request('/resources/fs_live', { method: 'DELETE', token: full.secret }, 202);
       try {
         const unrelated = await Promise.race([
-          request('/resources/db_memory', { method: 'DELETE' }),
+          request('/resources/db_legacy_local', { method: 'DELETE' }),
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error('unrelated resource deletion was blocked')), 5000),
           ),
@@ -505,7 +506,12 @@ export async function agentRestCases(t, transport) {
         const before = f.provider.deleted.length;
         await request(`/resources/${id}`, { method: 'DELETE', token: full.secret }, 202);
         assert.equal(f.provider.deleted.length, before);
-        await request('/queries', q(id, 'SELECT 1'), 409, 'RESOURCE_DELETING');
+        await request(
+          '/queries',
+          q(id, 'SELECT 1'),
+          id === 'db_duck' ? 404 : 409,
+          id === 'db_duck' ? 'NOT_FOUND' : 'RESOURCE_DELETING',
+        );
       }
       assert.ok(f.provider.deleted.some((d) => d.kind === 'db9'));
       const records = await f.records([

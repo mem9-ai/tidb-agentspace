@@ -58,7 +58,8 @@ export async function productApiFixture(
     ];
     for (const [resourceId, kind, upstream] of [
       ['fs_live', 'filesystem', 'drive9-anonymous'],
-      ['db_live', 'mysql', 'tidb-cloud-zero'],
+      ['db_live', 'postgresql', 'db9-anonymous'],
+      ['db_retired_mysql', 'mysql', 'tidb-cloud-zero'],
       ['db_pg', 'postgresql', 'db9-anonymous'],
       ['db_duck', 'duckdb', 'duckdb-drive9'],
     ])
@@ -71,6 +72,15 @@ export async function productApiFixture(
         region: kind === 'filesystem' ? 'aws-ap-southeast-1' : 'automatic',
         createdAt: state.workspace.createdAt,
       });
+    state.resources.push({
+      id: 'db_legacy_local',
+      kind: 'mysql',
+      provider: 'local',
+      name: 'legacy-local',
+      status: 'active',
+      region: 'aws-us-east-1',
+      createdAt: state.workspace.createdAt,
+    });
     if (missingBinding)
       state.resources.push({
         id: 'db_missing',
@@ -106,7 +116,7 @@ export async function productApiFixture(
       },
       zero: {
         bindings: {
-          db_live: {
+          db_retired_mysql: {
             state: 'ready',
             instanceId: state.workspace.id,
             expiresAt: '2099-01-01T00:00:00.000Z',
@@ -124,6 +134,16 @@ export async function productApiFixture(
           expiresAt: 4070908800000,
         },
         bindings: {
+          db_live: {
+            state: 'ready',
+            instanceId: state.workspace.id,
+            connection: connection('postgresql'),
+          },
+          db_memory: {
+            state: 'ready',
+            instanceId: state.workspace.id,
+            connection: connection('postgresql'),
+          },
           db_pg: {
             state: 'ready',
             instanceId: state.workspace.id,
@@ -303,7 +323,7 @@ export async function productApiFixture(
       for (let offset = 0; offset < count; offset += 1000) {
         const changes = Array.from({ length: Math.min(1000, count - offset) }, (_, index) => {
           const n = offset + index;
-          const id = `db_scale_${String(n).padStart(8, '0')}`;
+          const id = `fs_scale_${String(n).padStart(8, '0')}`;
           return {
             key: `state/resources/${id}`,
             expectedVersion: null,
@@ -312,8 +332,8 @@ export async function productApiFixture(
               record: {
                 id,
                 name: `scale-${n}`,
-                kind: 'mysql',
-                region: 'automatic',
+                kind: 'filesystem',
+                region: 'aws-ap-southeast-1',
                 provider: 'local',
                 status: 'active',
                 createdAt: states[0].workspace.createdAt,

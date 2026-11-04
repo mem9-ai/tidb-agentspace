@@ -1,6 +1,6 @@
 # TiDB Agent Workspace
 
-An independent Workspace for developers and agents to use databases and files through one scoped Global Workspace Key and Region access Tokens. The Console is React/TiUI; the hosted/local API and regional Meta services use Rust. MySQL, opt-in db9 PostgreSQL, native DuckDB and independent File Systems have separate provider capabilities and credential boundaries.
+An independent Workspace for developers and agents to use databases and files through one scoped Global Workspace Key and Region access Tokens. The Console is React/TiUI; the hosted/local API and regional Meta services use Rust. PostgreSQL-compatible databases and File Systems have separate provider capabilities and credential boundaries. DuckDB remains the File System analysis engine; standalone MySQL and DuckDB databases are retired.
 
 Start with [start-here.md](start-here.md), [contribution rules](CONTRIBUTING.md) and [architecture](docs/architecture.md). The Rust API supports local guest and hosted shared-Workspace SSO; production multi-tenant identity remains planned.
 
@@ -26,12 +26,11 @@ Provider configuration lives in private `.data/meta-runtime/rust-api.json`, unde
 ```json
 {
   "filesProvider": "drive9-anonymous",
-  "mysqlProvider": "tidb-cloud-zero",
   "postgresProvider": "db9-anonymous"
 }
 ```
 
-These modes enable explicit resource creation in the Console; startup does not provision instances. Defaults use local demo files/MySQL with PostgreSQL disabled. Native DuckDB also requires a separately verified tidbfs extension under `product.execute`. The service manages native credentials internally; callers use scoped Workspace Keys. See [Rust configuration](docs/rust-backend.md), [db9](docs/db9-postgres.md), [MySQL](docs/starter-sql-verification.md) and [DuckDB](docs/duckdb-databases.md) for boundaries and limits.
+These modes enable explicit resource creation in the Console; startup does not provision instances. Defaults use local demo files with PostgreSQL disabled. The service manages native credentials internally; callers use scoped Workspace Keys. See [Rust configuration](docs/rust-backend.md), [PostgreSQL](docs/db9-postgres.md), and [the retirement decision](docs/decisions/0048-postgresql-only-databases.md) for boundaries and limits.
 
 ## Build and verification
 
@@ -51,28 +50,10 @@ credential; customers still use a scoped Workspace Key. Existing local files rem
 See [the provider decision](docs/decisions/0004-drive9-anonymous-provider.md) for limits,
 private storage, recovery, and live verification instructions.
 
-## Real MySQL with TiDB Cloud Zero
-
-Enable anonymous database creation alongside the Singapore File System:
-
-Set `product.providers.mysqlProvider` to `tidb-cloud-zero` in the same native configuration.
-
-Create a MySQL database in the Console, then open its SQL editor. The backend creates the
-Zero instance and a database-scoped application user; no provider account or customer-supplied
-credential is needed. Customers use Workspace Keys with `queries:execute` and resource grants.
-That action permits both reads and writes. Native passwords remain encrypted private metadata records. Existing demo resources retain their labeled local behavior.
-
-Zero databases expire after up to 30 days; the Console shows the provider's exact expiry.
-Export important data before expiry. Region assignment is automatic. This integration does not
-claim/upgrade trials or automatically replace expired/uncertain instances. Legacy simulated PG
-records remain hidden on disk; db9 resources use new private bindings.
-See [the SQL boundary and recovery](docs/decisions/0006-zero-sql-gateway.md) and
-[real verification evidence](docs/starter-sql-verification.md).
-
 ## PostgreSQL with db9
 
 Set `product.providers.postgresProvider` to `db9-anonymous` in private native configuration,
-then create **PostgreSQL · db9** in the Console. Official REST calls create an anonymous account
+then create **PostgreSQL Compatible** in the Console. Official REST calls create an anonymous account
 and database; SQL uses a restricted native PostgreSQL role over verified TLS. Customers use
 Workspace Keys for queries, table browsing and files; upstream credentials stay in the service.
 Anonymous accounts currently allow five databases. Provider quotas/compatibility apply and
@@ -80,22 +61,11 @@ usage is not metered. db9 NUMERIC supports 28–29 significant digits, rather th
 larger precision range. See [setup and recovery](docs/db9-postgres.md),
 [the provider decision](docs/decisions/0011-db9-postgres.md) and [verification](docs/db9-verification.md).
 
-## DuckDB databases
-
-Select DuckDB in Databases to create an analytical database with dedicated service-managed
-storage in Singapore. Customers see only the database; its backing File System and credentials
-remain internal. The same scoped Workspace Key works with MySQL, DuckDB and standalone Files.
-The operator supplies a verified DuckDB 2.0 tidbfs artifact; without it, creation is unavailable.
-See [runtime setup and recovery](docs/duckdb-databases.md) and
-[verification](docs/duckdb-verification.md). Native remote storage is experimental.
-
 ## What works
-
-- DuckDB queries can use selected CSV, JSON/NDJSON and Parquet from public File Systems as query-scoped `files.name` tables, including joins. Require query/read/analyze actions and both database/File System grants. Four sources / 16 MiB input, read-only SELECT and the existing bounded worker. See [file sources](docs/duckdb-databases.md#workspace-file-sources).
 
 - Top-level destinations include overview, File Systems, databases, tutorials, agent connection, keys, API documentation, billing and settings. Each database has one SQL workspace with a persistent table list, editor, query results, columns, indexes and up to 100 preview rows at `#databases/<resource-id>/sql`, preserving the selected database on reload and browser history navigation.
 - Table links preserve exact names and keep the SQL editor visible. Table selection retains drafts; Query table explicitly prepares a SELECT. Agents use the same scoped table APIs; see [unified workspace verification](docs/database-workspace-verification.md) and [database API evidence](docs/database-browser-verification.md).
-- Simulated databases/local files by default, plus opt-in real Zero MySQL, db9 PostgreSQL databases and Drive9 anonymous File Systems in Singapore. Creation persists idempotency and provider bindings across restarts.
+- Local files by default, plus opt-in PostgreSQL-compatible databases and Drive9 anonymous File Systems in Singapore. Creation persists idempotency and provider bindings across restarts.
 - Local UTF-8 files up to 256 KiB; live text/binary uploads up to the negotiated gateway maximum of 1 MiB, metadata listings, bounded previews, streaming downloads, and empty-directory deletion. Markdown, JSON, CSV, code, and text render in a side panel; oversized/binary content remains downloadable.
 - Read-only file analysis in the file side panel: CSV/Parquet use real DuckDB SQL; UTF-8 logs/text use Just Bash grep/awk/pipelines. The API takes bounded snapshots from local or live files, with no hosted Exec requirement. Agents need both `files:read` and `files:analyze` plus the File System grant, carried by a Region access Token. See [limits and verification](docs/file-analysis-verification.md).
 - Global Workspace Keys with explicit action/resource grants and expiry. Keys are revealed once and exchanged for scoped access Tokens. Global records revocation immediately and reports Region policy application separately; disconnected Regions remain pending.
@@ -105,7 +75,7 @@ See [runtime setup and recovery](docs/duckdb-databases.md) and
 
 ## Prototype boundaries
 
-Unbound database instances and chart series are simulated and labeled in the UI. Demo SQL supports only `SELECT 1 [AS connected]` and `SELECT * FROM agent_events [LIMIT n]`; this is not a MySQL or PostgreSQL server. Local demo files are text records in encrypted native metadata. File Systems marked `drive9-anonymous` store their content in the real Singapore service, with internal credentials in encrypted native records. Database usage is not metered; local filesystem allowances are a reference snapshot. Live trial storage usage, quotas, and billing are not measured. One Workspace Key works across its permitted database and file APIs. Both action scopes and resource IDs are enforced; selected resources do not automatically expand to future resources. Path-level policies and native protocol gateways are not implemented.
+Chart series are simulated and labeled in the UI. Local demo files are text records in encrypted native metadata. File Systems marked `drive9-anonymous` store their content in the real Singapore service, with internal credentials in encrypted native records. Database usage is not metered; local filesystem allowances are a reference snapshot. Live trial storage usage, quotas, and billing are not measured. One Workspace Key works across its permitted database and file APIs. Both action scopes and resource IDs are enforced; selected resources do not automatically expand to future resources. Path-level policies and native protocol gateways are not implemented.
 
 Persistent Starter provisioning, production secret management, native protocol gateways, real telemetry, MCP, multi-tenant sign-in, payments, and invoices are proposed in [the architecture document](docs/architecture.md). The native loopback guest profile remains for local validation. Native SSO supports explicitly configured personal Workspace isolation; team sharing and production identity operations retain separate delivery limits.
 

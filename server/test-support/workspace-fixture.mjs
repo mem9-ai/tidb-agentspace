@@ -13,9 +13,10 @@ export function workspaceFixture() {
     resources: [
       {
         id: 'db_memory',
-        name: 'fixture-mysql',
-        kind: 'mysql',
-        region: 'aws-us-east-1',
+        name: 'fixture-postgresql',
+        kind: 'postgresql',
+        provider: 'db9-anonymous',
+        region: 'automatic',
         status: 'active',
         createdAt: now,
       },

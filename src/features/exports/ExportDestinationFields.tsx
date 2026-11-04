@@ -48,9 +48,7 @@ export function useExportDestination(
       resource.status === 'active' &&
       (kind === 'filesystem'
         ? resource.kind === 'filesystem'
-        : resource.kind !== 'filesystem' &&
-          resource.kind !== 'duckdb' &&
-          liveProviders.includes(resource.provider || '')),
+        : resource.kind === 'postgresql' && liveProviders.includes(resource.provider || '')),
   );
   return {
     targets,

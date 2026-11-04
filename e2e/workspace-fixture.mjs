@@ -9,7 +9,7 @@ const regionalContract = JSON.parse(
 
 const createdAt = '2026-01-01T00:00:00.000Z';
 export const sampleResources = [
-  { id: 'db_fixture', name: 'mysql-fixture', kind: 'mysql', region: 'automatic' },
+  { id: 'db_fixture', name: 'postgresql-fixture', kind: 'postgresql', region: 'automatic' },
   {
     id: 'fs_fixture',
     name: 'filesystem-fixture',
@@ -53,7 +53,7 @@ function bootstrap() {
           storageGiB: 2,
           monthlyRU: 50000000,
           preview: kind !== 'mysql',
-          available: true,
+          available: kind !== 'mysql' && kind !== 'duckdb',
           provider: kind === 'mysql' ? 'tidb-cloud-zero' : 'local',
         },
       ]),

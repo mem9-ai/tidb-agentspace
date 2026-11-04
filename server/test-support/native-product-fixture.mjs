@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { metaFixture, port, until } from './meta-fixture.mjs';
 import { seedRecords } from './record-fixture.mjs';
 import { workspaceFixture } from './workspace-fixture.mjs';
-import { providerFixture } from './provider-fixture.mjs';
+import { providerFixture, nativeSecret } from './provider-fixture.mjs';
 
 export async function nativeProductFixture(t) {
   const metadata = await metaFixture();
@@ -17,7 +17,32 @@ export async function nativeProductFixture(t) {
   });
   provider = await providerFixture();
   const region = await metadata.service('contract');
-  await seedRecords(region.client, region.server.authorityId, workspaceFixture());
+  await seedRecords(region.client, region.server.authorityId, workspaceFixture(), {
+    db9: {
+      account: {
+        state: 'ready',
+        anonymousId: 'fixture',
+        anonymousSecret: nativeSecret,
+        token: 'fixture-token',
+        expiresAt: 4070908800000,
+      },
+      bindings: {
+        db_memory: {
+          state: 'ready',
+          instanceId: 'fixture',
+          connection: {
+            kind: 'postgresql',
+            region: 'automatic',
+            host: 'pg.db9.io',
+            port: 5432,
+            user: 'tenant.wabcdef123456',
+            password: nativeSecret,
+            database: 'postgres',
+          },
+        },
+      },
+    },
+  });
   const listen = await port();
   const config = resolve(metadata.directory, 'api.json');
   await writeFile(
@@ -33,8 +58,10 @@ export async function nativeProductFixture(t) {
         providers: {
           filesProvider: 'local',
           mysqlProvider: 'tidb-cloud-zero',
+          postgresProvider: 'db9-anonymous',
           testMode: true,
           zeroEndpoint: provider.origin + '/zero',
+          db9Endpoint: provider.origin + '/customer',
           sqlFixture: provider.origin + '/sql',
         },
       },

@@ -188,8 +188,10 @@ function App() {
     () =>
       data && {
         ...data,
-        resources: data.resources.filter((resource) => resource.kind !== 'duckdb'),
-        usage: data.usage.filter((item) => item.kind !== 'duckdb'),
+        resources: data.resources.filter(
+          (resource) => !['duckdb', 'mysql'].includes(resource.kind),
+        ),
+        usage: data.usage.filter((item) => !['duckdb', 'mysql'].includes(item.kind)),
       },
     [data],
   );

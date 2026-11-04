@@ -686,7 +686,7 @@ const paths = {
               pattern: '^[a-z][a-z0-9_-]{2,39}$',
               description: 'Underscores are permitted for PostgreSQL resources only.',
             },
-            kind: { enum: ['mysql', 'postgresql', 'duckdb', 'filesystem'] },
+            kind: { enum: ['postgresql', 'filesystem'] },
             onlyIfNew: {
               type: 'boolean',
               description:
@@ -700,7 +700,7 @@ const paths = {
             region: {
               ...regionSchema,
               description:
-                'Provider data location supported by the resource kind. This is separate from regionId. Zero MySQL uses automatic provider assignment.',
+                'Provider data location supported by the resource kind. This is separate from regionId.',
             },
           },
           allOf: [
@@ -715,11 +715,6 @@ const paths = {
           properties: {
             data: ref('Resource'),
             mode: { enum: ['demo', 'live'] },
-            initialTableSnapshot: {
-              ...ref('TableList'),
-              description:
-                'Optional DuckDB table list observed during initialization of a newly created database, provided only with queries:read. This is a snapshot at creation, not a current table list; refresh to observe later changes. Omitted on idempotent replays and other providers.',
-            },
           },
         },
       },
@@ -1260,7 +1255,7 @@ const paths = {
               type: 'array',
               maxItems: 4,
               description:
-                'DuckDB only: query-scoped CSV/JSON/NDJSON/Parquet snapshots as files.NAME. Nonempty sources require files:read, files:analyze and every source File System grant in addition to database query access. SELECT only; 16 MiB combined input and a shared 15-second deadline. Sources are not persisted.',
+                'Reserved for the retired standalone DuckDB database capability; nonempty sources are not supported. Use File System analysis for DuckDB SQL over files.',
               items: {
                 type: 'object',
                 additionalProperties: false,
@@ -1284,7 +1279,7 @@ const paths = {
             sql: {
               type: 'string',
               description:
-                'queries:read grants a constrained parsed read-only SELECT/CTE/VALUES subset; unknown functions, locks, writes and multiple statements are rejected before provider I/O. queries:execute also permits reads and writes. readOnly:true constrains a full-access caller. Live Zero/DuckDB: one statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. queries:execute allows reads and writes under the internal database role. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. Demo resources accept only SELECT 1 [AS connected] or SELECT * FROM agent_events [LIMIT n].',
+                'queries:read grants a constrained parsed read-only SELECT/CTE/VALUES subset; unknown functions, locks, writes and multiple statements are rejected before provider I/O. queries:execute also permits reads and writes. readOnly:true constrains a full-access caller. One statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying.',
             },
           },
         },
@@ -1806,7 +1801,7 @@ const spec = {
     title: 'TiDB Agent Workspace · Local Prototype API',
     version: '0.1.0',
     description:
-      'A loopback Workspace gateway with opt-in PostgreSQL-compatible databases, TiDB Cloud Zero MySQL and Singapore Drive9 files. Existing local resources remain demos. Workspace Keys authorize actions and resources; upstream credentials stay internal. Zero trials expire; cloud usage is unmeasured. Production identity and public hosting are deferred.',
+      'A Workspace gateway for PostgreSQL-compatible databases and File Systems. Workspace Keys authorize actions and resources; upstream credentials stay internal. Standalone MySQL and DuckDB databases are retired; DuckDB remains available for File System analysis.',
   },
   servers: [
     { url: '/api/v1', description: 'Standalone Workspace API; resolve against the API origin' },

@@ -1188,50 +1188,23 @@ for (const managed of [false, true])
     `SSO logout after CREATE revokes in-flight import (${managed ? 'personal' : 'local legacy'})`,
     { skip: !enabled, timeout: 90000 },
     async (t) => {
-      const statements = [];
       let onCreate;
-      const sql = http.createServer(async (req, res) => {
-        const chunks = [];
-        for await (const c of req) chunks.push(c);
-        const input = JSON.parse(Buffer.concat(chunks));
-        const reply = (value) => {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(value));
-        };
-        if (req.url === '/zero')
-          return reply({
-            instance: {
-              id: 'native-sso-fixture',
-              expiresAt: new Date(Date.now() + 86400000).toISOString(),
-              connection: {
-                host: 'fixture.tidbcloud.com',
-                port: 4000,
-                username: 'prefix.root',
-                password: 'private-synthetic-fixture',
-              },
-            },
-          });
-        statements.push(input.sql);
-        if (input.sql.startsWith('CREATE TABLE') && onCreate) await onCreate();
-        reply({ columns: ['connected'], rows: [{ connected: 1 }], rowCount: 1, affectedRows: 0 });
+      const provider = await providerFixture({
+        onSql: async ({ sql }) => {
+          if (sql.startsWith('CREATE TABLE') && onCreate) await onCreate();
+        },
       });
-      await new Promise((r) => sql.listen(0, '127.0.0.1', r));
-      t.after(
-        () =>
-          new Promise((done) => {
-            sql.close(done);
-            sql.closeAllConnections();
-          }),
-      );
-      const origin = `http://127.0.0.1:${sql.address().port}`;
+      t.after(() => provider.close());
+      const statements = provider.statements;
+      const origin = provider.origin;
       const f = await fixture(
         t,
         {
           product: {
             providers: {
-              mysqlProvider: 'tidb-cloud-zero',
+              postgresProvider: 'db9-anonymous',
               testMode: true,
-              zeroEndpoint: origin + '/zero',
+              db9Endpoint: origin + '/customer',
               sqlFixture: origin + '/sql',
             },
           },
@@ -1251,7 +1224,7 @@ for (const managed of [false, true])
       const created = await f.request(workspaceBase + '/resources', {
         method: 'POST',
         cookie,
-        body: { name: 'sso-import-target', kind: 'mysql', region: 'automatic' },
+        body: { name: 'sso-import-target', kind: 'postgresql', region: 'automatic' },
         headers: { 'Idempotency-Key': 'native-sso-import' },
       });
       assert.equal(created.status, 201, JSON.stringify(created.body));
