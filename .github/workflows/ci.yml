@@ -239,7 +239,7 @@ jobs:
           git show 'HEAD^1:scripts/run-classic-integration.mjs' > "$runner"
           node "$runner" "$CLASSIC_PROFILE"
       - name: Save Cargo timing reports
-        if: always()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cargo-timings-${{ github.sha }}-${{ github.run_attempt }}
@@ -416,3 +416,7 @@ jobs:
               archiveSha256: pins.artifacts[target].sha256 });
             console.log(JSON.stringify(info));
           ' "$RUNNER_TEMP/native-runtime-info.json"
+      - name: Benchmark incremental native image rebuild
+        if: ${{ steps.changes.outputs.changed == 'true' && contains(github.event.pull_request.body, '[benchmark-native-cache]') }}
+        timeout-minutes: 10
+        run: bash scripts/benchmark-native-image-cache.sh

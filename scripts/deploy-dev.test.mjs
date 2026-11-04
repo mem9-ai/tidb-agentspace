@@ -493,6 +493,10 @@ test('automatic checks execute once and releases require exact-commit native evi
   assert.match(otherIntegration.run, /git show "\$policy_ref:scripts\/ci-full-integration\.mjs"/);
   assert.match(otherIntegration.run, /node "\$runner" other/);
   const productIntegration = ci.jobs.product_integration;
+  assert.equal(
+    ci.jobs.metadata.steps.find((step) => step.name === 'Save Cargo timing reports').if,
+    '${{ !cancelled() }}',
+  );
   assert.equal(productIntegration.name, 'Native product integration');
   assert.equal(productIntegration.needs, 'scope');
   assert.equal(
@@ -558,6 +562,15 @@ test('automatic checks execute once and releases require exact-commit native evi
   );
   assert.equal(prBuild.if, "steps.changes.outputs.changed == 'true'");
   assert.ok(ci.jobs.image.steps.some((step) => step.run === 'node scripts/ci-image-inputs.mjs'));
+  const cacheProbe = ci.jobs.image.steps.find(
+    (step) => step.name === 'Benchmark incremental native image rebuild',
+  );
+  assert.equal(
+    cacheProbe.if,
+    "${{ steps.changes.outputs.changed == 'true' && contains(github.event.pull_request.body, '[benchmark-native-cache]') }}",
+  );
+  assert.equal(cacheProbe.run, 'bash scripts/benchmark-native-image-cache.sh');
+  assert.equal(cacheProbe['timeout-minutes'], 10);
   const smoke = ci.jobs.image.steps.find(
     (step) => step.name === 'Run the final native image without network or writable root',
   );
