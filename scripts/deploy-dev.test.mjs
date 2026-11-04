@@ -20,6 +20,46 @@ const config = {
 const oldImage = `registry.example/api@sha256:${'a'.repeat(64)}`;
 const pause = async () => {};
 
+test('cross-run cache probe captures Buildx stderr and fails on a cache miss', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'ci-cache-history-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const docker = join(directory, 'docker');
+  writeFileSync(
+    docker,
+    `#!/bin/sh
+if [ "$1" = buildx ]; then
+  echo '#29 [builder 24/24] RUN find backend/host -type f' >&2
+  if [ "$CACHE_HIT" = yes ]; then echo '#29 CACHED' >&2; else echo '#29 DONE 1.0s' >&2; fi
+elif [ "$1" = run ]; then
+  echo runtime-info
+else
+  exit 1
+fi
+`,
+    { mode: 0o755 },
+  );
+  const workflow = parse(
+    readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'),
+  );
+  const command = workflow.jobs['image-cache-transfer'].steps.at(-1).run;
+  for (const [hit, expected] of [
+    ['yes', 0],
+    ['no', 1],
+  ]) {
+    const result = spawnSync('bash', ['-c', command], {
+      cwd: directory,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${directory}:${process.env.PATH}`,
+        RUNNER_TEMP: directory,
+        CACHE_HIT: hit,
+      },
+    });
+    assert.equal(result.status, expected, `${hit}: ${result.stdout} ${result.stderr}`);
+  }
+});
+
 test('full partition uses the verified merge base and fails closed on mismatched parents', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'ci-partition-source-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -365,9 +405,34 @@ test('automatic checks execute once and releases require exact-commit native evi
     step.uses?.startsWith('docker/build-push-action@'),
   );
   assert.equal(prebuild.with.push, false);
+  assert.equal(prebuild.id, 'image_cache');
+  assert.equal(prebuild['continue-on-error'], true);
+  assert.equal(
+    workflow.jobs.prebuild.outputs.cache_ready,
+    "${{ steps.image_cache.outcome == 'success' }}",
+  );
   assert.match(prebuild.with['cache-to'], /native-api-prewarm-\$\{\{ github\.sha \}\}/);
+  assert.match(prebuild.with['cache-to'], /ignore-error=false/);
   const publish = workflow.jobs.deploy.steps.find((step) => step.name === 'Build and push image');
-  assert.match(publish.with['cache-from'], /native-api-prewarm-\$\{\{ github\.sha \}\}/);
+  assert.equal(
+    publish.with['cache-from'],
+    "type=gha,scope=${{ needs.prebuild.outputs.cache_ready == 'true' && format('native-api-prewarm-{0}', github.sha) || 'native-api-linux-amd64-v1' }},version=2,timeout=3m",
+  );
+  const chooseCache = publish.with['cache-from'].match(/\$\{\{\s*(.*?)\s*\}\}/)?.[1];
+  assert.ok(chooseCache);
+  for (const [ready, expected] of [
+    ['true', 'native-api-prewarm-test-sha'],
+    ['false', 'native-api-linux-amd64-v1'],
+    ['', 'native-api-linux-amd64-v1'],
+  ])
+    assert.equal(
+      runInNewContext(chooseCache, {
+        needs: { prebuild: { outputs: { cache_ready: ready } } },
+        github: { sha: 'test-sha' },
+        format: (template, value) => template.replace('{0}', value),
+      }),
+      expected,
+    );
   assert.equal(workflow.jobs.deploy.environment, 'dev');
   assert.equal(workflow.jobs.verify.environment, undefined);
   assert.equal(workflow.jobs.verify.permissions['actions'], 'read');
@@ -572,6 +637,22 @@ test('automatic checks execute once and releases require exact-commit native evi
   );
   assert.equal(cacheProbe.run, 'bash scripts/benchmark-native-image-cache.sh');
   assert.equal(cacheProbe['timeout-minutes'], 10);
+  const cacheTransfer = ci.jobs['image-cache-transfer'];
+  assert.equal(cacheTransfer.needs, 'image');
+  assert.match(cacheTransfer.if, /needs\.image\.outputs\.image_built == 'true'/);
+  assert.match(cacheTransfer.if, /\[benchmark-cache-transfer\]/);
+  assert.equal(cacheTransfer.environment, undefined);
+  assert.ok(!JSON.stringify(cacheTransfer).includes('secrets.'));
+  const transferBuild = cacheTransfer.steps.find((step) =>
+    step.uses?.startsWith('docker/build-push-action@'),
+  );
+  assert.equal(transferBuild.with.push, false);
+  assert.equal(transferBuild.with['cache-to'], undefined);
+  assert.match(transferBuild.with['cache-from'], /scope=native-api-pr-/);
+  assert.doesNotMatch(transferBuild.with['cache-from'], /native-api-linux-amd64-v1/);
+  assert.match(cacheTransfer.steps.at(-1).run, /docker buildx history logs/);
+  assert.match(cacheTransfer.steps.at(-1).run, /CACHED/);
+  assert.match(cacheTransfer.steps.at(-1).run, /--network none --read-only/);
   const smoke = ci.jobs.image.steps.find(
     (step) => step.name === 'Run the final native image without network or writable root',
   );
