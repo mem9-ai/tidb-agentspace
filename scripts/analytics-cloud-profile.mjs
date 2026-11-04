@@ -81,62 +81,17 @@ async function certificates(host) {
   }
 }
 
-export function storagePolicy(bucket, prefix) {
-  return {
-    Version: '2012-10-17',
-    Statement: [
-      {
-        Effect: 'Allow',
-        Action: ['s3:ListBucket'],
-        Resource: [`arn:aws:s3:::${bucket}`],
-      },
-      {
-        Effect: 'Allow',
-        Action: [
-          's3:GetObject',
-          's3:PutObject',
-          's3:DeleteObject',
-          's3:AbortMultipartUpload',
-          's3:ListMultipartUploadParts',
-        ],
-        Resource: [`arn:aws:s3:::${bucket}/${prefix}/*`],
-      },
-    ],
-  };
-}
-
-export function roleTrust(issuer, account, namespace, serviceAccount) {
-  const provider = new URL(issuer);
-  if (
-    provider.protocol !== 'https:' ||
-    !/^oidc\.eks\.[a-z0-9-]+\.amazonaws\.com$/.test(provider.hostname) ||
-    !/^\/id\/[A-Za-z0-9]+$/.test(provider.pathname) ||
-    !/^\d{12}$/.test(account)
-  )
-    throw new AnalyticsCloudError('Invalid EKS workload identity.');
-  const identity = provider.host + provider.pathname;
-  return {
-    Version: '2012-10-17',
-    Statement: [
-      {
-        Effect: 'Allow',
-        Principal: { Federated: `arn:aws:iam::${account}:oidc-provider/${identity}` },
-        Action: 'sts:AssumeRoleWithWebIdentity',
-        Condition: {
-          StringEquals: {
-            [`${identity}:aud`]: 'sts.amazonaws.com',
-            [`${identity}:sub`]: `system:serviceaccount:${namespace}:${serviceAccount}`,
-          },
-        },
-      },
-    ],
-  };
-}
-
 // Private operator preparation only. No CA signing key, Meta credential or customer data
 // enters an analytics runtime. Existing source configuration bytes stay unchanged.
-export async function prepareAnalytics(target, options, identity, makeCertificates = certificates) {
+export async function prepareAnalytics(
+  target,
+  options,
+  storageClass,
+  makeCertificates = certificates,
+) {
   const { namespace, deployment } = options;
+  if (typeof storageClass !== 'string' || !/^[a-z0-9][a-z0-9.-]{0,252}$/.test(storageClass))
+    throw new AnalyticsCloudError('An existing cluster storage class is required.');
   const uid = target.source.metadata.uid;
   const mount = '/run/workspace';
   const globalRole = target.plan.services.filter((s) => s.kind === 'global');
@@ -173,26 +128,8 @@ export async function prepareAnalytics(target, options, identity, makeCertificat
     ['global', 'global'],
     ['region', target.api.authorityId],
   ]) {
-    const metaRole = target.plan.services.find(
-      (s) =>
-        s.kind === 'metadata' &&
-        decode(target.secret.data[basename(s.configFile)]).authorityId === authority,
-    );
-    if (!metaRole || dirname(metaRole.configFile) !== mount)
-      throw new AnalyticsCloudError('Missing authority storage configuration.');
-    const meta = decode(target.secret.data[basename(metaRole.configFile)]);
-    const { endpoint, region } = meta.s3;
-    const bucket = `studio-analytics-${kind}-${identity.account}-${owner}`;
-    if (
-      !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket || '') ||
-      !/^[a-z0-9-]+$/.test(region || '') ||
-      ![`https://s3.${region}.amazonaws.com`, 'https://s3.amazonaws.com'].includes(endpoint)
-    )
-      throw new AnalyticsCloudError('Expected the existing AWS S3 storage location.');
     const name = `analytics-${kind}-${owner}`;
     const host = `${name}.${namespace}.svc`;
-    const roleName = `studio-analytics-${kind}-${owner}`;
-    const roleArn = `arn:aws:iam::${identity.account}:role/${roleName}`;
     const tls = await makeCertificates(host);
     const token = randomBytes(32).toString('hex');
     const installationId = `analytics-${kind}-${randomUUID()}`;
@@ -202,7 +139,7 @@ export async function prepareAnalytics(target, options, identity, makeCertificat
       authorityId: authority,
       installationId,
       bind: '0.0.0.0:7446',
-      s3: { endpoint, bucket, region, prefix },
+      local: { directory: '/var/lib/analytics', prefix },
       tokenFile: `${privateMount}/token`,
       encryptionKeyFile: `${privateMount}/encryption-key`,
       pseudonymKeyFile: `${privateMount}/pseudonym-key`,
@@ -305,12 +242,6 @@ export async function prepareAnalytics(target, options, identity, makeCertificat
           image: target.runtime.image,
           command: ['workspace-backend'],
           args: ['serve', '--config', `${privateMount}/deployment.json`],
-          env: [
-            { name: 'AWS_REGION', value: region },
-            { name: 'AWS_ROLE_ARN', value: roleArn },
-            { name: 'AWS_WEB_IDENTITY_TOKEN_FILE', value: '/var/run/analytics-identity/token' },
-            { name: 'AWS_EC2_METADATA_DISABLED', value: 'true' },
-          ],
           securityContext: {
             allowPrivilegeEscalation: false,
             readOnlyRootFilesystem: true,
@@ -328,7 +259,7 @@ export async function prepareAnalytics(target, options, identity, makeCertificat
           livenessProbe: { tcpSocket: { port: 7446 }, initialDelaySeconds: 30, periodSeconds: 15 },
           volumeMounts: [
             { name: 'private', mountPath: privateMount, readOnly: true },
-            { name: 'identity', mountPath: '/var/run/analytics-identity', readOnly: true },
+            { name: 'data', mountPath: '/var/lib/analytics' },
             { name: 'tmp', mountPath: '/tmp' },
           ],
         },
@@ -336,20 +267,7 @@ export async function prepareAnalytics(target, options, identity, makeCertificat
       volumes: [
         { name: 'projected', secret: { secretName: secret.metadata.name, defaultMode: 0o440 } },
         { name: 'private', emptyDir: { medium: 'Memory', sizeLimit: '8Mi' } },
-        {
-          name: 'identity',
-          projected: {
-            sources: [
-              {
-                serviceAccountToken: {
-                  audience: 'sts.amazonaws.com',
-                  expirationSeconds: 3600,
-                  path: 'token',
-                },
-              },
-            ],
-          },
-        },
+        { name: 'data', persistentVolumeClaim: { claimName: `${name}-data` } },
         { name: 'tmp', emptyDir: { medium: 'Memory', sizeLimit: '64Mi' } },
       ],
     };
@@ -362,13 +280,17 @@ export async function prepareAnalytics(target, options, identity, makeCertificat
     entries.push({
       name,
       authority,
-      roleName,
-      roleArn,
-      bucket,
-      region,
-      prefix,
-      trust: roleTrust(identity.issuer, identity.account, namespace, name),
-      policy: storagePolicy(bucket, prefix),
+      volume: {
+        apiVersion: 'v1',
+        kind: 'PersistentVolumeClaim',
+        metadata: { name: `${name}-data`, namespace, labels },
+        spec: {
+          accessModes: ['ReadWriteOnce'],
+          volumeMode: 'Filesystem',
+          storageClassName: storageClass,
+          resources: { requests: { storage: '5Gi' } },
+        },
+      },
       account,
       secret,
       service: {
@@ -416,7 +338,7 @@ export async function prepareAnalytics(target, options, identity, makeCertificat
     data,
   };
   return {
-    format: 1,
+    format: 2,
     owner,
     sourceUid: uid,
     sourceSecret: target.secret.metadata.name,

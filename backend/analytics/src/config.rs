@@ -62,6 +62,12 @@ pub struct Storage {
 }
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LocalStorage {
+    pub directory: PathBuf,
+    pub prefix: String,
+}
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ServerTls {
     pub certificate_file: PathBuf,
     pub private_key_file: PathBuf,
@@ -73,7 +79,8 @@ pub struct Config {
     pub authority_id: String,
     pub installation_id: String,
     pub bind: SocketAddr,
-    pub s3: Storage,
+    pub s3: Option<Storage>,
+    pub local: Option<LocalStorage>,
     pub token_file: PathBuf,
     pub encryption_key_file: PathBuf,
     pub pseudonym_key_file: PathBuf,
@@ -104,6 +111,13 @@ pub(crate) fn token(path: &Path) -> Result<String> {
     Ok(value.into())
 }
 impl Config {
+    pub(crate) fn storage_prefix(&self) -> &str {
+        match (&self.s3, &self.local) {
+            (Some(storage), None) => &storage.prefix,
+            (None, Some(storage)) => &storage.prefix,
+            _ => "",
+        }
+    }
     pub fn load(path: &Path) -> Result<Self> {
         let config: Self = serde_json::from_slice(&private_file(path)?)
             .map_err(|_| anyhow::anyhow!("Invalid private analytics configuration"))?;
@@ -118,7 +132,8 @@ impl Config {
             "Invalid analytics authority or installation"
         );
         ensure!(
-            self.s3.prefix.starts_with("analytics/") && self.s3.prefix.split('/').all(id),
+            self.storage_prefix().starts_with("analytics/")
+                && self.storage_prefix().split('/').all(id),
             "Use a dedicated analytics storage root"
         );
         ensure!(
@@ -146,12 +161,29 @@ impl Config {
         } else {
             ensure!(self.tls.is_some(), "Analytics requires mutual TLS");
         }
-        let endpoint = reqwest::Url::parse(&self.s3.endpoint)?;
+        if let Some(local) = &self.local {
+            ensure!(
+                self.s3.is_none()
+                    && local.directory.is_absolute()
+                    && local.directory.parent().is_some()
+                    && local.directory.components().all(|part| !matches!(
+                        part,
+                        std::path::Component::ParentDir | std::path::Component::CurDir
+                    )),
+                "Use one explicit dedicated analytics storage directory"
+            );
+            return Ok(());
+        }
+        let s3 = self
+            .s3
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Analytics storage required"))?;
+        let endpoint = reqwest::Url::parse(&s3.endpoint)?;
         ensure!(
-            endpoint.origin().ascii_serialization() == self.s3.endpoint
+            endpoint.origin().ascii_serialization() == s3.endpoint
                 && (endpoint.scheme() == "https"
                     || ((self.insecure_loopback
-                        || (self.s3.allow_loopback_http && self.bind.ip().is_loopback()))
+                        || (s3.allow_loopback_http && self.bind.ip().is_loopback()))
                         && endpoint.scheme() == "http"
                         && matches!(
                             endpoint.host_str(),
@@ -160,7 +192,7 @@ impl Config {
             "Invalid analytics object storage endpoint"
         );
         ensure!(
-            self.s3.access_key_id.is_some() == self.s3.secret_access_key.is_some(),
+            s3.access_key_id.is_some() == s3.secret_access_key.is_some(),
             "Configure analytics storage credentials together"
         );
         Ok(())

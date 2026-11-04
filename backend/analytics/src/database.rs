@@ -58,24 +58,42 @@ fn unseal(cipher: &Aes256Gcm, path: &str, bytes: &[u8]) -> Result<Vec<u8>> {
 }
 impl Database {
     pub async fn open(config: &Config, initialize: bool) -> Result<Self> {
-        let mut builder = AmazonS3Builder::from_env()
-            .with_endpoint(&config.s3.endpoint)
-            .with_region(&config.s3.region)
-            .with_bucket_name(&config.s3.bucket)
-            .with_virtual_hosted_style_request(false)
-            .with_allow_http(config.insecure_loopback || config.s3.allow_loopback_http);
-        if let (Some(id), Some(secret)) = (&config.s3.access_key_id, &config.s3.secret_access_key) {
-            builder = builder
-                .with_access_key_id(id)
-                .with_secret_access_key(secret);
-        }
-        let store: Arc<dyn ObjectStore> = Arc::new(builder.build()?);
+        config.validate()?;
+        let store: Arc<dyn ObjectStore> = if let Some(local) = &config.local {
+            let metadata = std::fs::symlink_metadata(&local.directory)?;
+            ensure!(
+                metadata.is_dir() && !metadata.file_type().is_symlink(),
+                "Analytics directory must be an existing ordinary directory"
+            );
+            Arc::new(
+                slatedb::object_store::local::LocalFileSystem::new_with_prefix(&local.directory)?
+                    .with_fsync(true),
+            )
+        } else {
+            let s3 = config
+                .s3
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Analytics storage required"))?;
+            let mut builder = AmazonS3Builder::from_env()
+                .with_endpoint(&s3.endpoint)
+                .with_region(&s3.region)
+                .with_bucket_name(&s3.bucket)
+                .with_virtual_hosted_style_request(false)
+                .with_allow_http(config.insecure_loopback || s3.allow_loopback_http);
+            if let (Some(id), Some(secret)) = (&s3.access_key_id, &s3.secret_access_key) {
+                builder = builder
+                    .with_access_key_id(id)
+                    .with_secret_access_key(secret);
+            }
+            Arc::new(builder.build()?)
+        };
+        let prefix = config.storage_prefix();
         let key =
             hex::decode(String::from_utf8(private_file(&config.encryption_key_file)?)?.trim())?;
         let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| {
             anyhow::anyhow!("Expected a dedicated 32-byte analytics encryption key")
         })?;
-        let descriptor = Path::from(format!("{}/installation.json", config.s3.prefix));
+        let descriptor = Path::from(format!("{prefix}/installation.json"));
         match store.get(&descriptor).await {
             Ok(object) => {
                 let value: Value = serde_json::from_slice(&object.bytes().await?)?;
@@ -94,7 +112,7 @@ impl Database {
             Err(slatedb::object_store::Error::NotFound { .. }) if initialize => {
                 ensure!(
                     store
-                        .list(Some(&Path::from(config.s3.prefix.clone())))
+                        .list(Some(&Path::from(prefix)))
                         .try_next()
                         .await?
                         .is_none(),
@@ -119,7 +137,7 @@ impl Database {
             object_store_max_retries: Some(2),
             ..Default::default()
         };
-        let db = Db::builder(format!("{}/database", config.s3.prefix), store)
+        let db = Db::builder(format!("{prefix}/database"), store)
             .with_settings(settings)
             .build()
             .await?;
@@ -282,6 +300,59 @@ mod tests {
         Namespace {
             authority_id: authority.into(),
         }
+    }
+    #[tokio::test]
+    async fn volume_storage_reopens_with_no_cloud_identity_and_rejects_mismatched_installations() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        let data = directory.path().join("data");
+        std::fs::create_dir(&data).unwrap();
+        let key = directory.path().join("key");
+        std::fs::write(&key, hex::encode([7; 32])).unwrap();
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let mut config: Config = serde_json::from_value(json!({
+            "authorityId": "global", "installationId": "analytics-volume-test",
+            "bind": "127.0.0.1:7446", "insecureLoopback": true,
+            "local": {"directory": data, "prefix": "analytics/test"},
+            "encryptionKeyFile": key,
+            "pseudonymKeyFile": directory.path().join("pseudonym"),
+            "tokenFile": directory.path().join("token")
+        }))
+        .unwrap();
+        assert!(Database::open(&config, false).await.is_err());
+        let database = Database::open(&config, true).await.unwrap();
+        database
+            .execute(Request::Commit {
+                scope: scope("global"),
+                changes: vec![
+                    json!({"key":"retained","expectedVersion":null,"value":"volume-canary"}),
+                ],
+            })
+            .await
+            .unwrap();
+        database.close().await.unwrap();
+        config.installation_id = "different-installation".into();
+        assert!(Database::open(&config, true).await.is_err());
+        config.installation_id = "analytics-volume-test".into();
+        std::fs::write(&key, hex::encode([8; 32])).unwrap();
+        assert!(Database::open(&config, true).await.is_err());
+        std::fs::write(&key, hex::encode([7; 32])).unwrap();
+        let database = Database::open(&config, false).await.unwrap();
+        let row = database
+            .execute(Request::Get {
+                scope: scope("global"),
+                keys: vec!["retained".into()],
+            })
+            .await
+            .unwrap();
+        assert_eq!(row["records"]["retained"]["value"], "volume-canary");
+        database.close().await.unwrap();
+        let original = config.local.clone();
+        config.local.as_mut().unwrap().directory = "/".into();
+        assert!(config.validate().is_err());
+        config.local = original;
+        config.s3 = Some(serde_json::from_value(json!({"endpoint":"https://storage.example","region":"region","bucket":"bucket","prefix":"analytics/test"})).unwrap());
+        assert!(config.validate().is_err());
     }
     #[tokio::test]
     async fn independent_database_encrypts_binds_paths_preserves_atomic_conditions_and_reopens() {
