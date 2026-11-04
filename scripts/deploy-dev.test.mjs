@@ -558,6 +558,14 @@ test('automatic checks execute once and releases require exact-commit native evi
   );
   assert.equal(prBuild.if, "steps.changes.outputs.changed == 'true'");
   assert.ok(ci.jobs.image.steps.some((step) => step.run === 'node scripts/ci-image-inputs.mjs'));
+  const cacheProbe = ci.jobs.image.steps.find(
+    (step) => step.name === 'Benchmark incremental native image rebuild',
+  );
+  assert.equal(
+    cacheProbe.if,
+    "${{ steps.changes.outputs.changed == 'true' && contains(github.event.pull_request.body, '[benchmark-native-cache]') }}",
+  );
+  assert.equal(cacheProbe.run, 'bash scripts/benchmark-native-image-cache.sh');
   const smoke = ci.jobs.image.steps.find(
     (step) => step.name === 'Run the final native image without network or writable root',
   );
