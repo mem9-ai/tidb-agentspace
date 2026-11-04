@@ -116,6 +116,12 @@ rem-based geometry. Adjust the supported component typography and density settin
 computed sizes after overriding; a named typography variant may set its own size explicitly.
 Preserve browser zoom. Reflow narrow layouts rather than decreasing font size.
 
+For static TiUI pages, the provider renders only the selected palette. Changing the HTML
+color-scheme attribute alone does not resolve the other TiUI palette. Generate the dark
+semantic color tokens from the public `useTheme('dark')` API alongside the light SSR output;
+do not copy palette values. Verify initial HTML contrast in both system themes, including
+before optional analytics JavaScript runs. This boundary is implemented by the discovery renderer.
+
 ## Component selection for this Workspace
 
 | Product pattern                | TiUI building blocks                                                                          | Project responsibility                                                        |

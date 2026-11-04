@@ -1,3 +1,4 @@
+import { capture } from '../analytics/capture';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Anchor, Button, Group, Paper, Stack, Tabs, Text } from '@tidbcloud/uikit';
 import { IconFolder } from '@tidbcloud/uikit/icons';
@@ -390,7 +391,13 @@ export function SalesSampleJourney({
             <Tabs
               value={mode}
               onChange={(value) => {
-                if (value === 'agent' || value === 'self') setMode(value);
+                if ((value === 'agent' || value === 'self') && value !== mode) {
+                  capture({
+                    name: 'journey_selected',
+                    journey: value === 'agent' ? 'agent' : 'self_service',
+                  });
+                  setMode(value);
+                }
               }}
               keepMounted
             >
@@ -590,6 +597,7 @@ export function SalesSampleJourney({
               <Button
                 variant="filled"
                 onClick={() => {
+                  capture({ name: 'journey_selected', journey: 'agent' });
                   setMode('agent');
                   void start();
                 }}
@@ -605,6 +613,7 @@ export function SalesSampleJourney({
               <Button
                 variant="default"
                 onClick={() => {
+                  capture({ name: 'journey_selected', journey: 'self_service' });
                   setMode('self');
                   void start();
                 }}

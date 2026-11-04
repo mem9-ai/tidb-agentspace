@@ -211,6 +211,34 @@ test(
     await request(workspace + '/files/metadata', 'get', undefined, {
       suffix: '?resourceId=fs_shared&path=/contract.txt',
     });
+    const report = {
+      resourceId: 'fs_shared',
+      path: '/contract-report.md',
+      type: 'file',
+      content: '# Verified report',
+      purpose: 'report',
+    };
+    await request(workspace + '/files', 'put', report, { owner: false, status: 401 });
+    await request(workspace + '/files', 'put', report, { status: 400 });
+    await request(
+      workspace + '/files',
+      'put',
+      { ...report, type: 'directory' },
+      { status: 400, headers: { 'If-None-Match': '*' } },
+    );
+    const savedReport = await request(workspace + '/files', 'put', report, {
+      headers: { 'If-None-Match': '*' },
+    });
+    await request(
+      workspace + '/files',
+      'put',
+      { ...report, content: 'must not overwrite' },
+      { status: 412, headers: { 'If-None-Match': '*' } },
+    );
+    const reportMetadata = await request(workspace + '/files/metadata', 'get', undefined, {
+      suffix: '?resourceId=fs_shared&path=/contract-report.md',
+    });
+    assert.equal(reportMetadata.result.data.version, savedReport.result.data.version);
     await request(workspace + '/files', 'put', {
       resourceId: 'fs_shared',
       path: '/preview.csv',

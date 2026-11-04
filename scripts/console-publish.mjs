@@ -50,7 +50,7 @@ export async function verifyWebsiteCheckout(directory) {
 
 const shaPattern = /^[a-f0-9]{40}$/;
 export function consoleInput(path) {
-  return /^(src\/|console\/|tools\/api-contract\/|index\.html$|package(?:-lock)?\.json$|\.node-version$|\.npmrc$|\.env(?:\.|$)|tsconfig[^/]*\.json$|vite\.config\.[^/]+$|scripts\/console-publish[^/]*\.mjs$|\.github\/workflows\/console-publish\.yml$)/.test(
+  return /^(src\/|console\/|tools\/api-contract\/|index\.html$|package(?:-lock)?\.json$|\.node-version$|\.npmrc$|\.env(?:\.|$)|tsconfig[^/]*\.json$|vite\.config\.[^/]+$|scripts\/(?:console-publish[^/]*|public-discovery|discovery-markup)\.mjs$|\.github\/workflows\/console-publish\.yml$)/.test(
     path,
   );
 }

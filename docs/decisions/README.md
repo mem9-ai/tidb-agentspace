@@ -7,6 +7,8 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Accepted decisions
 
+- [0049: Product analytics and operator authority](0049-product-analytics-operator-boundary.md) — accepted launch measurement and verified PingCAP/TiDB Cloud Admin access; [runtime and deployment limits](../product-analytics.md).
+
 - [0048: PostgreSQL-only databases](0048-postgresql-only-databases.md) — retire standalone MySQL and DuckDB databases while retaining File System analysis and existing resource cleanup.
 
 - [0039: Manual dev smoke release](0039-dev-smoke-release.md) — explicitly selected basic
@@ -79,8 +81,6 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0044: Workspace audit and request history](0044-workspace-observability.md) — authority-local audit and HTTP history; implementation pending.
 
 ## Proposed decisions
-
-- [0049: Product analytics and operator authority](0049-product-analytics-operator-boundary.md) — proposed launch measurement, aggregate-only operator access and authority-local event retention for [GH-182](../../specs/gh-182/spec.md); not implemented.
 
 - [0034: Global Key authority and independently serving Regions](0034-openapi-security-authorities.md) — owner-confirmed Key/Token and regional autonomy direction; detailed implementation and security gates proposed.
 

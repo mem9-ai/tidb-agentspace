@@ -1856,6 +1856,25 @@ for (const status of [200, 201]) {
   };
 }
 extendRegionalSecurityContract(spec);
+// Report measurement reuses the existing create-only File API and its authorization.
+const fileWriteInput = spec.paths[ws + '/files'].put.requestBody.content['application/json'].schema;
+fileWriteInput.properties.purpose = {
+  enum: ['report'],
+  description:
+    'Explicit report-save intent. Requires a nonblank file and If-None-Match: *. Generic writes do not claim a saved report. Success proves persistence, not report quality or authorship.',
+};
+fileWriteInput.allOf = [
+  {
+    if: { properties: { purpose: { const: 'report' } }, required: ['purpose'] },
+    then: {
+      required: ['content'],
+      properties: {
+        type: { const: 'file' },
+        content: { type: 'string', minLength: 1, pattern: '\\S' },
+      },
+    },
+  },
+];
 const portalSpec = structuredClone(spec);
 portalSpec.info.title = 'Workspace Portal API';
 portalSpec.servers[0] = { url: '/api/portal/v1', description: 'Session-authenticated Portal API' };
@@ -2014,3 +2033,16 @@ if (process.argv.includes('--check')) {
     process.exitCode = 1;
   }
 } else await writeFile(entryTarget, entryRendered);
+
+const { operatorContract } = await import('../tools/api-contract/operator-contract.mjs');
+const operatorTarget = new URL('../public/operator-openapi.json', import.meta.url);
+const operatorRendered = await format(JSON.stringify(operatorContract()), {
+  ...(await resolveConfig(fileURLToPath(operatorTarget))),
+  parser: 'json',
+});
+if (process.argv.includes('--check')) {
+  if ((await readFile(operatorTarget, 'utf8')) !== operatorRendered) {
+    console.error('Operator contract drifted. Run npm run api:generate.');
+    process.exitCode = 1;
+  }
+} else await writeFile(operatorTarget, operatorRendered);

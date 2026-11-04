@@ -422,6 +422,13 @@ export const workspaceApi = {
         : client
       ).PUT('/workspaces/{workspaceId}/files', { params, body }),
     ),
+  saveReport: (body: WriteFileInput & { type: 'file'; content: string }) =>
+    responseData(
+      client.PUT('/workspaces/{workspaceId}/files', {
+        params: { ...params, header: { 'If-None-Match': '*' } },
+        body: { ...body, purpose: 'report' },
+      }),
+    ),
   createSampleFile: (body: WriteFileInput) =>
     responseData(
       client.PUT('/workspaces/{workspaceId}/files', {
@@ -540,8 +547,9 @@ export function contentUrl(file: Pick<WorkspaceFile, 'resourceId' | 'path'>) {
 }
 
 let globalSettings: SsoAuthConfig | undefined;
-export async function globalApiSettings() {
-  globalSettings ??= await workspaceApi.authConfig();
+export async function globalApiSettings(auth?: SsoAuthConfig) {
+  if (auth) globalSettings = auth;
+  else globalSettings ??= await workspaceApi.authConfig();
   const descriptor = globalSettings.globalApi;
   if (!descriptor) {
     globalSettings = undefined;

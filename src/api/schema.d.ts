@@ -4351,7 +4351,12 @@ export interface operations {
           type: 'file' | 'directory';
           /** @description Required for files; maximum 256 KiB of UTF-8 text and subject to the provider upload limit. */
           content?: string;
-        };
+          /**
+           * @description Explicit report-save intent. Requires a nonblank file and If-None-Match: *. Generic writes do not claim a saved report. Success proves persistence, not report quality or authorship.
+           * @enum {unknown}
+           */
+          purpose?: 'report';
+        } & unknown;
       };
     };
     responses: {

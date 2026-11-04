@@ -67,6 +67,21 @@ test('@visual Guest explores the sample and gets a sales result without an agent
 }, testInfo) => {
   workspace.requireSignIn({ guestEnabled: true });
   const analyses = [];
+  const events = [];
+  await context.route('**/api/global/analytics/config', (route) =>
+    route.fulfill({
+      json: { enabled: true, campaigns: [], policy: 'session_only', version: 1 },
+    }),
+  );
+  await context.route('**/api/global/analytics/events', (route) => {
+    events.push(
+      ...route
+        .request()
+        .postDataJSON()
+        .events.map(({ event }) => event),
+    );
+    return route.fulfill({ status: 202, json: { accepted: true } });
+  });
   const reportWrites = [];
   await context.route('**/files', async (route) => {
     const request = route.request();
@@ -111,6 +126,8 @@ test('@visual Guest explores the sample and gets a sales result without an agent
     });
   });
   await page.goto('/');
+  await expect.poll(() => events.some((event) => event.name === 'public_page_view')).toBe(true);
+  expect(events[0]).toMatchObject({ name: 'public_page_view', page: 'workspace' });
   await page.getByRole('button', { name: 'Try without an account' }).click();
   const sample = page.getByRole('region', { name: 'Explore US sales' });
   await expect(sample.getByRole('button', { name: 'Explore sample yourself' })).toBeVisible();
@@ -119,6 +136,12 @@ test('@visual Guest explores the sample and gets a sales result without an agent
   expect(workspace.state.resources).toHaveLength(1);
   expect(workspace.state.resources[0]).toMatchObject({ id: 'fs_sales', isDefault: true });
   await sample.getByRole('button', { name: 'Explore sample yourself' }).click();
+  await expect.poll(() => events.some((event) => event.name === 'try_clicked')).toBe(true);
+  await expect
+    .poll(() =>
+      events.some((event) => event.name === 'journey_selected' && event.journey === 'self_service'),
+    )
+    .toBe(true);
   await expect(sample.getByText('Sample ready · /us-sales.csv')).toBeVisible();
   await expect(sample.getByRole('tab', { name: 'Explore yourself' })).toHaveAttribute(
     'aria-selected',
@@ -167,6 +190,11 @@ test('@visual Guest explores the sample and gets a sales result without an agent
   await sample.getByRole('tab', { name: 'With an agent' }).click();
   await expect(sample.getByRole('button', { name: 'Connect your agent' })).toBeVisible();
   await sample.getByRole('tab', { name: 'Explore yourself' }).click();
+  await expect
+    .poll(() =>
+      events.filter((event) => event.name === 'journey_selected').map((event) => event.journey),
+    )
+    .toEqual(['self_service', 'agent', 'self_service']);
   await expect(sample.getByRole('region', { name: 'Query result data' })).toContainText('48000');
   await expect(sample.getByRole('button', { name: 'Run analysis again' })).toBeVisible();
   await sample.getByRole('button', { name: 'Find California’s top product' }).click();
@@ -185,6 +213,7 @@ test('@visual Guest explores the sample and gets a sales result without an agent
   await expect(sample.getByRole('link', { name: 'Open report' })).toBeFocused();
   expect(reportWrites).toHaveLength(1);
   expect(reportWrites[0].precondition).toBe('*');
+  expect(reportWrites[0].body.purpose).toBe('report');
   expect(reportWrites[0].body.content).toContain('California with $48,000.00');
   expect(reportWrites[0].body.content).toContain('Monitors with $18,000.00');
   expect(reportWrites[0].body.content).toContain('Source: /us-sales.csv');
@@ -358,6 +387,7 @@ for (const failure of ['lost response', 'provider not ready']) {
         return route.fallback();
       writes++;
       expect(request.headers()['if-none-match']).toBe('*');
+      expect(request.postDataJSON().purpose).toBe('report');
       if (failure === 'provider not ready')
         return route.fulfill({
           status: 409,

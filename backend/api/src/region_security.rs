@@ -478,6 +478,7 @@ impl Runtime {
     }
     pub fn region_connection(self: &Arc<Self>) -> Option<crate::region_connection::Connector> {
         Some(crate::region_connection::Connector {
+            analytics: None,
             config: self.config.region_connection.clone()?,
             descriptor: crate::global_api::RegionDescriptor {
                 region_id: self.region.clone(),

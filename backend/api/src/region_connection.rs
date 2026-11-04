@@ -53,6 +53,7 @@ pub struct ConnectorConfig {
     pub tls: ClientTls,
 }
 pub struct Connector {
+    pub analytics: Option<crate::analytics::Store>,
     pub config: ConnectorConfig,
     pub descriptor: RegionDescriptor,
     pub installer: Arc<dyn PolicyInstaller>,
@@ -62,6 +63,15 @@ pub struct Connector {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 enum Frame {
+    Attribution {
+        request_id: String,
+        workspace: String,
+        attribution: crate::analytics::Attribution,
+    },
+    Attributed {
+        request_id: String,
+        accepted: bool,
+    },
     Register {
         region_id: String,
         api_origin: String,
@@ -85,11 +95,30 @@ enum Frame {
         request_id: String,
         acknowledgement: Option<Acknowledgement>,
     },
+    Analytics {
+        request_id: String,
+        from: String,
+        to: String,
+    },
+    AnalyticsResult {
+        request_id: String,
+        summary: Option<crate::analytics::Summary>,
+    },
     Ping,
     Pong,
 }
 
 enum Request {
+    Attribution {
+        workspace: String,
+        attribution: crate::analytics::Attribution,
+        reply: oneshot::Sender<workspace_contracts::Result<()>>,
+    },
+    Analytics {
+        from: String,
+        to: String,
+        reply: oneshot::Sender<workspace_contracts::Result<crate::analytics::Summary>>,
+    },
     Policy {
         command: String,
         expected: PolicyReceipt,
@@ -117,6 +146,48 @@ fn unavailable() -> ServiceError {
 }
 
 impl Hub {
+    pub async fn attribute(
+        &self,
+        region: &str,
+        workspace: String,
+        attribution: crate::analytics::Attribution,
+    ) -> workspace_contracts::Result<()> {
+        let (reply, rx) = oneshot::channel();
+        self.sender(region)
+            .await?
+            .try_send(Request::Attribution {
+                workspace,
+                attribution,
+                reply,
+            })
+            .map_err(|_| unavailable())?;
+        tokio::time::timeout(Duration::from_secs(5), rx)
+            .await
+            .map_err(|_| unavailable())?
+            .map_err(|_| unavailable())?
+    }
+
+    pub async fn analytics(
+        &self,
+        region: &str,
+        from: chrono::NaiveDate,
+        to: chrono::NaiveDate,
+    ) -> workspace_contracts::Result<crate::analytics::Summary> {
+        let (reply, rx) = oneshot::channel();
+        self.sender(region)
+            .await?
+            .try_send(Request::Analytics {
+                from: from.to_string(),
+                to: to.to_string(),
+                reply,
+            })
+            .map_err(|_| unavailable())?;
+        tokio::time::timeout(Duration::from_secs(5), rx)
+            .await
+            .map_err(|_| unavailable())?
+            .map_err(|_| unavailable())?
+    }
+
     pub async fn connected(&self, region: &str) -> bool {
         self.connections.lock().await.contains_key(region)
     }
@@ -368,6 +439,22 @@ async fn serve_region<S: AsyncRead + AsyncWrite + Unpin>(
             if !hub.connections.lock().await.get(&region_id).is_some_and(|c| c.generation == generation) { break; }
             let request_id = Uuid::new_v4().to_string();
             let failed = match request {
+                Request::Attribution{workspace,attribution,reply}=>{
+                    let result=async {write_frame(&mut writer,&Frame::Attribution{request_id:request_id.clone(),workspace,attribution}).await?;
+                        let Frame::Attributed{request_id:observed,accepted}=tokio::time::timeout(Duration::from_secs(4),read_frame(&mut reader)).await?? else{bail!("invalid attribution response");};
+                        ensure!(observed==request_id,"attribution correlation mismatch");Ok::<_,anyhow::Error>(accepted)
+                    }.await;let failed=result.is_err();let _=reply.send(result.map_err(|_|unavailable()).and_then(|accepted|if accepted{Ok(())}else{Err(unavailable())}));failed
+                }
+
+                Request::Analytics {from,to,reply}=> {
+                    let result=async {
+                        write_frame(&mut writer,&Frame::Analytics{request_id:request_id.clone(),from,to}).await?;
+                        let Frame::AnalyticsResult{request_id:observed,summary}=tokio::time::timeout(Duration::from_secs(4),read_frame(&mut reader)).await?? else {bail!("analytics unavailable");};
+                        ensure!(observed==request_id&&summary.as_ref().is_none_or(|s|s.authority==region_id),"analytics authority mismatch");Ok::<_,anyhow::Error>(summary)
+                    }.await;
+                    let failed=result.is_err();let _=reply.send(result.map_err(|_|unavailable()).and_then(|v|v.ok_or_else(unavailable)));failed
+                }
+
                 Request::Policy { command, expected, reply } => {
                     let result = async {
                         write_frame(&mut writer, &Frame::Policy { request_id: request_id.clone(), command }).await?;
@@ -410,6 +497,7 @@ pub async fn connect(
     descriptor: RegionDescriptor,
     installer: Arc<dyn PolicyInstaller>,
     initializer: Arc<dyn RegionControl>,
+    analytics: Option<crate::analytics::Store>,
     stop: tokio_util::sync::CancellationToken,
 ) -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -471,6 +559,52 @@ pub async fn connect(
                     .await??
                 {
                     Frame::Ping => write_frame(&mut writer, &Frame::Pong).await?,
+                    Frame::Attribution {
+                        request_id,
+                        workspace,
+                        attribution,
+                    } if Uuid::parse_str(&request_id).is_ok() => {
+                        let accepted = if let Some(store) = &analytics {
+                            store.attribute(&workspace, attribution).await.is_ok()
+                        } else {
+                            false
+                        };
+                        write_frame(
+                            &mut writer,
+                            &Frame::Attributed {
+                                request_id,
+                                accepted,
+                            },
+                        )
+                        .await?;
+                    }
+                    Frame::Analytics {
+                        request_id,
+                        from,
+                        to,
+                    } if Uuid::parse_str(&request_id).is_ok() => {
+                        let summary = if let (Some(store), Ok(from), Ok(to)) = (
+                            &analytics,
+                            chrono::NaiveDate::parse_from_str(&from, "%Y-%m-%d"),
+                            chrono::NaiveDate::parse_from_str(&to, "%Y-%m-%d"),
+                        ) {
+                            store
+                                .summary(from, to, chrono::Utc::now().timestamp())
+                                .await
+                                .ok()
+                        } else {
+                            None
+                        };
+                        write_frame(
+                            &mut writer,
+                            &Frame::AnalyticsResult {
+                                request_id,
+                                summary,
+                            },
+                        )
+                        .await?;
+                    }
+
                     Frame::Policy {
                         request_id,
                         command,
@@ -490,6 +624,25 @@ pub async fn connect(
                         command,
                     } if Uuid::parse_str(&request_id).is_ok() => {
                         let acknowledgement = initializer.initialize(&command).await.ok();
+                        if acknowledgement.is_some()
+                            && let Some(store) = &analytics
+                        {
+                            let kind = if matches!(
+                                command.policy.identity,
+                                workspace_identity::regional::OwnerIdentity::Guest { .. }
+                            ) {
+                                "guest"
+                            } else {
+                                "account"
+                            };
+                            store.record(
+                                &command.registration.operation_id,
+                                &command.registration.workspace_id,
+                                kind,
+                                "workspace_ready",
+                                true,
+                            );
+                        }
                         write_frame(
                             &mut writer,
                             &Frame::Initialized {

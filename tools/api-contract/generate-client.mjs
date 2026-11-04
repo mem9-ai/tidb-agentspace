@@ -7,6 +7,7 @@ import { format, resolveConfig } from 'prettier';
 for (const [input, output] of [
   ['portal-regional-openapi.json', 'schema.d.ts'],
   ['portal-global-openapi.json', 'global-schema.d.ts'],
+  ['../../public/operator-openapi.json', 'operator-schema.d.ts'],
 ]) {
   const target = new URL('../../src/api/' + output, import.meta.url);
   const schema = new URL(input, import.meta.url);

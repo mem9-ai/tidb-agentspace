@@ -47,7 +47,7 @@ RUN find backend/product -type f -exec touch {} + \
     && cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend
 
 COPY backend/api ./backend/api
-COPY public/openapi.json public/owner-openapi.json public/global-openapi.json public/agent-entry-openapi.json ./public/
+COPY public/openapi.json public/owner-openapi.json public/global-openapi.json public/agent-entry-openapi.json public/operator-openapi.json ./public/
 RUN find backend/api -type f -exec touch {} + \
     && cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend
 

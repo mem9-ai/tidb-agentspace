@@ -67,6 +67,18 @@ impl Product {
             if_match,
             if_none_match,
         } = request;
+        if let Some(purpose) = input.get("purpose")
+            && (purpose != "report"
+                || method != "PUT"
+                || route != "/files"
+                || if_none_match != Some("*")
+                || input["type"] != "file"
+                || input["content"]
+                    .as_str()
+                    .is_none_or(|text| text.trim().is_empty()))
+        {
+            return Err(err(400, "INVALID_REPORT_SAVE"));
+        }
         let read = method == "GET";
         if if_match.is_some() && if_none_match.is_some()
             || if_none_match.is_some_and(|v| v != "*")

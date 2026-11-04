@@ -43,6 +43,10 @@ export async function packageRustApi({ root, sourceSha, binary, destination }) {
     await chmod(resolve(staged, 'workspace-backend'), 0o755);
     await cp(resolve(root, 'Cargo.lock'), resolve(staged, 'Cargo.lock'));
     await cp(resolve(root, 'public/openapi.json'), resolve(staged, 'openapi.json'));
+    await cp(
+      resolve(root, 'public/operator-openapi.json'),
+      resolve(staged, 'operator-openapi.json'),
+    );
     await cp(resolve(root, 'public/owner-openapi.json'), resolve(staged, 'owner-openapi.json'));
     await cp(resolve(root, 'public/global-openapi.json'), resolve(staged, 'global-openapi.json'));
     await cp(
@@ -65,7 +69,7 @@ export async function packageRustApi({ root, sourceSha, binary, destination }) {
     await writeFile(resolve(staged, 'build-info.json'), JSON.stringify(info, null, 2) + '\n');
     await writeFile(
       resolve(staged, 'README.txt'),
-      `Rust Workspace API\nSource: ${sourceSha}\nRun: ./workspace-backend serve --config /absolute/private/deployment.json\nThe same executable hosts Global/Region API and Meta roles; Region-internal Execute tasks exec this binary without a separate service or queue.\nRegional, Global and single-entry OpenAPI contracts are included.\nNo Node runtime or Console assets are required.\nUse docs/rust-backend.md for private configuration, migration, health and rollback.\nNative tidbfs requires a separately verified DuckDB 2.0 extension and its SHA-256.\nNo local state, secrets or provider credentials are included.\nPublic Owner login requires native SSO; Token-only Region hosting uses the explicit local security profile. Trusted origins and private S3 plans are required; see docs/native-studio-deployment.md. Customer isolation and production compute hardening remain separate work.\n`,
+      `Rust Workspace API\nSource: ${sourceSha}\nRun: ./workspace-backend serve --config /absolute/private/deployment.json\nThe same executable hosts Global/Region API and Meta roles; Region-internal Execute tasks exec this binary without a separate service or queue.\nRegional, Global, Admin and single-entry OpenAPI contracts are included.\nNo Node runtime or Console assets are required.\nUse docs/rust-backend.md for private configuration, migration, health and rollback.\nNative tidbfs requires a separately verified DuckDB 2.0 extension and its SHA-256.\nNo local state, secrets or provider credentials are included.\nPublic Owner login requires native SSO; Token-only Region hosting uses the explicit local security profile. Trusted origins and private S3 plans are required; see docs/native-studio-deployment.md. Customer isolation and production compute hardening remain separate work.\n`,
     );
     await mkdir(destination, { recursive: true });
     const archive = resolve(

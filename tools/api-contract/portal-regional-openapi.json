@@ -2414,8 +2414,27 @@
                   "content": {
                     "type": "string",
                     "description": "Required for files; maximum 256 KiB of UTF-8 text and subject to the provider upload limit."
+                  },
+                  "purpose": {
+                    "enum": ["report"],
+                    "description": "Explicit report-save intent. Requires a nonblank file and If-None-Match: *. Generic writes do not claim a saved report. Success proves persistence, not report quality or authorship."
                   }
-                }
+                },
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": { "purpose": { "const": "report" } },
+                      "required": ["purpose"]
+                    },
+                    "then": {
+                      "required": ["content"],
+                      "properties": {
+                        "type": { "const": "file" },
+                        "content": { "type": "string", "minLength": 1, "pattern": "\\S" }
+                      }
+                    }
+                  }
+                ]
               }
             }
           }
