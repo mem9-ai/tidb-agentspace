@@ -95,6 +95,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.operation == 'deploy')
+    outputs:
+      cache_ready: ${{ steps.image_cache.outcome == 'success' }}
     permissions:
       contents: read
     steps:
@@ -104,6 +106,8 @@ jobs:
           persist-credentials: false
       - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Build without publishing or deployment credentials
+        id: image_cache
+        continue-on-error: true
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -113,7 +117,7 @@ jobs:
           push: false
           labels: org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
-          cache-to: type=gha,scope=native-api-prewarm-${{ github.sha }},version=2,mode=max,timeout=3m,ignore-error=true
+          cache-to: type=gha,scope=native-api-prewarm-${{ github.sha }},version=2,mode=max,timeout=3m,ignore-error=false
 
   deploy:
     name: Build and deploy to dev
@@ -204,9 +208,9 @@ jobs:
           push: true
           tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           labels: org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: |
-            type=gha,scope=native-api-prewarm-${{ github.sha }},version=2,timeout=3m
-            type=gha,scope=native-api-linux-amd64-v1,version=2,timeout=3m
+          # Import a single scope: overlapping BuildKit cache manifests can select
+          # older workspace layers even when the exact-SHA prewarm was exported.
+          cache-from: type=gha,scope=${{ needs.prebuild.outputs.cache_ready == 'true' && format('native-api-prewarm-{0}', github.sha) || 'native-api-linux-amd64-v1' }},version=2,timeout=3m
           cache-to: type=gha,scope=native-api-linux-amd64-v1,version=2,mode=max,timeout=3m,ignore-error=true
       - name: Record immutable image digest
         if: github.event.inputs.operation != 'inspect' && github.event.inputs.operation != 'recover'

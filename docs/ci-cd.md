@@ -170,7 +170,11 @@ Dev CD no longer triggers on PRs or repeats quality/native commands. Its read-on
 job runs `scripts/require-ci.mjs full "$SOURCE_SHA"`. In parallel, an unprivileged main-only
 job warms an image cache named for that exact SHA, without publishing or deployment credentials.
 The protected dev job still builds, pushes and updates only after CI succeeds; it can fall
-back to the usual build if cache warming fails. Cache contents never count as CI evidence.
+back to the usual build if cache warming fails. Cache export failure is surfaced to the workflow
+but is non-fatal: a failed prewarm selects the normal main cache. A successful prewarm selects
+only its exact-SHA cache instead of importing overlapping manifests; this tests a suspected
+BuildKit cache-selection issue observed when both scopes were imported. Cache contents never
+count as CI evidence.
 Console publishing consumes `console` evidence (Quality
 and Browser smoke) before its independent `/studio/` build; unrelated Rust work can still
 be running. Source freshness, website checks, protected branches and exact-tree merge checks
@@ -395,7 +399,9 @@ synthetic sales fixture, verifies that the lower-level build layer was reused an
 executable contains the changed fixture, and restores the fixture. It reports elapsed build time.
 This opt-in probe runs no deployment and has no cloud credentials; ordinary PRs do not run it.
 The probe establishes same-runner reuse and freshness, not a cross-run cache hit; confirm the
-separate GitHub Actions cache export/import in build logs when measuring later runs.
+separate GitHub Actions cache export/import in build logs when measuring later runs. The same
+opt-in also runs an unprivileged fresh-runner job, importing only the preceding image job's PR
+cache and requiring the final source layer to be a cache hit. It never pushes an image.
 
 The pinned Docker build action imports/exports GitHub cache v2 with `mode=max`, including intermediate dependency layers. Main deployment continues to use `native-api-linux-amd64-v1`. PR image checks import a PR-specific scope first and the main scope as a fallback, and export only to the PR scope. This is intended to make subsequent builds of the same PR reuse its dependency layers without publishing an untrusted PR cache to main. Ordinary cache mounts are not sufficient to persist those layers across fresh hosted runners. Cache transfer has a three-minute bound; failed export is non-fatal and a miss still builds fully. Base images are resolved with `pull:true`. No deployment files, credentials or product state enter the Docker context or cache.
 

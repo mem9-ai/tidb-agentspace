@@ -364,9 +364,34 @@ test('automatic checks execute once and releases require exact-commit native evi
     step.uses?.startsWith('docker/build-push-action@'),
   );
   assert.equal(prebuild.with.push, false);
+  assert.equal(prebuild.id, 'image_cache');
+  assert.equal(prebuild['continue-on-error'], true);
+  assert.equal(
+    workflow.jobs.prebuild.outputs.cache_ready,
+    "${{ steps.image_cache.outcome == 'success' }}",
+  );
   assert.match(prebuild.with['cache-to'], /native-api-prewarm-\$\{\{ github\.sha \}\}/);
+  assert.match(prebuild.with['cache-to'], /ignore-error=false/);
   const publish = workflow.jobs.deploy.steps.find((step) => step.name === 'Build and push image');
-  assert.match(publish.with['cache-from'], /native-api-prewarm-\$\{\{ github\.sha \}\}/);
+  assert.equal(
+    publish.with['cache-from'],
+    "type=gha,scope=${{ needs.prebuild.outputs.cache_ready == 'true' && format('native-api-prewarm-{0}', github.sha) || 'native-api-linux-amd64-v1' }},version=2,timeout=3m",
+  );
+  const chooseCache = publish.with['cache-from'].match(/\$\{\{\s*(.*?)\s*\}\}/)?.[1];
+  assert.ok(chooseCache);
+  for (const [ready, expected] of [
+    ['true', 'native-api-prewarm-test-sha'],
+    ['false', 'native-api-linux-amd64-v1'],
+    ['', 'native-api-linux-amd64-v1'],
+  ])
+    assert.equal(
+      runInNewContext(chooseCache, {
+        needs: { prebuild: { outputs: { cache_ready: ready } } },
+        github: { sha: 'test-sha' },
+        format: (template, value) => template.replace('{0}', value),
+      }),
+      expected,
+    );
   assert.equal(workflow.jobs.deploy.environment, 'dev');
   assert.equal(workflow.jobs.verify.environment, undefined);
   assert.equal(workflow.jobs.verify.permissions['actions'], 'read');
@@ -571,6 +596,22 @@ test('automatic checks execute once and releases require exact-commit native evi
   );
   assert.equal(cacheProbe.run, 'bash scripts/benchmark-native-image-cache.sh');
   assert.equal(cacheProbe['timeout-minutes'], 10);
+  const cacheTransfer = ci.jobs['image-cache-transfer'];
+  assert.equal(cacheTransfer.needs, 'image');
+  assert.match(cacheTransfer.if, /needs\.image\.outputs\.image_built == 'true'/);
+  assert.match(cacheTransfer.if, /\[benchmark-native-cache\]/);
+  assert.equal(cacheTransfer.environment, undefined);
+  assert.ok(!JSON.stringify(cacheTransfer).includes('secrets.'));
+  const transferBuild = cacheTransfer.steps.find((step) =>
+    step.uses?.startsWith('docker/build-push-action@'),
+  );
+  assert.equal(transferBuild.with.push, false);
+  assert.equal(transferBuild.with['cache-to'], undefined);
+  assert.match(transferBuild.with['cache-from'], /scope=native-api-pr-/);
+  assert.doesNotMatch(transferBuild.with['cache-from'], /native-api-linux-amd64-v1/);
+  assert.match(cacheTransfer.steps.at(-1).run, /docker buildx history logs/);
+  assert.match(cacheTransfer.steps.at(-1).run, /CACHED/);
+  assert.match(cacheTransfer.steps.at(-1).run, /--network none --read-only/);
   const smoke = ci.jobs.image.steps.find(
     (step) => step.name === 'Run the final native image without network or writable root',
   );
