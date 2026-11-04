@@ -242,6 +242,57 @@ customer or operator authority. Date inputs and unsupported filters are validate
 there is no raw-event export. Use the summary and coverage operations for the same
 business data the Admin UI reads.
 
+## Hosted enablement and live acceptance
+
+The protected `Configure Global on dev` workflow has separate `inspect-analytics`,
+`enable-analytics`, `verify-analytics` and `restart-analytics` operator actions. These consume the existing
+same-commit full CI evidence and serialize against the configured API deployment.
+They reuse its digest-pinned native image, public SSO callback and existing business
+configuration. There is no customer/Meta initialization or data reset.
+
+Enablement creates one private S3 bucket, narrowly scoped IAM role and Kubernetes
+ServiceAccount per authority. The EKS cluster must already have its OIDC provider;
+trust binds its exact namespace, ServiceAccount and STS audience. The pinned native
+object-store client supports refreshable web identity credentials. No Meta storage
+key or short-lived GitHub deployment credential is copied into these Pods.
+Bucket-wide listing applies only to that authority's new analytics bucket; object
+access is restricted to its dedicated analytics root. Public access is blocked and
+S3 server-side encryption is enabled. The processes additionally encrypt records
+with independent keys. Existing buckets, roles and records are not repurposed.
+
+An immutable operator-only preparation Secret retains the exact candidate for
+reconciliation after a transport failure. It is never mounted into serving Pods.
+Each analytics process receives only its own server/storage configuration; the API
+receives only producer credentials and the verified `pingcap.com` Admin policy.
+Certificate CA signing keys are discarded after private preparation. Prepared Jobs
+initialize each new analytics root once, close it, then single-replica `Recreate`
+Deployments start independently. Only after both are ready does a resourceVersion-
+guarded API configuration switch enable collection and Admin. A changed target,
+failed/uncertain initializer, unexpected ownership or broadened existing IAM policy
+stops activation. Existing configuration and prepared resources remain available
+for explicit inspection; never blindly reset or repeat a failed initializer.
+
+```sh
+gh workflow run global-configure.yml --ref main -f operation=inspect-analytics
+gh workflow run global-configure.yml --ref main -f operation=enable-analytics
+gh workflow run global-configure.yml --ref main -f operation=verify-analytics
+```
+
+The cloud action verifies service readiness, ordinary API health, unauthenticated
+Admin denial and enabled capture. It deliberately reports real-account login as
+unverified. Live acceptance additionally requires a clean browser to show Admin
+without Guest initialization, the owner's real TiDB Cloud/PingCAP sign-in, and
+observed public visits plus an authorized meaningful business outcome in the
+authenticated summary/UI. Credentials and MFA remain user-entered. Keep the live
+delivery task open until that complete path is observed; source tests, a merged PR
+or a successful configuration job alone do not establish an operational Admin.
+
+The fixed `operator-check` campaign distinguishes live acceptance visits from launch
+traffic. `restart-analytics` gracefully restarts only the two retained analytics
+Deployments, preserving their roots/credentials and the business Deployment. Compare
+authenticated totals before and after that action; graceful recovery does not promise
+that every queued event survives an abrupt crash.
+
 ## Search discovery and publication
 
 The independent Console build renders installed TiUI 2.9.1 components and the shared
