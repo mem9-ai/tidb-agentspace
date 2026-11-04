@@ -128,6 +128,14 @@ impl Policies {
                 keys: vec!["owner-policy".into()],
             })
             .await?;
+        self.decode_read(scope, &response)
+    }
+
+    pub(crate) fn decode_read(
+        &self,
+        scope: &Scope,
+        response: &Value,
+    ) -> Result<Option<(Policy, String)>> {
         let record = response["records"]
             .get("owner-policy")
             .ok_or_else(|| error(503, "POLICY_RECORD_CORRUPT"))?;
