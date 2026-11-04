@@ -76,3 +76,15 @@ required shard succeeded or the explicitly identified complete
 unsharded fallback succeeded, in the same trusted exact-SHA run and attempt. Missing or skipped
 required work fails closed; caches never substitute for test evidence. Existing PR profiles,
 scope rules, Quality, Browser applicability and protected deployment authority remain in force.
+
+## Documentation-only main pushes and speculative cache warming
+
+Verified main push ranges containing only the existing documentation allowlist use the same
+scoped checks as documentation-only PRs. The policy is loaded from the verified `before`
+revision and compares the entire range including both sides of renames; missing history or
+unknown changes fail closed. A scoped result cannot authorize a same-revision release.
+
+For deployment events, an unprivileged main-only job can warm a cache for the exact source
+SHA while CI runs. It cannot publish an image or access deployment secrets. The protected
+deployment still requires the unchanged exact-SHA evidence, builds and pushes its own image,
+and proceeds without the optional cache if warming fails. A cache is never approval evidence.

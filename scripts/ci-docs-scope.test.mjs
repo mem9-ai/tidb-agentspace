@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { isDocumentationOnly } from './ci-docs-scope.mjs';
 
-test('only reviewed documentation files on a PR merge candidate skip application checks', () => {
+test('only reviewed documentation files on verified candidates skip application checks', () => {
   const docs = [
     'README.md',
     'docs/architecture.md',
@@ -23,6 +23,7 @@ test('only reviewed documentation files on a PR merge candidate skip application
     'docs/screenshots/example.png',
   ];
   assert.equal(isDocumentationOnly('pull_request', 2, docs), true);
+  assert.equal(isDocumentationOnly('push', 1, docs, true), true);
   for (const event of ['push', 'merge_group', 'workflow_dispatch'])
     assert.equal(isDocumentationOnly(event, 2, docs), false);
   for (const parents of [0, 1, 3])
@@ -39,6 +40,12 @@ test('only reviewed documentation files on a PR merge candidate skip application
     'AGENTS.md',
   ])
     assert.equal(isDocumentationOnly('pull_request', 2, [...docs, file]), false, file);
+  for (const file of [
+    'backend/api/src/lib.rs',
+    'scripts/ci-docs-scope.mjs',
+    '.github/workflows/ci.yml',
+  ])
+    assert.equal(isDocumentationOnly('push', 1, [...docs, file], true), false, file);
   assert.equal(isDocumentationOnly('pull_request', 2, []), false);
 });
 
@@ -48,11 +55,11 @@ test('merge candidates detect both sides of renames and untrusted candidates fai
   const git = (...args) => execFileSync('git', args, { cwd: directory, stdio: 'pipe' });
   const script = fileURLToPath(new URL('./ci-docs-scope.mjs', import.meta.url));
   const output = join(directory, 'output');
-  const classify = (policy = script) => {
+  const classify = (policy = script, event = 'pull_request', before = '') => {
     writeFileSync(output, '');
     execFileSync(process.execPath, [policy], {
       cwd: directory,
-      env: { ...process.env, GITHUB_OUTPUT: output, GITHUB_EVENT_NAME: 'pull_request' },
+      env: { ...process.env, GITHUB_OUTPUT: output, GITHUB_EVENT_NAME: event, BEFORE_SHA: before },
       stdio: 'pipe',
     });
     return readFileSync(output, 'utf8').trim();
@@ -68,6 +75,7 @@ test('merge candidates detect both sides of renames and untrusted candidates fai
   writeFileSync(join(directory, 'backend', 'private.rs'), 'native\n');
   git('add', '.');
   git('commit', '-qm', 'base');
+  const base = git('rev-parse', 'HEAD').toString().trim();
   assert.equal(classify(), 'docs_only=false');
   git('switch', '-qc', 'docs');
   writeFileSync(join(directory, 'docs', 'guide.md'), 'after\n');
@@ -76,12 +84,23 @@ test('merge candidates detect both sides of renames and untrusted candidates fai
   git('switch', '-q', 'main');
   git('merge', '--no-ff', '-qm', 'merge docs', 'docs');
   assert.equal(classify(), 'docs_only=true');
+  assert.equal(classify(script, 'push', base), 'docs_only=true');
+  assert.equal(classify(script, 'push', ''), 'docs_only=false');
+  assert.equal(classify(script, 'push', '0'.repeat(40)), 'docs_only=false');
+  git('switch', '-qc', 'unrelated', base);
+  writeFileSync(join(directory, 'docs', 'unrelated.md'), 'unrelated\n');
+  git('add', 'docs/unrelated.md');
+  git('commit', '-qm', 'unrelated');
+  const unrelated = git('rev-parse', 'HEAD').toString().trim();
+  git('switch', '-q', 'main');
+  assert.equal(classify(script, 'push', unrelated), 'docs_only=false');
   git('switch', '-qc', 'rename');
   git('mv', 'backend/private.rs', 'docs/private.md');
   git('commit', '-qm', 'move native');
   git('switch', '-q', 'main');
   git('merge', '--no-ff', '-qm', 'merge rename', 'rename');
   assert.equal(classify(), 'docs_only=false');
+  assert.equal(classify(script, 'push', base), 'docs_only=false');
   git('switch', '-qc', 'policy');
   writeFileSync(join(directory, 'scripts', 'ci-docs-scope.mjs'), 'malicious candidate\n');
   git('add', 'scripts/ci-docs-scope.mjs');

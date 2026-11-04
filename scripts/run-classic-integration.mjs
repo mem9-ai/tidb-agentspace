@@ -53,10 +53,10 @@ const agentCases = [
 const apiCases = [
   'action/resource/credential denial matrix has no upstream reads or writes',
   'colliding resource IDs stay isolated across real Workspaces and discovery',
-  'DuckDB selected sources require independent read/analyze grants and private storage stays hidden',
+  'retired DuckDB private storage stays hidden',
   'local file paths, UTF-8 writes, conflicts and deletion preserve exact state',
   'native binary transfer and create-only conflicts preserve bytes and headers',
-  'MySQL and PostgreSQL writes, reads and unknown outcomes are not retried',
+  'PostgreSQL writes, reads and unknown outcomes are not retried',
   'exports preserve CSV/JSON/JSONL precision, column order and create-only destinations',
   'imports bind actor, destination, source version and single-use concurrent confirmation',
   'import row bounds and reviewed dialect-safe field mappings are enforced before SQL',
@@ -69,8 +69,8 @@ const workflowCases = [
   'cancellation and confirmation cannot both win',
   'export reviews are addressable, currently authorized and cancellable',
   'setup creates durable identities, scoped replay, permission denial and bounded history without effects',
-  'safe setup resumes saved bindings and unknown creation is reconciled without replacement',
-  'a crash during setup retains the pre-effect journal and never replays it',
+  'PostgreSQL setup resumes saved bindings and reconciles unknown creation without replacement',
+  'a crash during PostgreSQL setup never replays an uncertain write',
   'encoded table identity is decoded exactly once, including reserved-looking names',
   'removed command and DELETE-body routes return 404 before upstream I/O',
 ];

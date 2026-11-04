@@ -59,7 +59,7 @@ jobs:
             echo 'backend_only=false' >> "$GITHUB_OUTPUT"
           fi
           docs_policy="$RUNNER_TEMP/ci-docs-scope.mjs"
-          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' ]] && git show "$policy_ref:scripts/ci-docs-scope.mjs" > "$docs_policy"; then
+          if git show "$policy_ref:scripts/ci-docs-scope.mjs" > "$docs_policy"; then
             node "$docs_policy"
           else
             echo 'docs_only=false' >> "$GITHUB_OUTPUT"
