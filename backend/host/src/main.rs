@@ -47,7 +47,20 @@ async fn main() -> Result<()> {
     {
         bail!("Use workspace-backend serve --config <private-deployment.json>");
     }
-    let plan = plan::Plan::load(Path::new(&args[2]))?;
+    let mut plan = plan::Plan::load(Path::new(&args[2]))?;
+    if let Some(analytics) = plan.analytics.take() {
+        let service = workspace_analytics::server::Service::open(
+            analytics.config,
+            analytics.initialize || args[0] == "initialize",
+        )
+        .await?;
+        if args[0] == "initialize" {
+            service.close().await?;
+        } else {
+            service.serve(shutdown_signal()).await?;
+        }
+        return Ok(());
+    }
     if args[0] == "initialize" {
         return initialize(plan).await;
     }

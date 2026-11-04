@@ -14,23 +14,26 @@ The fresh record profile supersedes the document migration baseline; see [ADR 00
 
 ## Modules
 
-| Crate                 | Responsibility                                                                         |
-| --------------------- | -------------------------------------------------------------------------------------- |
-| `backend/contracts`   | Metadata port, scoped context and structured errors                                    |
-| `backend/identity`    | Inactive Global identity reservations and Region-local owner policy primitives         |
-| `meta-service`        | Encrypted SlateDB/S3 authority, durable commits, fencing and mTLS server               |
-| `backend/meta-client` | Authority-bound remote Meta adapter; TLS 1.3/mTLS, bounded requests, no retries        |
-| `backend/workspace`   | Workspace/Key domain, authorization and versioned record repositories                  |
-| `backend/providers`   | Private Drive9, Zero and db9 lifecycle/vault adapters; native MySQL/PostgreSQL drivers |
-| `backend/execute`     | Region-internal Executor; prebuilt static DuckDB 2.0/Bashkit tasks via the same binary |
-| `backend/product`     | Regional resources, database browser, files, snapshots, analysis, exports/imports      |
-| `backend/api`         | Public HTTP contract, sessions, Host/Origin/CORS, request/cancellation/stream limits   |
-| `backend/host`        | Configuration, dependency wiring, real role composition and ordered shutdown           |
+| Crate                 | Responsibility                                                                               |
+| --------------------- | -------------------------------------------------------------------------------------------- |
+| `backend/contracts`   | Metadata port, scoped context and structured errors                                          |
+| `backend/identity`    | Inactive Global identity reservations and Region-local owner policy primitives               |
+| `meta-service`        | Encrypted SlateDB/S3 authority, durable commits, fencing and mTLS server                     |
+| `backend/meta-client` | Authority-bound remote Meta adapter; TLS 1.3/mTLS, bounded requests, no retries              |
+| `backend/workspace`   | Workspace/Key domain, authorization and versioned record repositories                        |
+| `backend/providers`   | Private Drive9, Zero and db9 lifecycle/vault adapters; native MySQL/PostgreSQL drivers       |
+| `backend/execute`     | Region-internal Executor; prebuilt static DuckDB 2.0/Bashkit tasks via the same binary       |
+| `backend/product`     | Regional resources, database browser, files, snapshots, analysis, exports/imports            |
+| `backend/analytics`   | Independent SlateDB analytics process and bounded asynchronous producers; no Meta dependency |
+| `backend/api`         | Public HTTP contract, sessions, Host/Origin/CORS, request/cancellation/stream limits         |
+| `backend/host`        | Configuration, dependency wiring, real role composition and ordered shutdown                 |
 
 The identity module reserves a complete Global personal identity group atomically and stores only
 verifiers for Guest secrets. The co-located Global-initiated Region initialization installs owner
 policies, an empty Workspace and an expiry job. A separately deployed Global must use an
 authenticated Region control service and never open a remote Region Meta store directly.
+
+Approximate analytics runs only in a separate, single-writer process under [ADR 0050](decisions/0050-isolated-analytics-service.md); see [configuration and failure semantics](product-analytics.md). It never shares the Meta service or prevents product serving when unavailable.
 
 The native host has an explicitly configured co-located Guest mode. It routes an authenticated
 regional browser cookie to a bounded Workspace pool, rechecking the durable grant and policy on each

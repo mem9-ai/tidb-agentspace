@@ -144,13 +144,12 @@ impl Config {
     pub fn validate(&self) -> Result<()> {
         let result = self;
         if let Some(settings) = &self.analytics {
+            settings.service.validate(self.insecure_loopback)?;
             anyhow::ensure!(
-                settings.pseudonym_key_file.is_absolute()
-                    && self
-                        .security
-                        .as_ref()
-                        .is_none_or(|s| s.regional_signing_key_file != settings.pseudonym_key_file),
-                "Dedicated absolute analytics key file required"
+                self.security
+                    .as_ref()
+                    .is_none_or(|s| s.regional_signing_key_file != settings.service.token_file),
+                "Dedicated analytics producer token required"
             );
         }
         if (result.insecure_loopback && !result.bind.ip().is_loopback())
@@ -235,7 +234,7 @@ struct Session {
 }
 #[derive(Clone)]
 struct App {
-    analytics: Option<analytics::Store>,
+    analytics: Option<analytics::Client>,
     workspace: Arc<Workspace>,
     product: Option<Arc<workspace_product::Product>>,
     config: Config,
@@ -326,15 +325,13 @@ impl WorkspaceServer {
             .analytics
             .as_ref()
             .filter(|c| c.enabled)
-            .map(|c| {
-                analytics::Store::new(
-                    metadata.clone(),
-                    &config.authority_id,
-                    private_file(&c.pseudonym_key_file)
-                        .map_err(|_| reject(503, "ANALYTICS_KEY_UNAVAILABLE"))?,
-                )
-            })
-            .transpose()?;
+            .and_then(|c| {
+                analytics::Client::new(&c.service, &config.authority_id)
+                    .map_err(|_| {
+                        eprintln!("Analytics producer unavailable; product serving continues.")
+                    })
+                    .ok()
+            });
         let metadata_port_for_security = metadata.clone();
         let repository = Repository::open(
             metadata,

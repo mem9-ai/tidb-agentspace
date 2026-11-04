@@ -18,6 +18,9 @@ The owner accepted this design on 2026-11-04 and then clarified two requirements
 Admin uses TiDB Cloud login with a verified email in exactly `pingcap.com`; HTTP
 operational monitoring is deferred. These amendments supersede the original exact
 account allowlist and web-vital/HTTP monitoring scope. The UI entry is `/admin`.
+A further owner amendment requires an independent, lower-availability SlateDB analytics
+service with asynchronous writes instead of reusing Meta. [ADR 0050](../../docs/decisions/0050-isolated-analytics-service.md)
+supersedes the original shared-Meta and durable-202 requirements below.
 Signing into a personal Workspace does not grant platform access. Runtime details
 and measured limitations are maintained in [product analytics](../../docs/product-analytics.md).
 
@@ -35,8 +38,8 @@ customer usage/billing and does not restore the removed Activity interface.
 
 Exclude session replay, keystroke recording, SQL/file capture, fingerprinting,
 customer impersonation, billing, marketing automation and a general admin console.
-Do not introduce a third-party analytics vendor or a separate analytics database
-for initial launch. Revisit storage based on measured load and retention cost.
+Do not introduce a third-party analytics vendor. Use a dedicated SlateDB analytics
+service and storage root; keep approximate observation failures independent from Meta.
 
 ## Required behavior
 
@@ -141,15 +144,16 @@ summaries/cohort contributions to the operator aggregation service; no Global
 credential gains arbitrary regional customer record reads. A companion ADR must
 freeze the service identity, pseudonym-key ownership and transport before code.
 
-Start with existing metadata primitives, incremental aggregates and indexed reads;
+Use the dedicated SlateDB analytics service, incremental aggregates and indexed reads;
 dashboard requests never scan every Workspace or customer file. Initial limits:
 20 events/32 KiB per browser batch, 100 pending events per tab, 60 batches/minute
 per session with additional bounded process and edge limits, and 1,000 pending
 server events per process. Edge limit state may use transient IPs without retaining
 them in analytics. Session limits alone are not abuse protection.
 
-POST success (`202`) means durably accepted after schema validation/deduplication;
-queue-only admission must not return a durable acknowledgment. Unique event IDs
+POST success (`202`) means queued acceptance by the independent analytics service,
+with explicit `durability: "queued"`; it does not promise durable S3 acknowledgment.
+Producer queues and recent analytics writes may be lost on a crash. Unique event IDs
 are idempotent within the 30-day raw retention window, scoped by trusted producer
 identity/session. Conflicting reuse returns `409`; identical retries do not add counts.
 Browser requests retry at most twice with backoff, then drop; never block navigation.

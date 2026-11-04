@@ -16,7 +16,7 @@ use workspace_meta_client::private_file;
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
-    pub pseudonym_key_file: PathBuf,
+    pub service: workspace_analytics::ClientConfig,
     pub operators_file: PathBuf,
     pub return_url: String,
     #[serde(default)]
@@ -77,11 +77,10 @@ pub fn cookie<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
 impl Config {
     pub fn validate(&self, origins: &[String], local: bool) -> anyhow::Result<()> {
         anyhow::ensure!(
-            self.pseudonym_key_file.is_absolute()
-                && self.operators_file.is_absolute()
-                && self.pseudonym_key_file != self.operators_file,
+            self.operators_file.is_absolute() && self.service.token_file != self.operators_file,
             "Private analytics files required"
         );
+        self.service.validate(local)?;
         let url = crate::sso::endpoint(&self.return_url, local)?;
         anyhow::ensure!(
             origins.contains(&url.origin().ascii_serialization())
@@ -298,7 +297,12 @@ mod tests {
         let file = policy_file();
         let operators = Operators::new(
             Config {
-                pseudonym_key_file: file.with_extension("key"),
+                service: workspace_analytics::ClientConfig {
+                    endpoint: "http://127.0.0.1:1".into(),
+                    token_file: file.with_extension("token"),
+                    insecure_loopback: true,
+                    tls: None,
+                },
                 operators_file: file.clone(),
                 return_url: "https://example.test/admin".into(),
                 campaigns: Vec::new(),

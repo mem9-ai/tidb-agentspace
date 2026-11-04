@@ -80,7 +80,7 @@ test('@visual Guest explores the sample and gets a sales result without an agent
         .postDataJSON()
         .events.map(({ event }) => event),
     );
-    return route.fulfill({ status: 202, json: { accepted: true } });
+    return route.fulfill({ status: 202, json: { accepted: true, durability: 'queued' } });
   });
   const reportWrites = [];
   await context.route('**/files', async (route) => {

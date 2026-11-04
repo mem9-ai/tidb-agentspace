@@ -14,10 +14,6 @@ pub(super) async fn handle(
         .analytics
         .as_ref()
         .ok_or_else(|| err(404, "ANALYTICS_UNAVAILABLE"))?;
-    let store = app
-        .analytics
-        .as_ref()
-        .ok_or_else(|| err(404, "ANALYTICS_UNAVAILABLE"))?;
     if path == "/analytics/session" && matches!(*method, Method::DELETE | Method::POST) {
         if !h
             .get(header::ORIGIN)
@@ -58,9 +54,13 @@ pub(super) async fn handle(
         .into_response());
     }
     if path == "/analytics/config" && *method == Method::GET {
-        return Ok(Json(json!({"enabled":settings.browser_enabled,"campaigns":settings.campaigns,"policy":"session_only","version":1})).into_response());
+        return Ok(Json(json!({"enabled":settings.browser_enabled && app.analytics.is_some(),"campaigns":settings.campaigns,"policy":"session_only","version":1})).into_response());
     }
     if path == "/analytics/events" && *method == Method::POST {
+        let store = app
+            .analytics
+            .as_ref()
+            .ok_or_else(|| err(503, "ANALYTICS_UNAVAILABLE"))?;
         if !settings.browser_enabled {
             return Err(err(404, "ANALYTICS_DISABLED"));
         }
@@ -152,14 +152,18 @@ pub(super) async fn handle(
         } else {
             ""
         };
-        let mut response = (StatusCode::ACCEPTED, Json(json!({"accepted":true}))).into_response();
+        let mut response = (
+            StatusCode::ACCEPTED,
+            Json(json!({"accepted":true,"durability":"queued"})),
+        )
+            .into_response();
         response.headers_mut().append(header::SET_COOKIE,format!("aw_acquisition={token}; HttpOnly; SameSite=Strict;{secure} Path={prefix}/; Max-Age=600").parse().map_err(|_|err(503,"ANALYTICS_UNAVAILABLE"))?);
         return Ok(response);
     }
     let operators = app
         .operators
         .as_ref()
-        .ok_or_else(|| err(404, "OPERATOR_UNAVAILABLE"))?;
+        .ok_or_else(|| err(503, "OPERATOR_UNAVAILABLE"))?;
     if path == "/operator/auth/login" && *method == Method::GET {
         let mut response = StatusCode::SEE_OTHER.into_response();
         let prefix = app
@@ -212,6 +216,10 @@ pub(super) async fn handle(
         .analytics_reads
         .try_acquire()
         .map_err(|_| err(429, "ANALYTICS_BUSY"))?;
+    let store = app
+        .analytics
+        .as_ref()
+        .ok_or_else(|| err(503, "ANALYTICS_UNAVAILABLE"))?;
     let today = chrono::Utc::now().date_naive();
     let parse = |name: &str, default: NaiveDate| -> workspace_contracts::Result<NaiveDate> {
         query

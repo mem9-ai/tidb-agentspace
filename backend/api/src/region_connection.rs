@@ -53,7 +53,7 @@ pub struct ConnectorConfig {
     pub tls: ClientTls,
 }
 pub struct Connector {
-    pub analytics: Option<crate::analytics::Store>,
+    pub analytics: Option<crate::analytics::Client>,
     pub config: ConnectorConfig,
     pub descriptor: RegionDescriptor,
     pub installer: Arc<dyn PolicyInstaller>,
@@ -497,7 +497,7 @@ pub async fn connect(
     descriptor: RegionDescriptor,
     installer: Arc<dyn PolicyInstaller>,
     initializer: Arc<dyn RegionControl>,
-    analytics: Option<crate::analytics::Store>,
+    analytics: Option<crate::analytics::Client>,
     stop: tokio_util::sync::CancellationToken,
 ) -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
