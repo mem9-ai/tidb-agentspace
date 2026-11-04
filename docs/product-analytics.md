@@ -50,6 +50,10 @@ The bounded launch profile accepts up to 1,024 events per shard/day (16,384 per
 authority/day, with possible earlier saturation for a hot subject). Public capacity
 rejection is 429; server queue/write loss is visible as unconfirmed coverage. The
 server queue holds at most 1,000 jobs and does not block completed product requests.
+Native outcomes flush in batches of up to 64 or after ten seconds. Each day/shard
+commits its raw events, receipts and projection atomically, reducing contention with
+business metadata writes. Pending jobs (including staged/in-flight batches) are included
+in unconfirmed coverage; a fresh summary does not imply those outcomes are already durable.
 HTTP 202 for browser capture means durable acceptance, not in-memory admission.
 Events within a batch commit individually: a failed batch may be partially retained;
 retry the same IDs, never generate replacements to retry an uncertain outcome.
@@ -104,6 +108,14 @@ one-hour server-side session bound to the verified issuer/subject. It does not c
 a personal Workspace or add Workspace ownership. Policy is read on every operator
 request; removing a domain/identity takes effect for existing sessions immediately.
 Process restart invalidates Admin sessions and requires another login.
+
+Bounded structured `operator_security` diagnostics record allowed/denied sign-in,
+denied requests and authorized aggregate reads separately from product usage.
+Only fixed event labels and timestamps are emitted, without identities, claims,
+cookies, URLs or customer content. Allowed and denied streams have separate
+120-record/minute process budgets and one overflow marker, so denial spam cannot
+consume the allowed-read budget. Existing platform log capture/retention applies;
+this is best-effort security evidence, not a new monitoring pipeline or durable audit ledger.
 
 The backend reads a private ordinary file (owner-only permissions, no symlink):
 
@@ -191,3 +203,10 @@ cohort denominators, cross-authority isolation and retention cleanup. Browser te
 cover Admin data/permission/error states, opt-out, public pages, existing sales
 journeys and responsive themes. Actual command outcomes belong in the implementation
 PR and must be current for its candidate; this guide does not assert unrun gates.
+
+The local 2026-11-04 debug/RustFS comparison used 100 measured create-only metadata-file
+writes per configuration after ten warmups. Batched capture measured 410.1 ms median
+and 440.0 ms p95 versus 409.7/425.4 ms without capture (increments 0.4/14.7 ms).
+All 111 writes including setup/warmups were reflected after flush, with zero unconfirmed
+events; the 30-day summary read took 47 ms. This is a bounded local end-to-end workload,
+without an external data provider, and does not establish production latency guarantees.

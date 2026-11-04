@@ -1814,6 +1814,23 @@ test(
       assert.equal(summary.body.authorities[1].counts.events['report_saved:failure'], 1);
       assert.ok(!JSON.stringify(summary.body).includes('Verified report save'));
     });
+    const securityEvents = f
+      .log()
+      .split('\n')
+      .flatMap((line) => {
+        try {
+          const event = JSON.parse(line);
+          return event.stream === 'operator_security' ? [event] : [];
+        } catch {
+          return [];
+        }
+      });
+    for (const event of ['sign_in_allowed', 'sign_in_denied', 'request_denied', 'read_authorized'])
+      assert.ok(securityEvents.some((record) => record.event === event));
+    for (const record of securityEvents)
+      assert.deepEqual(Object.keys(record).sort(), ['at', 'event', 'stream']);
+    assert.ok(!JSON.stringify(securityEvents).includes('alice@pingcap.com'));
+    assert.ok(!JSON.stringify(securityEvents).includes(admin.split('=')[1]));
     await writeFile(f.analyticsPolicy, JSON.stringify({ subjects: [], verifiedEmailDomains: [] }), {
       mode: 0o600,
     });

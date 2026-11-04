@@ -224,6 +224,7 @@ pub(super) async fn handle(
     };
     let from = parse("from", today - chrono::Duration::days(7))?;
     let to = parse("to", today)?;
+    operators.audit_read();
     let now = chrono::Utc::now().timestamp();
     let mut authorities = vec![store.summary(from, to, now).await?];
     let mut missing = Vec::new();

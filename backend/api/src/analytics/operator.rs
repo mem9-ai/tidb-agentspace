@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     path::PathBuf,
+    sync::Mutex as AuditMutex,
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
@@ -45,6 +46,15 @@ pub struct Operators {
     sessions: Mutex<BTreeMap<String, Session>>,
     cookie_path: String,
     secure: bool,
+    audit: AuditMutex<BTreeMap<&'static str, (Instant, u16)>>,
+}
+#[derive(Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+enum AuditEvent {
+    SignInAllowed,
+    SignInDenied,
+    RequestDenied,
+    ReadAuthorized,
 }
 fn denied(status: u16, code: &str) -> ServiceError {
     ServiceError::new(status, code)
@@ -97,6 +107,7 @@ impl Operators {
             sessions: Mutex::new(BTreeMap::new()),
             cookie_path: path.into(),
             secure,
+            audit: AuditMutex::new(BTreeMap::new()),
         };
         result.members()?;
         Ok(result)
@@ -156,7 +167,11 @@ impl Operators {
                 })))
     }
     async fn issue(&self, identity: Identity, email: Option<String>) -> Result<HeaderValue> {
-        if !self.allows(&identity, email.as_deref())? {
+        let allowed = self.allows(&identity, email.as_deref());
+        if !matches!(allowed, Ok(true)) {
+            self.audit(AuditEvent::SignInDenied);
+        }
+        if !allowed? {
             return Err(denied(403, "OPERATOR_REQUIRED"));
         }
         let secret = workspace_domain::secret(32)
@@ -175,9 +190,18 @@ impl Operators {
                 expires: Instant::now() + Duration::from_secs(3600),
             },
         );
-        self.session_cookie(&secret, 3600)
+        let cookie = self.session_cookie(&secret, 3600)?;
+        self.audit(AuditEvent::SignInAllowed);
+        Ok(cookie)
     }
     pub async fn authorize(&self, headers: &HeaderMap) -> Result<()> {
+        let result = self.authorize_inner(headers).await;
+        if result.is_err() {
+            self.audit(AuditEvent::RequestDenied);
+        }
+        result
+    }
+    async fn authorize_inner(&self, headers: &HeaderMap) -> Result<()> {
         // Bearer/Workspace credentials can never be used as operator authorization.
         if headers.contains_key("authorization") {
             return Err(denied(403, "OPERATOR_REQUIRED"));
@@ -195,6 +219,40 @@ impl Operators {
             return Err(denied(403, "OPERATOR_REQUIRED"));
         }
         Ok(())
+    }
+    pub fn audit_read(&self) {
+        self.audit(AuditEvent::ReadAuthorized);
+    }
+    fn audit(&self, event: AuditEvent) {
+        // Separate safe security diagnostics, never product-usage events. Fixed
+        // fields exclude identities, claims, cookies, URLs and customer data.
+        let bucket = if matches!(
+            event,
+            AuditEvent::SignInAllowed | AuditEvent::ReadAuthorized
+        ) {
+            "allowed"
+        } else {
+            "denied"
+        };
+        let Ok(mut budgets) = self.audit.lock() else {
+            return;
+        };
+        let window = budgets.entry(bucket).or_insert((Instant::now(), 0));
+        if window.0.elapsed() >= Duration::from_secs(60) {
+            *window = (Instant::now(), 0);
+        }
+        if window.1 < 120 {
+            eprintln!(
+                "{}",
+                serde_json::json!({"stream":"operator_security","event":event,"at":chrono::Utc::now().timestamp()})
+            );
+        } else if window.1 == 120 {
+            eprintln!(
+                "{}",
+                serde_json::json!({"stream":"operator_security","event":"rate_limited","bucket":bucket,"at":chrono::Utc::now().timestamp()})
+            );
+        }
+        window.1 = window.1.saturating_add(1);
     }
     pub async fn logout(&self, headers: &HeaderMap) -> Result<HeaderValue> {
         if let Some(secret) = cookie(headers, "aw_operator") {

@@ -16,6 +16,7 @@ use workspace_contracts::{MetaRequest, Metadata, Result, Scope, ServiceError};
 
 const SHARDS: usize = 16;
 const MAX_EVENTS: usize = 1024;
+const MAX_PENDING: u64 = 1000;
 const DAY: i64 = 86400;
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -67,7 +68,8 @@ pub struct Store {
     metadata: Arc<dyn Metadata>,
     authority: String,
     key: Arc<Vec<u8>>,
-    dropped: Arc<AtomicU64>,
+    unconfirmed: Arc<AtomicU64>,
+    pending: Arc<AtomicU64>,
     locks: Arc<Vec<Mutex<()>>>,
     sender: mpsc::Sender<Job>,
     cleanup_cursors: Arc<Mutex<BTreeMap<String, String>>>,
@@ -79,6 +81,11 @@ struct Job {
     operation: String,
     success: bool,
     at: i64,
+}
+struct PreparedJob {
+    event: RawEvent,
+    job: Job,
+    attribution: Option<super::Attribution>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -139,12 +146,13 @@ impl Store {
         if key.len() < 32 {
             return Err(failure("ANALYTICS_KEY_INVALID"));
         }
-        let (sender, mut receiver) = mpsc::channel::<Job>(1000);
+        let (sender, mut receiver) = mpsc::channel::<Job>(MAX_PENDING as usize);
         let store = Self {
             metadata,
             authority: authority.into(),
             key: Arc::new(key),
-            dropped: Arc::new(AtomicU64::new(0)),
+            unconfirmed: Arc::new(AtomicU64::new(0)),
+            pending: Arc::new(AtomicU64::new(0)),
             locks: Arc::new((0..SHARDS).map(|_| Mutex::new(())).collect()),
             sender,
             cleanup_cursors: Arc::new(Mutex::new(BTreeMap::new())),
@@ -152,12 +160,24 @@ impl Store {
         let worker = store.clone();
         tokio::spawn(async move {
             while let Some(job) = receiver.recv().await {
-                let result =
-                    tokio::time::timeout(std::time::Duration::from_secs(2), worker.server(job))
-                        .await;
-                if !matches!(result, Ok(Ok(()))) {
-                    worker.dropped.fetch_add(1, Ordering::Relaxed);
+                let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+                let mut jobs = vec![job];
+                while jobs.len() < 64 {
+                    match tokio::time::timeout_at(deadline, receiver.recv()).await {
+                        Ok(Some(job)) => jobs.push(job),
+                        _ => break,
+                    }
                 }
+                let count = jobs.len() as u64;
+                let result = tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    worker.server_batch(jobs),
+                )
+                .await;
+                if matches!(result, Ok(Ok(()))) {
+                    worker.unconfirmed.fetch_sub(count, Ordering::Relaxed);
+                }
+                worker.pending.fetch_sub(count, Ordering::Relaxed);
             }
         });
         let cleaner = store.clone();
@@ -166,14 +186,14 @@ impl Store {
             loop {
                 tick.tick().await;
                 if cleaner.purge(Utc::now().timestamp()).await.is_err() {
-                    cleaner.dropped.fetch_add(1, Ordering::Relaxed);
+                    cleaner.unconfirmed.fetch_add(1, Ordering::Relaxed);
                 }
             }
         });
         Ok(store)
     }
     pub fn mark_unconfirmed(&self) {
-        self.dropped.fetch_add(1, Ordering::Relaxed);
+        self.unconfirmed.fetch_add(1, Ordering::Relaxed);
     }
     pub fn authority(&self) -> &str {
         &self.authority
@@ -207,79 +227,125 @@ impl Store {
             success,
             at: Utc::now().timestamp(),
         };
+        self.unconfirmed.fetch_add(1, Ordering::Relaxed);
+        if self
+            .pending
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |pending| {
+                (pending < MAX_PENDING).then_some(pending + 1)
+            })
+            .is_err()
+        {
+            return;
+        }
         if self.sender.try_send(job).is_err() {
-            self.dropped.fetch_add(1, Ordering::Relaxed);
+            self.pending.fetch_sub(1, Ordering::Relaxed);
         }
     }
+    #[cfg(test)]
     async fn server(&self, job: Job) -> Result<()> {
-        let subject = self.pseudonym(&job.workspace);
-        let attribution_key = format!("attribution/{subject}");
-        let attribution = self
+        self.server_batch(vec![job]).await
+    }
+    async fn server_batch(&self, jobs: Vec<Job>) -> Result<()> {
+        let keys = jobs
+            .iter()
+            .map(|job| format!("attribution/{}", self.pseudonym(&job.workspace)))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let attributes = self
             .metadata
             .execute(MetaRequest::Get {
                 scope: self.scope(""),
                 guard: None,
-                keys: vec![attribution_key.clone()],
+                keys,
             })
             .await?;
-        let attribution = serde_json::from_value::<super::Attribution>(
-            attribution["records"][&attribution_key]["value"].clone(),
-        )
-        .ok()
-        .filter(|a| a.at + 30 * DAY > job.at);
-        let payload = json!({"operation":job.operation,"success":job.success,"actor":job.actor});
-        self.append(
-            RawEvent {
-                id: job.id,
+        let mut groups: BTreeMap<(i64, usize), Vec<PreparedJob>> = BTreeMap::new();
+        for job in jobs {
+            let subject = self.pseudonym(&job.workspace);
+            let attribution = serde_json::from_value::<super::Attribution>(
+                attributes["records"][format!("attribution/{subject}")]["value"].clone(),
+            )
+            .ok()
+            .filter(|a| a.at + 30 * DAY > job.at);
+            let event = RawEvent {
+                id: job.id.clone(),
                 at: job.at,
                 subject: subject.clone(),
-                payload,
-            },
-            move |p| {
-                if job.operation == "trial" {
-                    p.trials.insert(subject.clone());
-                    return;
-                }
-                if job.operation == "sign_in_completed" {
-                    increment(&mut p.counts.events, "sign_in_completed");
-                    return;
-                }
-                let w = p.workspaces.entry(subject.clone()).or_default();
-                if let Some(attribution) = &attribution {
-                    w.source = Some(label(&attribution.source));
-                    w.campaign = attribution.campaign.clone();
-                }
-                if job.actor != "api" || w.actor.is_empty() {
-                    w.actor = job.actor.clone();
-                }
-                if job.operation == "workspace_ready" {
-                    w.ready = Some(w.ready.map_or(job.at, |old| old.min(job.at)));
-                    p.counts.ready += 1;
-                } else {
-                    increment(
-                        &mut p.counts.events,
-                        &format!(
-                            "{}:{}",
-                            job.operation,
-                            if job.success { "success" } else { "failure" }
-                        ),
-                    );
-                    if job.success {
-                        p.counts.successes += 1;
-                        if matches!(
-                            job.operation.as_str(),
-                            "query" | "analysis" | "preview" | "import" | "export" | "report_saved"
-                        ) {
-                            w.useful = Some(w.useful.map_or(job.at, |old| old.min(job.at)));
-                            w.api |= job.actor == "api";
-                        }
-                    } else {
-                        p.counts.failures += 1;
+                payload: json!({"operation":job.operation,"success":job.success,"actor":job.actor}),
+            };
+            groups
+                .entry((job.at.div_euclid(DAY), Self::shard(&subject)))
+                .or_default()
+                .push(PreparedJob {
+                    event,
+                    job,
+                    attribution,
+                });
+        }
+        for group in groups.values() {
+            self.append_many(
+                group
+                    .iter()
+                    .map(|prepared| prepared.event.clone())
+                    .collect(),
+                |index, p| {
+                    let PreparedJob {
+                        event,
+                        job,
+                        attribution,
+                    } = &group[index];
+                    if job.operation == "trial" {
+                        p.trials.insert(event.subject.clone());
+                        return;
                     }
-                }
-            },
-        )
-        .await
+                    if job.operation == "sign_in_completed" {
+                        increment(&mut p.counts.events, "sign_in_completed");
+                        return;
+                    }
+                    let w = p.workspaces.entry(event.subject.clone()).or_default();
+                    if let Some(attribution) = attribution {
+                        w.source = Some(label(&attribution.source));
+                        w.campaign = attribution.campaign.clone();
+                    }
+                    if job.actor != "api" || w.actor.is_empty() {
+                        w.actor = job.actor.clone();
+                    }
+                    if job.operation == "workspace_ready" {
+                        w.ready = Some(w.ready.map_or(job.at, |old| old.min(job.at)));
+                        p.counts.ready += 1;
+                    } else {
+                        increment(
+                            &mut p.counts.events,
+                            &format!(
+                                "{}:{}",
+                                job.operation,
+                                if job.success { "success" } else { "failure" }
+                            ),
+                        );
+                        if job.success {
+                            p.counts.successes += 1;
+                            if matches!(
+                                job.operation.as_str(),
+                                "query"
+                                    | "analysis"
+                                    | "preview"
+                                    | "import"
+                                    | "export"
+                                    | "report_saved"
+                            ) {
+                                w.useful = Some(w.useful.map_or(job.at, |old| old.min(job.at)));
+                                w.api |= job.actor == "api";
+                            }
+                        } else {
+                            p.counts.failures += 1;
+                        }
+                    }
+                },
+            )
+            .await?;
+        }
+        Ok(())
     }
     pub async fn browser(&self, batch: Batch, at: i64) -> Result<()> {
         let subject = self.pseudonym(&batch.session_id);
@@ -326,56 +392,83 @@ impl Store {
         Ok(())
     }
     async fn append(&self, event: RawEvent, apply: impl Fn(&mut Projection)) -> Result<()> {
-        let day = chrono::DateTime::from_timestamp(event.at, 0)
+        self.append_many(vec![event], |_, projection| apply(projection))
+            .await
+    }
+    async fn append_many(
+        &self,
+        events: Vec<RawEvent>,
+        apply: impl Fn(usize, &mut Projection),
+    ) -> Result<()> {
+        let Some(first) = events.first() else {
+            return Ok(());
+        };
+        let day = chrono::DateTime::from_timestamp(first.at, 0)
             .ok_or_else(|| failure("ANALYTICS_TIME_INVALID"))?
             .date_naive()
             .to_string();
-        let shard = Self::shard(&event.subject);
+        let shard = Self::shard(&first.subject);
         let _lock = self.locks[shard].lock().await;
-        let identity = format!("{}:{}", event.subject, event.id);
-        let keys = [
+        let shared = [
             format!("day/{day}/raw/{shard:02}"),
             format!("day/{day}/projection/{shard:02}"),
             format!("day/{day}/aggregate/{shard:02}"),
-            format!("dedup/{identity}"),
         ];
+        let identities = events
+            .iter()
+            .map(|e| format!("{}:{}", e.subject, e.id))
+            .collect::<Vec<_>>();
+        let mut keys = shared.to_vec();
+        keys.extend(
+            identities
+                .iter()
+                .map(|id| format!("dedup/{id}"))
+                .collect::<BTreeSet<_>>(),
+        );
         for _ in 0..4 {
             let records = self
                 .metadata
                 .execute(MetaRequest::Get {
                     scope: self.scope(&day),
                     guard: None,
-                    keys: keys.to_vec(),
+                    keys: keys.clone(),
                 })
                 .await?;
             let r = &records["records"];
-            let mut raw: BTreeMap<String, RawEvent> = decode(&r[&keys[0]])?;
-            let prior = &r[&keys[3]]["value"];
-            if !prior.is_null()
-                && prior["at"]
-                    .as_i64()
-                    .is_some_and(|at| at + 30 * DAY > event.at)
-            {
-                return if prior["payload"] == event.payload {
-                    Ok(())
-                } else {
-                    Err(ServiceError::new(409, "ANALYTICS_EVENT_CONFLICT"))
-                };
+            let mut raw: BTreeMap<String, RawEvent> = decode(&r[&shared[0]])?;
+            let mut projection: Projection = decode(&r[&shared[1]])?;
+            let mut accepted: BTreeMap<String, &RawEvent> = BTreeMap::new();
+            for (index, (event, identity)) in events.iter().zip(&identities).enumerate() {
+                let prior = &r[format!("dedup/{identity}")]["value"];
+                let prior_payload = accepted.get(identity).map(|e| &e.payload).or_else(|| {
+                    prior["at"]
+                        .as_i64()
+                        .filter(|at| at + 30 * DAY > event.at)
+                        .map(|_| &prior["payload"])
+                });
+                if let Some(payload) = prior_payload {
+                    if payload != &event.payload {
+                        return Err(ServiceError::new(409, "ANALYTICS_EVENT_CONFLICT"));
+                    }
+                    continue;
+                }
+                accepted.insert(identity.clone(), event);
+                raw.insert(identity.clone(), event.clone());
+                if raw.len() > MAX_EVENTS {
+                    return Err(ServiceError::new(429, "ANALYTICS_CAPACITY"));
+                }
+                apply(index, &mut projection);
             }
-            if raw.len() >= MAX_EVENTS {
-                return Err(ServiceError::new(429, "ANALYTICS_CAPACITY"));
+            if accepted.is_empty() {
+                return Ok(());
             }
-            raw.insert(identity.clone(), event.clone());
-            let mut projection: Projection = decode(&r[&keys[1]])?;
-            apply(&mut projection);
-            let values = [
-                json!(raw),
-                json!(projection),
-                json!(projection.counts),
-                json!({"at":event.at,"payload":event.payload}),
-            ];
-            let mut changes=keys.iter().zip(values).map(|(key,value)|json!({"key":key,"expectedVersion":r[key]["version"],"value":value})).collect::<Vec<_>>();
-            changes.push(json!({"key":format!("expiry/{day}/{identity}"),"expectedVersion":null,"value":{"dedup":keys[3],"at":event.at}}));
+            let values = [json!(raw), json!(projection), json!(projection.counts)];
+            let mut changes = shared.iter().zip(values).map(|(key,value)|json!({"key":key,"expectedVersion":r[key]["version"],"value":value})).collect::<Vec<_>>();
+            for (identity, event) in accepted {
+                let key = format!("dedup/{identity}");
+                changes.push(json!({"key":key,"expectedVersion":r[&key]["version"],"value":{"at":event.at,"payload":event.payload}}));
+                changes.push(json!({"key":format!("expiry/{day}/{identity}"),"expectedVersion":null,"value":{"dedup":key,"at":event.at}}));
+            }
             match self
                 .metadata
                 .execute(MetaRequest::Commit {
@@ -419,7 +512,7 @@ impl Store {
             cohorts: Vec::new(),
             time_to_value_seconds: BTreeMap::new(),
             generated_at: now,
-            unconfirmed_events: self.dropped.load(Ordering::Relaxed),
+            unconfirmed_events: self.unconfirmed.load(Ordering::Relaxed),
             coverage: "best_effort_since_enablement; crash_loss_unknown".into(),
         };
         let mut sessions = BTreeSet::new();
@@ -892,6 +985,57 @@ mod tests {
             store.purge(now + 95 * DAY).await.unwrap();
         }
         assert!(memory.records.lock().unwrap().is_empty());
+    }
+    #[tokio::test]
+    async fn native_batches_deduplicate_and_commit_projection_with_receipts_atomically() {
+        let memory = Arc::new(Memory::default());
+        let store = Store::new(memory.clone(), "region:batch", vec![3; 32]).unwrap();
+        let now = Utc::now().timestamp();
+        let day = Utc::now().date_naive();
+        store
+            .server_batch(vec![
+                job("ready", "workspace", "workspace_ready", now - DAY),
+                job("read", "workspace", "query", now),
+                job("read", "workspace", "query", now),
+                job("write", "workspace", "file_write", now),
+            ])
+            .await
+            .unwrap();
+        let summary = store
+            .summary(
+                day - chrono::Duration::days(1),
+                day + chrono::Duration::days(1),
+                now,
+            )
+            .await
+            .unwrap();
+        assert_eq!(summary.counts.ready, 1);
+        assert_eq!(summary.counts.successes, 2);
+        assert_eq!(summary.active_workspaces, 1);
+        let conflict = store
+            .server_batch(vec![
+                job("new", "workspace", "file_write", now),
+                job("read", "workspace", "analysis", now),
+            ])
+            .await
+            .unwrap_err();
+        assert_eq!(conflict.status, 409);
+        assert_eq!(
+            store
+                .summary(day, day + chrono::Duration::days(1), now)
+                .await
+                .unwrap()
+                .counts
+                .successes,
+            2
+        );
+        store.record("queued", "workspace", "account", "query", true);
+        let pending = store
+            .summary(day, day + chrono::Duration::days(1), now)
+            .await
+            .unwrap();
+        assert_eq!(pending.counts.successes, 2);
+        assert_eq!(pending.unconfirmed_events, 1);
     }
     #[tokio::test]
     async fn collection_does_not_acknowledge_storage_failure_or_duplicate_conflict() {
