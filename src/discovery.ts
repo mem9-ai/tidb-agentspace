@@ -15,6 +15,8 @@ async function start() {
   const page = document.body.dataset.page;
   const button = document.getElementById('analytics-choice');
   const status = document.getElementById('analytics-choice-status');
+  let initialized = false;
+  let earlyOptOut = false;
   const update = () => {
     if (button)
       button.textContent = analyticsDisabled()
@@ -26,7 +28,9 @@ async function start() {
         : 'Optional session-only browser analytics is on.';
   };
   button?.addEventListener('click', () => {
-    void setAnalyticsDisabled(!analyticsDisabled()).then(update);
+    const disabled = !analyticsDisabled();
+    if (!initialized) earlyOptOut = disabled;
+    void setAnalyticsDisabled(disabled).then(update);
     update();
   });
   update();
@@ -41,6 +45,8 @@ async function start() {
   } catch {
     /* Public content remains usable without optional measurement. */
   }
+  initialized = true;
+  if (earlyOptOut && analyticsDisabled()) void setAnalyticsDisabled(true);
   if (page === 'home' || page === 'get_started' || page === 'sales_guide' || page === 'api_docs') {
     capturePage(page);
     document

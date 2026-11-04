@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('privacy choice works while configuration is still loading', async ({ page }) => {
+  const sessionActions = [];
   let releaseConfiguration;
   const configurationReady = new Promise((resolve) => {
     releaseConfiguration = resolve;
@@ -12,7 +13,22 @@ test('privacy choice works while configuration is still loading', async ({ page 
   await page.route('**/config.json', async (route) => {
     configurationRequested();
     await configurationReady;
-    await route.fulfill({ status: 503 });
+    await route.fulfill({ json: { apiOrigin: 'http://127.0.0.1:4318' } });
+  });
+  await page.route('**/api/auth/config', (route) =>
+    route.fulfill({
+      json: {
+        enabled: false,
+        globalApi: { apiOrigin: 'http://127.0.0.1:4318', apiPathPrefix: '/api/global' },
+      },
+    }),
+  );
+  await page.route('**/api/global/analytics/config', (route) =>
+    route.fulfill({ json: { enabled: true, campaigns: [] } }),
+  );
+  await page.route('**/api/global/analytics/session', (route) => {
+    sessionActions.push(route.request().method());
+    return route.fulfill({ status: 204 });
   });
   try {
     await page.goto('/discover/privacy/', { waitUntil: 'domcontentloaded' });
@@ -25,6 +41,7 @@ test('privacy choice works while configuration is still loading', async ({ page 
   } finally {
     releaseConfiguration();
   }
+  await expect.poll(() => sessionActions).toContain('DELETE');
   await page.reload();
   await expect(page.getByRole('status')).toHaveText('Optional browser analytics is off.');
 });
