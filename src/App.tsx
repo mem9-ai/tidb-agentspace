@@ -1,4 +1,5 @@
 import { ApiDocumentation } from './features/api/ApiDocumentation';
+import { capturePage, startAnalytics } from './features/analytics/capture';
 import { WorkspaceApiError } from './api/transport';
 import {
   apiBaseUrl,
@@ -330,6 +331,9 @@ function App() {
         throw cause;
       }
       setSso(auth);
+      // Optional capture reuses successful product discovery; it cannot issue a
+      // competing auth-config request or consume a product bootstrap failure.
+      void startAnalytics(auth).then(() => capturePage('workspace'));
       const result = await discovery;
       if (!auth.enabled) {
         await workspaceApi.startSession();

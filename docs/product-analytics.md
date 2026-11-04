@@ -14,6 +14,11 @@ votes. A random session ID expires after 30 minutes of inactivity. No persistent
 person ID, fingerprint, raw URL/referrer, SQL, file name/content or credential enters
 these events. GPC and the persistent analytics preference suppress optional capture.
 
+Console capture starts from the product's successfully loaded authentication configuration.
+It reuses that configuration to locate Global; optional measurement must not issue a
+competing authentication/discovery request, consume a bootstrap failure, delay sign-in
+or change its retry behavior. Standalone public pages discover collection independently.
+
 Native completion hooks count meaningful product outcomes for Console and API use:
 query, file analysis/preview, import/export and explicit report saving. Listing and
 polling do not activate a Workspace. Key-authenticated activity is API usage, not

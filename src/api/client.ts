@@ -547,8 +547,9 @@ export function contentUrl(file: Pick<WorkspaceFile, 'resourceId' | 'path'>) {
 }
 
 let globalSettings: SsoAuthConfig | undefined;
-export async function globalApiSettings() {
-  globalSettings ??= await workspaceApi.authConfig();
+export async function globalApiSettings(auth?: SsoAuthConfig) {
+  if (auth) globalSettings = auth;
+  else globalSettings ??= await workspaceApi.authConfig();
   const descriptor = globalSettings.globalApi;
   if (!descriptor) {
     globalSettings = undefined;

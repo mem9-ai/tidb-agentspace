@@ -1,4 +1,4 @@
-import { globalApiSettings } from '../../api/client';
+import { globalApiSettings, type SsoAuthConfig } from '../../api/client';
 
 type Page = 'home' | 'get_started' | 'sales_guide' | 'api_docs' | 'workspace';
 type Event =
@@ -61,9 +61,9 @@ function session() {
     return undefined;
   }
 }
-export async function startAnalytics(publicEndpoint?: string) {
+export async function startAnalytics(auth?: SsoAuthConfig) {
   try {
-    endpoint = publicEndpoint || (await globalApiSettings()).baseUrl;
+    endpoint = (await globalApiSettings(auth)).baseUrl;
     const response = await fetch(endpoint + '/analytics/config', { credentials: 'include' });
     if (!response.ok) return;
     const config: unknown = await response.json();
