@@ -137,7 +137,7 @@ test('@visual public discovery is readable, measures approved sources and respec
   );
   await context.route('**/api/global/analytics/events', (route) => {
     events.push(...route.request().postDataJSON().events);
-    return route.fulfill({ status: 202, json: { accepted: true } });
+    return route.fulfill({ status: 202, json: { accepted: true, durability: 'queued' } });
   });
   await context.route('**/api/global/analytics/session', (route) => route.fulfill({ status: 204 }));
   await page.goto('/discover/?utm_campaign=launch&secret=must-not-be-captured');

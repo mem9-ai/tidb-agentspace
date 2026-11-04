@@ -206,8 +206,11 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": { "accepted": { "const": true } },
-                  "required": ["accepted"],
+                  "properties": {
+                    "accepted": { "const": true },
+                    "durability": { "const": "queued" }
+                  },
+                  "required": ["accepted", "durability"],
                   "additionalProperties": false
                 }
               }
@@ -395,7 +398,7 @@
             }
           }
         },
-        "description": "Untrusted optional browser events only. Exact trusted Origin and application/json required; no account or Workspace authorization is established. 202 means durable acceptance; identical event retries are deduplicated for the retained window. GPC suppression returns 204.",
+        "description": "Untrusted optional browser events only. Exact trusted Origin and application/json required; no account or Workspace authorization is established. 202 acknowledges queued acceptance by the independent analytics service, not object-storage durability. Queued writes may be lost on a crash. Retained event IDs deduplicate retries. GPC suppression returns 204.",
         "requestBody": {
           "required": true,
           "content": {

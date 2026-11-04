@@ -110,12 +110,16 @@ export function operatorContract() {
     object({ name: { const: 'journey_selected' }, journey: { enum: ['agent', 'self_service'] } }),
     object({ name: { const: 'helpful_vote' }, helpful: { type: 'boolean' } }),
   ];
-  const ingest = operation('ingestProductEvents', object({ accepted: { const: true } }), {
-    status: 202,
-    anonymous: true,
-  });
+  const ingest = operation(
+    'ingestProductEvents',
+    object({ accepted: { const: true }, durability: { const: 'queued' } }),
+    {
+      status: 202,
+      anonymous: true,
+    },
+  );
   ingest.description =
-    'Untrusted optional browser events only. Exact trusted Origin and application/json required; no account or Workspace authorization is established. 202 means durable acceptance; identical event retries are deduplicated for the retained window. GPC suppression returns 204.';
+    'Untrusted optional browser events only. Exact trusted Origin and application/json required; no account or Workspace authorization is established. 202 acknowledges queued acceptance by the independent analytics service, not object-storage durability. Queued writes may be lost on a crash. Retained event IDs deduplicate retries. GPC suppression returns 204.';
   ingest.requestBody = {
     required: true,
     content: {

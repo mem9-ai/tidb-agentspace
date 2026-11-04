@@ -92,7 +92,7 @@ impl Config {
             origins.push(self.public_origin.clone());
             settings.validate(&origins, local)?;
             anyhow::ensure!(
-                settings.pseudonym_key_file != self.signing_key_file,
+                settings.service.token_file != self.signing_key_file,
                 "Dedicated analytics key required"
             );
         }
@@ -275,7 +275,7 @@ struct Acquisition {
 }
 struct App {
     acquisition: Mutex<BTreeMap<String, Acquisition>>,
-    analytics: Option<crate::analytics::Store>,
+    analytics: Option<crate::analytics::Client>,
     operators: Option<crate::analytics::operator::Operators>,
     analytics_limits: Mutex<BTreeMap<String, (Instant, u32)>>,
     analytics_reads: Semaphore,
@@ -688,33 +688,24 @@ impl GlobalServer {
             Some(TcpListener::bind(config.bind).await?)
         };
         let trusted_host_origins = vec![config.public_origin.clone()];
-        let analytics = config
-            .analytics
-            .as_ref()
-            .map(|settings| {
-                crate::analytics::Store::new(
-                    metadata.clone(),
-                    "global",
-                    private_file(&settings.pseudonym_key_file)
-                        .map_err(|_| err(503, "ANALYTICS_KEY_UNAVAILABLE"))?,
-                )
-            })
-            .transpose()?;
+        let analytics = config.analytics.as_ref().and_then(|settings| {
+            crate::analytics::Client::new(&settings.service, "global")
+                .map_err(|_| eprintln!("Analytics producer unavailable; Global serving continues."))
+                .ok()
+        });
         let cookie_path = config
             .public_path
             .strip_suffix("/api/global")
             .unwrap_or(&config.public_path);
-        let operators = config
-            .analytics
-            .clone()
-            .map(|settings| {
-                crate::analytics::operator::Operators::new(
-                    settings,
-                    cookie_path,
-                    config.public_origin.starts_with("https:"),
-                )
-            })
-            .transpose()?;
+        let operators = config.analytics.clone().and_then(|settings| {
+            crate::analytics::operator::Operators::new(
+                settings,
+                cookie_path,
+                config.public_origin.starts_with("https:"),
+            )
+            .map_err(|_| eprintln!("Admin policy unavailable; Global serving continues."))
+            .ok()
+        });
         Ok(Self {
             listener,
             app: Arc::new(App {

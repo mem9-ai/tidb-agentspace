@@ -7,6 +7,8 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Accepted decisions
 
+- [0050: Independent analytics service](0050-isolated-analytics-service.md) — separate SlateDB process, storage and credentials; asynchronous best-effort delivery with lower availability than Meta.
+
 - [0049: Product analytics and operator authority](0049-product-analytics-operator-boundary.md) — accepted launch measurement and verified PingCAP/TiDB Cloud Admin access; [runtime and deployment limits](../product-analytics.md).
 
 - [0048: PostgreSQL-only databases](0048-postgresql-only-databases.md) — retire standalone MySQL and DuckDB databases while retaining File System analysis and existing resource cleanup.

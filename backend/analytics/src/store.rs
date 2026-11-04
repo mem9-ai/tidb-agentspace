@@ -1,4 +1,5 @@
-use super::{Batch, BrowserEvent};
+use super::{Batch, BrowserEvent, Job};
+use crate::storage::{Namespace, Request, Storage};
 use chrono::{NaiveDate, Utc};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
@@ -11,12 +12,11 @@ use std::{
         atomic::{AtomicU64, Ordering},
     },
 };
-use tokio::sync::{Mutex, mpsc};
-use workspace_contracts::{MetaRequest, Metadata, Result, Scope, ServiceError};
+use tokio::sync::Mutex;
+use workspace_contracts::{Result, ServiceError};
 
 const SHARDS: usize = 16;
 const MAX_EVENTS: usize = 1024;
-const MAX_PENDING: u64 = 1000;
 const DAY: i64 = 86400;
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -65,22 +65,12 @@ struct RawEvent {
 }
 #[derive(Clone)]
 pub struct Store {
-    metadata: Arc<dyn Metadata>,
+    storage: Arc<dyn Storage>,
     authority: String,
     key: Arc<Vec<u8>>,
     unconfirmed: Arc<AtomicU64>,
-    pending: Arc<AtomicU64>,
     locks: Arc<Vec<Mutex<()>>>,
-    sender: mpsc::Sender<Job>,
     cleanup_cursors: Arc<Mutex<BTreeMap<String, String>>>,
-}
-struct Job {
-    id: String,
-    workspace: String,
-    actor: String,
-    operation: String,
-    success: bool,
-    at: i64,
 }
 struct PreparedJob {
     event: RawEvent,
@@ -142,44 +132,18 @@ fn increment(map: &mut BTreeMap<String, u64>, key: &str) {
 }
 
 impl Store {
-    pub fn new(metadata: Arc<dyn Metadata>, authority: &str, key: Vec<u8>) -> Result<Self> {
+    pub fn new(storage: Arc<dyn Storage>, authority: &str, key: Vec<u8>) -> Result<Self> {
         if key.len() < 32 {
             return Err(failure("ANALYTICS_KEY_INVALID"));
         }
-        let (sender, mut receiver) = mpsc::channel::<Job>(MAX_PENDING as usize);
         let store = Self {
-            metadata,
+            storage,
             authority: authority.into(),
             key: Arc::new(key),
             unconfirmed: Arc::new(AtomicU64::new(0)),
-            pending: Arc::new(AtomicU64::new(0)),
             locks: Arc::new((0..SHARDS).map(|_| Mutex::new(())).collect()),
-            sender,
             cleanup_cursors: Arc::new(Mutex::new(BTreeMap::new())),
         };
-        let worker = store.clone();
-        tokio::spawn(async move {
-            while let Some(job) = receiver.recv().await {
-                let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
-                let mut jobs = vec![job];
-                while jobs.len() < 64 {
-                    match tokio::time::timeout_at(deadline, receiver.recv()).await {
-                        Ok(Some(job)) => jobs.push(job),
-                        _ => break,
-                    }
-                }
-                let count = jobs.len() as u64;
-                let result = tokio::time::timeout(
-                    std::time::Duration::from_secs(10),
-                    worker.server_batch(jobs),
-                )
-                .await;
-                if matches!(result, Ok(Ok(()))) {
-                    worker.unconfirmed.fetch_sub(count, Ordering::Relaxed);
-                }
-                worker.pending.fetch_sub(count, Ordering::Relaxed);
-            }
-        });
         let cleaner = store.clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
@@ -191,9 +155,6 @@ impl Store {
             }
         });
         Ok(store)
-    }
-    pub fn mark_unconfirmed(&self) {
-        self.unconfirmed.fetch_add(1, Ordering::Relaxed);
     }
     pub fn authority(&self) -> &str {
         &self.authority
@@ -207,45 +168,19 @@ impl Store {
         mac.update(value.as_bytes());
         format!("{:x}", mac.finalize().into_bytes())
     }
-    fn scope(&self, _day: &str) -> Scope {
-        Scope::system(
-            &self.authority,
-            "product-analytics",
-            "analytics-v1",
-            "daily",
-        )
+    fn scope(&self, _day: &str) -> Namespace {
+        Namespace {
+            authority_id: self.authority.clone(),
+        }
     }
     fn shard(subject: &str) -> usize {
         usize::from(Sha256::digest(subject.as_bytes())[0]) % SHARDS
-    }
-    pub fn record(&self, id: &str, workspace: &str, actor: &str, operation: &str, success: bool) {
-        let job = Job {
-            id: id.into(),
-            workspace: workspace.into(),
-            actor: actor.into(),
-            operation: operation.into(),
-            success,
-            at: Utc::now().timestamp(),
-        };
-        self.unconfirmed.fetch_add(1, Ordering::Relaxed);
-        if self
-            .pending
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, |pending| {
-                (pending < MAX_PENDING).then_some(pending + 1)
-            })
-            .is_err()
-        {
-            return;
-        }
-        if self.sender.try_send(job).is_err() {
-            self.pending.fetch_sub(1, Ordering::Relaxed);
-        }
     }
     #[cfg(test)]
     async fn server(&self, job: Job) -> Result<()> {
         self.server_batch(vec![job]).await
     }
-    async fn server_batch(&self, jobs: Vec<Job>) -> Result<()> {
+    pub(crate) async fn server_batch(&self, jobs: Vec<Job>) -> Result<()> {
         let keys = jobs
             .iter()
             .map(|job| format!("attribution/{}", self.pseudonym(&job.workspace)))
@@ -253,10 +188,9 @@ impl Store {
             .into_iter()
             .collect::<Vec<_>>();
         let attributes = self
-            .metadata
-            .execute(MetaRequest::Get {
+            .storage
+            .execute(Request::Get {
                 scope: self.scope(""),
-                guard: None,
                 keys,
             })
             .await?;
@@ -427,10 +361,9 @@ impl Store {
         );
         for _ in 0..4 {
             let records = self
-                .metadata
-                .execute(MetaRequest::Get {
+                .storage
+                .execute(Request::Get {
                     scope: self.scope(&day),
-                    guard: None,
                     keys: keys.clone(),
                 })
                 .await?;
@@ -470,11 +403,9 @@ impl Store {
                 changes.push(json!({"key":format!("expiry/{day}/{identity}"),"expectedVersion":null,"value":{"dedup":key,"at":event.at}}));
             }
             match self
-                .metadata
-                .execute(MetaRequest::Commit {
+                .storage
+                .execute(Request::Commit {
                     scope: self.scope(&day),
-                    guard: None,
-                    mutation_id: uuid::Uuid::new_v4().to_string(),
                     changes,
                 })
                 .await
@@ -528,10 +459,9 @@ impl Store {
                 .map(|s| format!("day/{date}/projection/{s:02}"))
                 .collect::<Vec<_>>();
             let records = self
-                .metadata
-                .execute(MetaRequest::Get {
+                .storage
+                .execute(Request::Get {
                     scope: self.scope(&date.to_string()),
-                    guard: None,
                     keys: keys.clone(),
                 })
                 .await?;
@@ -665,10 +595,9 @@ impl Store {
         let key = format!("attribution/{}", self.pseudonym(workspace));
         let scope = self.scope("");
         let old = self
-            .metadata
-            .execute(MetaRequest::Get {
+            .storage
+            .execute(Request::Get {
                 scope: scope.clone(),
-                guard: None,
                 keys: vec![key.clone()],
             })
             .await?;
@@ -678,7 +607,7 @@ impl Store {
         let day = chrono::DateTime::from_timestamp(attribution.at, 0)
             .ok_or_else(|| failure("ANALYTICS_TIME_INVALID"))?
             .date_naive();
-        self.metadata.execute(MetaRequest::Commit{scope,guard:None,mutation_id:uuid::Uuid::new_v4().to_string(),changes:vec![json!({"key":key,"expectedVersion":null,"value":attribution}),json!({"key":format!("expiry/{day}/attribution-{}",self.pseudonym(workspace)),"expectedVersion":null,"value":{"dedup":key,"at":attribution.at}})]}).await?;
+        self.storage.execute(Request::Commit{scope,changes:vec![json!({"key":key,"expectedVersion":null,"value":attribution}),json!({"key":format!("expiry/{day}/attribution-{}",self.pseudonym(workspace)),"expectedVersion":null,"value":{"dedup":key,"at":attribution.at}})]}).await?;
         Ok(())
     }
     pub async fn purge(&self, now: i64) -> Result<()> {
@@ -688,10 +617,9 @@ impl Store {
         let scope = self.scope("");
         for prefix in ["expiry/", "day/"] {
             let page = self
-                .metadata
-                .execute(MetaRequest::List {
+                .storage
+                .execute(Request::List {
                     scope: scope.clone(),
-                    guard: None,
                     prefix: prefix.into(),
                     after: self.cleanup_cursors.lock().await.get(prefix).cloned(),
                     limit: 100,
@@ -738,10 +666,9 @@ impl Store {
                     && let Some(dedup) = entry["value"]["dedup"].as_str()
                 {
                     let old = self
-                        .metadata
-                        .execute(MetaRequest::Get {
+                        .storage
+                        .execute(Request::Get {
                             scope: scope.clone(),
-                            guard: None,
                             keys: vec![dedup.into()],
                         })
                         .await?;
@@ -754,11 +681,9 @@ impl Store {
                 removals.extend(changes);
             }
             if !removals.is_empty() {
-                self.metadata
-                    .execute(MetaRequest::Commit {
+                self.storage
+                    .execute(Request::Commit {
                         scope: scope.clone(),
-                        guard: None,
-                        mutation_id: uuid::Uuid::new_v4().to_string(),
                         changes: removals,
                     })
                     .await?;
@@ -799,19 +724,16 @@ mod tests {
         records: std::sync::Mutex<BTreeMap<String, Value>>,
         unavailable: std::sync::atomic::AtomicBool,
     }
-    impl Metadata for Memory {
-        fn health(&self) -> Call<'_> {
-            Box::pin(async { Ok(json!({})) })
-        }
-        fn execute(&self, request: MetaRequest) -> Call<'_> {
+    impl Storage for Memory {
+        fn execute(&self, request: Request) -> Call<'_> {
             Box::pin(async move {
                 if self.unavailable.load(Ordering::Relaxed) {
                     return Err(failure("UNAVAILABLE"));
                 }
                 let mut all = self.records.lock().unwrap();
                 match request {
-                    MetaRequest::Get { scope, keys, .. } => {
-                        let prefix = format!("{}:{}:", scope.authority_id, scope.partition_id);
+                    Request::Get { scope, keys, .. } => {
+                        let prefix = format!("{}:", scope.authority_id);
                         let records = keys
                             .into_iter()
                             .map(|key| {
@@ -824,8 +746,8 @@ mod tests {
                             .collect::<serde_json::Map<_, _>>();
                         Ok(json!({"records":records}))
                     }
-                    MetaRequest::Commit { scope, changes, .. } => {
-                        let prefix = format!("{}:{}:", scope.authority_id, scope.partition_id);
+                    Request::Commit { scope, changes, .. } => {
+                        let prefix = format!("{}:", scope.authority_id);
                         for change in &changes {
                             let key = prefix.clone() + change["key"].as_str().unwrap();
                             if all.get(&key).unwrap_or(&Value::Null)["version"]
@@ -844,14 +766,14 @@ mod tests {
                         }
                         Ok(json!({}))
                     }
-                    MetaRequest::List {
+                    Request::List {
                         scope,
                         prefix,
                         after,
                         limit,
                         ..
                     } => {
-                        let base = format!("{}:{}:", scope.authority_id, scope.partition_id);
+                        let base = format!("{}:", scope.authority_id);
                         let records = all
                             .iter()
                             .filter_map(|(key, v)| {
@@ -867,7 +789,6 @@ mod tests {
                             .collect::<Vec<_>>();
                         Ok(json!({"records":records}))
                     }
-                    _ => panic!("unsupported operation"),
                 }
             })
         }
@@ -1029,13 +950,6 @@ mod tests {
                 .successes,
             2
         );
-        store.record("queued", "workspace", "account", "query", true);
-        let pending = store
-            .summary(day, day + chrono::Duration::days(1), now)
-            .await
-            .unwrap();
-        assert_eq!(pending.counts.successes, 2);
-        assert_eq!(pending.unconfirmed_events, 1);
     }
     #[tokio::test]
     async fn collection_does_not_acknowledge_storage_failure_or_duplicate_conflict() {

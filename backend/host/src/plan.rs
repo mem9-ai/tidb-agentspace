@@ -17,6 +17,12 @@ struct Deployment {
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 enum Role {
+    Analytics {
+        #[serde(rename = "configFile")]
+        config_file: PathBuf,
+        #[serde(default)]
+        initialize: bool,
+    },
     Metadata {
         #[serde(rename = "configFile")]
         config_file: PathBuf,
@@ -39,7 +45,12 @@ pub struct MetadataPlan {
     pub initialize: bool,
     pub recover_owner: Option<String>,
 }
+pub struct AnalyticsPlan {
+    pub config: workspace_analytics::config::Config,
+    pub initialize: bool,
+}
 pub struct Plan {
+    pub analytics: Option<AnalyticsPlan>,
     pub metadata: Vec<MetadataPlan>,
     pub workspaces: Vec<workspace_api::Config>,
     pub globals: Vec<workspace_api::global_api::Config>,
@@ -54,7 +65,9 @@ impl Plan {
         {
             bail!("Use deployment format 1 with 1–64 real service roles");
         }
+        let service_count = deployment.services.len();
         let mut result = Self {
+            analytics: None,
             metadata: Vec::new(),
             workspaces: Vec::new(),
             globals: Vec::new(),
@@ -68,6 +81,18 @@ impl Plan {
         let mut workspace_authorities = BTreeSet::new();
         for service in deployment.services {
             match service {
+                Role::Analytics {
+                    config_file,
+                    initialize,
+                } => {
+                    if service_count != 1 || !config_file.is_absolute() {
+                        bail!("Analytics must run in a separate process with one explicit role");
+                    }
+                    result.analytics = Some(AnalyticsPlan {
+                        config: workspace_analytics::config::Config::load(&config_file)?,
+                        initialize,
+                    });
+                }
                 Role::Global { config_file } => {
                     if !config_file.is_absolute() {
                         bail!("Use absolute private configuration references");
@@ -173,5 +198,27 @@ impl Plan {
             }
         }
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn analytics_cannot_share_a_process_with_business_or_meta_roles() {
+        let directory = tempfile::tempdir().unwrap();
+        let plan = directory.path().join("plan.json");
+        for kind in ["metadata", "workspace", "global", "analytics"] {
+            std::fs::write(&plan, serde_json::to_vec(&serde_json::json!({"format":1,"services":[{"kind":"analytics","configFile":"/missing-analytics.json"},{"kind":kind,"configFile":"/missing-other.json"}]})).unwrap()).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&plan, std::fs::Permissions::from_mode(0o600)).unwrap();
+            }
+            let error = match super::Plan::load(&plan) {
+                Ok(_) => panic!("mixed analytics process accepted"),
+                Err(error) => error,
+            };
+            assert!(error.to_string().contains("separate process"));
+        }
     }
 }

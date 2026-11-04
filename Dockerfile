@@ -46,9 +46,10 @@ COPY specs/gh-150/fixtures/us-sales.csv ./specs/gh-150/fixtures/us-sales.csv
 RUN find backend/product -type f -exec touch {} + \
     && cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend
 
+COPY backend/analytics ./backend/analytics
 COPY backend/api ./backend/api
 COPY public/openapi.json public/owner-openapi.json public/global-openapi.json public/agent-entry-openapi.json public/operator-openapi.json ./public/
-RUN find backend/api -type f -exec touch {} + \
+RUN find backend/api backend/analytics -type f -exec touch {} + \
     && cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend
 
 # Copy the complete workspace for the final binary, including any new crates.
@@ -57,7 +58,7 @@ COPY meta-service ./meta-service
 RUN find backend/host -type f -exec touch {} + \
     && for manifest in backend/*/Cargo.toml; do \
       case "$manifest" in \
-        backend/contracts/*|backend/meta-client/*|backend/workspace/*|backend/identity/*|backend/providers/*|backend/execute/*|backend/product/*|backend/api/*|backend/host/*) ;; \
+        backend/contracts/*|backend/meta-client/*|backend/workspace/*|backend/identity/*|backend/providers/*|backend/execute/*|backend/product/*|backend/analytics/*|backend/api/*|backend/host/*) ;; \
         *) find "$(dirname "$manifest")" -type f -exec touch {} + ;; \
       esac; \
     done \

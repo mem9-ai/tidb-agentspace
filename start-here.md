@@ -226,6 +226,9 @@ exact-commit evidence consumption by delivery workflows.
 For product acquisition, activation/retention metrics and the verified PingCAP
 Admin boundary, read [product analytics](docs/product-analytics.md). Capture is opt-in
 at deployment; HTTP operational monitoring remains separate.
+Analytics runs in a separate, single-writer SlateDB service with dedicated storage
+and credentials; follow [ADR 0050](docs/decisions/0050-isolated-analytics-service.md).
+Its best-effort availability/durability must not become a business Meta dependency.
 
 ## Find the implementation
 

@@ -24,7 +24,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** @description Untrusted optional browser events only. Exact trusted Origin and application/json required; no account or Workspace authorization is established. 202 means durable acceptance; identical event retries are deduplicated for the retained window. GPC suppression returns 204. */
+    /** @description Untrusted optional browser events only. Exact trusted Origin and application/json required; no account or Workspace authorization is established. 202 acknowledges queued acceptance by the independent analytics service, not object-storage durability. Queued writes may be lost on a crash. Retained event IDs deduplicate retries. GPC suppression returns 204. */
     post: operations['ingestProductEvents'];
     delete?: never;
     options?: never;
@@ -434,6 +434,8 @@ export interface operations {
           'application/json': {
             /** @constant */
             accepted: true;
+            /** @constant */
+            durability: 'queued';
           };
         };
       };

@@ -3,7 +3,7 @@ import test from 'node:test';
 import http from 'node:http';
 import { execFile, spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, readFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
@@ -11,6 +11,8 @@ import { metaFixture, port, until } from './test-support/meta-fixture.mjs';
 import { providerFixture } from './test-support/provider-fixture.mjs';
 import { createMetaClient } from './meta/client.mjs';
 import { assertSessionContract } from './test-support/assert-session-contract.mjs';
+import { analyticsFixture } from './test-support/analytics-fixture.mjs';
+import { metadataCertificates } from './test-support/meta-tls.mjs';
 
 const enabled = process.env.WORKSPACE_BACKEND_TEST === '1';
 const base = '/api/v1/workspaces/ws_agentlab';
@@ -25,12 +27,14 @@ async function fixture(
   let provider;
   let child;
   let closing;
+  const analyticsServices = [];
   // after hooks run in registration order. Stop the client before its dependencies;
   // otherwise their keep-alive connections can delay teardown by minutes.
   const close = () =>
     (closing ||= (async () => {
       try {
         if (child) await metadata.stop(child);
+        for (const service of analyticsServices) await service.stop();
       } finally {
         try {
           if (provider?.listening)
@@ -188,17 +192,20 @@ async function fixture(
   let analyticsPolicy;
   let analyticsSettings;
   if (analytics) {
-    const key = resolve(metadata.directory, 'analytics-key');
     analyticsPolicy = resolve(metadata.directory, 'analytics-operators.json');
-    await writeFile(key, Buffer.alloc(32, 7), { mode: 0o600 });
     await writeFile(
       analyticsPolicy,
       JSON.stringify({ subjects: [], verifiedEmailDomains: ['pingcap.com'] }),
       { mode: 0o600 },
     );
-    config.analytics = { enabled: true, pseudonymKeyFile: key };
+    const analyticsTls = await metadataCertificates(metadata.directory);
+    const regional = await analyticsFixture(metadata, region.server, 'regional', analyticsTls);
+    analyticsServices.push(regional);
+    const acquisition = await analyticsFixture(metadata, global.server, 'global', analyticsTls);
+    analyticsServices.push(acquisition);
+    config.analytics = { enabled: true, service: regional.client };
     analyticsSettings = {
-      pseudonymKeyFile: key,
+      service: acquisition.client,
       operatorsFile: analyticsPolicy,
       returnUrl: 'https://studio.example.test/studio/admin',
       browserEnabled: true,
@@ -395,6 +402,26 @@ async function fixture(
   return {
     origin,
     analyticsPolicy,
+    analyticsServices,
+    async analyticsFootprint() {
+      const counts = [];
+      for (const source of [region, global].filter(Boolean)) {
+        const page = await source.client.call({
+          op: 'list',
+          scope: {
+            authorityId: source.server.authorityId,
+            ownerKind: 'system',
+            ownerId: 'product-analytics',
+            family: 'analytics-v1',
+            partitionId: 'daily',
+          },
+          prefix: '',
+          limit: 100,
+        });
+        counts.push(page.records.length);
+      }
+      return counts;
+    },
     request,
     flow,
     callback,
@@ -1655,11 +1682,58 @@ test(
 );
 
 test(
-  'product analytics: durable browser capture, verified PingCAP Admin, revocation and real report outcomes',
+  'product analytics: isolated asynchronous capture, verified PingCAP Admin and independent recovery',
   { skip: !enabled, timeout: 90000 },
   async (t) => {
     const f = await fixture(t, {}, 'globalApi', false, true);
     const path = '/studio/api/global';
+    const isolated = f.analyticsServices[0];
+    assert.equal((await isolated.request('/summary', {})).status, 403);
+    const token = (
+      await (await import('node:fs/promises')).readFile(isolated.config.tokenFile, 'utf8')
+    ).trim();
+    const internalHeaders = {
+      Authorization: 'Bearer ' + token,
+      'x-analytics-authority': isolated.config.authorityId,
+    };
+    assert.equal(
+      (
+        await isolated.request(
+          '/summary',
+          {},
+          { ...internalHeaders, 'x-analytics-authority': 'global' },
+        )
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await isolated.request(
+          '/summary',
+          {},
+          { ...internalHeaders, Origin: 'https://studio.example.test' },
+        )
+      ).status,
+      403,
+    );
+    await assert.rejects(
+      isolated.request('/summary', {}, internalHeaders, { cert: undefined, key: undefined }),
+    );
+    await assert.rejects(
+      isolated.request('/summary', {}, internalHeaders, {
+        cert: await readFile(isolated.config.tls.certificateFile),
+        key: await readFile(isolated.config.tls.privateKeyFile),
+      }),
+    );
+    await assert.rejects(
+      isolated.request('/summary', {}, internalHeaders, { servername: 'wrong.example' }),
+    );
+    await assert.rejects(
+      isolated.request('/summary', {}, internalHeaders, {
+        minVersion: 'TLSv1.2',
+        maxVersion: 'TLSv1.2',
+      }),
+    );
     assert.equal((await f.request(path + '/operator/analytics/summary')).status, 401);
     assert.equal(
       (
@@ -1683,6 +1757,7 @@ test(
     const batch = { version: 1, sessionId, events: [event] };
     const ingest = await f.request(path + '/analytics/events', { method: 'POST', body: batch });
     assert.equal(ingest.status, 202);
+    assert.equal(ingest.body.durability, 'queued');
     assert.equal(
       (await f.request(path + '/analytics/events', { method: 'POST', body: batch })).status,
       202,
@@ -1862,5 +1937,79 @@ test(
     assert.equal(persisted.status, 200);
     assert.equal(persisted.body.authorities[0].counts.pageViews, 1);
     assert.equal(persisted.body.authorities[1].counts.events['report_saved:success'], 1);
+    assert.deepEqual(await f.analyticsFootprint(), [0, 0]);
+    for (const service of f.analyticsServices) await service.stop();
+    const active = await f.callback(await f.flow());
+    const activeOwner = active.headers['set-cookie'].map((v) => v.split(';')[0]).join('; ');
+    assert.equal(
+      (
+        await f.request('/studio' + ownBase + '/files', {
+          method: 'PUT',
+          cookie: activeOwner,
+          headers: { 'If-None-Match': '*' },
+          body: {
+            resourceId: report.resourceId,
+            path: '/while-service-is-down.txt',
+            type: 'file',
+            content: 'normal writes remain available',
+          },
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await f.request(path + '/operator/analytics/summary', { cookie: reopenedAdmin })).status,
+      503,
+    );
+    const producerTokens = await Promise.all(
+      f.analyticsServices.map(async (service) => {
+        const contents = await readFile(service.client.tokenFile);
+        await rm(service.client.tokenFile);
+        return { path: service.client.tokenFile, contents };
+      }),
+    );
+    // Even missing optional producer credentials cannot prevent a fresh product startup.
+    await f.restartHost();
+    const continuing = await f.callback(await f.flow());
+    const continuedOwner = continuing.headers['set-cookie'].map((v) => v.split(';')[0]).join('; ');
+    const unaffected = await f.request('/studio' + ownBase + '/files', {
+      method: 'PUT',
+      cookie: continuedOwner,
+      headers: { 'If-None-Match': '*' },
+      body: {
+        resourceId: report.resourceId,
+        path: '/during-analytics-outage.txt',
+        type: 'file',
+        content: 'customer operation remains available',
+      },
+    });
+    assert.equal(unaffected.status, 200);
+    const unavailableAdmin = await f.callback(await f.flow(true));
+    const outageCookie = unavailableAdmin.headers['set-cookie']
+      .find((v) => v.startsWith('aw_operator='))
+      .split(';')[0];
+    assert.equal(
+      (await f.request(path + '/operator/analytics/summary', { cookie: outageCookie })).status,
+      503,
+    );
+    for (const token of producerTokens)
+      await writeFile(token.path, token.contents, { mode: 0o600 });
+    for (const service of f.analyticsServices) await service.restart();
+    await f.restartHost();
+    const restoredLogin = await f.callback(await f.flow(true));
+    const restoredCookie = restoredLogin.headers['set-cookie']
+      .find((v) => v.startsWith('aw_operator='))
+      .split(';')[0];
+    const restored = await f.request(
+      path +
+        '/operator/analytics/summary?from=' +
+        new Date().toISOString().slice(0, 10) +
+        '&to=' +
+        new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+      { cookie: restoredCookie },
+    );
+    assert.equal(restored.status, 200);
+    assert.equal(restored.body.authorities[1].counts.events['report_saved:success'], 1);
+    assert.deepEqual(await f.analyticsFootprint(), [0, 0]);
   },
 );

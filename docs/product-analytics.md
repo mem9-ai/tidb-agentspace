@@ -1,6 +1,8 @@
 # Product analytics and Admin
 
-Implementation for [GH-184](https://github.com/mem9-ai/tidb.ai/issues/184), against
+Initial implementation: [GH-184](https://github.com/mem9-ai/tidb.ai/issues/184).
+Independent service amendment: [GH-190](https://github.com/mem9-ai/tidb.ai/issues/190), under
+[ADR 0050](decisions/0050-isolated-analytics-service.md), against
 [GH-182](../specs/gh-182/spec.md) accepted at
 `a80611104ce322a00034021210604d6ad96fcd2e`. Live enablement is separate from source
 verification. HTTP latency, infrastructure monitoring and request-history changes
@@ -34,29 +36,44 @@ same create-only File API; older deployments retain their normal file behavior.
 
 ## Storage and retention
 
-Reuse the native encrypted SlateDB Meta service, with durable WAL acknowledgment
-to its existing private S3 object storage. No separate analytics database, vendor
-account, customer File System or public bucket is introduced. Global and Regions
-retain their independent authority/storage/encryption boundaries.
+Run a dedicated single-writer analytics process per producing authority, using its own
+SlateDB 0.17/S3 root, encryption key, pseudonym key and producer token. API producers
+have only a remote analytics client. The analytics crate has no Meta service/client
+dependency and exposes no Meta protocol, writer owner, security clock or takeover path.
+The role loader rejects a mixed analytics/business/Meta process. Do not grant the
+analytics process access to primary Meta or customer storage.
 
-Each authority uses `Scope::system(authority, "product-analytics", "analytics-v1",
-"daily")`. Raw events, deduplication, 30-day identity-bearing projections, approved
-attribution and identity-free daily totals have separate prefixes. Sixteen subject
-shards per UTC day avoid one shared update counter. Atomic compare-and-set commits
-couple an accepted event, its dedup receipt and materialized projection/total.
-Dashboard reads use projections rather than raw events or customer Workspace scans.
+Raw events, deduplication, 30-day identity-bearing projections, approved attribution
+and identity-free daily totals use separate analytics prefixes. Sixteen subject
+shards per UTC day bound contention. An atomic native transaction couples each
+shard's accepted events, dedup receipts and materialized projections/totals. Admin
+reads projections, never customer Workspaces/files or raw-event scans.
 
-The bounded launch profile accepts up to 1,024 events per shard/day (16,384 per
-authority/day, with possible earlier saturation for a hot subject). Public capacity
-rejection is 429; server queue/write loss is visible as unconfirmed coverage. The
-server queue holds at most 1,000 jobs and does not block completed product requests.
-Native outcomes flush in batches of up to 64 or after ten seconds. Each day/shard
-commits its raw events, receipts and projection atomically, reducing contention with
-business metadata writes. Pending jobs (including staged/in-flight batches) are included
-in unconfirmed coverage; a fresh summary does not imply those outcomes are already durable.
-HTTP 202 for browser capture means durable acceptance, not in-memory admission.
-Events within a batch commit individually: a failed batch may be partially retained;
-retry the same IDs, never generate replacements to retry an uncertain outcome.
+The launch limit remains 1,024 events/shard/day (16,384/authority/day, with possible
+earlier saturation for a hot subject). Business hooks enqueue at most 1,000 jobs,
+including staged/in-flight batches, without network/storage waits. A background
+sender posts up to 64 jobs or after one second, with two-second requests and at most
+two retries using identical IDs. Overflow/unresolved delivery is unconfirmed coverage;
+there is no disk spool or replay-complete broker in the business process.
+
+The separate service commits to SlateDB memory atomically and asynchronously flushes
+its WAL to its private S3 root, normally at a one-second interval. It does not await
+per-write durability. Public collection returns
+`202 {"accepted":true,"durability":"queued"}` after service acceptance; this is **not**
+a durable S3 receipt. A process crash can lose producer queues and recent analytics
+writes; displayed totals can recede. The flush interval is not a production RPO.
+Retained IDs deduplicate retries; no dedup promise survives loss of an unflushed
+receipt. Browser batches commit individual events; a failed batch can be partially
+accepted, so retry identical IDs rather than invent replacements.
+
+Use one active analytics process/root, with a single-replica stop/recreate rollout.
+There is no standby or automatic failover. Native SlateDB writer fencing still
+applies. Restart recovers available analytics WAL/SST data directly, without Meta
+owner recovery. An absent service never blocks product startup or completion hooks;
+missing optional producer credentials disable the producer while business serving
+continues. Admin remains authenticated and reports 503 or explicit missing Regions,
+not zeros. Pending/drop counts are process-local; crash-related loss is unknown and
+an accepted in-memory event may still be unflushed.
 
 Keep 30 UTC daily partitions including today, with identity-free totals for 90 UTC
 partitions. Default view is seven complete days; the 30-day view includes today and
@@ -130,13 +147,69 @@ credential, impersonation or raw-event browsing API.
 
 ## Private runtime configuration
 
-Capture is disabled by default. The independently generated Global role config can
-add this optional section (example deployment paths, no keys in source):
+Capture is disabled by default. Each authority needs an independently deployed analytics
+process. Its private configuration has no Meta binding:
+
+```json
+{
+  "authorityId": "global",
+  "installationId": "analytics-global",
+  "bind": "0.0.0.0:4329",
+  "s3": {
+    "endpoint": "https://s3.ap-southeast-1.amazonaws.com",
+    "region": "ap-southeast-1",
+    "bucket": "private-analytics-example",
+    "prefix": "analytics/global"
+  },
+  "tokenFile": "/run/analytics/producer-token",
+  "encryptionKeyFile": "/run/analytics/encryption-key",
+  "pseudonymKeyFile": "/run/analytics/pseudonym-key",
+  "campaigns": ["launch"],
+  "tls": {
+    "certificateFile": "/run/analytics/server.crt",
+    "privateKeyFile": "/run/analytics/server.key",
+    "clientCaFile": "/run/analytics/clients-ca.crt"
+  }
+}
+```
+
+Use a dedicated IAM identity scoped to this bucket/root; explicit S3 credentials are
+optional when workload identity is configured. Encryption keys are 32 random bytes
+encoded as hex; pseudonym keys are at least 32 random raw bytes; producer tokens are
+32–128 ASCII token characters (64 hex characters works). Keep key/token/config files
+ordinary, owner-only and outside Git/artifacts. Different authorities use different
+roots, keys and tokens. Production uses mTLS/TLS 1.3. Plaintext is available only in
+explicit loopback development; HTTPS service tests may separately allow a loopback
+RustFS endpoint with `s3.allowLoopbackHttp: true`.
+
+A separate native deployment plan contains exactly one analytics role:
+
+```json
+{
+  "format": 1,
+  "services": [{ "kind": "analytics", "configFile": "/run/analytics/config.json" }]
+}
+```
+
+Run `workspace-backend initialize --config /run/analytics/plan.json` once against an
+empty dedicated root, then `workspace-backend serve --config /run/analytics/plan.json`.
+Resume uses the same configuration without a recovery owner or a data reset. Never
+reuse a Meta root. A nonempty or mismatched installation is rejected.
+
+The Global API's optional analytics section references only its producer client:
 
 ```json
 {
   "analytics": {
-    "pseudonymKeyFile": "/run/workspace/global-analytics.key",
+    "service": {
+      "endpoint": "https://analytics-global.internal:4329",
+      "tokenFile": "/run/workspace/analytics-producer-token",
+      "tls": {
+        "caFile": "/run/workspace/analytics-ca.crt",
+        "certificateFile": "/run/workspace/analytics-client.crt",
+        "privateKeyFile": "/run/workspace/analytics-client.key"
+      }
+    },
     "operatorsFile": "/run/workspace/admin-policy.json",
     "returnUrl": "https://drive9.ai/studio/admin",
     "browserEnabled": true,
@@ -145,23 +218,22 @@ add this optional section (example deployment paths, no keys in source):
 }
 ```
 
-Each regional API config independently opts in:
+A regional API opts in with `{ "analytics": { "enabled": true, "service": { ... } } }`,
+using that Region's dedicated endpoint/token/certificates. Its analytics process's
+`authorityId` must equal the producing API authority. Allowed campaign labels must
+match the Global collector/service configuration. Trusted Console origins and the
+registered callback remain required. Missing Admin policy disables Admin without
+preventing normal Global serving; policy changes still revoke current sessions. Producer token/TLS configuration is
+loaded at startup; restore missing credentials and restart the affected producer to
+re-enable it.
 
-```json
-{
-  "analytics": {
-    "enabled": true,
-    "pseudonymKeyFile": "/run/workspace/region-analytics.key"
-  }
-}
-```
-
-Use ordinary owner-only key/policy files and at least 32 random key bytes. Existing
-trusted Console origins and the exact registered callback remain required. Do not
-copy real private runtime config, email claims or key bytes into Git. A deployment
-requiring another collection/consent policy must leave browser capture disabled
-until that policy is implemented and reviewed. The existing diagnostics settings do
-not enable marketing measurement.
+The former API-side `pseudonymKeyFile` config is replaced, not aliased. New analytics
+never reads or migrates the former Meta namespace. No live capture was enabled by
+the implementation PR. If an operator enabled the old profile, arrange its retention
+or reviewed analytics-only purge before retiring its old cleaner; never reset Meta
+or customer resources for this transition. A consent-required deployment keeps
+browser capture disabled until its reviewed policy is implemented. HTTP diagnostics
+settings do not enable product analytics.
 
 The generated [Admin/collection contract](../public/operator-openapi.json) is separate
 from customer Key contracts; `/operator/openapi.json` under the Global mount serves
@@ -197,16 +269,17 @@ SEO foundations for AI features; `llms.txt` is an optional index, not a ranking 
 
 Native tests use synthetic OIDC identities and isolated RustFS/S3. They cover verified
 PingCAP login/denial, ordinary-account/Key denial, replay, policy removal, logout,
-durable duplicate capture, GPC, origin rejection, report save/non-overwrite and
+duplicate capture across graceful service restart, GPC, origin rejection, report save/non-overwrite and
 source-to-result summaries. Domain fixtures cover dedup across midnight, redaction,
 cohort denominators, cross-authority isolation and retention cleanup. Browser tests
 cover Admin data/permission/error states, opt-out, public pages, existing sales
 journeys and responsive themes. Actual command outcomes belong in the implementation
 PR and must be current for its candidate; this guide does not assert unrun gates.
 
-The local 2026-11-04 debug/RustFS comparison used 100 measured create-only metadata-file
-writes per configuration after ten warmups. Batched capture measured 410.1 ms median
-and 440.0 ms p95 versus 409.7/425.4 ms without capture (increments 0.4/14.7 ms).
-All 111 writes including setup/warmups were reflected after flush, with zero unconfirmed
-events; the 30-day summary read took 47 ms. This is a bounded local end-to-end workload,
-without an external data provider, and does not establish production latency guarantees.
+The independent service's local comparison used 100 create-only file writes after
+10 warmups in each configuration. Enabled/disabled median latency was
+407.38/407.20 ms; P95 was 424.24/423.55 ms (differences of 0.18/0.68 ms).
+The 30-day summary took 18.99 ms with no unconfirmed events. These synthetic local
+measurements do not establish production latency. The isolation acceptance explicitly stops
+analytics, removes optional producer credentials, restarts the API, completes normal
+business operations and verifies independent analytics recovery and no main Meta rows.

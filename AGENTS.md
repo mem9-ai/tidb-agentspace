@@ -80,6 +80,10 @@ follow its task-specific references before implementation. Keep detailed rules c
   shared domain modules support in-process and independently deployed service composition.
   The old Node business implementation and its dedicated regression tests are retired; do not restore them. Node ESM under `server/` is limited to build/operator tools and native integration fixtures. Follow [native verification](docs/native-backend-retirement.md). Rust owns SSO/public hosting under [the native hosted boundary](docs/decisions/0026-native-hosted-studio.md); follow [native deployment](docs/native-studio-deployment.md).
   Fresh storage follows [ADR 0024](docs/decisions/0024-fresh-record-metadata.md); do not restore document import/handoff paths. Keep Node build/test tooling ESM.
+- Product analytics uses an independent, lower-availability SlateDB service under
+  [ADR 0050](docs/decisions/0050-isolated-analytics-service.md), never the business Meta
+  service. Keep producer queues bounded and asynchronous; analytics failure must not
+  block business startup or successful operations.
 - Use PascalCase for React components/types, camelCase for functions/variables, and descriptive
   kebab-case for new non-component files. Follow established public API field names.
 - Prefer small feature modules and shared UI primitives. Extract from the prototype's large
