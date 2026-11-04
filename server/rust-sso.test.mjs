@@ -1807,6 +1807,7 @@ test(
       assert.equal(summary.body.missingRegions.length, 0);
       assert.equal(summary.body.authorities[0].sessions, 1);
       assert.equal(summary.body.authorities[0].trials, 1);
+      assert.equal(summary.body.authorities[0].counts.events.sign_in_completed, 1);
       assert.equal(summary.body.authorities[0].counts.pageViews, 1);
       assert.equal(summary.body.authorities[1].counts.events['report_saved:success'], 1);
       assert.equal(summary.body.authorities[1].firstUseCampaigns.launch, 1);

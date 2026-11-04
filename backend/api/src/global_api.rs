@@ -383,6 +383,15 @@ impl PortalSessions {
                 &Uuid::new_v4().to_string(),
             )
             .await?;
+        if let Some(store) = &self.app.analytics {
+            store.record(
+                &Uuid::new_v4().to_string(),
+                workspace,
+                "account",
+                "sign_in_completed",
+                true,
+            );
+        }
         self.cookie(&issued.secret, 28800)
     }
     pub(crate) async fn revoke(
@@ -2342,6 +2351,15 @@ async fn auth(
                 &Uuid::new_v4().to_string(),
             )
             .await?;
+        if let Some(store) = &app.analytics {
+            store.record(
+                &Uuid::new_v4().to_string(),
+                &workspace,
+                "account",
+                "sign_in_completed",
+                true,
+            );
+        }
         app.attribute_trial(h, &workspace, &session.assignment.region_id)
             .await;
         let mut r = json_response(

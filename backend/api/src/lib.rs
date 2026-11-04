@@ -2114,13 +2114,15 @@ async fn auth_route(
                                             true,
                                         );
                                     }
-                                    store.record(
-                                        &uuid::Uuid::new_v4().to_string(),
-                                        &registration.workspace_id,
-                                        "account",
-                                        "sign_in_completed",
-                                        true,
-                                    );
+                                    if app.portal_sessions.is_none() {
+                                        store.record(
+                                            &uuid::Uuid::new_v4().to_string(),
+                                            &registration.workspace_id,
+                                            "account",
+                                            "sign_in_completed",
+                                            true,
+                                        );
+                                    }
                                 }
                                 if let Some(global) = &app.portal_sessions {
                                     global

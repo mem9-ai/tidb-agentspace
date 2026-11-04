@@ -240,6 +240,10 @@ impl Store {
                     p.trials.insert(subject.clone());
                     return;
                 }
+                if job.operation == "sign_in_completed" {
+                    increment(&mut p.counts.events, "sign_in_completed");
+                    return;
+                }
                 let w = p.workspaces.entry(subject.clone()).or_default();
                 if let Some(attribution) = &attribution {
                     w.source = Some(label(&attribution.source));
@@ -251,8 +255,6 @@ impl Store {
                 if job.operation == "workspace_ready" {
                     w.ready = Some(w.ready.map_or(job.at, |old| old.min(job.at)));
                     p.counts.ready += 1;
-                } else if job.operation == "sign_in_completed" {
-                    increment(&mut p.counts.events, "sign_in_completed");
                 } else {
                     increment(
                         &mut p.counts.events,
