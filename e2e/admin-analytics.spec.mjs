@@ -107,6 +107,82 @@ test('@visual Admin shows actual denominators, acquisition, cohorts and freshnes
   await expect(page.getByText('12 visit sessions → 6 attributed trials')).not.toBeVisible();
 });
 
+test('Admin Open workspace uses normal account SSO even with an existing Guest session', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Try without an account' }).click();
+  await expect(
+    page.getByText('Your temporary workspace expires 24 hours after it was created.'),
+  ).toBeVisible();
+  const navigation = page.getByRole('button', { name: 'Open navigation', exact: true });
+  if (await navigation.isVisible()) await navigation.click();
+  await expect(page.getByRole('link', { name: /Temporary session$/ })).toBeVisible();
+  await context.route('**/api/global/operator/analytics/summary?*', (route) =>
+    route.fulfill({ json: summary() }),
+  );
+  await page.goto('/admin');
+  const open = page.getByRole('link', { name: 'Open workspace', exact: true });
+  await expect(open).toHaveAttribute('href', 'http://127.0.0.1:4389/api/auth/tidbcloud/login');
+  const before = workspace.requests.length;
+  await open.click();
+  await expect(page).toHaveURL('http://127.0.0.1:4389/api/auth/tidbcloud/login');
+  const requests = workspace.requests.slice(before);
+  expect(requests).toContainEqual(
+    expect.objectContaining({ path: '/api/auth/tidbcloud/login', method: 'GET', query: {} }),
+  );
+  expect(requests.some((r) => r.path === '/api/auth/guest')).toBe(false);
+  expect(requests.some((r) => r.path === '/api/portal/v1/workspaces')).toBe(false);
+  expect(requests.some((r) => r.path.includes('/operator/auth/login'))).toBe(false);
+});
+
+test('Admin Open workspace retains the local Console entry when SSO is disabled', async ({
+  page,
+  context,
+}) => {
+  await context.route('**/api/global/operator/analytics/summary?*', (route) =>
+    route.fulfill({ json: summary() }),
+  );
+  await page.goto('/admin');
+  await expect(page.getByRole('link', { name: 'Open workspace', exact: true })).toHaveAttribute(
+    'href',
+    '/',
+  );
+});
+
+test('Admin Workspace entry uses the configured login URL and returns to the Console', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  await context.route('**/api/auth/config', (route) =>
+    route.fulfill({
+      json: {
+        enabled: true,
+        loginPath: '/api/auth/tidbcloud/login',
+        loginUrl:
+          'http://127.0.0.1:4389/api/auth/tidbcloud/login?returnTo=http%3A%2F%2F127.0.0.1%3A4389%2Fadmin&provider=tidbcloud',
+        globalApi: { apiOrigin: 'http://127.0.0.1:4389', apiPathPrefix: '/api/global' },
+      },
+    }),
+  );
+  await context.route('**/api/global/operator/analytics/summary?*', (route) =>
+    route.fulfill({ json: summary() }),
+  );
+  await page.goto('/admin');
+  const open = page.getByRole('link', { name: 'Open workspace', exact: true });
+  await expect(open).toHaveAttribute('href', /returnTo=http%3A%2F%2F127.0.0.1%3A4389%2F&/);
+  await open.click();
+  await expect(page).toHaveURL(/\/api\/auth\/tidbcloud\/login\?/);
+  expect(workspace.requests.at(-1)).toMatchObject({
+    path: '/api/auth/tidbcloud/login',
+    query: { returnTo: 'http://127.0.0.1:4389/', provider: 'tidbcloud' },
+  });
+});
+
 for (const [status, title] of [
   [401, 'Sign in to Admin'],
   [403, 'Admin access required'],
