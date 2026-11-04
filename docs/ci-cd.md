@@ -360,7 +360,8 @@ and all checks. Keep the workflows' token permissions read-only.
 
 CI builds with `--timings` and retains the HTML report from
 `meta-service/target/cargo-timings/` for seven days, with a distinct artifact name per run
-attempt. To evaluate a cache change, compare an initial miss with a rerun of the Rust job
+attempt. Failed runs retain their reports; superseded, cancelled runs do not delay the next
+candidate by uploading obsolete reports. To evaluate a cache change, compare an initial miss with a rerun of the Rust job
 on the same commit and a fresh hosted runner. Record the action's exact/fallback cache hit,
 cache size, restore/save overhead, build/Clippy/test steps and total job duration. A PR-local
 rerun proves same-PR reuse; verify the subsequent `main` seed separately before claiming

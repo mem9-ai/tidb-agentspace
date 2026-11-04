@@ -493,6 +493,10 @@ test('automatic checks execute once and releases require exact-commit native evi
   assert.match(otherIntegration.run, /git show "\$policy_ref:scripts\/ci-full-integration\.mjs"/);
   assert.match(otherIntegration.run, /node "\$runner" other/);
   const productIntegration = ci.jobs.product_integration;
+  assert.equal(
+    ci.jobs.metadata.steps.find((step) => step.name === 'Save Cargo timing reports').if,
+    '${{ !cancelled() }}',
+  );
   assert.equal(productIntegration.name, 'Native product integration');
   assert.equal(productIntegration.needs, 'scope');
   assert.equal(

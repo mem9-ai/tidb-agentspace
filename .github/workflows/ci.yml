@@ -239,7 +239,7 @@ jobs:
           git show 'HEAD^1:scripts/run-classic-integration.mjs' > "$runner"
           node "$runner" "$CLASSIC_PROFILE"
       - name: Save Cargo timing reports
-        if: always()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cargo-timings-${{ github.sha }}-${{ github.run_attempt }}
