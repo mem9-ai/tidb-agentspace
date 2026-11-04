@@ -20,6 +20,46 @@ const config = {
 const oldImage = `registry.example/api@sha256:${'a'.repeat(64)}`;
 const pause = async () => {};
 
+test('cross-run cache probe captures Buildx stderr and fails on a cache miss', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'ci-cache-history-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const docker = join(directory, 'docker');
+  writeFileSync(
+    docker,
+    `#!/bin/sh
+if [ "$1" = buildx ]; then
+  echo '#29 [builder 24/24] RUN find backend/host -type f' >&2
+  if [ "$CACHE_HIT" = yes ]; then echo '#29 CACHED' >&2; else echo '#29 DONE 1.0s' >&2; fi
+elif [ "$1" = run ]; then
+  echo runtime-info
+else
+  exit 1
+fi
+`,
+    { mode: 0o755 },
+  );
+  const workflow = parse(
+    readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'),
+  );
+  const command = workflow.jobs['image-cache-transfer'].steps.at(-1).run;
+  for (const [hit, expected] of [
+    ['yes', 0],
+    ['no', 1],
+  ]) {
+    const result = spawnSync('bash', ['-c', command], {
+      cwd: directory,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${directory}:${process.env.PATH}`,
+        RUNNER_TEMP: directory,
+        CACHE_HIT: hit,
+      },
+    });
+    assert.equal(result.status, expected, `${hit}: ${result.stdout} ${result.stderr}`);
+  }
+});
+
 test('full partition uses the verified merge base and fails closed on mismatched parents', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'ci-partition-source-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));

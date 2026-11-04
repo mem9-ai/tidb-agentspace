@@ -450,7 +450,7 @@ jobs:
       - name: Verify the final source layer was restored
         run: |
           set -euo pipefail
-          docker buildx history logs --progress plain > "$RUNNER_TEMP/cache-transfer.log"
+          docker buildx history logs --progress plain > "$RUNNER_TEMP/cache-transfer.log" 2>&1
           cat "$RUNNER_TEMP/cache-transfer.log"
           layer="$(grep -E '^#[0-9]+ \[builder [^]]+\] RUN find backend/host ' "$RUNNER_TEMP/cache-transfer.log" | head -n 1 | cut -d ' ' -f 1)"
           test -n "$layer"
