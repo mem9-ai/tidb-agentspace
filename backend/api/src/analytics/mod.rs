@@ -117,7 +117,6 @@ fn uuid(s: &str) -> bool {
 /// Only fixed operation labels enter this domain; caller-provided paths never persist.
 pub fn operation(method: &str, route: &str) -> Option<&'static str> {
     match (method, route) {
-        ("POST", "/reports") => Some("report_saved"),
         ("POST", "/queries") => Some("query"),
         ("POST", "/file-analyses") => Some("analysis"),
         ("POST", "/database-imports") => Some("import"),

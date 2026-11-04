@@ -829,6 +829,11 @@ fn hex_bytes(s: &str) -> Result<[u8; 32]> {
 }
 impl App {
     async fn attribute_trial(&self, headers: &HeaderMap, workspace: &str, region: &str) {
+        if cookie(headers, "aw_analytics_off") == Some("1")
+            || headers.get("sec-gpc").is_some_and(|v| v == "1")
+        {
+            return;
+        }
         if let Some(token) = cookie(headers, "aw_acquisition")
             && let Some(handoff) = self
                 .acquisition

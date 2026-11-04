@@ -171,6 +171,17 @@ export function operatorContract() {
       },
       '/analytics/events': { post: ingest },
       '/analytics/session': {
+        post: {
+          operationId: 'enableAnalyticsAttribution',
+          security: [],
+          responses: {
+            204: {
+              description:
+                'Clear the server-side optional-analytics opt-out flag; exact trusted Origin required.',
+            },
+            403: error,
+          },
+        },
         delete: {
           ...operation('clearAnalyticsAttribution', {}, { anonymous: true }),
           responses: {

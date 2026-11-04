@@ -512,6 +512,33 @@
       }
     },
     "/analytics/session": {
+      "post": {
+        "operationId": "enableAnalyticsAttribution",
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "Clear the server-side optional-analytics opt-out flag; exact trusted Origin required."
+          },
+          "403": {
+            "description": "Structured service error. No customer content or secrets.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error"],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": ["code"],
+                      "properties": { "code": { "type": "string" } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "operationId": "clearAnalyticsAttribution",
         "security": [],

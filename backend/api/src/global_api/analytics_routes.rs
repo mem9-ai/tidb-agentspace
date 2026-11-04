@@ -18,7 +18,7 @@ pub(super) async fn handle(
         .analytics
         .as_ref()
         .ok_or_else(|| err(404, "ANALYTICS_UNAVAILABLE"))?;
-    if path == "/analytics/session" && *method == Method::DELETE {
+    if path == "/analytics/session" && matches!(*method, Method::DELETE | Method::POST) {
         if !h
             .get(header::ORIGIN)
             .and_then(|v| v.to_str().ok())
@@ -29,7 +29,26 @@ pub(super) async fn handle(
         if let Some(token) = cookie(h, "aw_acquisition") {
             app.acquisition.lock().await.remove(token);
         }
-        return Ok(StatusCode::NO_CONTENT.into_response());
+        let prefix = app
+            .config
+            .public_path
+            .strip_suffix("/api/global")
+            .unwrap_or(&app.config.public_path);
+        let secure = if app.config.public_origin.starts_with("https:") {
+            " Secure;"
+        } else {
+            ""
+        };
+        let mut response = StatusCode::NO_CONTENT.into_response();
+        let age = if *method == Method::DELETE {
+            31536000
+        } else {
+            0
+        };
+        for (name, value, max_age) in [("aw_analytics_off", "1", age), ("aw_acquisition", "", 0)] {
+            response.headers_mut().append(header::SET_COOKIE,format!("{name}={value}; HttpOnly; SameSite=Strict;{secure} Path={prefix}/; Max-Age={max_age}").parse().map_err(|_|err(503,"ANALYTICS_UNAVAILABLE"))?);
+        }
+        return Ok(response);
     }
     if path == "/operator/openapi.json" && *method == Method::GET {
         return Ok(Json(
@@ -52,7 +71,8 @@ pub(super) async fn handle(
         {
             return Err(err(403, "ORIGIN_REQUIRED"));
         }
-        if h.get("sec-gpc").is_some_and(|v| v == "1") {
+        if h.get("sec-gpc").is_some_and(|v| v == "1") || cookie(h, "aw_analytics_off") == Some("1")
+        {
             return Ok(StatusCode::NO_CONTENT.into_response());
         }
         if h.get(header::CONTENT_TYPE)

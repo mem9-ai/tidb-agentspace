@@ -19,12 +19,13 @@ query, file analysis/preview, import/export and explicit report saving. Listing 
 polling do not activate a Workspace. Key-authenticated activity is API usage, not
 proof of an autonomous agent. Generic file writes cannot claim `report_saved`.
 
-`POST /workspaces/{workspaceId}/reports` saves an explicit user-supplied report as a
-new file with `files:write` and selected-resource authorization. It never overwrites
-an existing path, returns 201 with a file-metadata Location, and uses existing file
-read/content operations for inspection. A lost response is reconciled through file
-metadata; the client must not replay it as an overwrite. A successful save is not
-evidence of report quality or agent authorship. The self-service sales path uses it.
+The existing `PUT /workspaces/{workspaceId}/files` accepts optional `purpose: "report"`
+for an explicit report save. It requires a nonblank file, `If-None-Match: *`,
+`files:write` and the selected resource grant. Generic writes do not claim a report.
+Use existing file metadata/content operations to inspect a save. A lost response is
+reconciled through file metadata, never replayed as an overwrite. Success proves
+persistence, not quality or agent authorship. The self-service sales path uses this
+same create-only File API; older deployments retain their normal file behavior.
 
 ## Storage and retention
 
@@ -154,7 +155,8 @@ business data the Admin UI reads.
 
 ## Search discovery and publication
 
-The independent Console build emits initial HTML at `discover/`, `discover/get-started/`,
+The independent Console build renders installed TiUI 2.9.1 components and the shared
+Workspace theme into initial HTML at `discover/`, `discover/get-started/`,
 `discover/analyze-sales-data/`, `discover/api/` and `discover/privacy/`, plus sitemap,
 robots and a curated `llms.txt` index. Application and Admin HTML use noindex.
 The local static server returns 404 for unknown discovery pages instead of the SPA.

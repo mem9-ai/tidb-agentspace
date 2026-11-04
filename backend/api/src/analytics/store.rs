@@ -546,7 +546,7 @@ impl Store {
             }
         }
         result.sessions = sessions.len();
-        result.trials = trials.len();
+        result.trials = trials.intersection(&sessions).count();
         result.active_workspaces = active.len();
         result.api_workspaces = api.len();
         result.cohorts = cohorts.into_values().collect();

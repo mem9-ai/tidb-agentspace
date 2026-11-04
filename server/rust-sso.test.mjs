@@ -1716,6 +1716,19 @@ test(
       ).status,
       204,
     );
+    const optedOut = await f.request(path + '/analytics/session', { method: 'DELETE' });
+    assert.equal(optedOut.status, 204);
+    assert.ok(optedOut.headers['set-cookie'].some((v) => v.startsWith('aw_analytics_off=1')));
+    assert.equal(
+      (
+        await f.request(path + '/analytics/events', {
+          method: 'POST',
+          body: batch,
+          cookie: 'aw_analytics_off=1',
+        })
+      ).status,
+      204,
+    );
     f.control.claims = { email: 'alice@pingcap.com', email_verified: false };
     let login = await f.flow(true);
     assert.equal((await f.callback(login)).status, 403);
@@ -1760,19 +1773,22 @@ test(
       resourceId: resource.body.data.id,
       path: '/findings.md',
       type: 'file',
+      purpose: 'report',
       content: '# Findings\nVerified report save',
     };
-    const saved = await f.request('/studio' + ownBase + '/reports', {
-      method: 'POST',
+    const saved = await f.request('/studio' + ownBase + '/files', {
+      method: 'PUT',
       cookie: owner,
+      headers: { 'If-None-Match': '*' },
       body: report,
     });
-    assert.equal(saved.status, 201);
+    assert.equal(saved.status, 200);
     assert.equal(
       (
-        await f.request('/studio' + ownBase + '/reports', {
-          method: 'POST',
+        await f.request('/studio' + ownBase + '/files', {
+          method: 'PUT',
           cookie: owner,
+          headers: { 'If-None-Match': '*' },
           body: report,
         })
       ).status,

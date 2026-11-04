@@ -1278,7 +1278,7 @@ async fn dispatch(
         (method.as_str(), route),
         (
             "POST",
-            "/reports" | "/queries" | "/database-imports" | "/result-exports" | "/file-exports"
+            "/queries" | "/database-imports" | "/result-exports" | "/file-exports"
         ) | ("PUT", "/files")
     ) {
         Some(body())
@@ -1297,6 +1297,12 @@ async fn dispatch(
         Credential::SessionOwner { .. } | Credential::LocalDemoOwner => true,
         Credential::Bearer(_) => false,
     };
+    let analytics_operation =
+        if method == Method::PUT && route == "/files" && audit_input["purpose"] == "report" {
+            Some("report_saved")
+        } else {
+            analytics::operation(method.as_str(), route)
+        };
     let audit_action = if route == "/queries" && !write_capable {
         None
     } else {
@@ -1452,9 +1458,7 @@ async fn dispatch(
                     } else {
                         None
                     };
-                    let report_location=if route=="/reports" {match &reply {workspace_product::Reply::Json(v)=>Some(format!("files/metadata?resourceId={}&path={}",percent_encoding::utf8_percent_encode(v["data"]["resourceId"].as_str().unwrap_or_default(),percent_encoding::NON_ALPHANUMERIC),percent_encoding::utf8_percent_encode(v["data"]["path"].as_str().unwrap_or_default(),percent_encoding::NON_ALPHANUMERIC))),_=>None}}else{None};
                     let mut output = product_response(status, reply)?;
-                    if let Some(location)=report_location{output.headers_mut().insert("Location",HeaderValue::from_str(&location).map_err(|_|reject(500,"INTERNAL_ERROR"))?);}
                     if method == Method::PUT && status == 201 && route.starts_with("/tutorials/") {
                         output.headers_mut().insert(
                             "Location",
@@ -1462,7 +1466,7 @@ async fn dispatch(
                                 .map_err(|_| reject(500, "INTERNAL_ERROR"))?,
                         );
                     }
-                    if let Some(id) = created_id.filter(|_|route!="/reports") {
+                    if let Some(id) = created_id {
                         output.headers_mut().insert(
                             "Location",
                             HeaderValue::from_str(&format!(
@@ -1541,11 +1545,9 @@ async fn dispatch(
         )
         .await;
     }
-    if let (Some(store), Some(actor), Some(operation)) = (
-        &app.analytics,
-        &actor,
-        analytics::operation(method.as_str(), route),
-    ) {
+    if let (Some(store), Some(actor), Some(operation)) =
+        (&app.analytics, &actor, analytics_operation)
+    {
         let status = match &result {
             Ok(r) => r.status().as_u16(),
             Err(e) => e.status,

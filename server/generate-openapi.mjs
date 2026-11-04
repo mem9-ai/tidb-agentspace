@@ -1856,27 +1856,25 @@ for (const status of [200, 201]) {
   };
 }
 extendRegionalSecurityContract(spec);
-// Explicit report creation is create-only file persistence, not proof of author or quality.
-spec.paths[ws + '/reports'] = {
-  parameters: structuredClone(spec.paths[ws + '/files'].parameters),
-  post: structuredClone(spec.paths[ws + '/files'].put),
+// Report measurement reuses the existing create-only File API and its authorization.
+const fileWriteInput = spec.paths[ws + '/files'].put.requestBody.content['application/json'].schema;
+fileWriteInput.properties.purpose = {
+  enum: ['report'],
+  description:
+    'Explicit report-save intent. Requires a nonblank file and If-None-Match: *. Generic writes do not claim a saved report. Success proves persistence, not report quality or authorship.',
 };
-spec.paths[ws + '/reports'].post.operationId = 'saveReport';
-spec.paths[ws + '/reports'].post.summary =
-  'Save a report as a new file; existing files are never overwritten';
-spec.paths[ws + '/reports'].post.parameters = (
-  spec.paths[ws + '/reports'].post.parameters || []
-).filter((p) => !['If-Match', 'If-None-Match'].includes(p.name));
-spec.paths[ws + '/reports'].post.responses[201] = spec.paths[ws + '/reports'].post.responses[200];
-delete spec.paths[ws + '/reports'].post.responses[200];
-spec.paths[ws + '/reports'].post.responses[201].headers = {
-  Location: {
-    required: true,
-    schema: { type: 'string' },
-    description:
-      'Relative file metadata URI; retrieve report bytes through files/content with the same authorization.',
+fileWriteInput.allOf = [
+  {
+    if: { properties: { purpose: { const: 'report' } }, required: ['purpose'] },
+    then: {
+      required: ['content'],
+      properties: {
+        type: { const: 'file' },
+        content: { type: 'string', minLength: 1, pattern: '\\S' },
+      },
+    },
   },
-};
+];
 const portalSpec = structuredClone(spec);
 portalSpec.info.title = 'Workspace Portal API';
 portalSpec.servers[0] = { url: '/api/portal/v1', description: 'Session-authenticated Portal API' };

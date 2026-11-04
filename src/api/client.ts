@@ -422,8 +422,13 @@ export const workspaceApi = {
         : client
       ).PUT('/workspaces/{workspaceId}/files', { params, body }),
     ),
-  saveReport: (body: WriteFileInput) =>
-    responseData(client.POST('/workspaces/{workspaceId}/reports', { params, body })),
+  saveReport: (body: WriteFileInput & { type: 'file'; content: string }) =>
+    responseData(
+      client.PUT('/workspaces/{workspaceId}/files', {
+        params: { ...params, header: { 'If-None-Match': '*' } },
+        body: { ...body, purpose: 'report' },
+      }),
+    ),
   createSampleFile: (body: WriteFileInput) =>
     responseData(
       client.PUT('/workspaces/{workspaceId}/files', {

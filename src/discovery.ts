@@ -1,3 +1,6 @@
+import '@tidbcloud/uikit/style.css';
+import './theme.css';
+import './features/analytics/discovery.css';
 import {
   analyticsDisabled,
   capture,

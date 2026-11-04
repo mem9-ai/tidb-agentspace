@@ -582,36 +582,6 @@ impl Product {
                     )
                     .await;
             }
-            ("POST", "/reports") => {
-                if input["type"] != "file"
-                    || input["content"]
-                        .as_str()
-                        .is_none_or(|s| s.trim().is_empty())
-                    || input.as_object().is_none_or(|v| {
-                        v.keys().any(|k| {
-                            !matches!(k.as_str(), "resourceId" | "path" | "type" | "content")
-                        })
-                    })
-                {
-                    return Err(err(400, "INVALID_INPUT"));
-                }
-                let (_, reply) = self
-                    .files(
-                        &credential,
-                        &p,
-                        files::FileRequest {
-                            method: "PUT",
-                            route: "/files",
-                            query,
-                            input,
-                            raw,
-                            if_match: None,
-                            if_none_match: Some("*"),
-                        },
-                    )
-                    .await?;
-                return Ok((201, reply));
-            }
             ("POST", "/queries") => Reply::Json(self.query(&credential, &p, &input).await?),
             ("GET", "/file-analyses/capabilities")
             | ("GET", "/files/tabular-preview")

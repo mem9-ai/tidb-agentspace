@@ -35,9 +35,9 @@ export async function setAnalyticsDisabled(disabled: boolean) {
     /* Storage may be unavailable. */
   }
   pending = [];
-  if (disabled && endpoint)
+  if (endpoint)
     await fetch(endpoint + '/analytics/session', {
-      method: 'DELETE',
+      method: disabled ? 'DELETE' : 'POST',
       credentials: 'include',
     }).catch(() => undefined);
 }

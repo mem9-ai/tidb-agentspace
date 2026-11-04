@@ -41,7 +41,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    post?: never;
+    post: operations['enableAnalyticsAttribution'];
     delete: operations['clearAnalyticsAttribution'];
     options?: never;
     head?: never;
@@ -563,6 +563,37 @@ export interface operations {
       };
       /** @description Structured service error. No customer content or secrets. */
       503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            error: {
+              code: string;
+            };
+          };
+        };
+      };
+    };
+  };
+  enableAnalyticsAttribution: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Clear the server-side optional-analytics opt-out flag; exact trusted Origin required. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Structured service error. No customer content or secrets. */
+      403: {
         headers: {
           [name: string]: unknown;
         };

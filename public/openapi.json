@@ -1781,8 +1781,27 @@
                   "content": {
                     "type": "string",
                     "description": "Required for files; maximum 256 KiB of UTF-8 text and subject to the provider upload limit."
+                  },
+                  "purpose": {
+                    "enum": ["report"],
+                    "description": "Explicit report-save intent. Requires a nonblank file and If-None-Match: *. Generic writes do not claim a saved report. Success proves persistence, not report quality or authorship."
                   }
-                }
+                },
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": { "purpose": { "const": "report" } },
+                      "required": ["purpose"]
+                    },
+                    "then": {
+                      "required": ["content"],
+                      "properties": {
+                        "type": { "const": "file" },
+                        "content": { "type": "string", "minLength": 1, "pattern": "\\S" }
+                      }
+                    }
+                  }
+                ]
               }
             }
           }
@@ -5508,164 +5527,6 @@
           }
         },
         "description": "Locally deny the authenticated access token itself until its original expiry. An arbitrary ID is not authorization."
-      }
-    },
-    "/workspaces/{workspaceId}/reports": {
-      "parameters": [
-        {
-          "name": "workspaceId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[A-Za-z0-9_.:-]+$"
-          },
-          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
-        }
-      ],
-      "post": {
-        "operationId": "saveReport",
-        "summary": "Save a report as a new file; existing files are never overwritten",
-        "tags": ["Workspace"],
-        "description": "Required Region access Token scope: files:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
-        "x-required-scope": "files:write",
-        "security": [{ "regionalAccess": [] }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["resourceId", "path", "type"],
-                "properties": {
-                  "resourceId": { "type": "string" },
-                  "path": {
-                    "type": "string",
-                    "description": "Absolute virtual path. Parent directory must exist; traversal is rejected."
-                  },
-                  "type": { "enum": ["file", "directory"] },
-                  "content": {
-                    "type": "string",
-                    "description": "Required for files; maximum 256 KiB of UTF-8 text and subject to the provider upload limit."
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": { "data": { "$ref": "#/components/schemas/File" } }
-                }
-              }
-            },
-            "headers": {
-              "Location": {
-                "required": true,
-                "schema": { "type": "string" },
-                "description": "Relative file metadata URI; retrieve report bytes through files/content with the same authorization."
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, expired, or revoked credential",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "403": {
-            "description": "Insufficient permission",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "404": {
-            "description": "Resource or endpoint not found",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "405": {
-            "description": "Resource lifecycle operation unsupported by provider",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "409": {
-            "description": "Conflict or free-tier limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "410": {
-            "description": "Temporary database expired",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "412": {
-            "description": "Version precondition failed without a write",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "413": {
-            "description": "Content too large",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "415": {
-            "description": "Unsupported content type",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "422": {
-            "description": "SQL syntax, result limit, or unsupported demo query",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "429": {
-            "description": "Provider quota or rate limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "502": {
-            "description": "Provider unavailable or invalid response",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "503": {
-            "description": "Provider binding needs operator recovery",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "504": {
-            "description": "SQL timeout; a write outcome may be unknown",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          }
-        },
-        "parameters": []
       }
     }
   },
