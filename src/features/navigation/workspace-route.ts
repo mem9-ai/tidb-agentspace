@@ -1,3 +1,5 @@
+import { uploadHash } from './upload-entry.ts';
+
 const pages = [
   'overview',
   'databases',
@@ -17,6 +19,7 @@ export type WorkspaceRoute = {
   databaseView?: 'tables' | 'sql';
   tableName?: string;
   fileLink?: string;
+  openForUpload?: boolean;
   tutorialResourceId?: string;
   tutorialKind?: 'database' | 'filesystem';
   showSalesExample?: boolean;
@@ -68,6 +71,7 @@ export function parseWorkspaceRoute(hash: string): WorkspaceRoute {
       ...(kind === 'database' || kind === 'filesystem' ? { tutorialKind: kind } : {}),
     };
   }
+  if (hash === uploadHash) return { page: 'files', openForUpload: true };
   if (value.startsWith('files?')) return { page: 'files', fileLink: value };
   if (value === 'sql') return { page: 'databases' };
   const database = /^databases\/([^/]+)\/(tables|sql)(?:\?table=([^&]*))?$/.exec(value);

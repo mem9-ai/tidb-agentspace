@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './workspace-fixture.mjs';
 
 const id = 'fb95da62-aa92-4656-8974-49b6e0111885';
 const grant = ['v1', 'a'.repeat(43), id, 2000000000, 'b'.repeat(86)].join('.');
@@ -93,10 +93,7 @@ test('original Studio link opens the latest saved report without a session @visu
   await expect(page).toHaveURL(new RegExp('#v1\\.'));
   await expect(followUp).toHaveCount(0);
   await expect(page.getByText(/Revision 2 · Complete/)).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Open Workspace Files' })).toHaveAttribute(
-    'href',
-    '/studio/#files',
-  );
+  await expect(page.getByRole('link', { name: 'Open Workspace Files' })).toBeVisible();
   expect(apiPaths).toEqual([
     '/studio/api/v1/agent-trial/report-view',
     '/studio/api/v1/agent-trial/report-view',
@@ -141,4 +138,110 @@ test('viewer handles unavailable, invalid and expired links and clears an open r
   await expect(
     page.getByRole('heading', { name: 'This report link is unavailable' }),
   ).toBeVisible();
+});
+
+async function openReportForUpload(page) {
+  await page.route(endpoint, (route) =>
+    route.fulfill({
+      json: {
+        ...sample,
+        revision: 2,
+        expiresAt: Math.floor(Date.now() / 1000) + 172800,
+        leadingStateProducts: { Monitors: 18000 },
+      },
+    }),
+  );
+  await page.goto(path);
+  await page.getByRole('link', { name: 'Open Workspace Files' }).click();
+}
+
+test('report click opens upload for a new Guest and returns to the same workspace', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  const guestPosts = () =>
+    workspace.requests.filter((r) => r.path === '/api/auth/guest' && r.method === 'POST');
+  await openReportForUpload(page);
+  const upload = page.getByRole('button', { name: 'Upload', exact: true });
+  await expect(upload).toBeEnabled();
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), upload.click()]);
+  expect(await chooser.element().getAttribute('aria-label')).toBe('Upload a file');
+  const filesUrl = page.url();
+  expect(filesUrl).toContain('/studio/#files?resourceId=');
+  expect(guestPosts()).toHaveLength(1);
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp('#v1\\.'));
+  await page.getByRole('link', { name: 'Open Workspace Files' }).click();
+  await expect(page).toHaveURL(filesUrl);
+  await expect(upload).toBeEnabled();
+  expect(guestPosts()).toHaveLength(1);
+});
+
+test('report click uses the existing account and offers a choice among file systems', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  workspace.signInAsAccount();
+  workspace.addResources();
+  workspace.state.resources.push({
+    ...workspace.state.resources[1],
+    id: 'fs_other',
+    name: 'Sales files',
+  });
+  await openReportForUpload(page);
+  const table = page.getByRole('table', { name: 'File systems' });
+  await table.getByRole('link', { name: 'Sales files', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Upload', exact: true })).toBeEnabled();
+  await expect(page).toHaveURL(/#files\?resourceId=fs_other$/);
+  expect(workspace.requests.some((r) => r.method === 'POST' && r.path === '/api/auth/guest')).toBe(
+    false,
+  );
+});
+
+test('account sign-in returns a report reader to Files when Guest access is disabled', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: false });
+  await openReportForUpload(page);
+  await expect(page.getByRole('heading', { name: 'Open Workspace Files' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open temporary workspace' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Continue with TiDB Account' }).click();
+  await expect(page).toHaveURL(/tidbcloud\/login$/);
+  workspace.signInAsAccount();
+  workspace.addResources();
+  await page.goto('/studio/');
+  await expect(page).toHaveURL(/#files\?resourceId=fs_fixture$/);
+  await expect(page.getByRole('button', { name: 'Upload', exact: true })).toBeEnabled();
+  expect(workspace.requests.some((r) => r.method === 'POST' && r.path === '/api/auth/guest')).toBe(
+    false,
+  );
+});
+
+test('a pasted upload link waits for an explicit click before temporary access', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  await page.goto('/studio/#files/upload');
+  await expect(page.getByRole('button', { name: 'Open temporary workspace' })).toBeVisible();
+  expect(workspace.requests.some((r) => r.path === '/api/auth/guest')).toBe(false);
+});
+
+test('a failed Guest entry can retry from Files without returning to the home page', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  await page.route(
+    '**/api/auth/guest',
+    (route) => route.fulfill({ status: 503, json: { error: { message: 'Unavailable' } } }),
+    { times: 1 },
+  );
+  await openReportForUpload(page);
+  await expect(page.getByRole('alert')).toContainText('Unable to start');
+  await page.getByRole('button', { name: 'Open temporary workspace' }).click();
+  await expect(page.getByRole('button', { name: 'Upload', exact: true })).toBeEnabled();
 });

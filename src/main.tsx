@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { takeWorkspaceFilesEntry } from './features/navigation/upload-entry';
 import { TrialReportView } from './features/reports/TrialReportView';
 import { Admin } from './features/analytics/Admin';
 import { AnalyticsPreference } from './features/analytics/AnalyticsPreference';
@@ -40,7 +41,7 @@ async function start() {
           <Admin />
         ) : (
           <>
-            <App />
+            <App enterWorkspaceFiles={takeWorkspaceFilesEntry()} />
             <AnalyticsPreference />
           </>
         )}

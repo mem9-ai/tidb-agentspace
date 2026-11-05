@@ -90,7 +90,8 @@ After the first saved agent report, name the finding and offer one concrete foll
 person can accept in the current chat. Reserve cross-agent handoff instructions for someone
 who chooses that path. When a follow-up changes the question, lead the original report link with the new finding
 and the data that explains it. Keep the earlier analysis available as context.
-Distinguish a completed sample from the separate choice to bring data into a workspace.
+Opening Files from a completed sample should reach the upload action in the reader’s own or temporary workspace.
+Verify the click from a signed-out browser as well as a returning session. Viewing the report alone starts no workspace.
 
 **People and agent onboarding (owner direction, 2026-11-03):** a Guest can explore the US sales
 sample and obtain a real read-only analysis without installing an agent or creating a key. Offer a
