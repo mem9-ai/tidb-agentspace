@@ -1,22 +1,10 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Button, Paper, Stack, Text, Title } from '@tidbcloud/uikit';
-import { TrialPrompt } from './TrialPrompt';
+import { Button, Stack, Text, Title } from '@tidbcloud/uikit';
+import { TrialReportContent, type SalesReport } from './TrialReportContent';
 import './trial-report.css';
 
-type Rows = [string, number][];
-type SalesReport = { revision: number; expiresAt: number; states: Rows; products: Rows };
 type Status = 'loading' | 'invalid' | 'expired' | 'unavailable';
-const money = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  maximumFractionDigits: 0,
-});
-const share = (amount: number, total: number) =>
-  new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 1 }).format(
-    amount / total,
-  );
-
-function amounts(value: unknown): Rows {
+function amounts(value: unknown): SalesReport['states'] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error();
   const rows = Object.entries(value);
   if (
@@ -48,95 +36,6 @@ function parseReport(raw: unknown): SalesReport {
     states: amounts(raw.stateSales),
     products: raw.revision === 2 ? amounts(raw.leadingStateProducts) : [],
   };
-}
-
-function Report({ report }: { report: SalesReport }) {
-  const [[leader, sales]] = report.states;
-  const total = report.states.reduce((sum, [, n]) => sum + n, 0);
-  const top = report.products[0];
-  const expires = new Date(report.expiresAt * 1000);
-  return (
-    <>
-      <Text size="sm" c="var(--text-secondary)">
-        Public US sales sample · Revision {report.revision}
-        {top && ' · Complete'}
-      </Text>
-      <Title order={1}>US sales report</Title>
-      <p className="report-lead">
-        <strong>{leader}</strong> leads with <strong>{money.format(sales)}</strong> in sales,{' '}
-        {share(sales, total)} of the {money.format(total)} total.
-      </p>
-      {top ? (
-        <section aria-labelledby="top-product">
-          <Title order={2} id="top-product">
-            Top product in {leader}
-          </Title>
-          <Text>
-            {top[0]} generated <strong>{money.format(top[1])}</strong>, or {share(top[1], sales)} of
-            the state's sales.
-          </Text>
-        </section>
-      ) : (
-        <Paper component="section" withBorder p="md" aria-labelledby="next-question">
-          <Title order={2} id="next-question">
-            Which product brought in the most sales in {leader}?
-          </Title>
-          <Text mb="sm">
-            Paste the question into your agent chat in the original project. Reopen this link after
-            your agent saves.
-          </Text>
-          <TrialPrompt leadingState={leader} />
-        </Paper>
-      )}
-      <section aria-labelledby="state-sales">
-        <Title order={2} id="state-sales">
-          Sales by state
-        </Title>
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">State</th>
-              <th scope="col">Sales</th>
-              <th scope="col">Share</th>
-            </tr>
-          </thead>
-          <tbody>
-            {report.states.map(([state, n]) => (
-              <tr key={state}>
-                <th scope="row">{state}</th>
-                <td>{money.format(n)}</td>
-                <td>{share(n, total)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-      {top && (
-        <section aria-labelledby="own-sales">
-          <Title order={2} id="own-sales">
-            Try this with your own sales data
-          </Title>
-          <Text mb="sm">In your workspace, open a file system and upload your sales CSV.</Text>
-          <Button
-            component="a"
-            href={window.location.pathname.replace(/\/report\/?$/, '/#files')}
-            rel="noreferrer"
-            variant="default"
-          >
-            Open Workspace Files
-          </Button>
-        </section>
-      )}
-      <footer>
-        <Text size="sm" c="var(--text-secondary)">
-          Read-only link · Expires{' '}
-          <time dateTime={expires.toISOString()}>
-            {expires.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
-          </time>
-        </Text>
-      </footer>
-    </>
-  );
 }
 
 const messages = {
@@ -229,7 +128,7 @@ function Viewer({ grant }: { grant: string }) {
       </header>
       <article>
         {typeof result !== 'string' ? (
-          <Report report={result} />
+          <TrialReportContent report={result} />
         ) : (
           <Stack role="status">
             <Title order={1}>{messages[result][0]}</Title>
