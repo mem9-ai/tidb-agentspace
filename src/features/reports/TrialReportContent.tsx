@@ -1,4 +1,5 @@
 import { Button, Paper, Text, Title } from '@tidbcloud/uikit';
+import { rememberWorkspaceFilesEntry, uploadHash } from '../navigation/upload-entry';
 import { TrialPrompt } from './TrialPrompt';
 
 type Rows = [string, number][];
@@ -117,11 +118,18 @@ export function TrialReportContent({ report }: { report: SalesReport }) {
             <Title order={2} id="own-sales">
               Try this with your own sales data
             </Title>
-            <Text mb="sm">In your workspace, open a file system and upload your sales CSV.</Text>
+            <Text mb="sm">
+              Upload a sales CSV in your workspace. If you’re signed out, you can use a temporary
+              workspace for 24 hours.
+            </Text>
             <Button
               component="a"
-              href={window.location.pathname.replace(/\/report\/?$/, '/#files')}
+              href={window.location.pathname.replace(/\/report\/?$/, '/') + uploadHash}
               rel="noreferrer"
+              onClick={(event) => {
+                if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey)
+                  rememberWorkspaceFilesEntry();
+              }}
               variant="default"
             >
               Open Workspace Files

@@ -40,6 +40,7 @@ import {
 } from './features/files/remote-files';
 import { CreateResourceDialog } from './features/resources/CreateResourceDialog';
 import { TutorialProgressProvider } from './features/portal/TutorialProgressProvider';
+import { rememberUploadSignIn, restoreUploadAfterSignIn } from './features/navigation/upload-entry';
 import { SignInChoices } from './features/auth/SignInChoices';
 import {
   resourceKindLabels as kindLabel,
@@ -156,7 +157,8 @@ function relative(value: string | null) {
         : new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function App() {
+function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
+  const guestEntryRequested = useRef(enterWorkspaceFiles);
   const [data, setData] = useState<PortalData | null>(null),
     [routeLocation, setRouteLocation] = useState<WorkspaceRoute>(currentRoute),
     [error, setError] = useState(''),
@@ -364,15 +366,37 @@ function App() {
       });
     return () => controller.abort();
   }, [knownFileSystem, lookupKey, selectedResourceId, resolvedResourceKey, resourceLookupFailure]);
-  // Boot the workspace. When SSO is enabled the anonymous demo session is disabled, so we never
-  // auto-start one: we only try to use an existing (SSO) session and, failing that, show the
-  // sign-in screen. When SSO is unconfigured, the local demo session starts as before.
+  const { prepareNewGuest } = defaultFileSystem;
+  const startGuest = useCallback(async () => {
+    setGuestLoading(true);
+    setGuestError('');
+    try {
+      const guest = await workspaceApi.startGuestSession();
+      workspaceApi.selectWorkspace(guest.workspaceId);
+      const workspaceLoaded = refresh();
+      if (guest.initialFileSystemRegion) {
+        void prepareNewGuest(guest.workspaceId, guest.initialFileSystemRegion, workspaceLoaded);
+      }
+      if (guest.initialFileSystemRegion && currentRoute().page === 'overview')
+        setFreshGuestOverview(guest.workspaceId);
+      setSso((current) => ({ ...current, sessionKind: 'guest' }));
+      await workspaceLoaded;
+      setError('');
+    } catch {
+      setGuestError('Unable to start a temporary workspace. Please try again.');
+    } finally {
+      setGuestLoading(false);
+    }
+  }, [prepareNewGuest, refresh]);
   const start = useCallback(async () => {
+    let guestAvailable = false;
     try {
       setError('');
       setNeedsSignIn(false);
       const auth = await workspaceApi.authConfig();
       setSso(auth);
+      // A missing ID on older hosts requires discovery before starting a Guest.
+      guestAvailable = Boolean(auth.enabled && auth.guestEnabled && auth.workspaceId == null);
       void startAnalytics(auth).then(() => capturePage('workspace'));
       if (!auth.enabled) {
         const session = await workspaceApi.startSession();
@@ -385,37 +409,24 @@ function App() {
         // Distributed sessions must exchange their ticket. Older bundled hosts also use discovery.
         await workspaceApi.discoverWorkspace();
       }
+      guestAvailable = false;
+      if (auth.sessionKind === 'account' || auth.loginUrl) restoreUploadAfterSignIn();
       await refresh();
     } catch (e) {
       setError((e as Error).message);
-      setNeedsSignIn(e instanceof WorkspaceApiError && e.status === 401);
-    }
-  }, [refresh]);
-  async function startGuest() {
-    setGuestLoading(true);
-    setGuestError('');
-    try {
-      const guest = await workspaceApi.startGuestSession();
-      workspaceApi.selectWorkspace(guest.workspaceId);
-      const workspaceLoaded = refresh();
-      if (guest.initialFileSystemRegion) {
-        void defaultFileSystem.prepareNewGuest(
-          guest.workspaceId,
-          guest.initialFileSystemRegion,
-          workspaceLoaded,
-        );
+      const signedOut = e instanceof WorkspaceApiError && e.status === 401;
+      setNeedsSignIn(signedOut);
+      if (
+        signedOut &&
+        guestAvailable &&
+        guestEntryRequested.current &&
+        currentRoute().openForUpload
+      ) {
+        guestEntryRequested.current = false;
+        await startGuest();
       }
-      if (guest.initialFileSystemRegion && currentRoute().page === 'overview')
-        setFreshGuestOverview(guest.workspaceId);
-      setSso((current) => ({ ...current, sessionKind: 'guest' }));
-      await workspaceLoaded;
-      setError('');
-    } catch {
-      setGuestError('Unable to start a temporary workspace. Please try again.');
-    } finally {
-      setGuestLoading(false);
     }
-  }
+  }, [refresh, startGuest]);
   useEffect(() => {
     void start();
     const update = () => {
@@ -495,6 +506,7 @@ function App() {
       <Button
         variant="default"
         onClick={() => {
+          if (routeLocation.openForUpload) rememberUploadSignIn();
           window.location.href = sso.loginUrl || apiBaseUrl + sso.loginPath;
         }}
       >
@@ -511,7 +523,31 @@ function App() {
             Agent Workspace
           </Text>
         </div>
-        {showSignIn ? (
+        {showSignIn && routeLocation.openForUpload ? (
+          <>
+            <Heading level={1}>
+              {guestLoading ? 'Opening your files…' : 'Open Workspace Files'}
+            </Heading>
+            {guestLoading ? (
+              <Loader aria-label="Opening your workspace" />
+            ) : (
+              <>
+                <Text component="p">
+                  {sso.guestEnabled
+                    ? 'Use a temporary workspace for 24 hours or sign in to upload your CSV.'
+                    : 'Sign in to your workspace to upload your CSV.'}
+                </Text>
+                {guestError && <Text role="alert">{guestError}</Text>}
+                {sso.guestEnabled && (
+                  <Button variant="filled" onClick={() => void startGuest()}>
+                    Open temporary workspace
+                  </Button>
+                )}
+                {ssoButton}
+              </>
+            )}
+          </>
+        ) : showSignIn ? (
           <>
             <Heading level={1}>How would you like to work?</Heading>
             {sso.loginPath && (
@@ -599,10 +635,13 @@ function App() {
           ) : (
             <>
               {route === 'databases' && <Databases {...shared} routeLocation={routeLocation} />}
-              {route === 'files' && !routeLocation.fileLink && defaultFileSystem.preparing ? (
-                <FileSetupStatus setup={defaultFileSystem} />
-              ) : (
-                route === 'files' && <Files key={routeLocation.fileLink || 'files'} {...shared} />
+              {route === 'files' && (
+                <Files
+                  key={routeLocation.fileLink || 'files'}
+                  {...shared}
+                  setup={defaultFileSystem}
+                  openForUpload={routeLocation.openForUpload}
+                />
               )}
             </>
           )}
@@ -988,9 +1027,35 @@ function download(name: string, value: string, mime = 'text/plain') {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function Files(shared: Shared) {
+function Files({
+  openForUpload,
+  setup,
+  ...shared
+}: Shared & { openForUpload?: boolean; setup: FileSetup }) {
   const context = parseFileSystemLocation(location.hash);
   const systems = shared.data.resources.filter((resource) => resource.kind === 'filesystem');
+  const target =
+    openForUpload &&
+    (systems.find((system) => system.isDefault) ??
+      (systems.length === 1 &&
+      !shared.data.resourceNextCursor &&
+      !shared.data.resourceWindowTruncated
+        ? systems[0]
+        : undefined));
+  const targetId =
+    target && target.status === 'active' && !target.connectionError ? target.id : undefined;
+  useEffect(() => {
+    if (targetId) location.replace(fileSystemHash(targetId));
+  }, [targetId]);
+  if (
+    !context &&
+    (setup.preparing ||
+      (openForUpload &&
+        setup.error &&
+        !systems.some((system) => system.status === 'active' && !system.connectionError)))
+  )
+    return <FileSetupStatus setup={setup} />;
+  if (targetId) return <Text role="status">Opening your files…</Text>;
   if (!context)
     return (
       <ResourceCollectionPage
