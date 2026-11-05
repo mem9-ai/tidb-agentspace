@@ -53,6 +53,15 @@ impl GlobalGuest {
         self.directory.create_guest(&self.region).await
     }
 
+    pub(crate) async fn csv_guest(
+        &self,
+        key: &workspace_identity::CsvGuestKey,
+    ) -> Result<GuestRegistration> {
+        let guest = self.directory.open_csv_guest(&self.region, key).await?;
+        self.finish(&guest).await?;
+        Ok(guest)
+    }
+
     /// A successful result means regional policy and expiry intent were durably installed.
     /// A usable regional session and provider cleanup executor require separate integration.
     pub async fn finish(&self, guest: &GuestRegistration) -> Result<Registration> {

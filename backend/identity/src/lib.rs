@@ -75,6 +75,40 @@ pub struct GuestRegistration {
     pub registration: Registration,
 }
 
+/// A CSV capability selects its own Guest. The browser enrolls random v4 UUIDs.
+pub struct CsvGuestKey {
+    pub id: String,
+    bytes: [u8; 32],
+}
+
+impl CsvGuestKey {
+    pub fn parse(value: &str) -> Result<Self> {
+        let mut input = [0u8; 32];
+        hex::decode_to_slice(value, &mut input)
+            .map_err(|_| error(401, "CSV_CREDENTIAL_REQUIRED"))?;
+        let derive = |tag: &[u8]| -> [u8; 32] {
+            Sha256::new()
+                .chain_update(tag)
+                .chain_update(input)
+                .finalize()
+                .into()
+        };
+        let id = uuid::Builder::from_custom_bytes(
+            derive(b"drive9/csv/id/v1")[..16]
+                .try_into()
+                .expect("16 bytes"),
+        )
+        .into_uuid();
+        Ok(Self {
+            id: id.to_string(),
+            bytes: derive(b"drive9/csv/guest/v1"),
+        })
+    }
+    pub fn secret(&self) -> String {
+        hex::encode(self.bytes)
+    }
+}
+
 /// Backed by the Global Meta authority; no Region-to-Global call is made by this module.
 #[derive(Clone)]
 pub struct Directory {
@@ -412,17 +446,61 @@ impl Directory {
     }
 
     async fn create_guest_at(&self, region: &str, created_at: i64) -> Result<GuestRegistration> {
+        let id = Uuid::new_v4().to_string();
+        let mut bytes = [0u8; 32];
+        getrandom::fill(&mut bytes).map_err(|_| error(503, "RANDOM_UNAVAILABLE"))?;
+        self.create_guest_with_secret(region, created_at, id, &bytes)
+            .await
+    }
+
+    /// The native CSV entry picks a domain-separated identity from a project capability.
+    /// Conditional insertion preserves the first absolute expiry across retries and races.
+    pub async fn open_csv_guest(
+        &self,
+        region: &str,
+        key: &CsvGuestKey,
+    ) -> Result<GuestRegistration> {
+        let existing = async || -> Result<GuestRegistration> {
+            let (registration, _, expires_at) = self.guest_status(&key.id, &key.secret()).await?;
+            if registration.region_id != region {
+                return Err(error(409, "GUEST_REGION_MISMATCH"));
+            }
+            Ok(GuestRegistration {
+                guest_id: key.id.clone(),
+                secret: key.secret(),
+                registration,
+                expires_at,
+            })
+        };
+        match existing().await {
+            Ok(guest) => return Ok(guest),
+            Err(e) if e.code == "GUEST_UNAUTHORIZED" => {}
+            Err(e) => return Err(e),
+        }
+        match self
+            .create_guest_with_secret(region, now()?, key.id.clone(), &key.bytes)
+            .await
+        {
+            Err(e) if e.code == "META_CONFLICT" => existing().await,
+            other => other,
+        }
+    }
+
+    async fn create_guest_with_secret(
+        &self,
+        region: &str,
+        created_at: i64,
+        guest_id: String,
+        bytes: &[u8; 32],
+    ) -> Result<GuestRegistration> {
         if !valid_region(region) {
             return Err(error(400, "INVALID_REGION"));
         }
         let expires_at = created_at
             .checked_add(86_400)
             .ok_or_else(|| error(503, "CLOCK_UNAVAILABLE"))?;
-        let guest_id = Uuid::new_v4().to_string();
-        let mut secret_bytes = [0u8; 32];
-        getrandom::fill(&mut secret_bytes).map_err(|_| error(503, "RANDOM_UNAVAILABLE"))?;
-        let secret = hex::encode(secret_bytes);
-        let verifier = hex::encode(Sha256::digest(secret_bytes));
+        let secret = hex::encode(bytes);
+        let verifier = hex::encode(Sha256::digest(bytes));
         let registration = Registration {
             user_id: Uuid::new_v4().to_string(),
             organization_id: Uuid::new_v4().to_string(),
@@ -972,6 +1050,27 @@ pub(crate) mod tests {
             .unwrap();
         assert!(recovered == again);
         assert_eq!(metadata.groups.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn csv_capabilities_converge_and_expired_bindings_cannot_reenroll() {
+        let dir = Directory::open(Arc::new(MemoryMeta::default()))
+            .await
+            .unwrap();
+        let key = CsvGuestKey::parse(&"73".repeat(32)).unwrap();
+        let (a, b) = tokio::join!(
+            dir.open_csv_guest("region:a", &key),
+            dir.open_csv_guest("region:a", &key)
+        );
+        let a = a.unwrap();
+        let b = b.unwrap();
+        assert_eq!(a.registration.workspace_id, b.registration.workspace_id);
+        assert_eq!(a.expires_at, b.expires_at);
+        let expired = CsvGuestKey::parse(&"9a".repeat(32)).unwrap();
+        dir.create_guest_with_secret("region:a", 100, expired.id.clone(), &expired.bytes)
+            .await
+            .unwrap();
+        assert!(dir.open_csv_guest("region:a", &expired).await.is_err());
     }
 
     #[tokio::test]

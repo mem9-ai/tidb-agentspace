@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 
 const base = new URL('../console/public/skills/drive9-workspace/', import.meta.url);
 const hashes = {};
-for (const name of ['SKILL.md', 'report.py']) {
+for (const name of ['SKILL.md', 'report.py', 'private_csv.py']) {
   hashes[name] = createHash('sha256')
     .update(await readFile(new URL(name, base)))
     .digest('hex');

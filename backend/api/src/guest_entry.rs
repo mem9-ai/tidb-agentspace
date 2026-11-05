@@ -69,6 +69,37 @@ impl GuestEntry {
         })
     }
 
+    async fn admit(&self, peer: IpAddr) -> Result<()> {
+        let current = Instant::now();
+        {
+            let mut attempts = self.attempts.lock().await;
+            attempts
+                .retain(|_, (start, _)| current.duration_since(*start) < Duration::from_secs(60));
+            if attempts.len() >= 4096 && !attempts.contains_key(&peer) {
+                return Err(ServiceError::new(429, "GUEST_RATE_LIMITED"));
+            }
+            let attempt = attempts.entry(peer).or_insert((current, 0));
+            if attempt.1 >= 5 {
+                return Err(ServiceError::new(429, "GUEST_RATE_LIMITED"));
+            }
+            attempt.1 += 1;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn csv_guest(
+        &self,
+        key: &workspace_identity::CsvGuestKey,
+        peer: IpAddr,
+    ) -> Result<workspace_identity::GuestRegistration> {
+        let signup = self
+            .signup
+            .as_ref()
+            .ok_or_else(|| ServiceError::new(503, "GUEST_SIGNUP_UNAVAILABLE"))?;
+        self.admit(peer).await?;
+        signup.csv_guest(key).await
+    }
+
     /// `peer` must be the actual socket peer, never a client-controlled forwarded header.
     /// A valid regional cookie resumes the same Guest without Global or a new expiry.
     pub async fn enter(&self, headers: &HeaderMap, peer: IpAddr) -> Result<GuestEntryResult> {
@@ -97,20 +128,7 @@ impl GuestEntry {
             .signup
             .as_ref()
             .ok_or_else(|| ServiceError::new(503, "GUEST_SIGNUP_UNAVAILABLE"))?;
-        let current = Instant::now();
-        {
-            let mut attempts = self.attempts.lock().await;
-            attempts
-                .retain(|_, (start, _)| current.duration_since(*start) < Duration::from_secs(60));
-            if attempts.len() >= 4096 && !attempts.contains_key(&peer) {
-                return Err(ServiceError::new(429, "GUEST_RATE_LIMITED"));
-            }
-            let attempt = attempts.entry(peer).or_insert((current, 0));
-            if attempt.1 >= 5 {
-                return Err(ServiceError::new(429, "GUEST_RATE_LIMITED"));
-            }
-            attempt.1 += 1;
-        }
+        self.admit(peer).await?;
         let guest = signup.begin().await?;
         let registration = signup.finish(&guest).await?;
         let cookie = self

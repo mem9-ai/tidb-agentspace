@@ -101,6 +101,12 @@ test('original Studio link opens the latest saved report without a session @visu
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   if (process.env.VISUAL_SCREENSHOTS)
     await page.screenshot({ path: testInfo.outputPath('report.png'), fullPage: true });
+  const privatePrompt = page.getByRole('button', { name: 'Copy prompt for my CSV' });
+  await privatePrompt.click();
+  const own = await page.evaluate(() => navigator.clipboard.readText());
+  expect(own).toContain('Resume the existing private CSV workspace');
+  expect(own).toContain('Use only the file I select');
+  expect(own).not.toContain(grant);
 });
 
 test('viewer handles unavailable, invalid and expired links and clears an open report at expiry', async ({

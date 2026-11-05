@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { privateCsvCases } from './test-support/private-csv-cases.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -270,6 +271,7 @@ test(
       ).status,
       401,
     );
+    const resumeCsv = await privateCsvCases(origin, first);
     await stop();
     await write(apiFile, { ...apiConfig, initializeWorkspace: false });
     await write(globalFile, {
@@ -277,6 +279,7 @@ test(
       s3: { ...globalConfig.s3, prefix: 'intentionally-offline-root' },
     });
     await start();
+    await resumeCsv();
     const resumedSample = await request(
       `/api/portal/v1/workspaces/${sampleGuest.workspaceId}/sales-sample-attempts/${sample.id}`,
       { cookie: sampleGuest.cookie },
