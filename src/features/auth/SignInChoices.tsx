@@ -52,8 +52,8 @@ export function SignInChoices({
             </div>
           </Group>
           <Text component="p">
-            Paste a prompt into Codex or Pi. Your agent analyzes the sales sample and saves a
-            report.
+            Paste the prompt into Claude Code, Cursor, Codex, Pi, or another local coding agent.
+            Your agent analyzes the sales sample and gives you a report link.
           </Text>
           <CopyAgentTrial />
         </Paper>

@@ -82,7 +82,8 @@ cleanup that the service has not implemented.
 
 On the signed-out Studio page, present the two places a person can work. For the agent path,
 name the human action (copy and paste the prompt) and the agent outcome (analyze the sample
-and save a report). Group browser actions with the browser path and distinguish account sign-in
+and save a report). Present agent names as examples. Make the prompt usable from a fresh
+project chat, including tools that open a skill by URL. Group browser actions with the browser path and distinguish account sign-in
 from the two ways to try Studio.
 
 **People and agent onboarding (owner direction, 2026-11-03):** a Guest can explore the US sales

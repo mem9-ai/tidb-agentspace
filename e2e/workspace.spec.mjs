@@ -68,7 +68,7 @@ test('a person can copy the agent prompt manually when clipboard access is denie
   const before = workspace.requests.length;
   await copyPrompt.click();
   const manual = agent.getByRole('textbox', {
-    name: 'Select and copy the prompt into Codex or Pi',
+    name: 'Select and copy the prompt for your coding agent',
   });
   await expect(manual).toBeVisible();
   await expect(manual).toHaveValue(
@@ -135,8 +135,11 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
   await expect(guest).toHaveAccessibleDescription('Workspace access expires after 24 hours.');
   await expect(browser.getByText('Workspace access expires after 24 hours.')).toBeVisible();
   await expect(
-    agent.getByText(/Paste a prompt into Codex or Pi. Your agent analyzes/),
+    agent.getByText(/Claude Code, Cursor, Codex, Pi, or another local coding agent/),
   ).toBeVisible();
+  await expect(agent).toContainText(
+    'Your agent analyzes the sales sample and gives you a report link.',
+  );
   await expect(agent.getByText('No account needed · 48-hour trial')).toBeVisible();
   const account = page.getByRole('button', { name: 'Continue with TiDB Account' });
   await expect(account).toBeEnabled();
@@ -150,9 +153,7 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
   const beforeCopy = workspace.requests.length;
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await agent.getByRole('button', { name: 'Copy prompt' }).click();
-  await expect(page.getByRole('status')).toHaveText(
-    'Copied. Paste into Codex or Pi in your project.',
-  );
+  await expect(page.getByRole('status')).toHaveText('Copied. Paste it into your project chat.');
   const instruction = await page.evaluate(() => navigator.clipboard.readText());
   expect(instruction).toContain('https://drive9.ai/studio/skills/drive9-workspace/SKILL.md');
   expect(instruction).toContain('save a report');
