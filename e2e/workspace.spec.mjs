@@ -47,66 +47,40 @@ test('cloud sign-in offers TiDB Account and clearly marks Guest access unavailab
   await expect(page).toHaveURL(/\/api\/auth\/tidbcloud\/login$/);
 });
 
-test('workspace discovery can proceed while hosted sign-in configuration is pending', async ({
+test('signed-out and signed-in browsers reuse authoritative session discovery', async ({
   page,
-  context,
   workspace,
 }) => {
   workspace.requireSignIn({ guestEnabled: true });
-  let releaseConfig;
-  const configReady = new Promise((resolve) => {
-    releaseConfig = resolve;
-  });
-  await context.route('**/api/auth/config', async (route) => {
-    await configReady;
-    await route.fallback();
-  });
-  try {
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await expect
-      .poll(() =>
-        workspace.requests.some((request) => request.path === '/api/portal/v1/workspaces'),
-      )
-      .toBe(true);
-  } finally {
-    releaseConfig();
-  }
+  await page.goto('/');
   await expect(page.getByRole('button', { name: 'Try without an account' })).toBeVisible();
+  workspace.signInAsAccount();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Try with an agent' })).toBeEnabled();
+  expect(workspace.requests.filter((r) => r.path === '/api/portal/v1/workspaces')).toHaveLength(0);
 });
 
-test('failed auth configuration cancels discovery before retrying', async ({
+test('failed auth configuration can retry and supports hosts requiring separate discovery', async ({
   page,
   context,
   workspace,
 }) => {
   workspace.requireSignIn({ guestEnabled: true });
-  let firstConfig = true;
-  let firstDiscovery = true;
-  let releaseDiscovery;
-  const blocked = new Promise((resolve) => {
-    releaseDiscovery = resolve;
-  });
-  await context.route('**/api/auth/config', async (route) => {
-    if (firstConfig) {
-      firstConfig = false;
-      await route.abort('failed');
-    } else await route.fallback();
-  });
-  await context.route('**/api/portal/v1/workspaces', async (route) => {
-    if (firstDiscovery) {
-      firstDiscovery = false;
-      await blocked;
+  let first = true;
+  await context.route('**/api/auth/config', (route) => {
+    if (first) {
+      first = false;
+      return route.abort('failed');
     }
-    await route.fallback().catch(() => undefined);
+    return route.fulfill({
+      json: { enabled: true, guestEnabled: true, loginPath: '/api/auth/tidbcloud/login' },
+    });
   });
-  try {
-    await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Couldn’t open your workspace' })).toBeVisible();
-    await page.getByRole('button', { name: 'Try again' }).click();
-    await expect(page.getByRole('button', { name: 'Try without an account' })).toBeVisible();
-  } finally {
-    releaseDiscovery();
-  }
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Couldn’t open your workspace' })).toBeVisible();
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect(page.getByRole('button', { name: 'Try without an account' })).toBeVisible();
+  expect(workspace.requests.filter((r) => r.path === '/api/portal/v1/workspaces')).toHaveLength(1);
 });
 
 test('@visual Guest sign-in opens the Workspace when the server enables it', async ({

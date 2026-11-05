@@ -22,7 +22,7 @@ const collections = [
   },
 ];
 
-test('a new source editor waits for its saved content before accepting a draft and receiving focus', async ({
+test('a new source editor waits for the create receipt before accepting a draft and receiving focus', async ({
   page,
   context,
   workspace,
@@ -35,14 +35,8 @@ test('a new source editor waits for its saved content before accepting a draft a
   await context.route('**/api/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (
-      url.pathname.endsWith('/files/content') &&
-      url.searchParams.get('path') === '/agent-notes.md'
-    ) {
-      await pending;
-      return route.fulfill({ json: { content: '', size: 0 } });
-    }
     if (!url.pathname.endsWith('/files') || request.method() !== 'PUT') return route.fallback();
+    await pending;
     const input = request.postDataJSON();
     const saved = {
       id: 'new-source',
@@ -63,12 +57,12 @@ test('a new source editor waits for its saved content before accepting a draft a
     await dialog.getByRole('textbox', { name: 'Name', exact: true }).fill('agent-notes.md');
     await dialog.getByRole('button', { name: 'Create file', exact: true }).click();
     const source = page.getByRole('textbox', { name: 'File content', exact: true });
-    await expect(source).toBeVisible();
-    await expect(source).toBeDisabled();
-    await expect(page.getByText('Loading saved file…', { exact: true })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Create file', exact: true })).toBeDisabled();
+    await expect(source).toHaveCount(0);
     release();
     await expect(source).toBeEnabled();
     await expect(source).toBeFocused();
+    expect(workspace.requests.filter((r) => r.path.endsWith('/files/content'))).toHaveLength(0);
     await source.fill('# Agent notes\n\nKeep this draft.');
     await page.getByRole('button', { name: 'All file systems', exact: true }).click();
     await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
@@ -95,7 +89,7 @@ test('new files open for editing, lock creation, protect drafts and survive summ
   await context.route('**/api/**', async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
-    if (path.endsWith('/bootstrap') && request.method() === 'GET' && failSummary) {
+    if (path.endsWith('/usage') && request.method() === 'GET' && failSummary) {
       failSummary = false;
       return route.fulfill({
         status: 503,
@@ -312,13 +306,12 @@ test('@visual resource pages distinguish unloaded collections and resolve deep l
   );
   const beforeSelection = workspace.requests.length;
   await workspace.open('#files?resourceId=fs_fixture');
-  await expect
-    .poll(() =>
-      workspace.requests
-        .slice(beforeSelection)
-        .some((request) => request.path.endsWith('/resources/fs_fixture')),
-    )
-    .toBe(true);
+  await expect(page.getByRole('button', { name: 'Create file or folder' })).toBeVisible();
+  expect(
+    workspace.requests
+      .slice(beforeSelection)
+      .filter((r) => r.path.endsWith('/resources/fs_fixture')),
+  ).toHaveLength(0);
   const beforeReload = workspace.requests.length;
   await page.reload();
   await expect(page.getByText('File System unavailable')).toHaveCount(0);

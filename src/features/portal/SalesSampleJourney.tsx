@@ -26,6 +26,7 @@ export function SalesSampleJourney({
   sampleKey,
   isAuthorizing,
   preparingWorkspace,
+  freshGuest,
   showCompleted,
 }: {
   data: Data;
@@ -35,6 +36,7 @@ export function SalesSampleJourney({
   sampleKey?: { resourceId: string; suitable: boolean; pending: boolean; launchPrepared?: boolean };
   isAuthorizing: boolean;
   preparingWorkspace: boolean;
+  freshGuest: boolean;
   showCompleted: boolean;
 }) {
   const [attempt, setAttempt] = useState<SalesSampleAttempt | null>(null);
@@ -122,8 +124,9 @@ export function SalesSampleJourney({
     }
   }, [showCompleted]);
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (freshGuest) setLoading(false);
+    else void load();
+  }, [load, freshGuest]);
   useEffect(() => {
     if (sampleKey && sampleKey.resourceId === attempt?.resourceId && sampleKey.suitable) {
       setMode('agent');
@@ -289,7 +292,12 @@ export function SalesSampleJourney({
       setAttempt(result.data);
       setUncertain(false);
       try {
-        await refresh();
+        // A ready sample in an existing live File System changes only file content.
+        if (
+          defaultFileSystem?.provider !== 'drive9-anonymous' ||
+          result.data.resourceId !== defaultFileSystem.id
+        )
+          await refresh();
       } catch {
         setError(
           'The sample was saved, but the workspace could not refresh. Check its status to continue.',

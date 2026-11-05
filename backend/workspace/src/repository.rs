@@ -564,31 +564,24 @@ impl Repository {
         if projection.events {
             previous.extend(self.records("state/events/").await?);
         }
-        for key in ["state/workspace", "state/profile", "state/queryCount"] {
-            let value = self.get(key).await?;
-            if !value.is_null() {
-                previous.insert(key.into(), value);
-            }
-        }
-        let selected_file_resources = projection.resources.clone();
         let mut ids = projection
             .resources
             .iter()
             .cloned()
             .collect::<std::collections::BTreeSet<_>>();
+        let mut paths: Vec<String> = ["state/workspace", "state/profile", "state/queryCount"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let mut statistic_owners = BTreeMap::new();
         if projection.statistics {
             for id in &ids {
                 let key = format!(
                     "state/resourceQueryCounts/{}",
                     hex::encode(Sha256::digest(id.as_bytes()))
                 );
-                let value = self.get(&key).await?;
-                if !value.is_null() {
-                    if value["value"]["mapKey"] != *id {
-                        return Err(error("META_RECORD_CORRUPT"));
-                    }
-                    previous.insert(key, value);
-                }
+                statistic_owners.insert(key.clone(), id.clone());
+                paths.push(key);
             }
         }
         if projection.events {
@@ -603,18 +596,18 @@ impl Repository {
                     }),
             );
         }
-        let paths = ids
-            .into_iter()
-            .filter(|id| {
-                id != "*"
-                    && !id.is_empty()
-                    && id.len() <= 496
-                    && id
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b"/_-.:".contains(&b))
-            })
-            .map(|id| format!("state/resources/{id}"))
-            .collect::<Vec<_>>();
+        paths.extend(
+            ids.into_iter()
+                .filter(|id| {
+                    id != "*"
+                        && !id.is_empty()
+                        && id.len() <= 496
+                        && id
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"/_-.:".contains(&b))
+                })
+                .map(|id| format!("state/resources/{id}")),
+        );
         for batch in paths.chunks(512) {
             let result = self
                 .call(MetaRequest::Get {
@@ -626,18 +619,25 @@ impl Repository {
             for key in batch {
                 let value = &result["records"][key];
                 if !value.is_null() {
+                    if let Some(owner) = statistic_owners.get(key)
+                        && value["value"]["mapKey"].as_str() != Some(owner.as_str())
+                    {
+                        return Err(error("META_RECORD_CORRUPT"));
+                    }
                     previous.insert(key.clone(), value.clone());
                 }
             }
         }
         if projection.files {
-            let filesystems = selected_file_resources
-                .into_iter()
+            let filesystems = projection
+                .resources
+                .iter()
                 .filter(|id| {
                     previous
                         .get(&format!("state/resources/{id}"))
                         .is_some_and(|record| record["value"]["record"]["kind"] == "filesystem")
                 })
+                .cloned()
                 .collect::<std::collections::BTreeSet<_>>()
                 .into_iter()
                 .collect::<Vec<_>>();
@@ -1469,9 +1469,9 @@ mod concurrency_tests {
             Box::pin(async move {
                 match request {
                     MetaRequest::Get { keys, .. } => {
-                        let should_pause = (keys == ["state/resources/a"]
-                            || keys == ["state/keys/key-revoke"])
-                            && self.first.swap(false, Ordering::AcqRel);
+                        let should_pause = keys.iter().any(|key| {
+                            matches!(key.as_str(), "state/resources/a" | "state/keys/key-revoke")
+                        }) && self.first.swap(false, Ordering::AcqRel);
                         let records = {
                             let values = self.values.lock().unwrap();
                             keys.into_iter()

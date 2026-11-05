@@ -1806,24 +1806,25 @@ async fn auth_route(
             && regional_account::RegionalAccount::has_cookie(headers)
         {
             match runtime.account.authenticate(headers).await {
-                Ok(_) => true,
-                Err(e) if e.status == 401 || e.code == "POLICY_DENIED" => false,
+                Ok(account) => Some(account.workspace_id),
+                Err(e) if e.status == 401 || e.code == "POLICY_DENIED" => None,
                 Err(e) => return error(e),
             }
         } else {
-            legacy_account
+            None
         };
-        let guest = if !account
+        let guest = if account.is_none()
+            && !legacy_account
             && let Some(runtime) = &app.guest_runtime
             && regional_guest::RegionalGuest::has_cookie(headers)
         {
             match runtime.region.authenticate(headers).await {
-                Ok(_) => true,
-                Err(e) if e.status == 401 || e.code == "POLICY_DENIED" => false,
+                Ok(guest) => Some(guest.workspace_id),
+                Err(e) if e.status == 401 || e.code == "POLICY_DENIED" => None,
                 Err(e) => return error(e),
             }
         } else {
-            false
+            None
         };
         let mut config = if app.sso.is_some() {
             json!({"enabled":true,"provider":"tidbcloud","label":"Continue with TiDB Account","loginPath":"/api/auth/tidbcloud/login","logoutPath":"/api/auth/tidbcloud/logout","guestEnabled":app.guest_runtime.as_ref().is_some_and(|runtime| runtime.guest_enabled),"guestCleanupEnabled":app.guest_runtime.is_some()})
@@ -1834,12 +1835,25 @@ async fn auth_route(
             config["globalApi"] = json!(global);
             config["regionId"] = json!(app.config.authority_id);
         }
-        if account {
+        if let Some(id) = account {
             config["sessionKind"] = json!("account");
-        } else if guest {
+            config["workspaceId"] = json!(id);
+        } else if legacy_account {
+            config["sessionKind"] = json!("account");
+            if app.guest_runtime.is_none() {
+                config["workspaceId"] = json!(app.config.workspace_id);
+            }
+        } else if let Some(id) = guest {
             config["sessionKind"] = json!("guest");
+            config["workspaceId"] = json!(id);
+        } else {
+            config["workspaceId"] = Value::Null;
         }
-        return Json(config).into_response();
+        return (
+            [(axum::http::header::CACHE_CONTROL, "no-store")],
+            Json(config),
+        )
+            .into_response();
     }
     if path == "/api/auth/guest" && *method == Method::POST {
         let Some(runtime) = &app.guest_runtime else {
@@ -1869,7 +1883,15 @@ async fn auth_route(
                             .await;
                     }
                 }
-                let mut response = Json(json!({"workspaceId":result.workspace_id})).into_response();
+                let mut body = json!({"workspaceId":result.workspace_id});
+                if result.set_cookie.is_some()
+                    && let Some(product) = &app.product
+                    && let Some(region) =
+                        product.capabilities()["filesystem"]["regions"][0].as_str()
+                {
+                    body["initialFileSystemRegion"] = json!(region);
+                }
+                let mut response = Json(body).into_response();
                 if let Some(value) = result.set_cookie {
                     response.headers_mut().append("Set-Cookie", value);
                 }

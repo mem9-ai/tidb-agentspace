@@ -56,6 +56,7 @@ export type SsoAuthConfig = {
   guestEnabled?: boolean;
   guestCleanupEnabled?: boolean;
   sessionKind?: 'account' | 'guest';
+  workspaceId?: string | null;
   provider?: string;
   label?: string;
   loginPath?: string;
@@ -207,9 +208,8 @@ export const workspaceApi = {
   startSession: () => responseData(sessionClient.POST('/api/session', { body: {} })),
   startGuestSession: () => responseData(sessionClient.POST('/api/auth/guest')),
   endGuestSession: () => responseData(sessionClient.POST('/api/auth/guest/logout')),
-  selectGuestWorkspace: (id: string) => {
-    // The ID comes from the authenticated guest enrollment response; the subsequent bootstrap
-    // still enforces the browser session and workspace boundary on the server.
+  selectWorkspace: (id: string) => {
+    // Session discovery selects a route. Every workspace request still authenticates on the server.
     const selected = firstWorkspaceId({ data: [{ id }] });
     clearWorkspace();
     workspaceId = selected;

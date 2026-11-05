@@ -1506,6 +1506,11 @@ paths['/api/auth/config'] = {
             guestEnabled: { type: 'boolean' },
             guestCleanupEnabled: { type: 'boolean' },
             sessionKind: { type: 'string', enum: ['account', 'guest'] },
+            workspaceId: {
+              type: ['string', 'null'],
+              description:
+                'Workspace selected by this verified browser session, or null for a signed-out browser. Hosts requiring separate discovery omit this field.',
+            },
             provider: { const: 'tidbcloud' },
             label: str,
             loginPath: str,
@@ -1673,7 +1678,19 @@ paths['/api/auth/guest'] = {
     description:
       'Start or resume a Guest session from a trusted origin. A new session sets a secure, HttpOnly, SameSite=Strict cookie with an absolute expiry.',
     responses: {
-      200: response(object({ workspaceId: str })),
+      200: response(
+        object(
+          {
+            workspaceId: str,
+            initialFileSystemRegion: {
+              ...regionSchema,
+              description:
+                'Configured first File System location, supplied only on fresh enrollment. The Console may start the owner-only, idempotent initial resource request while loading the Workspace.',
+            },
+          },
+          ['workspaceId'],
+        ),
+      ),
       404: response(ref('Error'), 'Guest sign-in is disabled'),
       default: response(ref('Error'), 'Guest sign-in unavailable or denied'),
     },

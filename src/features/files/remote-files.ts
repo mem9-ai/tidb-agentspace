@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { contentUrl, workspaceApi, type WorkspaceFile } from '../../api/client';
 export type { WorkspaceFile } from '../../api/client';
@@ -13,7 +13,10 @@ export function useRemoteFiles(resourceId: string, path: string, enabled: boolea
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const generation = useRef(0);
+  const renderedGeneration = generation.current;
   useEffect(() => {
+    generation.current++;
     if (!enabled) return;
     const controller = new AbortController();
     setLoading(true);
@@ -42,10 +45,12 @@ export function useRemoteFiles(resourceId: string, path: string, enabled: boolea
   async function loadMore() {
     const cursor = listing.nextCursor;
     if (!cursor || loading) return;
+    const request = ++generation.current;
     setLoading(true);
     setError('');
     try {
       const result = await workspaceApi.listFiles(resourceId, path, undefined, cursor);
+      if (request !== generation.current) return;
       setListing((current) => {
         if (
           current.resourceId !== resourceId ||
@@ -65,19 +70,45 @@ export function useRemoteFiles(resourceId: string, path: string, enabled: boolea
         };
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to load files.');
+      if (request === generation.current)
+        setError(cause instanceof Error ? cause.message : 'Unable to load files.');
     } finally {
-      setLoading(false);
+      if (request === generation.current) setLoading(false);
     }
   }
   return {
     files: listing.resourceId === resourceId && listing.path === path ? listing.files : [],
-    loading,
+    loading:
+      loading ||
+      (enabled && !error && (listing.resourceId !== resourceId || listing.path !== path)),
     error,
     nextCursor:
       listing.resourceId === resourceId && listing.path === path ? listing.nextCursor : null,
     earlier: listing.resourceId === resourceId && listing.path === path && listing.earlier,
     loadMore,
+    acceptSaved(file: WorkspaceFile) {
+      const parent = file.path.slice(0, file.path.lastIndexOf('/')) || '/';
+      if (file.resourceId !== resourceId || parent !== path) return;
+      // Only a complete, settled directory can absorb a write without refreshing its cursor.
+      if (
+        renderedGeneration !== generation.current ||
+        loading ||
+        error ||
+        listing.resourceId !== resourceId ||
+        listing.path !== path ||
+        listing.nextCursor ||
+        listing.earlier ||
+        listing.files.length >= 32
+      ) {
+        setRevision((n) => n + 1);
+        return;
+      }
+      setListing((current) =>
+        current.resourceId === resourceId && current.path === path
+          ? { ...current, files: [...current.files.filter((old) => old.path !== file.path), file] }
+          : current,
+      );
+    },
     refresh: () => setRevision((n) => n + 1),
   };
 }

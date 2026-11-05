@@ -121,6 +121,10 @@ async fn main() -> anyhow::Result<()> {
         );
         let cookie = set_cookie.split(';').next().unwrap().to_string();
         let body: Value = response.json().await?;
+        anyhow::ensure!(
+            body["initialFileSystemRegion"] == "aws-ap-southeast-1",
+            "missing initial placement"
+        );
         let id = body["workspaceId"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("missing Workspace"))?
@@ -146,6 +150,10 @@ async fn main() -> anyhow::Result<()> {
         );
         let body: Value = response.json().await?;
         anyhow::ensure!(body["workspaceId"] == *id, "Guest was recreated");
+        anyhow::ensure!(
+            body.get("initialFileSystemRegion").is_none(),
+            "resumed Guest offered first-use setup"
+        );
         let body: Value = call(
             reqwest::Method::GET,
             "/api/portal/v1/workspaces".into(),

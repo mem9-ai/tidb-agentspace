@@ -121,21 +121,27 @@ impl Product {
         id: Option<(&str, Option<&str>)>,
     ) -> Result<(Principal, Value)> {
         let p = self.workspace.authenticate(credential).await?;
-        p.scope(scope)?;
-        let value = if let Some((id, kind)) = id {
-            let resource = self.workspace.repository().resource(id).await?;
-            let r = p.resource(&json!({"resources":[resource]}), id, kind)?;
-            if retired_database(&r) {
-                return Err(err(404, "NOT_FOUND"));
-            }
-            if r["status"] == "deleting" || r["status"] == "deleted" {
-                return Err(err(409, "RESOURCE_DELETING"));
-            }
-            r
-        } else {
-            return Err(err(500, "RESOURCE_CONTEXT_REQUIRED"));
-        };
+        let value = self.authorized_resource(&p, scope, id).await?;
         Ok((p, value))
+    }
+
+    async fn authorized_resource(
+        &self,
+        p: &Principal,
+        scope: &str,
+        selection: Option<(&str, Option<&str>)>,
+    ) -> Result<Value> {
+        p.scope(scope)?;
+        let (id, kind) = selection.ok_or_else(|| err(500, "RESOURCE_CONTEXT_REQUIRED"))?;
+        let resource = self.workspace.repository().resource(id).await?;
+        let r = p.resource(&json!({"resources":[resource]}), id, kind)?;
+        if retired_database(&r) {
+            return Err(err(404, "NOT_FOUND"));
+        }
+        if r["status"] == "deleting" || r["status"] == "deleted" {
+            return Err(err(409, "RESOURCE_DELETING"));
+        }
+        Ok(r)
     }
     pub fn capabilities(&self) -> Value {
         let c = &self.providers.config;
@@ -288,6 +294,27 @@ impl Product {
             } else {
                 _admitted.push(self.lifecycle[index].read().await);
             }
+        }
+        if matches!(
+            (method, route),
+            ("GET", "/files" | "/files/metadata" | "/files/content")
+                | ("PUT", "/files" | "/files/content")
+                | ("DELETE", "/files/entry")
+        ) {
+            return self
+                .files(
+                    &credential,
+                    files::FileRequest {
+                        method,
+                        route,
+                        query,
+                        input,
+                        raw,
+                        if_match,
+                        if_none_match,
+                    },
+                )
+                .await;
         }
         let p = self.workspace.authenticate(&credential).await?;
         let actor_value = if p.owner {
@@ -559,28 +586,6 @@ impl Product {
                 Reply::Json(
                     json!({"data":data,"mode":"demo","queryCount":count,"queryCountScope":if p.has("*"){"workspace"}else{"page"},"nextCursor":next}),
                 )
-            }
-            ("GET", "/files")
-            | ("PUT", "/files")
-            | ("DELETE", "/files/entry")
-            | ("GET", "/files/metadata")
-            | ("GET", "/files/content")
-            | ("PUT", "/files/content") => {
-                return self
-                    .files(
-                        &credential,
-                        &p,
-                        files::FileRequest {
-                            method,
-                            route,
-                            query,
-                            input,
-                            raw,
-                            if_match,
-                            if_none_match,
-                        },
-                    )
-                    .await;
             }
             ("POST", "/queries") => Reply::Json(self.query(&credential, &p, &input).await?),
             ("GET", "/file-analyses/capabilities")

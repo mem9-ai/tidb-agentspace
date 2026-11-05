@@ -30,3 +30,5 @@ does not by itself prove physical deletion. No change here adds a provider recon
 prewarming, metering, or a performance guarantee. Verify concurrent entry and replay, owner-only
 initial creation, prior-history and deleted-resource behavior, target grants, file conflicts, first
 use and returning journeys, and real-provider provisioning plus deletion separately from mocks.
+
+[ADR 0051](0051-guest-workspace-entry.md) specifies concurrent first-use setup and receipt handling.
