@@ -63,8 +63,10 @@ test('a person can copy the agent prompt manually when clipboard access is denie
     }),
   );
   const agent = page.getByRole('region', { name: 'With your coding agent' });
+  const copyPrompt = agent.getByRole('button', { name: 'Copy prompt' });
+  await expect(copyPrompt).toBeEnabled();
   const before = workspace.requests.length;
-  await agent.getByRole('button', { name: 'Copy prompt' }).click();
+  await copyPrompt.click();
   const manual = agent.getByRole('textbox', {
     name: 'Select and copy the prompt into Codex or Pi',
   });
