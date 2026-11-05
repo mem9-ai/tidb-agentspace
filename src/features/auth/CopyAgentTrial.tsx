@@ -32,7 +32,7 @@ export function CopyAgentTrial() {
       </Button>
       {result === 'manual' && (
         <Textarea
-          label="Select and copy the prompt into Codex or Pi"
+          label="Select and copy the prompt for your coding agent"
           readOnly
           autosize
           value={trialInstruction}
@@ -41,7 +41,7 @@ export function CopyAgentTrial() {
       )}
       <Text size="sm" ta="center" role="status">
         {result === 'copied'
-          ? 'Copied. Paste into Codex or Pi in your project.'
+          ? 'Copied. Paste it into your project chat.'
           : 'No account needed · 48-hour trial'}
       </Text>
     </Stack>
