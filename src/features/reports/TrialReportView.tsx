@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Button, Stack, Text, Title } from '@tidbcloud/uikit';
+import { Button, Paper, Stack, Text, Title } from '@tidbcloud/uikit';
+import { TrialPrompt } from './TrialPrompt';
 import './trial-report.css';
 
 type Rows = [string, number][];
@@ -58,12 +59,35 @@ function Report({ report }: { report: SalesReport }) {
     <>
       <Text size="sm" c="var(--text-secondary)">
         Public US sales sample · Revision {report.revision}
+        {top && ' · Complete'}
       </Text>
       <Title order={1}>US sales report</Title>
       <p className="report-lead">
         <strong>{leader}</strong> leads with <strong>{money.format(sales)}</strong> in sales,{' '}
         {share(sales, total)} of the {money.format(total)} total.
       </p>
+      {top ? (
+        <section aria-labelledby="top-product">
+          <Title order={2} id="top-product">
+            Top product in {leader}
+          </Title>
+          <Text>
+            {top[0]} generated <strong>{money.format(top[1])}</strong>, or {share(top[1], sales)} of
+            the state's sales.
+          </Text>
+        </section>
+      ) : (
+        <Paper component="section" withBorder p="md" aria-labelledby="next-question">
+          <Title order={2} id="next-question">
+            Which product brought in the most sales in {leader}?
+          </Title>
+          <Text mb="sm">
+            Paste the question into your agent chat in the original project. Reopen this link after
+            your agent saves.
+          </Text>
+          <TrialPrompt leadingState={leader} />
+        </Paper>
+      )}
       <section aria-labelledby="state-sales">
         <Title order={2} id="state-sales">
           Sales by state
@@ -88,14 +112,19 @@ function Report({ report }: { report: SalesReport }) {
         </table>
       </section>
       {top && (
-        <section aria-labelledby="top-product">
-          <Title order={2} id="top-product">
-            Top product in {leader}
+        <section aria-labelledby="own-sales">
+          <Title order={2} id="own-sales">
+            Try this with your own sales data
           </Title>
-          <Text>
-            {top[0]} generated <strong>{money.format(top[1])}</strong>, or {share(top[1], sales)} of
-            the state's sales.
-          </Text>
+          <Text mb="sm">In your workspace, open a file system and upload your sales CSV.</Text>
+          <Button
+            component="a"
+            href={window.location.pathname.replace(/\/report\/?$/, '/#files')}
+            rel="noreferrer"
+            variant="default"
+          >
+            Open Workspace Files
+          </Button>
         </section>
       )}
       <footer>
