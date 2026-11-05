@@ -90,7 +90,7 @@ After the first saved agent report, name the finding and offer one concrete foll
 person can accept in the current chat. Reserve cross-agent handoff instructions for someone
 who chooses that path. When a follow-up changes the question, lead the original report link with the new finding
 and the data that explains it. Keep the earlier analysis available as context.
-For a private CSV, lead with the agent uploading the explicitly selected file once and continuing from its saved remote version in the same project. Keep private results separate from public sample links.
+For a private CSV, lead with the agent uploading the explicitly selected file once and continuing from its saved remote version in the same project. Keep private results separate from public sample links. A copied sample question should yield a named finding even in an empty project. An attachment or unambiguous filename is sufficient to select private data; the agent resolves the path and explains file limits only when they affect that selection.
 Opening Files from a completed sample should reach the upload action in the reader’s own or temporary workspace.
 Verify the click from a signed-out browser as well as a returning session. Viewing the report alone starts no workspace.
 

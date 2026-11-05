@@ -101,11 +101,15 @@ test('original Studio link opens the latest saved report without a session @visu
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   if (process.env.VISUAL_SCREENSHOTS)
     await page.screenshot({ path: testInfo.outputPath('report.png'), fullPage: true });
-  const privatePrompt = page.getByRole('button', { name: 'Copy prompt for my CSV' });
+  const privatePrompt = page.getByRole('button', { name: 'Copy sales question' });
   await privatePrompt.click();
   const own = await page.evaluate(() => navigator.clipboard.readText());
-  expect(own).toContain('Resume the existing private CSV workspace');
-  expect(own).toContain('Use only the file I select');
+  expect(own).toContain('Use the CSV I attach or name, or resume my saved CSV');
+  expect(own).toContain(
+    'answer now from these public sample figures: California $48,000, Texas $20,000 out of $100,000',
+  );
+  await expect(page.getByRole('status')).toContainText('attach a CSV in the same message');
+  expect(own).toContain(`In a new chat, use ${await page.evaluate(() => navigator.language)}`);
   expect(own).not.toContain(grant);
 });
 
