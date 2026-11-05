@@ -351,8 +351,43 @@ small {
   gap: 24px;
   padding: 24px;
 }
+.sign-in-screen {
+  width: min(100%, 54rem);
+  margin-inline: auto;
+  align-items: stretch;
+}
+.sign-in-screen h1 {
+  text-wrap: balance;
+}
 .sign-in-choices {
-  width: min(100%, 320px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.sign-in-path {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+}
+.sign-in-path-action {
+  margin-top: auto;
+  padding-top: 8px;
+}
+@media (max-width: 44rem) {
+  .sign-in-screen {
+    width: min(100%, 31rem);
+    padding: 24px 16px;
+    gap: 16px;
+  }
+  .sign-in-choices {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .sign-in-path {
+    padding: 18px;
+  }
 }
 .workspace-toast {
   position: fixed;

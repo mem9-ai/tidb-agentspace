@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Button, Stack, Text, Textarea } from '@tidbcloud/uikit';
+import { IconCheck, IconCopy03 } from '@tidbcloud/uikit/icons';
 
 const trialInstruction =
   'Follow the official Drive9 skill at https://drive9.ai/studio/skills/drive9-workspace/SKILL.md to find the top US state by sales in the public sample, show the calculation, and save a report I can continue in this project using only the free trial.';
@@ -7,15 +8,17 @@ const trialInstruction =
 export function CopyAgentTrial() {
   const [result, setResult] = useState<'idle' | 'copied' | 'manual'>('idle');
   return (
-    <>
+    <Stack className="sign-in-path-action" gap="xs">
       <Button
         fullWidth
-        size="lg"
-        variant="default"
-        h="auto"
-        py="sm"
-        aria-label="Copy for my agent"
-        aria-describedby="agent-report-description"
+        variant="filled"
+        leftSection={
+          result === 'copied' ? (
+            <IconCheck size={18} aria-hidden />
+          ) : (
+            <IconCopy03 size={18} aria-hidden />
+          )
+        }
         onClick={async () => {
           try {
             await navigator.clipboard.writeText(trialInstruction);
@@ -25,27 +28,22 @@ export function CopyAgentTrial() {
           }
         }}
       >
-        <Stack component="span" gap={0} align="center">
-          <span>Copy for my agent</span>
-          <Text id="agent-report-description" component="span" size="sm" fw={400} c="inherit">
-            Run a free sales report in Codex or Pi
-          </Text>
-        </Stack>
+        Copy prompt
       </Button>
-      {result === 'copied' && (
-        <Text size="sm" ta="center" role="status">
-          Copied. Paste into Codex or Pi in your project.
-        </Text>
-      )}
       {result === 'manual' && (
         <Textarea
-          label="Copy this instruction into Codex or Pi"
+          label="Select and copy the prompt into Codex or Pi"
           readOnly
           autosize
           value={trialInstruction}
           onFocus={(event) => event.currentTarget.select()}
         />
       )}
-    </>
+      <Text size="sm" ta="center" role="status">
+        {result === 'copied'
+          ? 'Copied. Paste into Codex or Pi in your project.'
+          : 'No account needed · 48-hour trial'}
+      </Text>
+    </Stack>
   );
 }

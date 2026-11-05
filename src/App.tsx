@@ -501,22 +501,19 @@ function App() {
         {sso.label || 'Continue with TiDB Account'}
       </Button>
     ) : null;
-  if (!data)
+  if (!data) {
+    const showSignIn = error && sso.enabled && needsSignIn;
     return (
-      <div className="loading-screen">
+      <main className={showSignIn ? 'loading-screen sign-in-screen' : 'loading-screen'}>
         <div className="sign-in-brand">
           <span className="brand-mark">TiDB</span>{' '}
           <Text span fw={600}>
             Agent Workspace
           </Text>
         </div>
-        {error && sso.enabled && needsSignIn ? (
-          // SSO is enabled and no session is active yet: prompt sign-in (no anonymous demo).
+        {showSignIn ? (
           <>
-            <Heading level={1}>Work with your data, your way</Heading>
-            <Text component="p">
-              Explore files and databases yourself, or connect an agent to help.
-            </Text>
+            <Heading level={1}>How would you like to work?</Heading>
             {sso.loginPath && (
               <SignInChoices
                 label={sso.label || 'Continue with TiDB Account'}
@@ -544,8 +541,9 @@ function App() {
             {ssoButton}
           </>
         )}
-      </div>
+      </main>
     );
+  }
   return (
     <TutorialProgressProvider
       key={data.workspace.id}

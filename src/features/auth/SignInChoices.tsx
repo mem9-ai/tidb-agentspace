@@ -1,6 +1,8 @@
-import { CopyAgentTrial } from './CopyAgentTrial';
+import { Button, Group, Paper, Stack, Text, ThemeIcon } from '@tidbcloud/uikit';
+import { IconArrowRight, IconBrowser, IconTerminal } from '@tidbcloud/uikit/icons';
+import { Heading } from '../../ui/WorkspaceHeading';
 import { capture } from '../analytics/capture';
-import { Button, Stack, Text } from '@tidbcloud/uikit';
+import { CopyAgentTrial } from './CopyAgentTrial';
 
 type SignInChoicesProps = {
   label: string;
@@ -21,9 +23,9 @@ export function SignInChoices({
 }: SignInChoicesProps) {
   const account = (
     <Button
-      fullWidth
-      size="lg"
-      variant={guestEnabled ? 'default' : 'filled'}
+      variant={guestEnabled ? 'subtle' : 'filled'}
+      c={guestEnabled ? 'peacock.8' : undefined}
+      rightSection={<IconArrowRight size={16} aria-hidden />}
       onClick={() => {
         capture({ name: 'sign_in_clicked', page: 'workspace' });
         onTiDBLogin();
@@ -33,42 +35,75 @@ export function SignInChoices({
     </Button>
   );
   return (
-    <Stack className="sign-in-choices" gap="sm">
-      {!guestEnabled && account}
-      <Button
-        fullWidth
-        size="lg"
-        variant={guestEnabled ? 'filled' : 'default'}
-        h="auto"
-        py="sm"
-        aria-label="Try without an account"
-        aria-describedby={guestEnabled ? 'guest-expiry' : 'guest-expiry guest-access-note'}
-        disabled={!guestEnabled || guestLoading}
-        loading={guestLoading}
-        onClick={() => {
-          capture({ name: 'try_clicked', page: 'workspace' });
-          onGuestLogin();
-        }}
-      >
-        <Stack component="span" gap={0} align="center">
-          <span>Try without an account</span>
-          <Text id="guest-expiry" component="span" size="sm" fw={400} c="inherit">
-            Workspace access expires after 24 hours
+    <>
+      <div className="sign-in-choices">
+        <Paper
+          component="section"
+          aria-labelledby="agent-path-title"
+          className="sign-in-path"
+          withBorder
+        >
+          <Group gap="sm" wrap="nowrap">
+            <ThemeIcon variant="light" color="peacock" size={36} radius="md" aria-hidden>
+              <IconTerminal size={21} color="var(--blue)" />
+            </ThemeIcon>
+            <div id="agent-path-title">
+              <Heading level={2}>With your coding agent</Heading>
+            </div>
+          </Group>
+          <Text component="p">
+            Paste a prompt into Codex or Pi. Your agent analyzes the sales sample and saves a
+            report.
           </Text>
-        </Stack>
-      </Button>
-      {!guestEnabled && (
-        <Text id="guest-access-note" size="sm" ta="center">
-          Trying without an account is coming soon.
-        </Text>
-      )}
-      <CopyAgentTrial />
-      {guestEnabled && account}
-      {guestError && (
-        <Text role="alert" c="red" size="sm">
-          {guestError}
-        </Text>
-      )}
-    </Stack>
+          <CopyAgentTrial />
+        </Paper>
+        <Paper
+          component="section"
+          aria-labelledby="browser-path-title"
+          className="sign-in-path"
+          withBorder
+        >
+          <Group gap="sm" wrap="nowrap">
+            <ThemeIcon variant="light" color="carbon" size={36} radius="md" aria-hidden>
+              <IconBrowser size={21} color="var(--text)" />
+            </ThemeIcon>
+            <div id="browser-path-title">
+              <Heading level={2}>In your browser</Heading>
+            </div>
+          </Group>
+          <Text component="p">Explore files and run database queries yourself in Studio.</Text>
+          <Stack className="sign-in-path-action" gap="xs">
+            {guestEnabled ? (
+              <Button
+                fullWidth
+                variant="default"
+                aria-describedby="guest-expiry"
+                disabled={guestLoading}
+                loading={guestLoading}
+                onClick={() => {
+                  capture({ name: 'try_clicked', page: 'workspace' });
+                  onGuestLogin();
+                }}
+              >
+                Try without an account
+              </Button>
+            ) : (
+              account
+            )}
+            <Text id="guest-expiry" size="sm" ta="center">
+              {guestEnabled
+                ? 'Workspace access expires after 24 hours.'
+                : 'Guest access is currently unavailable.'}
+            </Text>
+            {guestError && (
+              <Text role="alert" c="red" size="sm">
+                {guestError}
+              </Text>
+            )}
+          </Stack>
+        </Paper>
+      </div>
+      {guestEnabled && <Group justify="center">{account}</Group>}
+    </>
   );
 }
