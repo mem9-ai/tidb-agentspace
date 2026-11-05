@@ -1,4 +1,5 @@
 pub mod access_signer;
+mod agent_trials;
 pub mod analytics;
 pub mod global_api;
 mod global_local_sessions;
@@ -234,6 +235,7 @@ struct Session {
 }
 #[derive(Clone)]
 struct App {
+    trials: Arc<agent_trials::Trials>,
     analytics: Option<analytics::Client>,
     workspace: Arc<Workspace>,
     product: Option<Arc<workspace_product::Product>>,
@@ -332,6 +334,10 @@ impl WorkspaceServer {
                     })
                     .ok()
             });
+        let trials = Arc::new(agent_trials::Trials::new(
+            metadata.clone(),
+            &config.authority_id,
+        ));
         let metadata_port_for_security = metadata.clone();
         let repository = Repository::open(
             metadata,
@@ -403,6 +409,7 @@ impl WorkspaceServer {
             listener,
             history_worker,
             app: App {
+                trials,
                 analytics,
                 workspace,
                 product,
@@ -818,6 +825,9 @@ async fn dispatch(
         .unwrap_or_else(|| request.uri().path().to_owned());
     let method = request.method().clone();
     let headers = request.headers().clone();
+    if let Some(route) = path.strip_prefix("/api/v1/agent-trial/") {
+        return app.trials.handle(route, request).await;
+    }
     let portal_request = path.starts_with("/api/portal/v1/");
     // The browser-facing interface has its own authentication boundary. The actual
     // domain operation is shared with the Agent API, not reimplemented in the Portal.

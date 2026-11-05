@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { extendRegionalSecurityContract } from '../tools/api-contract/regional-security-contract.mjs';
 import { globalSecurityContract } from '../tools/api-contract/global-security-contract.mjs';
 import { format, resolveConfig } from 'prettier';
+import { addAgentTrials } from '../tools/api-contract/agent-trials.mjs';
 import { analysisLimits } from '../tools/api-contract/analysis-limits.mjs';
 import { fileExportSchemas } from '../tools/api-contract/file-export-schemas.mjs';
 import { databaseImportSchemas } from '../tools/api-contract/database-import-schemas.mjs';
@@ -1948,6 +1949,7 @@ spec.externalDocs = {
   description: 'Regional Owner history API contract',
   url: 'owner-openapi.json',
 };
+addAgentTrials(spec);
 const target = new URL('../public/openapi.json', import.meta.url);
 const rendered = await format(JSON.stringify(spec), {
   ...(await resolveConfig(fileURLToPath(target))),

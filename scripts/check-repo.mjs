@@ -1,3 +1,4 @@
+import './check-trial-installer.mjs';
 import assert from 'node:assert/strict';
 import { access, readFile, readdir } from 'node:fs/promises';
 import { parse } from 'yaml';

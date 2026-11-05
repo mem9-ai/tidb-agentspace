@@ -111,6 +111,17 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
       path: `${process.env.GUEST_SIGNIN_SCREENSHOT}-${testInfo.project.name}.png`,
       animations: 'disabled',
     });
+  const beforeCopy = workspace.requests.length;
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.getByRole('button', { name: 'Copy for my agent' }).click();
+  await expect(page.getByRole('status')).toHaveText(
+    'Copied. Paste into Codex or Pi in your project.',
+  );
+  const instruction = await page.evaluate(() => navigator.clipboard.readText());
+  expect(instruction).toContain('https://drive9.ai/studio/skills/drive9-workspace/SKILL.md');
+  expect(instruction).toContain('save a report');
+  expect(instruction).toContain('free trial');
+  expect(workspace.requests).toHaveLength(beforeCopy);
   const beforeGuest = workspace.requests.length;
   await guest.getByText('Workspace access expires after 24 hours').click();
   await expect(page.getByRole('combobox', { name: 'Color theme', exact: true })).toBeVisible();
