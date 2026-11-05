@@ -45,7 +45,10 @@ test('original Studio link opens the latest saved report without a session @visu
         ...sample,
         revision,
         expiresAt: Math.floor(Date.now() / 1000) + 172800,
-        leadingStateProducts: revision === 2 ? { Monitors: 18000 } : null,
+        leadingStateProducts:
+          revision === 2
+            ? { Keyboards: 10000, Webcams: 10000, Monitors: 18000, Headsets: 10000 }
+            : null,
       },
     });
   });
@@ -69,8 +72,24 @@ test('original Studio link opens the latest saved report without a session @visu
   await expect(followUp.getByRole('status')).toContainText('Paste it into your project chat');
   revision = 2;
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Top product in California' })).toBeVisible();
-  await expect(page.getByText(/Monitors generated/)).toHaveText(/\$18,000.*37.5%/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Monitors' })).toBeInViewport();
+  await expect(page.getByText('Top product in California')).toBeVisible();
+  await expect(page.locator('dl')).toContainText('$18,000');
+  await expect(page.locator('dl')).toContainText('37.5%');
+  const bars = page.getByRole('region', { name: 'Sales by product' }).getByRole('listitem');
+  await expect(bars).toHaveText([
+    'Monitors$18,000',
+    'Headsets$10,000',
+    'Keyboards$10,000',
+    'Webcams$10,000',
+  ]);
+  const original = page.getByText('Original state rankings');
+  const stateTable = page.getByRole('table', { name: 'Sales by state' });
+  await expect(stateTable).toBeHidden();
+  await original.click();
+  await expect(stateTable.getByRole('row', { name: 'California $48,000 48%' })).toBeVisible();
+  await original.click();
+  await expect(stateTable).toBeHidden();
   await expect(page).toHaveURL(new RegExp('#v1\\.'));
   await expect(followUp).toHaveCount(0);
   await expect(page.getByText(/Revision 2 · Complete/)).toBeVisible();

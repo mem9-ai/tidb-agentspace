@@ -88,7 +88,8 @@ from the two ways to try Studio.
 
 After the first saved agent report, name the finding and offer one concrete follow-up that a
 person can accept in the current chat. Reserve cross-agent handoff instructions for someone
-who chooses that path. Show the new finding on the original link after a confirmed update.
+who chooses that path. When a follow-up changes the question, lead the original report link with the new finding
+and the data that explains it. Keep the earlier analysis available as context.
 Distinguish a completed sample from the separate choice to bring data into a workspace.
 
 **People and agent onboarding (owner direction, 2026-11-03):** a Guest can explore the US sales
