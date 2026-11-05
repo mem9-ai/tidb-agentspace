@@ -178,7 +178,6 @@ impl Product {
                 json!({"resourceId":resource_id,"path":PATH,"type":"file","content":FIXTURE});
             self.files(
                 credential,
-                p,
                 files::FileRequest {
                     method: "PUT",
                     route: "/files",
@@ -203,7 +202,7 @@ impl Product {
                 if_match: None,
                 if_none_match: None,
             };
-            let (_, first_metadata) = self.files(credential, p, metadata()).await?;
+            let (_, first_metadata) = self.files(credential, metadata()).await?;
             let version = match first_metadata {
                 Reply::Entity { etag, .. } => etag,
                 _ => return Err(err(409, "FILE_VERSION_UNAVAILABLE")),
@@ -214,7 +213,7 @@ impl Product {
             if bytes != FIXTURE.as_bytes() {
                 return Err(err(409, "FILE_CHANGED"));
             }
-            let (_, last_metadata) = self.files(credential, p, metadata()).await?;
+            let (_, last_metadata) = self.files(credential, metadata()).await?;
             if !matches!(last_metadata, Reply::Entity { etag, .. } if etag == version) {
                 return Err(err(409, "FILE_CHANGED"));
             }

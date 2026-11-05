@@ -80,6 +80,7 @@ export default function FilePreviewPanel({
   const [mode, setMode] = useState<string | null>(
     imageFile && initialView === 'source' ? 'preview' : initialView,
   );
+  const [previewOpened, setPreviewOpened] = useState(mode !== 'source');
   const [expanded, setExpanded] = useState(initialView === 'analyze');
   const [analysisRunning, setAnalysisRunning] = useState(false);
   const [exportMode, setExportMode] = useState<'export' | 'table' | null>(null);
@@ -92,7 +93,12 @@ export default function FilePreviewPanel({
   );
   const tabular = isTabularFile(path);
   const [imageError, setImageError] = useState(false);
-  const tablePreview = useTabularPreview(resourceId, path, savedContent, tabular && !loading);
+  const tablePreview = useTabularPreview(
+    resourceId,
+    path,
+    savedContent,
+    previewOpened && tabular && !loading,
+  );
   const fileActions = (
     <Group gap="sm">
       {dirty ? (
@@ -251,6 +257,7 @@ export default function FilePreviewPanel({
                 }
                 onClick={() => {
                   const next = mode === 'source' ? 'preview' : 'source';
+                  if (next === 'preview') setPreviewOpened(true);
                   setMode(next);
                   onViewChange(next === 'source' ? next : expanded ? 'analyze' : 'preview');
                 }}
@@ -298,7 +305,7 @@ export default function FilePreviewPanel({
         </Alert>
       )}
       <div hidden={mode === 'source'}>
-        {imageFile ? (
+        {!previewOpened ? null : imageFile ? (
           preview
         ) : (
           <Suspense fallback={preview}>

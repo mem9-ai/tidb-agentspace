@@ -221,7 +221,7 @@ impl EmbeddedRegion {
             if empty != keys.len() {
                 return Err(error(409, "REGION_WORKSPACE_OWNER_MISMATCH"));
             }
-            let workspace = json!({"id":command.registration.workspace_id,"name":"My Workspace","description":"","plan":"Free","createdAt":intent.created_at});
+            let workspace = json!({"id":command.registration.workspace_id,"name":"My Workspace","description":"","plan":"Free","defaultRegionId":self.authority,"createdAt":intent.created_at});
             let changes = vec![
                 json!({"key":"state/workspace","expectedVersion":null,"value":workspace}),
                 json!({"key":"state/profile","expectedVersion":null,"value":{"name":"Developer","email":"","role":"Owner"}}),
@@ -249,7 +249,7 @@ impl EmbeddedRegion {
 
     async fn initialize_inner(&self, command: &Command) -> Result<Acknowledgement> {
         self.validate(command)?;
-        let (intent, _) = self.intent(command).await?;
+        let (mut intent, mut version) = self.intent(command).await?;
         if !intent.ready {
             self.ensure_workspace(command, &intent).await?;
         }
@@ -262,36 +262,30 @@ impl EmbeddedRegion {
                 .enqueue(&command.policy, &command.registration.operation_id)
                 .await?;
         }
-        let mut ready = false;
         for _ in 0..8 {
-            let (mut current, version) = self.intent(command).await?;
-            if current.ready {
-                ready = true;
+            if intent.ready {
                 break;
             }
-            current.ready = true;
+            intent.ready = true;
             let scope = self.scope(command, "regional-init");
             let result = self
                 .commit(
                     &scope,
                     &mutation(&command.registration.operation_id, "ready"),
-                    vec![json!({"key":"intent","expectedVersion":version,"value":current})],
+                    vec![json!({"key":"intent","expectedVersion":version,"value":intent})],
                 )
                 .await;
             match result {
                 // The acknowledgement is returned only after this conditional write or its
                 // committed receipt is confirmed; no second read is needed on success.
-                Ok(()) => {
-                    ready = true;
-                    break;
+                Ok(()) => break,
+                Err(e) if e.code == "META_CONFLICT" => {
+                    (intent, version) = self.intent(command).await?;
                 }
-                Err(e) if e.code == "META_CONFLICT" => continue,
                 Err(e) => return Err(e),
             }
         }
-        // A final read is still needed if every attempt conflicted: another initializer may
-        // have committed readiness on the last attempt.
-        if !ready && !self.intent(command).await?.0.ready {
+        if !intent.ready {
             return Err(error(503, "REGION_INIT_CONFLICT"));
         }
         Ok(Acknowledgement {

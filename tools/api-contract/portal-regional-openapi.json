@@ -5660,6 +5660,10 @@
                     "guestEnabled": { "type": "boolean" },
                     "guestCleanupEnabled": { "type": "boolean" },
                     "sessionKind": { "type": "string", "enum": ["account", "guest"] },
+                    "workspaceId": {
+                      "type": ["string", "null"],
+                      "description": "Workspace selected by this verified browser session, or null for a signed-out browser. Hosts requiring separate discovery omit this field."
+                    },
                     "provider": { "const": "tidbcloud" },
                     "label": { "type": "string" },
                     "loginPath": { "type": "string" },
@@ -6317,7 +6321,14 @@
                 "schema": {
                   "type": "object",
                   "required": ["workspaceId"],
-                  "properties": { "workspaceId": { "type": "string" } }
+                  "properties": {
+                    "workspaceId": { "type": "string" },
+                    "initialFileSystemRegion": {
+                      "type": "string",
+                      "enum": ["aws-us-east-1", "aws-us-west-2", "automatic", "aws-ap-southeast-1"],
+                      "description": "Configured first File System location, supplied only on fresh enrollment. The Console may start the owner-only, idempotent initial resource request while loading the Workspace."
+                    }
+                  }
                 }
               }
             }

@@ -5,6 +5,7 @@ import {
   apiBaseUrl,
   base,
   workspaceApi,
+  workspaceId,
   type Data,
   type Resource,
   type ApiKey,
@@ -114,7 +115,7 @@ import {
 
 const FilePreviewPanel = lazy(() => import('./features/files/FilePreviewPanel'));
 type WorkspaceIcon = React.ComponentType<IconProps>;
-type PortalData = Data & { resourceWindowTruncated?: boolean };
+type PortalData = Data & { resourceWindowTruncated?: boolean; usageNeedsRefresh?: boolean };
 
 const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string }> = {
   overview: { label: 'Overview', icon: LayoutDashboard, group: 'Workspace' },
@@ -174,6 +175,7 @@ function App() {
   const [resourcePageError, setResourcePageError] = useState('');
   const [resourceLookupFailure, setResourceLookupFailure] = useState('');
   const [resolvedResourceKey, setResolvedResourceKey] = useState('');
+  const [freshGuestOverview, setFreshGuestOverview] = useState<string>();
   const [tutorialCreation, setTutorialCreation] = useState(false);
   const [keyPreset, setKeyPreset] = useState<Resource>();
   const [salesPrompt, setSalesPrompt] = useState<string>();
@@ -205,6 +207,15 @@ function App() {
   const selectedLoaded = Boolean(
     data?.resources.some((resource) => resource.id === selectedResourceId),
   );
+  const knownFileSystem =
+    route === 'files' &&
+    data?.resources.some(
+      (resource) =>
+        resource.id === selectedResourceId &&
+        resource.kind === 'filesystem' &&
+        resource.status === 'active' &&
+        !resource.connectionError,
+    );
   const resourceName = visibleData?.resources.find(
     (resource) =>
       resource.id === selectedResourceId &&
@@ -240,10 +251,54 @@ function App() {
     setResourceLookupFailure('');
     setResolvedResourceKey('');
   }, []);
+  const acceptResource = useCallback((workspaceId: string, resource: Resource) => {
+    setData((current) => {
+      if (current?.workspace.id !== workspaceId) return current;
+      const window = resourceWindow(current.resources, [resource], selectedResourceIdRef.current);
+      return {
+        ...current,
+        resources: window.resources,
+        resourceWindowTruncated: Boolean(current.resourceWindowTruncated || window.dropped),
+        mode: resource.provider && resource.provider !== 'local' ? 'hybrid' : current.mode,
+        usageNeedsRefresh: true,
+      };
+    });
+  }, []);
+  const usageRequest = useRef(0);
+  const refreshUsage = useCallback(
+    async (resourceId?: string) => {
+      const sequence = ++usageRequest.current;
+      const id = workspaceId;
+      const result = await workspaceApi.usage();
+      if (id !== workspaceId || sequence !== usageRequest.current) return;
+      if (
+        resourceId &&
+        result.nextCursor &&
+        !result.data.some((row) => row.resourceId === resourceId)
+      ) {
+        await refresh();
+        return;
+      }
+      setData((current) => {
+        if (current?.workspace.id !== id) return current;
+        const visible = new Set(current.resources.map((resource) => resource.id));
+        const rows = new Map(
+          current.usage
+            .filter((row) => visible.has(row.resourceId))
+            .map((row) => [row.resourceId, row]),
+        );
+        for (const row of result.data)
+          if (visible.has(row.resourceId)) rows.set(row.resourceId, row);
+        return { ...current, usage: [...rows.values()], usageNeedsRefresh: false };
+      });
+    },
+    [refresh],
+  );
   const defaultFileSystem = useDefaultFileSystem(
     data,
     refresh,
     sso.sessionKind === 'guest' || sso.sessionKind === 'account',
+    acceptResource,
   );
   const loadMoreResources = useCallback(async () => {
     const cursor = data?.resourceNextCursor;
@@ -279,6 +334,7 @@ function App() {
   }, [data?.resourceNextCursor, resourcePageBusy]);
   useEffect(() => {
     if (
+      knownFileSystem ||
       !lookupKey ||
       !selectedResourceId ||
       resolvedResourceKey === lookupKey ||
@@ -307,7 +363,7 @@ function App() {
         if (!controller.signal.aborted) setResourceLookupFailure(lookupKey);
       });
     return () => controller.abort();
-  }, [lookupKey, selectedResourceId, resolvedResourceKey, resourceLookupFailure]);
+  }, [knownFileSystem, lookupKey, selectedResourceId, resolvedResourceKey, resourceLookupFailure]);
   // Boot the workspace. When SSO is enabled the anonymous demo session is disabled, so we never
   // auto-start one: we only try to use an existing (SSO) session and, failing that, show the
   // sign-in screen. When SSO is unconfigured, the local demo session starts as before.
@@ -315,31 +371,19 @@ function App() {
     try {
       setError('');
       setNeedsSignIn(false);
-      // Existing hosted sessions can discover their Workspace while auth configuration loads.
-      // Capture failures immediately; local demo mode must establish its session before retrying.
-      const controller = new AbortController();
-      const discovery = workspaceApi.discoverWorkspace(controller.signal).then(
-        () => ({ ok: true as const }),
-        (cause: unknown) => ({ ok: false as const, cause }),
-      );
-      let auth;
-      try {
-        auth = await workspaceApi.authConfig();
-      } catch (cause) {
-        controller.abort();
-        await discovery;
-        throw cause;
-      }
+      const auth = await workspaceApi.authConfig();
       setSso(auth);
-      // Optional capture reuses successful product discovery; it cannot issue a
-      // competing auth-config request or consume a product bootstrap failure.
       void startAnalytics(auth).then(() => capturePage('workspace'));
-      const result = await discovery;
       if (!auth.enabled) {
-        await workspaceApi.startSession();
+        const session = await workspaceApi.startSession();
+        workspaceApi.selectWorkspace(session.workspaceId);
+      } else if (auth.workspaceId === null) {
+        throw new WorkspaceApiError('Sign in to your workspace.', 401, 'UNAUTHENTICATED');
+      } else if (auth.workspaceId !== undefined) {
+        workspaceApi.selectWorkspace(auth.workspaceId);
+      } else {
+        // Distributed sessions must exchange their ticket. Older bundled hosts also use discovery.
         await workspaceApi.discoverWorkspace();
-      } else if (!result.ok) {
-        throw result.cause;
       }
       await refresh();
     } catch (e) {
@@ -352,9 +396,19 @@ function App() {
     setGuestError('');
     try {
       const guest = await workspaceApi.startGuestSession();
-      workspaceApi.selectGuestWorkspace(guest.workspaceId);
-      await refresh();
+      workspaceApi.selectWorkspace(guest.workspaceId);
+      const workspaceLoaded = refresh();
+      if (guest.initialFileSystemRegion) {
+        void defaultFileSystem.prepareNewGuest(
+          guest.workspaceId,
+          guest.initialFileSystemRegion,
+          workspaceLoaded,
+        );
+      }
+      if (guest.initialFileSystemRegion && currentRoute().page === 'overview')
+        setFreshGuestOverview(guest.workspaceId);
       setSso((current) => ({ ...current, sessionKind: 'guest' }));
+      await workspaceLoaded;
       setError('');
     } catch {
       setGuestError('Unable to start a temporary workspace. Please try again.');
@@ -367,6 +421,7 @@ function App() {
     const update = () => {
       if (location.hash === '#monitoring' || location.hash === '#activity')
         history.replaceState(history.state, '', '#overview');
+      setFreshGuestOverview(undefined);
       setRouteLocation(currentRoute());
     };
     update();
@@ -421,6 +476,7 @@ function App() {
   const shared = {
     data: visibleData!,
     refresh,
+    refreshUsage,
     notify,
     copy,
     onCreate: (target: ResourceCreationTarget = 'resource') => {
@@ -524,6 +580,7 @@ function App() {
           {route === 'overview' && (
             <Overview
               {...shared}
+              freshGuest={freshGuestOverview === data.workspace.id}
               defaultFileSystem={defaultFileSystem}
               showSalesExample={routeLocation.showSalesExample === true}
               sampleKey={sampleKey?.workspaceId === data.workspace.id ? sampleKey : undefined}
@@ -544,7 +601,11 @@ function App() {
           ) : (
             <>
               {route === 'databases' && <Databases {...shared} routeLocation={routeLocation} />}
-              {route === 'files' && <Files key={routeLocation.fileLink || 'files'} {...shared} />}
+              {route === 'files' && !routeLocation.fileLink && defaultFileSystem.preparing ? (
+                <FileSetupStatus setup={defaultFileSystem} />
+              ) : (
+                route === 'files' && <Files key={routeLocation.fileLink || 'files'} {...shared} />
+              )}
             </>
           )}
           {route === 'connect' && <Connect {...shared} onNewKey={() => setModal('key')} />}
@@ -621,6 +682,7 @@ function App() {
       {modal === 'resource' && (
         <CreateResourceDialog
           {...shared}
+          applyCreatedResource={acceptResource}
           target={creationTarget}
           onClose={() => setModal(null)}
           onCreated={
@@ -674,6 +736,7 @@ function App() {
   );
 }
 type Shared = {
+  refreshUsage: (resourceId?: string) => Promise<void>;
   data: PortalData;
   refresh: () => Promise<void>;
   notify: (s: string) => void;
@@ -685,6 +748,20 @@ type Shared = {
   resourcePageBusy: boolean;
   resourcePageError: string;
 };
+type FileSetup = Pick<ReturnType<typeof useDefaultFileSystem>, 'preparing' | 'error' | 'retry'>;
+
+function FileSetupStatus({ setup }: { setup: FileSetup }) {
+  if (setup.preparing) return <Text role="status">Preparing your workspace…</Text>;
+  if (!setup.error) return null;
+  return (
+    <Alert color="yellow" title="Your files are not ready">
+      We couldn’t finish preparing your workspace. Try again to check its status.
+      <Group mt="sm">
+        <Button onClick={() => void setup.retry()}>Try again</Button>
+      </Group>
+    </Alert>
+  );
+}
 function Overview({
   data,
   onCreate,
@@ -695,13 +772,15 @@ function Overview({
   sampleKey,
   isAuthorizing,
   defaultFileSystem,
+  freshGuest,
   showSalesExample,
 }: Shared & {
   onAuthorize: (resource: Resource, prompt?: string) => void;
   sampleKey?: { resourceId: string; suitable: boolean; pending: boolean; launchPrepared?: boolean };
   isAuthorizing: boolean;
   showSalesExample: boolean;
-  defaultFileSystem: { preparing: boolean; error: boolean; retry: () => Promise<void> };
+  freshGuest: boolean;
+  defaultFileSystem: FileSetup;
 }) {
   const hasResources =
     data.resources.length > 0 || Boolean(data.resourceNextCursor || data.resourceWindowTruncated);
@@ -732,15 +811,7 @@ function Overview({
         }
       />
       {isGuest && <GuestExpiryNotice />}
-      {defaultFileSystem.preparing && <Text role="status">Preparing your workspace…</Text>}
-      {defaultFileSystem.error && (
-        <Alert color="yellow" title="Your files are not ready">
-          We couldn’t finish preparing your workspace. Try again to check its status.
-          <Group mt="sm">
-            <Button onClick={() => void defaultFileSystem.retry()}>Try again</Button>
-          </Group>
-        </Alert>
-      )}
+      <FileSetupStatus setup={defaultFileSystem} />
       {
         <SalesSampleJourney
           key={showSalesExample ? 'sales-example' : 'overview'}
@@ -751,6 +822,7 @@ function Overview({
           sampleKey={sampleKey}
           isAuthorizing={isAuthorizing}
           preparingWorkspace={defaultFileSystem.preparing || defaultFileSystem.error}
+          freshGuest={freshGuest}
           showCompleted={showSalesExample}
         />
       }
@@ -819,7 +891,7 @@ function Overview({
           )}
         </section>
       )}
-      <TutorialResume data={data} />
+      {hasResources && !freshGuest && <TutorialResume data={data} />}
     </>
   );
 }
@@ -959,6 +1031,7 @@ function Files(shared: Shared) {
 }
 function FileWorkspace({
   data,
+  refreshUsage,
   refresh,
   notify,
   onConnect,
@@ -1045,18 +1118,20 @@ function FileWorkspace({
   }
   const upload = useRef<HTMLInputElement>(null);
   const files = listing.files;
+  async function refreshFiles() {
+    listing.refresh();
+    if (!remote) await refreshUsage(system);
+  }
   const fileUpload = useFileUpload({
     resource: selectedSystem,
     directory: path,
     files,
     onBusyChange: setBusy,
-    onSaved: async () => {
-      listing.refresh();
-      await refresh();
-    },
+    onSaved: refreshFiles,
   });
   const openFile = useCallback(
-    async (file: WorkspaceFile, view: FileView = 'preview') => {
+    async (file: WorkspaceFile, view: FileView = 'preview', savedText?: string) => {
+      if (savedText !== undefined) file = { ...file, content: savedText };
       setPreviewView(view);
       history.replaceState(null, '', fileHash(file.resourceId, file.path, view));
       previewRequest.current?.abort();
@@ -1067,7 +1142,7 @@ function FileWorkspace({
       setError('');
       setUnavailableReason('');
       setPreviewImage(null);
-      const needsPreview = remote || file.content === undefined;
+      const needsPreview = savedText === undefined && (remote || file.content === undefined);
       setPreviewLoading(needsPreview);
       if (!needsPreview) return;
       try {
@@ -1125,20 +1200,15 @@ function FileWorkspace({
         type,
         content: text,
       });
-      listing.refresh();
       setNewItem(null);
       setName('');
-      const summaryUpdated = await refresh().then(
-        () => true,
-        () => false,
-      );
-      notify(
-        summaryUpdated
-          ? type === 'directory'
-            ? 'Folder created'
-            : 'File saved'
-          : 'Saved. Refresh the file list to see the update; do not repeat the save.',
-      );
+      notify(type === 'directory' ? 'Folder created' : 'File saved');
+      if (saved) listing.acceptSaved(saved);
+      else listing.refresh();
+      if (!remote)
+        void refreshUsage(system).catch(() =>
+          notify('Saved. Refresh the file list to see the update; do not repeat the save.'),
+        );
       return (
         saved ?? {
           id: `${resourceId}:${target}`,
@@ -1164,8 +1234,7 @@ function FileWorkspace({
     setError('');
     try {
       await workspaceApi.deleteFile({ resourceId: system, path: deleting.path });
-      await refresh();
-      listing.refresh();
+      void refreshFiles().catch(() => notify('Item deleted. Refresh to update usage.'));
       notify('Item deleted');
       if (editing?.id === deleting.id) {
         closePreview();
@@ -1238,7 +1307,7 @@ function FileWorkspace({
             ml={16}
             onClick={() => {
               listing.refresh();
-              void refresh();
+              if (selectedSystem?.connectionError) void refresh();
             }}
           >
             Retry
@@ -1257,10 +1326,7 @@ function FileWorkspace({
           search={search}
           onSearch={setSearch}
           onNavigate={setPath}
-          onRefresh={() => {
-            listing.refresh();
-            void refresh();
-          }}
+          onRefresh={() => void refreshFiles().catch(() => notify('Could not update usage.'))}
           refreshing={listing.loading || analysisBusy}
           canCreate={!!system && !busy && !analysisBusy}
           onCreate={(type) =>
@@ -1391,7 +1457,14 @@ function FileWorkspace({
               onAnalysisRunningChange={setAnalysisBusy}
               onExportSaved={async () => {
                 listing.refresh();
-                await refresh();
+                if (
+                  data.resources.some(
+                    (item) => item.kind === 'filesystem' && item.provider !== 'drive9-anonymous',
+                  ) ||
+                  data.resourceNextCursor ||
+                  data.resourceWindowTruncated
+                )
+                  await refreshUsage();
               }}
               onClose={() => requestPreviewChange(closePreview)}
               onKeepEditing={() => setPendingAction(null)}
@@ -1461,7 +1534,7 @@ function FileWorkspace({
               }
               const type = newItem;
               void saveFile(target, type).then((saved) => {
-                if (saved && type === 'file') void openFile(saved, 'source');
+                if (saved && type === 'file') void openFile(saved, 'source', '');
               });
             }}
           >
@@ -1841,7 +1914,19 @@ function ApiExplorer({ data, copy }: Shared) {
   return <ApiDocumentation data={data} copy={copy} />;
 }
 
-function Billing({ data }: Shared) {
+function Billing({ data, refreshUsage }: Shared) {
+  const [usageError, setUsageError] = useState(false);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    if (!data.usageNeedsRefresh) return;
+    let active = true;
+    void refreshUsage().catch(() => {
+      if (active) setUsageError(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [data.usageNeedsRefresh, refreshUsage, retry]);
   return (
     <>
       <PageHeading
@@ -1874,6 +1959,22 @@ function Billing({ data }: Shared) {
       <div className="section-title">
         <Heading level={2}>Resource allowances</Heading>
       </div>
+      {data.usageNeedsRefresh &&
+        (usageError ? (
+          <Alert color="red">
+            Could not load resource allowances.{' '}
+            <Button
+              onClick={() => {
+                setUsageError(false);
+                setRetry(retry + 1);
+              }}
+            >
+              Retry
+            </Button>
+          </Alert>
+        ) : (
+          <Text role="status">Loading resource allowances…</Text>
+        ))}
       <Paper className="panel table-panel" withBorder>
         <Table>
           <Table.Thead>

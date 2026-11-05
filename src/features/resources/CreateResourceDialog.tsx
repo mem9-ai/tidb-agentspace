@@ -25,6 +25,7 @@ export function CreateResourceDialog({
   onClose,
   target,
   onCreated,
+  applyCreatedResource,
   isGuest,
 }: {
   data: Data;
@@ -33,6 +34,7 @@ export function CreateResourceDialog({
   onClose: () => void;
   target: ResourceCreationTarget;
   onCreated?: (resource: Resource) => void;
+  applyCreatedResource?: (workspaceId: string, resource: Resource) => void;
   isGuest: boolean;
 }) {
   const context = resourceCreationContext(target, data.capabilities);
@@ -76,7 +78,16 @@ export function CreateResourceDialog({
         { name, kind, region: selectedRegion },
         createId.current,
       );
-      await refresh();
+      if (
+        created.data &&
+        applyCreatedResource &&
+        created.data.status !== 'deleted' &&
+        created.data.status !== 'deleting'
+      ) {
+        applyCreatedResource(data.workspace.id, created.data);
+      } else {
+        await refresh();
+      }
       notify(
         isPostgres
           ? 'PostgreSQL database requested'

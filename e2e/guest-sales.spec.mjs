@@ -1,6 +1,80 @@
 import { test, expect } from './workspace-fixture.mjs';
 import { readFile } from 'node:fs/promises';
 
+test('a fresh guest provisions during bootstrap and opens and saves with only file requests', async ({
+  page,
+  context,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  workspace.state.capabilities.filesystem.provider = 'drive9-anonymous';
+  let release;
+  const blocked = new Promise((resolve) => {
+    release = resolve;
+  });
+  const calls = [];
+  page.on('request', (request) => {
+    const { pathname } = new URL(request.url());
+    if (pathname.startsWith('/api/'))
+      calls.push(request.method() + ' ' + pathname.replace(/^.*\/workspaces\/[^/]+\//, '/'));
+  });
+  await context.route('**/bootstrap', async (route) => {
+    // Hold the older snapshot until the resource write has returned.
+    const snapshot = structuredClone(workspace.state);
+    await blocked;
+    return route.fulfill({ json: snapshot });
+  });
+  await context.route('**/files', (route) => {
+    if (route.request().method() !== 'PUT') return route.fallback();
+    const { content, ...input } = route.request().postDataJSON();
+    const file = {
+      ...input,
+      id: 'file_notes',
+      size: Buffer.byteLength(content),
+      updatedAt: new Date().toISOString(),
+    };
+    workspace.state.files.push(file);
+    return route.fulfill({ json: { data: file } });
+  });
+  const created = page.waitForResponse(
+    (response) => response.url().endsWith('/resources') && response.status() === 201,
+  );
+  await page.goto('/');
+  try {
+    await page.getByRole('button', { name: 'Try without an account' }).click();
+    await created;
+  } finally {
+    release();
+  }
+  await expect(page.getByRole('button', { name: 'Try with an agent' })).toBeEnabled();
+  const menu = page.getByRole('button', { name: 'Open navigation' });
+  if (await menu.isVisible()) await menu.click();
+  await page
+    .getByRole('navigation', { name: 'Main navigation' })
+    .filter({ visible: true })
+    .getByRole('link', { name: 'Files', exact: true })
+    .click();
+  await page.getByRole('link', { name: 'Open my-files' }).click();
+  await expect(page.getByRole('heading', { name: 'No files yet' })).toBeVisible();
+  await page.getByRole('button', { name: 'Create file or folder' }).click();
+  await page.getByRole('menuitem', { name: 'New file', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create a file' });
+  await dialog.getByRole('textbox', { name: 'Name' }).fill('notes.md');
+  await dialog.getByRole('button', { name: 'Create file' }).click();
+  await expect(page.getByRole('textbox', { name: 'File content' })).toBeFocused();
+  expect(workspace.state.files).toEqual([expect.objectContaining({ path: '/notes.md' })]);
+  expect(calls.filter((call) => !call.includes('/analytics/')).sort()).toEqual(
+    [
+      'GET /api/auth/config',
+      'POST /api/auth/guest',
+      'GET /bootstrap',
+      'POST /resources',
+      'GET /files',
+      'PUT /files',
+    ].sort(),
+  );
+});
+
 test('a missing file service location is explained without creating a sample', async ({
   page,
   workspace,

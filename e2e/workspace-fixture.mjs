@@ -115,6 +115,7 @@ export const test = base.extend({
                 }),
                 regionId: 'region:fixture',
                 enabled: true,
+                workspaceId: signInRequired ? null : state.workspace.id,
                 loginPath: '/api/auth/tidbcloud/login',
                 logoutPath: '/api/auth/tidbcloud/logout',
                 guestEnabled,
@@ -131,9 +132,13 @@ export const test = base.extend({
               },
         );
       if (url.pathname === '/api/auth/guest' && method === 'POST' && guestEnabled) {
+        const initialFileSystemRegion =
+          !signedInAsGuest && !state.resources.length && !salesSample
+            ? state.capabilities.filesystem.regions[0]
+            : undefined;
         signInRequired = false;
         signedInAsGuest = true;
-        return reply({ workspaceId: state.workspace.id });
+        return reply({ workspaceId: state.workspace.id, initialFileSystemRegion });
       }
       if (url.pathname === '/api/auth/guest/logout' && method === 'POST' && signedInAsGuest) {
         if (rejectGuestLogout) {
@@ -145,7 +150,8 @@ export const test = base.extend({
         return reply({ loggedOut: true, cleanup: 'scheduled' });
       }
       if (url.pathname === '/api/auth/tidbcloud/login') return reply({ fixture: 'login' });
-      if (url.pathname === '/api/session') return reply({ ok: true });
+      if (url.pathname === '/api/session')
+        return reply({ workspaceId: state.workspace.id, mode: 'demo' });
       if (url.pathname === '/api/portal/v1/workspaces' && method === 'GET')
         return signInRequired
           ? reply({ error: { code: 'UNAUTHENTICATED', message: 'Sign in' } }, 401)
@@ -305,7 +311,7 @@ export const test = base.extend({
             kind: 'filesystem',
             region: body.region,
             regionId: state.workspace.defaultRegionId,
-            provider: 'local',
+            provider: state.capabilities.filesystem.provider,
             status: 'active',
             isDefault: true,
             createdAt,
@@ -475,6 +481,7 @@ export const test = base.extend({
         await otherContext.route('**/*', handler);
       },
       signInAsAccount() {
+        signInRequired = false;
         signedInAsAccount = true;
       },
       requireSignIn(options = {}) {

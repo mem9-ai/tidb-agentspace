@@ -234,7 +234,11 @@ test(
       false,
     );
     const authConfig = await request('/api/auth/config', { cookie: first.cookie });
-    assert.equal((await authConfig.json()).sessionKind, 'guest');
+    const session = await authConfig.json();
+    assert.equal(session.sessionKind, 'guest');
+    assert.equal(session.workspaceId, first.workspaceId);
+    assert.equal(first.initialFileSystemRegion, 'aws-ap-southeast-1');
+    assert.equal((await (await request('/api/auth/config')).json()).workspaceId, null);
     assert.notEqual(first.workspaceId, second.workspaceId);
     assert.equal(
       (await request(`/api/portal/v1/workspaces/${second.workspaceId}`, { cookie: first.cookie }))

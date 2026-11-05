@@ -8048,6 +8048,8 @@ export interface operations {
             guestCleanupEnabled?: boolean;
             /** @enum {string} */
             sessionKind?: 'account' | 'guest';
+            /** @description Workspace selected by this verified browser session, or null for a signed-out browser. Hosts requiring separate discovery omit this field. */
+            workspaceId?: string | null;
             /** @constant */
             provider?: 'tidbcloud';
             label?: string;
@@ -8781,6 +8783,12 @@ export interface operations {
         content: {
           'application/json': {
             workspaceId: string;
+            /**
+             * @description Configured first File System location, supplied only on fresh enrollment. The Console may start the owner-only, idempotent initial resource request while loading the Workspace.
+             * @enum {string}
+             */
+            initialFileSystemRegion?:
+              'aws-us-east-1' | 'aws-us-west-2' | 'automatic' | 'aws-ap-southeast-1';
           };
         };
       };

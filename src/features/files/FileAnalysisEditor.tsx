@@ -61,7 +61,8 @@ export function FileAnalysisEditor({
   const visibleContentView = hasExecution ? contentView : 'preview';
   const execution = useRef<AbortController | null>(null);
   const pending = useRef(false);
-  const { store: tutorials } = useTutorialStore();
+  const tutorialFile = /^\/tutorial-orders-[a-f0-9]{32}\.csv$/.test(path);
+  const { store: tutorials } = useTutorialStore(tutorialFile && cap.engine === 'duckdb');
   useEffect(() => {
     onRunningChange(busy);
   }, [busy, onRunningChange]);
@@ -91,7 +92,7 @@ export function FileAnalysisEditor({
       );
       if (!controller.signal.aborted) {
         setResult(value);
-        if (value.engine === 'duckdb')
+        if (value.engine === 'duckdb' && tutorialFile)
           void (async () => {
             if (tutorials.getSnapshot().loading) await tutorials.refresh(undefined, true);
             const progress = tutorials.readSample(resourceId);

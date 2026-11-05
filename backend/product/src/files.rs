@@ -55,9 +55,9 @@ impl Product {
     pub(super) async fn files(
         &self,
         credential: &Credential,
-        p: &Principal,
         request: FileRequest<'_>,
     ) -> Result<(u16, Reply)> {
+        let p = self.workspace.authenticate(credential).await?;
         let FileRequest {
             method,
             route,
@@ -97,9 +97,9 @@ impl Product {
         } else {
             text(&input, "resourceId")?
         };
-        let (_, r) = self
-            .context(
-                credential,
+        let r = self
+            .authorized_resource(
+                &p,
                 if read { "files:read" } else { "files:write" },
                 Some((resource_id, Some("filesystem"))),
             )

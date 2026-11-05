@@ -109,3 +109,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0046: PostgreSQL-compatible resource names](0046-postgresql-resource-names.md) — permit underscores for PostgreSQL Workspace names and use compatibility wording in the Console.
 
 - [0047: Default File System](0047-default-file-system.md) — provision a new Workspace's first File System once and reuse it for the sales sample.
+
+- [0051: Guest Workspace entry](0051-guest-workspace-entry.md) — load the Console and prepare a fresh Guest’s default File System concurrently.
