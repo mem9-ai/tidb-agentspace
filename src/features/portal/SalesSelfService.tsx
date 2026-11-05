@@ -292,17 +292,6 @@ export function SalesSelfService({
           Open sample file
         </Button>
       </Group>
-      {states && stateTotals && (
-        <section aria-label="Sales by state" className="sales-self-service">
-          <WorkspaceQueryResults
-            sourceResourceId={resourceId}
-            result={states}
-            busy={false}
-            error=""
-            footnote="Sales by state · Read-only analysis · Original file unchanged"
-          />
-        </section>
-      )}
       {products && productTotals && (
         <section aria-label="Top products" className="sales-self-service">
           <WorkspaceQueryResults
@@ -311,6 +300,17 @@ export function SalesSelfService({
             busy={false}
             error=""
             footnote="Sales by product · Read-only analysis · Original file unchanged"
+          />
+        </section>
+      )}
+      {states && stateTotals && (
+        <section aria-label="Sales by state" className="sales-self-service">
+          <WorkspaceQueryResults
+            sourceResourceId={resourceId}
+            result={states}
+            busy={false}
+            error=""
+            footnote="Sales by state · Read-only analysis · Original file unchanged"
           />
         </section>
       )}
