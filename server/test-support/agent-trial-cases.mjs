@@ -69,6 +69,10 @@ test(
     const update = (token, version, section) =>
       call('report', 'PUT', { section }, { ...headers(token), 'If-Match': '"' + version + '"' });
     if (process.env.WORKSPACE_TRIAL_PYTHON) {
+      await promisify(execFile)(process.env.WORKSPACE_TRIAL_PYTHON, [
+        '-IB',
+        'server/test-support/private_csv_helper.py',
+      ]);
       const { stdout } = await promisify(execFile)(process.env.WORKSPACE_TRIAL_PYTHON, [
         '-IB',
         'server/test-support/agent_trial_client.py',

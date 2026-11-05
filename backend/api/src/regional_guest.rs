@@ -146,6 +146,26 @@ impl RegionalGuest {
         })
     }
 
+    pub(crate) async fn csv_credential(
+        &self,
+        workspace: &str,
+        key: &workspace_identity::CsvGuestKey,
+    ) -> Result<Credential> {
+        let policy = self.sessions.csv_guest_policy(workspace, key).await?;
+        let workspace_identity::regional::OwnerIdentity::Guest { expires_at, .. } = policy.identity
+        else {
+            return Err(unauthorized());
+        };
+        Ok(Credential::SessionOwner {
+            id: policy.user_id,
+            actor: "CSV agent".into(),
+            workspace_id: workspace.into(),
+            policy_generation: Some(policy.generation),
+            expires_at,
+            revoked: Arc::new(AtomicBool::new(false)),
+        })
+    }
+
     /// Rechecks the durable regional credential and installed policy on each request.
     /// The caller must resolve only this Workspace and use `Workspace::new_managed`.
     pub async fn authenticate(&self, headers: &HeaderMap) -> Result<AuthorizedGuest> {

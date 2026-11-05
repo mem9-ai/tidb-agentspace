@@ -1,4 +1,5 @@
 pub mod access_signer;
+mod agent_csv;
 mod agent_trials;
 pub mod analytics;
 pub mod global_api;
@@ -825,6 +826,9 @@ async fn dispatch(
         .unwrap_or_else(|| request.uri().path().to_owned());
     let method = request.method().clone();
     let headers = request.headers().clone();
+    if let Some(route) = path.strip_prefix("/api/v1/agent-csv/") {
+        return agent_csv::handle(&app, route, request).await;
+    }
     if let Some(route) = path.strip_prefix("/api/v1/agent-trial/") {
         return app.trials.handle(route, request).await;
     }

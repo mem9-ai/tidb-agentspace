@@ -114,3 +114,4 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 - [0052: Anonymous local agent reports](0052-anonymous-agent-report.md) — isolated public sample and local credential lifecycle.
 - [0053: Read-only Studio report links](0053-trial-report-view.md) — stable per-report viewing and expiry.
+- [0054: Private CSV workspace for a local agent](0054-private-agent-csv.md)

@@ -5812,6 +5812,159 @@
           }
         }
       }
+    },
+    "/agent-csv/workspaces": {
+      "post": {
+        "operationId": "openPrivateCsvWorkspace",
+        "description": "Enroll or recover the same private 24-hour Guest workspace and its default File System using the same project capability. Send an empty body. Resume known files using the source endpoints.",
+        "tags": ["Private CSV workspace"],
+        "security": [{ "csvWorkspace": [] }],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["workspaceId", "resourceId", "expiresAt"],
+                  "properties": {
+                    "workspaceId": { "type": "string", "format": "uuid" },
+                    "resourceId": { "type": "string" },
+                    "expiresAt": {
+                      "type": "integer",
+                      "description": "Original expiry in Unix seconds"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Rejected or unavailable",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/agent-csv/workspaces/{workspaceId}/sources/{resourceId}/metadata": {
+      "parameters": [
+        { "in": "path", "name": "workspaceId", "required": true, "schema": { "type": "string" } },
+        { "in": "path", "name": "resourceId", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "operationId": "getPrivateCsvVersion",
+        "description": "Read the current source version. Missing source returns 404.",
+        "tags": ["Private CSV workspace"],
+        "security": [{ "csvWorkspace": [] }],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data"],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "resourceId",
+                        "path",
+                        "type",
+                        "size",
+                        "version",
+                        "conditionalWrites"
+                      ],
+                      "properties": {
+                        "resourceId": { "type": "string" },
+                        "path": { "type": "string" },
+                        "type": { "enum": ["file", "directory"] },
+                        "size": { "type": "integer" },
+                        "version": { "type": ["string", "null"] },
+                        "conditionalWrites": { "type": "boolean" }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "ETag": {
+                "schema": { "type": "string" },
+                "description": "Strong version validator when available. Never cache authenticated metadata."
+              }
+            }
+          },
+          "default": {
+            "description": "Rejected or unavailable",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/agent-csv/workspaces/{workspaceId}/sources/{resourceId}/content": {
+      "parameters": [
+        { "in": "path", "name": "workspaceId", "required": true, "schema": { "type": "string" } },
+        { "in": "path", "name": "resourceId", "required": true, "schema": { "type": "string" } }
+      ],
+      "get": {
+        "operationId": "downloadPrivateCsv",
+        "description": "Read the private source from its original workspace without a local file or a new signup.",
+        "tags": ["Private CSV workspace"],
+        "security": [{ "csvWorkspace": [] }],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/octet-stream": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "default": {
+            "description": "Rejected or unavailable",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "uploadPrivateCsv",
+        "description": "Write one nonempty UTF-8 CSV of up to 1048576 bytes. Supply exactly one of If-None-Match: * (new) or If-Match (explicit replacement). A stale precondition cannot overwrite the source.",
+        "tags": ["Private CSV workspace"],
+        "security": [{ "csvWorkspace": [] }],
+        "parameters": [
+          { "in": "header", "name": "If-Match", "schema": { "type": "string" } },
+          { "in": "header", "name": "If-None-Match", "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "text/csv": { "schema": { "type": "string" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["saved", "size"],
+                  "properties": { "saved": { "type": "boolean" }, "size": { "type": "integer" } }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Rejected or unavailable",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5839,6 +5992,12 @@
         "in": "header",
         "name": "Authorization",
         "description": "TrialView v1.<publicKey>.<reportId>.<expiresAt>.<signature>. Sign the LF-separated UTF-8 lines drive9/trial/report-view/v1, canonical UUID, and original decimal Unix expiry with the project Ed25519 key. Key and signature use unpadded base64url."
+      },
+      "csvWorkspace": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "CsvWorkspace followed by a space and 32 cryptographically random bytes encoded in hex. Generate once per project in the OS credential store. Use HTTPS; omit Cookie and Origin."
       }
     },
     "schemas": {

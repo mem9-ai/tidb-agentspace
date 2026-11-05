@@ -355,6 +355,24 @@ impl Sessions {
         Ok(GuestCredential { token, expires_at })
     }
 
+    /// Authenticate the project proof directly against the installed regional Guest policy.
+    pub async fn csv_guest_policy(
+        &self,
+        workspace: &str,
+        key: &crate::CsvGuestKey,
+    ) -> Result<Policy> {
+        self.policies
+            .authorized_policy_at(
+                workspace,
+                Principal::Guest {
+                    guest_id: &key.id,
+                    secret: &key.secret(),
+                },
+                now()?,
+            )
+            .await
+    }
+
     /// Authenticate a Guest's fixed-lifetime regional browser credential without Global.
     /// It is not an access-token refresh: every request rechecks the durable grant and local
     /// policy, and the Guest's absolute expiry cannot be extended. Callers must additionally

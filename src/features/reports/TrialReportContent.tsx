@@ -119,10 +119,12 @@ export function TrialReportContent({ report }: { report: SalesReport }) {
               Try this with your own sales data
             </Title>
             <Text mb="sm">
-              Upload a sales CSV in your workspace. If you’re signed out, you can use a temporary
-              workspace for 24 hours.
+              Give your agent a CSV to analyze in a private 24-hour workspace. When you come back,
+              it uses the saved file.
             </Text>
+            <TrialPrompt privateCsv />
             <Button
+              mt="sm"
               component="a"
               href={window.location.pathname.replace(/\/report\/?$/, '/') + uploadHash}
               rel="noreferrer"
