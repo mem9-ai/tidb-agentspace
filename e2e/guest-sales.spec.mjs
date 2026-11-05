@@ -282,6 +282,10 @@ test('@visual Guest explores the sample and gets a sales result without an agent
     .getByRole('region', { name: 'Top products' })
     .boundingBox();
   expect(saveBox.y + saveBox.height).toBeLessThanOrEqual(productResultsBox.y);
+  const previousResultsBox = await sample
+    .getByRole('region', { name: 'Sales by state' })
+    .boundingBox();
+  expect(productResultsBox.y + productResultsBox.height).toBeLessThanOrEqual(previousResultsBox.y);
   await saveReport.click();
   await expect(sample.getByText('Report saved.')).toBeVisible();
   await expect(sample.getByRole('link', { name: 'Open report' })).toBeFocused();
