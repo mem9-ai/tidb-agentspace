@@ -30,21 +30,53 @@ test('cloud sign-in offers TiDB Account and clearly marks Guest access unavailab
   workspace.requireSignIn();
   await page.goto('/');
   await expect(
-    page.getByRole('heading', { name: 'Work with your data, your way', level: 1 }),
+    page.getByRole('heading', { name: 'How would you like to work?', level: 1 }),
   ).toBeVisible();
-  const account = page.getByRole('button', { name: 'Continue with TiDB Account' });
-  const guest = page.getByRole('button', { name: 'Try without an account' });
+  const browser = page.getByRole('region', { name: 'In your browser' });
+  const account = browser.getByRole('button', { name: 'Continue with TiDB Account' });
   await expect(account).toBeEnabled();
-  await expect(guest).toBeDisabled();
-  expect(await account.evaluate((element) => element.offsetTop)).toBeLessThan(
-    await guest.evaluate((element) => element.offsetTop),
-  );
-  await expect(page.getByText('Trying without an account is coming soon.')).toBeVisible();
+  await expect(browser.getByText('Guest access is currently unavailable.')).toBeVisible();
+  await expect(browser.getByRole('button', { name: 'Try without an account' })).toHaveCount(0);
+  await expect(
+    page
+      .getByRole('region', { name: 'With your coding agent' })
+      .getByRole('button', { name: 'Copy prompt' }),
+  ).toBeEnabled();
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     .toBe(true);
   await account.click();
   await expect(page).toHaveURL(/\/api\/auth\/tidbcloud\/login$/);
+});
+
+test('a person can copy the agent prompt manually when clipboard access is denied', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  await page.goto('/');
+  await page.evaluate(() =>
+    Object.defineProperty(navigator.clipboard, 'writeText', {
+      value: async () => {
+        throw new DOMException('Denied', 'NotAllowedError');
+      },
+    }),
+  );
+  const agent = page.getByRole('region', { name: 'With your coding agent' });
+  const before = workspace.requests.length;
+  await agent.getByRole('button', { name: 'Copy prompt' }).click();
+  const manual = agent.getByRole('textbox', {
+    name: 'Select and copy the prompt into Codex or Pi',
+  });
+  await expect(manual).toBeVisible();
+  await expect(manual).toHaveValue(
+    /https:\/\/drive9\.ai\/studio\/skills\/drive9-workspace\/SKILL\.md/,
+  );
+  await manual.focus();
+  expect(await manual.evaluate((field) => field.selectionEnd - field.selectionStart)).toBe(
+    (await manual.inputValue()).length,
+  );
+  expect(workspace.requests).toHaveLength(before);
 });
 
 test('signed-out and signed-in browsers reuse authoritative session discovery', async ({
@@ -92,20 +124,22 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
   await expect(page.locator('.sign-in-brand')).toHaveText('TiDB Agent Workspace');
   await expect(page.locator('.sign-in-brand')).toBeVisible();
   await expect(
-    page.getByRole('heading', { name: 'Work with your data, your way', level: 1 }),
+    page.getByRole('heading', { name: 'How would you like to work?', level: 1 }),
   ).toBeVisible();
-  const guest = page.getByRole('button', { name: 'Try without an account' });
+  const agent = page.getByRole('region', { name: 'With your coding agent' });
+  const browser = page.getByRole('region', { name: 'In your browser' });
+  const guest = browser.getByRole('button', { name: 'Try without an account' });
   await expect(guest).toBeEnabled();
+  await expect(guest).toHaveAccessibleDescription('Workspace access expires after 24 hours.');
+  await expect(browser.getByText('Workspace access expires after 24 hours.')).toBeVisible();
+  await expect(
+    agent.getByText(/Paste a prompt into Codex or Pi. Your agent analyzes/),
+  ).toBeVisible();
+  await expect(agent.getByText('No account needed · 48-hour trial')).toBeVisible();
   const account = page.getByRole('button', { name: 'Continue with TiDB Account' });
-  expect(await guest.evaluate((element) => element.offsetTop)).toBeLessThan(
-    await account.evaluate((element) => element.offsetTop),
-  );
-  await expect(guest.getByText('Workspace access expires after 24 hours')).toBeVisible();
-  const expiryColor = await guest
-    .getByText('Workspace access expires after 24 hours')
-    .evaluate((element) => getComputedStyle(element).color);
-  expect(expiryColor).toBe(await guest.evaluate((element) => getComputedStyle(element).color));
-  await expect(guest).toHaveAccessibleDescription('Workspace access expires after 24 hours');
+  await expect(account).toBeEnabled();
+  await expect(browser.getByRole('button', { name: 'Continue with TiDB Account' })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   if (process.env.GUEST_SIGNIN_SCREENSHOT)
     await page.screenshot({
       path: `${process.env.GUEST_SIGNIN_SCREENSHOT}-${testInfo.project.name}.png`,
@@ -113,7 +147,7 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
     });
   const beforeCopy = workspace.requests.length;
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-  await page.getByRole('button', { name: 'Copy for my agent' }).click();
+  await agent.getByRole('button', { name: 'Copy prompt' }).click();
   await expect(page.getByRole('status')).toHaveText(
     'Copied. Paste into Codex or Pi in your project.',
   );
@@ -123,7 +157,7 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
   expect(instruction).toContain('free trial');
   expect(workspace.requests).toHaveLength(beforeCopy);
   const beforeGuest = workspace.requests.length;
-  await guest.getByText('Workspace access expires after 24 hours').click();
+  await guest.click();
   await expect(page.getByRole('combobox', { name: 'Color theme', exact: true })).toBeVisible();
   await page.goto('/#settings');
   const settings = page.getByRole('main');

@@ -80,6 +80,11 @@ perform real operations. Show the 24-hour access limit with the action without r
 Explain the actual consequence of signing out before ending a Guest session; do not promise
 cleanup that the service has not implemented.
 
+On the signed-out Studio page, present the two places a person can work. For the agent path,
+name the human action (copy and paste the prompt) and the agent outcome (analyze the sample
+and save a report). Group browser actions with the browser path and distinguish account sign-in
+from the two ways to try Studio.
+
 **People and agent onboarding (owner direction, 2026-11-03):** a Guest can explore the US sales
 sample and obtain a real read-only analysis without installing an agent or creating a key. Offer a
 separate agent path using the same saved sample. An agent's durable, inspectable report and a
