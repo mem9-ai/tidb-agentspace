@@ -113,3 +113,4 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0051: Guest Workspace entry](0051-guest-workspace-entry.md) — load the Console and prepare a fresh Guest’s default File System concurrently.
 
 - [0052: Anonymous local agent reports](0052-anonymous-agent-report.md) — isolated public sample and local credential lifecycle.
+- [0053: Read-only Studio report links](0053-trial-report-view.md) — stable per-report viewing and expiry.

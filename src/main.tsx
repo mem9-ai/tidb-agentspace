@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { TrialReportView } from './features/reports/TrialReportView';
 import { Admin } from './features/analytics/Admin';
 import { AnalyticsPreference } from './features/analytics/AnalyticsPreference';
 import { WorkspaceThemeProvider } from './features/theme/WorkspaceThemeProvider';
@@ -20,6 +21,14 @@ if (landing.searchParams.has('code') && landing.searchParams.has('state')) {
 
 const root = createRoot(document.getElementById('root')!);
 async function start() {
+  if (/\/report\/?$/.test(window.location.pathname)) {
+    root.render(
+      <WorkspaceThemeProvider>
+        <TrialReportView />
+      </WorkspaceThemeProvider>,
+    );
+    return;
+  }
   try {
     const response = await fetch(import.meta.env.BASE_URL + 'config.json', { cache: 'no-store' });
     if (!response.ok) throw new Error('Unable to load config.json.');

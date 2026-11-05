@@ -37,7 +37,21 @@ export function addAgentTrials(spec) {
     name: 'Authorization',
     description: 'Trial <session token>, usable only for the originating public-sample report.',
   };
+  spec.components.securitySchemes.trialReportView = {
+    type: 'apiKey',
+    in: 'header',
+    name: 'Authorization',
+    description:
+      'TrialView v1.<publicKey>.<reportId>.<expiresAt>.<signature>. Sign the LF-separated UTF-8 lines drive9/trial/report-view/v1, canonical UUID, and original decimal Unix expiry with the project Ed25519 key. Key and signature use unpadded base64url.',
+  };
   const routes = {
+    'report-view': {
+      get: op('getAgentTrialReportView', report, {
+        security: [{ trialReportView: [] }],
+        description:
+          'Read the latest saved revision. Grant is valid for one report until its original 48-hour deadline (410 when expired). Cookies and query parameters are rejected. Reading never enrolls, renews, or changes a trial.',
+      }),
+    },
     challenges: {
       post: op('createAgentTrialChallenge', object({ challenge: string, expiresAt: timestamp })),
     },

@@ -1,0 +1,7 @@
+# ADR 0053: Read-only Studio links for trial reports
+
+[Accepted behavior](../../specs/gh-214/spec.md) extends the [anonymous local report](0052-anonymous-agent-report.md). After confirming a saved revision, the helper signs a read grant for the report UUID and its original expiry. Ed25519 signatures are deterministic, so another agent with the same project binding returns the original URL. Existing active reports need no migration. The viewer reads the same durable regional report on every open. Reading cannot create a report, issue a writer session, extend the deadline or authorize Workspace access.
+
+The URL carries the grant in its fragment. The isolated viewer passes it only in the authorization header to the same-origin read endpoint, omits cookies and referrers, and skips Workspace bootstrap and analytics. Anyone given the full link may read this sample report until the trial deadline. Treat it as a bearer capability. The server checks the signature in a separate domain from writer proofs, the report identity, saved revision, and original deadline. Neither the private key nor a writer session enters the URL. Forgetting a local key ends local editing; issued links still expire on the original schedule. Trial expiry leaves the local Markdown accessible.
+
+The public regional OpenAPI documents the wire format. Private Workspace publication, owner claims and spending need separate authorization.

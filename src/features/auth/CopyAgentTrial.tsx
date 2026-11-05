@@ -3,7 +3,7 @@ import { Button, Stack, Text, Textarea } from '@tidbcloud/uikit';
 import { IconCheck, IconCopy03 } from '@tidbcloud/uikit/icons';
 
 const trialInstruction =
-  'Follow the official Drive9 skill at https://drive9.ai/studio/skills/drive9-workspace/SKILL.md to find the top US state by sales in the public sample, show the calculation, and save a report I can continue in this project using only the free trial.';
+  'Follow the official Drive9 skill at https://drive9.ai/studio/skills/drive9-workspace/SKILL.md to find the top US state by sales in the public sample, show the calculation, and save a report I can continue in this project using only the free trial. Give me the read-only Studio link and the local report.';
 
 export function CopyAgentTrial() {
   const [result, setResult] = useState<'idle' | 'copied' | 'manual'>('idle');

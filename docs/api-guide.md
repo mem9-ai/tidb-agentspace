@@ -203,4 +203,4 @@ addressable `/resources/{id}/setup-attempts` resource with explicit idempotency;
 Resource deletion may return 202; inspect Location and `deletion.phase`. Acceptance does not
 claim physical erasure and provider-specific unsupported deletion stays explicit.
 
-For an account-free public US sales report in Codex or Pi, choose **With your coding agent → Copy prompt** on the Studio sign-in page and paste it into your project chat. The local trial and its recovery boundaries are described in [ADR 0052](decisions/0052-anonymous-agent-report.md).
+For an account-free public US sales report in Codex or Pi, choose **With your coding agent → Copy prompt** on the Studio sign-in page and paste it into your project chat. After saving, the agent returns a read-only Studio link and the local Markdown. Open the same link after another agent continues the report in this project. Anyone with the full link can view the latest saved revision until the original trial expires. The local Markdown survives expiry. See [report links](decisions/0053-trial-report-view.md). The local trial and its recovery boundaries are described in [ADR 0052](decisions/0052-anonymous-agent-report.md).

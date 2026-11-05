@@ -105,6 +105,25 @@ async fn body<T: serde::de::DeserializeOwned>(request: Request) -> Result<T> {
     serde_json::from_slice(&bytes).map_err(|_| reject(400, "INVALID_TRIAL_INPUT"))
 }
 
+fn valid_signature(public: &str, signature: &str, message: &str) -> bool {
+    let Some(bytes) = B64.decode(public).ok().and_then(|b| b.try_into().ok()) else {
+        return false;
+    };
+    let Ok(key) = VerifyingKey::from_bytes(&bytes) else {
+        return false;
+    };
+    let Some(sig) = B64
+        .decode(signature)
+        .ok()
+        .and_then(|b| Signature::from_slice(&b).ok())
+    else {
+        return false;
+    };
+    !key.is_weak()
+        && B64.encode(bytes) == public
+        && key.verify_strict(message.as_bytes(), &sig).is_ok()
+}
+
 impl Trials {
     pub(super) fn new(metadata: Arc<dyn Metadata>, authority: &str) -> Self {
         Self {
@@ -154,24 +173,12 @@ impl Trials {
             (Method::POST, "sessions") => {
                 let proof: Proof = body(request).await?;
                 let invalid = || reject(401, "INVALID_TRIAL_PROOF");
-                let bytes: [u8; 32] = B64
-                    .decode(&proof.public_key)
-                    .ok()
-                    .and_then(|b| b.try_into().ok())
-                    .ok_or_else(invalid)?;
-                let public = VerifyingKey::from_bytes(&bytes).map_err(|_| invalid())?;
-                let sig =
-                    Signature::from_slice(&B64.decode(&proof.signature).map_err(|_| invalid())?)
-                        .map_err(|_| invalid())?;
                 let message = format!(
                     "drive9/trial/v1\n{}\n{}",
                     proof.challenge,
                     if proof.enroll { "start" } else { "resume" }
                 );
-                if public.is_weak()
-                    || B64.encode(bytes) != proof.public_key
-                    || public.verify_strict(message.as_bytes(), &sig).is_err()
-                {
+                if !valid_signature(&proof.public_key, &proof.signature, &message) {
                     return Err(invalid());
                 }
                 let deadline = self
@@ -203,6 +210,7 @@ impl Trials {
                 );
                 Ok(Json(json!({"token":token,"report":report.view()})).into_response())
             }
+            (Method::GET, "report-view") => self.read_view(request.headers(), now).await,
             (method @ (Method::GET | Method::PUT), "report") => {
                 let token = request
                     .headers()
@@ -257,6 +265,49 @@ impl Trials {
             }
             _ => Err(reject(404, "NOT_FOUND")),
         }
+    }
+
+    async fn read_view(&self, headers: &axum::http::HeaderMap, now: i64) -> Result<Response> {
+        let invalid = || reject(401, "INVALID_REPORT_VIEW");
+        let grant = headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("TrialView "))
+            .ok_or_else(invalid)?;
+        let mut fields = grant.split('.');
+        let (Some("v1"), Some(public), Some(id), Some(deadline), Some(signature), None) = (
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+        ) else {
+            return Err(invalid());
+        };
+        let expiry: i64 = deadline.parse().map_err(|_| invalid())?;
+        if expiry <= 0
+            || expiry.to_string() != deadline
+            || Uuid::parse_str(id).map(|v| v.to_string()).as_deref() != Ok(id)
+            || !valid_signature(
+                public,
+                signature,
+                &format!("drive9/trial/report-view/v1\n{id}\n{deadline}"),
+            )
+        {
+            return Err(invalid());
+        }
+        if expiry <= now {
+            return Err(reject(410, "TRIAL_EXPIRED"));
+        }
+        let report = self.record(public, false, Some(id), None, now).await?;
+        if report.expires_at != expiry {
+            return Err(reject(403, "TRIAL_ACCESS_DENIED"));
+        }
+        if report.revision == 0 {
+            return Err(reject(404, "REPORT_NOT_SAVED"));
+        }
+        Ok(Json(report.view()).into_response())
     }
 
     // Fixed shard count and capacity bound durable report storage. Each compact report

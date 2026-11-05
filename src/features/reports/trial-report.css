@@ -1,0 +1,57 @@
+.trial-report {
+  max-width: 46rem;
+  padding: clamp(1.25rem, 4vw, 3rem);
+  margin: 0 auto;
+}
+.trial-report header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.trial-report article {
+  padding-top: clamp(1.5rem, 4vw, 3rem);
+}
+.trial-report h1 {
+  margin: 0.3rem 0 1rem;
+  color: var(--ink);
+  font-size: clamp(2rem, 5vw, 3rem);
+  letter-spacing: -0.035em;
+}
+.trial-report .report-lead {
+  font-size: 1.2rem;
+  line-height: 1.6;
+}
+.trial-report section {
+  margin-top: 2rem;
+}
+.trial-report h2 {
+  font-size: 1.25rem;
+  margin-bottom: 0.65rem;
+}
+.trial-report table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.trial-report th,
+.trial-report td {
+  padding: 0.55rem 0;
+  text-align: right;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.trial-report th:first-child {
+  text-align: left;
+}
+.trial-report tbody th {
+  font-weight: 500;
+}
+.trial-report thead th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+.trial-report footer {
+  margin-top: 2rem;
+}
