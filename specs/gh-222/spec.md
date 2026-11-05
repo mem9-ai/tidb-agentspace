@@ -1,0 +1,10 @@
+# Private CSV workspace for a local agent
+
+Parent [GH-222](https://github.com/mem9-ai/tidb.ai/issues/222). Baseline `4a20d9fc6f58b2bb6a36a9726ef82ecbfd4b9c0e`. This extends the local agent experience to a user-selected private CSV, using the hosted Guest lifecycle and one File System.
+
+- **CSV-1 · Start.** On an explicit request with a named CSV, the agent opens an independent, no-account 24-hour Workspace and conditionally uploads the file. No browser session, customer key, payer or public-sample credential is needed. The first version accepts one UTF-8 CSV up to 1 MiB per project binding.
+- **CSV-2 · Continue.** A later process in the same OS user, service and canonical project can continue from the remote bytes without the original file, another upload or a new Workspace. A repeated selection of identical content is a read. Changing the source requires an explicit replacement and version check. Preserve the absolute expiry.
+- **CSV-3 · Authority.** Restrict the anonymous agent to its own temporary Workspace and one file. Keep its high-entropy secret only in the system credential store. Reject browser credentials, sample grants and cross-project substitution. Gate signup on the hosted Guest setting, enforce service limits, durably schedule normal Guest cleanup, and deny expired access. Fail closed when the secure store is unavailable.
+- **CSV-4 · Handoff.** Studio offers a prompt for the local agent and preserves manual browser upload as an alternative. The skill asks for the exact file only when it is missing. On continuation, read the stored remote version. The agent can analyze the recovered file and link the local result. A public sample link never exposes private files.
+
+Acceptance covers actual conditional writes, retry/restart, remote-only continuation, two independent project identities, expiry, stale replacements, denied credentials and first-use versus manual Studio entry. Native credential stores are distinct from substitute stores used by automation. Restrict live acceptance to a small synthetic CSV. Owner claims, budgets, public sharing of private files and paid resource provisioning are outside this change.
