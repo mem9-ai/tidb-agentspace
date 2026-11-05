@@ -5528,6 +5528,242 @@
         },
         "description": "Locally deny the authenticated access token itself until its original expiry. An arbitrary ID is not authorization."
       }
+    },
+    "/agent-trial/challenges": {
+      "post": {
+        "operationId": "createAgentTrialChallenge",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["challenge", "expiresAt"],
+                  "properties": {
+                    "challenge": { "type": "string" },
+                    "expiresAt": { "type": "integer", "description": "Unix seconds" }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/agent-trial/sessions": {
+      "post": {
+        "operationId": "createAgentTrialSession",
+        "security": [],
+        "description": "Sign the UTF-8 text drive9/trial/v1, challenge, and start (enroll=true) or resume, joined by LF, with the project Ed25519 key. Keys and signatures use unpadded base64url. Challenges expire after 60 seconds. Sessions expire within five minutes; trial lifetime is 48 hours.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["publicKey", "challenge", "signature", "enroll"],
+                "properties": {
+                  "publicKey": { "type": "string" },
+                  "challenge": { "type": "string" },
+                  "signature": { "type": "string" },
+                  "enroll": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["token", "report"],
+                  "properties": {
+                    "token": { "type": "string" },
+                    "report": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "sample",
+                        "stateSales",
+                        "leadingStateProducts",
+                        "expiresAt",
+                        "revision"
+                      ],
+                      "properties": {
+                        "id": { "type": "string", "format": "uuid" },
+                        "sample": { "const": "us-sales-v1" },
+                        "stateSales": {
+                          "type": ["object", "null"],
+                          "additionalProperties": { "type": "integer" }
+                        },
+                        "leadingStateProducts": {
+                          "type": ["object", "null"],
+                          "additionalProperties": { "type": "integer" }
+                        },
+                        "expiresAt": { "type": "integer", "description": "Unix seconds" },
+                        "revision": { "type": "integer", "minimum": 0, "maximum": 2 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/agent-trial/report": {
+      "get": {
+        "operationId": "getAgentTrialReport",
+        "security": [{ "trialSession": [] }],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "sample",
+                    "stateSales",
+                    "leadingStateProducts",
+                    "expiresAt",
+                    "revision"
+                  ],
+                  "properties": {
+                    "id": { "type": "string", "format": "uuid" },
+                    "sample": { "const": "us-sales-v1" },
+                    "stateSales": {
+                      "type": ["object", "null"],
+                      "additionalProperties": { "type": "integer" }
+                    },
+                    "leadingStateProducts": {
+                      "type": ["object", "null"],
+                      "additionalProperties": { "type": "integer" }
+                    },
+                    "expiresAt": { "type": "integer", "description": "Unix seconds" },
+                    "revision": { "type": "integer", "minimum": 0, "maximum": 2 }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateAgentTrialReport",
+        "security": [{ "trialSession": [] }],
+        "description": "The report is the immutable us-sales-v1 sample plus the selected analyses. Revision 0 is empty, 1 contains state totals, and 2 also contains the top product for the leading state. Append in order. Read back after unknown outcomes.",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": { "enum": ["\"0\"", "\"1\"", "\"2\""] }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["section"],
+                "properties": { "section": { "enum": ["states", "products"] } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "sample",
+                    "stateSales",
+                    "leadingStateProducts",
+                    "expiresAt",
+                    "revision"
+                  ],
+                  "properties": {
+                    "id": { "type": "string", "format": "uuid" },
+                    "sample": { "const": "us-sales-v1" },
+                    "stateSales": {
+                      "type": ["object", "null"],
+                      "additionalProperties": { "type": "integer" }
+                    },
+                    "leadingStateProducts": {
+                      "type": ["object", "null"],
+                      "additionalProperties": { "type": "integer" }
+                    },
+                    "expiresAt": { "type": "integer", "description": "Unix seconds" },
+                    "revision": { "type": "integer", "minimum": 0, "maximum": 2 }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
+    "/agent-trial/us-sales-v1.csv": {
+      "get": {
+        "operationId": "downloadAgentTrialSample",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Immutable public US sales fixture",
+            "content": { "text/csv": { "schema": { "type": "string" } } }
+          },
+          "default": {
+            "description": "Unavailable",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5543,6 +5779,12 @@
         "in": "header",
         "name": "Authorization",
         "description": "Refresh <credential>, bound to the enrolled client key and rotating nonce. Requires DPoP proof. Never sent to Global."
+      },
+      "trialSession": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "Trial <session token>, usable only for the originating public-sample report."
       }
     },
     "schemas": {

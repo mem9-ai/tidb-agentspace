@@ -291,6 +291,25 @@ export async function productApiFixture(
       workspaceId: states[0].workspace.id,
       regionId: region.server.authorityId,
     },
+    async expireTrial(publicKey) {
+      const scope = {
+        authorityId: region.server.authorityId,
+        ownerKind: 'system',
+        ownerId: 'agent-trials',
+        family: 'sample-reports',
+        partitionId: 'v1',
+      };
+      const key = 'reports/' + createHash('sha256').update(publicKey).digest('hex').slice(0, 2);
+      const { records } = await region.client.call({ op: 'get', scope, keys: [key] });
+      const { value, version } = records[key];
+      value[publicKey].expiresAt = Math.floor(Date.now() / 1000) - 1;
+      await region.client.call({
+        op: 'commit',
+        scope,
+        mutationId: randomUUID(),
+        changes: [{ key, value, expectedVersion: version }],
+      });
+    },
     async storedResource(id) {
       const scope = workspaceScope(region.server.authorityId, states[0].workspace.id);
       const key = `state/resources/${id}`;

@@ -111,3 +111,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0047: Default File System](0047-default-file-system.md) — provision a new Workspace's first File System once and reuse it for the sales sample.
 
 - [0051: Guest Workspace entry](0051-guest-workspace-entry.md) — load the Console and prepare a fresh Guest’s default File System concurrently.
+
+- [0052: Anonymous local agent reports](0052-anonymous-agent-report.md) — isolated public sample and local credential lifecycle.

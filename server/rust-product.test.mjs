@@ -1,3 +1,4 @@
+import './test-support/agent-trial-cases.mjs';
 import { restWorkflowCases } from './test-support/rest-workflow-cases.mjs';
 import { tutorialCases } from './test-support/tutorial-cases.mjs';
 import { revokeAndConfirmRegion } from './test-support/revoke-confirm.mjs';

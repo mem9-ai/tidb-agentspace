@@ -1,3 +1,4 @@
+import { CopyAgentTrial } from './CopyAgentTrial';
 import { capture } from '../analytics/capture';
 import { Button, Stack, Text } from '@tidbcloud/uikit';
 
@@ -61,6 +62,7 @@ export function SignInChoices({
           Trying without an account is coming soon.
         </Text>
       )}
+      <CopyAgentTrial />
       {guestEnabled && account}
       {guestError && (
         <Text role="alert" c="red" size="sm">
