@@ -2,7 +2,7 @@ import { Button, Group, Paper, Stack, Text, ThemeIcon } from '@tidbcloud/uikit';
 import { IconArrowRight, IconBrowser, IconTerminal } from '@tidbcloud/uikit/icons';
 import { Heading } from '../../ui/WorkspaceHeading';
 import { capture } from '../analytics/capture';
-import { CopyAgentTrial } from './CopyAgentTrial';
+import { TrialPrompt } from '../reports/TrialPrompt';
 
 type SignInChoicesProps = {
   label: string;
@@ -55,7 +55,7 @@ export function SignInChoices({
             Paste the prompt into Claude Code, Cursor, Codex, Pi, or another local coding agent.
             Your agent analyzes the sales sample and gives you a report link.
           </Text>
-          <CopyAgentTrial />
+          <TrialPrompt />
         </Paper>
         <Paper
           component="section"

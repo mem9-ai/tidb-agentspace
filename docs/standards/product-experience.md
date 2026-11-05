@@ -86,6 +86,11 @@ and save a report). Present agent names as examples. Make the prompt usable from
 project chat, including tools that open a skill by URL. Group browser actions with the browser path and distinguish account sign-in
 from the two ways to try Studio.
 
+After the first saved agent report, name the finding and offer one concrete follow-up that a
+person can accept in the current chat. Reserve cross-agent handoff instructions for someone
+who chooses that path. Show the new finding on the original link after a confirmed update.
+Distinguish a completed sample from the separate choice to bring data into a workspace.
+
 **People and agent onboarding (owner direction, 2026-11-03):** a Guest can explore the US sales
 sample and obtain a real read-only analysis without installing an agent or creating a key. Offer a
 separate agent path using the same saved sample. An agent's durable, inspectable report and a
