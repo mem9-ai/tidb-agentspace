@@ -769,9 +769,24 @@ async fn indexed_usage(repository: &workspace_domain::Repository, state: &Value)
     if !local.is_empty() {
         repository.ensure_file_indexes().await?;
     }
-    for resource in local {
-        let id = text(resource, "id")?;
-        let summary = repository.local_file_summary(id).await?;
+    // Each local file system's summary is an independent metadata read. Fetch them
+    // with bounded concurrency: enough to avoid serializing one round-trip per file
+    // system, but capped so a workspace with many file systems does not flood the
+    // metadata service (which otherwise answers the burst with META_BUSY).
+    const SUMMARY_FETCH_CONCURRENCY: usize = 8;
+    use futures::{StreamExt, TryStreamExt};
+    let ids = local
+        .iter()
+        .map(|resource| text(resource, "id").map(str::to_owned))
+        .collect::<Result<Vec<String>>>()?;
+    let summaries = futures::stream::iter(ids.into_iter().map(|id| async move {
+        let summary = repository.local_file_summary(&id).await?;
+        Ok::<_, ServiceError>((id, summary))
+    }))
+    .buffer_unordered(SUMMARY_FETCH_CONCURRENCY)
+    .try_collect::<Vec<_>>()
+    .await?;
+    for (id, summary) in summaries {
         let row = output
             .as_array_mut()
             .and_then(|rows| rows.iter_mut().find(|row| row["resourceId"] == id))
