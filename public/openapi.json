@@ -5529,6 +5529,54 @@
         "description": "Locally deny the authenticated access token itself until its original expiry. An arbitrary ID is not authorization."
       }
     },
+    "/agent-trial/report-view": {
+      "get": {
+        "operationId": "getAgentTrialReportView",
+        "security": [{ "trialReportView": [] }],
+        "description": "Read the latest saved revision. Grant is valid for one report until its original 48-hour deadline (410 when expired). Cookies and query parameters are rejected. Reading never enrolls, renews, or changes a trial.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "sample",
+                    "stateSales",
+                    "leadingStateProducts",
+                    "expiresAt",
+                    "revision"
+                  ],
+                  "properties": {
+                    "id": { "type": "string", "format": "uuid" },
+                    "sample": { "const": "us-sales-v1" },
+                    "stateSales": {
+                      "type": ["object", "null"],
+                      "additionalProperties": { "type": "integer" }
+                    },
+                    "leadingStateProducts": {
+                      "type": ["object", "null"],
+                      "additionalProperties": { "type": "integer" }
+                    },
+                    "expiresAt": { "type": "integer", "description": "Unix seconds" },
+                    "revision": { "type": "integer", "minimum": 0, "maximum": 2 }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
+          }
+        }
+      }
+    },
     "/agent-trial/challenges": {
       "post": {
         "operationId": "createAgentTrialChallenge",
@@ -5785,6 +5833,12 @@
         "in": "header",
         "name": "Authorization",
         "description": "Trial <session token>, usable only for the originating public-sample report."
+      },
+      "trialReportView": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "TrialView v1.<publicKey>.<reportId>.<expiresAt>.<signature>. Sign the LF-separated UTF-8 lines drive9/trial/report-view/v1, canonical UUID, and original decimal Unix expiry with the project Ed25519 key. Key and signature use unpadded base64url."
       }
     },
     "schemas": {

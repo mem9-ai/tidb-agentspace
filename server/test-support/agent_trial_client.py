@@ -7,6 +7,8 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
+from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 
 helper = (
     Path(__file__).resolve().parents[2]
@@ -59,7 +61,23 @@ def run(origin, directory):
             and "$48,000.00" in first["markdown"]
             and "$100,000.00" in first["markdown"]
         )
+        link = first["studioUrl"]
+        assert second["studioUrl"] == link
+        assert link.startswith(origin + "/report/#v1.")
+        grant = urlsplit(link).fragment
+
+        def view():
+            req = Request(
+                origin + "/api/v1/agent-trial/report-view",
+                headers={"Authorization": "TrialView " + grant},
+            )
+            with urlopen(req, timeout=10) as response:
+                return json.load(response)
+
+        assert view()["revision"] == 1
         continued = invoke("products", nested)
+        assert continued["studioUrl"] == link
+        assert view()["leadingStateProducts"]["Monitors"] == 18000
         assert (
             continued["report"] == first["report"]
             and continued["reportId"] == first["reportId"]
@@ -75,6 +93,7 @@ def run(origin, directory):
         assert set(state) == {"reportId", "file", "status", "expiresAt"}
         fallback = client.trial(origin, project, home, "products", store_factory=locked)
         assert fallback["status"] == "local-only" and fallback["report"] != str(file)
+        assert "studioUrl" not in fallback
         assert file.read_text() == continued["markdown"]
         service = "Drive9 Agent Trial " + binding.parent.name
         assert client.native_store().get_password(service, "project") is not None

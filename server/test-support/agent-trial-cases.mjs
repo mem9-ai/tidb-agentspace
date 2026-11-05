@@ -49,6 +49,22 @@ test(
         signature: sign(null, Buffer.from(message), keys.privateKey).toString('base64url'),
       };
     }
+    function viewGrant(keys, id, expiry) {
+      const signature = sign(
+        null,
+        Buffer.from(['drive9/trial/report-view/v1', id, expiry].join('\n')),
+        keys.privateKey,
+      );
+      return [
+        'v1',
+        keys.publicKey.export({ format: 'jwk' }).x,
+        id,
+        expiry,
+        signature.toString('base64url'),
+      ].join('.');
+    }
+    const read = (grant) =>
+      call('report-view', 'GET', undefined, { Authorization: 'TrialView ' + grant });
     const headers = (token) => ({ Authorization: 'Trial ' + token });
     const update = (token, version, section) =>
       call('report', 'PUT', { section }, { ...headers(token), 'If-Match': '"' + version + '"' });
@@ -81,12 +97,66 @@ test(
     const first = await call('sessions', 'POST', enrollment);
     assert.equal(first.status, 200, JSON.stringify(first.body));
     const { token, report } = first.body;
+    const grant = viewGrant(a, report.id, report.expiresAt);
+    assert.equal((await read(grant)).status, 404);
+    assert.equal((await read(report.id)).status, 401);
+    assert.equal((await read(grant.replace('v1.', 'v2.'))).status, 401);
+    assert.equal(
+      (await read(grant.replace(report.id, report.id.split('').reverse().join('')))).status,
+      401,
+    );
+    assert.equal((await read(viewGrant(a, report.id, report.expiresAt + 1))).status, 403);
+    const viewHeaders = { Authorization: 'TrialView ' + grant };
+    assert.equal(
+      (await call('report', 'PUT', { section: 'states' }, { ...viewHeaders, 'If-Match': '"0"' }))
+        .status,
+      401,
+    );
+    assert.equal((await call('report', 'GET', undefined, viewHeaders)).status, 401);
+    assert.equal((await call('report-view', 'GET', undefined, headers(token))).status, 401);
+    assert.equal(
+      (await call('report-view', 'GET', undefined, { ...viewHeaders, Cookie: 'browser=example' }))
+        .status,
+      400,
+    );
+    assert.equal(
+      (
+        await f.request('/api/v1/agent-trial/report-view?test=1', {
+          headers: viewHeaders,
+          token: null,
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await f.request('/api/v1/agent-trial/report-view', {
+          method: 'PUT',
+          headers: viewHeaders,
+          token: null,
+        })
+      ).status,
+      404,
+    );
+    assert.ok(
+      [401, 403].includes(
+        (
+          await f.request('/api/v1/workspaces/ws_agentlab/resources', {
+            headers: viewHeaders,
+            token: null,
+          })
+        ).status,
+      ),
+    );
     assert.ok(Math.abs(report.expiresAt - Date.now() / 1000 - 48 * 3600) < 10);
     assert.equal((await call('sessions', 'POST', enrollment)).status, 401);
     assert.equal((await call('report')).status, 401);
     assert.equal((await update(token, 0, 'products')).status, 409);
     const rev1 = await update(token, 0, 'states');
     assert.equal(rev1.status, 200);
+    const initialView = await read(grant);
+    assert.deepEqual(initialView.body, rev1.body);
+    assert.equal(initialView.headers.get('cache-control'), 'no-store');
     assert.equal(rev1.headers.get('etag'), '"1"');
     assert.equal(rev1.body.stateSales.California, 48000);
     assert.equal((await update(token, 0, 'states')).status, 412);
@@ -99,6 +169,13 @@ test(
     const other = await call('sessions', 'POST', await proof(b, true));
     assert.notEqual(other.body.report.id, report.id);
     assert.equal(other.body.report.revision, 0);
+    assert.equal((await read(viewGrant(b, report.id, report.expiresAt))).status, 403);
+    const fakeSession = await proof(a, false);
+    assert.equal(
+      (await call('sessions', 'POST', { ...fakeSession, signature: grant.split('.').at(-1) }))
+        .status,
+      401,
+    );
     await f.restart();
     assert.equal((await call('report', 'GET', undefined, headers(token))).status, 401);
     const resumed = await call('sessions', 'POST', await proof(a, false));
@@ -109,8 +186,11 @@ test(
     assert.equal(rev2.body.leadingStateProducts.Monitors, 18000);
     const saved = await call('report', 'GET', undefined, headers(resumed.body.token));
     assert.deepEqual(saved.body, rev2.body);
+    assert.deepEqual((await read(grant)).body, rev2.body);
     assert.equal((await update(resumed.body.token, 2, 'states')).body.revision, 2);
     await f.expireTrial(enrollment.publicKey);
+    assert.equal((await read(grant)).status, 410);
+    assert.equal((await read(viewGrant(a, report.id, 1))).status, 410);
     assert.equal((await call('report', 'GET', undefined, headers(resumed.body.token))).status, 410);
     assert.equal((await call('sessions', 'POST', await proof(a, false))).status, 410);
   },
