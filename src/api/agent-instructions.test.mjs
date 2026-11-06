@@ -38,7 +38,7 @@ test('task points to the portable skill without exposing credentials', () => {
   const skill = workspaceSkillUrl('https://workspace.example', '/studio/');
   const text = workspaceSkillTask('https://workspace.example/studio/api', skill, task);
   assert.ok(text.includes('https://workspace.example/studio/api'));
-  assert.ok(text.includes('https://workspace.example/studio/skills/drive9-workspace/SKILL.md'));
+  assert.ok(text.includes('https://workspace.example/studio/skills/tidb-agent-workspace/SKILL.md'));
   assert.ok(text.includes(task));
   assert.match(text, /unauthenticated GET/);
   assert.match(text, /If the skill is unavailable, stop/);
@@ -49,7 +49,7 @@ test('task points to the portable skill without exposing credentials', () => {
 
 test('published Workspace skill is portable and preserves credential and write safeguards', async () => {
   const skill = await readFile(
-    new URL('../../console/public/skills/drive9-workspace/SKILL.md', import.meta.url),
+    new URL('../../console/public/skills/tidb-agent-workspace/SKILL.md', import.meta.url),
     'utf8',
   );
   const match = /^---\n([\s\S]*?)\n---\n/.exec(skill);
@@ -60,7 +60,7 @@ test('published Workspace skill is portable and preserves credential and write s
   assert.ok(metadata.description.length <= 1024);
   assert.match(skill, /\[the authenticated API\]\(workspace-api.md\)/);
   const api = await readFile(
-    new URL('../../console/public/skills/drive9-workspace/workspace-api.md', import.meta.url),
+    new URL('../../console/public/skills/tidb-agent-workspace/workspace-api.md', import.meta.url),
     'utf8',
   );
   assert.match(api, /Do not follow the\s+307 redirect/);

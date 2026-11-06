@@ -678,7 +678,7 @@ test('@visual Guest starts a sales task, grants only its file system and returns
   expect(setupCommand).toContain('/us-sales-report.md');
   expect(setupCommand).toContain('Mermaid pie chart');
   expect(setupCommand).toContain('actual query results');
-  expect(setupCommand).toContain('/skills/drive9-workspace/SKILL.md');
+  expect(setupCommand).toContain('/skills/tidb-agent-workspace/SKILL.md');
   expect(setupCommand).not.toContain('POST /file-analyses');
   expect(setupCommand).not.toContain('\n');
   expect(setupCommand).not.toContain('synthetic-browser-key-never-valid-on-a-provider');
@@ -733,7 +733,7 @@ test('@visual Guest starts a sales task, grants only its file system and returns
   const copied = await page.evaluate(() => globalThis.__copiedText);
   expect(copied).toContain('WORKSPACE_API_KEY');
   expect(copied).toContain('/us-sales.csv');
-  expect(copied).toContain('/skills/drive9-workspace/SKILL.md');
+  expect(copied).toContain('/skills/tidb-agent-workspace/SKILL.md');
   expect(copied).not.toContain('awk_');
   expect(copied).not.toContain('synthetic-browser-key-never-valid-on-a-provider');
   expect(page.url()).not.toContain('synthetic-browser-key-never-valid-on-a-provider');
@@ -846,7 +846,7 @@ test('@visual a copied follow-up resumes waiting and discovers its own report', 
   expect(copied).toContain('/us-sales.csv');
   expect(copied).toContain('/us-sales-report.md');
   expect(copied).toContain('/us-sales-follow-up.md');
-  expect(copied).toContain('/skills/drive9-workspace/SKILL.md');
+  expect(copied).toContain('/skills/tidb-agent-workspace/SKILL.md');
   expect(copied).not.toContain('awk_');
   if (process.env.GUEST_SALES_SCREENSHOTS)
     await page.screenshot({
@@ -925,7 +925,7 @@ test('follow-up task offers a usable download when clipboard access fails', asyn
   expect(download.suggestedFilename()).toBe('workspace-follow-up-task.txt');
   const text = await readFile(await download.path(), 'utf8');
   expect(text).toContain('/us-sales-follow-up.md');
-  expect(text).toContain('/skills/drive9-workspace/SKILL.md');
+  expect(text).toContain('/skills/tidb-agent-workspace/SKILL.md');
   expect(text).not.toContain('awk_');
   await followUp.getByRole('button', { name: 'Continue to waiting' }).click();
   await expect(followUp.getByText(/Give the task to your agent/)).toBeVisible();
@@ -962,7 +962,7 @@ test('an existing key and an unavailable clipboard have a recoverable path', asy
   const downloaded = await taskDownload;
   const downloadedTask = await readFile(await downloaded.path(), 'utf8');
   expect(downloaded.suggestedFilename()).toBe('workspace-task.txt');
-  expect(downloadedTask).toContain('/skills/drive9-workspace/SKILL.md');
+  expect(downloadedTask).toContain('/skills/tidb-agent-workspace/SKILL.md');
   expect(downloadedTask).toContain('/us-sales.csv');
   expect(downloadedTask).not.toContain('synthetic-browser-key-never-valid-on-a-provider');
   await task.getByRole('button', { name: 'Continue to report' }).click();
@@ -1134,19 +1134,22 @@ test('the published Workspace skill is available at root and mounted Console pat
   page,
 }) => {
   for (const prefix of ['', '/studio']) {
-    const response = await page.request.get(`${prefix}/skills/drive9-workspace/SKILL.md`);
+    const response = await page.request.get(`${prefix}/skills/tidb-agent-workspace/SKILL.md`);
     expect(response.ok()).toBe(true);
     const body = await response.text();
+    const legacy = await page.request.get(`${prefix}/skills/drive9-workspace/SKILL.md`);
+    expect(legacy.status()).toBe(200);
+    expect(await legacy.text()).toBe(body);
     expect(body).toContain('name: tidb-agent-workspace');
     expect(body).toContain('[the authenticated API](workspace-api.md)');
     expect(body).toContain('[the private CSV workflow](private-csv.md)');
-    const api = await page.request.get(`${prefix}/skills/drive9-workspace/workspace-api.md`);
+    const api = await page.request.get(`${prefix}/skills/tidb-agent-workspace/workspace-api.md`);
     expect(api.ok()).toBe(true);
     const instructions = await api.text();
     expect(instructions).toContain('If-None-Match: *');
     expect(instructions).toContain('If-Match');
     expect(instructions).toContain('Never print it');
-    const csv = await page.request.get(`${prefix}/skills/drive9-workspace/private-csv.md`);
+    const csv = await page.request.get(`${prefix}/skills/tidb-agent-workspace/private-csv.md`);
     expect(csv.ok()).toBe(true);
     expect(await csv.text()).toContain('Never pick a different file');
   }

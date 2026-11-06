@@ -72,7 +72,7 @@ test('a person can copy the agent prompt manually when clipboard access is denie
   });
   await expect(manual).toBeVisible();
   await expect(manual).toHaveValue(
-    /https:\/\/drive9\.ai\/studio\/skills\/drive9-workspace\/SKILL\.md/,
+    /https:\/\/drive9\.ai\/studio\/skills\/tidb-agent-workspace\/SKILL\.md/,
   );
   await manual.focus();
   expect(await manual.evaluate((field) => field.selectionEnd - field.selectionStart)).toBe(
@@ -162,7 +162,7 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
   await agent.getByRole('button', { name: 'Copy prompt' }).click();
   await expect(page.getByRole('status')).toHaveText('Copied. Paste it into your project chat.');
   const instruction = await page.evaluate(() => navigator.clipboard.readText());
-  expect(instruction).toContain('https://drive9.ai/studio/skills/drive9-workspace/SKILL.md');
+  expect(instruction).toContain('https://drive9.ai/studio/skills/tidb-agent-workspace/SKILL.md');
   expect(instruction).toContain('save a report');
   expect(instruction).toContain('open the report in Workspace');
   expect(instruction).toContain('free trial');
