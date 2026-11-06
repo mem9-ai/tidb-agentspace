@@ -1,4 +1,5 @@
 import { ReportFilesEntry } from './features/reports/ReportFilesEntry';
+import { TemporaryReportNotice } from './features/reports/TemporaryReportNotice';
 import { ReportNextSteps } from './features/reports/ReportNextSteps';
 import { ApiDocumentation } from './features/api/ApiDocumentation';
 import { capturePage, startAnalytics } from './features/analytics/capture';
@@ -1381,7 +1382,16 @@ function FileWorkspace({
   }
   return (
     <>
-      {reportWelcome && (
+      {reportWelcome && isGuest && initialLocation && (
+        <TemporaryReportNotice
+          resourceId={resource.id}
+          workspaceId={data.workspace.id}
+          reportPath={initialLocation.path}
+          disabled={busy || analysisBusy || previewLoading}
+          beforeLeave={requestPreviewChange}
+        />
+      )}
+      {reportWelcome && !isGuest && (
         <ReportNextSteps
           resource={resource}
           workspaceId={data.workspace.id}
@@ -1600,7 +1610,12 @@ function FileWorkspace({
               databaseCreation={{ data, refresh, notify, isGuest }}
               initialView={previewView}
               onViewChange={(view) =>
-                history.replaceState(null, '', fileHash(editing.resourceId, editing.path, view))
+                history.replaceState(
+                  null,
+                  '',
+                  fileHash(editing.resourceId, editing.path, view) +
+                    (reportWelcome && initialLocation?.path === editing.path ? '&from=report' : ''),
+                )
               }
               content={content}
               savedContent={editing.content || ''}

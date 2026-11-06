@@ -57,7 +57,7 @@ export function ReportFilesEntry({
   if (!files)
     return (
       <Alert title="Open the report to continue">
-        Return to the report and choose “Open report files” again.
+        Return to the report and choose “Open report in Workspace” again.
       </Alert>
     );
   return (

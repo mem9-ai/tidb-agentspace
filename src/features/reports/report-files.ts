@@ -1,6 +1,7 @@
 import { workspaceApi, workspaceId } from '../../api/client';
 import { WorkspaceApiError } from '../../api/transport';
 
+const transferLimit = 64 * 1024;
 const storageKey = 'studio:report-files';
 const sampleDigest = 'd79064c635829b0aeac2824b49e3e189a838dd52f1669567f2efa8913c8e1f06';
 export const samplePath = '/US sales sample.csv';
@@ -38,17 +39,74 @@ export async function prepareReportFiles(report: string, revision: 1 | 2, market
     markets,
     expiresAt: Date.now() + 10 * 60_000,
   };
+  storeReportFiles(files);
+}
+
+function storeReportFiles(files: ReportFiles) {
+  const text = JSON.stringify(files);
+  if (text.length > transferLimit)
+    throw new Error(
+      'These files are too large to carry through sign-in. Download them before leaving this workspace.',
+    );
   try {
-    sessionStorage.setItem(storageKey, JSON.stringify(files));
+    sessionStorage.setItem(storageKey, text);
   } catch {
-    throw new Error('Allow site storage in your browser, then try opening the report files again.');
+    throw new Error('Allow site storage in your browser, then try saving the report again.');
   }
+}
+
+/** Read the selected report and its saved source only, before leaving the current owner session. */
+export async function prepareSavedReportFiles(
+  resourceId: string,
+  path: string,
+  sourceWorkspace: string,
+) {
+  const markets = path === '/US sales insights.md';
+  const match = /^\/US sales report - revision ([12])\.md$/.exec(path);
+  if (!markets && !match) throw new Error('Open the sales report to save it to TiDB Cloud.');
+  const revision = match?.[1] === '1' ? 1 : 2;
+  function checkWorkspace() {
+    if (workspaceId !== sourceWorkspace)
+      throw new Error('The workspace changed. Reopen the report and try again.');
+  }
+  checkWorkspace();
+  const paths = [samplePath, path];
+  const before = await Promise.all(paths.map((p) => workspaceApi.fileMetadata(resourceId, p)));
+  checkWorkspace();
+  const contents = await Promise.all(
+    paths.map((p) => workspaceApi.previewFile({ resourceId, path: p })),
+  );
+  checkWorkspace();
+  const after = await Promise.all(paths.map((p) => workspaceApi.fileMetadata(resourceId, p)));
+  checkWorkspace();
+  if (before.some((file, i) => !file.data.version || file.data.version !== after[i].data.version))
+    throw new Error('The report or its data changed while preparing to save. Try again.');
+  const text = contents.map((file, i) => {
+    if (
+      file.unavailableReason ||
+      typeof file.content !== 'string' ||
+      file.size !== before[i].data.size ||
+      new TextEncoder().encode(file.content).length !== file.size
+    )
+      throw new Error(
+        'The complete report and source data could not be read. Keep this workspace open and try again.',
+      );
+    return file.content;
+  });
+  if (!text[1]) throw new Error('The report is empty. Save your report before continuing.');
+  storeReportFiles({
+    sample: text[0],
+    report: text[1],
+    revision,
+    markets,
+    expiresAt: Date.now() + 10 * 60_000,
+  });
 }
 
 export function readReportFiles(): ReportFiles | null {
   try {
     const text = sessionStorage.getItem(storageKey);
-    if (!text || text.length > 64 * 1024) return null;
+    if (!text || text.length > transferLimit) return null;
     const value: unknown = JSON.parse(text);
     if (
       !value ||
