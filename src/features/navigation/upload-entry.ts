@@ -1,5 +1,6 @@
 export const uploadHash = '#files/upload';
 export const reportFilesHash = '#files/report';
+export const reportAccountHash = '#files/report/account';
 
 // Keep only a fixed destination and deadline in this tab. The report grant
 // stays on its original history entry and is never carried into the workspace.
@@ -33,10 +34,10 @@ export function takeWorkspaceFilesEntry() {
 }
 
 // Bundled SSO returns to the Console root.
-export function rememberUploadSignIn() {
+export function rememberUploadSignIn(destination = location.hash) {
   remember(accountReturn, 10 * 60_000);
   try {
-    sessionStorage.setItem(accountReturn + ':route', location.hash);
+    sessionStorage.setItem(accountReturn + ':route', destination);
   } catch {
     /* Restore the standard Files route. */
   }

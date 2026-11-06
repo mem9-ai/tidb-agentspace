@@ -38,7 +38,7 @@ export function ReportFilesEntry({
         await refresh();
         if (!active) return;
         clearReportFiles();
-        location.replace(fileHash(target, reportPath(files), 'preview'));
+        location.replace(fileHash(target, reportPath(files), 'preview') + '&from=report');
       })
       .catch((cause: unknown) => {
         if (active)

@@ -1,4 +1,5 @@
 import { ReportFilesEntry } from './features/reports/ReportFilesEntry';
+import { ReportNextSteps } from './features/reports/ReportNextSteps';
 import { ApiDocumentation } from './features/api/ApiDocumentation';
 import { capturePage, startAnalytics } from './features/analytics/capture';
 import { WorkspaceApiError } from './api/transport';
@@ -41,7 +42,11 @@ import {
 } from './features/files/remote-files';
 import { CreateResourceDialog } from './features/resources/CreateResourceDialog';
 import { TutorialProgressProvider } from './features/portal/TutorialProgressProvider';
-import { rememberUploadSignIn, restoreUploadAfterSignIn } from './features/navigation/upload-entry';
+import {
+  rememberUploadSignIn,
+  restoreUploadAfterSignIn,
+  reportFilesHash,
+} from './features/navigation/upload-entry';
 import { SignInChoices } from './features/auth/SignInChoices';
 import {
   resourceKindLabels as kindLabel,
@@ -182,6 +187,10 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
   const [tutorialCreation, setTutorialCreation] = useState(false);
   const [keyPreset, setKeyPreset] = useState<Resource>();
   const [salesPrompt, setSalesPrompt] = useState<string>();
+  const [reportAgentSetup, setReportAgentSetup] = useState<{
+    resourceId: string;
+    started: boolean;
+  }>();
   const [sampleKey, setSampleKey] = useState<{
     workspaceId: string;
     resourceId: string;
@@ -391,11 +400,22 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
   }, [prepareNewGuest, refresh]);
   const start = useCallback(async () => {
     let guestAvailable = false;
+    let reportLogin: string | undefined;
     try {
       setError('');
       setNeedsSignIn(false);
       const auth = await workspaceApi.authConfig();
       setSso(auth);
+      if (currentRoute().reportAccount) reportLogin = auth.loginUrl;
+      if (currentRoute().reportAccount && !auth.loginUrl && auth.sessionKind !== 'account') {
+        if (!auth.enabled || !auth.loginPath)
+          throw new Error(
+            'TiDB Cloud sign-in is unavailable. Return to the report to open temporary files.',
+          );
+        rememberUploadSignIn(reportFilesHash);
+        window.location.assign(apiBaseUrl + auth.loginPath);
+        return;
+      }
       // A missing ID on older hosts requires discovery before starting a Guest.
       guestAvailable = Boolean(auth.enabled && auth.guestEnabled && auth.workspaceId == null);
       void startAnalytics(auth).then(() => capturePage('workspace'));
@@ -417,6 +437,11 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
       setError((e as Error).message);
       const signedOut = e instanceof WorkspaceApiError && e.status === 401;
       setNeedsSignIn(signedOut);
+      if (signedOut && reportLogin) {
+        rememberUploadSignIn(reportFilesHash);
+        window.location.assign(reportLogin);
+        return;
+      }
       if (
         signedOut &&
         guestAvailable &&
@@ -497,6 +522,12 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
       setModal('resource');
     },
     onConnect: (r: Resource) => setConnection(r),
+    onReportConnect: (resource: Resource, prompt: string) => {
+      setKeyPreset(resource);
+      setSalesPrompt(prompt);
+      setModal('key');
+    },
+    reportAgentSetup,
     isGuest: sso.sessionKind === 'guest',
     loadMoreResources,
     resourcePageBusy,
@@ -756,6 +787,8 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
           }
           onContinue={(launchPrepared) => {
             setModal(null);
+            if (keyPreset && new URLSearchParams(location.hash.slice(7)).get('from') === 'report')
+              setReportAgentSetup({ resourceId: keyPreset.id, started: launchPrepared });
             if (keyPreset && launchPrepared)
               setSampleKey((current) => (current ? { ...current, launchPrepared: true } : current));
             if (!keyPreset) location.hash = 'connect';
@@ -786,6 +819,8 @@ type Shared = {
   copy: (s: string) => Promise<boolean>;
   onCreate: (target?: ResourceCreationTarget) => void;
   onConnect: (r: Resource) => void;
+  onReportConnect: (resource: Resource, prompt: string) => void;
+  reportAgentSetup?: { resourceId: string; started: boolean };
   isGuest: boolean;
   loadMoreResources: () => Promise<void>;
   resourcePageBusy: boolean;
@@ -1113,12 +1148,18 @@ function FileWorkspace({
   refresh,
   notify,
   onConnect,
+  onReportConnect,
+  reportAgentSetup,
+  copy,
   onCreate,
   isGuest,
   resource,
 }: Shared & { resource: Resource }) {
   const systems = data.resources.filter((r) => r.kind === 'filesystem');
   const [initialContext] = useState(() => parseFileSystemLocation(location.hash));
+  const [reportWelcome, setReportWelcome] = useState(
+    () => new URLSearchParams(location.hash.slice(7)).get('from') === 'report',
+  );
   const initialLocation = initialContext?.file;
   const initialResource = resource;
   const initialFile =
@@ -1211,7 +1252,16 @@ function FileWorkspace({
     async (file: WorkspaceFile, view: FileView = 'preview', savedText?: string) => {
       if (savedText !== undefined) file = { ...file, content: savedText };
       setPreviewView(view);
-      history.replaceState(null, '', fileHash(file.resourceId, file.path, view));
+      const current = parseFileSystemLocation(location.hash)?.file;
+      const keepNextStep =
+        new URLSearchParams(location.hash.slice(7)).get('from') === 'report' &&
+        current?.path === file.path &&
+        current.resourceId === file.resourceId;
+      history.replaceState(
+        null,
+        '',
+        fileHash(file.resourceId, file.path, view) + (keepNextStep ? '&from=report' : ''),
+      );
       previewRequest.current?.abort();
       const controller = new AbortController();
       previewRequest.current = controller;
@@ -1327,6 +1377,34 @@ function FileWorkspace({
   }
   return (
     <>
+      {reportWelcome && (
+        <ReportNextSteps
+          resource={resource}
+          workspaceId={data.workspace.id}
+          copy={copy}
+          connected={reportAgentSetup?.resourceId === resource.id ? reportAgentSetup : undefined}
+          onConnect={(prompt) => onReportConnect(resource, prompt)}
+          onExplore={() =>
+            requestPreviewChange(() => {
+              setReportWelcome(false);
+              const samplePath = '/US sales sample.csv';
+              const source = data.files.find(
+                (file) => file.resourceId === resource.id && file.path === samplePath,
+              );
+              void openFile(
+                source || {
+                  id: resource.id + samplePath,
+                  resourceId: resource.id,
+                  path: samplePath,
+                  type: 'file',
+                  size: 0,
+                  updatedAt: null,
+                },
+              );
+            })
+          }
+        />
+      )}
       <FileWorkspaceHeader
         resource={selectedSystem}
         resources={systems}

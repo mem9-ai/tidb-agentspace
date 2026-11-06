@@ -1,9 +1,10 @@
 import { Paper, Stack, Text, Title } from '@tidbcloud/uikit';
 import { OpenReportFiles } from './OpenReportFiles';
 import { TrialPrompt } from './TrialPrompt';
+import { marketInsight } from './report-insights';
 
 type Rows = [string, number][];
-export type SalesReport = { revision: number; expiresAt: number; states: Rows; products: Rows };
+export type SalesReport = { revision: 1 | 2; expiresAt: number; states: Rows; products: Rows };
 const money = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
@@ -91,6 +92,8 @@ function ProductAnalysis({
 }
 
 export function TrialReportContent({ report }: { report: SalesReport }) {
+  const markets = new URLSearchParams(location.search).get('view') === 'markets';
+  const insight = marketInsight(report.states);
   const [[leader, sales]] = report.states;
   const total = report.states.reduce((sum, [, n]) => sum + n, 0);
   const expires = new Date(report.expiresAt * 1000);
@@ -106,9 +109,18 @@ export function TrialReportContent({ report }: { report: SalesReport }) {
         Public US sales sample · Revision {report.revision}
         {report.revision === 2 && ' · Complete'}
       </Text>
-      {report.revision === 2 ? (
+      {report.revision === 2 || markets ? (
         <>
-          <ProductAnalysis state={leader} sales={sales} products={report.products} />
+          {markets ? (
+            <Paper className="product-spotlight" withBorder>
+              <Text fw={600}>Sales from your top two states</Text>
+              <Title order={1}>{insight.percentage} of total sales</Title>
+              <Text>{insight.calculation}</Text>
+              <Text>{insight.share}</Text>
+            </Paper>
+          ) : (
+            <ProductAnalysis state={leader} sales={sales} products={report.products} />
+          )}
           <details className="original-analysis">
             <summary>Original state rankings</summary>
             {stateFinding}
@@ -116,20 +128,26 @@ export function TrialReportContent({ report }: { report: SalesReport }) {
           </details>
           <section aria-labelledby="own-sales">
             <Title order={2} id="own-sales">
-              Your report files
+              Keep going in your own workspace
             </Title>
             <Text mb="sm">
-              Open this report and its source data together in your workspace. To keep analyzing the
-              sample with your agent, copy the next question.
+              Sign in or create a TiDB Cloud account. Bring this report and its sample data into
+              your workspace, then connect your agent or explore the data here.
             </Text>
             <Stack gap="sm" align="flex-start">
-              <OpenReportFiles report={report} />
-              <TrialPrompt
-                sampleSales={`${report.states
-                  .slice(0, 2)
-                  .map(([state, amount]) => `${state} ${money.format(amount)}`)
-                  .join(', ')} out of ${money.format(total)} across all states`}
-              />
+              <OpenReportFiles report={report} markets={markets} account />
+              <OpenReportFiles report={report} markets={markets} />
+              <Text size="sm" c="var(--text-secondary)">
+                Not ready to sign up? Open the files in a temporary workspace for 24 hours.
+              </Text>
+              {!markets && (
+                <TrialPrompt
+                  sampleSales={`${report.states
+                    .slice(0, 2)
+                    .map(([state, amount]) => `${state} ${money.format(amount)}`)
+                    .join(', ')} out of ${money.format(total)} across all states`}
+                />
+              )}
             </Stack>
           </section>
         </>

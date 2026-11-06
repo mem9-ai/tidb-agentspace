@@ -4,13 +4,21 @@ import { WorkspaceApiError } from '../../api/transport';
 const storageKey = 'studio:report-files';
 const sampleDigest = 'd79064c635829b0aeac2824b49e3e189a838dd52f1669567f2efa8913c8e1f06';
 export const samplePath = '/US sales sample.csv';
-export type ReportFiles = { sample: string; report: string; revision: 1 | 2; expiresAt: number };
+export type ReportFiles = {
+  sample: string;
+  report: string;
+  revision: 1 | 2;
+  markets?: boolean;
+  expiresAt: number;
+};
 
 export function reportPath(files: ReportFiles) {
-  return `/US sales report - revision ${files.revision}.md`;
+  return files.markets
+    ? '/US sales insights.md'
+    : `/US sales report - revision ${files.revision}.md`;
 }
 
-export async function prepareReportFiles(report: string, revision: 1 | 2) {
+export async function prepareReportFiles(report: string, revision: 1 | 2, markets = false) {
   const endpoint = location.pathname.replace(/\/report\/?$/, '/api/v1/agent-trial/us-sales-v1.csv');
   const response = await fetch(endpoint, {
     credentials: 'omit',
@@ -27,6 +35,7 @@ export async function prepareReportFiles(report: string, revision: 1 | 2) {
     sample: new TextDecoder().decode(bytes),
     report,
     revision,
+    markets,
     expiresAt: Date.now() + 10 * 60_000,
   };
   try {
@@ -60,6 +69,7 @@ export function readReportFiles(): ReportFiles | null {
       sample: value.sample,
       report: value.report,
       revision: value.revision,
+      markets: 'markets' in value && value.markets === true,
       expiresAt: value.expiresAt,
     };
   } catch {

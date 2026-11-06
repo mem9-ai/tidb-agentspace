@@ -5,6 +5,13 @@ import { WorkspaceApiError } from '../../api/transport';
 import { fileHash } from '../files/file-location';
 
 export const followUpReportPath = '/us-sales-follow-up.md';
+export function followUpStorageKey(
+  workspaceId: string,
+  resourceId: string,
+  path = followUpReportPath,
+) {
+  return `sales-follow-up:${workspaceId}:${resourceId}${path === followUpReportPath ? '' : ':' + path}`;
+}
 type ReportState = 'checking' | 'missing' | 'found' | 'unavailable';
 
 /** File existence is observable; it does not identify the writer or prove the task ran. */
@@ -14,20 +21,36 @@ export function SalesFollowUp({
   instructions,
   enabled,
   copy,
+  started = false,
+  description = 'Find which product contributes most to California sales.',
+  path = followUpReportPath,
 }: {
   workspaceId: string;
   resourceId: string;
   instructions: string;
   enabled: boolean;
   copy: (value: string) => Promise<boolean>;
+  started?: boolean;
+  description?: string;
+  path?: string;
 }) {
-  const storageKey = `sales-follow-up:${workspaceId}:${resourceId}`;
+  const storageKey = followUpStorageKey(workspaceId, resourceId, path);
+  useEffect(() => {
+    if (started) {
+      try {
+        sessionStorage.setItem(storageKey, 'waiting');
+      } catch {
+        /* Keep observing in this page. */
+      }
+    }
+  }, [started, storageKey]);
   const [report, setReport] = useState<ReportState>('checking');
   const [checking, setChecking] = useState(false);
   const [checked, setChecked] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [waiting, setWaiting] = useState(() => {
+    if (started) return true;
     try {
       return sessionStorage.getItem(storageKey) === 'waiting';
     } catch {
@@ -45,12 +68,12 @@ export function SalesFollowUp({
   }
   const observe = useCallback(async () => {
     try {
-      const value = await workspaceApi.fileMetadata(resourceId, followUpReportPath);
+      const value = await workspaceApi.fileMetadata(resourceId, path);
       return value.data.type === 'file' ? 'found' : 'unavailable';
     } catch (cause) {
       return cause instanceof WorkspaceApiError && cause.status === 404 ? 'missing' : 'unavailable';
     }
-  }, [resourceId]);
+  }, [resourceId, path]);
   useEffect(() => {
     let active = true;
     void observe().then((result) => {
@@ -131,26 +154,28 @@ export function SalesFollowUp({
   return (
     <section aria-label="Follow-up task">
       <Stack gap="sm">
-        <Text fw={600}>Continue with a fresh agent session</Text>
+        <Text fw={600}>
+          {started ? 'Your agent’s next report' : 'Continue with a fresh agent session'}
+        </Text>
         {report === 'checking' && <Text role="status">Checking for a follow-up report…</Text>}
         {report === 'found' ? (
           <>
             <Text role="status">Follow-up file found. Open it to review its contents.</Text>
             <Group>
-              <Button component="a" href={fileHash(resourceId, followUpReportPath, 'preview')}>
+              <Button component="a" href={fileHash(resourceId, path, 'preview')}>
                 Open follow-up report
               </Button>
             </Group>
           </>
         ) : (
           <>
-            <Text>Find which product contributes most to California sales.</Text>
+            <Text>{description}</Text>
             {waiting && (
               <>
                 <Text role="status">
-                  {copied ? 'Task copied.' : 'Give the task to your agent.'} Start a fresh agent
-                  session with access to this workspace, then paste the task. If you used the
-                  one-line setup, run it again and enter your key.
+                  {started
+                    ? 'Run the terminal command and provide your key. Your agent will save its result here.'
+                    : `${copied ? 'Task copied.' : 'Give the task to your agent.'} Start a fresh agent session with access to this workspace, then paste the task. If you used the one-line setup, run it again and enter your key.`}
                 </Text>
                 <Text size="sm">
                   We’ll look for the follow-up report while this page is open. Copying the task does
@@ -162,7 +187,7 @@ export function SalesFollowUp({
             {report === 'unavailable' && (
               <Alert color="yellow">Could not check for the follow-up report. Try again.</Alert>
             )}
-            {!instructions && (
+            {!instructions && !started && (
               <Text size="sm">
                 Connection details are unavailable.{' '}
                 <Anchor href="#connect">Open connection instructions</Anchor>
@@ -185,9 +210,14 @@ export function SalesFollowUp({
               </Alert>
             )}
             <Group>
-              <Button disabled={!enabled || report === 'checking'} onClick={() => void copyTask()}>
-                {waiting ? 'Copy follow-up task again' : 'Copy follow-up task'}
-              </Button>
+              {(!started || instructions) && (
+                <Button
+                  disabled={!enabled || report === 'checking'}
+                  onClick={() => void copyTask()}
+                >
+                  {waiting ? 'Copy follow-up task again' : 'Copy follow-up task'}
+                </Button>
+              )}
               {(waiting || report === 'unavailable') && (
                 <Button variant="default" loading={checking} onClick={() => void checkNow()}>
                   Check follow-up report

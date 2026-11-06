@@ -157,7 +157,7 @@ test('viewer handles unavailable, invalid and expired links and clears an open r
   ).toBeVisible();
 });
 
-async function openReportForUpload(page, workspace, loseReceipt = false) {
+async function openReportForUpload(page, workspace, loseReceipt = false, options = {}) {
   let writes = 0;
   await page.route('**/api/v1/agent-trial/us-sales-v1.csv', (route) =>
     route.fulfill({ body: source, contentType: 'text/csv' }),
@@ -198,14 +198,20 @@ async function openReportForUpload(page, workspace, loseReceipt = false) {
     route.fulfill({
       json: {
         ...sample,
-        revision: 2,
+        revision: options.revision ?? 2,
         expiresAt: Math.floor(Date.now() / 1000) + 172800,
         leadingStateProducts: { Monitors: 18000 },
       },
     }),
   );
-  await page.goto(path);
-  await page.getByRole('button', { name: 'Open report files' }).click();
+  await page.goto(options.markets ? path.replace('/#', '/?view=markets#') : path);
+  if (options.beforeOpen) await options.beforeOpen();
+  await page
+    .getByRole('button', {
+      name: options.account ? 'Continue with TiDB Cloud' : 'Open report files',
+      exact: true,
+    })
+    .click();
   return () => writes;
 }
 
@@ -348,3 +354,151 @@ test('a lost save receipt resumes without uploading either file again', async ({
   await expect(page.getByRole('heading', { name: 'US sales summary' })).toBeVisible();
   expect(writes()).toBe(2);
 });
+
+test('analysis continues through TiDB Cloud signup to saved files and a scoped agent task @visual', async ({
+  page,
+  context,
+  workspace,
+}, testInfo) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  const writes = await openReportForUpload(page, workspace, false, {
+    account: true,
+    markets: true,
+    beforeOpen: async () => {
+      await expect(
+        page.getByRole('heading', { level: 1, name: '68% of total sales' }),
+      ).toBeVisible();
+      await expect(
+        page.getByText('California ($48,000) + Texas ($20,000) = $68,000.'),
+      ).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Copy next question' })).toHaveCount(0);
+      if (process.env.VISUAL_SCREENSHOTS)
+        await page.screenshot({ path: testInfo.outputPath('analysis.png'), fullPage: true });
+    },
+  });
+  await expect(page).toHaveURL(/tidbcloud\/login$/);
+  expect(writes()).toBe(0);
+  expect(workspace.requests.some((r) => r.method === 'POST' && r.path === '/api/auth/guest')).toBe(
+    false,
+  );
+  expect(page.url()).not.toContain(grant);
+  const transfer = await page.evaluate(() => sessionStorage.getItem('studio:report-files'));
+  expect(transfer).toContain('68%');
+  expect(transfer).not.toContain(grant);
+  workspace.signInAsAccount();
+  await page.goto('/studio/');
+  await expect(page.getByRole('heading', { name: 'Top two states', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Your report and data are ready' })).toBeVisible();
+  expect(writes()).toBe(2);
+  const saved = workspace.state.files.find((f) => f.path === '/US sales insights.md');
+  expect(saved.content).toContain('68%');
+  expect(workspace.state.files.find((f) => f.path === sourcePath).content).toBe(source);
+  if (process.env.VISUAL_SCREENSHOTS)
+    await page.screenshot({ path: testInfo.outputPath('account-files.png'), fullPage: true });
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Connect my agent', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Connect my agent', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('textbox', { name: 'Key name' })).toHaveValue('sales-agent');
+  await expect(
+    dialog.getByRole('checkbox', { name: 'Read files files:read', exact: true }),
+  ).toBeChecked();
+  await expect(
+    dialog.getByRole('checkbox', { name: 'Analyze files files:analyze', exact: true }),
+  ).toBeChecked();
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await dialog.getByRole('button', { name: 'Create key', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Copy terminal command', exact: true }).click();
+  const command = await page.evaluate(() => navigator.clipboard.readText());
+  expect(command).toContain('Compare average order value by state');
+  expect(command).toContain('/US sales sample.csv');
+  expect(command).toContain('US+sales+order+values.md');
+  expect(command).toContain(saved.resourceId);
+  expect(command).not.toContain(grant);
+  await dialog.getByRole('button', { name: 'Copy key', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Wait for report', exact: true }).click();
+  await expect(page.getByText('Your agent’s next report')).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Your agent’s next report')).toBeVisible();
+  workspace.state.files.push({
+    ...saved,
+    id: 'follow-up',
+    path: '/US sales order values.md',
+    content: '# Average order value\nCalifornia: $400',
+    size: 44,
+  });
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await page.getByRole('link', { name: 'Open follow-up report', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Average order value', exact: true }),
+  ).toBeVisible();
+});
+
+for (const existing of ['guest', 'account']) {
+  test(`account continuation from an existing ${existing} uses the account and opens the saved CSV`, async ({
+    page,
+    workspace,
+  }) => {
+    workspace.requireSignIn({ guestEnabled: true });
+    if (existing === 'guest') {
+      await page.goto('/studio/');
+      await page.evaluate(() => fetch('/api/auth/guest', { method: 'POST' }));
+    } else workspace.signInAsAccount();
+    workspace.addResources();
+    const writes = await openReportForUpload(page, workspace, false, {
+      account: true,
+      markets: true,
+      revision: existing === 'account' ? 1 : 2,
+    });
+    if (existing === 'guest') {
+      await expect(page).toHaveURL(/tidbcloud\/login$/);
+      expect(writes()).toBe(0);
+      workspace.signInAsAccount();
+      await page.goto('/studio/');
+    }
+    await expect(
+      page.getByRole('heading', { name: 'Your report and data are ready' }),
+    ).toBeVisible();
+    await page.route('**/files/tabular-preview?*', (route) =>
+      route.fulfill({
+        json: {
+          resourceId: 'fs_fixture',
+          path: sourcePath,
+          format: 'csv',
+          readOnly: true,
+          fileVersion: 'sample',
+          columns: ['state', 'sales_usd'],
+          columnTypes: ['VARCHAR', 'BIGINT'],
+          schema: [
+            { column_name: 'state', column_type: 'VARCHAR' },
+            { column_name: 'sales_usd', column_type: 'BIGINT' },
+          ],
+          rowCount: 1,
+          truncated: false,
+          rows: [{ state: 'California', sales_usd: 48000 }],
+          totalRows: 240,
+          typesInferred: true,
+        },
+      }),
+    );
+    await page.getByRole('button', { name: 'Explore sample data', exact: true }).click();
+    await expect(page).toHaveURL(/path=%2FUS\+sales\+sample.csv/);
+    await expect(
+      page.getByRole('heading', { name: 'US sales sample.csv', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('region', { name: 'File data preview', exact: true }),
+    ).toContainText('California');
+    expect(writes()).toBe(2);
+    if (existing === 'account') {
+      const resumed = await openReportForUpload(page, workspace, false, {
+        account: true,
+        markets: true,
+      });
+      await expect(
+        page.getByRole('heading', { name: 'Your report and data are ready' }),
+      ).toBeVisible();
+      expect(resumed()).toBe(0);
+    }
+  });
+}

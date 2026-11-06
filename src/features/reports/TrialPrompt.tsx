@@ -15,7 +15,7 @@ export function TrialPrompt({
   const followUp = leadingState !== undefined;
   const compact = followUp || sampleSales !== undefined;
   const prompt = sampleSales
-    ? `Follow the TiDB Agent Workspace skill at ${skillUrl} to continue this public sales report. What share of total sales comes from the top two states? Use these figures from the report: ${sampleSales}. Show the calculation in chat and add it to this project's saved local report if available. Use the existing sample and report. Reply in the language we have been using. In a new chat, use ${navigator.language}.`
+    ? `Follow the current TiDB Agent Workspace skill at ${skillUrl} to continue this public sales report. What share of total sales comes from the top two states? Use these figures from the report: ${sampleSales}. Use the existing sample and report. Reopen it with the official helper's start command in this project and return its verified insightsUrl as a clickable online report, along with the local Markdown. If the helper lacks insightsUrl, update it once with the official installer and resume. Show the calculation, then direct me to Continue with TiDB Cloud on the report to sign in or create an account and bring these files into my own workspace. Reply in the language we have been using. In a new chat, use ${navigator.language}.`
     : followUp
       ? `Follow ${skillUrl} in the local project that created my TiDB Agent Workspace sales report. Add the top product by sales in ${leadingState} and its share of state sales to the same report, then give me the updated Studio link.`
       : trialInstruction;
