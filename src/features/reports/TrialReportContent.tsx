@@ -1,4 +1,4 @@
-import { Paper, Stack, Text, Title } from '@tidbcloud/uikit';
+import { Paper, Text, Title } from '@tidbcloud/uikit';
 import { OpenReportFiles } from './OpenReportFiles';
 import { TrialPrompt } from './TrialPrompt';
 import { marketInsight } from './report-insights';
@@ -128,27 +128,12 @@ export function TrialReportContent({ report }: { report: SalesReport }) {
           </details>
           <section aria-labelledby="own-sales">
             <Title order={2} id="own-sales">
-              Keep going in your own workspace
+              Continue with this report
             </Title>
             <Text mb="sm">
-              Sign in or create a TiDB Cloud account. Bring this report and its sample data into
-              your workspace, then connect your agent or explore the data here.
+              Open the report alongside its source data, ready to explore in your workspace.
             </Text>
-            <Stack gap="sm" align="flex-start">
-              <OpenReportFiles report={report} markets={markets} account />
-              <OpenReportFiles report={report} markets={markets} />
-              <Text size="sm" c="var(--text-secondary)">
-                Not ready to sign up? Open the files in a temporary workspace for 48 hours.
-              </Text>
-              {!markets && (
-                <TrialPrompt
-                  sampleSales={`${report.states
-                    .slice(0, 2)
-                    .map(([state, amount]) => `${state} ${money.format(amount)}`)
-                    .join(', ')} out of ${money.format(total)} across all states`}
-                />
-              )}
-            </Stack>
+            <OpenReportFiles report={report} markets={markets} />
           </section>
         </>
       ) : (

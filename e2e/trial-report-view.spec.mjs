@@ -67,7 +67,7 @@ test('original Studio link opens the latest saved report without a session @visu
     name: /Which product brought in the most sales in California/,
   });
   await expect(followUp).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Open report files' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open report in Workspace' })).toHaveCount(0);
   if (process.env.VISUAL_SCREENSHOTS)
     await page.screenshot({ path: testInfo.outputPath('first-report.png'), fullPage: true });
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -100,7 +100,7 @@ test('original Studio link opens the latest saved report without a session @visu
   await expect(page).toHaveURL(new RegExp('#v1\\.'));
   await expect(followUp).toHaveCount(0);
   await expect(page.getByText(/Revision 2 · Complete/)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Open report files' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open report in Workspace' })).toBeVisible();
   expect(apiPaths).toEqual([
     '/studio/api/v1/agent-trial/report-view',
     '/studio/api/v1/agent-trial/report-view',
@@ -108,16 +108,9 @@ test('original Studio link opens the latest saved report without a session @visu
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   if (process.env.VISUAL_SCREENSHOTS)
     await page.screenshot({ path: testInfo.outputPath('report.png'), fullPage: true });
-  const privatePrompt = page.getByRole('button', { name: 'Copy next question' });
-  await privatePrompt.click();
-  const own = await page.evaluate(() => navigator.clipboard.readText());
-  expect(own).toContain('Use the existing sample and report');
-  expect(own).toContain(
-    'Use these figures from the report: California $48,000, Texas $20,000 out of $100,000',
-  );
-  await expect(page.getByRole('status')).toContainText('continue this report');
-  expect(own).toContain(`In a new chat, use ${await page.evaluate(() => navigator.language)}`);
-  expect(own).not.toContain(grant);
+  await expect(page.getByRole('heading', { name: 'Continue with this report' })).toBeVisible();
+  await expect(page.getByRole('button')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Continue with TiDB Cloud' })).toHaveCount(0);
 });
 
 test('viewer handles unavailable, invalid and expired links and clears an open report at expiry', async ({
@@ -208,7 +201,7 @@ async function openReportForUpload(page, workspace, loseReceipt = false, options
   if (options.beforeOpen) await options.beforeOpen();
   await page
     .getByRole('button', {
-      name: options.account ? 'Continue with TiDB Cloud' : 'Open report files',
+      name: 'Open report in Workspace',
       exact: true,
     })
     .click();
@@ -235,7 +228,7 @@ test('report click saves both files for a new Guest and reuses them on return', 
   expect(guestPosts()).toHaveLength(1);
   await page.goBack();
   await expect(page).toHaveURL(new RegExp('#v1\\.'));
-  await page.getByRole('button', { name: 'Open report files' }).click();
+  await page.getByRole('button', { name: 'Open report in Workspace' }).click();
   await expect(page).toHaveURL(filesUrl);
   await expect(upload).toBeEnabled();
   expect(guestPosts()).toHaveLength(1);
@@ -362,7 +355,6 @@ test('analysis continues through TiDB Cloud signup to saved files and a scoped a
 }, testInfo) => {
   workspace.requireSignIn({ guestEnabled: true });
   const writes = await openReportForUpload(page, workspace, false, {
-    account: true,
     markets: true,
     beforeOpen: async () => {
       await expect(
@@ -376,23 +368,54 @@ test('analysis continues through TiDB Cloud signup to saved files and a scoped a
         await page.screenshot({ path: testInfo.outputPath('analysis.png'), fullPage: true });
     },
   });
-  await expect(page).toHaveURL(/tidbcloud\/login$/);
-  expect(writes()).toBe(0);
-  expect(workspace.requests.some((r) => r.method === 'POST' && r.path === '/api/auth/guest')).toBe(
-    false,
+  await expect(page.getByRole('heading', { name: 'Top two states', exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Temporary workspace · 48-hour trial', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Your report and data are ready' })).toHaveCount(
+    0,
   );
+  expect(writes()).toBe(2);
+  expect(
+    workspace.requests.filter((r) => r.method === 'POST' && r.path === '/api/auth/guest'),
+  ).toHaveLength(1);
+  if (process.env.VISUAL_SCREENSHOTS)
+    await page.screenshot({ path: testInfo.outputPath('temporary-files.png'), fullPage: true });
+  // Carry current saved content, even after the initial tab-local import has expired.
+  await page.clock.install();
+  await page.clock.fastForward(11 * 60_000);
+  const guestReport = workspace.state.files.find((f) => f.path === '/US sales insights.md');
+  guestReport.content += '\nSaved customer note';
+  guestReport.version = '"edited-report"';
+  guestReport.size = Buffer.byteLength(guestReport.content);
+  const guestSource = workspace.state.files.find((f) => f.path === sourcePath);
+  guestSource.content += '\n';
+  guestSource.version = '"edited-source"';
+  guestSource.size = Buffer.byteLength(guestSource.content);
+  await page.getByRole('button', { name: 'Save to TiDB Cloud', exact: true }).click();
+  await expect(page).toHaveURL(/tidbcloud\/login$/);
+  expect(writes()).toBe(2);
   expect(page.url()).not.toContain(grant);
-  const transfer = await page.evaluate(() => sessionStorage.getItem('studio:report-files'));
-  expect(transfer).toContain('68%');
-  expect(transfer).not.toContain(grant);
+  const transfer = JSON.parse(
+    await page.evaluate(() => sessionStorage.getItem('studio:report-files')),
+  );
+  expect(transfer.report).toBe(guestReport.content);
+  expect(transfer.sample).toBe(guestSource.content);
+  expect(JSON.stringify(transfer)).not.toContain(grant);
   workspace.signInAsAccount();
+  workspace.state.workspace.id = 'ws_account_destination';
+  workspace.addResources();
   await page.goto('/studio/');
   await expect(page.getByRole('heading', { name: 'Top two states', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Your report and data are ready' })).toBeVisible();
-  expect(writes()).toBe(2);
+  await expect(page.getByText('Saved customer note', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save to TiDB Cloud' })).toHaveCount(0);
+  expect(writes()).toBe(4);
   const saved = workspace.state.files.find((f) => f.path === '/US sales insights.md');
   expect(saved.content).toContain('68%');
-  expect(workspace.state.files.find((f) => f.path === sourcePath).content).toBe(source);
+  expect(workspace.state.files.find((f) => f.path === sourcePath).content).toBe(
+    guestSource.content,
+  );
   if (process.env.VISUAL_SCREENSHOTS)
     await page.screenshot({ path: testInfo.outputPath('account-files.png'), fullPage: true });
   await page.reload();
@@ -446,14 +469,19 @@ for (const existing of ['guest', 'account']) {
     } else workspace.signInAsAccount();
     workspace.addResources();
     const writes = await openReportForUpload(page, workspace, false, {
-      account: true,
       markets: true,
       revision: existing === 'account' ? 1 : 2,
     });
     if (existing === 'guest') {
+      await expect(
+        page.getByText('Temporary workspace · 48-hour trial', { exact: true }),
+      ).toBeVisible();
+      await page.getByRole('button', { name: 'Save to TiDB Cloud', exact: true }).click();
       await expect(page).toHaveURL(/tidbcloud\/login$/);
-      expect(writes()).toBe(0);
+      expect(writes()).toBe(2);
       workspace.signInAsAccount();
+      workspace.state.workspace.id = 'ws_account_destination';
+      workspace.addResources();
       await page.goto('/studio/');
     }
     await expect(
@@ -489,10 +517,9 @@ for (const existing of ['guest', 'account']) {
     await expect(
       page.getByRole('region', { name: 'File data preview', exact: true }),
     ).toContainText('California');
-    expect(writes()).toBe(2);
+    expect(writes()).toBe(existing === 'guest' ? 4 : 2);
     if (existing === 'account') {
       const resumed = await openReportForUpload(page, workspace, false, {
-        account: true,
         markets: true,
       });
       await expect(
@@ -502,3 +529,67 @@ for (const existing of ['guest', 'account']) {
     }
   });
 }
+
+test('saving to Cloud preserves unsaved drafts and refuses incomplete source reads', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  await openReportForUpload(page, workspace);
+  await expect(page.getByRole('heading', { name: 'US sales summary' })).toBeVisible();
+  await page.getByRole('button', { name: 'Edit source', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to preview', exact: true }).click();
+  await page.reload();
+  await expect(
+    page.getByText('Temporary workspace · 48-hour trial', { exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Edit source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'File content', exact: true }).fill('An unsaved report');
+  const save = page.getByRole('button', { name: 'Save to TiDB Cloud', exact: true });
+  await save.click();
+  await expect(page.getByText('This file has unsaved changes.')).toBeVisible();
+  await expect(page).toHaveURL(/#files\?resourceId=.+&from=report$/);
+  await page.getByRole('button', { name: 'Keep editing', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'File content', exact: true })).toHaveValue(
+    'An unsaved report',
+  );
+  let incomplete = true;
+  await page.route('**/files/content?*', (route) => {
+    if (!incomplete) return route.fallback();
+    return route.fulfill({ json: { content: 'partial', size: 100 } });
+  });
+  await save.click();
+  await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
+  await expect(
+    page.getByRole('region', { name: 'Temporary workspace · 48-hour trial' }).getByRole('alert'),
+  ).toContainText('complete report and source data could not be read');
+  expect(workspace.requests.some((r) => r.path === '/api/auth/tidbcloud/login')).toBe(false);
+  expect(await page.evaluate(() => sessionStorage.getItem('studio:report-files'))).toBeNull();
+  incomplete = false;
+  let changed = true;
+  let metadataReads = 0;
+  await page.route('**/files/metadata?*', (route) => {
+    if (!changed) return route.fallback();
+    const pathname = new URL(route.request().url()).searchParams.get('path');
+    const file = workspace.state.files.find((f) => f.path === pathname);
+    return route.fulfill({
+      json: { data: { ...file, version: ++metadataReads <= 2 ? 'before' : 'changed' } },
+    });
+  });
+  await save.click();
+  await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
+  await expect(
+    page.getByRole('region', { name: 'Temporary workspace · 48-hour trial' }).getByRole('alert'),
+  ).toContainText('changed while preparing to save');
+  expect(workspace.requests.some((r) => r.path === '/api/auth/tidbcloud/login')).toBe(false);
+  expect(await page.evaluate(() => sessionStorage.getItem('studio:report-files'))).toBeNull();
+  changed = false;
+  await save.click();
+  await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
+  await expect(page).toHaveURL(/tidbcloud\/login$/);
+  const transfer = JSON.parse(
+    await page.evaluate(() => sessionStorage.getItem('studio:report-files')),
+  );
+  expect(transfer.report).toContain('Monitors');
+  expect(transfer.report).not.toContain('An unsaved report');
+});
