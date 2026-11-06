@@ -33,7 +33,7 @@ test('cloud sign-in offers TiDB Account and clearly marks Guest access unavailab
     page.getByRole('heading', { name: 'How would you like to work?', level: 1 }),
   ).toBeVisible();
   const browser = page.getByRole('region', { name: 'In your browser' });
-  const account = browser.getByRole('button', { name: 'Continue with TiDB Account' });
+  const account = browser.getByRole('button', { name: 'Continue with TiDB Cloud' });
   await expect(account).toBeEnabled();
   await expect(browser.getByText('Guest access is currently unavailable.')).toBeVisible();
   await expect(browser.getByRole('button', { name: 'Try without an account' })).toHaveCount(0);
@@ -132,8 +132,8 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
   const browser = page.getByRole('region', { name: 'In your browser' });
   const guest = browser.getByRole('button', { name: 'Try without an account' });
   await expect(guest).toBeEnabled();
-  await expect(guest).toHaveAccessibleDescription('Workspace access expires after 24 hours.');
-  await expect(browser.getByText('Workspace access expires after 24 hours.')).toBeVisible();
+  await expect(guest).toHaveAccessibleDescription('No account needed · 48-hour trial');
+  await expect(browser.getByText('No account needed · 48-hour trial')).toBeVisible();
   await expect(
     agent.getByText(/Claude Code, Cursor, Codex, Pi, or another local coding agent/),
   ).toBeVisible();
@@ -141,9 +141,16 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
     'Your agent analyzes the sales sample and gives you a report link.',
   );
   await expect(agent.getByText('No account needed · 48-hour trial')).toBeVisible();
-  const account = page.getByRole('button', { name: 'Continue with TiDB Account' });
+  const account = page.getByRole('button', { name: 'Continue with TiDB Cloud' });
   await expect(account).toBeEnabled();
-  await expect(browser.getByRole('button', { name: 'Continue with TiDB Account' })).toHaveCount(0);
+  await expect(browser.getByRole('button', { name: 'Continue with TiDB Cloud' })).toHaveCount(0);
+  const accountBounds = await account.boundingBox();
+  const browserBounds = await browser.boundingBox();
+  expect(accountBounds.x + accountBounds.width).toBeCloseTo(
+    browserBounds.x + browserBounds.width,
+    0,
+  );
+  expect(accountBounds.y).toBeGreaterThanOrEqual(browserBounds.y + browserBounds.height);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   if (process.env.GUEST_SIGNIN_SCREENSHOT)
     await page.screenshot({
@@ -169,7 +176,7 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
   const settings = page.getByRole('main');
   await expect(settings.getByText('Temporary session', { exact: true })).toBeVisible();
   await expect(
-    page.getByText('Your temporary workspace expires 24 hours after it was created.'),
+    page.getByText('Your temporary workspace expires 48 hours after it was created.'),
   ).toBeVisible();
   await expect(settings.getByRole('button', { name: 'Sign out' })).toBeVisible();
   if (process.env.GUEST_SETTINGS_SCREENSHOT) {
@@ -227,7 +234,7 @@ test('Guest API key creation explains the Workspace expiry', async ({ page, work
   await page.getByRole('button', { name: 'Create API key', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
   await expect(
-    dialog.getByText('Expires with your temporary workspace (within 24 hours), or on sign-out.'),
+    dialog.getByText('Expires with your temporary workspace (within 48 hours), or on sign-out.'),
   ).toBeVisible();
   await expect(dialog.getByRole('combobox', { name: 'Expiration' })).toHaveCount(0);
   await dialog.getByLabel('Key name').fill('guest-agent');
@@ -238,8 +245,8 @@ test('Guest API key creation explains the Workspace expiry', async ({ page, work
   const creation = workspace.requests.findLast(
     (request) => request.method === 'POST' && request.path.endsWith('/keys'),
   );
-  expect(creation.body.expiresAt).toBeGreaterThanOrEqual(start + 86400);
-  expect(creation.body.expiresAt).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 86400);
+  expect(creation.body.expiresAt).toBeGreaterThanOrEqual(start + 172800);
+  expect(creation.body.expiresAt).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 172800);
 });
 
 test('@visual Guest can cancel or confirm sign-out from the workspace navigation', async ({
@@ -509,7 +516,7 @@ test('@visual Guest database creation distinguishes Workspace access from provid
   await page.getByRole('button', { name: 'Create database', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create a database' });
   await expect(
-    dialog.getByText('Temporary workspace access ends 24 hours after it was created.'),
+    dialog.getByText('Temporary workspace access ends 48 hours after it was created.'),
   ).toBeVisible();
   if (process.env.DEFAULT_DATABASE_SCREENSHOTS)
     await page.screenshot({

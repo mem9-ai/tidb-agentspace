@@ -60,7 +60,7 @@ export function ResourceQuickStart({ kind }: { kind: QuickStartKind }) {
 export function GuestExpiryNotice() {
   return (
     <Text className="guest-expiry-notice" size="sm">
-      Your temporary workspace expires 24 hours after it was created.
+      Your temporary workspace expires 48 hours after it was created.
     </Text>
   );
 }

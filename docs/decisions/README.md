@@ -7,6 +7,8 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Accepted decisions
 
+- [0055: Unified trial duration](0055-unified-trial-duration.md) — 48-hour new anonymous sessions across browser and agent entry; preserve existing deadlines.
+
 - [0050: Independent analytics service](0050-isolated-analytics-service.md) — separate SlateDB process, storage and credentials; asynchronous best-effort delivery with lower availability than Meta.
 
 - [0049: Product analytics and operator authority](0049-product-analytics-operator-boundary.md) — accepted launch measurement and verified PingCAP/TiDB Cloud Admin access; [runtime and deployment limits](../product-analytics.md).

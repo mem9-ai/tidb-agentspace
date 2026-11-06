@@ -642,7 +642,8 @@ test(
     });
     assert.equal(created.status, 201, JSON.stringify(created.body));
     assert.equal(created.body.regionalStatus, 'applied');
-    assert.ok(created.body.data.expiresAt <= Math.floor(Date.now() / 1000) + 86400);
+    assert.ok(created.body.data.expiresAt <= Math.floor(Date.now() / 1000) + 172800);
+    assert.ok(created.body.data.expiresAt > Math.floor(Date.now() / 1000) + 172700);
     assert.equal((await f.request(`${path}/keys`, { cookie: second.cookie })).status, 404);
     const discovered = await f.request('/studio/api/v1/token-issuances', {
       method: 'POST',
@@ -894,8 +895,8 @@ test(
       },
     });
     assert.equal(created.status, 201, JSON.stringify(created.body));
-    assert.ok(created.body.data.expiresAt <= before + 86400);
-    assert.ok(created.body.data.expiresAt > before);
+    assert.ok(created.body.data.expiresAt <= before + 172800);
+    assert.ok(created.body.data.expiresAt > before + 172700);
     const issue = () =>
       f.request('/studio/api/v1/token-issuances', {
         method: 'POST',

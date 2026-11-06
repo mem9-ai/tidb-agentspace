@@ -138,7 +138,7 @@ export function TrialReportContent({ report }: { report: SalesReport }) {
               <OpenReportFiles report={report} markets={markets} account />
               <OpenReportFiles report={report} markets={markets} />
               <Text size="sm" c="var(--text-secondary)">
-                Not ready to sign up? Open the files in a temporary workspace for 24 hours.
+                Not ready to sign up? Open the files in a temporary workspace for 48 hours.
               </Text>
               {!markets && (
                 <TrialPrompt

@@ -130,7 +130,7 @@ impl RegionalGuest {
         let _remaining = access
             .expires_at
             .checked_sub(chrono::Utc::now().timestamp())
-            .filter(|v| *v > 0 && *v <= 86_400)
+            .filter(|v| *v > 0 && *v <= workspace_contracts::GUEST_SESSION_SECONDS)
             .ok_or_else(unauthorized)?;
         let expires = chrono::DateTime::from_timestamp(access.expires_at, 0)
             .ok_or_else(unauthorized)?

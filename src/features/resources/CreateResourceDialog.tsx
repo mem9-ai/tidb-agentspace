@@ -211,7 +211,7 @@ export function CreateResourceDialog({
           </div>
         )}
         {isGuest && kind !== 'filesystem' && !unavailable && (
-          <Text size="sm">Temporary workspace access ends 24 hours after it was created.</Text>
+          <Text size="sm">Temporary workspace access ends 48 hours after it was created.</Text>
         )}
         {locationUnavailable && (
           <Alert color="yellow">No data location is available for this resource right now.</Alert>

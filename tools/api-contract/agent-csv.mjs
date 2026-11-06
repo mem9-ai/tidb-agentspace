@@ -38,7 +38,7 @@ export function addAgentCsv(spec) {
   spec.paths[base] = {
     post: operation(
       'openPrivateCsvWorkspace',
-      'Enroll or recover the same private 24-hour Guest workspace and its default File System using the same project capability. Send an empty body. Resume known files using the source endpoints.',
+      'Enroll or recover the same private 48-hour Guest workspace and its default File System using the same project capability. Send an empty body. Resume known files using the source endpoints.',
       json(
         object({
           workspaceId: { type: 'string', format: 'uuid' },

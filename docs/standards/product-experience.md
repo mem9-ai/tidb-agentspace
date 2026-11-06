@@ -76,7 +76,7 @@ retain their Quick Starts. Explain the Guest expiry where applicable; remove the
 once resources exist. Creation and execution remain explicit.
 On the temporary-workspace entry, use “Try without an account” for the action and
 “Temporary workspace” for the resulting workspace; avoid “demo” because this session can
-perform real operations. Show the 24-hour access limit with the action without requiring hover.
+perform real operations. Show the same 48-hour trial promise for the coding-agent and browser entry paths, backed by the actual session deadline. Keep account continuation right-aligned below the choices and label it “Continue with TiDB Cloud”. Existing shorter sessions retain their original expiry; see [ADR 0055](../decisions/0055-unified-trial-duration.md).
 Explain the actual consequence of signing out before ending a Guest session; do not promise
 cleanup that the service has not implemented.
 

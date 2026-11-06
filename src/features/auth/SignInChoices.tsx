@@ -92,7 +92,7 @@ export function SignInChoices({
             )}
             <Text id="guest-expiry" size="sm" ta="center">
               {guestEnabled
-                ? 'Workspace access expires after 24 hours.'
+                ? 'No account needed · 48-hour trial'
                 : 'Guest access is currently unavailable.'}
             </Text>
             {guestError && (
@@ -103,7 +103,7 @@ export function SignInChoices({
           </Stack>
         </Paper>
       </div>
-      {guestEnabled && <Group justify="center">{account}</Group>}
+      {guestEnabled && <Group justify="flex-end">{account}</Group>}
     </>
   );
 }

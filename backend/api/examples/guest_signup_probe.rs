@@ -26,8 +26,8 @@ async fn main() -> anyhow::Result<()> {
     let before = chrono::Utc::now().timestamp();
     let guest = signup.begin().await?;
     anyhow::ensure!(
-        guest.expires_at >= before + 86_400
-            && guest.expires_at <= chrono::Utc::now().timestamp() + 86_400,
+        guest.expires_at >= before + 172_800
+            && guest.expires_at <= chrono::Utc::now().timestamp() + 172_800,
         "invalid Guest expiry"
     );
     let registration = signup.finish(&guest).await?;

@@ -654,7 +654,7 @@ test('Guest sees expiry and can use their own files from the sample entry', asyn
   await page.goto('/');
   await page.getByRole('button', { name: 'Try without an account' }).click();
   const guide = page.getByRole('region', { name: 'Explore US sales' });
-  await expect(page.getByText(/Your temporary workspace expires 24 hours/)).toBeVisible();
+  await expect(page.getByText(/Your temporary workspace expires 48 hours/)).toBeVisible();
   await expect(guide.getByRole('button', { name: 'Explore sample' })).toBeVisible();
   await page.goto('/#connect');
   await expect(page.getByRole('heading', { name: 'Connect an agent', level: 1 })).toBeVisible();

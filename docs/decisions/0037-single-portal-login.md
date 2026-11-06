@@ -1,5 +1,7 @@
 # ADR 0037: One Portal sign-in for bundled Global and Region
 
+Trial duration was unified to 48 hours by [ADR 0055](0055-unified-trial-duration.md); existing shorter deadlines remain unchanged.
+
 - Status: accepted owner direction; implementation and native acceptance accompany this change.
 - Date: 2026-11-01.
 - Refines ADR 0036 for the single-service cloud profile.
@@ -26,7 +28,7 @@ Revisit the Portal auth routing when deploying its public login separately.
 For an explicitly enabled Guest profile on a shared Global/Region listener, including hosted HTTPS,
 Global can authenticate the existing Region Guest browser session in-process and only for its
 exact Workspace. It rechecks the durable Region Guest policy for Global token use and Key exchange.
-Guest Keys default to at most 24 hours and never outlive the Guest Workspace. Logout durably denies
+Guest Keys default to at most 48 hours and never outlive the Guest Workspace. Logout durably denies
 the Region Guest policy before success, denying subsequent Key exchange and regional Token
 reads, writes and refresh. Operations admitted before logout follow the existing drain policy.
 Independent Global deployments cannot use this in-process session bridge;

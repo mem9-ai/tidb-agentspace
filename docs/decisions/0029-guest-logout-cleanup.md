@@ -1,5 +1,7 @@
 # ADR 0029: Guest logout and provider cleanup
 
+Trial duration was unified to 48 hours by [ADR 0055](0055-unified-trial-duration.md); existing shorter deadlines remain unchanged.
+
 - Status: owner direction, implementation under verification; supersedes the non-deleting
   processor in [ADR 0028](0028-guest-expiry-retention.md). It does not change account isolation.
 - Scope: Guest logout, Region policy and asynchronous provider cleanup.
@@ -14,7 +16,7 @@ terminal: the Guest policy cannot be re-enabled while provider effects may remai
 Another Guest's Workspace and TiDB Account sessions are not selected by a supplied Workspace ID.
 
 The Region starts a bounded immediate cleanup attempt and also scans a durable sharded logout
-index for recovery; the original 24-hour expiry scheduler uses the same processor. Cleanup waits
+index for recovery; the original 48-hour expiry scheduler uses the same processor. Cleanup waits
 for in-flight Workspace/stream leases to drain. A durable claim and a scoped per-resource intent
 precede provider I/O, and the provider adapter revalidates the Workspace, resource, private binding
 and target digest. A busy Workspace can be retried only before any provider effect is journaled.
