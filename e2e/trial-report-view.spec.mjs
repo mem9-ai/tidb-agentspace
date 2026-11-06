@@ -79,7 +79,7 @@ test('original Studio link opens the latest saved report without a session @visu
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await followUp.getByRole('button', { name: 'Copy follow-up' }).click();
   const prompt = await page.evaluate(() => navigator.clipboard.readText());
-  expect(prompt).toContain('https://drive9.ai/studio/skills/drive9-workspace/SKILL.md');
+  expect(prompt).toContain('https://drive9.ai/studio/skills/tidb-agent-workspace/SKILL.md');
   expect(prompt).toContain('top product by sales in California');
   expect(prompt).not.toContain(grant);
   await expect(followUp.getByRole('status')).toContainText('Paste it into your project chat');

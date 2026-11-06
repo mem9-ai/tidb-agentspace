@@ -36,6 +36,15 @@ the last confirmed report and back off to one minute. Original expiry still clea
 revocation or invalid access clears it on the next check. Hidden pages stop polling. Cookies,
 referrers, analytics and Workspace bootstrap remain absent from this reader.
 
+## Public skill identity
+
+The canonical public entry is `/studio/skills/tidb-agent-workspace/SKILL.md`.
+Use it in copied prompts, discovery pages and installer downloads. The former
+`drive9-workspace` URL remains a byte-identical compatibility alias, generated and
+checked by `scripts/check-trial-installer.mjs`; maintain only the canonical assets.
+Keep existing local installation and credential locations to preserve cross-agent
+identity. A public name correction must not create a second key or lose reports.
+
 ## Reuse Python and secure storage
 
 Keep one Python helper and the native Keychain,
