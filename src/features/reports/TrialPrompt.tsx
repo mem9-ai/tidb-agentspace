@@ -3,7 +3,7 @@ import { Button, Stack, Text, Textarea } from '@tidbcloud/uikit';
 import { IconCheck, IconCopy03 } from '@tidbcloud/uikit/icons';
 
 const skillUrl = 'https://drive9.ai/studio/skills/drive9-workspace/SKILL.md';
-const trialInstruction = `Follow the official TiDB Agent Workspace skill at ${skillUrl} to find the top US state by sales in the public sample, show the calculation, and save a report I can continue in this project using only the free trial. Give me the read-only Studio link and the local report. If this is the first version, ask if I want to add the leading state’s top product in this chat.`;
+const trialInstruction = `Follow the official TiDB Agent Workspace skill at ${skillUrl} to find the top US state by sales in the public sample, show the calculation, and save a report I can continue in this project using only the free trial. Give me the read-only Studio link and the local report.`;
 
 export function TrialPrompt({
   leadingState,
@@ -15,7 +15,7 @@ export function TrialPrompt({
   const followUp = leadingState !== undefined;
   const compact = followUp || sampleSales !== undefined;
   const prompt = sampleSales
-    ? `Follow the current TiDB Agent Workspace skill at ${skillUrl} to continue this public sales report. What share of total sales comes from the top two states? Use these figures from the report: ${sampleSales}. Use the existing sample and report. Reopen it with the official helper's start command in this project and return its verified insightsUrl as a clickable online report, along with the local Markdown. If the helper lacks insightsUrl, update it once with the official installer and resume. Show the calculation, then direct me to Open report in Workspace. I can read and explore it immediately; the temporary workspace offers Save to TiDB Cloud when I want to keep the report and its data. Reply in the language we have been using. In a new chat, use ${navigator.language}.`
+    ? `Follow the current TiDB Agent Workspace skill at ${skillUrl} to continue this public sales report. What share of total sales comes from the top two states? Use these figures from the report: ${sampleSales}. Use the existing sample and report. Continue in this project using the current skill and return the verified online report link and local Markdown. Show the calculation, then direct me to Open report in Workspace. I can read and explore it immediately; the temporary workspace offers Save to TiDB Cloud when I want to keep the report and its data. Reply in the language we have been using. In a new chat, use ${navigator.language}.`
     : followUp
       ? `Follow ${skillUrl} in the local project that created my TiDB Agent Workspace sales report. Add the top product by sales in ${leadingState} and its share of state sales to the same report, then give me the updated Studio link.`
       : trialInstruction;
@@ -25,7 +25,7 @@ export function TrialPrompt({
       <Button
         fullWidth={!compact}
         w={compact ? 'fit-content' : undefined}
-        variant={sampleSales ? 'default' : 'filled'}
+        variant={compact ? 'default' : 'filled'}
         leftSection={
           result === 'copied' ? (
             <IconCheck size={18} aria-hidden />

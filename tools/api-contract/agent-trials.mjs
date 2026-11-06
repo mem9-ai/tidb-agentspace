@@ -12,6 +12,12 @@ export function addAgentTrials(spec) {
   const report = object({
     id: { type: 'string', format: 'uuid' },
     sample: { const: 'us-sales-v1' },
+    markdown: {
+      type: ['string', 'null'],
+      description:
+        'Canonical UTF-8 report content, shared unchanged by local files and Workspace copies. Null before the first save.',
+    },
+    sharingRevoked: { type: 'boolean' },
     stateSales: { type: ['object', 'null'], additionalProperties: { type: 'integer' } },
     leadingStateProducts: { type: ['object', 'null'], additionalProperties: { type: 'integer' } },
     expiresAt: timestamp,
@@ -49,7 +55,7 @@ export function addAgentTrials(spec) {
       get: op('getAgentTrialReportView', report, {
         security: [{ trialReportView: [] }],
         description:
-          'Read the latest saved revision. Grant is valid for one report until its original 48-hour deadline (410 when expired). Cookies and query parameters are rejected. Reading never enrolls, renews, or changes a trial.',
+          'Read the latest saved revision. Grant is valid for one report until its original 48-hour deadline (410 when expired or sharing is revoked). Cookies and query parameters are rejected. Reading never enrolls, renews, or changes a trial.',
       }),
     },
     challenges: {
@@ -84,6 +90,13 @@ export function addAgentTrials(spec) {
           },
         ],
         requestBody: body(object({ section: { enum: ['states', 'products'] } })),
+      }),
+    },
+    'report-sharing': {
+      delete: op('revokeAgentTrialReportSharing', report, {
+        security,
+        description:
+          'Permanently revoke all read-only links for this trial. Only the originating writer session may revoke. Repeated deletion is idempotent. Content, local reports, writer access and the original expiry are retained; later report updates never re-enable sharing. A new trial is required to publish again.',
       }),
     },
     'us-sales-v1.csv': {

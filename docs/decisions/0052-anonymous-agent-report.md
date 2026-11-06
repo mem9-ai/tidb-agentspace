@@ -1,5 +1,7 @@
 # ADR 0052: Anonymous local agent report
 
+Amended by [ADR 0056](0056-report-continuity.md): canonical project reports, automatic viewing, Python environment reuse and explicit sharing revocation.
+
 [GH-210](../../specs/gh-210/spec.md) covers a single public-sample report under a regional trial identity. No Workspace, provider account, filesystem tenant, browser Owner cookie or billing authorization is allocated. The device proves possession of its Ed25519 key using a one-minute, consumed-on-verification challenge. The regional server issues a report-only session lasting at most five minutes, bounded by the original 48-hour expiry. Client and browser Guest credentials are separate.
 
 The durable report consists of its UUID, expiry and monotonic section revision over an immutable dataset and report format. The API returns the selected aggregates. A conditional update appends one supported analysis; replay reads the current revision. Region Meta encrypts 256 bounded buckets of up to 32 active reports each. An expired entry is inaccessible and its slot is reclaimed on a subsequent bucket mutation. Instance-local peer, challenge and session limits bound ingress; network peers behind a proxy share its rate limit. Route a trial to one serving regional instance. After a restart the helper proves possession again to reopen the durable report.

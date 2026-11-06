@@ -1393,6 +1393,11 @@ function FileWorkspace({
       )}
       {reportWelcome && !isGuest && (
         <ReportNextSteps
+          sourcePath={
+            initialLocation?.path === '/us-sales-report.md'
+              ? '/us-sales.csv'
+              : '/US sales sample.csv'
+          }
           resource={resource}
           workspaceId={data.workspace.id}
           copy={copy}
@@ -1401,7 +1406,10 @@ function FileWorkspace({
           onExplore={() =>
             requestPreviewChange(() => {
               setReportWelcome(false);
-              const samplePath = '/US sales sample.csv';
+              const samplePath =
+                initialLocation?.path === '/us-sales-report.md'
+                  ? '/us-sales.csv'
+                  : '/US sales sample.csv';
               const source = data.files.find(
                 (file) => file.resourceId === resource.id && file.path === samplePath,
               );

@@ -1,6 +1,9 @@
 """Run against a disposable regional fixture using a unique native credential-store entry."""
 
 import json
+import runpy
+import hashlib
+import os
 import subprocess
 import sys
 import tempfile
@@ -9,6 +12,8 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
+from unittest.mock import patch
+from urllib.error import HTTPError
 
 helper = (
     Path(__file__).resolve().parents[2]
@@ -92,12 +97,40 @@ def run(origin, directory):
         assert "Monitors leads with $18,000.00 (37.5%" in continued["markdown"]
         assert invoke("start")["markdown"] == continued["markdown"]
         file = Path(continued["report"])
-        binding = file.parent / "binding.json"
+        binding = home / hashlib.sha256(f"{origin}\0{os.path.normcase(str(project.resolve()))}".encode()).hexdigest() / "binding.json"
         state = json.loads(binding.read_text())
-        assert set(state) == {"reportId", "file", "status", "expiresAt"}
-        fallback = client.trial(origin, project, home, "products", store_factory=locked)
-        assert fallback["status"] == "local-only" and fallback["report"] != str(file)
-        assert "studioUrl" not in fallback
+        assert set(state) == {"reportId", "file", "status", "expiresAt", "projectFile", "projectHash"}
+        try:
+            client.trial(origin, project, home, "products", store_factory=locked)
+            raise AssertionError("Locked credential store must stop the workflow")
+        except ValueError as error:
+            assert "credential store is unavailable or locked" in str(error)
+        assert file.resolve().is_relative_to(project.resolve())
+        assert view()["markdown"] == file.read_text()
+        assert Path(continued["source"]).read_bytes() == (binding.parent / "us-sales-v1.csv").read_bytes()
+        file.write_text("My local edits")
+        try:
+            invoke("start")
+            raise AssertionError("Local edits must be preserved")
+        except subprocess.CalledProcessError:
+            assert file.read_text() == "My local edits"
+        file.write_text(continued["markdown"])
+        assert invoke("unshare")["status"] == "sharing-revoked"
+        assert invoke("unshare")["status"] == "sharing-revoked"
+        try:
+            view()
+            raise AssertionError("The shared link must be closed")
+        except HTTPError as error:
+            assert error.code == 410
+        with patch.object(client, "api", side_effect=client.URLError("simulated outage")):
+            try:
+                client.trial(origin, project, home, "start")
+                raise AssertionError("Unconfirmed save must not fabricate another report")
+            except ValueError as error:
+                assert "Remote save unconfirmed" in str(error)
+        assert file.read_text() == continued["markdown"]
+        closed = invoke("start")
+        assert "studioUrl" not in closed and closed["markdown"] == continued["markdown"]
         assert file.read_text() == continued["markdown"]
         service = "Drive9 Agent Trial " + binding.parent.name
         assert client.native_store().get_password(service, "project") is not None
@@ -118,13 +151,11 @@ def run(origin, directory):
     finally:
         invoke("forget")
 
-    local = client.trial(
-        origin, project, directory / "locked", "start", store_factory=locked
-    )
-    assert (
-        local["status"] == "local-only"
-        and "$48,000.00" in Path(local["report"]).read_text()
-    )
+    try:
+        client.trial(origin, project, directory / "locked", "start", store_factory=locked)
+        raise AssertionError("Missing secure store must not create a local-only journey")
+    except ValueError as error:
+        assert "credential store is unavailable or locked" in str(error)
 
 
 if __name__ == "__main__":
@@ -132,5 +163,6 @@ if __name__ == "__main__":
         _, _, origin, project, home, action = sys.argv
         print(json.dumps(client.trial(origin, Path(project), Path(home), action)))
     else:
+        runpy.run_path(str(Path(__file__).with_name("trial_installer.py")))
         with tempfile.TemporaryDirectory(prefix="drive9-report-test-") as directory:
             run(sys.argv[1], Path(directory))

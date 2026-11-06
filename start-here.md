@@ -314,3 +314,5 @@ Maintain this map when architecture, source layout, document locations, or deliv
 changes. Update detailed rules in their canonical homes and adjust these links. Repository
 checks verify required routing and document availability; they cannot prove that a client
 loaded the documents or an agent understood them.
+
+Public agent report continuation follows [ADR 0056](docs/decisions/0056-report-continuity.md): canonical report bytes in the project and Workspace, automatic viewer refresh, and explicit sharing revocation. This bounded sample remains separate from the proposed general Workspace pairing flow.

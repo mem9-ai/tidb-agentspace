@@ -429,6 +429,13 @@ export const workspaceApi = {
         body: { ...body, purpose: 'report' },
       }),
     ),
+  updateReport: (body: WriteFileInput & { type: 'file'; content: string }, version: string) =>
+    responseData(
+      client.PUT('/workspaces/{workspaceId}/files', {
+        params: { ...params, header: { 'If-Match': version } },
+        body: { ...body, purpose: 'report' },
+      }),
+    ),
   createSampleFile: (body: WriteFileInput) =>
     responseData(
       client.PUT('/workspaces/{workspaceId}/files', {
