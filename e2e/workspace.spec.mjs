@@ -311,9 +311,7 @@ test('@visual an empty personal account workspace is described accurately', asyn
   workspace.signInAsAccount();
   await page.goto('/?code=redeemed-fixture&state=fixture-state&view=keep#settings');
   await expect(page).toHaveURL(/\?view=keep#settings$/);
-  await expect(
-    page.getByText('Sign in again to load your account details.'),
-  ).toBeVisible();
+  await expect(page.getByText('Sign in again to load your account details.')).toBeVisible();
   await expect(
     page.getByText('Admitted accounts have owner access.', { exact: false }),
   ).toHaveCount(0);
