@@ -5816,7 +5816,7 @@
     "/agent-csv/workspaces": {
       "post": {
         "operationId": "openPrivateCsvWorkspace",
-        "description": "Enroll or recover the same private 24-hour Guest workspace and its default File System using the same project capability. Send an empty body. Resume known files using the source endpoints.",
+        "description": "Enroll or recover the same private 48-hour Guest workspace and its default File System using the same project capability. Send an empty body. Resume known files using the source endpoints.",
         "tags": ["Private CSV workspace"],
         "security": [{ "csvWorkspace": [] }],
         "responses": {

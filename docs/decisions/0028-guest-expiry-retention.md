@@ -1,10 +1,12 @@
 # 0028: Guest expiry with deferred provider cleanup
 
+Trial duration was unified to 48 hours by [ADR 0055](0055-unified-trial-duration.md); existing shorter deadlines remain unchanged.
+
 Status: Partially superseded by [ADR 0029](0029-guest-logout-cleanup.md), which adds an
 explicit logout cleanup request and provider deletion attempts. [ADR 0030](0030-personal-account-isolation.md)
 defines independent personal TiDB Account onboarding.
 
-A Guest receives an independent User, Organization and Workspace with an absolute 24-hour
+A Guest receives an independent User, Organization and Workspace with an absolute 48-hour
 expiry. The regional browser credential is host-only, Secure and HttpOnly. The Region checks its
 own policy and durable grant for each Guest request, so existing Guests can continue when Global is
 unavailable. Global initiates regional onboarding within the co-located trust boundary; separately

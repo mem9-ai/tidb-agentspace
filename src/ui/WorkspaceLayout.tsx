@@ -279,7 +279,7 @@ export function WorkspaceLayout({
           </Text>
           <Text size="sm">
             {isGuest
-              ? 'Temporary workspace · Access expires after 24 hours'
+              ? 'Temporary workspace · Access expires after 48 hours'
               : liveDatabases
                 ? 'Cloud usage is not measured'
                 : liveFiles

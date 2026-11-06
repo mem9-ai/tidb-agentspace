@@ -552,7 +552,7 @@ test('@visual Guest starts a sales task, grants only its file system and returns
   await page.getByRole('button', { name: 'Try without an account' }).click();
   const task = page.getByRole('region', { name: 'Explore US sales' });
   await expect(task.getByRole('heading', { name: 'Explore US sales' })).toBeVisible();
-  await expect(page.getByText('Temporary workspace · Access expires after 24 hours')).toBeVisible();
+  await expect(page.getByText('Temporary workspace · Access expires after 48 hours')).toBeVisible();
   if (await page.getByRole('button', { name: 'Open navigation' }).isVisible()) {
     await expect(page.locator('.workspace-mobile-crumb')).toHaveText('Workspace');
   }

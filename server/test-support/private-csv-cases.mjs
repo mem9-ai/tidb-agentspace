@@ -26,7 +26,7 @@ export async function privateCsvCases(origin, browserGuest) {
   const workspace = await enroll();
   assert.deepEqual(await enroll(), workspace);
   assert.notEqual(workspace.workspaceId, browserGuest.workspaceId);
-  assert.ok(Math.abs(workspace.expiresAt - Date.now() / 1000 - 86400) < 30);
+  assert.ok(Math.abs(workspace.expiresAt - Date.now() / 1000 - 172800) < 30);
   const source = 'workspaces/' + workspace.workspaceId + '/sources/' + workspace.resourceId + '/';
   const content = source + 'content';
   assert.ok(

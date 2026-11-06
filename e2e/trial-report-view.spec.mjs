@@ -275,7 +275,7 @@ test('account sign-in returns a report reader to Files when Guest access is disa
   await openReportForUpload(page, workspace);
   await expect(page.getByRole('heading', { name: 'Open report files' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open temporary workspace' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Continue with TiDB Account' }).click();
+  await page.getByRole('button', { name: 'Continue with TiDB Cloud' }).click();
   await expect(page).toHaveURL(/tidbcloud\/login$/);
   workspace.signInAsAccount();
   workspace.addResources();

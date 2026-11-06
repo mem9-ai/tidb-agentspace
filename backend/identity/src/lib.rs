@@ -260,7 +260,7 @@ fn decode_guest(
     let expires = identity["expiresAt"]
         .as_i64()
         .ok_or_else(|| error(503, "IDENTITY_RECORD_CORRUPT"))?;
-    if created.checked_add(86_400) != Some(expires)
+    if !workspace_contracts::valid_guest_session_window(created, expires)
         || identity["type"] != "guest"
         || identity["guestId"] != guest_id
     {
@@ -461,7 +461,8 @@ impl Directory {
         key: &CsvGuestKey,
     ) -> Result<GuestRegistration> {
         let existing = async || -> Result<GuestRegistration> {
-            let (registration, _, expires_at) = self.guest_status(&key.id, &key.secret()).await?;
+            let (registration, _, expires_at, _) =
+                self.guest_status(&key.id, &key.secret()).await?;
             if registration.region_id != region {
                 return Err(error(409, "GUEST_REGION_MISMATCH"));
             }
@@ -497,7 +498,7 @@ impl Directory {
             return Err(error(400, "INVALID_REGION"));
         }
         let expires_at = created_at
-            .checked_add(86_400)
+            .checked_add(workspace_contracts::GUEST_SESSION_SECONDS)
             .ok_or_else(|| error(503, "CLOCK_UNAVAILABLE"))?;
         let secret = hex::encode(bytes);
         let verifier = hex::encode(Sha256::digest(bytes));
@@ -585,7 +586,7 @@ impl Directory {
         &self,
         guest_id: &str,
         secret: &str,
-    ) -> Result<(Registration, Provisioning, i64)> {
+    ) -> Result<(Registration, Provisioning, i64, i64)> {
         let scope = guest_scope(guest_id)?;
         let result = self
             .metadata
@@ -602,7 +603,10 @@ impl Directory {
             Some("ready") => Provisioning::Ready,
             _ => return Err(error(503, "IDENTITY_RECORD_CORRUPT")),
         };
-        Ok((registration, state, expires))
+        let created = value(records, "identity")?["createdAt"]
+            .as_i64()
+            .ok_or_else(|| error(503, "IDENTITY_RECORD_CORRUPT"))?;
+        Ok((registration, state, expires, created))
     }
 
     /// Caller must authenticate the Region and verify its durable cleanup-queue acknowledgement.
@@ -1074,7 +1078,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn guest_credentials_are_isolated_expire_after_24_hours_and_are_not_stored() {
+    async fn guest_credentials_are_isolated_expire_after_48_hours_and_are_not_stored() {
         let metadata = Arc::new(MemoryMeta::default());
         let directory = Directory::open(metadata.clone()).await.unwrap();
         let alice = directory.create_guest_at("region:a", 100).await.unwrap();
@@ -1084,17 +1088,17 @@ pub(crate) mod tests {
             alice.registration.workspace_id,
             bob.registration.workspace_id
         );
-        assert_eq!(alice.expires_at, 86_500);
+        assert_eq!(alice.expires_at, 172_900);
         assert!(
             directory
-                .authenticate_guest_at(&alice.guest_id, &alice.secret, 86_499)
+                .authenticate_guest_at(&alice.guest_id, &alice.secret, 172_899)
                 .await
                 .unwrap()
                 == alice.registration
         );
         assert_eq!(
             directory
-                .authenticate_guest_at(&alice.guest_id, &alice.secret, 86_500)
+                .authenticate_guest_at(&alice.guest_id, &alice.secret, 172_900)
                 .await
                 .err()
                 .unwrap()
@@ -1132,6 +1136,48 @@ pub(crate) mod tests {
         let records = serde_json::to_string(&*groups).unwrap();
         assert!(!records.contains(&alice.secret));
         assert!(!records.contains(&bob.secret));
+    }
+
+    #[tokio::test]
+    async fn legacy_guest_deadlines_remain_valid_without_renewal() {
+        let metadata = Arc::new(MemoryMeta::default());
+        let directory = Directory::open(metadata.clone()).await.unwrap();
+        let created = now().unwrap();
+        let guest = directory
+            .create_guest_at("region:a", created)
+            .await
+            .unwrap();
+        let group = group_key(&guest_scope(&guest.guest_id).unwrap());
+        for duration in [86_400, 172_800, 86_401, 172_801] {
+            {
+                let mut groups = metadata.groups.lock().unwrap();
+                groups.get_mut(&group).unwrap().get_mut("identity").unwrap()["value"]["expiresAt"] =
+                    json!(created + duration);
+            }
+            let status = directory.guest_status(&guest.guest_id, &guest.secret).await;
+            if duration == 86_400 || duration == 172_800 {
+                let (_, _, expires, original_created) = status.unwrap();
+                assert_eq!(expires, created + duration);
+                assert_eq!(original_created, created);
+                assert!(
+                    directory
+                        .authenticate_guest_at(&guest.guest_id, &guest.secret, expires - 1)
+                        .await
+                        .is_ok()
+                );
+                assert_eq!(
+                    directory
+                        .authenticate_guest_at(&guest.guest_id, &guest.secret, expires)
+                        .await
+                        .err()
+                        .unwrap()
+                        .code,
+                    "GUEST_UNAUTHORIZED"
+                );
+            } else {
+                assert_eq!(status.err().unwrap().code, "IDENTITY_RECORD_CORRUPT");
+            }
+        }
     }
 
     #[tokio::test]

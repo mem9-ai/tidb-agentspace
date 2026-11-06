@@ -253,7 +253,7 @@ impl Repository {
                 let created = policy["identity"]["createdAt"]
                     .as_i64()
                     .ok_or_else(|| error("MANAGED_POLICY_MISSING"))?;
-                if created.checked_add(86_400) != Some(expiry) {
+                if !workspace_contracts::valid_guest_session_window(created, expiry) {
                     return Err(error("MANAGED_POLICY_MISSING"));
                 }
                 if chrono::Utc::now().timestamp() >= expiry {

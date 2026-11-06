@@ -40,7 +40,7 @@ def run(directory):
         nonlocal lost_reply
         calls.append((method,route))
         if route == "workspaces":
-            item = workspaces.setdefault(key, {"id":str(uuid4()), "data":None, "version":0, "expiresAt":clock[0]+86400})
+            item = workspaces.setdefault(key, {"id":str(uuid4()), "data":None, "version":0, "expiresAt":clock[0]+172800})
             return json.dumps({"workspaceId":item["id"],"resourceId":"fs_123","expiresAt":item["expiresAt"]}).encode()
         item = workspaces[key]
         assert route.startswith("workspaces/" + item["id"] + "/sources/fs_123/")

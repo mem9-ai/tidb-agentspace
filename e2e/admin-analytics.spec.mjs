@@ -116,7 +116,7 @@ test('Admin Open workspace uses normal account SSO even with an existing Guest s
   await page.goto('/');
   await page.getByRole('button', { name: 'Try without an account' }).click();
   await expect(
-    page.getByText('Your temporary workspace expires 24 hours after it was created.'),
+    page.getByText('Your temporary workspace expires 48 hours after it was created.'),
   ).toBeVisible();
   const navigation = page.getByRole('button', { name: 'Open navigation', exact: true });
   if (await navigation.isVisible()) await navigation.click();

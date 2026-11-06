@@ -121,7 +121,7 @@ impl Onboarding {
     /// The caller retains the private Guest secret across a retry. The Region must persist
     /// its expiration job before acknowledging readiness; actual deletion is separate work.
     pub async fn guest(&self, guest: &GuestRegistration) -> Result<Registration> {
-        let (registration, state, expires_at) = self
+        let (registration, state, expires_at, created_at) = self
             .directory
             .guest_status(&guest.guest_id, &guest.secret)
             .await?;
@@ -145,7 +145,7 @@ impl Onboarding {
             identity: OwnerIdentity::Guest {
                 guest_id: guest.guest_id.clone(),
                 verifier: hex::encode(Sha256::digest(secret)),
-                created_at: expires_at - 86_400,
+                created_at,
                 expires_at,
             },
         };

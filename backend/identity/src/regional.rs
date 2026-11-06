@@ -80,7 +80,7 @@ pub(crate) fn validate(policy: &Policy, authority: &str) -> Result<()> {
             uuid(guest_id)
                 && verifier.len() == 64
                 && hex::decode(verifier).is_ok_and(|bytes| bytes.len() == 32)
-                && created_at.checked_add(86_400) == Some(*expires_at)
+                && workspace_contracts::valid_guest_session_window(*created_at, *expires_at)
         }
     };
     if !valid_identity {

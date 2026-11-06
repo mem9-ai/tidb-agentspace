@@ -2,6 +2,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{fmt, future::Future, pin::Pin};
 
+/// New anonymous sessions last 48 hours. Legacy sessions keep their recorded deadline.
+pub const GUEST_SESSION_SECONDS: i64 = 48 * 60 * 60;
+
+pub fn valid_guest_session_window(created: i64, expires: i64) -> bool {
+    matches!(
+        expires.checked_sub(created),
+        Some(86_400 | GUEST_SESSION_SECONDS)
+    )
+}
+
 pub const RESOURCE_INDEX_SCHEMA: &str = "indexes/resource-v1/schema";
 
 /// Commit only atomically with a brand-new, empty Workspace. Existing Workspaces must

@@ -533,6 +533,10 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
     resourcePageBusy,
     resourcePageError,
   };
+  const ssoLabel =
+    sso.label && sso.label !== 'Continue with TiDB Account'
+      ? sso.label
+      : 'Continue with TiDB Cloud';
   const ssoButton =
     sso.enabled && sso.loginPath ? (
       <Button
@@ -542,7 +546,7 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
           window.location.href = sso.loginUrl || apiBaseUrl + sso.loginPath;
         }}
       >
-        {sso.label || 'Continue with TiDB Account'}
+        {ssoLabel}
       </Button>
     ) : null;
   if (!data) {
@@ -570,7 +574,7 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
               <>
                 <Text component="p">
                   {sso.guestEnabled
-                    ? 'Open a temporary workspace to continue with your files for 24 hours.'
+                    ? 'Open a temporary workspace to continue with your files for 48 hours.'
                     : 'Sign in to continue with your files.'}
                 </Text>
                 {guestError && <Text role="alert">{guestError}</Text>}
@@ -588,7 +592,7 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
             <Heading level={1}>How would you like to work?</Heading>
             {sso.loginPath && (
               <SignInChoices
-                label={sso.label || 'Continue with TiDB Account'}
+                label={ssoLabel}
                 guestEnabled={sso.guestEnabled === true}
                 guestLoading={guestLoading}
                 guestError={guestError}
@@ -2325,7 +2329,7 @@ function WorkspaceSettings({
                 </strong>
                 <Text component="p">
                   {sso.sessionKind === 'guest'
-                    ? 'Your temporary workspace expires 24 hours after it was created.'
+                    ? 'Your temporary workspace expires 48 hours after it was created.'
                     : sso.enabled
                       ? 'Signed in with your TiDB Account. This is your personal workspace.'
                       : 'Local development session. Your workspace uses the configured local storage.'}
@@ -2434,7 +2438,7 @@ function CreateKey({
         name,
         scopes: activeScopes,
         resourceIds,
-        expiresInDays: isGuest ? 1 : expires,
+        expiresInDays: isGuest ? 2 : expires,
       });
       setSecret(result.secret);
       setCreatedKey(result.data);
@@ -2570,7 +2574,7 @@ function CreateKey({
           />
           {isGuest ? (
             <Text component="p">
-              Expires with your temporary workspace (within 24 hours), or on sign-out.
+              Expires with your temporary workspace (within 48 hours), or on sign-out.
             </Text>
           ) : (
             <NativeSelect
