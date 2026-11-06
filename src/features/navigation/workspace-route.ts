@@ -1,4 +1,4 @@
-import { uploadHash } from './upload-entry.ts';
+import { uploadHash, reportFilesHash } from './upload-entry.ts';
 
 const pages = [
   'overview',
@@ -20,6 +20,7 @@ export type WorkspaceRoute = {
   tableName?: string;
   fileLink?: string;
   openForUpload?: boolean;
+  openReportFiles?: boolean;
   tutorialResourceId?: string;
   tutorialKind?: 'database' | 'filesystem';
   showSalesExample?: boolean;
@@ -71,6 +72,8 @@ export function parseWorkspaceRoute(hash: string): WorkspaceRoute {
       ...(kind === 'database' || kind === 'filesystem' ? { tutorialKind: kind } : {}),
     };
   }
+  if (hash === reportFilesHash)
+    return { page: 'files', openForUpload: true, openReportFiles: true };
   if (hash === uploadHash) return { page: 'files', openForUpload: true };
   if (value.startsWith('files?')) return { page: 'files', fileLink: value };
   if (value === 'sql') return { page: 'databases' };

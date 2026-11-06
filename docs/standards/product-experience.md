@@ -92,7 +92,7 @@ who chooses that path. When a follow-up changes the question, lead the original 
 and the data that explains it. Keep the earlier analysis available as context.
 For a private CSV, lead with the agent uploading the explicitly selected file once and continuing from its saved remote version in the same project. Keep private results separate from public sample links. A copied sample question should yield a named finding even in an empty project. An attachment or unambiguous filename is sufficient to select private data; the agent resolves the path and explains file limits only when they affect that selection.
 When the agent needs a source and the user is stuck, offer the public sample and their CSV as actionable choices in chat. Use the host’s picker or numbered replies. Honor a selection directly and resume available data without another source-selection step.
-Opening Files from a completed sample should reach the upload action in the reader’s own or temporary workspace.
+Opening files from a completed sample saves the verified public CSV and the displayed report into the reader’s own or temporary workspace, then opens the report alongside its source. Re-entry reuses identical files and conditional creation preserves edits. Further analysis starts with the existing sample; selecting private data is an optional next task.
 Verify the click from a signed-out browser as well as a returning session. Viewing the report alone starts no workspace.
 
 **People and agent onboarding (owner direction, 2026-11-03):** a Guest can explore the US sales
@@ -209,7 +209,7 @@ supersedes the earlier Monitoring presentation and the historical GH-98 experien
 ## One interaction language
 
 **Product identity and attribution (owner correction, GH-92, 2026-11-01):** use **TiDB Agent
-Workspace** for the Console brand and document title. Do not label the entire Workspace
+Workspace** for the Console brand, skill, agent prompts, public discovery and document title. The skill metadata uses `tidb-agent-workspace`; its existing distribution URL and local helper paths remain compatibility identifiers. Do not label the entire Workspace
 **Live resources** or use TiDB Cloud documentation as Workspace help. Remove the unrelated
 help/Documentation and Cloud quota-documentation links; keep actual limits and resource-specific
 provider/demo/expiry information explicit. Use one quiet footer **Powered by TiDB Cloud** link

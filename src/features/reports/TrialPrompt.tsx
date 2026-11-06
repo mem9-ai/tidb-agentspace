@@ -3,7 +3,7 @@ import { Button, Stack, Text, Textarea } from '@tidbcloud/uikit';
 import { IconCheck, IconCopy03 } from '@tidbcloud/uikit/icons';
 
 const skillUrl = 'https://drive9.ai/studio/skills/drive9-workspace/SKILL.md';
-const trialInstruction = `Follow the official Drive9 skill at ${skillUrl} to find the top US state by sales in the public sample, show the calculation, and save a report I can continue in this project using only the free trial. Give me the read-only Studio link and the local report. If this is the first version, ask if I want to add the leading state’s top product in this chat.`;
+const trialInstruction = `Follow the official TiDB Agent Workspace skill at ${skillUrl} to find the top US state by sales in the public sample, show the calculation, and save a report I can continue in this project using only the free trial. Give me the read-only Studio link and the local report. If this is the first version, ask if I want to add the leading state’s top product in this chat.`;
 
 export function TrialPrompt({
   leadingState,
@@ -15,9 +15,9 @@ export function TrialPrompt({
   const followUp = leadingState !== undefined;
   const compact = followUp || sampleSales !== undefined;
   const prompt = sampleSales
-    ? `Follow ${skillUrl} to answer: How much of total sales comes from the top two markets? Use the CSV I attach or name, or resume my saved CSV in this project. Save private findings locally. If I have neither, answer now from these public sample figures: ${sampleSales}. Show the calculation and label it as the public sample. Then tell me I can attach a CSV or give its filename here to try my data. Reply in the language we have been using. In a new chat, use ${navigator.language}.`
+    ? `Follow the TiDB Agent Workspace skill at ${skillUrl} to continue this public sales report. What share of total sales comes from the top two states? Use these figures from the report: ${sampleSales}. Show the calculation in chat and add it to this project's saved local report if available. Use the existing sample and report. Reply in the language we have been using. In a new chat, use ${navigator.language}.`
     : followUp
-      ? `Follow ${skillUrl} in the local project that created my Drive9 sales report. Add the top product by sales in ${leadingState} and its share of state sales to the same report, then give me the updated Studio link.`
+      ? `Follow ${skillUrl} in the local project that created my TiDB Agent Workspace sales report. Add the top product by sales in ${leadingState} and its share of state sales to the same report, then give me the updated Studio link.`
       : trialInstruction;
   const [result, setResult] = useState<'idle' | 'copied' | 'manual'>('idle');
   return (
@@ -25,7 +25,7 @@ export function TrialPrompt({
       <Button
         fullWidth={!compact}
         w={compact ? 'fit-content' : undefined}
-        variant="filled"
+        variant={sampleSales ? 'default' : 'filled'}
         leftSection={
           result === 'copied' ? (
             <IconCheck size={18} aria-hidden />
@@ -42,7 +42,7 @@ export function TrialPrompt({
           }
         }}
       >
-        {sampleSales ? 'Copy sales question' : followUp ? 'Copy follow-up' : 'Copy prompt'}
+        {sampleSales ? 'Copy next question' : followUp ? 'Copy follow-up' : 'Copy prompt'}
       </Button>
       {result === 'manual' && (
         <Textarea
@@ -61,7 +61,7 @@ export function TrialPrompt({
         <Text size="sm" ta={compact ? 'left' : 'center'} role="status">
           {result === 'copied'
             ? sampleSales
-              ? 'Copied. Paste into your agent chat. You can attach a CSV in the same message.'
+              ? 'Copied. Paste into your agent chat to continue this report.'
               : 'Copied. Paste it into your project chat.'
             : 'No account needed · 48-hour trial'}
         </Text>

@@ -1,3 +1,4 @@
+import { ReportFilesEntry } from './features/reports/ReportFilesEntry';
 import { ApiDocumentation } from './features/api/ApiDocumentation';
 import { capturePage, startAnalytics } from './features/analytics/capture';
 import { WorkspaceApiError } from './api/transport';
@@ -526,7 +527,11 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
         {showSignIn && routeLocation.openForUpload ? (
           <>
             <Heading level={1}>
-              {guestLoading ? 'Opening your files…' : 'Open Workspace Files'}
+              {guestLoading
+                ? 'Opening your files…'
+                : routeLocation.openReportFiles
+                  ? 'Open report files'
+                  : 'Open Workspace Files'}
             </Heading>
             {guestLoading ? (
               <Loader aria-label="Opening your workspace" />
@@ -534,8 +539,8 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
               <>
                 <Text component="p">
                   {sso.guestEnabled
-                    ? 'Use a temporary workspace for 24 hours or sign in to upload your CSV.'
-                    : 'Sign in to your workspace to upload your CSV.'}
+                    ? 'Open a temporary workspace to continue with your files for 24 hours.'
+                    : 'Sign in to continue with your files.'}
                 </Text>
                 {guestError && <Text role="alert">{guestError}</Text>}
                 {sso.guestEnabled && (
@@ -641,6 +646,7 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
                   {...shared}
                   setup={defaultFileSystem}
                   openForUpload={routeLocation.openForUpload}
+                  openReportFiles={routeLocation.openReportFiles}
                 />
               )}
             </>
@@ -1029,9 +1035,10 @@ function download(name: string, value: string, mime = 'text/plain') {
 }
 function Files({
   openForUpload,
+  openReportFiles,
   setup,
   ...shared
-}: Shared & { openForUpload?: boolean; setup: FileSetup }) {
+}: Shared & { openForUpload?: boolean; openReportFiles?: boolean; setup: FileSetup }) {
   const context = parseFileSystemLocation(location.hash);
   const systems = shared.data.resources.filter((resource) => resource.kind === 'filesystem');
   const target =
@@ -1045,8 +1052,8 @@ function Files({
   const targetId =
     target && target.status === 'active' && !target.connectionError ? target.id : undefined;
   useEffect(() => {
-    if (targetId) location.replace(fileSystemHash(targetId));
-  }, [targetId]);
+    if (targetId && !openReportFiles) location.replace(fileSystemHash(targetId));
+  }, [targetId, openReportFiles]);
   if (
     !context &&
     (setup.preparing ||
@@ -1055,6 +1062,14 @@ function Files({
         !systems.some((system) => system.status === 'active' && !system.connectionError)))
   )
     return <FileSetupStatus setup={setup} />;
+  if (openReportFiles)
+    return (
+      <ReportFilesEntry
+        data={shared.data}
+        refresh={shared.refresh}
+        onCreate={() => shared.onCreate('filesystem')}
+      />
+    );
   if (targetId) return <Text role="status">Opening your files…</Text>;
   if (!context)
     return (

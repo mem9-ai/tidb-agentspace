@@ -55,7 +55,7 @@ test('published Workspace skill is portable and preserves credential and write s
   const match = /^---\n([\s\S]*?)\n---\n/.exec(skill);
   assert.ok(match, 'skill has YAML frontmatter');
   const metadata = parse(match[1]);
-  assert.equal(metadata.name, 'drive9-workspace');
+  assert.equal(metadata.name, 'tidb-agent-workspace');
   assert.ok(typeof metadata.description === 'string' && metadata.description.length > 0);
   assert.ok(metadata.description.length <= 1024);
   assert.match(skill, /Do not follow the\s+307 redirect/);

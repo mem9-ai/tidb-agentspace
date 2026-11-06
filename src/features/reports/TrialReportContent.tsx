@@ -1,5 +1,5 @@
-import { Button, Paper, Text, Title } from '@tidbcloud/uikit';
-import { rememberWorkspaceFilesEntry, uploadHash } from '../navigation/upload-entry';
+import { Paper, Stack, Text, Title } from '@tidbcloud/uikit';
+import { OpenReportFiles } from './OpenReportFiles';
 import { TrialPrompt } from './TrialPrompt';
 
 type Rows = [string, number][];
@@ -116,31 +116,21 @@ export function TrialReportContent({ report }: { report: SalesReport }) {
           </details>
           <section aria-labelledby="own-sales">
             <Title order={2} id="own-sales">
-              What share of sales comes from your top two markets?
+              Your report files
             </Title>
             <Text mb="sm">
-              Paste this question into your agent chat. Attach a sales CSV, or use the one you
-              shared earlier in this project. You can also try it with just this sample.
+              Open this report and its source data together in your workspace. To keep analyzing the
+              sample with your agent, copy the next question.
             </Text>
-            <TrialPrompt
-              sampleSales={`${report.states
-                .slice(0, 2)
-                .map(([state, amount]) => `${state} ${money.format(amount)}`)
-                .join(', ')} out of ${money.format(total)} across all states`}
-            />
-            <Button
-              mt="sm"
-              component="a"
-              href={window.location.pathname.replace(/\/report\/?$/, '/') + uploadHash}
-              rel="noreferrer"
-              onClick={(event) => {
-                if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey)
-                  rememberWorkspaceFilesEntry();
-              }}
-              variant="default"
-            >
-              Open Workspace Files
-            </Button>
+            <Stack gap="sm" align="flex-start">
+              <OpenReportFiles report={report} />
+              <TrialPrompt
+                sampleSales={`${report.states
+                  .slice(0, 2)
+                  .map(([state, amount]) => `${state} ${money.format(amount)}`)
+                  .join(', ')} out of ${money.format(total)} across all states`}
+              />
+            </Stack>
           </section>
         </>
       ) : (

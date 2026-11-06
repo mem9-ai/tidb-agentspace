@@ -1,9 +1,16 @@
+import { readFile } from 'node:fs/promises';
 import { test, expect } from './workspace-fixture.mjs';
 
 const id = 'fb95da62-aa92-4656-8974-49b6e0111885';
 const grant = ['v1', 'a'.repeat(43), id, 2000000000, 'b'.repeat(86)].join('.');
 const path = '/studio/report/#' + grant;
 const endpoint = '**/api/v1/agent-trial/report-view';
+const source = await readFile(
+  new URL('../specs/gh-150/fixtures/us-sales.csv', import.meta.url),
+  'utf8',
+);
+const sourcePath = '/US sales sample.csv';
+const savedReport = '/US sales report - revision 2.md';
 const sample = {
   id,
   sample: 'us-sales-v1',
@@ -60,7 +67,7 @@ test('original Studio link opens the latest saved report without a session @visu
     name: /Which product brought in the most sales in California/,
   });
   await expect(followUp).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Open Workspace Files' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open report files' })).toHaveCount(0);
   if (process.env.VISUAL_SCREENSHOTS)
     await page.screenshot({ path: testInfo.outputPath('first-report.png'), fullPage: true });
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -93,7 +100,7 @@ test('original Studio link opens the latest saved report without a session @visu
   await expect(page).toHaveURL(new RegExp('#v1\\.'));
   await expect(followUp).toHaveCount(0);
   await expect(page.getByText(/Revision 2 · Complete/)).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Open Workspace Files' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open report files' })).toBeVisible();
   expect(apiPaths).toEqual([
     '/studio/api/v1/agent-trial/report-view',
     '/studio/api/v1/agent-trial/report-view',
@@ -101,14 +108,14 @@ test('original Studio link opens the latest saved report without a session @visu
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   if (process.env.VISUAL_SCREENSHOTS)
     await page.screenshot({ path: testInfo.outputPath('report.png'), fullPage: true });
-  const privatePrompt = page.getByRole('button', { name: 'Copy sales question' });
+  const privatePrompt = page.getByRole('button', { name: 'Copy next question' });
   await privatePrompt.click();
   const own = await page.evaluate(() => navigator.clipboard.readText());
-  expect(own).toContain('Use the CSV I attach or name, or resume my saved CSV');
+  expect(own).toContain('Use the existing sample and report');
   expect(own).toContain(
-    'answer now from these public sample figures: California $48,000, Texas $20,000 out of $100,000',
+    'Use these figures from the report: California $48,000, Texas $20,000 out of $100,000',
   );
-  await expect(page.getByRole('status')).toContainText('attach a CSV in the same message');
+  await expect(page.getByRole('status')).toContainText('continue this report');
   expect(own).toContain(`In a new chat, use ${await page.evaluate(() => navigator.language)}`);
   expect(own).not.toContain(grant);
 });
@@ -150,7 +157,43 @@ test('viewer handles unavailable, invalid and expired links and clears an open r
   ).toBeVisible();
 });
 
-async function openReportForUpload(page) {
+async function openReportForUpload(page, workspace, loseReceipt = false) {
+  let writes = 0;
+  await page.route('**/api/v1/agent-trial/us-sales-v1.csv', (route) =>
+    route.fulfill({ body: source, contentType: 'text/csv' }),
+  );
+  await page.route('**/files', (route) => {
+    const request = route.request();
+    if (request.method() !== 'PUT') return route.fallback();
+    expect(request.headers()['if-none-match']).toBe('*');
+    expect(request.headers().authorization || '').not.toContain('TrialView');
+    const body = request.postDataJSON();
+    writes++;
+    if (
+      workspace.state.files.some(
+        (file) => file.resourceId === body.resourceId && file.path === body.path,
+      )
+    )
+      return route.fulfill({
+        status: 412,
+        json: { error: { code: 'PRECONDITION_FAILED', message: 'Exists' } },
+      });
+    workspace.state.files.push({
+      ...body,
+      id: body.resourceId + body.path,
+      size: Buffer.byteLength(body.content),
+      version: '"saved-report"',
+      updatedAt: new Date().toISOString(),
+    });
+    if (loseReceipt && body.path === savedReport) {
+      loseReceipt = false;
+      return route.fulfill({
+        status: 503,
+        json: { error: { code: 'UNAVAILABLE', message: 'Connection interrupted' } },
+      });
+    }
+    return route.fulfill({ status: 201, json: { data: workspace.state.files.at(-1) } });
+  });
   await page.route(endpoint, (route) =>
     route.fulfill({
       json: {
@@ -162,30 +205,38 @@ async function openReportForUpload(page) {
     }),
   );
   await page.goto(path);
-  await page.getByRole('link', { name: 'Open Workspace Files' }).click();
+  await page.getByRole('button', { name: 'Open report files' }).click();
+  return () => writes;
 }
 
-test('report click opens upload for a new Guest and returns to the same workspace', async ({
+test('report click saves both files for a new Guest and reuses them on return', async ({
   page,
   workspace,
 }) => {
   workspace.requireSignIn({ guestEnabled: true });
   const guestPosts = () =>
     workspace.requests.filter((r) => r.path === '/api/auth/guest' && r.method === 'POST');
-  await openReportForUpload(page);
+  const writes = await openReportForUpload(page, workspace);
   const upload = page.getByRole('button', { name: 'Upload', exact: true });
   await expect(upload).toBeEnabled();
-  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), upload.click()]);
-  expect(await chooser.element().getAttribute('aria-label')).toBe('Upload a file');
+  const originals = workspace.state.files.filter((f) => [sourcePath, savedReport].includes(f.path));
+  expect(originals).toHaveLength(2);
+  expect(originals.find((f) => f.path === sourcePath).content).toBe(source);
+  expect(originals.find((f) => f.path === savedReport).content).toContain('Monitors');
+  await expect(page.getByRole('heading', { name: 'US sales summary' })).toBeVisible();
   const filesUrl = page.url();
   expect(filesUrl).toContain('/studio/#files?resourceId=');
   expect(guestPosts()).toHaveLength(1);
   await page.goBack();
   await expect(page).toHaveURL(new RegExp('#v1\\.'));
-  await page.getByRole('link', { name: 'Open Workspace Files' }).click();
+  await page.getByRole('button', { name: 'Open report files' }).click();
   await expect(page).toHaveURL(filesUrl);
   await expect(upload).toBeEnabled();
   expect(guestPosts()).toHaveLength(1);
+  expect(writes()).toBe(2);
+  expect(
+    workspace.state.files.filter((f) => [sourcePath, savedReport].includes(f.path)),
+  ).toHaveLength(2);
 });
 
 test('report click uses the existing account and offers a choice among file systems', async ({
@@ -200,11 +251,11 @@ test('report click uses the existing account and offers a choice among file syst
     id: 'fs_other',
     name: 'Sales files',
   });
-  await openReportForUpload(page);
-  const table = page.getByRole('table', { name: 'File systems' });
-  await table.getByRole('link', { name: 'Sales files', exact: true }).click();
+  await openReportForUpload(page, workspace);
+  await page.getByRole('textbox', { name: 'File system', exact: true }).click();
+  await page.getByRole('option', { name: 'Sales files', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Upload', exact: true })).toBeEnabled();
-  await expect(page).toHaveURL(/#files\?resourceId=fs_other$/);
+  await expect(page).toHaveURL(/#files\?resourceId=fs_other&path=/);
   expect(workspace.requests.some((r) => r.method === 'POST' && r.path === '/api/auth/guest')).toBe(
     false,
   );
@@ -215,15 +266,15 @@ test('account sign-in returns a report reader to Files when Guest access is disa
   workspace,
 }) => {
   workspace.requireSignIn({ guestEnabled: false });
-  await openReportForUpload(page);
-  await expect(page.getByRole('heading', { name: 'Open Workspace Files' })).toBeVisible();
+  await openReportForUpload(page, workspace);
+  await expect(page.getByRole('heading', { name: 'Open report files' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open temporary workspace' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Continue with TiDB Account' }).click();
   await expect(page).toHaveURL(/tidbcloud\/login$/);
   workspace.signInAsAccount();
   workspace.addResources();
   await page.goto('/studio/');
-  await expect(page).toHaveURL(/#files\?resourceId=fs_fixture$/);
+  await expect(page).toHaveURL(/#files\?resourceId=fs_fixture&path=/);
   await expect(page.getByRole('button', { name: 'Upload', exact: true })).toBeEnabled();
   expect(workspace.requests.some((r) => r.method === 'POST' && r.path === '/api/auth/guest')).toBe(
     false,
@@ -250,8 +301,50 @@ test('a failed Guest entry can retry from Files without returning to the home pa
     (route) => route.fulfill({ status: 503, json: { error: { message: 'Unavailable' } } }),
     { times: 1 },
   );
-  await openReportForUpload(page);
+  await openReportForUpload(page, workspace);
   await expect(page.getByRole('alert')).toContainText('Unable to start');
   await page.getByRole('button', { name: 'Open temporary workspace' }).click();
   await expect(page.getByRole('button', { name: 'Upload', exact: true })).toBeEnabled();
+});
+
+test('report import preserves an edited file and recovers a partially saved import', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  workspace.signInAsAccount();
+  workspace.addResources();
+  workspace.state.files.push({
+    id: 'existing-source',
+    resourceId: 'fs_fixture',
+    path: sourcePath,
+    type: 'file',
+    content: 'My edits',
+    size: 8,
+    version: '"edited"',
+    updatedAt: new Date().toISOString(),
+  });
+  await openReportForUpload(page, workspace);
+  await expect(page.getByRole('alert')).toContainText('already contains different content');
+  expect(workspace.state.files.find((f) => f.path === sourcePath).content).toBe('My edits');
+  expect(workspace.state.files.some((f) => f.path === savedReport)).toBe(false);
+  workspace.state.files.find((f) => f.path === sourcePath).content = source;
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'US sales summary' })).toBeVisible();
+  expect(
+    workspace.state.files.filter((f) => [sourcePath, savedReport].includes(f.path)),
+  ).toHaveLength(2);
+});
+
+test('a lost save receipt resumes without uploading either file again', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  const writes = await openReportForUpload(page, workspace, true);
+  await expect(page.getByRole('alert')).toContainText('Connection interrupted');
+  expect(writes()).toBe(2);
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'US sales summary' })).toBeVisible();
+  expect(writes()).toBe(2);
 });
