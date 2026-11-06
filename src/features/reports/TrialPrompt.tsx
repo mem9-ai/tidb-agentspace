@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button, Stack, Text, Textarea } from '@tidbcloud/uikit';
 import { IconCheck, IconCopy03 } from '@tidbcloud/uikit/icons';
 
-const skillUrl = 'https://drive9.ai/studio/skills/drive9-workspace/SKILL.md';
+const skillUrl = 'https://drive9.ai/studio/skills/tidb-agent-workspace/SKILL.md';
 const trialInstruction = `Follow the official TiDB Agent Workspace skill at ${skillUrl} to find the top US state by sales in the public sample, show the calculation, and save a report I can continue in this project using only the free trial. Give me the read-only Studio link and the local report, so I can open the report in Workspace.`;
 
 export function TrialPrompt({

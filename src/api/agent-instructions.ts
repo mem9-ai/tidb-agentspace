@@ -68,5 +68,5 @@ export function workspaceSkillUrl(origin: string, pathname: string): string {
   const directory = pathname.endsWith('/index.html')
     ? pathname.slice(0, -'index.html'.length)
     : `${pathname.replace(/\/+$/, '')}/`;
-  return new URL(`${directory}skills/drive9-workspace/SKILL.md`, origin).href;
+  return new URL(`${directory}skills/tidb-agent-workspace/SKILL.md`, origin).href;
 }

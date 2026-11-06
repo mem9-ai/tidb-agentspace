@@ -8,9 +8,9 @@ import tempfile
 from types import SimpleNamespace
 from unittest.mock import patch
 
-assets = Path(__file__).resolve().parents[2] / "console/public/skills/drive9-workspace"
+assets = Path(__file__).resolve().parents[2] / "console/public/skills/tidb-agent-workspace"
 installer = runpy.run_path(str(assets / "install.py"))
-base = "https://drive9.ai/studio/skills/drive9-workspace/"
+base = "https://drive9.ai/studio/skills/tidb-agent-workspace/"
 
 
 def download(url, timeout):
