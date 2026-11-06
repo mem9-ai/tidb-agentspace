@@ -1138,7 +1138,17 @@ test('the published Workspace skill is available at root and mounted Console pat
     expect(response.ok()).toBe(true);
     const body = await response.text();
     expect(body).toContain('name: tidb-agent-workspace');
-    expect(body).toContain('If-None-Match: *');
+    expect(body).toContain('[the authenticated API](workspace-api.md)');
+    expect(body).toContain('[the private CSV workflow](private-csv.md)');
+    const api = await page.request.get(`${prefix}/skills/drive9-workspace/workspace-api.md`);
+    expect(api.ok()).toBe(true);
+    const instructions = await api.text();
+    expect(instructions).toContain('If-None-Match: *');
+    expect(instructions).toContain('If-Match');
+    expect(instructions).toContain('Never print it');
+    const csv = await page.request.get(`${prefix}/skills/drive9-workspace/private-csv.md`);
+    expect(csv.ok()).toBe(true);
+    expect(await csv.text()).toContain('Never pick a different file');
   }
 });
 
