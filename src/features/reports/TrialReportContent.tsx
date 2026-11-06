@@ -4,7 +4,14 @@ import { TrialPrompt } from './TrialPrompt';
 import { marketInsight } from './report-insights';
 
 type Rows = [string, number][];
-export type SalesReport = { revision: 1 | 2; expiresAt: number; states: Rows; products: Rows };
+export type SalesReport = {
+  id: string;
+  markdown: string;
+  revision: 1 | 2;
+  expiresAt: number;
+  states: Rows;
+  products: Rows;
+};
 const money = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
@@ -133,20 +140,21 @@ export function TrialReportContent({ report }: { report: SalesReport }) {
             <Text mb="sm">
               Open the report alongside its source data, ready to explore in your workspace.
             </Text>
-            <OpenReportFiles report={report} markets={markets} />
+            <OpenReportFiles report={report} />
           </section>
         </>
       ) : (
         <>
           <Title order={1}>US sales report</Title>
           {stateFinding}
+          <OpenReportFiles report={report} />
           <Paper component="section" withBorder p="md" aria-labelledby="next-question">
             <Title order={2} id="next-question">
               Which product brought in the most sales in {leader}?
             </Title>
             <Text mb="sm">
-              Paste the question into your agent chat in the original project. Reopen this link
-              after your agent saves.
+              Paste the question into your agent chat in the original project. This page updates
+              automatically after your agent saves.
             </Text>
             <TrialPrompt leadingState={leader} />
           </Paper>
@@ -165,6 +173,14 @@ export function TrialReportContent({ report }: { report: SalesReport }) {
             {expires.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
           </time>
         </Text>
+        <details>
+          <summary>About this shared link</summary>
+          <Text size="sm">
+            Anyone with this link can read the public sample report until it expires. The report
+            owner can ask their agent to stop sharing. Clearing local access alone does not close
+            this link.
+          </Text>
+        </details>
       </footer>
     </>
   );

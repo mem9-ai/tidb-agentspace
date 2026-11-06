@@ -10,6 +10,7 @@ const nextReport = '/US sales order values.md';
 export function ReportNextSteps({
   resource,
   workspaceId,
+  sourcePath,
   copy,
   connected,
   onConnect,
@@ -17,6 +18,7 @@ export function ReportNextSteps({
 }: {
   resource: Resource;
   workspaceId: string;
+  sourcePath: string;
   copy: (value: string) => Promise<boolean>;
   connected?: { started: boolean };
   onConnect: (prompt: string) => void;
@@ -45,7 +47,7 @@ export function ReportNextSteps({
       const prompt = workspaceSkillTask(
         settings.endpoint,
         workspaceSkillUrl(location.origin, location.pathname),
-        `Continue in my Workspace File System ${resource.id}. Read /US sales sample.csv, which is already saved; do not ask me to upload it again. Compare average order value by state using read-only file analysis. sales_usd is the line total; do not multiply it by quantity. Save a concise Markdown analysis to ${nextReport} only if absent; if it exists, read and reuse it. Do not overwrite or blindly retry an uncertain write. Give me the finding and this link to the saved report: ${link.href}.`,
+        `Continue in my Workspace File System ${resource.id}. Read ${sourcePath}, which is already saved; do not ask me to upload it again. Compare average order value by state using read-only file analysis. sales_usd is the line total; do not multiply it by quantity. Save a concise Markdown analysis to ${nextReport} only if absent; if it exists, read and reuse it. Do not overwrite or blindly retry an uncertain write. Give me the finding and this link to the saved report: ${link.href}.`,
       );
       setInstructions(prompt);
       onConnect(prompt);

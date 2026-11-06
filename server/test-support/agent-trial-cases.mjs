@@ -117,6 +117,7 @@ test(
       401,
     );
     assert.equal((await call('report', 'GET', undefined, viewHeaders)).status, 401);
+    assert.equal((await call('report-sharing', 'DELETE', undefined, viewHeaders)).status, 401);
     assert.equal((await call('report-view', 'GET', undefined, headers(token))).status, 401);
     assert.equal(
       (await call('report-view', 'GET', undefined, { ...viewHeaders, Cookie: 'browser=example' }))
@@ -192,10 +193,36 @@ test(
     assert.deepEqual(saved.body, rev2.body);
     assert.deepEqual((await read(grant)).body, rev2.body);
     assert.equal((await update(resumed.body.token, 2, 'states')).body.revision, 2);
+    assert.match(rev2.body.markdown, /# US sales report/);
+    assert.match(rev2.body.markdown, /Source: us-sales.csv/);
+    assert.match(rev2.body.markdown, /\$68,000.00 \/ \$100,000.00 = 68.0%/);
+    const otherResumed = await call('sessions', 'POST', await proof(b, false));
+    assert.equal(
+      (await call('report-sharing', 'DELETE', undefined, headers(otherResumed.body.token))).status,
+      200,
+    );
+    assert.equal((await read(grant)).status, 200);
+    const revoked = await call('report-sharing', 'DELETE', undefined, headers(resumed.body.token));
+    assert.equal(revoked.body.sharingRevoked, true);
+    assert.equal(revoked.body.markdown, rev2.body.markdown);
+    assert.equal(revoked.body.expiresAt, report.expiresAt);
+    assert.deepEqual(
+      (await call('report-sharing', 'DELETE', undefined, headers(resumed.body.token))).body,
+      revoked.body,
+    );
+    await f.restart();
+    assert.equal((await read(grant)).status, 410);
+    assert.equal((await read(grant)).body.error.code, 'REPORT_SHARING_REVOKED');
+    const afterRevoke = await call('sessions', 'POST', await proof(a, false));
+    assert.equal(afterRevoke.body.report.sharingRevoked, true);
+    assert.equal((await update(afterRevoke.body.token, 2, 'states')).body.sharingRevoked, true);
     await f.expireTrial(enrollment.publicKey);
     assert.equal((await read(grant)).status, 410);
     assert.equal((await read(viewGrant(a, report.id, 1))).status, 410);
-    assert.equal((await call('report', 'GET', undefined, headers(resumed.body.token))).status, 410);
+    assert.equal(
+      (await call('report', 'GET', undefined, headers(afterRevoke.body.token))).status,
+      410,
+    );
     assert.equal((await call('sessions', 'POST', await proof(a, false))).status, 410);
   },
 );

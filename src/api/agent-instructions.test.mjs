@@ -58,10 +58,15 @@ test('published Workspace skill is portable and preserves credential and write s
   assert.equal(metadata.name, 'tidb-agent-workspace');
   assert.ok(typeof metadata.description === 'string' && metadata.description.length > 0);
   assert.ok(metadata.description.length <= 1024);
-  assert.match(skill, /Do not follow the\s+307 redirect/);
-  assert.match(skill, /Verify the response's region origin, path, and ID/);
-  assert.match(skill, /If-None-Match: \*/);
-  assert.match(skill, /If-Match/);
-  assert.match(skill, /rather than blindly retrying/);
-  assert.doesNotMatch(skill, /awk_[A-Za-z0-9]+/);
+  assert.match(skill, /\[the authenticated API\]\(workspace-api.md\)/);
+  const api = await readFile(
+    new URL('../../console/public/skills/drive9-workspace/workspace-api.md', import.meta.url),
+    'utf8',
+  );
+  assert.match(api, /Do not follow the\s+307 redirect/);
+  assert.match(api, /Verify the response's region origin, path, and ID/);
+  assert.match(api, /If-None-Match: \*/);
+  assert.match(api, /If-Match/);
+  assert.match(api, /rather than blindly retrying/);
+  assert.doesNotMatch(skill + api, /awk_[A-Za-z0-9]+/);
 });

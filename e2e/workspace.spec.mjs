@@ -164,9 +164,7 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
   const instruction = await page.evaluate(() => navigator.clipboard.readText());
   expect(instruction).toContain('https://drive9.ai/studio/skills/drive9-workspace/SKILL.md');
   expect(instruction).toContain('save a report');
-  expect(instruction).toContain(
-    'ask if I want to add the leading state’s top product in this chat',
-  );
+  expect(instruction).toContain('open the report in Workspace');
   expect(instruction).toContain('free trial');
   expect(workspace.requests).toHaveLength(beforeCopy);
   const beforeGuest = workspace.requests.length;

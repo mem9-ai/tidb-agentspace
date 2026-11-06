@@ -25,6 +25,8 @@ struct Report {
     id: String,
     expires_at: i64,
     revision: u8,
+    #[serde(default)]
+    sharing_revoked: bool,
 }
 
 // This immutable fixture and the ordered section selection fully specify the durable report.
@@ -56,10 +58,71 @@ static TOTALS: LazyLock<SampleTotals> = LazyLock::new(|| {
     }
 });
 
+#[derive(Clone, Copy)]
+enum Mutation {
+    Append(u8, u8),
+    RevokeSharing,
+}
+
+fn money(amount: u64) -> String {
+    let digits = amount.to_string();
+    let mut result = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            result.push(',');
+        }
+        result.push(c);
+    }
+    format!("${result}.00")
+}
+
 impl Report {
+    fn markdown(&self) -> Option<String> {
+        if self.revision == 0 {
+            return None;
+        }
+        let mut states: Vec<_> = TOTALS.states.iter().collect();
+        states.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+        let total: u64 = states.iter().map(|(_, n)| **n).sum();
+        let (leader, sales) = states[0];
+        let mut text = format!(
+            "# US sales report\n\nSample: us-sales-v1\nSource: us-sales.csv\n\n{leader} leads with {} ({:.1}% of sales).\nTotal: {} across {} orders.\n\nSummed sales_usd by state and sorted the totals in descending order.\n\n| State | Sales (USD) |\n| --- | ---: |\n",
+            money(*sales),
+            *sales as f64 * 100.0 / total as f64,
+            money(total),
+            SAMPLE.lines().count() - 1
+        );
+        for (name, amount) in &states {
+            text.push_str(&format!("| {name} | {} |\n", money(**amount)));
+        }
+        let top_two = *states[0].1 + *states[1].1;
+        text.push_str(&format!(
+            "\n## Top two states\n\n{} ({}) + {} ({}) = {}.\n{} / {} = {:.1}% of total sales.\n",
+            states[0].0,
+            money(*states[0].1),
+            states[1].0,
+            money(*states[1].1),
+            money(top_two),
+            money(top_two),
+            money(total),
+            top_two as f64 * 100.0 / total as f64
+        ));
+        if self.revision >= 2 {
+            let mut products: Vec<_> = TOTALS.leading_state_products.iter().collect();
+            products.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+            let (product, revenue) = products[0];
+            text.push_str(&format!("\n## Top product in {leader}\n\n{product} leads with {} ({:.1}% of state sales).\nFiltered orders to {leader} and summed sales_usd by product.\n", money(*revenue), *revenue as f64 * 100.0 / *sales as f64));
+        }
+        text.push_str(&format!(
+            "\n<!-- tidb-agent-workspace report={} revision={} -->\n",
+            self.id, self.revision
+        ));
+        Some(text)
+    }
+
     fn view(&self) -> Value {
         json!({"id":self.id,"expiresAt":self.expires_at,"revision":self.revision,
-        "sample":"us-sales-v1","stateSales":(self.revision>=1).then_some(&TOTALS.states),
+        "sample":"us-sales-v1","markdown":self.markdown(),"sharingRevoked":self.sharing_revoked,"stateSales":(self.revision>=1).then_some(&TOTALS.states),
         "leadingStateProducts":(self.revision>=2).then_some(&TOTALS.leading_state_products)})
     }
 }
@@ -211,7 +274,8 @@ impl Trials {
                 Ok(Json(json!({"token":token,"report":report.view()})).into_response())
             }
             (Method::GET, "report-view") => self.read_view(request.headers(), now).await,
-            (method @ (Method::GET | Method::PUT), "report") => {
+            (method @ (Method::GET | Method::PUT), "report")
+            | (method @ Method::DELETE, "report-sharing") => {
                 let token = request
                     .headers()
                     .get("authorization")
@@ -252,7 +316,9 @@ impl Trials {
                         "products" => 2,
                         _ => return Err(reject(400, "INVALID_REPORT_SECTION")),
                     };
-                    Some((expected, next))
+                    Some(Mutation::Append(expected, next))
+                } else if method == Method::DELETE {
+                    Some(Mutation::RevokeSharing)
                 } else {
                     None
                 };
@@ -304,6 +370,9 @@ impl Trials {
         if report.expires_at != expiry {
             return Err(reject(403, "TRIAL_ACCESS_DENIED"));
         }
+        if report.sharing_revoked {
+            return Err(reject(410, "REPORT_SHARING_REVOKED"));
+        }
         if report.revision == 0 {
             return Err(reject(404, "REPORT_NOT_SAVED"));
         }
@@ -317,7 +386,7 @@ impl Trials {
         public: &str,
         enroll: bool,
         id: Option<&str>,
-        update: Option<(u8, u8)>,
+        update: Option<Mutation>,
         now: i64,
     ) -> Result<Report> {
         let key = format!("reports/{:02x}", Sha256::digest(public.as_bytes())[0]);
@@ -344,19 +413,27 @@ impl Trials {
                 if id.is_some_and(|id| r.id != id) {
                     return Err(reject(403, "TRIAL_ACCESS_DENIED"));
                 }
-                let Some((expected, next)) = update else {
-                    return Ok(r);
-                };
-                if r.revision != expected {
-                    return Err(reject(412, "REPORT_VERSION_CHANGED"));
+                match update {
+                    None => return Ok(r),
+                    Some(Mutation::RevokeSharing) => {
+                        if r.sharing_revoked {
+                            return Ok(r);
+                        }
+                        r.sharing_revoked = true;
+                    }
+                    Some(Mutation::Append(expected, next)) => {
+                        if r.revision != expected {
+                            return Err(reject(412, "REPORT_VERSION_CHANGED"));
+                        }
+                        if next <= r.revision {
+                            return Ok(r);
+                        }
+                        if next != r.revision + 1 {
+                            return Err(reject(409, "STATE_REPORT_REQUIRED"));
+                        }
+                        r.revision = next;
+                    }
                 }
-                if next <= r.revision {
-                    return Ok(r);
-                }
-                if next != r.revision + 1 {
-                    return Err(reject(409, "STATE_REPORT_REQUIRED"));
-                }
-                r.revision = next;
                 r
             } else {
                 if !enroll {
@@ -366,6 +443,7 @@ impl Trials {
                     id: Uuid::new_v4().to_string(),
                     expires_at: now + LIFETIME,
                     revision: 0,
+                    sharing_revoked: false,
                 }
             };
             bucket.retain(|_, r| r.expires_at > now);

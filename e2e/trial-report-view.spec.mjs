@@ -9,10 +9,14 @@ const source = await readFile(
   new URL('../specs/gh-150/fixtures/us-sales.csv', import.meta.url),
   'utf8',
 );
-const sourcePath = '/US sales sample.csv';
-const savedReport = '/US sales report - revision 2.md';
+const sourcePath = '/us-sales.csv';
+const savedReport = '/us-sales-report.md';
+const markdown = (revision) =>
+  `# US sales report\n\nSource: us-sales.csv\n\nCalifornia leads with $48,000.00. Total: $100,000.00 across 240 orders.\n\n## Top two states\n\nCalifornia ($48,000.00) + Texas ($20,000.00) = $68,000.00.\n$68,000.00 / $100,000.00 = 68.0% of total sales.\n${revision === 2 ? '\n## Top product in California\n\nMonitors leads with $18,000.00 (37.5% of state sales).\n' : ''}\n<!-- tidb-agent-workspace report=${id} revision=${revision} -->\n`;
 const sample = {
   id,
+  markdown: markdown(1),
+  sharingRevoked: false,
   sample: 'us-sales-v1',
   stateSales: {
     California: 48000,
@@ -31,6 +35,7 @@ test('original Studio link opens the latest saved report without a session @visu
   context,
 }, testInfo) => {
   let revision = 1;
+  await page.clock.install();
   const apiPaths = [];
   await context.addCookies([
     { name: 'studio_session', value: 'synthetic', domain: '127.0.0.1', path: '/' },
@@ -51,6 +56,7 @@ test('original Studio link opens the latest saved report without a session @visu
       json: {
         ...sample,
         revision,
+        markdown: markdown(revision),
         expiresAt: Math.floor(Date.now() / 1000) + 172800,
         leadingStateProducts:
           revision === 2
@@ -67,7 +73,7 @@ test('original Studio link opens the latest saved report without a session @visu
     name: /Which product brought in the most sales in California/,
   });
   await expect(followUp).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Open report in Workspace' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open report in Workspace' })).toBeVisible();
   if (process.env.VISUAL_SCREENSHOTS)
     await page.screenshot({ path: testInfo.outputPath('first-report.png'), fullPage: true });
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -78,7 +84,7 @@ test('original Studio link opens the latest saved report without a session @visu
   expect(prompt).not.toContain(grant);
   await expect(followUp.getByRole('status')).toContainText('Paste it into your project chat');
   revision = 2;
-  await page.reload();
+  await page.clock.fastForward(10001);
   await expect(page.getByRole('heading', { level: 1, name: 'Monitors' })).toBeInViewport();
   await expect(page.getByText('Top product in California')).toBeVisible();
   await expect(page.locator('dl')).toContainText('$18,000');
@@ -117,10 +123,9 @@ test('viewer handles unavailable, invalid and expired links and clears an open r
   page,
 }) => {
   let status = 503;
+  const expiresAt = Math.floor(Date.now() / 1000) + 90;
   await page.clock.install();
-  await page.route(endpoint, (route) =>
-    route.fulfill({ status, json: { ...sample, expiresAt: Math.floor(Date.now() / 1000) + 90 } }),
-  );
+  await page.route(endpoint, (route) => route.fulfill({ status, json: { ...sample, expiresAt } }));
   await page.goto(path);
   await expect(page.getByRole('heading', { name: 'The report could not be loaded' })).toBeVisible();
   status = 200;
@@ -158,10 +163,23 @@ async function openReportForUpload(page, workspace, loseReceipt = false, options
   await page.route('**/files', (route) => {
     const request = route.request();
     if (request.method() !== 'PUT') return route.fallback();
-    expect(request.headers()['if-none-match']).toBe('*');
     expect(request.headers().authorization || '').not.toContain('TrialView');
     const body = request.postDataJSON();
     writes++;
+    const existing = workspace.state.files.find(
+      (file) => file.resourceId === body.resourceId && file.path === body.path,
+    );
+    if (request.headers()['if-match']) {
+      expect(body.path).toBe(savedReport);
+      expect(existing).toBeDefined();
+      expect(request.headers()['if-match']).toBe(existing.version);
+      Object.assign(existing, body, {
+        size: Buffer.byteLength(body.content),
+        version: '"updated-report"',
+      });
+      return route.fulfill({ status: 200, json: { data: existing } });
+    }
+    expect(request.headers()['if-none-match']).toBe('*');
     if (
       workspace.state.files.some(
         (file) => file.resourceId === body.resourceId && file.path === body.path,
@@ -192,6 +210,7 @@ async function openReportForUpload(page, workspace, loseReceipt = false, options
       json: {
         ...sample,
         revision: options.revision ?? 2,
+        markdown: markdown(options.revision ?? 2),
         expiresAt: Math.floor(Date.now() / 1000) + 172800,
         leadingStateProducts: { Monitors: 18000 },
       },
@@ -222,7 +241,7 @@ test('report click saves both files for a new Guest and reuses them on return', 
   expect(originals).toHaveLength(2);
   expect(originals.find((f) => f.path === sourcePath).content).toBe(source);
   expect(originals.find((f) => f.path === savedReport).content).toContain('Monitors');
-  await expect(page.getByRole('heading', { name: 'US sales summary' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'US sales report' })).toBeVisible();
   const filesUrl = page.url();
   expect(filesUrl).toContain('/studio/#files?resourceId=');
   expect(guestPosts()).toHaveLength(1);
@@ -329,7 +348,7 @@ test('report import preserves an edited file and recovers a partially saved impo
   expect(workspace.state.files.some((f) => f.path === savedReport)).toBe(false);
   workspace.state.files.find((f) => f.path === sourcePath).content = source;
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'US sales summary' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'US sales report' })).toBeVisible();
   expect(
     workspace.state.files.filter((f) => [sourcePath, savedReport].includes(f.path)),
   ).toHaveLength(2);
@@ -344,7 +363,7 @@ test('a lost save receipt resumes without uploading either file again', async ({
   await expect(page.getByRole('alert')).toContainText('Connection interrupted');
   expect(writes()).toBe(2);
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'US sales summary' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'US sales report' })).toBeVisible();
   expect(writes()).toBe(2);
 });
 
@@ -384,7 +403,7 @@ test('analysis continues through TiDB Cloud signup to saved files and a scoped a
   // Carry current saved content, even after the initial tab-local import has expired.
   await page.clock.install();
   await page.clock.fastForward(11 * 60_000);
-  const guestReport = workspace.state.files.find((f) => f.path === '/US sales insights.md');
+  const guestReport = workspace.state.files.find((f) => f.path === savedReport);
   guestReport.content += '\nSaved customer note';
   guestReport.version = '"edited-report"';
   guestReport.size = Buffer.byteLength(guestReport.content);
@@ -411,8 +430,8 @@ test('analysis continues through TiDB Cloud signup to saved files and a scoped a
   await expect(page.getByText('Saved customer note', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save to TiDB Cloud' })).toHaveCount(0);
   expect(writes()).toBe(4);
-  const saved = workspace.state.files.find((f) => f.path === '/US sales insights.md');
-  expect(saved.content).toContain('68%');
+  const saved = workspace.state.files.find((f) => f.path === savedReport);
+  expect(saved.content).toContain('68.0%');
   expect(workspace.state.files.find((f) => f.path === sourcePath).content).toBe(
     guestSource.content,
   );
@@ -434,7 +453,7 @@ test('analysis continues through TiDB Cloud signup to saved files and a scoped a
   await dialog.getByRole('button', { name: 'Copy terminal command', exact: true }).click();
   const command = await page.evaluate(() => navigator.clipboard.readText());
   expect(command).toContain('Compare average order value by state');
-  expect(command).toContain('/US sales sample.csv');
+  expect(command).toContain('/us-sales.csv');
   expect(command).toContain('US+sales+order+values.md');
   expect(command).toContain(saved.resourceId);
   expect(command).not.toContain(grant);
@@ -510,16 +529,15 @@ for (const existing of ['guest', 'account']) {
       }),
     );
     await page.getByRole('button', { name: 'Explore sample data', exact: true }).click();
-    await expect(page).toHaveURL(/path=%2FUS\+sales\+sample.csv/);
-    await expect(
-      page.getByRole('heading', { name: 'US sales sample.csv', exact: true }),
-    ).toBeVisible();
+    await expect(page).toHaveURL(/path=%2Fus-sales.csv/);
+    await expect(page.getByRole('heading', { name: 'us-sales.csv', exact: true })).toBeVisible();
     await expect(
       page.getByRole('region', { name: 'File data preview', exact: true }),
     ).toContainText('California');
     expect(writes()).toBe(existing === 'guest' ? 4 : 2);
     if (existing === 'account') {
       const resumed = await openReportForUpload(page, workspace, false, {
+        revision: 1,
         markets: true,
       });
       await expect(
@@ -536,7 +554,7 @@ test('saving to Cloud preserves unsaved drafts and refuses incomplete source rea
 }) => {
   workspace.requireSignIn({ guestEnabled: true });
   await openReportForUpload(page, workspace);
-  await expect(page.getByRole('heading', { name: 'US sales summary' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'US sales report' })).toBeVisible();
   await page.getByRole('button', { name: 'Edit source', exact: true }).click();
   await page.getByRole('button', { name: 'Back to preview', exact: true }).click();
   await page.reload();
@@ -592,4 +610,97 @@ test('saving to Cloud preserves unsaved drafts and refuses incomplete source rea
   );
   expect(transfer.report).toContain('Monitors');
   expect(transfer.report).not.toContain('An unsaved report');
+});
+
+test('focus refresh retains confirmed content through an outage and clears revoked access', async ({
+  page,
+}) => {
+  let status = 200;
+  let reads = 0;
+  await page.clock.install();
+  await page.route(endpoint, (route) => {
+    reads++;
+    return route.fulfill({
+      status,
+      json:
+        status === 200
+          ? { ...sample, expiresAt: Math.floor(Date.now() / 1000) + 172800 }
+          : { error: { code: status === 410 ? 'REPORT_SHARING_REVOKED' : 'UNAVAILABLE' } },
+    });
+  });
+  await page.goto(path);
+  await expect(page.getByRole('heading', { name: 'US sales report' })).toBeVisible();
+  status = 503;
+  const previous = reads;
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect.poll(() => reads).toBeGreaterThan(previous);
+  await expect(page.getByRole('heading', { name: 'US sales report' })).toBeVisible();
+  await expect(page.getByText('The report could not be loaded')).toHaveCount(0);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  const hiddenReads = reads;
+  await page.clock.fastForward(61000);
+  expect(reads).toBe(hiddenReads);
+  status = 410;
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect(
+    page.getByRole('heading', { name: 'This report is no longer shared' }),
+  ).toBeVisible();
+  await expect(page.getByRole('table')).toHaveCount(0);
+  const closedReads = reads;
+  await page.clock.fastForward(61000);
+  expect(reads).toBe(closedReads);
+});
+
+test('existing sample is reused and a newer revision updates the same untouched Workspace report', async ({
+  page,
+  workspace,
+}) => {
+  workspace.requireSignIn({ guestEnabled: true });
+  workspace.signInAsAccount();
+  workspace.addResources();
+  workspace.state.files.push({
+    id: 'browser-sample',
+    resourceId: 'fs_fixture',
+    path: sourcePath,
+    type: 'file',
+    content: source,
+    size: Buffer.byteLength(source),
+    version: '"browser-sample"',
+    updatedAt: new Date().toISOString(),
+  });
+  const options = { revision: 1, markets: true };
+  const writes = await openReportForUpload(page, workspace, false, options);
+  await expect(page.getByRole('heading', { name: 'US sales report' })).toBeVisible();
+  expect(writes()).toBe(1);
+  const report = workspace.state.files.find((file) => file.path === savedReport);
+  expect(report.content).toBe(markdown(1));
+  options.revision = 2;
+  await page.goBack();
+  await page.getByRole('button', { name: 'Open report in Workspace' }).click();
+  await expect(page.getByRole('heading', { name: 'Top product in California' })).toBeVisible();
+  expect(report.content).toBe(markdown(2));
+  expect(writes()).toBe(2);
+  expect(workspace.state.files.filter((file) => file.path === sourcePath)).toHaveLength(1);
+  expect(workspace.state.files.filter((file) => file.path === savedReport)).toHaveLength(1);
+  options.revision = 1;
+  await page.goBack();
+  await page.getByRole('button', { name: 'Open report in Workspace' }).click();
+  await expect(page.getByRole('alert')).toContainText('already contains different content');
+  expect(report.content).toBe(markdown(2));
+  expect(writes()).toBe(2);
+  options.revision = 2;
+  report.content += '\nMy saved edits';
+  report.version = '"edited"';
+  report.size = Buffer.byteLength(report.content);
+  await page.goBack();
+  await page.getByRole('button', { name: 'Open report in Workspace' }).click();
+  await expect(page.getByRole('alert')).toContainText('already contains different content');
+  expect(report.content).toContain('My saved edits');
+  expect(writes()).toBe(2);
 });
