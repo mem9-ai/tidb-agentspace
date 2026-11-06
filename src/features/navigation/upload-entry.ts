@@ -1,4 +1,5 @@
 export const uploadHash = '#files/upload';
+export const reportFilesHash = '#files/report';
 
 // Keep only a fixed destination and deadline in this tab. The report grant
 // stays on its original history entry and is never carried into the workspace.
@@ -28,14 +29,29 @@ export function rememberWorkspaceFilesEntry() {
 }
 
 export function takeWorkspaceFilesEntry() {
-  return consume(guestEntry) && location.hash === uploadHash;
+  return consume(guestEntry) && [uploadHash, reportFilesHash].includes(location.hash);
 }
 
 // Bundled SSO returns to the Console root.
 export function rememberUploadSignIn() {
   remember(accountReturn, 10 * 60_000);
+  try {
+    sessionStorage.setItem(accountReturn + ':route', location.hash);
+  } catch {
+    /* Restore the standard Files route. */
+  }
 }
 
 export function restoreUploadAfterSignIn() {
-  if (consume(accountReturn) && !location.hash) location.replace(uploadHash);
+  if (consume(accountReturn) && !location.hash) {
+    let target = uploadHash;
+    try {
+      if (sessionStorage.getItem(accountReturn + ':route') === reportFilesHash)
+        target = reportFilesHash;
+      sessionStorage.removeItem(accountReturn + ':route');
+    } catch {
+      /* Restore the standard Files route. */
+    }
+    location.replace(target);
+  }
 }

@@ -1137,7 +1137,7 @@ test('the published Workspace skill is available at root and mounted Console pat
     const response = await page.request.get(`${prefix}/skills/drive9-workspace/SKILL.md`);
     expect(response.ok()).toBe(true);
     const body = await response.text();
-    expect(body).toContain('name: drive9-workspace');
+    expect(body).toContain('name: tidb-agent-workspace');
     expect(body).toContain('If-None-Match: *');
   }
 });

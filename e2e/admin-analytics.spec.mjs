@@ -257,7 +257,7 @@ test('@visual public discovery is readable, measures approved sources and respec
   await page.getByRole('link', { name: 'Privacy and analytics choices' }).click();
   await page.getByRole('button', { name: 'Turn optional analytics off' }).click();
   await expect(page.getByRole('status')).toHaveText('Optional browser analytics is off.');
-  await page.getByRole('link', { name: 'Drive9 Workspace' }).click();
+  await page.getByRole('link', { name: 'TiDB Agent Workspace' }).click();
   await expect(
     page.getByRole('heading', { name: 'From a question to a useful result.' }),
   ).toBeVisible();
