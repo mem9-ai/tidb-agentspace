@@ -65,6 +65,9 @@ def run(origin, directory):
         assert second["studioUrl"] == link
         assert link.startswith(origin + "/report/#v1.")
         grant = urlsplit(link).fragment
+        assert urlsplit(first['insightsUrl']).fragment == grant
+        assert urlsplit(first['insightsUrl']).query == 'view=markets'
+        assert '$68,000.00 / $100,000.00 = 68.0%' in first['markdown']
 
         def view():
             req = Request(
@@ -77,6 +80,7 @@ def run(origin, directory):
         assert view()["revision"] == 1
         continued = invoke("products", nested)
         assert continued["studioUrl"] == link
+        assert continued['insightsUrl'] == first['insightsUrl']
         assert view()["leadingStateProducts"]["Monitors"] == 18000
         assert (
             continued["report"] == first["report"]

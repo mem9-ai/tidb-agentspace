@@ -1,25 +1,35 @@
 import { useState } from 'react';
 import { Button, Stack, Text } from '@tidbcloud/uikit';
-import { rememberWorkspaceFilesEntry, reportFilesHash } from '../navigation/upload-entry';
-import { salesReport } from '../portal/sales-insights';
+import {
+  rememberWorkspaceFilesEntry,
+  reportFilesHash,
+  reportAccountHash,
+} from '../navigation/upload-entry';
+import { reportMarkdown } from './report-insights';
 import type { SalesReport } from './TrialReportContent';
-import { prepareReportFiles, samplePath } from './report-files';
+import { prepareReportFiles } from './report-files';
 
-export function OpenReportFiles({ report }: { report: SalesReport }) {
+export function OpenReportFiles({
+  report,
+  markets = false,
+  account = false,
+}: {
+  report: SalesReport;
+  markets?: boolean;
+  account?: boolean;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function open() {
     setBusy(true);
     setError('');
     try {
-      const content = salesReport(
-        samplePath,
-        report.states.map(([label, sales]) => ({ label, sales })),
-        report.products.map(([label, sales]) => ({ label, sales })),
+      await prepareReportFiles(reportMarkdown(report, markets), report.revision, markets);
+      if (!account) rememberWorkspaceFilesEntry();
+      location.assign(
+        location.pathname.replace(/\/report\/?$/, '/') +
+          (account ? reportAccountHash : reportFilesHash),
       );
-      await prepareReportFiles(content, 2);
-      rememberWorkspaceFilesEntry();
-      location.assign(location.pathname.replace(/\/report\/?$/, '/') + reportFilesHash);
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -31,8 +41,13 @@ export function OpenReportFiles({ report }: { report: SalesReport }) {
   }
   return (
     <Stack gap="xs">
-      <Button variant="filled" w="fit-content" loading={busy} onClick={() => void open()}>
-        Open report files
+      <Button
+        variant={account ? 'filled' : 'default'}
+        w="fit-content"
+        loading={busy}
+        onClick={() => void open()}
+      >
+        {account ? 'Continue with TiDB Cloud' : 'Open report files'}
       </Button>
       {error && <Text role="alert">{error}</Text>}
     </Stack>
