@@ -1407,7 +1407,12 @@ test(
     );
     const { request, flow, callback, control } = f;
     async function login(subject) {
-      control.claims = { sub: subject };
+      control.claims = {
+        sub: subject,
+        name: `${subject} Example`,
+        email: `${subject}@example.org`,
+        email_verified: subject === 'alice',
+      };
       const response = await callback(await flow());
       assert.equal(response.status, 302, JSON.stringify(response.body));
       const header = response.headers['set-cookie'].find((value) =>
@@ -1441,6 +1446,15 @@ test(
       ).status,
       401,
     );
+    const aliceProfile = { name: 'alice Example', email: 'alice@example.org' };
+    assert.deepEqual(
+      (await request('/api/auth/config', { cookie: alice.cookie })).body.account,
+      aliceProfile,
+    );
+    assert.deepEqual((await request('/api/auth/config', { cookie: bob.cookie })).body.account, {
+      name: 'bob Example',
+    });
+    assert.equal((await request('/api/auth/config')).body.account, undefined);
     assert.equal(
       (await request('/api/auth/config', { cookie: alice.cookie })).body.sessionKind,
       'account',
@@ -1536,6 +1550,15 @@ test(
       404,
     );
     await f.restartWithoutGlobal();
+    assert.deepEqual(
+      (await request('/api/auth/config', { cookie: alice.cookie })).body.account,
+      aliceProfile,
+    );
+    assert.equal(
+      (await request('/api/auth/config', { cookie: guestCookie })).body.account,
+      undefined,
+    );
+
     const sqlPath = `/api/v1/workspaces/${alice.workspace}/queries`;
     for (const sql of ['INSERT INTO outage_test VALUES (42)', 'SELECT id FROM outage_test']) {
       const result = await request(sqlPath, {

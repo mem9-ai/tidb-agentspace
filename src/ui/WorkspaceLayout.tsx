@@ -23,6 +23,7 @@ type Props = {
   liveDatabases?: boolean;
   isHostedSession?: boolean;
   profileName: string;
+  profileDescription?: string;
   active: string;
   databaseId?: string;
   fileSystemId?: string;
@@ -41,6 +42,7 @@ export function WorkspaceLayout({
   liveDatabases = false,
   isHostedSession = false,
   profileName,
+  profileDescription,
   active,
   databaseId,
   fileSystemId,
@@ -153,7 +155,11 @@ export function WorkspaceLayout({
           component="a"
           href="#settings"
           label={profileName}
-          description={isGuest ? 'Temporary session' : 'Personal account'}
+          description={isGuest ? 'Temporary session' : profileDescription || 'Personal account'}
+          styles={{
+            label: { whiteSpace: 'normal', overflowWrap: 'anywhere' },
+            description: { whiteSpace: 'normal', overflowWrap: 'anywhere' },
+          }}
           onClick={() => setOpened(false)}
         />
         {onSignOut && (

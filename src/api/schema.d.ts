@@ -8048,6 +8048,12 @@ export interface operations {
             guestCleanupEnabled?: boolean;
             /** @enum {string} */
             sessionKind?: 'account' | 'guest';
+            /** @description Display-only profile from the verified TiDB Cloud login, available only to its authenticated browser session. Absent for Guests, signed-out browsers and older sessions; sign in again to populate it. */
+            account?: {
+              name?: string;
+              /** Format: email */
+              email?: string;
+            };
             /** @description Workspace selected by this verified browser session, or null for a signed-out browser. Hosts requiring separate discovery omit this field. */
             workspaceId?: string | null;
             /** @constant */

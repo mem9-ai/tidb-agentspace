@@ -920,6 +920,7 @@ async fn dispatch(
                 &claims.workspace_id,
                 &claims.identity_issuer,
                 &claims.identity_subject,
+                None,
             )
             .await?;
         let mut response = Json(json!({"workspaceId":claims.workspace_id})).into_response();
@@ -1852,6 +1853,13 @@ async fn auth_route(
         if let Some(id) = account {
             config["sessionKind"] = json!("account");
             config["workspaceId"] = json!(id);
+            if let Some(runtime) = &app.guest_runtime {
+                match runtime.account.profile(headers).await {
+                    Ok(Some(profile)) => config["account"] = json!(profile),
+                    Ok(None) => {}
+                    Err(e) => return error(e),
+                }
+            }
         } else if legacy_account {
             config["sessionKind"] = json!("account");
             if app.guest_runtime.is_none() {
@@ -2168,7 +2176,12 @@ async fn auth_route(
                                 }
                                 let regional_cookie = runtime
                                     .account
-                                    .establish(&registration.workspace_id, issuer, subject)
+                                    .establish(
+                                        &registration.workspace_id,
+                                        issuer,
+                                        subject,
+                                        Some(&login.account_profile()),
+                                    )
                                     .await;
                                 match regional_cookie {
                                     Err(e) => Err(e),

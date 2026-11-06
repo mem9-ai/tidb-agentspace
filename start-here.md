@@ -316,3 +316,5 @@ checks verify required routing and document availability; they cannot prove that
 loaded the documents or an agent understood them.
 
 Public agent report continuation follows [ADR 0056](docs/decisions/0056-report-continuity.md): canonical report bytes in the project and Workspace, automatic viewer refresh, and explicit sharing revocation. This bounded sample remains separate from the proposed general Workspace pairing flow.
+
+Signed-in account presentation follows [ADR 0057](docs/decisions/0057-account-display-identity.md); connection dialogs reuse one Workspace Key through agent/client-managed authentication.

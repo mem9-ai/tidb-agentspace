@@ -1508,6 +1508,17 @@ paths['/api/auth/config'] = {
             guestEnabled: { type: 'boolean' },
             guestCleanupEnabled: { type: 'boolean' },
             sessionKind: { type: 'string', enum: ['account', 'guest'] },
+            account: {
+              ...object(
+                {
+                  name: { type: 'string', minLength: 1, maxLength: 200 },
+                  email: { type: 'string', format: 'email', maxLength: 320 },
+                },
+                [],
+              ),
+              description:
+                'Display-only profile from the verified TiDB Cloud login, available only to its authenticated browser session. Absent for Guests, signed-out browsers and older sessions; sign in again to populate it.',
+            },
             workspaceId: {
               type: ['string', 'null'],
               description:
