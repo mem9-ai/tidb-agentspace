@@ -56,6 +56,7 @@ export type SsoAuthConfig = {
   guestEnabled?: boolean;
   guestCleanupEnabled?: boolean;
   sessionKind?: 'account' | 'guest';
+  account?: { name?: string; email?: string };
   workspaceId?: string | null;
   provider?: string;
   label?: string;

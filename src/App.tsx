@@ -1,12 +1,12 @@
 import { ReportFilesEntry } from './features/reports/ReportFilesEntry';
 import { TemporaryReportNotice } from './features/reports/TemporaryReportNotice';
 import { ReportNextSteps } from './features/reports/ReportNextSteps';
+import { ResourceConnection as Connection } from './features/resources/ResourceConnection';
 import { ApiDocumentation } from './features/api/ApiDocumentation';
 import { capturePage, startAnalytics } from './features/analytics/capture';
 import { WorkspaceApiError } from './api/transport';
 import {
   apiBaseUrl,
-  base,
   workspaceApi,
   workspaceId,
   type Data,
@@ -72,12 +72,9 @@ import {
   Group,
 } from '@tidbcloud/uikit';
 import { WorkspaceModal as Modal } from './ui/WorkspaceModal';
-import { CodeExample as Code } from './ui/CodeExample';
-import { ChoiceTabs } from './ui/ChoiceTabs';
 import { Heading } from './ui/WorkspaceHeading';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  IconArrowRight as ArrowRight,
   IconArrowUpRight as ArrowUpRight,
   IconCheckCircle as CheckCircle2,
   IconCopy03 as Copy,
@@ -634,7 +631,19 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
           ['tidb-cloud-zero', 'db9-anonymous'].includes(r.provider || ''),
         )}
         workspaceName={data.workspace.name}
-        profileName={data.profile.name}
+        profileName={
+          sso.sessionKind === 'account'
+            ? sso.account?.name || sso.account?.email || 'TiDB Cloud account'
+            : sso.sessionKind === 'guest'
+              ? 'Temporary workspace'
+              : data.profile.name
+        }
+        profileDescription={
+          sso.sessionKind === 'account'
+            ? (sso.account?.name && sso.account.email) ||
+              (sso.account ? 'TiDB Cloud account' : 'Signed in')
+            : undefined
+        }
         active={route}
         databaseId={routeLocation.databaseId}
         resourceName={resourceName}
@@ -811,7 +820,20 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
         <SearchModal data={visibleData!} onClose={() => setModal(null)} onConnect={setConnection} />
       )}
       {connection && (
-        <Connection resource={connection} copy={copy} onClose={() => setConnection(null)} />
+        <Connection
+          resource={connection}
+          copy={copy}
+          onClose={() => setConnection(null)}
+          onManageKeys={() => {
+            setConnection(null);
+            go('keys');
+          }}
+          onOpen={() => {
+            setConnection(null);
+            if (connection.kind === 'filesystem') location.hash = fileSystemHash(connection.id);
+            else openDatabaseEditor(connection.id);
+          }}
+        />
       )}
     </TutorialProgressProvider>
   );
@@ -2328,33 +2350,42 @@ function WorkspaceSettings({
           <div className="panel-header">
             <div>
               <Heading level={2}>Personal account</Heading>
-              <Text component="p">Your workspace display profile.</Text>
+              <Text component="p">Your signed-in identity and workspace display name.</Text>
             </div>
             <Badge>{sso.enabled ? 'Workspace owner' : 'Local owner'}</Badge>
           </div>
           <div className="settings-fields">
             <TextInput
-              label="Display name"
+              label="Workspace display name"
               required
               maxLength={50}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
             <div className="account-row">
-              <span className="profile-avatar">{name.slice(0, 1).toUpperCase()}</span>
+              <span className="profile-avatar">
+                {(sso.sessionKind === 'account'
+                  ? sso.account?.name || sso.account?.email || 'TiDB Cloud'
+                  : name
+                )
+                  .slice(0, 1)
+                  .toUpperCase()}
+              </span>
               <div className="account-session-summary">
                 <strong>
                   {sso.sessionKind === 'guest'
                     ? 'Temporary session'
                     : sso.enabled
-                      ? 'TiDB Account session'
+                      ? sso.account?.name || sso.account?.email || 'TiDB Cloud account'
                       : 'Local session'}
                 </strong>
                 <Text component="p">
                   {sso.sessionKind === 'guest'
                     ? 'Your temporary workspace expires 48 hours after it was created.'
                     : sso.enabled
-                      ? 'Signed in with your TiDB Account. This is your personal workspace.'
+                      ? sso.account
+                        ? (sso.account.name && sso.account.email) || 'Signed in with TiDB Cloud.'
+                        : 'Sign in again to load your account details.'
                       : 'Local development session. Your workspace uses the configured local storage.'}
                 </Text>
               </div>
@@ -2634,125 +2665,6 @@ function CreateKey({
           </div>
         </form>
       )}
-    </Modal>
-  );
-}
-function Connection({
-  resource: r,
-  copy,
-  onClose,
-}: {
-  resource: Resource;
-  copy: (s: string) => void;
-  onClose: () => void;
-}) {
-  const [tab, setTab] = useState('REST API');
-  const isFileSystem = r.kind === 'filesystem';
-  const endpoint = `${apiBaseUrl}${base}${isFileSystem ? `/files?resourceId=${r.id}` : '/queries'}`;
-  const payload = JSON.stringify({ resourceId: r.id, sql: 'SELECT 1 AS connected;' });
-  const shell = [
-    `curl '${endpoint}'`,
-    '  -H "Authorization: Bearer $REGION_ACCESS_TOKEN"',
-    ...(isFileSystem ? [] : ["  -H 'Content-Type: application/json'", `  -d '${payload}'`]),
-  ].join(' \\' + '\n');
-  const javascript = [
-    'const response = await fetch(',
-    `  "${endpoint}",`,
-    '  {',
-    `    method: "${isFileSystem ? 'GET' : 'POST'}",`,
-    '    headers: {',
-    '      Authorization: `Bearer ${process.env.REGION_ACCESS_TOKEN}`,',
-    '      "Content-Type": "application/json"',
-    `    }${isFileSystem ? '' : ','}`,
-    ...(isFileSystem ? [] : [`    body: JSON.stringify(${payload})`]),
-    '  }',
-    ');',
-    'console.log(await response.json());',
-  ].join('\n');
-  const python = [
-    'import os, json, urllib.request',
-    '',
-    'request = urllib.request.Request(',
-    `    "${endpoint}",`,
-    '    headers={',
-    '        "Authorization": "Bearer " + os.environ["REGION_ACCESS_TOKEN"],',
-    '        "Content-Type": "application/json"',
-    `    }${isFileSystem ? '' : ','}`,
-    ...(isFileSystem ? [] : [`    data=json.dumps(${payload}).encode()`]),
-    ')',
-    'with urllib.request.urlopen(request) as response:',
-    '    print(json.load(response))',
-  ].join('\n');
-  return (
-    <Modal
-      wide
-      title={`Connect to ${r.name}`}
-      description={`${kindLabel[r.kind]} · Scoped API access`}
-      onClose={onClose}
-    >
-      <Alert className="notice" color="peacock" icon={<KeyRound size={17} />}>
-        <span>
-          Exchange a Workspace Key with access to <strong>{r.name}</strong> and{' '}
-          <code>{isFileSystem ? 'files:read' : 'queries:execute'}</code>. The same key can access
-          your other permitted resources. Send the returned Region Token as{' '}
-          <code>REGION_ACCESS_TOKEN</code>. See the{' '}
-          <a href="#api" onClick={onClose}>
-            API documentation
-          </a>{' '}
-          for Token exchange examples.
-        </span>
-      </Alert>
-      <ChoiceTabs value={tab} onChange={setTab} options={['REST API', 'JavaScript', 'Python']}>
-        <Code
-          copy={copy}
-          label={
-            r.provider === 'drive9-anonymous'
-              ? 'WORKSPACE API · LIVE FILE TRIAL'
-              : r.provider === 'duckdb-drive9'
-                ? 'WORKSPACE API · DUCKDB'
-                : r.provider === 'db9-anonymous'
-                  ? 'WORKSPACE API · LIVE POSTGRESQL'
-                  : r.provider === 'tidb-cloud-zero'
-                    ? 'WORKSPACE API · LIVE ZERO'
-                    : 'WORKSPACE API · LOCAL DEMO'
-          }
-          value={tab === 'REST API' ? shell : tab === 'JavaScript' ? javascript : python}
-        />
-      </ChoiceTabs>
-      <div className="connection-note">
-        <ShieldCheck size={18} />
-        <Text component="p">
-          {r.provider === 'drive9-anonymous'
-            ? 'Files are stored in the Singapore anonymous trial. Use the file content API for upload, preview, and download; provider credentials stay inside the service. Native file mounts are not available yet.'
-            : r.provider === 'duckdb-drive9'
-              ? 'SQL runs in your persistent DuckDB database through the Workspace API. Use this database resource and queries:execute; internal storage and credentials are managed by the service.'
-              : r.provider === 'db9-anonymous'
-                ? 'SQL runs on a PostgreSQL-compatible database through the Workspace API. Use queries:execute and this resource grant; native credentials stay inside the service. PostgreSQL compatibility has limits.'
-                : r.provider === 'tidb-cloud-zero'
-                  ? 'SQL runs on a temporary TiDB Cloud Zero database through the Workspace API. This key action permits reads and writes within the internal database role; connection credentials remain private.'
-                  : 'Provider credentials are handled by the service. This resource uses a local demo provider; native database connections and file mounts are not available yet.'}
-        </Text>
-      </div>
-      <div className="modal-actions">
-        <Button
-          onClick={() => {
-            onClose();
-            go('keys');
-          }}
-        >
-          Manage keys
-        </Button>
-        <Button
-          variant="filled"
-          onClick={() => {
-            onClose();
-            if (isFileSystem) location.hash = fileSystemHash(r.id);
-            else openDatabaseEditor(r.id);
-          }}
-        >
-          Open {isFileSystem ? 'file browser' : 'SQL editor'} <ArrowRight size={14} />
-        </Button>
-      </div>
     </Modal>
   );
 }

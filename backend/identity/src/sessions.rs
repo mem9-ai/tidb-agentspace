@@ -36,6 +36,16 @@ pub struct GuestAccess {
     pub expires_at: i64,
 }
 
+/// Display-only claims from a verified OIDC login; never an authorization identity.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AccountProfile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+}
+
 /// Returned only after durable storage; `token` is a bearer credential.
 pub struct GuestCredential {
     pub token: String,
@@ -247,6 +257,38 @@ impl Sessions {
             generation: grant.generation,
             expires_at: session_expiry(&policy, current)?,
         })
+    }
+
+    /// Bind verified display claims to this browser grant, separately from workspace profiles.
+    pub async fn store_account_profile(
+        &self,
+        workspace: &str,
+        renewal: &str,
+        profile: &AccountProfile,
+    ) -> Result<()> {
+        let account = self.authenticate_oidc_grant(workspace, renewal).await?;
+        self.commit(
+            &self.scope(workspace)?,
+            &Uuid::new_v4().to_string(),
+            vec![json!({"key":format!("profile/{}", account.session_id),"expectedVersion":null,"value":profile})],
+        ).await
+    }
+
+    pub async fn account_profile(
+        &self,
+        workspace: &str,
+        renewal: &str,
+    ) -> Result<Option<AccountProfile>> {
+        let account = self.authenticate_oidc_grant(workspace, renewal).await?;
+        self.get(
+            &self.scope(workspace)?,
+            &format!("profile/{}", account.session_id),
+        )
+        .await?
+        .map(|(value, _)| {
+            serde_json::from_value(value).map_err(|_| error(503, "SESSION_RECORD_CORRUPT"))
+        })
+        .transpose()
     }
 
     async fn issue_at(
@@ -803,6 +845,78 @@ mod tests {
         assert!(
             sessions
                 .authenticate_guest_credential(&policy.workspace_id, &browser.token)
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn account_display_profile_is_private_to_its_live_grant_and_survives_restart() {
+        let metadata = region();
+        let sessions = Sessions::open(metadata.clone(), "region:a").await.unwrap();
+        let policy = oidc_policy();
+        sessions
+            .policies
+            .install(&policy, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        let first = sessions
+            .issue_owner(&policy.workspace_id, alice())
+            .await
+            .unwrap();
+        let second = sessions
+            .issue_owner(&policy.workspace_id, alice())
+            .await
+            .unwrap();
+        assert_eq!(
+            sessions
+                .account_profile(&policy.workspace_id, &first.renewal)
+                .await
+                .unwrap(),
+            None
+        );
+        let profile = AccountProfile {
+            name: Some("Alice".into()),
+            email: Some("alice@example.org".into()),
+        };
+        sessions
+            .store_account_profile(&policy.workspace_id, &first.renewal, &profile)
+            .await
+            .unwrap();
+        let restarted = Sessions::open(metadata, "region:a").await.unwrap();
+        assert_eq!(
+            restarted
+                .account_profile(&policy.workspace_id, &first.renewal)
+                .await
+                .unwrap(),
+            Some(profile)
+        );
+        assert_eq!(
+            restarted
+                .account_profile(&policy.workspace_id, &second.renewal)
+                .await
+                .unwrap(),
+            None
+        );
+        assert!(
+            restarted
+                .account_profile(&Uuid::new_v4().to_string(), &first.renewal)
+                .await
+                .is_err()
+        );
+        assert!(
+            restarted
+                .account_profile(&policy.workspace_id, &first.access)
+                .await
+                .is_err()
+        );
+        restarted
+            .revoke(&policy.workspace_id, &first.renewal)
+            .await
+            .unwrap();
+        assert!(
+            restarted
+                .account_profile(&policy.workspace_id, &first.renewal)
                 .await
                 .is_err()
         );

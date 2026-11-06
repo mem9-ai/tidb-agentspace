@@ -5660,6 +5660,15 @@
                     "guestEnabled": { "type": "boolean" },
                     "guestCleanupEnabled": { "type": "boolean" },
                     "sessionKind": { "type": "string", "enum": ["account", "guest"] },
+                    "account": {
+                      "type": "object",
+                      "required": [],
+                      "properties": {
+                        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+                        "email": { "type": "string", "format": "email", "maxLength": 320 }
+                      },
+                      "description": "Display-only profile from the verified TiDB Cloud login, available only to its authenticated browser session. Absent for Guests, signed-out browsers and older sessions; sign in again to populate it."
+                    },
                     "workspaceId": {
                       "type": ["string", "null"],
                       "description": "Workspace selected by this verified browser session, or null for a signed-out browser. Hosts requiring separate discovery omit this field."

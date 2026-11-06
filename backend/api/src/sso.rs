@@ -186,6 +186,26 @@ pub(crate) struct VerifiedLogin {
     claims: Value,
 }
 impl VerifiedLogin {
+    pub(crate) fn account_profile(&self) -> workspace_identity::sessions::AccountProfile {
+        workspace_identity::sessions::AccountProfile {
+            name: ["name", "preferred_username"].iter().find_map(|field| {
+                self.claims[*field]
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|value| {
+                        !value.is_empty()
+                            && value.chars().count() <= 200
+                            && !value.chars().any(char::is_control)
+                    })
+                    .map(str::to_owned)
+            }),
+            email: self
+                .verified_email()
+                .filter(|value| value.len() <= 320)
+                .map(str::to_owned),
+        }
+    }
+
     pub(crate) fn verified_email(&self) -> Option<&str> {
         if self.claims["email_verified"] == true {
             self.claims["email"]
@@ -519,6 +539,36 @@ mod tests {
             "ws_test",
         )
     }
+    #[test]
+    fn display_profile_uses_bounded_claims_and_only_verified_email() {
+        let profile = |claims| {
+            VerifiedLogin {
+                issuer: "https://issuer.example".into(),
+                subject: "alice".into(),
+                claims,
+            }
+            .account_profile()
+        };
+        let result =
+            profile(json!({"name":" Alice ","email":"alice@example.org","email_verified":true}));
+        assert_eq!(result.name.as_deref(), Some("Alice"));
+        assert_eq!(result.email.as_deref(), Some("alice@example.org"));
+        let result = profile(
+            json!({"name":"\n","preferred_username":"alice","email":"alice@example.org","email_verified":"true"}),
+        );
+        assert_eq!(result.name.as_deref(), Some("alice"));
+        assert_eq!(result.email, None);
+        assert_eq!(profile(json!({"name":"a".repeat(201)})).name, None);
+        assert_eq!(
+            profile(json!({"name":"a\nb","email":"invalid","email_verified":true})).name,
+            None
+        );
+        assert_eq!(
+            profile(json!({"email":"invalid","email_verified":true})).email,
+            None
+        );
+    }
+
     #[test]
     fn configuration_and_identity_fail_closed() {
         let mut c = config();

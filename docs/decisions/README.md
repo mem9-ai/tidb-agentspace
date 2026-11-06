@@ -119,3 +119,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0054: Private CSV workspace for a local agent](0054-private-agent-csv.md)
 
 - [0056: Report continuity](0056-report-continuity.md) — canonical project/Workspace files, visible updates and explicit link revocation.
+
+- [0057: Account display identity](0057-account-display-identity.md) — verified session name/email, separate from the editable Workspace display profile.

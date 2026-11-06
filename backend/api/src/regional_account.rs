@@ -11,7 +11,10 @@ use std::{
 use tokio::sync::Mutex;
 use workspace_contracts::{Metadata, Result, ServiceError};
 use workspace_domain::Credential;
-use workspace_identity::{regional::Principal, sessions::Sessions};
+use workspace_identity::{
+    regional::Principal,
+    sessions::{AccountProfile, Sessions},
+};
 
 const NAME: &str = "aw_account";
 
@@ -116,11 +119,17 @@ impl RegionalAccount {
         workspace: &str,
         issuer: &str,
         subject: &str,
+        profile: Option<&AccountProfile>,
     ) -> Result<HeaderValue> {
         let credentials = self
             .sessions
             .issue_owner(workspace, Principal::Oidc { issuer, subject })
             .await?;
+        if let Some(profile) = profile {
+            self.sessions
+                .store_account_profile(workspace, &credentials.renewal, profile)
+                .await?;
+        }
         let mut header = HeaderValue::from_str(&format!(
             "{NAME}=a1.{workspace}.{}; HttpOnly; SameSite=Strict;{} Path={}",
             credentials.renewal,
@@ -130,6 +139,10 @@ impl RegionalAccount {
         .map_err(|_| unauthorized())?;
         header.set_sensitive(true);
         Ok(header)
+    }
+    pub async fn profile(&self, headers: &HeaderMap) -> Result<Option<AccountProfile>> {
+        let (workspace, secret) = parse(cookie(headers)?)?;
+        self.sessions.account_profile(workspace, secret).await
     }
     pub async fn authenticate(&self, headers: &HeaderMap) -> Result<AuthorizedAccount> {
         let (workspace, secret) = parse(cookie(headers)?)?;

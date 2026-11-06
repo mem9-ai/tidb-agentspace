@@ -672,7 +672,7 @@ test('Guest sees expiry and can use their own files from the sample entry', asyn
 test('@visual populated collections share metadata, exact-resource entry, connection and return actions', async ({
   page,
   workspace,
-}) => {
+}, testInfo) => {
   workspace.addResources();
   workspace.state.resources[0].name = 'postgresql-resource-with-a-long-name-for-agents';
   workspace.state.resources[1].name = 'filesystem-resource-with-a-long-name-1234';
@@ -715,11 +715,29 @@ test('@visual populated collections share metadata, exact-resource entry, connec
     await expect(table).toBeVisible();
     await table.getByRole('button', { name: `Connect to ${resource.name}`, exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveAccessibleName(`Connect to ${resource.name}`);
-    await expect(page.getByRole('dialog')).toContainText('REGION_ACCESS_TOKEN');
-    await expect(page.getByRole('dialog')).not.toContainText('$WORKSPACE_API_KEY');
-    const command = await page.getByRole('dialog').locator('pre').innerText();
-    expect(command).toContain(' \\\n');
-    expect(command).not.toContain(' \\\\\n');
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('button', { name: 'Copy agent prompt' })).toBeEnabled();
+    await expect(dialog).toContainText('WORKSPACE_API_KEY');
+    await expect(dialog).not.toContainText('REGION_ACCESS_TOKEN');
+    await page.screenshot({
+      path: testInfo.outputPath(`${resource.kind}-agent.png`),
+      fullPage: true,
+    });
+    await dialog.getByRole('tab', { name: 'JavaScript', exact: true }).click();
+    const command = await dialog.locator('pre').innerText();
+    expect(command).toContain('connectWorkspace');
+    expect(command).toContain('process.env.WORKSPACE_API_KEY');
+    expect(command).toContain(resource.id);
+    expect(command).toContain(collection.id === 'db_fixture' ? 'readOnly: true' : 'listFiles');
+    expect(command).not.toContain('/api/portal/');
+    await page.screenshot({
+      path: testInfo.outputPath(`${resource.kind}-javascript.png`),
+      fullPage: true,
+    });
+    await expect(dialog.getByRole('link', { name: 'Download JavaScript client' })).toHaveAttribute(
+      'download',
+      'workspace-agent.mjs',
+    );
     await expect(
       page.getByRole('dialog').getByRole('link', { name: 'API documentation' }),
     ).toHaveAttribute('href', '#api');

@@ -77,6 +77,7 @@ export const test = base.extend({
     let guestCleanupEnabled = false;
     let signedInAsGuest = false;
     let signedInAsAccount = false;
+    let accountProfile;
     let rejectGuestLogout = false;
     const resourcePages = new Map();
     const keyPages = new Map();
@@ -121,7 +122,9 @@ export const test = base.extend({
                 guestEnabled,
                 guestCleanupEnabled,
                 ...(signedInAsGuest ? { sessionKind: 'guest' } : {}),
-                ...(signedInAsAccount ? { sessionKind: 'account' } : {}),
+                ...(signedInAsAccount
+                  ? { sessionKind: 'account', ...(accountProfile && { account: accountProfile }) }
+                  : {}),
               }
             : {
                 enabled: false,
@@ -480,7 +483,8 @@ export const test = base.extend({
         );
         await otherContext.route('**/*', handler);
       },
-      signInAsAccount() {
+      signInAsAccount(profile) {
+        accountProfile = profile;
         signInRequired = false;
         signedInAsAccount = true;
       },
