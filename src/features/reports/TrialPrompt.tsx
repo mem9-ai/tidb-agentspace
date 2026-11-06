@@ -7,15 +7,15 @@ const trialInstruction = `Follow the official Drive9 skill at ${skillUrl} to fin
 
 export function TrialPrompt({
   leadingState,
-  privateCsv = false,
+  sampleSales,
 }: {
   leadingState?: string;
-  privateCsv?: boolean;
+  sampleSales?: string;
 }) {
   const followUp = leadingState !== undefined;
-  const compact = followUp || privateCsv;
-  const prompt = privateCsv
-    ? `Follow ${skillUrl} to analyze my own CSV in this project. Resume the existing private CSV workspace if one is bound. Otherwise ask which CSV to upload to a free 24-hour workspace. Use only the file I select, save the analysis locally, and give me the report.`
+  const compact = followUp || sampleSales !== undefined;
+  const prompt = sampleSales
+    ? `Follow ${skillUrl} to answer: How much of total sales comes from the top two markets? Use the CSV I attach or name, or resume my saved CSV in this project. Save private findings locally. If I have neither, answer now from these public sample figures: ${sampleSales}. Show the calculation and label it as the public sample. Then tell me I can attach a CSV or give its filename here to try my data. Reply in the language we have been using. In a new chat, use ${navigator.language}.`
     : followUp
       ? `Follow ${skillUrl} in the local project that created my Drive9 sales report. Add the top product by sales in ${leadingState} and its share of state sales to the same report, then give me the updated Studio link.`
       : trialInstruction;
@@ -42,7 +42,7 @@ export function TrialPrompt({
           }
         }}
       >
-        {privateCsv ? 'Copy prompt for my CSV' : followUp ? 'Copy follow-up' : 'Copy prompt'}
+        {sampleSales ? 'Copy sales question' : followUp ? 'Copy follow-up' : 'Copy prompt'}
       </Button>
       {result === 'manual' && (
         <Textarea
@@ -60,7 +60,9 @@ export function TrialPrompt({
       {(!compact || result === 'copied') && (
         <Text size="sm" ta={compact ? 'left' : 'center'} role="status">
           {result === 'copied'
-            ? 'Copied. Paste it into your project chat.'
+            ? sampleSales
+              ? 'Copied. Paste into your agent chat. You can attach a CSV in the same message.'
+              : 'Copied. Paste it into your project chat.'
             : 'No account needed · 48-hour trial'}
         </Text>
       )}

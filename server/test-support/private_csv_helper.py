@@ -60,6 +60,10 @@ def run(directory):
     client.request = api
     def invoke(action, file=None, path=project):
         return client.private_csv(client.PRODUCTION,path,home,action,file,lambda:store,lambda:clock[0])
+    def unexpected_store():
+        raise AssertionError("an empty project should not open a credential store")
+    assert client.private_csv(client.PRODUCTION, project, home, "resume", store_factory=unexpected_store) == {"status":"needs-file"}
+    assert not calls
     try:
         invoke("upload", source)
         raise AssertionError("lost write receipt was confirmed")

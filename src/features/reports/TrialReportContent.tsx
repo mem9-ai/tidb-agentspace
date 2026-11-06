@@ -116,13 +116,18 @@ export function TrialReportContent({ report }: { report: SalesReport }) {
           </details>
           <section aria-labelledby="own-sales">
             <Title order={2} id="own-sales">
-              Try this with your own sales data
+              What share of sales comes from your top two markets?
             </Title>
             <Text mb="sm">
-              Give your agent a CSV to analyze in a private 24-hour workspace. When you come back,
-              it uses the saved file.
+              Paste this question into your agent chat. Attach a sales CSV, or use the one you
+              shared earlier in this project. You can also try it with just this sample.
             </Text>
-            <TrialPrompt privateCsv />
+            <TrialPrompt
+              sampleSales={`${report.states
+                .slice(0, 2)
+                .map(([state, amount]) => `${state} ${money.format(amount)}`)
+                .join(', ')} out of ${money.format(total)} across all states`}
+            />
             <Button
               mt="sm"
               component="a"
