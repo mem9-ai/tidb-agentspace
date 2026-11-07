@@ -20,9 +20,6 @@ impl Product {
         let repository = self.workspace.repository();
         let r = repository.resource(id).await?;
         let r = p.resource(&json!({"resources":[r]}), id, None)?;
-        if retired_database(&r) {
-            return Err(err(404, "NOT_FOUND"));
-        }
         if method == "GET" && parts.len() == 4 {
             uuid::Uuid::parse_str(parts[3]).map_err(|_| err(404, "NOT_FOUND"))?;
             let value = repository.setup_attempt(id, parts[3]).await?;
@@ -65,7 +62,7 @@ impl Product {
         let key = idempotency
             .filter(|s| !s.is_empty() && s.len() <= 128)
             .ok_or_else(|| err(400, "INVALID_IDEMPOTENCY_KEY"))?;
-        if ![ZERO, DB9, DUCKDB].contains(&r["provider"].as_str().unwrap_or("")) {
+        if r["provider"] != DB9 {
             return Err(err(400, "UNSUPPORTED_PROVIDER"));
         }
         let _admission = self.setup_admission[resource_locks::stripe(id)]
@@ -89,41 +86,18 @@ impl Product {
             .await;
         let outcome = async {
             let (_, r) = current?;
-            let provider = r["provider"].as_str().unwrap_or("");
-            let binding = self
-                .providers
-                .binding(
-                    match provider {
-                        ZERO => "zero",
-                        DB9 => "db9",
-                        _ => "duckdb",
-                    },
-                    id,
-                )
-                .await?;
+            let binding = self.providers.binding("db9", id).await?;
             if binding.is_null() {
                 return Err(err(409, "SETUP_NOT_RESUMABLE"));
             }
             if r["status"] == "active" && binding["state"] == "ready" {
-                // Native status is a Meta-only observation, including saved Zero expiry.
+                // Native status is a Meta-only observation, without contacting the provider.
                 return self.providers.status(&r).await;
             }
-            if provider == DB9
-                && binding["state"] != "ready"
-                && repository.account("db9").await?["state"] != "ready"
-            {
+            if binding["state"] != "ready" && repository.account("db9").await?["state"] != "ready" {
                 return Err(err(409, "SETUP_NOT_RESUMABLE"));
             }
-            if provider == DUCKDB {
-                let storage =
-                    text(&binding, "storageId").map_err(|_| err(409, "SETUP_NOT_RESUMABLE"))?;
-                if self.providers.binding("drive9", storage).await?.is_null() {
-                    return Err(err(409, "SETUP_NOT_RESUMABLE"));
-                }
-                self.setup_duckdb(&r).await
-            } else {
-                self.providers.provision_database(&r).await
-            }
+            self.providers.provision_database(&r).await
         }
         .await;
         let (status, code, updates) = match outcome {
@@ -133,7 +107,6 @@ impl Product {
                 let known = [
                     "SETUP_NOT_RESUMABLE",
                     "RESOURCE_DELETING",
-                    "ZERO_SETUP_INCOMPLETE",
                     "DB9_SETUP_INCOMPLETE",
                     "DATABASE_EXPIRED",
                     "INSUFFICIENT_SCOPE",

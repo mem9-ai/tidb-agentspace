@@ -195,16 +195,10 @@ fn plan(
     identifier(table)?;
     let columns = result["columns"].as_array().ok_or_else(invalid)?;
     let rows = result["rows"].as_array().ok_or_else(invalid)?;
-    if !["mysql", "postgresql", "duckdb"].contains(&kind) {
+    if kind != "postgresql" {
         return Err(invalid());
     }
-    let quote = |s: &str| {
-        if kind == "mysql" {
-            format!("`{}`", s.replace('`', "``"))
-        } else {
-            format!("\"{}\"", s.replace('"', "\"\""))
-        }
-    };
+    let quote = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
     let mut folded = BTreeSet::new();
     let mut defs = vec![];
     for (i, c) in columns.iter().enumerate() {
@@ -237,13 +231,7 @@ fn plan(
         if !["TEXT", "BIGINT", "DOUBLE", "BOOLEAN"].contains(&t.as_str()) {
             return Err(invalid());
         }
-        let native_type = if t == "TEXT" {
-            match kind {
-                "mysql" => "LONGTEXT",
-                "duckdb" => "VARCHAR",
-                _ => "TEXT",
-            }
-        } else if t == "DOUBLE" && kind == "postgresql" {
+        let native_type = if t == "DOUBLE" {
             "DOUBLE PRECISION"
         } else {
             &t
@@ -283,11 +271,7 @@ fn plan(
                     return Err(invalid());
                 }
                 let hex = hex::encode(text.as_bytes());
-                match kind {
-                    "mysql" => format!("CONVERT(X'{hex}' USING utf8mb4)"),
-                    "postgresql" => format!("convert_from(decode('{hex}', 'hex'), 'UTF8')"),
-                    _ => format!("decode(from_hex('{hex}'))"),
-                }
+                format!("convert_from(decode('{hex}', 'hex'), 'UTF8')")
             });
         }
         literals.push(format!("({})", fields.join(", ")));
@@ -348,9 +332,6 @@ impl Product {
     ) -> Result<(Principal, Value)> {
         let p = principal(state, credential)?;
         let source = p.resource(state, source_id, None)?;
-        if retired_database(&source) {
-            return Err(err(404, "NOT_FOUND"));
-        }
         if source["status"] == "deleting" || source["status"] == "deleted" {
             return Err(err(409, "RESOURCE_DELETING"));
         }
@@ -379,9 +360,6 @@ impl Product {
             text(target, "resourceId").map_err(|_| invalid())?,
             None,
         )?;
-        if retired_database(&destination) {
-            return Err(err(404, "NOT_FOUND"));
-        }
         if target["kind"] == "filesystem" {
             p.scope("files:write")?;
             if destination["kind"] != "filesystem"
@@ -391,9 +369,7 @@ impl Product {
             }
         } else {
             p.scope("queries:execute")?;
-            if ![ZERO, DB9, DUCKDB].contains(&destination["provider"].as_str().unwrap_or(""))
-                || destination["kind"] == "filesystem"
-            {
+            if destination["provider"] != DB9 || destination["kind"] == "filesystem" {
                 return Err(err(400, "INVALID_EXPORT_TARGET"));
             }
         }
@@ -822,10 +798,7 @@ impl Product {
             }
             entry.used = true;
         }
-        if let Err(e) = self
-            .execute_database_with_mode(&r, &create, false, json!([]), database_import)
-            .await
-        {
+        if let Err(e) = self.execute_database(&r, &create, false).await {
             if e.code == "SQL_TABLE_EXISTS"
                 && let Some(id) = preparation
                 && let Some(entry) = self.preparations.lock().await.get_mut(id)
@@ -838,8 +811,7 @@ impl Product {
             let inserted = async {
                 self.export_authorize(credential, source, target, false, file_source)
                     .await?;
-                self.execute_database_with_mode(&r, &insert, false, json!([]), database_import)
-                    .await
+                self.execute_database(&r, &insert, false).await
             }
             .await;
             if inserted.is_err() {

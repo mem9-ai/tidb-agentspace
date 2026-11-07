@@ -395,7 +395,6 @@ test('@visual database creation offers PostgreSQL without an engine choice', asy
   page,
   workspace,
 }, testInfo) => {
-  workspace.state.capabilities.duckdb.available = false;
   await workspace.open('#databases');
   const trigger = page.getByRole('button', { name: 'Create database', exact: true });
   await trigger.click();

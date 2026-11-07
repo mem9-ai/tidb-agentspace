@@ -10,12 +10,8 @@ export function resourceWorkspaceHref(resource: Resource): string {
 
 export function resourceServiceLabel(resource: Resource): string {
   switch (resource.provider) {
-    case 'tidb-cloud-zero':
-      return 'TiDB Cloud Zero · Trial';
     case 'db9-anonymous':
       return 'PostgreSQL compatible · Trial';
-    case 'duckdb-drive9':
-      return 'DuckDB · Experimental';
     case 'drive9-anonymous':
       return 'Drive9 · Anonymous trial';
     default:

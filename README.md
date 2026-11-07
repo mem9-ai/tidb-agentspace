@@ -1,6 +1,6 @@
 # TiDB Agent Workspace
 
-An independent Workspace for developers and agents to use databases and files through one scoped Global Workspace Key and Region access Tokens. The Console is React/TiUI; the hosted/local API and regional Meta services use Rust. PostgreSQL-compatible databases and File Systems have separate provider capabilities and credential boundaries. DuckDB remains the File System analysis engine; standalone MySQL and DuckDB databases are retired.
+An independent Workspace for developers and agents to use databases and files through one scoped Global Workspace Key and Region access Tokens. The Console is React/TiUI; the hosted/local API and regional Meta services use Rust. PostgreSQL-compatible databases and File Systems have separate provider capabilities and credential boundaries. File System SQL analysis runs on DuckDB.
 
 Start with [start-here.md](start-here.md), [contribution rules](CONTRIBUTING.md) and [architecture](docs/architecture.md). The Rust API supports local guest and hosted shared-Workspace SSO; production multi-tenant identity remains planned.
 

@@ -479,7 +479,7 @@ export interface paths {
     put?: never;
     /**
      * Create a private destination-bound import review
-     * @description Required Region access Token scope: queries:execute on destination; Workspace inputs also require source files:read/analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.
+     * @description Required Region access Token scope: queries:execute on destination; Workspace inputs also require source files:read/analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.
      */
     post: operations['createDatabaseImportPreparation'];
     delete?: never;
@@ -502,7 +502,7 @@ export interface paths {
     put?: never;
     /**
      * Confirm reviewed server rows and create a new database table
-     * @description Required Region access Token scope: queries:execute on destination; Workspace files additionally require source files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.
+     * @description Required Region access Token scope: queries:execute on destination; Workspace files additionally require source files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.
      */
     post: operations['createDatabaseImport'];
     delete?: never;
@@ -853,7 +853,7 @@ export interface paths {
     post?: never;
     /**
      * Request removal and retain an observable deletion tombstone
-     * @description Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Local removal completes synchronously (200). Drive9/DuckDB and PostgreSQL may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; PostgreSQL requires operator reconciliation. Zero returns 405 unchanged. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.
+     * @description Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Local removal completes synchronously (200). Drive9 and PostgreSQL may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; PostgreSQL requires operator reconciliation. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.
      */
     delete: operations['deleteResource'];
     options?: never;
@@ -1097,7 +1097,7 @@ export interface components {
       id: string;
       name: string;
       /** @enum {unknown} */
-      kind: 'mysql' | 'postgresql' | 'duckdb' | 'filesystem';
+      kind: 'postgresql' | 'filesystem';
       /** @description Provider-assigned data location; may be automatic and is distinct from the Workspace Region. */
       region: string;
       /** @description Region control plane owning this resource. Legacy records are interpreted in their existing Region. */
@@ -1109,8 +1109,7 @@ export interface components {
        * @description Missing on legacy local resources. PostgreSQL-compatible databases support NUMERIC values of up to 28–29 significant digits. Provider compatibility limits apply.
        * @enum {unknown}
        */
-      provider?:
-        'local' | 'drive9-anonymous' | 'tidb-cloud-zero' | 'duckdb-drive9' | 'db9-anonymous';
+      provider?: 'local' | 'drive9-anonymous' | 'db9-anonymous';
       deletion?: {
         /** @enum {unknown} */
         phase: 'outcome-unknown' | 'provider-accepted' | 'completed';
@@ -1133,7 +1132,7 @@ export interface components {
       isDefault?: boolean;
       /**
        * Format: date-time
-       * @description Zero expiry reported by the provider. No automatic renewal or replacement.
+       * @description Expiry reported by the database provider. No automatic renewal or replacement.
        */
       expiresAt?: string;
       /** Format: date-time */
@@ -1488,7 +1487,7 @@ export interface components {
       resourceId: string;
       name: string;
       /** @enum {unknown} */
-      kind: 'mysql' | 'postgresql' | 'duckdb' | 'filesystem';
+      kind: 'postgresql' | 'filesystem';
       storageBytes: number | null;
       storageLimitBytes: number | null;
       monthlyRU: number | null;
@@ -1508,9 +1507,7 @@ export interface components {
       available?: boolean;
     };
     Capabilities: {
-      mysql: components['schemas']['Capability'];
       postgresql: components['schemas']['Capability'];
-      duckdb: components['schemas']['Capability'];
       filesystem: components['schemas']['Capability'];
     };
     Bootstrap: {
@@ -6763,14 +6760,6 @@ export interface operations {
            * @default false
            */
           readOnly?: boolean;
-          /** @description Reserved for the retired standalone DuckDB database capability; nonempty sources are not supported. Use File System analysis for DuckDB SQL over files. */
-          sources?: {
-            /** @description Unique source table name in the per-query files catalog. */
-            name: string;
-            resourceId: string;
-            /** @description Exact absolute Workspace file path; no globs, traversal, external URLs or native paths. */
-            path: string;
-          }[];
           /** @description queries:read grants a constrained parsed read-only SELECT/CTE/VALUES subset; unknown functions, locks, writes and multiple statements are rejected before provider I/O. queries:execute also permits reads and writes. readOnly:true constrains a full-access caller. One statement up to 64 KiB, a 15-second deadline, at most 1000 result rows / 1 MiB. No persistent session or automatic retry. A timeout or result limit can leave writes committed; check before retrying. */
           sql: string;
         };
@@ -8672,8 +8661,6 @@ export interface operations {
       /** @description Resource lifecycle operation unsupported by provider */
       405: {
         headers: {
-          /** @description Methods available on this provider-backed resource. */
-          Allow?: 'GET';
           [name: string]: unknown;
         };
         content: {

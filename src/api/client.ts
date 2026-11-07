@@ -26,7 +26,6 @@ export type QueryResult =
   operations['executeQuery']['responses'][200]['content']['application/json'];
 type JsonBody<T extends { requestBody: { content: { 'application/json': unknown } } }> =
   T['requestBody']['content']['application/json'];
-export type QuerySource = NonNullable<JsonBody<operations['executeQuery']>['sources']>[number];
 export type CreateKeyInput = {
   name: string;
   scopes: string[];

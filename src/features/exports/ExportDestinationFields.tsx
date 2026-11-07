@@ -3,7 +3,6 @@ import { Alert, Button, Group, Loader, NativeSelect, Text, TextInput } from '@ti
 import { useResourcePages } from '../resources/use-resource-pages';
 import type { Resource } from '../../api/client';
 export type DestinationKind = 'download' | 'filesystem' | 'database';
-const liveProviders = ['tidb-cloud-zero', 'db9-anonymous'];
 export function ExportKindSelect({
   kind,
   onKindChange,
@@ -48,7 +47,7 @@ export function useExportDestination(
       resource.status === 'active' &&
       (kind === 'filesystem'
         ? resource.kind === 'filesystem'
-        : resource.kind === 'postgresql' && liveProviders.includes(resource.provider || '')),
+        : resource.kind === 'postgresql' && resource.provider === 'db9-anonymous'),
   );
   return {
     targets,
@@ -123,7 +122,7 @@ export function ExportDestinationFields({
                 },
                 ...state.targets.map((resource) => ({
                   value: resource.id,
-                  label: `${resource.name} · ${resource.kind === 'filesystem' ? (resource.provider === 'drive9-anonymous' ? 'Live' : 'Local') : resource.kind === 'mysql' ? 'MySQL' : resource.kind === 'postgresql' ? 'PostgreSQL' : 'DuckDB'}`,
+                  label: `${resource.name} · ${resource.kind === 'filesystem' ? (resource.provider === 'drive9-anonymous' ? 'Live' : 'Local') : 'PostgreSQL'}`,
                 })),
               ]}
             />

@@ -12,11 +12,10 @@ resource or open the existing contextual create dialog. Creation returns to the 
 the actual returned resource selected. Normal resource creation and Connect an agent retain
 their existing flows.
 
-- Live MySQL, db9 PostgreSQL and DuckDB tutorials import the fixed six-order CSV into a
+- The PostgreSQL tutorial imports the fixed six-order CSV into a
   uniquely named table through the existing destination-bound, create-only database import
   operations. The Load action confirms this visible dataset and its schema: `id BIGINT`,
-  `region TEXT`, `amount BIGINT`. The parsed six rows and fields must match before committing. PostgreSQL
-  uses `workspace`; DuckDB uses `main`. Local database demos use the three preloaded `agent_events`
+  `region TEXT`, `amount BIGINT`. The parsed six rows and fields must match before committing. PostgreSQL uses the `workspace` schema. Local database demos use the three preloaded `agent_events`
   instead of unsupported writes and remain visibly labeled.
 - The File System tutorial explicitly saves the same six-row CSV at a unique root path, checks
   SQL analysis availability and analyzes the saved snapshot as table `file`. Live uploads use

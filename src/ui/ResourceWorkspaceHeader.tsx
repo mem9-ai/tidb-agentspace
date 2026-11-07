@@ -120,7 +120,7 @@ export function ResourceWorkspaceBar({
   onSelect: (id: string) => void;
 }) {
   const Icon = resource?.kind === 'filesystem' || !resource ? IconFolder : IconDatabase01;
-  const kinds = { mysql: 'MySQL', postgresql: 'PostgreSQL', duckdb: 'DuckDB', filesystem: '' };
+  const kinds = { postgresql: 'PostgreSQL', filesystem: '' };
   const active = resource?.status === 'active';
   return (
     <section className="resource-workspace-bar" aria-label={`${label} context`}>

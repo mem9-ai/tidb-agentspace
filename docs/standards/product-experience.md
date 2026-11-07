@@ -61,14 +61,8 @@ These are design paths, not measured cloud-latency guarantees. Default safe opti
 such as supported regions and generated resource names. Console exploration does not require
 connecting an agent first. Do not invent provider availability or hide provider constraints.
 
-Name TiDB Cloud Zero as TiDB and describe MySQL compatibility as a capability. Local
-simulation must be visibly identified and must not imply that a Zero instance was created.
-Do not present simulated locations as meaningful choices. Per owner direction, the Console's
-database creation flow offers PostgreSQL through db9, with unavailability clearly identified.
-Existing TiDB resources remain accessible; standalone DuckDB resources are not shown in the
-Console, and DuckDB file analysis remains
-available. This is a Console experience decision, not removal of backend capabilities; revisit it
-on owner direction.
+The Console and API expose PostgreSQL databases and File Systems as specified in
+[ADR 0058](../decisions/0058-public-resource-kinds.md). Label local simulations explicitly.
 
 For new and Guest Workspaces, lead the Overview with a useful file experience that offers both
 agent and self-service paths; keep database creation available as a secondary action. The individual empty collections
@@ -165,16 +159,8 @@ follow-up file while waiting, offer a manual check and a download when copying f
 the waiting or found state on return. An existing file is offered for inspection, not presented
 as proof that this agent ran the task. Do not overwrite an existing report or expose the Key.
 
-**Database creation (owner direction, 2026-11-03):** the Console creates PostgreSQL through db9
-without an engine choice. Existing standalone DuckDB databases are hidden from Console discovery,
-direct navigation, and import destinations; existing data and backend capabilities remain intact.
-File analysis continues to use DuckDB. Use the
-configured location without a selector; actual location remains discoverable in Details. Creation
-remains explicit, and unavailable PostgreSQL must be clearly identified.
-
-When a persistent DuckDB database is unavailable, distinguish it from read-only DuckDB file
-analysis and provide a route to Files. Do not imply that the storage-backed database was created
-or enable a provider merely to remove the message.
+**Database creation.** Create PostgreSQL through db9 in the configured location. Show the
+actual location in Details and explain when the PostgreSQL provider is unavailable.
 
 Minimize required decisions and navigation, not safeguards. Permission selection, write intent,
 format/field/type confirmation, overwrite/discard decisions, provider limits and live/demo

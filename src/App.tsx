@@ -202,9 +202,11 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
       data && {
         ...data,
         resources: data.resources.filter(
-          (resource) => !['duckdb', 'mysql'].includes(resource.kind),
+          (resource) => resource.kind === 'postgresql' || resource.kind === 'filesystem',
         ),
-        usage: data.usage.filter((item) => !['duckdb', 'mysql'].includes(item.kind)),
+        usage: data.usage.filter(
+          (item) => item.kind === 'postgresql' || item.kind === 'filesystem',
+        ),
       },
     [data],
   );
@@ -627,9 +629,7 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
       <WorkspaceLayout
         isHostedSession={sso.sessionKind === 'account' || sso.sessionKind === 'guest'}
         liveFiles={visibleData!.resources.some((r) => r.provider === 'drive9-anonymous')}
-        liveDatabases={visibleData!.resources.some((r) =>
-          ['tidb-cloud-zero', 'db9-anonymous'].includes(r.provider || ''),
-        )}
+        liveDatabases={visibleData!.resources.some((r) => r.provider === 'db9-anonymous')}
         workspaceName={data.workspace.name}
         profileName={
           sso.sessionKind === 'account'
@@ -1003,11 +1003,7 @@ function Overview({
 function Databases({ routeLocation, ...shared }: Shared & { routeLocation: WorkspaceRoute }) {
   const { databaseId } = routeLocation;
   const { data, onCreate, onConnect, isGuest } = shared;
-  const databases = data.resources
-    .filter((r) => r.kind !== 'filesystem')
-    .sort(
-      (a, b) => Number(b.provider === 'tidb-cloud-zero') - Number(a.provider === 'tidb-cloud-zero'),
-    );
+  const databases = data.resources.filter((resource) => resource.kind === 'postgresql');
   if (databaseId) {
     const database = databases.find((r) => r.id === databaseId);
     if (!database) {
@@ -1067,7 +1063,6 @@ function DatabaseDetail({
     <section className="database-page">
       <DatabaseWorkspace
         key={database.id}
-        workspaceId={data.workspace.id}
         onConnect={() => onConnect(database)}
         onRetry={async () => {
           try {
@@ -2234,11 +2229,7 @@ function Billing({ data, refreshUsage }: Shared) {
                 </Table.Td>
                 <Table.Td>
                   <Badge color="carbon">
-                    {u.measured === false
-                      ? 'Anonymous trial'
-                      : u.kind === 'mysql'
-                        ? 'Starter Free'
-                        : 'Free · Preview'}
+                    {u.measured === false ? 'Anonymous trial' : 'Free · Preview'}
                   </Badge>
                 </Table.Td>
               </Table.Tr>
@@ -2263,8 +2254,7 @@ function Billing({ data, refreshUsage }: Shared) {
           <ShieldCheck size={22} />
           <Heading level={3}>Predictable limits</Heading>
           <Text component="p">
-            TiDB Cloud Zero is temporary and service limits apply. Export important data before the
-            database expires.
+            Export important data before your PostgreSQL trial database expires.
           </Text>
           <Text className="muted" component="p">
             File System requests can be rejected when a trial quota is reached. Keep important files

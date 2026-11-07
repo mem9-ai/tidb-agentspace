@@ -2,7 +2,7 @@
 
 Design baseline: 2026-10-27. This describes the proposed architecture for an independent developer
 and agent product. Current database support is PostgreSQL-compatible resources through opt-in
-db9. Standalone MySQL and DuckDB databases are retired under [ADR 0048](decisions/0048-postgresql-only-databases.md);
+db9. [ADR 0058](decisions/0058-public-resource-kinds.md) defines public resource discovery and direct access;
 DuckDB remains available for bounded File System analysis. Later descriptions of MySQL or
 standalone DuckDB as active resources are historical or proposed, not current capability.
 The opt-in Drive9 File System boundary is [ADR 0004](decisions/0004-drive9-anonymous-provider.md),

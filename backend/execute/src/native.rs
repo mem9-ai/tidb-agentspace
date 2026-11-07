@@ -137,7 +137,6 @@ fn setup() -> Result<Connection> {
         .and_then(|c| c.with("autoinstall_known_extensions", "false"))
         .and_then(|c| c.with("allow_persistent_secrets", "false"))
         .and_then(|c| c.with("allow_unredacted_secrets", "false"))
-        .and_then(|c| c.with("allow_unsigned_extensions", "true"))
         .map_err(safe_error)?;
     Connection::open_in_memory_with_flags(cfg).map_err(safe_error)
 }
@@ -168,12 +167,6 @@ fn read_statement(conn: &Connection, sql: &str) -> Result<bool> {
         .map_err(safe_error)?;
     let ast: Value = serde_json::from_str(&ast).map_err(|_| err(422, "SQL_SYNTAX_ERROR"))?;
     Ok(ast["error"] == false)
-}
-fn allowed(sql: &str) -> bool {
-    let clean = regex::Regex::new(r"(?s)^(?:\s|--[^\n]*(?:\n|$)|/\*.*?\*/)*")
-        .expect("regex")
-        .replace(sql, "");
-    read_prefix(sql)||regex::Regex::new(r"(?i)^(INSERT|UPDATE|DELETE|MERGE|CHECKPOINT)\b|^CREATE\s+(OR\s+REPLACE\s+)?((TEMP|TEMPORARY)\s+)?(TABLE|VIEW|(UNIQUE\s+)?INDEX)\b|^(ALTER\s+TABLE|DROP\s+(TABLE|VIEW|INDEX))\b").expect("regex").is_match(&clean)
 }
 fn value(conn: &Connection, v: DValue, depth: usize) -> Result<Value> {
     if depth > 16 {
@@ -332,227 +325,143 @@ fn query_bounded(
 pub fn duckdb(input: &Value) -> Result<Value> {
     let conn = setup()?;
     let mode = input["mode"].as_str().unwrap_or("analysis");
-    if mode == "probe" {
-        run(
-            &conn,
-            &format!(
-                "LOAD {}",
-                quote(
-                    input["extensionPath"]
-                        .as_str()
-                        .ok_or_else(|| err(503, "DUCKDB_RUNTIME_UNAVAILABLE"))?
-                )
-            ),
-        )?;
-        return Ok(json!({"available":true}));
+    if !matches!(mode, "analysis" | "preview" | "import") {
+        return Err(err(400, "INVALID_EXECUTE_INPUT"));
     }
-    if mode == "database" {
-        let extension = input["extensionPath"]
-            .as_str()
-            .ok_or_else(|| err(503, "DUCKDB_RUNTIME_UNAVAILABLE"))?;
-        run(&conn, &format!("LOAD {}", quote(extension)))?;
-        let c = &input["connection"];
-        run(
-            &conn,
-            &format!(
-                "CREATE TEMPORARY SECRET workspace_storage (TYPE tidbfs, ENDPOINT {}, TOKEN {})",
-                quote(
-                    c["endpoint"]
-                        .as_str()
-                        .ok_or_else(|| err(503, "PROVIDER_BINDING_MISSING"))?
-                ),
-                quote(
-                    c["apiKey"]
-                        .as_str()
-                        .ok_or_else(|| err(503, "PROVIDER_BINDING_MISSING"))?
-                )
-            ),
-        )?;
-        let read_only =
-            input["readOnly"] == true || input["sources"].as_array().is_some_and(|v| !v.is_empty());
-        run(
-            &conn,
-            &format!(
-                "ATTACH 'tidbfs+db:///workspace.duckdb' AS workspace{}; USE workspace",
-                if read_only { " (READ_ONLY)" } else { "" }
-            ),
-        )?;
-        if let Some(sources) = input["sources"].as_array().filter(|v| !v.is_empty()) {
-            run(&conn, "ATTACH ':memory:' AS files")?;
-            let source_name = regex::Regex::new(r"^[a-z][a-z0-9_]{0,31}$").expect("regex");
-            for source in sources {
-                let name = source["name"]
-                    .as_str()
-                    .ok_or_else(|| err(422, "SOURCE_INVALID"))?;
-                if !source_name.is_match(name) {
-                    return Err(err(422, "SOURCE_INVALID"));
-                }
-                let reader = match source["format"].as_str() {
-                    Some("csv") => "read_csv",
-                    Some("json" | "jsonl" | "ndjson") => "read_json_auto",
-                    Some("parquet") => "read_parquet",
-                    _ => return Err(err(422, "SOURCE_INVALID")),
-                };
-                run(
-                    &conn,
-                    &format!(
-                        "CREATE TABLE files.\"{name}\" AS SELECT * FROM {reader}({})",
-                        quote(
-                            source["path"]
-                                .as_str()
-                                .ok_or_else(|| err(422, "SOURCE_INVALID"))?
-                        )
-                    ),
-                )?;
-            }
+    let path = input["sourcePath"]
+        .as_str()
+        .ok_or_else(|| err(400, "INVALID_EXECUTE_INPUT"))?;
+    if mode == "import" && input["parsing"]["format"] == "lines" {
+        let bytes = std::fs::read(path).map_err(|_| err(422, "IMPORT_FORMAT"))?;
+        let text = std::str::from_utf8(&bytes).map_err(|_| err(422, "IMPORT_FORMAT"))?;
+        if bytes
+            .iter()
+            .any(|b| (*b < 32 && ![9, 10, 13].contains(b)) || *b == 127)
+        {
+            return Err(err(422, "IMPORT_FORMAT"));
         }
+        let rows: Vec<_> = text
+            .replace("\r\n", "\n")
+            .replace('\r', "\n")
+            .split_terminator('\n')
+            .map(|s| json!({"line":s}))
+            .collect();
+        if rows.len() > 1000 {
+            return Err(err(413, "IMPORT_ROW_LIMIT"));
+        }
+        if rows.iter().map(|r| r.to_string().len()).sum::<usize>() > 1024 * 1024 {
+            return Err(err(413, "IMPORT_OUTPUT_LIMIT"));
+        }
+        return Ok(
+            json!({"columns":["line"],"columnTypes":["VARCHAR"],"rowCount":rows.len(),"rows":rows}),
+        );
+    }
+    let format = input["format"].as_str().unwrap_or("csv");
+    let reader = if mode == "import" {
+        if input["parsing"]["format"] == "parquet" {
+            format!("read_parquet({})", quote(path))
+        } else {
+            let d = input["parsing"]["delimiter"].as_str().unwrap_or(",");
+            if ![",", "\t", ";", "|"].contains(&d) {
+                return Err(err(400, "INVALID_EXPORT"));
+            }
+            format!(
+                "read_csv({},header={},delim={},all_varchar=true,strict_mode=true,allow_quoted_nulls=false,quote='\"',escape='\"')",
+                quote(path),
+                input["parsing"]["header"] == true,
+                quote(d)
+            )
+        }
+    } else {
+        format!(
+            "{}({})",
+            if format == "parquet" {
+                "read_parquet"
+            } else {
+                "read_csv_auto"
+            },
+            quote(path)
+        )
+    };
+    let preview = mode == "preview";
+    run(
+        &conn,
+        &format!(
+            "CREATE {} \"file\" AS SELECT * FROM {reader}",
+            if preview || mode == "import" {
+                "VIEW"
+            } else {
+                "TABLE"
+            }
+        ),
+    )?;
+    let schema = query(&conn, "DESCRIBE \"file\"", 1000, 1024 * 1024, false)?["rows"].clone();
+    let rows_limit = if preview { 21 } else { 1000 };
+    let mut total = Value::Null;
+    if preview && format == "parquet" {
+        total = query(
+            &conn,
+            &format!(
+                "SELECT num_rows FROM parquet_file_metadata({})",
+                quote(path)
+            ),
+            1,
+            4096,
+            false,
+        )?["rows"][0]["num_rows"]
+            .clone();
+    }
+    if mode == "analysis" {
         run(
             &conn,
             "SET enable_external_access=false; SET lock_configuration=true",
         )?;
-        database_query(
-            &conn,
-            input["sql"]
-                .as_str()
-                .ok_or_else(|| err(400, "INVALID_SQL"))?,
-            read_only,
-        )
-    } else {
-        let path = input["sourcePath"]
-            .as_str()
-            .ok_or_else(|| err(400, "INVALID_EXECUTE_INPUT"))?;
-        if mode == "import" && input["parsing"]["format"] == "lines" {
-            let bytes = std::fs::read(path).map_err(|_| err(422, "IMPORT_FORMAT"))?;
-            let text = std::str::from_utf8(&bytes).map_err(|_| err(422, "IMPORT_FORMAT"))?;
-            if bytes
-                .iter()
-                .any(|b| (*b < 32 && ![9, 10, 13].contains(b)) || *b == 127)
-            {
-                return Err(err(422, "IMPORT_FORMAT"));
-            }
-            let rows: Vec<_> = text
-                .replace("\r\n", "\n")
-                .replace('\r', "\n")
-                .split_terminator('\n')
-                .map(|s| json!({"line":s}))
-                .collect();
-            if rows.len() > 1000 {
-                return Err(err(413, "IMPORT_ROW_LIMIT"));
-            }
-            if rows.iter().map(|r| r.to_string().len()).sum::<usize>() > 1024 * 1024 {
-                return Err(err(413, "IMPORT_OUTPUT_LIMIT"));
-            }
-            return Ok(
-                json!({"columns":["line"],"columnTypes":["VARCHAR"],"rowCount":rows.len(),"rows":rows}),
-            );
-        }
-        let format = input["format"].as_str().unwrap_or("csv");
-        let reader = if mode == "import" {
-            if input["parsing"]["format"] == "parquet" {
-                format!("read_parquet({})", quote(path))
-            } else {
-                let d = input["parsing"]["delimiter"].as_str().unwrap_or(",");
-                if ![",", "\t", ";", "|"].contains(&d) {
-                    return Err(err(400, "INVALID_EXPORT"));
-                }
-                format!(
-                    "read_csv({},header={},delim={},all_varchar=true,strict_mode=true,allow_quoted_nulls=false,quote='\"',escape='\"')",
-                    quote(path),
-                    input["parsing"]["header"] == true,
-                    quote(d)
-                )
-            }
-        } else {
-            format!(
-                "{}({})",
-                if format == "parquet" {
-                    "read_parquet"
-                } else {
-                    "read_csv_auto"
-                },
-                quote(path)
-            )
-        };
-        let preview = mode == "preview";
-        run(
-            &conn,
-            &format!(
-                "CREATE {} \"file\" AS SELECT * FROM {reader}",
-                if preview || mode == "import" {
-                    "VIEW"
-                } else {
-                    "TABLE"
-                }
-            ),
-        )?;
-        let schema = query(&conn, "DESCRIBE \"file\"", 1000, 1024 * 1024, false)?["rows"].clone();
-        let rows_limit = if preview { 21 } else { 1000 };
-        let mut total = Value::Null;
-        if preview && format == "parquet" {
-            total = query(
-                &conn,
-                &format!(
-                    "SELECT num_rows FROM parquet_file_metadata({})",
-                    quote(path)
-                ),
-                1,
-                4096,
-                false,
-            )?["rows"][0]["num_rows"]
-                .clone();
-        }
-        if mode == "analysis" {
-            run(
-                &conn,
-                "SET enable_external_access=false; SET lock_configuration=true",
-            )?;
-        }
-
-        let sql = if preview {
-            format!("SELECT * FROM \"file\" LIMIT {rows_limit}")
-        } else if mode == "import" {
-            "SELECT * FROM \"file\"".into()
-        } else {
-            input["script"].as_str().unwrap_or("").to_owned()
-        };
-        if !one_statement(&sql) || !read_statement(&conn, &sql)? {
-            return Err(err(422, "READ_ONLY_SQL"));
-        }
-        if mode == "import" && schema.as_array().is_some_and(|v| v.len() > 100) {
-            return Err(err(413, "IMPORT_COLUMN_LIMIT"));
-        }
-        let mut result = query_bounded(
-            &conn,
-            &sql,
-            rows_limit,
-            if preview { 128 * 1024 } else { 1024 * 1024 },
-            true,
-            mode == "import",
-        )?;
-        if mode == "import" && result["columns"].as_array().is_some_and(|v| v.len() > 100) {
-            return Err(err(413, "IMPORT_COLUMN_LIMIT"));
-        }
-        if preview {
-            if result["columns"].as_array().is_some_and(|v| v.len() > 50) {
-                return Err(err(422, "PREVIEW_COLUMN_LIMIT"));
-            }
-            let rows = result["rows"].as_array_mut().expect("rows");
-            let truncated = rows.len() > 20;
-            rows.truncate(20);
-            result["rowCount"] = json!(rows.len());
-            result["truncated"] = json!(truncated);
-            result["totalRows"] = total;
-            result["typesInferred"] = json!(format == "csv");
-        } else if mode != "import" {
-            result["stdout"] = json!("");
-            result["stderr"] = json!("");
-            result["exitCode"] = json!(0);
-        }
-        if mode != "import" {
-            result["schema"] = schema;
-        }
-        Ok(result)
     }
+
+    let sql = if preview {
+        format!("SELECT * FROM \"file\" LIMIT {rows_limit}")
+    } else if mode == "import" {
+        "SELECT * FROM \"file\"".into()
+    } else {
+        input["script"].as_str().unwrap_or("").to_owned()
+    };
+    if !one_statement(&sql) || !read_statement(&conn, &sql)? {
+        return Err(err(422, "READ_ONLY_SQL"));
+    }
+    if mode == "import" && schema.as_array().is_some_and(|v| v.len() > 100) {
+        return Err(err(413, "IMPORT_COLUMN_LIMIT"));
+    }
+    let mut result = query_bounded(
+        &conn,
+        &sql,
+        rows_limit,
+        if preview { 128 * 1024 } else { 1024 * 1024 },
+        true,
+        mode == "import",
+    )?;
+    if mode == "import" && result["columns"].as_array().is_some_and(|v| v.len() > 100) {
+        return Err(err(413, "IMPORT_COLUMN_LIMIT"));
+    }
+    if preview {
+        if result["columns"].as_array().is_some_and(|v| v.len() > 50) {
+            return Err(err(422, "PREVIEW_COLUMN_LIMIT"));
+        }
+        let rows = result["rows"].as_array_mut().expect("rows");
+        let truncated = rows.len() > 20;
+        rows.truncate(20);
+        result["rowCount"] = json!(rows.len());
+        result["truncated"] = json!(truncated);
+        result["totalRows"] = total;
+        result["typesInferred"] = json!(format == "csv");
+    } else if mode != "import" {
+        result["stdout"] = json!("");
+        result["stderr"] = json!("");
+        result["exitCode"] = json!(0);
+    }
+    if mode != "import" {
+        result["schema"] = schema;
+    }
+    Ok(result)
 }
 pub async fn bash(input: &Value) -> Result<Value> {
     use bashkit::ReadOnlyFs;
@@ -638,28 +547,6 @@ pub async fn bash(input: &Value) -> Result<Value> {
     )
 }
 
-fn database_query(conn: &Connection, sql: &str, read_only: bool) -> Result<Value> {
-    if sql.trim().is_empty() || sql.len() > 65536 || !one_statement(sql) {
-        return Err(err(400, "INVALID_SQL"));
-    }
-    let read = read_statement(conn, sql)?;
-    if !allowed(sql) || (read_only && !read) {
-        return Err(err(403, "SQL_PERMISSION_DENIED"));
-    }
-    let unquoted = regex::Regex::new(r#"(?s)'(?:''|[^'])*'|"(?:""|[^"])*"|--[^\n]*|/\*.*?\*/"#)
-        .expect("regex")
-        .replace_all(sql, "");
-    let returning = regex::Regex::new(r"(?i)\bRETURNING\b")
-        .expect("regex")
-        .is_match(&unquoted);
-    if read || returning {
-        query(conn, sql, 1000, 1024 * 1024, false)
-    } else {
-        let n = conn.execute(sql, []).map_err(safe_error)?;
-        Ok(json!({"columns":[],"rows":[],"rowCount":0,"affectedRows":n}))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -714,14 +601,12 @@ mod tests {
         ] {
             assert!(one_statement(sql), "{sql}");
         }
-        let conn = setup().unwrap();
-        assert_eq!(
-            database_query(&conn, "CREATE TABLE injected(a INT); SELECT 1", false)
-                .unwrap_err()
-                .code,
-            "INVALID_SQL"
-        );
-        assert!(conn.prepare("SELECT * FROM injected").is_err());
+        for mode in ["database", "probe"] {
+            assert_eq!(
+                duckdb(&json!({"mode":mode})).unwrap_err().code,
+                "INVALID_EXECUTE_INPUT"
+            );
+        }
     }
     #[test]
     fn csv_preview_and_import_keep_limits_without_mutating_source() {

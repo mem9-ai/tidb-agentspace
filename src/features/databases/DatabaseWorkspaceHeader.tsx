@@ -35,15 +35,9 @@ export function DatabaseWorkspaceHeader({
   const provider =
     database.provider === 'db9-anonymous'
       ? 'PostgreSQL compatible · Trial'
-      : database.provider === 'duckdb-drive9'
-        ? 'DuckDB · Experimental'
-        : database.provider === 'tidb-cloud-zero'
-          ? 'TiDB Cloud Zero · MySQL compatible'
-          : `${resourceKindLabels[database.kind]} · Local demo`;
+      : `${resourceKindLabels[database.kind]} · Local demo`;
   const expiry = database.expiresAt ? new Date(database.expiresAt) : null;
-  const live = ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
-    database.provider || '',
-  );
+  const live = database.provider === 'db9-anonymous';
   return (
     <>
       <ResourceWorkspaceHeader
@@ -73,9 +67,6 @@ export function DatabaseWorkspaceHeader({
                   Temporary database · Expires {expiry.toLocaleString()}. Export important data
                   before expiry.
                 </Text>
-              )}
-              {database.kind === 'duckdb' && (
-                <Text>Persistent DuckDB with private backing storage.</Text>
               )}
             </ResourceDetails>
             <ResourceTutorialButton

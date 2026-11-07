@@ -79,8 +79,13 @@ test(
     const before = fixture.provider.calls;
     const listed = await fixture.request('/resources');
     assert.equal(listed.status, 200);
-    assert.equal(listed.body.capabilities.mysql.available, false);
-    assert.equal(listed.body.capabilities.duckdb.available, false);
+    const expectedKinds = ['filesystem', 'postgresql'];
+    assert.deepEqual(Object.keys(listed.body.capabilities).sort(), expectedKinds);
+    for (const path of ['/context', '/bootstrap']) {
+      const response = await fixture.request(path);
+      assert.equal(response.status, 200);
+      assert.deepEqual(Object.keys(response.body.capabilities).sort(), expectedKinds);
+    }
     assert.ok(listed.body.data.some((resource) => resource.id === 'db_pg'));
     assert.ok(listed.body.data.some((resource) => resource.id === 'fs_shared'));
     assert.ok(listed.body.data.every((resource) => !['mysql', 'duckdb'].includes(resource.kind)));
@@ -88,6 +93,9 @@ test(
       ['mysql', 'db_retired_mysql'],
       ['duckdb', 'db_duck'],
     ]) {
+      for (const method of ['GET', 'DELETE']) {
+        assert.equal((await fixture.request(`/resources/${id}`, { method })).status, 404);
+      }
       const create = await fixture.request('/resources', {
         method: 'POST',
         body: { kind, name: 'retired-db', region: 'automatic' },

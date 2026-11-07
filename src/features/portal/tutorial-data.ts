@@ -25,7 +25,7 @@ export const expectedTotals = [
 ];
 
 export function liveDatabase(resource: Pick<Resource, 'provider'>) {
-  return ['tidb-cloud-zero', 'db9-anonymous', 'duckdb-drive9'].includes(resource.provider || '');
+  return resource.provider === 'db9-anonymous';
 }
 
 export function tutorialSample(id: string) {
@@ -39,12 +39,7 @@ export function totalsQuery(table: string) {
 
 export function databaseTutorial(resource: Pick<Resource, 'kind' | 'provider'>, id: string) {
   const sample = tutorialSample(id);
-  const table =
-    resource.kind === 'postgresql'
-      ? `"workspace"."${sample.table}"`
-      : resource.kind === 'duckdb'
-        ? `"main"."${sample.table}"`
-        : `\`${sample.table}\``;
+  const table = `"workspace"."${sample.table}"`;
   return {
     table: sample.table,
     query: liveDatabase(resource) ? totalsQuery(table) : 'SELECT * FROM agent_events LIMIT 10;',
