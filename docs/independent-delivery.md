@@ -126,7 +126,8 @@ segments, without a trailing slash. All API calls, schema links and generated
 instructions use the resulting base URL.
 
 Set `WORKSPACE_PUBLIC_PATH=/studio` on the API. A gateway forwards
-`/studio/api/*` to `/api/*` and `/studio/openapi.json` to `/openapi.json`,
+`/studio/api/*` to `/api/*`, `/studio/openapi.json` to `/openapi.json`, and
+`/studio/owner-openapi.json` to `/owner-openapi.json`,
 without changing methods, request bodies or authentication headers. The API
 still serves no Console assets. Keep API rules before any static SPA fallback;
 API errors must never become successful HTML responses.

@@ -72,7 +72,7 @@ test(
     const key = await fixture.issueKey({
       name: 'retired-database-denial',
       scopes: ['resources:read', 'queries:execute'],
-      resourceIds: ['db_retired_mysql', 'db_duck'],
+      resourceIds: ['*'],
       expiresInDays: 7,
     });
     assert.equal(key.status, 201, JSON.stringify(key.body));
@@ -93,6 +93,25 @@ test(
       ['mysql', 'db_retired_mysql'],
       ['duckdb', 'db_duck'],
     ]) {
+      const created = await fixture.globalRequest('/keys', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+        body: {
+          name: 'retired-target',
+          scopes: ['resources:read'],
+          resourceIds: [id],
+          expiresAt: Math.floor(Date.now() / 1000) + 3600,
+        },
+      });
+      assert.equal(created.status, 201);
+      assert.equal(created.body.regionalStatus, 'pending');
+      const denied = await fixture.globalRequest('/token-issuances', {
+        method: 'POST',
+        token: created.body.secret,
+        body: { audience: fixture.endpoints.regionId },
+      });
+      assert.equal(denied.status, 503);
+      assert.equal(denied.body.accessToken, undefined);
       for (const method of ['GET', 'DELETE']) {
         assert.equal((await fixture.request(`/resources/${id}`, { method })).status, 404);
       }
@@ -1011,6 +1030,44 @@ for (const transport of ['remote', 'inProcess']) {
     (t) => productApiCases(t, transport),
   );
 }
+
+test(
+  'Workspace Key records a PostgreSQL query that outlasts the regional clock reservation',
+  { skip: process.env.WORKSPACE_BACKEND_TEST !== '1', timeout: 60000 },
+  async (t) => {
+    const f = await productApiFixture(
+      t,
+      'remote',
+      async () => {
+        // The hosted security clock reserves five seconds at a time.
+        await new Promise((resolve) => setTimeout(resolve, 6100));
+        return { body: { columns: ['total'], rows: [{ total: 42 }], rowCount: 1 } };
+      },
+      { metadataSecurityState: true },
+    );
+    const issued = await f.issueKey({
+      name: 'query-reader',
+      scopes: ['queries:read', 'usage:read'],
+      resourceIds: ['db_pg'],
+      expiresInDays: 1,
+    });
+    assert.equal(issued.status, 201);
+    const token = issued.body.secret;
+    const before = await f.request('/usage', { token });
+    assert.equal(before.status, 200);
+    const result = await f.request('/queries', {
+      method: 'POST',
+      token,
+      body: { resourceId: 'db_pg', sql: 'SELECT 42 AS total' },
+    });
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.deepEqual(result.body.rows, [{ total: 42 }]);
+    const after = await f.request('/usage', { token });
+    assert.equal(after.status, 200);
+    assert.equal(after.body.queryCount, before.body.queryCount + 1);
+    assert.equal(f.provider.statements.filter((sql) => sql === 'SELECT 42 AS total').length, 1);
+  },
+);
 
 test(
   'Region data API and retained credentials survive an independent Global Meta process outage',

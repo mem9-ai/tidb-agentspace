@@ -17,10 +17,7 @@ export async function agentRestCases(t, transport) {
     assert.equal(JSON.stringify(r.body).includes(nativeSecret), false);
     return r;
   };
-  const key = async (
-    scopes,
-    resourceIds = ['fs_shared', 'fs_live', 'db_live', 'db_pg', 'db_duck'],
-  ) => {
+  const key = async (scopes, resourceIds = ['fs_shared', 'fs_live', 'db_live', 'db_pg']) => {
     const r = await f.issueKey({ name: 'agent-p0', scopes, resourceIds, expiresInDays: 7 });
     assert.equal(r.status, 201, JSON.stringify(r.body));
     return r.body;
@@ -372,10 +369,10 @@ export async function agentRestCases(t, transport) {
       assert.equal(cross.status, 401);
       assert.equal(f.provider.calls, before);
       await request('/resources/missing', { token: full.secret }, 403, 'RESOURCE_ACCESS_DENIED');
-      const oldKey = await key(['resources:read', 'resources:write'], ['db_retired_mysql']);
+      const wildcard = await key(['resources:read', 'resources:write'], ['*']);
       await request(
         '/resources/db_retired_mysql',
-        { method: 'DELETE', token: oldKey.secret },
+        { method: 'DELETE', token: wildcard.secret },
         404,
         'NOT_FOUND',
       );
@@ -507,7 +504,12 @@ export async function agentRestCases(t, transport) {
     await request('/resources/db_pg', { method: 'DELETE', token: full.secret }, 202);
     assert.equal(f.provider.deleted.length, before);
     await request('/queries', q('db_pg', 'SELECT 1'), 409, 'RESOURCE_DELETING');
-    await request('/resources/db_duck', { method: 'DELETE', token: full.secret }, 404, 'NOT_FOUND');
+    await request(
+      '/resources/db_duck',
+      { method: 'DELETE', token: full.secret },
+      403,
+      'RESOURCE_ACCESS_DENIED',
+    );
     assert.equal(f.provider.deleted.length, before);
     assert.ok(f.provider.deleted.some((d) => d.kind === 'db9'));
     const records = await f.records([
