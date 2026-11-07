@@ -18,6 +18,7 @@ export async function productApiFixture(
   onSql,
   {
     missingBinding = false,
+    metadataSecurityState = false,
     mysqlProvider = 'tidb-cloud-zero',
     fresh = false,
     filesProvider = 'drive9-anonymous',
@@ -197,7 +198,10 @@ export async function productApiFixture(
             transport === 'remote' || index > 0
               ? { transport: 'remote', client: region.clientConfig }
               : { transport, authorityId: region.server.authorityId },
-          security: globals[index].security,
+          security: {
+            ...globals[index].security,
+            metadataSecurityState: metadataSecurityState && index === 0,
+          },
           product: {
             providers: {
               filesProvider,

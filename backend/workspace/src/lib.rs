@@ -30,6 +30,13 @@ pub trait ScopedAuthorization: Send + Sync {
     fn workspace_key_id(&self) -> Option<&str> {
         None
     }
+    /// Prepare the trusted time source after asynchronous I/O and before a synchronous
+    /// transaction check. The snapshot still enforces the actual credential expiry.
+    fn prepare_snapshot(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + '_>> {
+        Box::pin(async { Ok(()) })
+    }
     fn snapshot(&self) -> Result<Principal>;
     fn check(
         &self,

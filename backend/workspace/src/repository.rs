@@ -649,6 +649,9 @@ impl Repository {
                 previous.extend(self.files_for_resources(&filesystems).await?);
             }
         }
+        if let KeyLoad::Credential(crate::Credential::Scoped(authorization)) = projection.keys {
+            authorization.prepare_snapshot().await?;
+        }
         self.apply_transaction(previous, apply, fence_reads).await
     }
 
@@ -2227,7 +2230,7 @@ mod concurrency_tests {
                 &crate::Credential::LocalDemoOwner,
                 Some("owner:independent"),
                 "fingerprint",
-                json!({"id":"db_new","name":"independent-duck","kind":"duckdb","status":"active","region":"automatic","provider":"local"}),
+                json!({"id":"db_new","name":"independent-pg","kind":"postgresql","status":"active","region":"automatic","provider":"db9-anonymous"}),
                 json!({"id":"event-independent","action":"resource.created"}),
             ),
         ).await.expect("independent creation was serialized").unwrap();
@@ -2361,7 +2364,7 @@ mod concurrency_tests {
     #[tokio::test]
     async fn a_resource_update_racing_index_initialization_is_retried() {
         let metadata = Arc::new(MetadataGate {
-            values:std::sync::Mutex::new([("state/resources/race".into(),json!({"version":"v1","value":{"position":1,"record":{"id":"race","name":"old-name","kind":"mysql","status":"active","region":"automatic"}}}))].into_iter().collect()),
+            values:std::sync::Mutex::new([("state/resources/race".into(),json!({"version":"v1","value":{"position":1,"record":{"id":"race","name":"old-name","kind":"filesystem","status":"active","region":"aws-ap-southeast-1","provider":"drive9-anonymous"}}}))].into_iter().collect()),
             paused:Notify::new(), resume:Notify::new(), first:AtomicBool::new(true),
             fail_backfill_once:AtomicBool::new(false), fail_file_backfill_once:AtomicBool::new(false),
             fail_event_backfill_once:AtomicBool::new(false), forbid_event_scan:AtomicBool::new(false), forbid_file_scan:AtomicBool::new(false),
@@ -2450,7 +2453,7 @@ mod concurrency_tests {
             async move {
                 repository.create_indexed_resource(
                 &crate::Credential::Bearer(token.into()), Some("owner:key-race"), "fingerprint",
-                json!({"id":"db_revoke","name":"revoke-test","kind":"duckdb","status":"active","region":"automatic","provider":"local"}),
+                json!({"id":"db_revoke","name":"revoke-test","kind":"postgresql","status":"active","region":"automatic","provider":"db9-anonymous"}),
                 json!({"id":"event-revoke","action":"resource.created"}),
             ).await
             }
@@ -2740,7 +2743,7 @@ mod concurrency_tests {
             values: std::sync::Mutex::new((0..1541).map(|n| {
                 let id = format!("db_{n:06}");
                 (format!("state/resources/{id}"), json!({"version":"v1","value":{"position":n,"record":{
-                    "id":id,"name":format!("existing-{n}"),"kind":"mysql","status":"active","region":"automatic"
+                    "id":id,"name":format!("existing-{n}"),"kind":"filesystem","status":"active","region":"aws-ap-southeast-1","provider":"drive9-anonymous"
                 }}}))
             }).collect()),
             paused: Notify::new(),
@@ -2771,7 +2774,7 @@ mod concurrency_tests {
             resource_backfill_error: std::sync::Mutex::new(None),
         };
         let repository = Arc::new(repository);
-        let resource = json!({"id":"db_new","name":"new-duck","kind":"duckdb","status":"active","region":"automatic","provider":"local"});
+        let resource = json!({"id":"db_new","name":"new-postgres","kind":"postgresql","status":"active","region":"automatic","provider":"db9-anonymous"});
         let event = json!({"id":"event-new","action":"resource.created"});
         let result = repository
             .create_indexed_resource(
@@ -2831,8 +2834,11 @@ mod concurrency_tests {
                 )
             })
             .collect::<BTreeMap<_, _>>();
-        assert_eq!(counts.get("[\"database\",\"mysql\"]"), Some(&1541));
-        assert_eq!(counts.get("[\"database\",\"duckdb\"]"), Some(&1));
+        assert_eq!(
+            counts.get("[\"filesystem\",\"aws-ap-southeast-1\",\"drive9-anonymous\"]"),
+            Some(&1541)
+        );
+        assert_eq!(counts.get("[\"database\",\"postgresql\"]"), Some(&1));
         assert_eq!(
             values["indexes/resource-v1/schema"]["value"]["phase"],
             "ready"
@@ -2846,7 +2852,7 @@ mod concurrency_tests {
                 let id = format!("db_{n:06}");
                 let name = if n == 1540 { "existing-0".to_owned() } else { format!("existing-{n}") };
                 (format!("state/resources/{id}"), json!({"version":"v1","value":{"position":n,"record":{
-                    "id":id,"name":name,"kind":"mysql","status":"active","region":"automatic"
+                    "id":id,"name":name,"kind":"filesystem","status":"active","region":"aws-ap-southeast-1","provider":"drive9-anonymous"
                 }}}))
             }).collect()),
             paused: Notify::new(), resume: Notify::new(), first: AtomicBool::new(false),
@@ -2875,7 +2881,7 @@ mod concurrency_tests {
             resource_backfill_error: std::sync::Mutex::new(None),
         };
         let repository = Arc::new(repository);
-        let resource = json!({"id":"db_new","name":"new-duck","kind":"duckdb","status":"active","region":"automatic","provider":"local"});
+        let resource = json!({"id":"db_new","name":"new-postgres","kind":"postgresql","status":"active","region":"automatic","provider":"db9-anonymous"});
         let event = json!({"id":"event-new","action":"resource.created"});
         let create = || {
             repository.create_indexed_resource(
@@ -2924,7 +2930,7 @@ mod concurrency_tests {
         assert_eq!(created.unwrap()["id"], "db_new");
         let records = metadata.values.lock().unwrap();
         assert!(records.values().any(|entry| entry["value"]["group"]
-            == "[\"database\",\"mysql\"]"
+            == "[\"filesystem\",\"aws-ap-southeast-1\",\"drive9-anonymous\"]"
             && entry["value"]["count"] == 1542));
     }
 

@@ -27,7 +27,7 @@ use std::{
 use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 use uuid::Uuid;
 use workspace_contracts::{MetaRequest, Metadata, Result, Scope, ServiceError};
-use workspace_domain::{Credential, Principal, ScopedAuthorization};
+use workspace_domain::{Credential, Principal, ScopedAuthorization, visible_resource};
 use workspace_identity::{
     enrollment_ticket::{TicketTrust, TicketVerifier},
     regional_key_policy::{KeyPolicies, KeyPolicy, VerifiedKeyBinding},
@@ -1090,6 +1090,9 @@ impl ScopedAuthorization for Authorization {
     fn workspace_key_id(&self) -> Option<&str> {
         Some(self.token.key_id())
     }
+    fn prepare_snapshot(&self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>> {
+        Box::pin(async { self.runtime.clock.now().await.map(|_| ()) })
+    }
     fn snapshot(&self) -> Result<Principal> {
         let now = self.runtime.clock.snapshot()?;
         if self.token.expires_at() <= now {
@@ -1138,13 +1141,7 @@ impl PolicyInstaller for Runtime {
                 .collect::<Vec<_>>();
             if !policy.revoked
                 && (resources.len() != ids.len()
-                    || resources.iter().any(|resource| {
-                        !matches!(
-                            resource["kind"].as_str(),
-                            Some("mysql" | "duckdb" | "filesystem")
-                        ) && !(resource["kind"] == "postgresql"
-                            && resource["provider"] == "db9-anonymous")
-                    }))
+                    || resources.iter().any(|resource| !visible_resource(resource)))
             {
                 return Err(error(403, "RESOURCE_ACCESS_DENIED"));
             }

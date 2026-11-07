@@ -8,7 +8,8 @@ PostgreSQL retains its availability flag so clients can distinguish an unconfigu
 
 Resource schemas, examples, tutorials, catalog queries and imports follow the same boundary.
 Authorized requests to read or delete an old standalone database by ID return 404 before
-provider I/O. Its stored data and credentials stay untouched. Database queries accept SQL
+provider I/O. Regional grants reject explicit targets for unsupported kinds. Only supported resources count
+toward a quota. Stored data and credentials for retired resources stay untouched. Database queries accept SQL
 for the selected PostgreSQL database. File analysis continues to execute SQL over an
 authorized file snapshot.
 

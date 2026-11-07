@@ -25,7 +25,7 @@ fn name(resource: &Value) -> Option<&str> {
     }
 }
 fn quota(resource: &Value) -> Option<String> {
-    if resource["status"] == "deleted" {
+    if !crate::visible_resource(resource) || resource["status"] == "deleted" {
         return None;
     }
     let kind = resource["kind"].as_str()?;
@@ -38,12 +38,8 @@ fn quota(resource: &Value) -> Option<String> {
             ])
             .to_string(),
         )
-    } else if ["mysql", "duckdb", "postgresql"].contains(&kind)
-        && (kind != "postgresql" || resource["provider"] == "db9-anonymous")
-    {
-        Some(json!(["database", kind]).to_string())
     } else {
-        None
+        Some(json!(["database", kind]).to_string())
     }
 }
 fn counter(record: &Value, group: &str) -> Result<u64> {
@@ -555,5 +551,17 @@ impl Repository {
             }
         }
         unreachable!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retired_database_records_do_not_consume_quota() {
+        for kind in ["mysql", "duckdb"] {
+            assert!(quota(&json!({"kind":kind,"status":"active","region":"automatic"})).is_none());
+        }
     }
 }
