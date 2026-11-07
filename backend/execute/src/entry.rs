@@ -21,7 +21,7 @@ pub async fn execute_entry() -> Result<()> {
         native::duckdb(&input)
     };
     let result = result.map_err(|e| {
-        if input["mode"] != "database" && input["mode"] != "probe" && e.code.starts_with("SQL_") {
+        if e.code.starts_with("SQL_") {
             err(422, "ANALYSIS_FAILED")
         } else {
             e

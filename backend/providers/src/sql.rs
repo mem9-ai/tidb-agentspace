@@ -17,9 +17,6 @@ pub async fn execute_native_read_only(b: &Value, sql: &str, read_only: bool) -> 
         return execute_native(b, sql, false).await;
     }
     tokio::time::timeout(Duration::from_secs(15), async {
-        if b["kind"] == "mysql" {
-            return super::mysql::execute(b, sql).await;
-        }
         postgres_queries_mode(connect_postgres(b).await?, &[sql], false, true)
             .await
             .map(|mut v| v.remove(0))
@@ -28,11 +25,7 @@ pub async fn execute_native_read_only(b: &Value, sql: &str, read_only: bool) -> 
     .map_err(|_| err(504, "SQL_TIMEOUT"))?
 }
 async fn execute(b: &Value, sql: &str, setup: bool) -> Result<Value> {
-    if b["kind"] == "mysql" {
-        super::mysql::execute(b, sql).await
-    } else {
-        postgres_query(connect_postgres(b).await?, sql, setup).await
-    }
+    postgres_query(connect_postgres(b).await?, sql, setup).await
 }
 async fn connect_postgres(b: &Value) -> Result<sqlx::PgConnection> {
     let options = sqlx::postgres::PgConnectOptions::new_without_pgpass()

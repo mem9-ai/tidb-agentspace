@@ -309,7 +309,7 @@ test('@visual saving a database sample shows activity without repeating the writ
   workspace,
 }) => {
   workspace.addResources();
-  workspace.state.resources[0].provider = 'tidb-cloud-zero';
+  workspace.state.resources[0].provider = 'db9-anonymous';
   let release;
   const pending = new Promise((resolve) => {
     release = resolve;
@@ -368,7 +368,7 @@ test('uncertain tutorial writes are checked without replay and missing resource 
   workspace,
 }) => {
   workspace.addResources();
-  workspace.state.resources[0].provider = 'tidb-cloud-zero';
+  workspace.state.resources[0].provider = 'db9-anonymous';
   const { calls } = await tutorialApi(context, workspace, { uncertainSeed: true });
   await workspace.open('#tutorials?resourceId=db_fixture');
   const database = page.locator('#tutorial-database');
@@ -417,7 +417,7 @@ test('unavailable progress blocks sample writes and unknown save acknowledgement
   workspace,
 }) => {
   workspace.addResources();
-  workspace.state.resources[0].provider = 'tidb-cloud-zero';
+  workspace.state.resources[0].provider = 'db9-anonymous';
   const { calls } = await tutorialApi(context, workspace);
   let unavailable = true;
   let loseAcknowledgement = true;
@@ -572,7 +572,7 @@ test('database sample progress resumes in a fresh browser without repeating its 
   browser,
 }, testInfo) => {
   workspace.addResources();
-  workspace.state.resources[0].provider = 'tidb-cloud-zero';
+  workspace.state.resources[0].provider = 'db9-anonymous';
   const api = await tutorialApi(context, workspace);
   await workspace.open('#tutorials?resourceId=db_fixture');
   const tutorial = page.locator('#tutorial-database');

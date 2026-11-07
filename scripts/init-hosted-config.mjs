@@ -81,7 +81,6 @@ export async function initializeHostedConfig({ directory, mountDirectory, input 
     product: input.product || {
       providers: {
         filesProvider: 'drive9-anonymous',
-        mysqlProvider: 'tidb-cloud-zero',
         postgresProvider: 'local',
       },
     },

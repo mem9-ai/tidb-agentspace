@@ -20,7 +20,6 @@ futures.workspace = true
 workspace-contracts.workspace = true
 workspace-domain.workspace = true
 workspace-identity.workspace = true
-mysql_async.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true

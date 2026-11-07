@@ -29,13 +29,7 @@ export function ResourceAccessPicker({
                 <span>
                   {resource.name}{' '}
                   <span id={`key-resource-kind-${index}`} className="key-resource-kind">
-                    {resource.kind === 'mysql'
-                      ? 'MySQL database'
-                      : resource.kind === 'postgresql'
-                        ? 'PostgreSQL database'
-                        : resource.kind === 'duckdb'
-                          ? 'DuckDB database'
-                          : 'File System'}
+                    {resource.kind === 'postgresql' ? 'PostgreSQL database' : 'File System'}
                   </span>
                 </span>
               }

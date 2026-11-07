@@ -19,9 +19,10 @@ use std::{
 };
 use tokio::sync::Mutex;
 use workspace_contracts::{Result, ServiceError};
+pub use workspace_domain::visible_resource;
 use workspace_domain::{Credential, Principal, Workspace, principal, secret};
 use workspace_execute::Executor;
-use workspace_providers::{DB9, DRIVE9, DUCKDB, Providers, ZERO, err, timestamp};
+use workspace_providers::{DB9, DRIVE9, Providers, err, timestamp};
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
@@ -72,32 +73,11 @@ pub enum Reply {
         filename: String,
     },
 }
-fn creation_reply(
-    data: Value,
-    is_live: bool,
-    is_new: bool,
-    principal: Option<&Principal>,
-    snapshot: Option<Value>,
-) -> Value {
-    let mut reply = json!({"data":data,"mode":if is_live{"live"}else{"demo"}});
-    if is_new
-        && reply["data"]["kind"] == "duckdb"
-        && reply["data"]["status"] == "active"
-        && principal.is_some_and(|p| {
-            p.scope("queries:read").is_ok()
-                && reply["data"]["id"].as_str().is_some_and(|id| p.has(id))
-        })
-        && let Some(snapshot) = snapshot
-    {
-        reply["initialTableSnapshot"] = snapshot;
-    }
-    reply
-}
 impl Product {
     pub async fn new(workspace: Arc<Workspace>, config: Config) -> Result<Self> {
         config.validate()?;
         let providers = Providers::new(config.providers, workspace.repository())?;
-        let execute = Executor::new(config.execute).await;
+        let execute = Executor::default();
         Ok(Self {
             workspace,
             providers,
@@ -135,9 +115,6 @@ impl Product {
         let (id, kind) = selection.ok_or_else(|| err(500, "RESOURCE_CONTEXT_REQUIRED"))?;
         let resource = self.workspace.repository().resource(id).await?;
         let r = p.resource(&json!({"resources":[resource]}), id, kind)?;
-        if retired_database(&r) {
-            return Err(err(404, "NOT_FOUND"));
-        }
         if r["status"] == "deleting" || r["status"] == "deleted" {
             return Err(err(409, "RESOURCE_DELETING"));
         }
@@ -145,15 +122,31 @@ impl Product {
     }
     pub fn capabilities(&self) -> Value {
         let c = &self.providers.config;
-        json!({"mysql":{"label":if c.mysql_provider==ZERO{"MySQL · TiDB Cloud Zero"}else{"MySQL demo"},"regions":if c.mysql_provider==ZERO{vec!["automatic"]}else{vec!["aws-us-east-1","aws-us-west-2"]},"storageGiB":if c.mysql_provider==ZERO{Value::Null}else{json!(5)},"monthlyRU":if c.mysql_provider==ZERO{Value::Null}else{json!(50_000_000)},"preview":false,"available":false,"provider":c.mysql_provider},"postgresql":{"label":"PostgreSQL Compatible","regions":["automatic"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":c.postgres_provider==DB9,"provider":DB9},"duckdb":{"label":"DuckDB","regions":["aws-ap-southeast-1"],"storageGiB":null,"monthlyRU":null,"preview":true,"available":false,"provider":DUCKDB},"filesystem":{"label":"TiDB Cloud File System","regions":if c.files_provider==DRIVE9{vec!["aws-ap-southeast-1"]}else{vec!["aws-ap-southeast-1","aws-us-west-2"]},"storageGiB":if c.files_provider==DRIVE9{Value::Null}else{json!(2)},"maxFiles":if c.files_provider==DRIVE9{Value::Null}else{json!(2000)},"preview":true,"provider":c.files_provider}})
+        let live_files = c.files_provider == DRIVE9;
+        json!({
+            "postgresql": {
+                "label": "PostgreSQL Compatible",
+                "regions": ["automatic"],
+                "storageGiB": null,
+                "monthlyRU": null,
+                "preview": true,
+                "available": c.postgres_provider == DB9,
+                "provider": DB9
+            },
+            "filesystem": {
+                "label": "TiDB Cloud File System",
+                "regions": if live_files { vec!["aws-ap-southeast-1"] } else { vec!["aws-ap-southeast-1", "aws-us-west-2"] },
+                "storageGiB": (!live_files).then_some(2),
+                "maxFiles": (!live_files).then_some(2000),
+                "preview": true,
+                "provider": c.files_provider
+            }
+        })
     }
     pub async fn mode(&self) -> Result<&'static str> {
         let config = &self.providers.config;
         Ok(
-            if config.files_provider == DRIVE9
-                || config.mysql_provider == ZERO
-                || config.postgres_provider == DB9
-            {
+            if config.files_provider == DRIVE9 || config.postgres_provider == DB9 {
                 "hybrid"
             } else {
                 "demo"
@@ -161,31 +154,13 @@ impl Product {
         )
     }
     pub async fn update_resource(&self, resource: Value, provision: bool) -> Result<Value> {
-        Ok(self
-            .update_resource_with_snapshot(resource, provision)
-            .await?
-            .0)
-    }
-    async fn update_resource_with_snapshot(
-        &self,
-        resource: Value,
-        provision: bool,
-    ) -> Result<(Value, Option<Value>)> {
         if !resource["deletion"].is_null() || !live(&resource) {
-            return Ok((resource, None));
+            return Ok(resource);
         }
         let id = text(&resource, "id")?.to_owned();
-        let mut snapshot = None;
         let info = if provision {
             if resource["provider"] == DRIVE9 {
                 self.providers.provision_files(&id).await
-            } else if resource["provider"] == DUCKDB {
-                self.setup_duckdb_with_snapshot(&resource)
-                    .await
-                    .map(|(info, tables)| {
-                        snapshot = tables;
-                        info
-                    })
             } else {
                 self.providers.provision_database(&resource).await
             }
@@ -217,46 +192,7 @@ impl Product {
                 Ok(current.clone())
             })
             .await?;
-        Ok((saved, snapshot))
-    }
-    async fn setup_duckdb(&self, r: &Value) -> Result<Value> {
-        Ok(self.setup_duckdb_with_snapshot(r).await?.0)
-    }
-    async fn setup_duckdb_with_snapshot(&self, r: &Value) -> Result<(Value, Option<Value>)> {
-        self.execute.verify()?;
-        let id = text(r, "id")?;
-        let mut b = self.providers.binding("duckdb", id).await?;
-        if b.is_null() {
-            b = json!({"state":"requested","storageId":format!("duckdb_{}",secret(12)?)});
-            self.providers.save_binding("duckdb", id, b.clone()).await?;
-        }
-        if b["state"] == "ready" {
-            return Ok((self.providers.status(r).await?, None));
-        }
-        let info = self
-            .providers
-            .provision_files(text(&b, "storageId")?)
-            .await?;
-        if info["status"] != "active" {
-            return Ok((
-                json!({"status":"provisioning","connectionError":"Database storage is not ready. Retry setup later."}),
-                None,
-            ));
-        }
-        let connection = self
-            .providers
-            .file_connection(text(&b, "storageId")?)
-            .await?;
-        let catalog = self.execute
-            .database(id, connection, "SELECT table_name AS name, table_type AS type FROM information_schema.tables WHERE table_catalog = current_database() AND table_schema = 'main' ORDER BY table_name LIMIT 501", json!([]), false)
-            .await?;
-        let rows = catalog["rows"]
-            .as_array()
-            .ok_or_else(|| err(502, "INVALID_METADATA"))?;
-        let snapshot = json!({"data":rows.iter().take(500).collect::<Vec<_>>(),"truncated":rows.len()>500,"mode":"live"});
-        b["state"] = json!("ready");
-        self.providers.save_binding("duckdb", id, b).await?;
-        Ok((self.providers.status(r).await?, Some(snapshot)))
+        Ok(saved)
     }
     pub async fn record(
         &self,
@@ -441,7 +377,7 @@ impl Product {
                     return Err(err(403, "WORKSPACE_GRANT_REQUIRED"));
                 }
                 let kind = text(&input, "kind").map_err(|_| err(400, "INVALID_KIND"))?;
-                if matches!(kind, "mysql" | "duckdb") {
+                if !matches!(kind, "postgresql" | "filesystem") {
                     return Err(err(400, "INVALID_KIND"));
                 }
                 let name = text(&input, "name").map_err(|_| err(400, "INVALID_NAME"))?;
@@ -482,9 +418,6 @@ impl Product {
                 {
                     return Err(err(400, "UNSUPPORTED_REGION"));
                 }
-                if kind == "duckdb" {
-                    self.execute.verify()?;
-                }
                 if idem.is_some_and(|v| v.encode_utf16().count() > 128) {
                     return Err(err(400, "INVALID_IDEMPOTENCY_KEY"));
                 }
@@ -492,15 +425,13 @@ impl Product {
                 let fingerprint = fingerprint(raw)?;
                 let provider = match kind {
                     "filesystem" => self.providers.config.files_provider.as_str(),
-                    "mysql" => self.providers.config.mysql_provider.as_str(),
                     "postgresql" => DB9,
-                    _ => DUCKDB,
+                    _ => return Err(err(400, "INVALID_KIND")),
                 };
                 let mut resource = json!({"id":format!("{}_{}",if kind=="filesystem"{"fs"}else{"db"},secret(6)?),"name":name,"kind":kind,"region":region,"regionId":authority,"status":if provider=="local"{"active"}else{"provisioning"},"provider":provider,"createdAt":timestamp()});
                 if initial {
                     resource["isDefault"] = json!(true);
                 }
-                let new_id = text(&resource, "id")?.to_owned();
                 let event = json!({"id":uuid::Uuid::new_v4().to_string(),"action":"resource.created","resource":name,"resourceId":resource["id"],"actor":p.actor,"at":timestamp(),"outcome":"success"});
                 let repository = self.workspace.repository();
                 let resource = if initial {
@@ -534,16 +465,11 @@ impl Product {
                 if !authorized.has("*") {
                     return Err(err(403, "WORKSPACE_GRANT_REQUIRED"));
                 }
-                let is_new = resource["id"] == new_id;
-                let (data, snapshot) = self.update_resource_with_snapshot(resource, true).await?;
-                // Setup can take seconds. Do not disclose the catalog from an expired, revoked,
-                // or narrowed credential; creation itself may already have taken effect.
-                let current = if snapshot.is_some() {
-                    self.workspace.authenticate(&credential).await.ok()
-                } else {
-                    None
-                };
-                let reply = creation_reply(data, is_live, is_new, current.as_ref(), snapshot);
+                if !visible_resource(&resource) {
+                    return Err(err(404, "NOT_FOUND"));
+                }
+                let data = self.update_resource(resource, true).await?;
+                let reply = json!({"data":data,"mode":if is_live{"live"}else{"demo"}});
                 return Ok((201, Reply::Json(reply)));
             }
             ("GET", "/usage") => {
@@ -690,17 +616,7 @@ pub fn text<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
     v[key].as_str().ok_or_else(|| err(400, "INVALID_BODY"))
 }
 pub fn live(r: &Value) -> bool {
-    [DRIVE9, ZERO, DB9, DUCKDB].contains(&r["provider"].as_str().unwrap_or(""))
-}
-fn retired_database(r: &Value) -> bool {
-    matches!(r["kind"].as_str(), Some("mysql" | "duckdb"))
-}
-pub fn visible_resource(r: &Value) -> bool {
-    match r["kind"].as_str() {
-        Some("filesystem") => true,
-        Some("postgresql") => r["provider"] == DB9,
-        _ => false,
-    }
+    [DRIVE9, DB9].contains(&r["provider"].as_str().unwrap_or(""))
 }
 pub fn visible(mut state: Value) -> Value {
     let retired = state["resources"]
@@ -755,7 +671,7 @@ pub fn clean_path(path: &str) -> Result<String> {
 }
 fn usage(state: &Value) -> Value {
     json!(state["resources"].as_array().expect("resources").iter().filter(|r|visible_resource(r)).map(|r|{let native=live(r);
-let files=state["files"].as_array().expect("files").iter().filter(|f|f["resourceId"]==r["id"]).collect::<Vec<_>>();json!({"resourceId":r["id"],"name":r["name"],"kind":r["kind"],"storageBytes":if native{Value::Null}else{json!(files.iter().map(|f|f["content"].as_str().unwrap_or("").len()).sum::<usize>())},"storageLimitBytes":if native{Value::Null}else{json!((if r["kind"]=="filesystem"{2u64}else{5})*1024*1024*1024)},"measured":!native,"fileCount":if native{Value::Null}else{json!(files.iter().filter(|f|f["type"]=="file").count())},"monthlyRU":if native{Value::Null}else{json!(0)},"monthlyRULimit":if [ZERO,DB9,DUCKDB].contains(&r["provider"].as_str().unwrap_or(""))||r["kind"]!="mysql"{Value::Null}else{json!(50_000_000)}})}).collect::<Vec<_>>())
+let files=state["files"].as_array().expect("files").iter().filter(|f|f["resourceId"]==r["id"]).collect::<Vec<_>>();json!({"resourceId":r["id"],"name":r["name"],"kind":r["kind"],"storageBytes":if native{Value::Null}else{json!(files.iter().map(|f|f["content"].as_str().unwrap_or("").len()).sum::<usize>())},"storageLimitBytes":if native{Value::Null}else{json!((if r["kind"]=="filesystem"{2u64}else{5})*1024*1024*1024)},"measured":!native,"fileCount":if native{Value::Null}else{json!(files.iter().filter(|f|f["type"]=="file").count())},"monthlyRU":if native{Value::Null}else{json!(0)},"monthlyRULimit":Value::Null})}).collect::<Vec<_>>())
 }
 async fn indexed_usage(repository: &workspace_domain::Repository, state: &Value) -> Result<Value> {
     let mut output = usage(state);
@@ -788,9 +704,6 @@ fn message(code: &str) -> &str {
         }
         "PROVIDER_BINDING_MISSING" => {
             "File System provisioning requires operator recovery. No replacement tenant will be created automatically."
-        }
-        "ZERO_CREATION_UNCONFIRMED" => {
-            "Database creation could not be confirmed. No automatic retry will create another instance."
         }
         "DB9_CREATION_UNCONFIRMED" => {
             "Database creation could not be confirmed. Setup can recover the saved instance; no replacement is created automatically."

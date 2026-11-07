@@ -1,7 +1,7 @@
 //! A deliberately constrained read-only SQL language. Fail closed before provider I/O.
 use sqlparser::{
     ast::{Expr, Query, Select, Statement, TableFactor, Visit, Visitor},
-    dialect::{Dialect, DuckDbDialect, MySqlDialect, PostgreSqlDialect},
+    dialect::PostgreSqlDialect,
     parser::Parser,
     tokenizer::{Token, Tokenizer},
 };
@@ -9,7 +9,7 @@ use std::ops::ControlFlow;
 use workspace_contracts::Result;
 use workspace_providers::err;
 
-pub(super) fn validate(sql: &str, kind: &str) -> Result<()> {
+pub(super) fn validate(sql: &str) -> Result<()> {
     if sql.len() > 65536 || sql.trim().is_empty() {
         return Err(err(400, "INVALID_SQL"));
     }
@@ -17,11 +17,7 @@ pub(super) fn validate(sql: &str, kind: &str) -> Result<()> {
     if sql.contains("/*!") || sql.to_ascii_lowercase().contains("/*m!") || sql.contains('\\') {
         return Err(err(403, "READ_ONLY_SQL_REQUIRED"));
     }
-    let dialect: &dyn Dialect = match kind {
-        "mysql" => &MySqlDialect {},
-        "postgresql" => &PostgreSqlDialect {},
-        _ => &DuckDbDialect {},
-    };
+    let dialect = &PostgreSqlDialect {};
     let tokens = Tokenizer::new(dialect, sql)
         .tokenize()
         .map_err(|_| err(403, "READ_ONLY_SQL_REQUIRED"))?;
@@ -159,22 +155,15 @@ mod tests {
     use super::*;
     #[test]
     fn rejects_hidden_writes_functions_and_session_escapes() {
-        let kind = "postgresql";
-        assert!(
-            validate(
-                &format!("SELECT {}1{}", "(".repeat(100), ")".repeat(100)),
-                kind
-            )
-            .is_err()
-        );
-        assert!(validate(&format!("SELECT {}1", "1+".repeat(2000)), kind).is_err());
+        assert!(validate(&format!("SELECT {}1{}", "(".repeat(100), ")".repeat(100)),).is_err());
+        assert!(validate(&format!("SELECT {}1", "1+".repeat(2000))).is_err());
         for sql in [
             "SELECT 1",
             "/* read */ WITH x AS (SELECT 1 AS id) SELECT count(*) FROM x",
             "SELECT 'DELETE; DROP TABLE t' AS text",
             "SELECT * FROM t WHERE id IN (SELECT id FROM u)",
         ] {
-            assert!(validate(sql, kind).is_ok(), "{kind}: {sql}");
+            assert!(validate(sql).is_ok(), "{sql}");
         }
         for sql in [
             "DELETE FROM t",
@@ -191,7 +180,7 @@ mod tests {
             "SELECT 1 /*! INTO OUTFILE '/tmp/file' */",
             "CALL dangerous()",
         ] {
-            assert!(validate(sql, kind).is_err(), "{kind}: {sql}");
+            assert!(validate(sql).is_err(), "{sql}");
         }
     }
 }

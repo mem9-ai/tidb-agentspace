@@ -7,7 +7,6 @@ const WorkspaceSqlInput = lazy(() => import('./WorkspaceSqlInput'));
 type DatabaseResource = {
   id: string;
   name: string;
-  kind: 'mysql' | 'postgresql' | 'duckdb' | 'filesystem';
   provider?: string;
   status: string;
 };
@@ -37,9 +36,7 @@ export function SqlQueryPanel({
   onComplete,
   onExportSaved,
 }: Props) {
-  const live = ['tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'].includes(
-    database.provider || '',
-  );
+  const live = database.provider === 'db9-anonymous';
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState('');
@@ -76,9 +73,7 @@ export function SqlQueryPanel({
           {
             label: 'List tables',
             value:
-              database.kind === 'postgresql'
-                ? "SELECT table_name FROM information_schema.tables WHERE table_schema = 'workspace';"
-                : 'SHOW TABLES;',
+              "SELECT table_name FROM information_schema.tables WHERE table_schema = 'workspace';",
           },
         ]
       : []),
@@ -120,13 +115,7 @@ export function SqlQueryPanel({
         >
           <WorkspaceSqlInput
             databaseId={database.id}
-            dialect={
-              database.kind === 'duckdb'
-                ? 'duckdb'
-                : database.kind === 'postgresql'
-                  ? 'postgresql'
-                  : 'mysql'
-            }
+            dialect="postgresql"
             value={sql}
             onChange={setSql}
             onRun={() => void run()}

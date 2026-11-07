@@ -174,7 +174,7 @@ test('@visual live workspaces show recorded state without illustrative charts or
   workspace.state.profile.name = 'Developer';
   workspace.signInAsAccount();
   workspace.state.mode = 'hybrid';
-  workspace.state.resources[0].provider = 'tidb-cloud-zero';
+  workspace.state.resources[0].provider = 'db9-anonymous';
   workspace.state.resources[0].status = 'expired';
   await workspace.open('#overview');
   await expect(page.getByRole('heading', { name: 'Workspace activity', exact: true })).toHaveCount(
@@ -220,7 +220,7 @@ test('@visual the shared shell identifies Agent Workspace and separates Cloud at
 }, testInfo) => {
   workspace.addResources();
   workspace.signInAsAccount();
-  workspace.state.resources[0].provider = 'tidb-cloud-zero';
+  workspace.state.resources[0].provider = 'db9-anonymous';
   await workspace.open('#overview');
   await expect(page).toHaveTitle('TiDB Agent Workspace');
   const brand = page.getByRole('link', { name: 'TiDB Agent Workspace', exact: true });
@@ -789,7 +789,7 @@ test('collections keep lifecycle failures, expiry and service context visible', 
 }) => {
   workspace.addResources();
   Object.assign(workspace.state.resources[0], {
-    provider: 'tidb-cloud-zero',
+    provider: 'db9-anonymous',
     status: 'expired',
     expiresAt: '2026-01-01T00:00:00Z',
     connectionError: 'Fixture database expired.',
@@ -804,7 +804,7 @@ test('collections keep lifecycle failures, expiry and service context visible', 
   await expect(databases.getByText('expired', { exact: true })).toBeVisible();
   await expect(databases.getByText('Fixture database expired.', { exact: true })).toBeVisible();
   await expect(databases).toContainText('Expires');
-  await expect(databases).toContainText('TiDB Cloud Zero · Trial');
+  await expect(databases).toContainText('PostgreSQL compatible · Trial');
   await workspace.open('#files');
   const files = page.getByRole('table', { name: 'File systems', exact: true });
   await expect(files.getByText('failed', { exact: true })).toBeVisible();

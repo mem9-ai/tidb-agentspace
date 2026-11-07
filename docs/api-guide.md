@@ -150,7 +150,7 @@ curl --fail-with-body "$REGION_API/api/v1/workspaces/$WORKSPACE_ID/queries" \
 
 Queries accept one statement, up to 64 KiB SQL, 15 seconds, 1000 rows/1 MiB result. Read-only
 access enforces a bounded SELECT/CTE/VALUES subset; it does not grant arbitrary SQL execution.
-MySQL, PostgreSQL and DuckDB have explicit provider compatibility limits; inspect capabilities.
+Inspect `capabilities.postgresql` for database availability.
 
 ## Files, imports and exports
 

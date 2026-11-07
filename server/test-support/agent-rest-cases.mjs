@@ -373,14 +373,12 @@ export async function agentRestCases(t, transport) {
       assert.equal(f.provider.calls, before);
       await request('/resources/missing', { token: full.secret }, 403, 'RESOURCE_ACCESS_DENIED');
       const oldKey = await key(['resources:read', 'resources:write'], ['db_retired_mysql']);
-      const unsupported = await request(
+      await request(
         '/resources/db_retired_mysql',
         { method: 'DELETE', token: oldKey.secret },
-        405,
-        'RESOURCE_DELETE_UNSUPPORTED',
+        404,
+        'NOT_FOUND',
       );
-      assert.equal(unsupported.headers.get('allow'), 'GET');
-      assert.match(unsupported.body.error.message, /unchanged/);
       assert.equal((await request('/resources/db_live', { token })).body.data.status, 'active');
     },
   );
@@ -497,33 +495,29 @@ export async function agentRestCases(t, transport) {
       assert.equal((await request('/resources/fs_live', { token })).body.data.status, 'deleted');
     },
   );
-  await t.test(
-    'db9 and private DuckDB storage delete once while retaining credentials',
-    async () => {
-      for (const id of ['db_pg', 'db_duck']) {
-        const r = await request(`/resources/${id}`, { method: 'DELETE', token: full.secret }, 202);
-        assert.equal(r.body.data.deletion.phase, 'provider-accepted');
-        const before = f.provider.deleted.length;
-        await request(`/resources/${id}`, { method: 'DELETE', token: full.secret }, 202);
-        assert.equal(f.provider.deleted.length, before);
-        await request(
-          '/queries',
-          q(id, 'SELECT 1'),
-          id === 'db_duck' ? 404 : 409,
-          id === 'db_duck' ? 'NOT_FOUND' : 'RESOURCE_DELETING',
-        );
-      }
-      assert.ok(f.provider.deleted.some((d) => d.kind === 'db9'));
-      const records = await f.records([
-        'credentials/db9/db_pg',
-        'credentials/drive9/hidden-storage',
-        'credentials/accounts/db9',
-      ]);
-      assert.equal(records['credentials/db9/db_pg'].value.connection.password, nativeSecret);
-      assert.equal(records['credentials/drive9/hidden-storage'].value.apiKey, nativeSecret);
-      assert.equal(records['credentials/accounts/db9'].value.anonymousSecret, nativeSecret);
-    },
-  );
+  await t.test('PostgreSQL deletion is issued once and retired storage stays private', async () => {
+    const deletion = await request(
+      '/resources/db_pg',
+      { method: 'DELETE', token: full.secret },
+      202,
+    );
+    assert.equal(deletion.body.data.deletion.phase, 'provider-accepted');
+    const before = f.provider.deleted.length;
+    await request('/resources/db_pg', { method: 'DELETE', token: full.secret }, 202);
+    assert.equal(f.provider.deleted.length, before);
+    await request('/queries', q('db_pg', 'SELECT 1'), 409, 'RESOURCE_DELETING');
+    await request('/resources/db_duck', { method: 'DELETE', token: full.secret }, 404, 'NOT_FOUND');
+    assert.equal(f.provider.deleted.length, before);
+    assert.ok(f.provider.deleted.some((d) => d.kind === 'db9'));
+    const records = await f.records([
+      'credentials/db9/db_pg',
+      'credentials/drive9/hidden-storage',
+      'credentials/accounts/db9',
+    ]);
+    assert.equal(records['credentials/db9/db_pg'].value.connection.password, nativeSecret);
+    assert.equal(records['credentials/drive9/hidden-storage'].value.apiKey, nativeSecret);
+    assert.equal(records['credentials/accounts/db9'].value.anonymousSecret, nativeSecret);
+  });
   await t.test(
     'lost provider deletion response remains unknown after crash and never retries',
     async () => {

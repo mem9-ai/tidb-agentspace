@@ -81,6 +81,14 @@ test('@visual API docs use one configured endpoint with runnable examples and co
   expect(await page.evaluate(() => globalThis.__copiedText)).toContain('http://127.0.0.1:4389/api');
   await expect(page.getByText('workspace.listResources()', { exact: false })).toBeVisible();
   await expect(page.getByText('REGION_API', { exact: false })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Send request' }).click();
+  const response = page
+    .locator('.api-guide')
+    .filter({ has: page.getByRole('button', { name: 'Send request' }) });
+  await expect(response).toContainText('"capabilities"');
+  await response.getByRole('button', { name: 'Copy code' }).click();
+  const result = JSON.parse(await page.evaluate(() => globalThis.__copiedText));
+  expect(Object.keys(result.capabilities).sort()).toEqual(['filesystem', 'postgresql']);
   const clientDownload = page.waitForEvent('download');
   await page.getByRole('link', { name: 'Download JavaScript client' }).click();
   const clientFile = testInfo.outputPath('workspace-agent.mjs');

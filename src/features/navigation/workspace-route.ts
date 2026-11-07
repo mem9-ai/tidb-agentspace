@@ -43,15 +43,8 @@ export function databaseEditorHash(resourceId: string, tableName?: string): stri
 export function databaseTablesHash(resourceId: string, tableName?: string): string {
   return databaseHash(resourceId, 'tables', tableName);
 }
-export function tableSelectSql(
-  name: string,
-  dialect: 'mysql' | 'duckdb' | 'postgresql' = 'postgresql',
-): string {
-  if (dialect === 'postgresql')
-    return `SELECT * FROM "workspace"."${name.replaceAll('"', '""')}" LIMIT 100;`;
-  if (dialect === 'duckdb')
-    return `SELECT * FROM "main"."${name.replaceAll('"', '""')}" LIMIT 100;`;
-  return `SELECT * FROM \`${name.replaceAll('`', '``')}\` LIMIT 100;`;
+export function tableSelectSql(name: string): string {
+  return `SELECT * FROM "workspace"."${name.replaceAll('"', '""')}" LIMIT 100;`;
 }
 export function parseWorkspaceRoute(hash: string): WorkspaceRoute {
   const value = hash.replace(/^#/, '');

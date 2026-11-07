@@ -1,4 +1,3 @@
-mod mysql;
 mod sql;
 use chrono::{DateTime, SecondsFormat, Utc};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
@@ -106,7 +105,6 @@ pub struct Providers {
     pub repository: Arc<Repository>,
     http: Client,
     setup: Mutex<()>,
-    mysql_slots: Semaphore,
     postgres_slots: Semaphore,
 }
 
@@ -128,7 +126,6 @@ impl Providers {
             repository,
             http,
             setup: Mutex::new(()),
-            mysql_slots: Semaphore::new(4),
             postgres_slots: Semaphore::new(4),
         })
     }
@@ -261,14 +258,8 @@ impl Providers {
                     return Err(err(503, "PROVIDER_BINDING_MISSING"));
                 }
             }
-            Some(DRIVE9 | DUCKDB) => {
-                let storage = if r["provider"] == DUCKDB {
-                    let b = self.binding("duckdb", id).await?;
-                    strv(&b, "storageId")?.to_owned()
-                } else {
-                    id.to_owned()
-                };
-                self.file_connection(&storage).await?;
+            Some(DRIVE9) => {
+                self.file_connection(id).await?;
             }
             _ => return Err(err(405, "RESOURCE_DELETE_UNSUPPORTED")),
         }
@@ -290,14 +281,8 @@ impl Providers {
             )
             .await?;
         } else {
-            let storage = if r["provider"] == DUCKDB {
-                let b = self.binding("duckdb", id).await?;
-                strv(&b, "storageId")?.to_owned()
-            } else {
-                id.to_owned()
-            };
             let result = self
-                .file_json(Some(&storage), "/v1/tenant", Method::DELETE)
+                .file_json(Some(id), "/v1/tenant", Method::DELETE)
                 .await?;
             if !["deleting", "deleted"].contains(&result["status"].as_str().unwrap_or("")) {
                 return Err(err(502, "PROVIDER_UNAVAILABLE"));
@@ -338,18 +323,14 @@ impl Providers {
         statement: &str,
         read_only: bool,
     ) -> Result<Value> {
-        let slots = if resource["kind"] == "postgresql" {
-            &self.postgres_slots
-        } else {
-            &self.mysql_slots
-        };
-        let _permit = slots.try_acquire().map_err(|_| err(429, "SQL_BUSY"))?;
-        let doc = if resource["kind"] == "postgresql" {
-            "db9"
-        } else {
-            "zero"
-        };
-        let binding = self.binding(doc, strv(resource, "id")?).await?;
+        if resource["kind"] != "postgresql" || resource["provider"] != DB9 {
+            return Err(err(404, "NOT_FOUND"));
+        }
+        let _permit = self
+            .postgres_slots
+            .try_acquire()
+            .map_err(|_| err(429, "SQL_BUSY"))?;
+        let binding = self.binding("db9", strv(resource, "id")?).await?;
         if binding["state"] != "ready" {
             return Err(err(503, "DATABASE_NOT_READY"));
         }
@@ -414,25 +395,15 @@ impl Providers {
         if provider == DRIVE9 {
             return self.file_status(id).await;
         }
-        let doc = match provider {
-            ZERO => "zero",
-            DB9 => "db9",
-            DUCKDB => "duckdb",
-            _ => return Ok(json!({})),
-        };
-        let b = self.binding(doc, id).await?;
-        if provider == ZERO && expired(&b) {
-            return Ok(json!({"status":"expired","expiresAt":b["expiresAt"]}));
+        if provider != DB9 {
+            return Ok(json!({}));
         }
+        let b = self.binding("db9", id).await?;
         if b["state"] == "ready" {
-            let mut v = json!({"status":"active"});
-            if provider == ZERO {
-                v["expiresAt"] = b["expiresAt"].clone();
-            }
-            return Ok(v);
+            return Ok(json!({"status":"active"}));
         }
         Ok(
-            json!({"status":if provider==DUCKDB||b["admin"].is_object(){"provisioning"}else{"failed"},"connectionError":"Setup needs operator recovery. Retry setup on the same resource; no replacement is created automatically."}),
+            json!({"status":if b["admin"].is_object(){"provisioning"}else{"failed"},"connectionError":"Setup needs operator recovery. Retry setup on the same resource; no replacement is created automatically."}),
         )
     }
     fn endpoint(&self, kind: &str) -> &str {
@@ -442,11 +413,6 @@ impl Providers {
                 .drive9_endpoint
                 .as_deref()
                 .unwrap_or("https://api.drive9.ai"),
-            "zero" => self
-                .config
-                .zero_endpoint
-                .as_deref()
-                .unwrap_or("https://zero.tidbapi.com/v1beta1/instances"),
             _ => self
                 .config
                 .db9_endpoint
@@ -724,66 +690,10 @@ impl Providers {
     }
     pub async fn provision_database(&self, r: &Value) -> Result<Value> {
         let _guard = self.setup.lock().await;
-        if r["provider"] == ZERO {
-            self.provision_zero(r).await
-        } else {
-            self.provision_db9(r).await
+        if r["kind"] != "postgresql" || r["provider"] != DB9 {
+            return Err(err(404, "NOT_FOUND"));
         }
-    }
-    async fn provision_zero(&self, r: &Value) -> Result<Value> {
-        let id = strv(r, "id")?;
-        let mut b = self.binding("zero", id).await?;
-        if b["state"] == "ready" || expired(&b) {
-            return self.status(r).await;
-        }
-        if b.is_null() {
-            self.save_binding("zero", id, json!({"state":"requested"}))
-                .await?;
-            let result=async{let response=self.http.post(self.endpoint("zero")).json(&json!({"tag":"tidb-workspace"})).send().await.map_err(|_|err(503,"ZERO_CREATION_UNCONFIRMED"))?;
-if !response.status().is_success(){return Err(err(503,"ZERO_CREATION_UNCONFIRMED"));}
-let result:Value=serde_json::from_slice(&bounded(response,65536).await?).map_err(|_|err(503,"ZERO_CREATION_UNCONFIRMED"))?;
-let instance=&result["instance"];
-if !instance["id"].is_string()||!instance["expiresAt"].as_str().is_some_and(|s|DateTime::parse_from_rfc3339(s).is_ok_and(|d|d>Utc::now())){return Err(err(503,"ZERO_CREATION_UNCONFIRMED"));}
-let admin=json!({"kind":"mysql","region":"automatic","host":instance["connection"]["host"],"port":instance["connection"]["port"],"user":instance["connection"]["username"],"password":instance["connection"]["password"],"database":"test"});validate_binding(&admin,r,true)?;
-let login=strv(&admin,"user")?;
-if !regex::Regex::new(r"^[a-zA-Z0-9_.-]+$").expect("regex").is_match(login){return Err(err(503,"ZERO_CREATION_UNCONFIRMED"));}
-let prefix=login.rfind('.').map(|p|&login[..=p]).unwrap_or("");
-let length=12usize.min(31usize.saturating_sub(prefix.len()));
-if length<8{return Err(err(503,"ZERO_CREATION_UNCONFIRMED"));}
-let user=format!("w{}",&secret(6)?[..length]);
-let mut connection=admin.clone();connection["database"]=json!("workspace");connection["user"]=json!(format!("{prefix}{user}"));connection["password"]=json!(secret(32)?);
-Ok(json!({"state":"configuring","instanceId":instance["id"],"expiresAt":instance["expiresAt"],"admin":admin,"user":user,"connection":connection}))}.await.map_err(|_|err(503,"ZERO_CREATION_UNCONFIRMED"))?;
-            b = result;
-            self.save_binding("zero", id, b.clone()).await?;
-        }
-        if !b["admin"].is_object() {
-            return Err(err(503, "ZERO_CREATION_UNCONFIRMED"));
-        }
-        validate_binding(&b["admin"], r, true)?;
-        validate_binding(&b["connection"], r, false)?;
-        let role = strv(&b, "user")?;
-        if !regex::Regex::new(r"^w[a-f0-9]{8,12}$")
-            .expect("regex")
-            .is_match(role)
-            || !b["connection"]["user"]
-                .as_str()
-                .is_some_and(|v| v == role || v.ends_with(&format!(".{role}")))
-            || !regex::Regex::new(r"^[a-f0-9]{64}$")
-                .expect("regex")
-                .is_match(strv(&b["connection"], "password")?)
-        {
-            return Err(err(503, "ZERO_SETUP_INCOMPLETE"));
-        }
-        let setup=async{self.sql(&b["admin"],"CREATE DATABASE IF NOT EXISTS `workspace`",true).await?;
-self.sql(&b["admin"],&format!("CREATE USER IF NOT EXISTS '{}'@'%' IDENTIFIED BY '{}'",strv(&b["connection"],"user")?,strv(&b["connection"],"password")?),true).await?;
-self.sql(&b["admin"],&format!("GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES ON `workspace`.* TO '{}'@'%'",strv(&b["connection"],"user")?),true).await?;
-self.sql(&b["connection"],"SELECT 1 AS connected",false).await?;
-Result::Ok(())}.await;
-        if setup.is_err() {
-            return Err(err(503, "ZERO_SETUP_INCOMPLETE"));
-        }
-        self.save_binding("zero",id,json!({"state":"ready","instanceId":b["instanceId"],"expiresAt":b["expiresAt"],"connection":b["connection"]})).await?;
-        self.status(r).await
+        self.provision_db9(r).await
     }
     async fn provision_db9(&self, r: &Value) -> Result<Value> {
         let id = strv(r, "id")?;
@@ -936,8 +846,8 @@ fn token_expiry(v: &Value) -> i64 {
         * 1000
 }
 pub fn validate_binding(b: &Value, r: &Value, admin: bool) -> Result<()> {
-    let mysql = r["kind"] == "mysql";
-    if b["kind"] != r["kind"]
+    if r["kind"] != "postgresql"
+        || b["kind"] != r["kind"]
         || b["region"] != r["region"]
         || r["region"] != "automatic"
         || !["user", "password", "database", "host"].iter().all(|k| {
@@ -949,27 +859,16 @@ pub fn validate_binding(b: &Value, r: &Value, admin: bool) -> Result<()> {
     }
     let port = b["port"].as_u64().unwrap_or(0);
     let host = b["host"].as_str().unwrap_or("");
-    let valid = if mysql {
-        regex::Regex::new(r"^[a-z0-9.-]+\.tidbcloud\.com$")
-            .expect("regex")
-            .is_match(host)
-            && port > 0
-            && port <= 65535
-            && regex::Regex::new(r"^[a-zA-Z][a-zA-Z0-9_]{0,63}$")
-                .expect("regex")
-                .is_match(b["database"].as_str().unwrap_or(""))
-    } else {
-        ["pg.db9.io", "pg.d0000.db9.io"].contains(&host)
-            && [5432, 5433].contains(&port)
-            && b["database"] == "postgres"
-            && regex::Regex::new(if admin {
-                r"^[a-zA-Z0-9_-]+\.admin$"
-            } else {
-                r"^[a-zA-Z0-9_-]+\.w[a-f0-9]{12}$"
-            })
-            .expect("regex")
-            .is_match(b["user"].as_str().unwrap_or(""))
-    };
+    let valid = ["pg.db9.io", "pg.d0000.db9.io"].contains(&host)
+        && [5432, 5433].contains(&port)
+        && b["database"] == "postgres"
+        && regex::Regex::new(if admin {
+            r"^[a-zA-Z0-9_-]+\.admin$"
+        } else {
+            r"^[a-zA-Z0-9_-]+\.w[a-f0-9]{12}$"
+        })
+        .expect("regex")
+        .is_match(b["user"].as_str().unwrap_or(""));
     if !valid {
         return Err(err(503, "DATABASE_NOT_CONFIGURED"));
     }

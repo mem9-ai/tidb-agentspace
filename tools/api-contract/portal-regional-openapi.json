@@ -3,7 +3,7 @@
   "info": {
     "title": "Workspace Portal API",
     "version": "0.1.0",
-    "description": "A Workspace gateway for PostgreSQL-compatible databases and File Systems. Workspace Keys authorize actions and resources; upstream credentials stay internal. Standalone MySQL and DuckDB databases are retired; DuckDB remains available for File System analysis."
+    "description": "A Workspace gateway for PostgreSQL-compatible databases and File Systems. Workspace Keys authorize actions and resources; upstream credentials stay internal."
   },
   "servers": [{ "url": "/api/portal/v1", "description": "Session-authenticated Portal API" }],
   "tags": [{ "name": "Workspace" }, { "name": "Owner" }],
@@ -3778,7 +3778,7 @@
         "operationId": "createDatabaseImportPreparation",
         "summary": "Create a private destination-bound import review",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: queries:execute on destination; Workspace inputs also require source files:read/analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
+        "description": "Required Region access Token scope: queries:execute on destination; Workspace inputs also require source files:read/analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
         "x-required-scope": "queries:execute on destination; Workspace inputs also require source files:read/analyze",
         "security": [
           { "regionalAccess": [] },
@@ -3952,7 +3952,7 @@
         "operationId": "createDatabaseImport",
         "summary": "Confirm reviewed server rows and create a new database table",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: queries:execute on destination; Workspace files additionally require source files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
+        "description": "Required Region access Token scope: queries:execute on destination; Workspace files additionally require source files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
         "x-required-scope": "queries:execute on destination; Workspace files additionally require source files:read and files:analyze",
         "security": [
           { "regionalAccess": [] },
@@ -4516,6 +4516,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "additionalProperties": false,
                 "required": ["resourceId", "sql"],
                 "properties": {
                   "resourceId": { "type": "string" },
@@ -4523,29 +4524,6 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Enforced read-only mode. Automatically enabled for queries:read-only Keys."
-                  },
-                  "sources": {
-                    "type": "array",
-                    "maxItems": 4,
-                    "description": "Reserved for the retired standalone DuckDB database capability; nonempty sources are not supported. Use File System analysis for DuckDB SQL over files.",
-                    "items": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "required": ["name", "resourceId", "path"],
-                      "properties": {
-                        "name": {
-                          "type": "string",
-                          "pattern": "^[a-z][a-z0-9_]{0,31}$",
-                          "description": "Unique source table name in the per-query files catalog."
-                        },
-                        "resourceId": { "type": "string" },
-                        "path": {
-                          "type": "string",
-                          "maxLength": 512,
-                          "description": "Exact absolute Workspace file path; no globs, traversal, external URLs or native paths."
-                        }
-                      }
-                    }
                   },
                   "sql": {
                     "type": "string",
@@ -6178,7 +6156,7 @@
         "operationId": "deleteResource",
         "summary": "Request removal and retain an observable deletion tombstone",
         "tags": ["Workspace"],
-        "description": "Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Local removal completes synchronously (200). Drive9/DuckDB and PostgreSQL may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; PostgreSQL requires operator reconciliation. Zero returns 405 unchanged. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.",
+        "description": "Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Local removal completes synchronously (200). Drive9 and PostgreSQL may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; PostgreSQL requires operator reconciliation. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.",
         "x-required-scope": "resources:write",
         "security": [
           { "regionalAccess": [] },
@@ -6245,12 +6223,6 @@
             "description": "Resource lifecycle operation unsupported by provider",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            },
-            "headers": {
-              "Allow": {
-                "schema": { "const": "GET" },
-                "description": "Methods available on this provider-backed resource."
-              }
             }
           },
           "409": {
@@ -7211,7 +7183,7 @@
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
-          "kind": { "enum": ["mysql", "postgresql", "duckdb", "filesystem"] },
+          "kind": { "enum": ["postgresql", "filesystem"] },
           "region": {
             "type": "string",
             "description": "Provider-assigned data location; may be automatic and is distinct from the Workspace Region."
@@ -7232,13 +7204,7 @@
             ]
           },
           "provider": {
-            "enum": [
-              "local",
-              "drive9-anonymous",
-              "tidb-cloud-zero",
-              "duckdb-drive9",
-              "db9-anonymous"
-            ],
+            "enum": ["local", "drive9-anonymous", "db9-anonymous"],
             "description": "Missing on legacy local resources. PostgreSQL-compatible databases support NUMERIC values of up to 28–29 significant digits. Provider compatibility limits apply."
           },
           "deletion": {
@@ -7279,7 +7245,7 @@
           "expiresAt": {
             "type": "string",
             "format": "date-time",
-            "description": "Zero expiry reported by the provider. No automatic renewal or replacement."
+            "description": "Expiry reported by the database provider. No automatic renewal or replacement."
           },
           "createdAt": { "type": "string", "format": "date-time" }
         }
@@ -7925,7 +7891,7 @@
         "properties": {
           "resourceId": { "type": "string" },
           "name": { "type": "string" },
-          "kind": { "enum": ["mysql", "postgresql", "duckdb", "filesystem"] },
+          "kind": { "enum": ["postgresql", "filesystem"] },
           "storageBytes": { "type": ["integer", "null"] },
           "storageLimitBytes": { "type": ["integer", "null"] },
           "monthlyRU": { "type": ["integer", "null"] },
@@ -7959,13 +7925,12 @@
       },
       "Capabilities": {
         "type": "object",
-        "required": ["mysql", "postgresql", "duckdb", "filesystem"],
+        "required": ["postgresql", "filesystem"],
         "properties": {
-          "mysql": { "$ref": "#/components/schemas/Capability" },
           "postgresql": { "$ref": "#/components/schemas/Capability" },
-          "duckdb": { "$ref": "#/components/schemas/Capability" },
           "filesystem": { "$ref": "#/components/schemas/Capability" }
-        }
+        },
+        "additionalProperties": false
       },
       "Bootstrap": {
         "type": "object",

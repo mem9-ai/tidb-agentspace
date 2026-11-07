@@ -14,8 +14,7 @@ impl Product {
         )
     }
     fn resource_view(&self, mut r: Value, p: &Principal) -> Value {
-        let supported = r["provider"] != ZERO;
-        r["capabilities"] = json!({"delete":supported,"deletionCompletion":if !live(&r){"synchronous"}else if r["provider"]==DB9{"operatorReconciliation"}else if supported{"providerStatus"}else{"unsupported"},"readOnlyQueries":r["kind"]!="filesystem","conditionalFileWrites":r["kind"]=="filesystem"});
+        r["capabilities"] = json!({"delete":true,"deletionCompletion":if !live(&r){"synchronous"}else if r["provider"]==DB9{"operatorReconciliation"}else{"providerStatus"},"readOnlyQueries":r["kind"]!="filesystem","conditionalFileWrites":r["kind"]=="filesystem"});
         let available = r["status"] != "deleting" && r["status"] != "deleted";
         let actions = [
             "resources:read",
@@ -56,23 +55,13 @@ impl Product {
             // Observations never retry external deletion or resurrect a tombstone.
             let mut r = self.update_resource(r, false).await?;
             if r["deletion"]["phase"] == "provider-accepted"
-                && [DRIVE9, DUCKDB].contains(&r["provider"].as_str().unwrap_or(""))
+                && r["provider"] == DRIVE9
+                && let Ok(status) = self.providers.file_status(id).await
+                && status["status"] == "deleted"
             {
-                let storage = if r["provider"] == DUCKDB {
-                    self.providers.binding("duckdb", id).await?["storageId"]
-                        .as_str()
-                        .unwrap_or("")
-                        .to_owned()
-                } else {
-                    id.to_owned()
-                };
-                if let Ok(status) = self.providers.file_status(&storage).await
-                    && status["status"] == "deleted"
-                {
-                    r = self
-                        .finish_deletion(credential, id, "deleted", "completed")
-                        .await?;
-                }
+                r = self
+                    .finish_deletion(credential, id, "deleted", "completed")
+                    .await?;
             }
             return Ok((200, Reply::Json(json!({"data":self.resource_view(r,&p)}))));
         }
@@ -87,9 +76,6 @@ impl Product {
                 if r["status"] == "deleted" { 200 } else { 202 },
                 Reply::Json(json!({"data":self.resource_view(r,&p)})),
             ));
-        }
-        if r["provider"] == ZERO {
-            return Err(err(405, "RESOURCE_DELETE_UNSUPPORTED"));
         }
         // Validate all private targets before persisting a deletion intent. No account creation.
         if live(&r) {

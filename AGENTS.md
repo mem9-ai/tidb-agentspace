@@ -41,8 +41,7 @@ follow its task-specific references before implementation. Keep detailed rules c
 - Read `docs/architecture.md` for the proposed product. Distinguish proposed behavior from
   what the running prototype implements.
 - PostgreSQL through db9 is the only available database. Standalone MySQL and DuckDB databases
-  are retired under [ADR 0048](docs/decisions/0048-postgresql-only-databases.md); preserve
-  existing bindings and supported cleanup. TiDB Cloud PG Starter remains planned.
+  are excluded from the customer API under [ADR 0058](docs/decisions/0058-public-resource-kinds.md). TiDB Cloud PG Starter remains planned.
 - PostgreSQL through db9 follows [ADR 0011](docs/decisions/0011-db9-postgres.md): private anonymous credentials, restricted native roles, verified TLS and explicit compatibility limits. Retired simulated PG records stay hidden.
 - DuckDB remains the bounded File System analysis engine. Private storage bindings of retired
   standalone DuckDB databases remain internal and cannot become public File System resources.

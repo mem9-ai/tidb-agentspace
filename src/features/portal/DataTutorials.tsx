@@ -26,7 +26,7 @@ type Props = {
   data: Data;
   resourceId?: string;
   kind?: 'database' | 'filesystem';
-  onCreate: (kind: 'mysql' | 'filesystem') => void;
+  onCreate: (kind: 'postgresql' | 'filesystem') => void;
   refresh: () => Promise<void>;
   copy: (value: string) => void;
 };
@@ -223,7 +223,7 @@ export function DataTutorials({
                           mt="sm"
                           variant={selected ? 'default' : 'filled'}
                           disabled={busy}
-                          onClick={() => onCreate('mysql')}
+                          onClick={() => onCreate('postgresql')}
                         >
                           Create database
                         </Button>

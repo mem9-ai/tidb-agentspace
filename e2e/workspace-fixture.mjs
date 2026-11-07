@@ -44,17 +44,16 @@ function bootstrap() {
     queryCount: 0,
     mode: 'demo',
     capabilities: Object.fromEntries(
-      ['mysql', 'postgresql', 'duckdb', 'filesystem'].map((kind) => [
+      ['postgresql', 'filesystem'].map((kind) => [
         kind,
         {
           label: kind,
-          regions:
-            kind === 'mysql' || kind === 'postgresql' ? ['automatic'] : ['aws-ap-southeast-1'],
+          regions: kind === 'postgresql' ? ['automatic'] : ['aws-ap-southeast-1'],
           storageGiB: 2,
           monthlyRU: 50000000,
-          preview: kind !== 'mysql',
-          available: kind !== 'mysql' && kind !== 'duckdb',
-          provider: kind === 'mysql' ? 'tidb-cloud-zero' : 'local',
+          preview: true,
+          available: true,
+          provider: kind === 'postgresql' ? 'db9-anonymous' : 'local',
         },
       ]),
     ),

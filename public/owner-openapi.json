@@ -371,7 +371,7 @@
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
-          "kind": { "enum": ["mysql", "postgresql", "duckdb", "filesystem"] },
+          "kind": { "enum": ["postgresql", "filesystem"] },
           "region": {
             "type": "string",
             "description": "Provider-assigned data location; may be automatic and is distinct from the Workspace Region."
@@ -392,13 +392,7 @@
             ]
           },
           "provider": {
-            "enum": [
-              "local",
-              "drive9-anonymous",
-              "tidb-cloud-zero",
-              "duckdb-drive9",
-              "db9-anonymous"
-            ],
+            "enum": ["local", "drive9-anonymous", "db9-anonymous"],
             "description": "Missing on legacy local resources. PostgreSQL-compatible databases support NUMERIC values of up to 28–29 significant digits. Provider compatibility limits apply."
           },
           "deletion": {
@@ -439,7 +433,7 @@
           "expiresAt": {
             "type": "string",
             "format": "date-time",
-            "description": "Zero expiry reported by the provider. No automatic renewal or replacement."
+            "description": "Expiry reported by the database provider. No automatic renewal or replacement."
           },
           "createdAt": { "type": "string", "format": "date-time" }
         }
@@ -1085,7 +1079,7 @@
         "properties": {
           "resourceId": { "type": "string" },
           "name": { "type": "string" },
-          "kind": { "enum": ["mysql", "postgresql", "duckdb", "filesystem"] },
+          "kind": { "enum": ["postgresql", "filesystem"] },
           "storageBytes": { "type": ["integer", "null"] },
           "storageLimitBytes": { "type": ["integer", "null"] },
           "monthlyRU": { "type": ["integer", "null"] },
@@ -1119,13 +1113,12 @@
       },
       "Capabilities": {
         "type": "object",
-        "required": ["mysql", "postgresql", "duckdb", "filesystem"],
+        "required": ["postgresql", "filesystem"],
         "properties": {
-          "mysql": { "$ref": "#/components/schemas/Capability" },
           "postgresql": { "$ref": "#/components/schemas/Capability" },
-          "duckdb": { "$ref": "#/components/schemas/Capability" },
           "filesystem": { "$ref": "#/components/schemas/Capability" }
-        }
+        },
+        "additionalProperties": false
       },
       "Bootstrap": {
         "type": "object",

@@ -115,7 +115,7 @@ test('@visual create a table from a saved CSV after explicitly reviewing its dat
   workspace,
 }, testInfo) => {
   addSalesFile(workspace);
-  workspace.state.resources[0].provider = 'tidb-cloud-zero';
+  workspace.state.resources[0].provider = 'db9-anonymous';
   const preparations = [];
   const exports = [];
   await mockFileWork(context, { onPrepare: preparations, onExport: exports });
@@ -178,7 +178,7 @@ test('Parquet starts with the matching format and prepares the saved source', as
   workspace,
 }) => {
   addSalesFile(workspace, '/us-sales.parquet');
-  workspace.state.resources[0].provider = 'tidb-cloud-zero';
+  workspace.state.resources[0].provider = 'db9-anonymous';
   const preparations = [];
   const exports = [];
   await mockFileWork(context, { onPrepare: preparations, onExport: exports });
@@ -204,7 +204,7 @@ test('changing parsing options invalidates the reviewed data before table creati
   workspace,
 }) => {
   addSalesFile(workspace);
-  workspace.state.resources[0].provider = 'tidb-cloud-zero';
+  workspace.state.resources[0].provider = 'db9-anonymous';
   const preparations = [];
   const exports = [];
   await mockFileWork(context, { onPrepare: preparations, onExport: exports });

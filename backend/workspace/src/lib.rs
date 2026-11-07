@@ -103,9 +103,9 @@ fn event(state: &mut Value, action: &str, resource: &str, actor: &str) {
     events.insert(0,json!({"id":uuid::Uuid::new_v4().to_string(),"action":action,"resourceId":null,"resource":resource,"actor":actor,"at":timestamp(),"outcome":"success"}));
     events.truncate(200);
 }
-fn visible(resource: &Value) -> bool {
+pub fn visible_resource(resource: &Value) -> bool {
     match resource["kind"].as_str() {
-        Some("mysql" | "duckdb" | "filesystem") => true,
+        Some("filesystem") => true,
         Some("postgresql") => resource["provider"] == "db9-anonymous",
         _ => false,
     }
@@ -146,8 +146,9 @@ impl Principal {
         state["resources"]
             .as_array()
             .and_then(|v| {
-                v.iter()
-                    .find(|r| visible(r) && r["id"] == id && kind.is_none_or(|k| r["kind"] == k))
+                v.iter().find(|r| {
+                    visible_resource(r) && r["id"] == id && kind.is_none_or(|k| r["kind"] == k)
+                })
             })
             .cloned()
             .ok_or_else(|| reject(404, "NOT_FOUND"))
@@ -503,7 +504,7 @@ fn execute_operation(
                 .as_array()
                 .expect("validated resources")
                 .iter()
-                .filter(|r| visible(r))
+                .filter(|r| visible_resource(r))
                 .filter_map(|r| r["id"].as_str())
                 .collect();
             if (has_wildcard && grants.len() != 1)
@@ -599,7 +600,7 @@ fn filtered_events(state: &Value, owner: bool, resources: &[String]) -> Vec<Valu
         .as_array()
         .expect("validated resources")
         .iter()
-        .filter(|r| !visible(r))
+        .filter(|r| !visible_resource(r))
         .map(|r| &r["id"])
         .collect();
     state["events"]

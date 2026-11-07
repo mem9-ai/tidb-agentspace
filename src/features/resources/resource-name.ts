@@ -47,7 +47,7 @@ export function generateResourceName(
   const base =
     kind === 'filesystem'
       ? `${fileSystemAdjectives[parseInt(random.slice(0, 4), 16) % fileSystemAdjectives.length]}-${fileSystemNouns[parseInt(random.slice(4, 8), 16) % fileSystemNouns.length]}`
-      : `${kind === 'mysql' ? 'tidb' : kind === 'postgresql' ? 'tidb_pg' : kind}-${random.slice(0, 16)}`;
+      : `tidb_pg-${random.slice(0, 16)}`;
   let candidate = base;
   let suffix = 2;
   while (usedNames.has(candidate)) candidate = `${base}-${suffix++}`;

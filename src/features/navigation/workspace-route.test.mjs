@@ -81,7 +81,7 @@ test('table links preserve reserved characters across browse, editor, reload and
       });
     }
   }
-  assert.equal(tableSelectSql('a"b', 'postgresql'), 'SELECT * FROM "workspace"."a""b" LIMIT 100;');
+  assert.equal(tableSelectSql('a"b'), 'SELECT * FROM "workspace"."a""b" LIMIT 100;');
   for (const tail of ['%ZZ', '', 'a%00b', 'a'.repeat(65)])
     assert.deepEqual(parseWorkspaceRoute('#databases/db_memory/tables?table=' + tail), {
       page: 'databases',

@@ -20,7 +20,7 @@ const schemas = {
     properties: {
       id: { type: 'string' },
       name: { type: 'string' },
-      kind: { enum: ['mysql', 'postgresql', 'duckdb', 'filesystem'] },
+      kind: { enum: ['postgresql', 'filesystem'] },
       region: {
         type: 'string',
         description:
@@ -35,7 +35,7 @@ const schemas = {
         enum: ['active', 'provisioning', 'failed', 'suspended', 'deleting', 'deleted', 'expired'],
       },
       provider: {
-        enum: ['local', 'drive9-anonymous', 'tidb-cloud-zero', 'duckdb-drive9', 'db9-anonymous'],
+        enum: ['local', 'drive9-anonymous', 'db9-anonymous'],
         description:
           'Missing on legacy local resources. PostgreSQL-compatible databases support NUMERIC values of up to 28–29 significant digits. Provider compatibility limits apply.',
       },
@@ -69,7 +69,8 @@ const schemas = {
       expiresAt: {
         type: 'string',
         format: 'date-time',
-        description: 'Zero expiry reported by the provider. No automatic renewal or replacement.',
+        description:
+          'Expiry reported by the database provider. No automatic renewal or replacement.',
       },
       createdAt: { type: 'string', format: 'date-time' },
     },
@@ -232,7 +233,7 @@ Object.assign(schemas, {
   Usage: object({
     resourceId: str,
     name: str,
-    kind: { enum: ['mysql', 'postgresql', 'duckdb', 'filesystem'] },
+    kind: { enum: ['postgresql', 'filesystem'] },
     storageBytes: { type: ['integer', 'null'] },
     storageLimitBytes: { type: ['integer', 'null'] },
     monthlyRU: { type: ['integer', 'null'] },
@@ -256,11 +257,10 @@ Object.assign(schemas, {
     },
     ['label', 'regions', 'storageGiB', 'preview'],
   ),
-  Capabilities: object(
-    Object.fromEntries(
-      ['mysql', 'postgresql', 'duckdb', 'filesystem'].map((kind) => [kind, ref('Capability')]),
-    ),
-  ),
+  Capabilities: {
+    ...object({ postgresql: ref('Capability'), filesystem: ref('Capability') }),
+    additionalProperties: false,
+  },
   Bootstrap: object(
     {
       workspace: ref('Workspace'),
@@ -1244,6 +1244,7 @@ const paths = {
       {
         input: {
           type: 'object',
+          additionalProperties: false,
           required: ['resourceId', 'sql'],
           properties: {
             resourceId: str,
@@ -1252,31 +1253,6 @@ const paths = {
               default: false,
               description:
                 'Enforced read-only mode. Automatically enabled for queries:read-only Keys.',
-            },
-            sources: {
-              type: 'array',
-              maxItems: 4,
-              description:
-                'Reserved for the retired standalone DuckDB database capability; nonempty sources are not supported. Use File System analysis for DuckDB SQL over files.',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['name', 'resourceId', 'path'],
-                properties: {
-                  name: {
-                    type: 'string',
-                    pattern: '^[a-z][a-z0-9_]{0,31}$',
-                    description: 'Unique source table name in the per-query files catalog.',
-                  },
-                  resourceId: str,
-                  path: {
-                    type: 'string',
-                    maxLength: 512,
-                    description:
-                      'Exact absolute Workspace file path; no globs, traversal, external URLs or native paths.',
-                  },
-                },
-              },
             },
             sql: {
               type: 'string',
@@ -1668,12 +1644,6 @@ paths[ws + '/resources/{resourceId}'] = {
     { output: object({ data: ref('Resource') }) },
   ),
 };
-paths[ws + '/resources/{resourceId}'].delete.responses[405].headers = {
-  Allow: {
-    schema: { const: 'GET' },
-    description: 'Methods available on this provider-backed resource.',
-  },
-};
 paths[ws + '/resources/{resourceId}'].delete.responses[202] = response(
   object({ data: ref('Resource') }),
   'Deletion accepted or outcome unknown. Inspect GET at Location; repeated DELETE never retries the upstream effect. Credentials remain private and retained.',
@@ -1682,7 +1652,7 @@ paths[ws + '/resources/{resourceId}'].delete.responses[202].headers = {
   Location: { schema: str, description: 'URI of the retained resource and deletion status.' },
 };
 paths[ws + '/resources/{resourceId}'].delete.description +=
-  ' Local removal completes synchronously (200). Drive9/DuckDB and PostgreSQL may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; PostgreSQL requires operator reconciliation. Zero returns 405 unchanged. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.';
+  ' Local removal completes synchronously (200). Drive9 and PostgreSQL may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; PostgreSQL requires operator reconciliation. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.';
 paths['/api/auth/guest'] = {
   servers: [{ url: '/' }],
   post: {
@@ -1809,7 +1779,7 @@ for (const [path, item] of Object.entries(paths))
   if (path.includes('{workspaceId}')) item.parameters = [workspaceId, ...(item.parameters || [])];
 for (const route of ['/database-import-preparations', '/database-imports']) {
   paths[ws + route].post.description +=
-    ' CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. Only server-generated DuckDB import writes have a fixed 30-second worker deadline per statement; ordinary SQL and parsing keep 15 seconds. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.';
+    ' CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.';
 }
 paths[ws + '/file-export-preparations'].post.description +=
   ' Also requires files:read and the source File System grant. Fixed CSV/Parquet/text-line parsing, no scripts. Up to 16 MiB original or 1 MiB output text, 1000 rows/100 columns/1 MiB parsed data and 15 seconds, shared worker admission. Returns 20 sample rows and suggested field types with an actor-bound five-minute preparation. Parsing writes nothing. CSV keeps leading zeros and distinguishes quoted empty strings from NULL. Text lines are explicit one-column records.';
@@ -1831,7 +1801,7 @@ const spec = {
     title: 'TiDB Agent Workspace · Local Prototype API',
     version: '0.1.0',
     description:
-      'A Workspace gateway for PostgreSQL-compatible databases and File Systems. Workspace Keys authorize actions and resources; upstream credentials stay internal. Standalone MySQL and DuckDB databases are retired; DuckDB remains available for File System analysis.',
+      'A Workspace gateway for PostgreSQL-compatible databases and File Systems. Workspace Keys authorize actions and resources; upstream credentials stay internal.',
   },
   servers: [
     { url: '/api/v1', description: 'Standalone Workspace API; resolve against the API origin' },

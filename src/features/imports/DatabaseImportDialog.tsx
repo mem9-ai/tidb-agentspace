@@ -200,15 +200,7 @@ export function DatabaseImportDialog({
   return (
     <WorkspaceModal title={`Import into ${database.name}`} size={800} busy={busy} onClose={onClose}>
       <Stack gap="lg">
-        <Text>
-          Destination: {database.name} ·{' '}
-          {database.kind === 'postgresql'
-            ? 'PostgreSQL'
-            : database.kind === 'mysql'
-              ? 'MySQL'
-              : 'DuckDB'}{' '}
-          · New table
-        </Text>
+        <Text>Destination: {database.name} · PostgreSQL · New table</Text>
         {busy && (
           <Stack ref={progressSection} tabIndex={-1} gap="xs" aria-label="Import progress">
             <Group gap="sm">

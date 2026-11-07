@@ -10,9 +10,7 @@ export type DatabaseCreationContext = {
   isGuest: boolean;
 };
 export const resourceKindLabels: Record<ResourceKind, string> = {
-  mysql: 'TiDB',
   postgresql: 'PostgreSQL',
-  duckdb: 'DuckDB',
   filesystem: 'File System',
 };
 type CreationCapabilities = Record<

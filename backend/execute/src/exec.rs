@@ -9,33 +9,14 @@ use tokio::{
 use workspace_contracts::Result;
 
 pub(super) async fn execute(input: Value) -> Result<Value> {
-    let mut command = Command::new(std::env::current_exe().map_err(|_| {
-        err(
-            503,
-            if input["mode"] == "database" || input["mode"] == "probe" {
-                "SQL_EXECUTION_FAILED"
-            } else {
-                "ANALYSIS_FAILED"
-            },
-        )
-    })?);
+    let mut command =
+        Command::new(std::env::current_exe().map_err(|_| err(503, "ANALYSIS_FAILED"))?);
     command.arg("execute").env_clear();
-    // Only server-generated import writes retain the longer cold-storage commit budget.
-    let seconds = if input["mode"] == "database" && input["importWrite"] == true {
-        30
-    } else {
-        15
-    };
-    run(command, input, Duration::from_secs(seconds)).await
+    run(command, input, Duration::from_secs(15)).await
 }
 
 async fn run(mut command: Command, input: Value, deadline: Duration) -> Result<Value> {
-    let analysis = input["mode"] != "database" && input["mode"] != "probe";
-    let failure = if analysis {
-        "ANALYSIS_FAILED"
-    } else {
-        "SQL_EXECUTION_FAILED"
-    };
+    let failure = "ANALYSIS_FAILED";
     tokio::time::timeout(deadline, async {
         let mut child = command
             .stdin(std::process::Stdio::piped())
@@ -61,14 +42,7 @@ async fn run(mut command: Command, input: Value, deadline: Duration) -> Result<V
             .await
             .map_err(|_| err(502, failure))?;
         if output.len() > 1024 * 1024 {
-            return Err(err(
-                422,
-                if analysis {
-                    "ANALYSIS_OUTPUT_LIMIT"
-                } else {
-                    "RESULT_TOO_LARGE"
-                },
-            ));
+            return Err(err(422, "ANALYSIS_OUTPUT_LIMIT"));
         }
         let status = child.wait().await.map_err(|_| err(502, failure))?;
         if !status.success() {
@@ -91,16 +65,7 @@ async fn run(mut command: Command, input: Value, deadline: Duration) -> Result<V
         Ok(v["result"].clone())
     })
     .await
-    .map_err(|_| {
-        err(
-            504,
-            if analysis {
-                "ANALYSIS_TIMEOUT"
-            } else {
-                "SQL_TIMEOUT"
-            },
-        )
-    })?
+    .map_err(|_| err(504, "ANALYSIS_TIMEOUT"))?
 }
 
 #[cfg(all(test, unix))]
@@ -165,7 +130,7 @@ mod tests {
     async fn deadline_stops_the_child_and_preserves_api_error_classes() {
         for (mode, code) in [
             ("analysis", "ANALYSIS_TIMEOUT"),
-            ("database", "SQL_TIMEOUT"),
+            ("import", "ANALYSIS_TIMEOUT"),
         ] {
             let directory = tempfile::tempdir().unwrap();
             let ready = directory.path().join("ready");
