@@ -30,13 +30,14 @@ COPY Cargo.toml Cargo.lock ./
 # Keep stable lower-level crates in separately cached layers. Every layer builds
 # real sources (not cargo-chef's dependency skeleton) with the final toolchain.
 COPY backend/contracts ./backend/contracts
+COPY backend/cache-budget ./backend/cache-budget
 COPY backend/meta-client ./backend/meta-client
 COPY backend/workspace ./backend/workspace
 COPY backend/identity ./backend/identity
 COPY backend/providers ./backend/providers
 COPY backend/execute ./backend/execute
 COPY meta-service ./meta-service
-RUN find backend/contracts backend/meta-client backend/workspace backend/identity \
+RUN find backend/contracts backend/cache-budget backend/meta-client backend/workspace backend/identity \
     backend/providers backend/execute meta-service \
     -path meta-service/target -prune -o -type f -exec touch {} + \
     && cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend
@@ -58,7 +59,7 @@ COPY meta-service ./meta-service
 RUN find backend/host -type f -exec touch {} + \
     && for manifest in backend/*/Cargo.toml; do \
       case "$manifest" in \
-        backend/contracts/*|backend/meta-client/*|backend/workspace/*|backend/identity/*|backend/providers/*|backend/execute/*|backend/product/*|backend/analytics/*|backend/api/*|backend/host/*) ;; \
+        backend/contracts/*|backend/cache-budget/*|backend/meta-client/*|backend/workspace/*|backend/identity/*|backend/providers/*|backend/execute/*|backend/product/*|backend/analytics/*|backend/api/*|backend/host/*) ;; \
         *) find "$(dirname "$manifest")" -type f -exec touch {} + ;; \
       esac; \
     done \

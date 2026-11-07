@@ -5306,12 +5306,22 @@ dependencies = [
  "tokio",
  "workspace-analytics",
  "workspace-api",
+ "workspace-cache-budget",
  "workspace-contracts",
  "workspace-domain",
  "workspace-execute",
  "workspace-identity",
  "workspace-meta-client",
  "workspace-meta-service",
+]
+
+[[package]]
+name = "workspace-cache-budget"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "sysinfo",
 ]
 
 [[package]]
@@ -5413,6 +5423,7 @@ dependencies = [
  "subtle",
  "tokio",
  "uuid",
+ "workspace-cache-budget",
  "workspace-contracts",
 ]
 

@@ -36,13 +36,13 @@ same create-only File API; older deployments retain their normal file behavior.
 
 ## Storage and retention
 
-The separate SlateDB engine uses a private Foyer cache capped at 8 MiB of weighted entries by
-default. Its private configuration accepts `blockCacheMib` (0 disables, maximum 1024); count
-this budget alongside any co-located Global/Region Meta engines. See
-[cache sizing and memory limits](meta-service.md#memory-cache-budget) before changing it.
+The separate SlateDB engine receives a share of the runtime's system memory cache budget.
+It has no fixed per-instance default. Its private `blockCacheMib` can reduce that share or
+disable caching with 0. Keep the Analytics process isolated while coordinating budgets for
+shared hosts. See [cache sizing and memory limits](meta-service.md#memory-cache-budget).
 
 Run a dedicated single-writer analytics process per producing authority, using its own
-SlateDB 0.17 storage root, encryption key, pseudonym key and producer token. Hosted
+SlateDB 0.18 storage root, encryption key, pseudonym key and producer token. Hosted
 enablement uses dedicated persistent volumes; an explicit private S3 adapter remains available. API producers
 have only a remote analytics client. The analytics crate has no Meta service/client
 dependency and exposes no Meta protocol, writer owner, security clock or takeover path.

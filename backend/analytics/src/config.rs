@@ -81,8 +81,7 @@ pub struct Config {
     pub bind: SocketAddr,
     pub s3: Option<Storage>,
     pub local: Option<LocalStorage>,
-    #[serde(default = "default_block_cache_mib")]
-    pub block_cache_mib: u16,
+    pub block_cache_mib: Option<u64>,
     pub token_file: PathBuf,
     pub encryption_key_file: PathBuf,
     pub pseudonym_key_file: PathBuf,
@@ -91,9 +90,6 @@ pub struct Config {
     #[serde(default)]
     pub insecure_loopback: bool,
     pub tls: Option<ServerTls>,
-}
-fn default_block_cache_mib() -> u16 {
-    8
 }
 fn id(value: &str) -> bool {
     !value.is_empty()
@@ -131,8 +127,9 @@ impl Config {
     }
     pub fn validate(&self) -> Result<()> {
         ensure!(
-            self.block_cache_mib <= 1024,
-            "blockCacheMib must be between 0 and 1024 MiB"
+            self.block_cache_mib
+                .is_none_or(|mib| mib.checked_mul(1024 * 1024).is_some()),
+            "blockCacheMib is too large"
         );
         ensure!(
             (self.authority_id == "global"

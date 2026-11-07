@@ -225,6 +225,12 @@ export async function serveLocalRuntime({ directory }) {
     await rm(lock, { recursive: true });
   };
   try {
+    const cacheArgs = ['cache-budget', '--instances', String(topology.services.length)];
+    if (topology.memoryCache?.totalMiB !== undefined)
+      cacheArgs.push('--total-mib', String(topology.memoryCache.totalMiB));
+    const { stdout: cacheOutput } = await promisify(execFile)(topology.binary, cacheArgs);
+    const cacheBudget = JSON.parse(cacheOutput);
+    const memoryCache = { totalMiB: cacheBudget.totalMiB, instances: topology.services.length };
     const rustfs = process.env.RUSTFS_BINARY || 'rustfs';
     const { stdout } = await promisify(execFile)(rustfs, ['--version']);
     if (!stdout.includes('rustfs 1.0.4')) throw new Error('RustFS 1.0.4 is required.');
@@ -260,6 +266,7 @@ export async function serveLocalRuntime({ directory }) {
         });
       await privateWrite(service.planFile, {
         format: 1,
+        memoryCache,
         services: [
           { kind: 'metadata', configFile: service.configFile, initialize: !service.initialized },
         ],
@@ -281,6 +288,7 @@ export async function serveLocalRuntime({ directory }) {
       service.initialized = true;
       await privateWrite(service.planFile, {
         format: 1,
+        memoryCache,
         services: [{ kind: 'metadata', configFile: service.configFile }],
       });
       await saveTopology();

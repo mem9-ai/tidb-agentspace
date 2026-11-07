@@ -10,29 +10,44 @@ Global and every Region own separate engines, installations, storage roots, encr
 
 ## Memory cache budget
 
-Each Meta configuration accepts `"blockCacheMib": 32`. Omitted values default to **32 MiB per
-engine**; an integer from 0 through 1024 is accepted. Set 0 to disable the cache or, for example,
-8 to reduce it on a small host. Invalid values fail validation before storage is opened.
-Changes take effect after a graceful service restart; retain the existing roots and keys.
+Accepted owner direction: determine the runtime memory capacity, calculate one cache budget,
+then divide it among database instances. Do not select a fixed capacity for each instance.
 
-The `foyer` feature is enabled explicitly, and one private Foyer memory pool holds data blocks,
-indexes and filters together. The configured budget is their combined weighted entry capacity,
-not a data-only budget with an additional hidden metadata cache. Pools are never shared across
-Global, Region or Analytics installations. Disk/object-store caching remains disabled.
+The native host uses the smaller of physical RAM and applicable Linux cgroup limits.
+It checks cgroup v1, v2 and visible ancestor limits. Unknown physical capacity stops startup.
+The initial default reserves **10 percent** for cache entries, rounded down to whole MiB.
+This ratio is a project policy, not a measured optimum. Swap does not increase the budget.
+The remaining memory supports the OS, APIs, MemTables, compaction and execution workers.
+Cache capacity counts weighted entries; it does not limit process RSS.
 
-| Engines sharing a host/container                     | Default total cache entry budget |
-| ---------------------------------------------------- | -------------------------------- |
-| Global Meta + one Region Meta                        | 64 MiB                           |
-| Global Meta + two Region Meta (local development)    | 96 MiB                           |
-| Global Meta + one Region Meta + one Analytics engine | 72 MiB                           |
+The native deployment plan divides this total equally among its Meta or Analytics instances.
+The local supervisor calculates one total before starting its separate Meta processes.
+It passes the same total and instance count to every child, including after restart.
 
-[Analytics](product-analytics.md) uses the same `blockCacheMib` option with an **8 MiB** default.
-Count every engine in each deployment, including separate processes on the same small host.
-These budgets are project defaults, not measurements of the deployed machine's memory limit.
-Before increasing them, inspect both container limits and available host memory. Reserve space
-for MemTables, compaction, in-flight reads, cache bookkeeping, the API and computation workers:
-weighted cache capacity is not a process RSS limit. With a tighter budget, setting both Meta
-engines to 8 MiB reduces their combined cache capacity to 16 MiB.
+| Effective memory | Total cache budget | Instances | Cache per instance |
+| ---------------- | ------------------ | --------- | ------------------ |
+| 512 MiB          | 51 MiB             | 2         | 25 MiB             |
+| 2 GiB            | 204 MiB            | 2         | 102 MiB            |
+| 24 GiB           | 2457 MiB           | 3         | 819 MiB            |
+
+Inspect the current allocation with `workspace-backend cache-budget --instances 3`.
+An optional `--total-mib` argument supplies an explicit total. Startup also logs the budget.
+The native plan accepts `memoryCache.totalMiB` to override the total; 0 disables all caching.
+For separate processes sharing one memory allocation, set the same `totalMiB` and `instances`
+in every plan. Count all Meta and Analytics engines in that allocation. The loader rejects
+a count smaller than its local instance count. It does not discover unrelated processes.
+Independent containers use their own limits; operators must also budget their combined host use.
+
+A service's optional `blockCacheMib` can reduce its assigned share or disable it with 0.
+It cannot exceed that share. Omission or null selects the assigned share; no fixed default applies.
+The standalone Meta binary treats an explicit value as its single-instance total.
+Library callers must supply an allocation; an unassigned library engine has caching disabled.
+Changes take effect after graceful restart. Preserve existing storage roots and encryption keys.
+
+Each engine retains a private Foyer pool for data blocks, indexes and filters together.
+Only the memory budget is coordinated; entries and credentials are never shared across instances.
+Disk/object-store caching remains disabled. Tests cover aggregate limits, small capacities,
+container ancestors, separate process plans, and local supervisor restarts.
 
 Verified upstream behavior for [SlateDB 0.18.0](https://github.com/slatedb/slatedb/tree/v0.18.0):
 the default Foyer split cache permits 512 MiB of data and 128 MiB of metadata **per database**.

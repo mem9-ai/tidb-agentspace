@@ -23,6 +23,7 @@ subtle = "=2.6.1"
 tokio = { version = "=1.48.0", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 uuid = { version = "=1.18.1", features = ["v4"] }
 workspace-contracts = { workspace = true }
+workspace-cache-budget = { workspace = true }
 
 [dev-dependencies]
 slatedb-common = "=0.18.0"

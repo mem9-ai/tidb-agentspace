@@ -217,7 +217,7 @@ impl Engine {
         let db = database_builder(
             format!("{}/slatedb", config.s3.prefix),
             store.clone(),
-            config.block_cache_mib,
+            config.block_cache_mib.unwrap_or(0),
         )
         .build()
         .await?;

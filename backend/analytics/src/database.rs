@@ -141,11 +141,11 @@ impl Database {
         let mut builder = Db::builder(format!("{prefix}/database"), store)
             .with_settings(settings)
             .with_db_cache_disabled();
-        if config.block_cache_mib > 0 {
+        if let Some(cache_mib) = config.block_cache_mib.filter(|mib| *mib > 0) {
             // A private pool for all SST entries; enabling Foyer must not select its large defaults.
             builder = builder.with_db_cache(
                 Arc::new(FoyerCache::new_with_opts(FoyerCacheOptions {
-                    max_capacity: u64::from(config.block_cache_mib) * 1024 * 1024,
+                    max_capacity: cache_mib * 1024 * 1024,
                     shards: 4,
                 })),
                 0,
@@ -329,10 +329,10 @@ mod tests {
             "tokenFile": directory.path().join("token")
         }))
         .unwrap();
-        assert_eq!(config.block_cache_mib, 8);
-        config.block_cache_mib = 1025;
+        assert_eq!(config.block_cache_mib, None);
+        config.block_cache_mib = Some(u64::MAX);
         assert!(config.validate().is_err());
-        config.block_cache_mib = 1;
+        config.block_cache_mib = Some(1);
         assert!(Database::open(&config, false).await.is_err());
         let database = Database::open(&config, true).await.unwrap();
         database
@@ -351,7 +351,7 @@ mod tests {
         std::fs::write(&key, hex::encode([8; 32])).unwrap();
         assert!(Database::open(&config, true).await.is_err());
         std::fs::write(&key, hex::encode([7; 32])).unwrap();
-        config.block_cache_mib = 0;
+        config.block_cache_mib = Some(0);
         let database = Database::open(&config, false).await.unwrap();
         let row = database
             .execute(Request::Get {

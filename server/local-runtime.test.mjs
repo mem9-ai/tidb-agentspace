@@ -48,9 +48,15 @@ test(
       assert.ok(value.services.every((s) => s.initialized));
       return value;
     });
+    const budgets = [];
     for (const service of topology.services) {
-      assert.equal((await privateJson(service.planFile)).services[0].initialize ?? false, false);
+      const plan = await privateJson(service.planFile);
+      assert.equal(plan.services[0].initialize ?? false, false);
+      assert.equal(plan.memoryCache.instances, topology.services.length);
+      assert.ok(Number.isSafeInteger(plan.memoryCache.totalMiB));
+      budgets.push(plan.memoryCache.totalMiB);
     }
+    assert.ok(budgets.every((budget) => budget === budgets[0]));
     const ownerIds = [];
     for (const s of topology.services) {
       const c = await createMetaClient(s.client);

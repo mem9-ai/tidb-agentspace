@@ -8,7 +8,7 @@ use std::sync::Arc;
 pub(crate) fn database_builder(
     path: String,
     store: Arc<dyn ObjectStore>,
-    cache_mib: u16,
+    cache_mib: u64,
 ) -> DbBuilder<String> {
     // One pool covers data, indexes and filters. Never inherit the upstream split-cache budgets.
     let builder = Db::builder(path, store).with_db_cache_disabled();
@@ -18,7 +18,7 @@ pub(crate) fn database_builder(
     // Each engine owns a distinct cache, so cache scope 0 cannot cross installations.
     builder.with_db_cache(
         Arc::new(FoyerCache::new_with_opts(FoyerCacheOptions {
-            max_capacity: u64::from(cache_mib) * 1024 * 1024,
+            max_capacity: cache_mib * 1024 * 1024,
             shards: 4,
         })),
         0,
