@@ -4,9 +4,48 @@ For the complete architecture, clean target domain model and iteration plan, sta
 [SlateDB Metadata Architecture Version 1](slatedb-metadata-design.md). This guide describes
 the running service, its configuration and its current limits.
 
-The implemented profile uses SlateDB **0.17.0**, Rust **1.99.1** and object storage as the source of truth for acknowledged writes. [ADR 0024](decisions/0024-fresh-record-metadata.md) defines the fresh record layout and retires the five-document compatibility bridge. [ADR 0022](decisions/0022-native-slatedb-transactions.md) supplies the native transaction and durable read rationale.
+The implemented profile uses SlateDB **0.18.0**, Rust **1.99.1** and object storage as the source of truth for acknowledged writes. [ADR 0024](decisions/0024-fresh-record-metadata.md) defines the fresh record layout and retires the five-document compatibility bridge. [ADR 0022](decisions/0022-native-slatedb-transactions.md) supplies the native transaction and durable read rationale.
 
 Global and every Region own separate engines, installations, storage roots, encryption keys and service tokens. Global records regional storage descriptors; regional serving does not look up Global, renew a Global token, or fall back to another store. The local topology shares one RustFS host as a functional development environment; it is not production disaster recovery or regional IAM isolation.
+
+## Memory cache budget
+
+Each Meta configuration accepts `"blockCacheMib": 32`. Omitted values default to **32 MiB per
+engine**; an integer from 0 through 1024 is accepted. Set 0 to disable the cache or, for example,
+8 to reduce it on a small host. Invalid values fail validation before storage is opened.
+Changes take effect after a graceful service restart; retain the existing roots and keys.
+
+The `foyer` feature is enabled explicitly, and one private Foyer memory pool holds data blocks,
+indexes and filters together. The configured budget is their combined weighted entry capacity,
+not a data-only budget with an additional hidden metadata cache. Pools are never shared across
+Global, Region or Analytics installations. Disk/object-store caching remains disabled.
+
+| Engines sharing a host/container                     | Default total cache entry budget |
+| ---------------------------------------------------- | -------------------------------- |
+| Global Meta + one Region Meta                        | 64 MiB                           |
+| Global Meta + two Region Meta (local development)    | 96 MiB                           |
+| Global Meta + one Region Meta + one Analytics engine | 72 MiB                           |
+
+[Analytics](product-analytics.md) uses the same `blockCacheMib` option with an **8 MiB** default.
+Count every engine in each deployment, including separate processes on the same small host.
+These budgets are project defaults, not measurements of the deployed machine's memory limit.
+Before increasing them, inspect both container limits and available host memory. Reserve space
+for MemTables, compaction, in-flight reads, cache bookkeeping, the API and computation workers:
+weighted cache capacity is not a process RSS limit. With a tighter budget, setting both Meta
+engines to 8 MiB reduces their combined cache capacity to 16 MiB.
+
+Verified upstream behavior for [SlateDB 0.18.0](https://github.com/slatedb/slatedb/tree/v0.18.0):
+the default Foyer split cache permits 512 MiB of data and 128 MiB of metadata **per database**.
+Always supply the explicit pool when adding an engine; enabling a Cargo feature alone is not
+a memory budget. Recheck this boundary when upgrading SlateDB. The regression test flushes
+records into SSTs, reopens with a cold cache, and checks warm point/prefix reads for data,
+index and filter hits without new cache misses; disabling the cache preserves results.
+
+Caching does not remove all S3 requests. MemTable reads already avoid SST reads; cache misses,
+durable writes, manifests and the existing fresh owner/fencing checks still use object storage.
+The [0.18.0 release](https://github.com/slatedb/slatedb/releases/tag/v0.18.0) also avoids reading
+filters that cannot answer a prefix scan. Transaction creation is now synchronous; the service
+still waits for the pinned sequence's durable frontier before authoritative reads.
 
 ## Records and transactions
 

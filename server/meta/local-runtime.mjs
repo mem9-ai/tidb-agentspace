@@ -117,7 +117,7 @@ export async function initializeLocalRuntime({
         regionId: authorityId.replace('region:', ''),
         metaDeploymentId: installationId,
         engine: 'slatedb',
-        engineRelease: '0.17.0',
+        engineRelease: '0.18.0',
         formatVersion: 2,
         mainStorage: {
           provider: 'rustfs',
