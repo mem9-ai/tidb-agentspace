@@ -81,6 +81,7 @@ pub struct Config {
     pub bind: SocketAddr,
     pub s3: Option<Storage>,
     pub local: Option<LocalStorage>,
+    pub block_cache_mib: Option<u64>,
     pub token_file: PathBuf,
     pub encryption_key_file: PathBuf,
     pub pseudonym_key_file: PathBuf,
@@ -125,6 +126,11 @@ impl Config {
         Ok(config)
     }
     pub fn validate(&self) -> Result<()> {
+        ensure!(
+            self.block_cache_mib
+                .is_none_or(|mib| mib.checked_mul(1024 * 1024).is_some()),
+            "blockCacheMib is too large"
+        );
         ensure!(
             (self.authority_id == "global"
                 || self.authority_id.strip_prefix("region:").is_some_and(id))

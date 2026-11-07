@@ -4,9 +4,63 @@ For the complete architecture, clean target domain model and iteration plan, sta
 [SlateDB Metadata Architecture Version 1](slatedb-metadata-design.md). This guide describes
 the running service, its configuration and its current limits.
 
-The implemented profile uses SlateDB **0.17.0**, Rust **1.99.1** and object storage as the source of truth for acknowledged writes. [ADR 0024](decisions/0024-fresh-record-metadata.md) defines the fresh record layout and retires the five-document compatibility bridge. [ADR 0022](decisions/0022-native-slatedb-transactions.md) supplies the native transaction and durable read rationale.
+The implemented profile uses SlateDB **0.18.0**, Rust **1.99.1** and object storage as the source of truth for acknowledged writes. [ADR 0024](decisions/0024-fresh-record-metadata.md) defines the fresh record layout and retires the five-document compatibility bridge. [ADR 0022](decisions/0022-native-slatedb-transactions.md) supplies the native transaction and durable read rationale.
 
 Global and every Region own separate engines, installations, storage roots, encryption keys and service tokens. Global records regional storage descriptors; regional serving does not look up Global, renew a Global token, or fall back to another store. The local topology shares one RustFS host as a functional development environment; it is not production disaster recovery or regional IAM isolation.
+
+## Memory cache budget
+
+Accepted owner direction: determine the runtime memory capacity, calculate one cache budget,
+then divide it among database instances. Do not select a fixed capacity for each instance.
+
+The native host uses the smaller of physical RAM and applicable Linux cgroup limits.
+It checks cgroup v1, v2 and visible ancestor limits. Unknown physical capacity stops startup.
+The initial default reserves **10 percent** for cache entries, rounded down to whole MiB.
+This ratio is a project policy, not a measured optimum. Swap does not increase the budget.
+The remaining memory supports the OS, APIs, MemTables, compaction and execution workers.
+Cache capacity counts weighted entries; it does not limit process RSS.
+
+The native deployment plan divides this total equally among its Meta or Analytics instances.
+The local supervisor calculates one total before starting its separate Meta processes.
+It passes the same total and instance count to every child, including after restart.
+
+| Effective memory | Total cache budget | Instances | Cache per instance |
+| ---------------- | ------------------ | --------- | ------------------ |
+| 512 MiB          | 51 MiB             | 2         | 25 MiB             |
+| 2 GiB            | 204 MiB            | 2         | 102 MiB            |
+| 24 GiB           | 2457 MiB           | 3         | 819 MiB            |
+
+Inspect the current allocation with `workspace-backend cache-budget --instances 3`.
+An optional `--total-mib` argument supplies an explicit total. Startup also logs the budget.
+The native plan accepts `memoryCache.totalMiB` to override the total; 0 disables all caching.
+For separate processes sharing one memory allocation, set the same `totalMiB` and `instances`
+in every plan. Count all Meta and Analytics engines in that allocation. The loader rejects
+a count smaller than its local instance count. It does not discover unrelated processes.
+Independent containers use their own limits; operators must also budget their combined host use.
+
+A service's optional `blockCacheMib` can reduce its assigned share or disable it with 0.
+It cannot exceed that share. Omission or null selects the assigned share; no fixed default applies.
+The standalone Meta binary treats an explicit value as its single-instance total.
+Library callers must supply an allocation; an unassigned library engine has caching disabled.
+Changes take effect after graceful restart. Preserve existing storage roots and encryption keys.
+
+Each engine retains a private Foyer pool for data blocks, indexes and filters together.
+Only the memory budget is coordinated; entries and credentials are never shared across instances.
+Disk/object-store caching remains disabled. Tests cover aggregate limits, small capacities,
+container ancestors, separate process plans, and local supervisor restarts.
+
+Verified upstream behavior for [SlateDB 0.18.0](https://github.com/slatedb/slatedb/tree/v0.18.0):
+the default Foyer split cache permits 512 MiB of data and 128 MiB of metadata **per database**.
+Always supply the explicit pool when adding an engine; enabling a Cargo feature alone is not
+a memory budget. Recheck this boundary when upgrading SlateDB. The regression test flushes
+records into SSTs, reopens with a cold cache, and checks warm point/prefix reads for data,
+index and filter hits without new cache misses; disabling the cache preserves results.
+
+Caching does not remove all S3 requests. MemTable reads already avoid SST reads; cache misses,
+durable writes, manifests and the existing fresh owner/fencing checks still use object storage.
+The [0.18.0 release](https://github.com/slatedb/slatedb/releases/tag/v0.18.0) also avoids reading
+filters that cannot answer a prefix scan. Transaction creation is now synchronous; the service
+still waits for the pinned sequence's durable frontier before authoritative reads.
 
 ## Records and transactions
 

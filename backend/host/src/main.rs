@@ -24,6 +24,23 @@ async fn stopped(mut receiver: watch::Receiver<bool>) {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if matches!(args.len(), 3 | 5) && args[0] == "cache-budget" && args[1] == "--instances" {
+        let total_mi_b = if args.len() == 5 {
+            if args[3] != "--total-mib" {
+                bail!("Use --total-mib for a shared cache budget");
+            }
+            Some(args[4].parse()?)
+        } else {
+            None
+        };
+        let budget = workspace_cache_budget::Policy {
+            total_mi_b,
+            instances: None,
+        }
+        .resolve(args[2].parse()?)?;
+        println!("{}", serde_json::to_string(&budget)?);
+        return Ok(());
+    }
     if args.as_slice() == ["runtime-info"] {
         // Image/package verification must work without loading a private deployment plan.
         println!("{}", workspace_execute::runtime_info());

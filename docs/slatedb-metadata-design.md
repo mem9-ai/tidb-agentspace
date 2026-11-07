@@ -377,18 +377,18 @@ Test with independent temporary storage and credentials. Functional RustFS tests
 
 The running implementation is deliberately narrower than the target model.
 
-| Area                         | Baseline implementation                                                                    | Next iteration                                                                           |
-| ---------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| Rust composition             | In-process or remote metadata modules; common executable with independent roles            | Hosted deployment automation and failure-domain qualification                            |
-| Storage                      | Independent Global/Region installations and SlateDB 0.17.0 roots; local RustFS development | Production IAM/KMS, storage qualification and backup drills                              |
-| Record semantics             | Versioned encrypted records, native transactions, durable reads/ACKs and receipts          | Typed small-group domain repositories and retention policy                               |
-| Domain access                | Point authentication/resource checks; some bounded aggregate views                         | Remove aggregate-dependent operations; public collection indexes/pagination              |
-| Business concurrency         | One active API writer per Workspace and process-local provider coordination                | Distributed operation claims and qualified HA                                            |
-| Global directory             | Local initialization records regional storage descriptors                                  | Durable regional shard catalog and controlled relocation                                 |
-| Regional autonomy            | Regional startup/auth/request path does not call Global                                    | Installed policy distribution, delegated renewal and independent hosted reauthentication |
-| Control channel              | Direction and protocol specified                                                           | Commands, inbox/journal, Global polling and network enforcement                          |
-| Scale                        | One physical shard per authority; internal bounded record pages                            | Shared cells, hot-tenant distribution, route epochs and measured capacity                |
-| Advanced engine integrations | Native transactional storage path                                                          | Checkpoints/backup, qualified readers and replayable projections where needed            |
+| Area                         | Baseline implementation                                                                                          | Next iteration                                                                           |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Rust composition             | In-process or remote metadata modules; common executable with independent roles                                  | Hosted deployment automation and failure-domain qualification                            |
+| Storage                      | Independent Global/Region installations and SlateDB 0.18.0 roots; bounded Foyer caches; local RustFS development | Production IAM/KMS, storage qualification and backup drills                              |
+| Record semantics             | Versioned encrypted records, native transactions, durable reads/ACKs and receipts                                | Typed small-group domain repositories and retention policy                               |
+| Domain access                | Point authentication/resource checks; some bounded aggregate views                                               | Remove aggregate-dependent operations; public collection indexes/pagination              |
+| Business concurrency         | One active API writer per Workspace and process-local provider coordination                                      | Distributed operation claims and qualified HA                                            |
+| Global directory             | Local initialization records regional storage descriptors                                                        | Durable regional shard catalog and controlled relocation                                 |
+| Regional autonomy            | Regional startup/auth/request path does not call Global                                                          | Installed policy distribution, delegated renewal and independent hosted reauthentication |
+| Control channel              | Direction and protocol specified                                                                                 | Commands, inbox/journal, Global polling and network enforcement                          |
+| Scale                        | One physical shard per authority; internal bounded record pages                                                  | Shared cells, hot-tenant distribution, route epochs and measured capacity                |
+| Advanced engine integrations | Native transactional storage path                                                                                | Checkpoints/backup, qualified readers and replayable projections where needed            |
 
 Current aggregate views reject more than 4096 records or 24 MiB. That is an implementation ceiling to remove, not the target entity model. Million-resource capacity needs representative skew, crash recovery, pagination and tenant-isolation benchmarks; record-level storage by itself does not establish it.
 
@@ -404,5 +404,5 @@ The existing native/S3 suites cover version races, ordered pagination, receipts,
 - [Object metastore](../specs/gh-74/object-metastore.md): durability, storage directory and recovery requirements.
 - [Global control channel](../specs/gh-74/control-channel.md), [regional auth](../specs/gh-74/regional-api-auth.md) and [metadata scale](../specs/gh-74/metadata-scale.md): detailed future contracts.
 - [Meta engine](../meta-service/src/engine.rs), [service transport](../meta-service/src/server.rs), [Rust contract](../backend/contracts/src/lib.rs) and [Workspace repository](../backend/workspace/src/repository.rs): implementation source.
-- [SlateDB 0.17.0 source](https://github.com/slatedb/slatedb/tree/c1e36fc07fb9b759d31484dda18c1c1aad8a2853): pinned upstream release.
+- [SlateDB 0.18.0 source](https://github.com/slatedb/slatedb/tree/v0.18.0): current pinned upstream release; see [cache budgets](meta-service.md#memory-cache-budget). The initial implementation baseline above used 0.17.0.
 - [SlateDB write path](https://slatedb.io/docs/design/writes/): write handles, WAL and durability; reconcile live documentation with the pinned source when upgrading.

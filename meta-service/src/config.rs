@@ -13,6 +13,7 @@ pub struct Config {
     pub environment: String,
     pub bind: SocketAddr,
     pub s3: Storage,
+    pub block_cache_mib: Option<u64>,
     pub token_file: PathBuf,
     pub encryption_key_file: PathBuf,
     pub encryption_key_id: String,
@@ -80,6 +81,11 @@ impl Config {
     }
     pub fn validate(&self) -> Result<()> {
         let c = self;
+        if c.block_cache_mib
+            .is_some_and(|mib| mib.checked_mul(1024 * 1024).is_none())
+        {
+            bail!("blockCacheMib is too large");
+        }
         if !valid_id(&c.installation_id)
             || !valid_id(&c.encryption_key_id)
             || !(c.authority_id == "global"
@@ -115,5 +121,36 @@ impl Config {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn cache_budget_defaults_and_explicit_limits_validate_before_open() {
+        let mut input = json!({
+            "authorityId": "global", "installationId": "cache-config", "environment": "test",
+            "bind": "127.0.0.1:7443", "insecureLoopback": true,
+            "s3": {"endpoint": "http://127.0.0.1:9000", "region": "local", "bucket": "test", "prefix": "metadata"},
+            "tokenFile": "/unused/token", "encryptionKeyFile": "/unused/key", "encryptionKeyId": "key-v1"
+        });
+        let config: Config = serde_json::from_value(input.clone()).unwrap();
+        assert_eq!(config.block_cache_mib, None);
+        config.validate().unwrap();
+        for budget in [0, 1, 8, 1024] {
+            input["blockCacheMib"] = json!(budget);
+            let config: Config = serde_json::from_value(input.clone()).unwrap();
+            assert_eq!(config.block_cache_mib, Some(budget));
+            config.validate().unwrap();
+        }
+        for invalid in [json!(-1), json!(1.5), json!("32"), json!(u64::MAX)] {
+            input["blockCacheMib"] = invalid;
+            let valid = serde_json::from_value::<Config>(input.clone())
+                .is_ok_and(|config| config.validate().is_ok());
+            assert!(!valid, "Invalid cache budget accepted");
+        }
     }
 }

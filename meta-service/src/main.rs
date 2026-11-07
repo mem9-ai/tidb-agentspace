@@ -12,7 +12,13 @@ async fn main() -> anyhow::Result<()> {
     let path = args
         .get(i + 1)
         .ok_or_else(|| anyhow::anyhow!("Missing configuration path"))?;
-    let config = Config::load(std::path::Path::new(path))?;
+    let mut config = Config::load(std::path::Path::new(path))?;
+    let budget = workspace_cache_budget::Policy {
+        total_mi_b: config.block_cache_mib,
+        instances: None,
+    }
+    .resolve(1)?;
+    config.block_cache_mib = Some(budget.instance(config.block_cache_mib)?);
     let recover = args
         .iter()
         .position(|v| v == "--recover-owner")

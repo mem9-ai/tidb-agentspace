@@ -21,6 +21,7 @@ workspace-identity.workspace = true
 workspace-meta-client.workspace = true
 workspace-meta-service.workspace = true
 workspace-execute.workspace = true
+workspace-cache-budget.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

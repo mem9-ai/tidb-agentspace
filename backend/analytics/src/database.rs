@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 use slatedb::{
     Db, IsolationLevel,
     config::{DurabilityLevel, ReadOptions, ScanOptions},
+    db_cache::foyer::{FoyerCache, FoyerCacheOptions},
     object_store::{
         ObjectStore, ObjectStoreExt, PutMode, PutOptions, aws::AmazonS3Builder, path::Path,
     },
@@ -137,10 +138,20 @@ impl Database {
             object_store_max_retries: Some(2),
             ..Default::default()
         };
-        let db = Db::builder(format!("{prefix}/database"), store)
+        let mut builder = Db::builder(format!("{prefix}/database"), store)
             .with_settings(settings)
-            .build()
-            .await?;
+            .with_db_cache_disabled();
+        if let Some(cache_mib) = config.block_cache_mib.filter(|mib| *mib > 0) {
+            // A private pool for all SST entries; enabling Foyer must not select its large defaults.
+            builder = builder.with_db_cache(
+                Arc::new(FoyerCache::new_with_opts(FoyerCacheOptions {
+                    max_capacity: cache_mib * 1024 * 1024,
+                    shards: 4,
+                })),
+                0,
+            );
+        }
+        let db = builder.build().await?;
         Ok(Self {
             db,
             cipher,
@@ -180,7 +191,6 @@ impl Database {
         let tx = self
             .db
             .begin(IsolationLevel::SerializableSnapshot)
-            .await
             .map_err(unavailable)?;
         let options = ReadOptions {
             durability_filter: DurabilityLevel::Memory,
@@ -319,6 +329,10 @@ mod tests {
             "tokenFile": directory.path().join("token")
         }))
         .unwrap();
+        assert_eq!(config.block_cache_mib, None);
+        config.block_cache_mib = Some(u64::MAX);
+        assert!(config.validate().is_err());
+        config.block_cache_mib = Some(1);
         assert!(Database::open(&config, false).await.is_err());
         let database = Database::open(&config, true).await.unwrap();
         database
@@ -337,6 +351,7 @@ mod tests {
         std::fs::write(&key, hex::encode([8; 32])).unwrap();
         assert!(Database::open(&config, true).await.is_err());
         std::fs::write(&key, hex::encode([7; 32])).unwrap();
+        config.block_cache_mib = Some(0);
         let database = Database::open(&config, false).await.unwrap();
         let row = database
             .execute(Request::Get {

@@ -13,6 +13,8 @@ use workspace_meta_service::config::Config as MetaConfig;
 struct Deployment {
     format: u32,
     services: Vec<Role>,
+    #[serde(default)]
+    memory_cache: workspace_cache_budget::Policy,
 }
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
@@ -197,12 +199,86 @@ impl Plan {
                 bail!("An in-process Global dependency must be explicitly hosted");
             }
         }
+        let instances = result.metadata.len() + usize::from(result.analytics.is_some());
+        if instances > 0 {
+            let budget = deployment.memory_cache.resolve(instances)?;
+            for role in &mut result.metadata {
+                role.config.block_cache_mib = Some(budget.instance(role.config.block_cache_mib)?);
+            }
+            if let Some(role) = &mut result.analytics {
+                role.config.block_cache_mib = Some(budget.instance(role.config.block_cache_mib)?);
+            }
+            eprintln!(
+                "SlateDB cache: {} MiB total, {} instances, {} MiB per instance; memory capacity {} MiB.",
+                budget.total_mi_b,
+                budget.instances,
+                budget.per_instance_mi_b,
+                budget.memory_bytes / workspace_cache_budget::MIB,
+            );
+        }
         Ok(result)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn metadata_roles_share_one_budget_before_any_engine_opens() {
+        use std::path::Path;
+        fn write(path: &Path, value: impl AsRef<[u8]>) {
+            std::fs::write(path, value).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+            }
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let mut roles = Vec::new();
+        for (i, authority) in ["global", "region:test"].into_iter().enumerate() {
+            let key = directory.path().join(format!("key-{i}"));
+            let token = directory.path().join(format!("token-{i}"));
+            let config = directory.path().join(format!("config-{i}"));
+            write(&key, hex::encode([i as u8 + 1; 32]));
+            write(&token, format!("{i:064}"));
+            write(&config, serde_json::to_vec(&serde_json::json!({
+                "authorityId": authority, "installationId": format!("installation-{i}"),
+                "environment": "test", "bind": format!("127.0.0.1:{}", 7400 + i),
+                "insecureLoopback": true, "tokenFile": token, "encryptionKeyFile": key,
+                "encryptionKeyId": format!("key-{i}"),
+                "s3": {"endpoint": "http://127.0.0.1:9000", "region": "local", "bucket": "test", "prefix": format!("metadata-{i}")}
+            })).unwrap());
+            roles.push(serde_json::json!({"kind": "metadata", "configFile": config}));
+        }
+        let path = directory.path().join("plan");
+        let mut deployment = serde_json::json!({
+            "format": 1, "services": roles, "memoryCache": {"totalMiB": 120}
+        });
+        write(&path, serde_json::to_vec(&deployment).unwrap());
+        let plan = super::Plan::load(&path).unwrap();
+        assert_eq!(
+            plan.metadata
+                .iter()
+                .map(|p| p.config.block_cache_mib.unwrap())
+                .collect::<Vec<_>>(),
+            [60, 60]
+        );
+        // The same declaration can cover a third engine in a separate process.
+        deployment["memoryCache"]["instances"] = serde_json::json!(3);
+        write(&path, serde_json::to_vec(&deployment).unwrap());
+        let plan = super::Plan::load(&path).unwrap();
+        assert_eq!(
+            plan.metadata
+                .iter()
+                .map(|p| p.config.block_cache_mib.unwrap())
+                .collect::<Vec<_>>(),
+            [40, 40]
+        );
+        deployment["memoryCache"]["instances"] = serde_json::json!(1);
+        write(&path, serde_json::to_vec(&deployment).unwrap());
+        assert!(super::Plan::load(&path).is_err());
+    }
+
     #[test]
     fn analytics_cannot_share_a_process_with_business_or_meta_roles() {
         let directory = tempfile::tempdir().unwrap();

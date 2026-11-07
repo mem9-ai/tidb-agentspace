@@ -1,3 +1,4 @@
+use crate::cache::database_builder;
 use crate::config::{Config, Installation, private_file, valid_id};
 use aes_gcm::{
     Aes256Gcm, KeyInit, Nonce,
@@ -213,9 +214,13 @@ impl Engine {
                 },
             )
             .await?;
-        let db = Db::builder(format!("{}/slatedb", config.s3.prefix), store.clone())
-            .build()
-            .await?;
+        let db = database_builder(
+            format!("{}/slatedb", config.s3.prefix),
+            store.clone(),
+            config.block_cache_mib.unwrap_or(0),
+        )
+        .build()
+        .await?;
         Ok(Self {
             config,
             db,
@@ -312,7 +317,6 @@ impl Engine {
         let transaction = self
             .db
             .begin(IsolationLevel::SerializableSnapshot)
-            .await
             .map_err(unavailable)?;
         let mut status = self.db.subscribe();
         let sequence = transaction.seqnum();
@@ -655,7 +659,7 @@ impl Engine {
         Ok(self.health())
     }
     pub fn health(&self) -> Value {
-        json!({"authorityId":self.config.authority_id,"installationId":self.config.installation_id,"engine":"slatedb","engineVersion":"0.17.0","ownerId":self.owner.id,"capabilities":["recordsV1","workspaceWriterFencing"]})
+        json!({"authorityId":self.config.authority_id,"installationId":self.config.installation_id,"engine":"slatedb","engineVersion":"0.18.0","ownerId":self.owner.id,"capabilities":["recordsV1","workspaceWriterFencing"]})
     }
     pub async fn close(&self) -> Result<()> {
         let _drained = self.lifecycle.write().await;
