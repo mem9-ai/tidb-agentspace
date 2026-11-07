@@ -28,6 +28,31 @@ report's action. The public read grant never supplies Owner authority, a Workspa
 an account identity. Account continuation carries the current saved report/source using the
 existing complete-read, version and unsaved-change guards.
 
+## Predictable local project selection
+
+Accepted after first-use feedback: an unrelated `~/.git` must not capture reports from
+Downloads or another non-repository folder. Default lookup stops before the home or filesystem
+root; a real repository below that boundary is reused, otherwise the current directory is used.
+An existing binding in the selected folder or its project parents takes precedence.
+An explicit `--project` selects that exact directory. A new home/root binding is refused;
+existing home-bound reports remain accessible through explicit selection.
+
+Before any key creation or remote request, both public and private helpers check for a binding
+at the former parent root. When the newly selected folder has none, the agent offers continuing
+the original report or explicitly starting separately. It does not migrate ambiguous home-wide
+identity or silently make another trial. New independent reports preserve the original binding.
+The resolved output folder is visible before public-report writes. Default output gives the
+verified finding, Studio/local links, expiry/share visibility and the next action; `--json`
+retains structured output for agents. Only canonical server Markdown is saved; local calculations
+verify the numbers instead of constructing a second report body.
+
+Offline helper regressions cover home-repository boundaries, exact selection, old-binding
+recovery without key/network side effects, nested-project continuity and both output modes.
+The legacy local install names remain compatibility details, explained once in the skill.
+Dependency logs are quiet while failures remain visible. Full dependency locking, independent
+release signatures and complete runtime uninstall are separate improvements, not claims of
+this UX change. Revisit project selection if portable project identities replace path bindings.
+
 ## An open viewer stays current
 
 The isolated viewer checks for updates every ten seconds while visible, immediately on focus,
