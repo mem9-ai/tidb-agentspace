@@ -424,6 +424,7 @@ export async function agentRestCases(t, transport) {
   await t.test(
     'accepted deletion is retained and never repeats across normal or crash restart',
     async () => {
+      await f.seedResources(1);
       let entered, release;
       const pending = new Promise((r) => {
         entered = r;
@@ -443,7 +444,7 @@ export async function agentRestCases(t, transport) {
       const deleting = request('/resources/fs_live', { method: 'DELETE', token: full.secret }, 202);
       try {
         const unrelated = await Promise.race([
-          request('/resources/db_legacy_local', { method: 'DELETE' }),
+          request('/resources/fs_scale_00000000', { method: 'DELETE' }),
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error('unrelated resource deletion was blocked')), 5000),
           ),
