@@ -95,7 +95,7 @@ test(
     ]) {
       const created = await fixture.globalRequest('/keys', {
         method: 'POST',
-        headers: { 'Idempotency-Key': 'retired-target-' + id },
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
         body: {
           name: 'retired-target',
           scopes: ['resources:read'],
