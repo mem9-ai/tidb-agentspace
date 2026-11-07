@@ -13,12 +13,17 @@ on:
             inspect,
             inspect-analytics,
             enable-analytics,
+            deploy-analytics,
             verify-analytics,
             restart-analytics,
             reset-and-enable-global,
             activate-prepared,
             repair-probes,
           ]
+      image_digest:
+        description: Exact deployed API image digest for deploy-analytics
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -66,6 +71,7 @@ jobs:
       K8S_DEPLOYMENT: ${{ secrets.DEV_API_DEPLOYMENT }}
       K8S_CONTAINER: ${{ secrets.DEV_API_CONTAINER || secrets.DEV_API_DEPLOYMENT }}
       CUTOVER_OPERATION: ${{ inputs.operation }}
+      ANALYTICS_IMAGE_DIGEST: ${{ inputs.image_digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -93,8 +99,8 @@ jobs:
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
       - name: Configure the single-service Global and Region deployment
-        if: inputs.operation != 'inspect-analytics' && inputs.operation != 'enable-analytics' && inputs.operation != 'verify-analytics' && inputs.operation != 'restart-analytics'
+        if: inputs.operation != 'inspect-analytics' && inputs.operation != 'enable-analytics' && inputs.operation != 'verify-analytics' && inputs.operation != 'restart-analytics' && inputs.operation != 'deploy-analytics'
         run: node scripts/cutover-global-cloud.mjs
       - name: Configure independent analytics without changing business metadata
-        if: inputs.operation == 'inspect-analytics' || inputs.operation == 'enable-analytics' || inputs.operation == 'verify-analytics' || inputs.operation == 'restart-analytics'
+        if: inputs.operation == 'inspect-analytics' || inputs.operation == 'enable-analytics' || inputs.operation == 'verify-analytics' || inputs.operation == 'restart-analytics' || inputs.operation == 'deploy-analytics'
         run: node scripts/enable-analytics-cloud.mjs

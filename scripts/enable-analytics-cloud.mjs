@@ -195,6 +195,110 @@ export async function verifyAnalyticsPublic(request = fetch) {
     throw new AnalyticsCloudError('Public product capture is not enabled.');
 }
 
+function checkRuntime(live, entry, owner, image) {
+  managed(live, owner);
+  const pod = structuredClone(entry.deployment.spec.template.spec);
+  pod.containers[0].image = image;
+  pod.initContainers[0].image = image;
+  if (
+    live.spec.replicas !== 1 ||
+    live.spec.strategy?.type !== 'Recreate' ||
+    !matchesManifest(live.spec.selector, entry.deployment.spec.selector) ||
+    !matchesManifest(live.spec.template.spec, pod) ||
+    ['hostNetwork', 'hostPID', 'hostIPC'].some((k) => live.spec.template.spec[k] === true)
+  )
+    throw new AnalyticsCloudError('Analytics runtime differs from its prepared identity.');
+}
+
+function readyRevision(live) {
+  return (
+    Number.isInteger(live.metadata.generation) &&
+    live.status?.observedGeneration === live.metadata.generation &&
+    live.status.updatedReplicas === 1 &&
+    live.status.readyReplicas === 1 &&
+    live.status.availableReplicas === 1
+  );
+}
+
+function deployImages(target, prepared, options, get, kubectl, report) {
+  const image = target.runtime.image;
+  if (
+    !/^sha256:[a-f0-9]{64}$/.test(options.imageDigest ?? '') ||
+    image.split('@')[1] !== options.imageDigest ||
+    !readyRevision(target.source)
+  )
+    throw new AnalyticsCloudError(
+      'Select the exact image digest of the ready business Deployment.',
+    );
+  const authorities = new Map([
+    ['global', 'global'],
+    [target.api.authorityId, 'region'],
+  ]);
+  if (prepared.entries.length !== 2 || new Set(prepared.entries.map((e) => e.authority)).size !== 2)
+    throw new AnalyticsCloudError('Expected one Global and one Region analytics Deployment.');
+  // Validate both writers before updating either one. Retain their PVCs and private configuration.
+  const writers = prepared.entries.map((entry) => {
+    const kind = authorities.get(entry.authority);
+    if (!kind || entry.name !== `analytics-${kind}-${prepared.owner}`)
+      throw new AnalyticsCloudError('Unexpected analytics Deployment identity.');
+    const live = get('deployment', entry.name);
+    const previous = live.spec.template.spec.containers[0]?.image;
+    if (
+      !live.metadata.uid ||
+      !live.metadata.resourceVersion ||
+      !/^[\w./:-]+@sha256:[a-f0-9]{64}$/.test(previous ?? '') ||
+      previous.split('@')[0] !== image.split('@')[0]
+    )
+      throw new AnalyticsCloudError(
+        'Expected a digest-pinned analytics image in the release repository.',
+      );
+    checkRuntime(live, entry, prepared.owner, previous);
+    if (previous !== image && !readyRevision(live))
+      throw new AnalyticsCloudError(
+        'The previous analytics writer must be ready before an upgrade.',
+      );
+    return { entry, live, previous };
+  });
+  for (const { entry, live, previous } of writers) {
+    const business = get('deployment', options.deployment);
+    if (
+      business.metadata.uid !== target.source.metadata.uid ||
+      !isDeepStrictEqual(business.spec, target.source.spec) ||
+      !readyRevision(business)
+    )
+      throw new AnalyticsCloudError('The business release changed during analytics rollout.');
+    const resource = `deployment/${entry.name}`;
+    if (previous !== image) {
+      const patch = [
+        { op: 'test', path: '/metadata/uid', value: live.metadata.uid },
+        { op: 'test', path: '/metadata/resourceVersion', value: live.metadata.resourceVersion },
+        ...['containers', 'initContainers'].map((key) => ({
+          op: 'replace',
+          path: `/spec/template/spec/${key}/0/image`,
+          value: image,
+        })),
+      ];
+      kubectl([
+        'patch',
+        resource,
+        '-n',
+        options.namespace,
+        '--type=json',
+        '--patch',
+        JSON.stringify(patch),
+        '-o',
+        'name',
+      ]);
+    }
+    kubectl(['rollout', 'status', resource, '-n', options.namespace, '--timeout=240s']);
+    const updated = get('deployment', entry.name);
+    checkRuntime(updated, entry, prepared.owner, image);
+    if (updated.metadata.uid !== live.metadata.uid || !readyRevision(updated))
+      throw new AnalyticsCloudError('The requested analytics image is not ready.');
+    report(`${entry.authority} analytics is ready at ${options.imageDigest}.`);
+  }
+}
+
 // Explicit operator action. New analytics resources are prepared/initialized before the
 // business config changes. Source metadata, SSO, provider bindings and image are preserved.
 export async function enableAnalytics(
@@ -225,7 +329,11 @@ export async function enableAnalytics(
       immutableImage: /@sha256:[a-f0-9]{64}$/.test(target.runtime.image),
     };
   }
-  if (!['enable-analytics', 'verify-analytics', 'restart-analytics'].includes(options.operation))
+  if (
+    !['enable-analytics', 'verify-analytics', 'restart-analytics', 'deploy-analytics'].includes(
+      options.operation,
+    )
+  )
     throw new AnalyticsCloudError('Explicit analytics operator action required.');
   let prepared;
   if (state) {
@@ -236,7 +344,7 @@ export async function enableAnalytics(
     if (
       prepared.format !== 2 ||
       prepared.sourceUid !== target.source.metadata.uid ||
-      prepared.image !== target.runtime.image ||
+      (options.operation === 'enable-analytics' && prepared.image !== target.runtime.image) ||
       prepared.owner !== expectedOwner
     )
       throw new AnalyticsCloudError('Prepared analytics state does not match the target runtime.');
@@ -274,6 +382,10 @@ export async function enableAnalytics(
     );
   if (options.operation !== 'enable-analytics' && !enabled)
     throw new AnalyticsCloudError('Prepared analytics configuration is not active.');
+  if (options.operation === 'deploy-analytics') {
+    await verifyAnalyticsPublic(request);
+    deployImages(target, prepared, options, get, kubectl, report);
+  }
   if (options.operation === 'enable-analytics') {
     for (const entry of prepared.entries) {
       for (const object of [entry.volume, entry.account, entry.secret, entry.service])
@@ -300,9 +412,7 @@ export async function enableAnalytics(
   }
   for (const entry of prepared.entries) {
     const live = get('deployment', entry.name);
-    managed(live, prepared.owner);
-    if (!matchesManifest(live.spec.template.spec, entry.deployment.spec.template.spec))
-      throw new AnalyticsCloudError('Analytics runtime differs from its prepared identity.');
+    checkRuntime(live, entry, prepared.owner, target.runtime.image);
     if (options.operation === 'restart-analytics') {
       kubectl(['rollout', 'restart', `deployment/${entry.name}`, '-n', namespace]);
       kubectl(['rollout', 'status', `deployment/${entry.name}`, '-n', namespace, '--timeout=240s']);
@@ -342,6 +452,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         deployment: process.env.K8S_DEPLOYMENT,
         container: process.env.K8S_CONTAINER,
         operation: process.env.CUTOVER_OPERATION,
+        imageDigest: process.env.ANALYTICS_IMAGE_DIGEST,
       },
       {
         kubectl: (args, input) => command('kubectl', ['--request-timeout=30s', ...args], input),

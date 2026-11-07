@@ -160,9 +160,39 @@ function fixture() {
         throw missing('Forbidden private-canary');
       const key = `${object.kind.toLowerCase()}/${object.metadata.name}`;
       assert.ok(!objects.has(key));
-      if (object.kind === 'Deployment') object.status = { availableReplicas: 1 };
+      if (object.kind === 'Deployment') {
+        Object.assign(object.metadata, {
+          uid: object.metadata.name,
+          resourceVersion: '1',
+          generation: 1,
+        });
+        object.status = {
+          observedGeneration: 1,
+          updatedReplicas: 1,
+          readyReplicas: 1,
+          availableReplicas: 1,
+        };
+      }
       objects.set(key, object);
     } else if (args[0] === 'patch') {
+      if (args.includes('--type=json')) {
+        const live = objects.get(args[1]);
+        const patch = JSON.parse(args[args.indexOf('--patch') + 1]);
+        for (const { op, path, value } of patch) {
+          const parts = path.slice(1).split('/');
+          const key = parts.pop();
+          const object = parts.reduce((o, field) => o[field], live);
+          if (op === 'test') assert.equal(object[key], value);
+          else {
+            assert.equal(op, 'replace');
+            assert.equal(key, 'image');
+            object[key] = value;
+          }
+        }
+        live.metadata.resourceVersion = String(Number(live.metadata.resourceVersion) + 1);
+        live.status.observedGeneration = ++live.metadata.generation;
+        return '';
+      }
       const patch = JSON.parse(
         readFileSync(args.find((a) => a.startsWith('--patch-file=')).slice('--patch-file='.length)),
       );
@@ -314,6 +344,69 @@ test('permission denial, failed initialization and concurrent target changes nev
     assert.equal(f.source.spec.template.spec.volumes[0].secret.secretName, 'original');
     assert.ok(!f.events.some((e) => ['delete', 'reset'].includes(e.args[0])));
   }
+});
+
+async function activeRelease() {
+  const f = fixture();
+  await enableAnalytics(options, f.dependencies);
+  const imageDigest = 'sha256:' + 'b'.repeat(64);
+  f.source.spec.template.spec.containers[0].image = 'registry.example/studio@' + imageDigest;
+  f.source.metadata.generation = 3;
+  f.source.status = {
+    observedGeneration: 3,
+    updatedReplicas: 1,
+    readyReplicas: 1,
+    availableReplicas: 1,
+  };
+  f.events.length = 0;
+  return { f, release: { ...options, operation: 'deploy-analytics', imageDigest } };
+}
+
+test('analytics release resumes a partial rollout and changes only the two images of each writer', async () => {
+  const { f, release } = await activeRelease();
+  const prior = structuredClone(f.objects);
+  let patches = 0;
+  await assert.rejects(
+    enableAnalytics(release, {
+      ...f.dependencies,
+      kubectl(args, input) {
+        if (args[0] === 'patch' && ++patches === 2) throw new Error('interrupted rollout');
+        return f.dependencies.kubectl(args, input);
+      },
+    }),
+    /interrupted rollout/,
+  );
+  await enableAnalytics(release, f.dependencies);
+  await enableAnalytics(release, f.dependencies);
+  await enableAnalytics({ ...options, operation: 'verify-analytics' }, f.dependencies);
+  assert.equal(f.events.filter((e) => e.args[0] === 'patch').length, 2);
+  assert.deepEqual([...f.objects.keys()], [...prior.keys()]);
+  for (const [key, original] of prior) {
+    const actual = f.objects.get(key);
+    if (key.startsWith('deployment/analytics-')) {
+      for (const group of ['containers', 'initContainers'])
+        original.spec.template.spec[group][0].image =
+          f.source.spec.template.spec.containers[0].image;
+      original.metadata.resourceVersion = '2';
+      original.metadata.generation = original.status.observedGeneration = 2;
+    }
+    assert.deepEqual(actual, original);
+  }
+});
+
+test('analytics release rejects a stale release digest or a changed second writer before patching', async () => {
+  const { f, release } = await activeRelease();
+  await assert.rejects(
+    enableAnalytics({ ...release, imageDigest: 'sha256:' + 'c'.repeat(64) }, f.dependencies),
+    /exact image digest/,
+  );
+  const second = [...f.objects.values()].find(
+    (o) => o.kind === 'Deployment' && o.metadata.name.startsWith('analytics-region-'),
+  );
+  second.spec.template.spec.volumes.find((v) => v.name === 'data').persistentVolumeClaim.claimName =
+    'other-data';
+  await assert.rejects(enableAnalytics(release, f.dependencies), /prepared identity/);
+  assert.equal(f.events.filter((e) => e.args[0] === 'patch').length, 0);
 });
 
 test('missing or ambiguous existing storage stops before any preparation and never provisions cloud resources', async () => {

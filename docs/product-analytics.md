@@ -318,6 +318,16 @@ Deployments, preserving their roots/credentials and the business Deployment. Com
 authenticated totals before and after that action; graceful recovery does not promise
 that every queued event survives an abrupt crash.
 
+After business CD verifies its image digest, run the protected `deploy-analytics` operation.
+Supply the digest reported by that release. The operation checks both existing writers and
+updates their serving and configuration-copy images in sequence. Each writer must reach
+readiness at the requested digest. Retrying the same release resumes a partial rollout.
+
+```sh
+gh workflow run global-configure.yml --ref main -f operation=deploy-analytics \
+  -f image_digest="$DEPLOYED_IMAGE_DIGEST"
+```
+
 ## Search discovery and publication
 
 The independent Console build renders installed TiUI 2.9.1 components and the shared
