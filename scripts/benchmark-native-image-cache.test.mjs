@@ -22,6 +22,7 @@ test('image source preparation leaves cached Cargo artifacts untouched', (t) => 
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   for (const name of [
     'backend/contracts',
+    'backend/cache-budget',
     'backend/meta-client',
     'backend/workspace',
     'backend/identity',
