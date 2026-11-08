@@ -1,3 +1,5 @@
+#[path = "common/openapi.rs"]
+mod openapi;
 #[path = "common/product.rs"]
 mod product;
 
@@ -119,7 +121,22 @@ async fn all_regional_portal_operations_match_their_live_schemas() -> Result<()>
         .send()
         .await?;
     assert_eq!(published.status(), 200);
-    assert_eq!(published.json::<Value>().await?, owner_contract());
+    let document_url = published.url().clone();
+    let owner = published.json::<Value>().await?;
+    assert_eq!(owner, owner_contract());
+    let url = openapi::get_url(
+        &document_url,
+        &owner,
+        "/workspaces/{workspaceId}/audit-history",
+    )?;
+    assert_eq!(
+        url.as_str(),
+        format!(
+            "{}/api/v1/workspaces/ws_agentlab/audit-history",
+            product.origin
+        )
+    );
+    assert_eq!(client.get(url).send().await?.status(), 401);
     let api = contract();
     let mut ops = BTreeMap::new();
     for (path, item) in api["paths"].as_object().unwrap() {

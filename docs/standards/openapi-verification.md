@@ -35,6 +35,10 @@ The contract declares `aw_account`, `aw_guest` and the explicit local/legacy `aw
 as separate cookie security schemes, each with its actual lifetime/profile. Native tests
 match issued cookies to the documented alternatives and keep Key administration Owner-only.
 
+For a hosted OpenAPI document, resolve an operation URL using the document's own
+`servers` and its public retrieval URL, then make a read request. Verify the expected
+JSON result or authentication error through the deployment's public path prefix.
+
 For every business feature, its specification maps the user outcome to operation IDs and
 method/path, authentication/permissions, inputs/results/errors, and native acceptance evidence.
 Tests must complete its minimum useful workflow with HTTP calls and synthetic credentials,

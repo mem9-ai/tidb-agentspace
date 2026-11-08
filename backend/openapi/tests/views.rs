@@ -90,3 +90,25 @@ fn every_view_has_resolvable_schemas_and_unique_operation_ids() {
         assert!(!operations.is_empty());
     }
 }
+
+#[test]
+fn public_mount_applies_to_path_servers_and_independent_authorities() {
+    let portal = View::PortalRegional.mounted_document("/gateway/studio");
+    assert_eq!(portal["servers"][0]["url"], "/gateway/studio/api/portal/v1");
+    assert_eq!(
+        portal["paths"]["/api/health"]["servers"][0]["url"],
+        "/gateway/studio"
+    );
+    assert_eq!(
+        View::Operator.mounted_document("")["servers"][0]["url"],
+        "/"
+    );
+    assert_eq!(
+        View::Operator.document()["servers"][0]["url"],
+        "/api/global"
+    );
+    assert_eq!(
+        View::Regional.mounted_document(""),
+        View::Regional.document()
+    );
+}

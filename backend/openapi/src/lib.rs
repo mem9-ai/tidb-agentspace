@@ -76,6 +76,25 @@ impl View {
         }
     }
 
+    /// Bind a document to the public HTTP mount of its authority. Offline exports keep
+    /// their standalone defaults. Path- and operation-level servers override the root.
+    pub fn mounted_document(self, mount: &str) -> Value {
+        let mut document = self.document();
+        if self == Self::Operator {
+            // The offline artifact assumes a shared /api/global listener. A running
+            // Global authority may instead live at the origin root or another mount.
+            document["servers"][0]["url"] = "/".into();
+        }
+        mount_servers(&mut document, mount);
+        for path in document["paths"].as_object_mut().unwrap().values_mut() {
+            mount_servers(path, mount);
+            for operation in path.as_object_mut().unwrap().values_mut() {
+                mount_servers(operation, mount);
+            }
+        }
+        document
+    }
+
     /// Render once per audience so a contract request does not rebuild large schema trees.
     pub fn rendered(self) -> &'static str {
         static DOCUMENTS: [OnceLock<String>; View::ALL.len()] =
@@ -96,6 +115,20 @@ impl FromStr for View {
     fn from_str(input: &str) -> Result<Self> {
         Self::ALL.into_iter().find(|view| view.name() == input)
             .ok_or_else(|| anyhow!("Unknown OpenAPI view '{input}'. Choose regional, owner, portal-regional, global, portal-global, entry or operator."))
+    }
+}
+
+fn mount_servers(item: &mut Value, mount: &str) {
+    if let Some(servers) = item.get_mut("servers").and_then(Value::as_array_mut) {
+        for server in servers {
+            if let Some(path) = server["url"]
+                .as_str()
+                .filter(|s| s.starts_with('/') && !s.starts_with("//"))
+                && !mount.is_empty()
+            {
+                server["url"] = format!("{mount}{}", path.trim_end_matches('/')).into();
+            }
+        }
     }
 }
 

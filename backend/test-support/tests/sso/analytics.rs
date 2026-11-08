@@ -229,6 +229,38 @@ async fn operator_authentication_capture_and_independent_analytics_recovery() ->
         .is_err()
     );
     let b = site.browser.clone();
+    for (document_path, operation, expected_path, status) in [
+        (
+            "/studio/openapi.json",
+            "/workspaces/{workspaceId}/resources",
+            "/studio/api/v1/workspaces/ws_agentlab/resources",
+            401,
+        ),
+        (
+            "/studio/owner-openapi.json",
+            "/workspaces/{workspaceId}/audit-history",
+            "/studio/api/v1/workspaces/ws_agentlab/audit-history",
+            401,
+        ),
+        (
+            "/studio/api/global/operator/openapi.json",
+            "/analytics/config",
+            "/studio/api/global/analytics/config",
+            200,
+        ),
+    ] {
+        let public_url = reqwest::Url::parse(&format!("{}{document_path}", b.public_origin))?;
+        let document = b.get(document_path, "", 200).await?.body;
+        let target = super::openapi::get_url(&public_url, &document, operation)?;
+        assert_eq!(target.origin(), public_url.origin());
+        assert_eq!(target.path(), expected_path);
+        let response = b.get(target.path(), "", status).await?;
+        if status == 200 {
+            assert_eq!(response.body["enabled"], true);
+        } else {
+            assert!(response.body["error"]["code"].is_string());
+        }
+    }
     let summary = format!("{GLOBAL}/operator/analytics/summary");
     let session = format!("{GLOBAL}/operator/session");
     let events = format!("{GLOBAL}/analytics/events");

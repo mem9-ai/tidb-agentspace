@@ -14,6 +14,7 @@ pub mod history_queue;
 pub mod history_request;
 mod http_policy;
 pub mod managed_workspaces;
+mod openapi;
 pub mod policy_command;
 pub mod policy_transport;
 pub mod portal_ticket;
@@ -236,6 +237,7 @@ struct Session {
 }
 #[derive(Clone)]
 struct App {
+    openapi: Arc<openapi::Published>,
     trials: Arc<agent_trials::Trials>,
     analytics: Option<analytics::Client>,
     workspace: Arc<Workspace>,
@@ -410,6 +412,7 @@ impl WorkspaceServer {
             listener,
             history_worker,
             app: App {
+                openapi: Arc::default(),
                 trials,
                 analytics,
                 workspace,
@@ -847,18 +850,14 @@ async fn dispatch(
         path = "/api/v1/workspaces".into();
     }
     if path == "/openapi.json" && method == Method::GET && app.product.is_some() {
-        return Ok((
-            [("Content-Type", "application/json")],
-            workspace_openapi::View::Regional.rendered(),
-        )
-            .into_response());
+        return Ok(app
+            .openapi
+            .serve(workspace_openapi::View::Regional, &app.config.public_path));
     }
     if path == "/owner-openapi.json" && method == Method::GET && app.product.is_some() {
-        return Ok((
-            [("Content-Type", "application/json")],
-            workspace_openapi::View::Owner.rendered(),
-        )
-            .into_response());
+        return Ok(app
+            .openapi
+            .serve(workspace_openapi::View::Owner, &app.config.public_path));
     }
     let history_request = method == Method::GET
         && path
