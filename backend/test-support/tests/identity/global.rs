@@ -109,6 +109,20 @@ pub(super) async fn key_lifecycle(
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs()
         + 3600;
+    // Lifetime is a privilege: the server decides the ceiling, not the client.
+    for (expiry, code) in [
+        (expires + 200 * 86400, "INVALID_EXPIRY"),
+        (expires - 7200, "INVALID_EXPIRY"),
+    ] {
+        let (body, _) = checked(
+            g.owner(Method::POST, alice, cookie, "/keys")
+                .header("Idempotency-Key", id())
+                .json(&json!({"scopes":["resources:read"],"resourceIds":["fs_existing"],"expiresAt":expiry})),
+            400,
+        )
+        .await?;
+        assert_eq!(body["error"]["code"], code);
+    }
     let create = json!({"scopes":["resources:read","files:read"],"resourceIds":["fs_existing"],"expiresAt":expires});
     let op = id();
     let (created, headers) = checked(
@@ -241,6 +255,14 @@ pub(super) async fn key_lifecycle(
         200,
     )
     .await?;
+    // Renewal must not hand out a lifetime that creation would refuse.
+    let (body, _) = checked(
+        mutate(g.owner(Method::PATCH, alice, cookie, &detail), 3)
+            .json(&json!({"expiresAt":expires+200*86400})),
+        400,
+    )
+    .await?;
+    assert_eq!(body["error"]["code"], "INVALID_EXPIRY");
     for invalid in [token, field(&before, "accessToken")] {
         checked(g.agent(Method::GET, alice, invalid, "/regions"), 401).await?;
     }

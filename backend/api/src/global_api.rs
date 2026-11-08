@@ -34,7 +34,7 @@ use uuid::Uuid;
 use workspace_contracts::{MetaRequest, Metadata, Scope, ServiceError};
 use workspace_identity::{
     VerifiedIdentity,
-    global_keys::{GlobalKeys, KeyView, NewKey},
+    global_keys::{GlobalKeys, KeyView, MAX_KEY_LIFETIME, NewKey},
     global_owner_sessions::OwnerSessions,
 };
 use workspace_meta_client::private_file;
@@ -1368,6 +1368,17 @@ async fn receive(State(app): State<Arc<App>>, request: Request) -> Response {
     }
     response
 }
+
+/// A Key expiry is a server-side decision: it must be in the future and inside the
+/// lifetime ceiling shared by creation and renewal. A client may only pick a valid
+/// point inside that window, never extend it.
+fn key_expiry_in_range(now: i64, expires_at: i64) -> bool {
+    expires_at > now
+        && expires_at
+            .checked_sub(now)
+            .is_some_and(|lifetime| lifetime <= MAX_KEY_LIFETIME)
+}
+
 async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Response> {
     let h = request.headers().clone();
     let method = request.method().clone();
@@ -1861,6 +1872,11 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
             {
                 return Err(err(400, "INVALID_GRANTS"));
             }
+            // The lifetime is a privilege: never trust the absolute expiry a client
+            // computed, and never persist a grant for a request that can't be issued.
+            if !key_expiry_in_range(app.clock.now().await?, input.expires_at) {
+                return Err(err(400, "INVALID_EXPIRY"));
+            }
             app.region_descriptor(&owner.region_id)
                 .await
                 .map_err(|_| err(409, "REGION_UNAVAILABLE"))?;
@@ -2013,6 +2029,11 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
                     .is_some_and(|expiry| update.expires_at > expiry)
                 {
                     return Err(err(400, "GUEST_EXPIRY_LIMIT"));
+                }
+                // Same ceiling as creation: a renewal is not a way to mint an
+                // effectively permanent Key.
+                if !key_expiry_in_range(app.clock.now().await?, update.expires_at) {
+                    return Err(err(400, "INVALID_EXPIRY"));
                 }
                 let region = app.grant(&old).await?.region_id;
                 app.mark_region_sync(
