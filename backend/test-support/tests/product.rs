@@ -788,18 +788,17 @@ fn create_pg(f: &Workspaces, name: &str, key: &str) -> reqwest::RequestBuilder {
         .header("Idempotency-Key", key)
         .json(&json!({"kind":"postgresql","name":name,"region":"automatic"}))
 }
-#[tokio::test]
-#[ignore = "requires isolated RustFS and built native binaries"]
-async fn concurrent_creations_share_one_idempotency_result() -> Result<()> {
+async fn expect_backfilled_duplicate(f: &Workspaces) -> Result<()> {
     use std::time::{Duration, Instant};
-    let f = Workspaces::start(false, false).await?;
+    let before = f.provider.state.lock().unwrap().calls;
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
-        let r = create_pg(&f, "fixture-postgresql", "index-readiness")
+        let r = create_pg(f, "fixture-postgresql", "index-readiness")
             .send()
             .await?;
         let status = r.status();
         let v = r.json::<Value>().await?;
+        assert_eq!(f.provider.state.lock().unwrap().calls, before);
         if status == 503 && v["error"]["code"] == "RESOURCE_INDEX_MIGRATING" {
             ensure!(Instant::now() < deadline, "index migration timed out");
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -807,8 +806,15 @@ async fn concurrent_creations_share_one_idempotency_result() -> Result<()> {
         }
         assert_eq!(status, 409);
         assert_eq!(v["error"]["code"], "NAME_EXISTS");
-        break;
+        return Ok(());
     }
+}
+
+#[tokio::test]
+#[ignore = "requires isolated RustFS and built native binaries"]
+async fn concurrent_creations_share_one_idempotency_result() -> Result<()> {
+    let f = Workspaces::start(false, false).await?;
+    expect_backfilled_duplicate(&f).await?;
     let create = || expect(create_pg(&f, "concurrent-same", "concurrent-same"), 201);
     let (a, b) = tokio::try_join!(create(), create())?;
     assert_eq!(a["data"]["id"], b["data"]["id"]);
@@ -819,10 +825,7 @@ async fn concurrent_creations_share_one_idempotency_result() -> Result<()> {
 async fn backfilled_resource_indexes_preserve_quota_names_and_idempotency() -> Result<()> {
     let f = Workspaces::start(false, false).await?;
     expect(f.owner(0, Method::GET, "/resources?limit=1"), 200).await?;
-    assert_eq!(
-        expect(create_pg(&f, "fixture-postgresql", "existing"), 409).await?["error"]["code"],
-        "NAME_EXISTS"
-    );
+    expect_backfilled_duplicate(&f).await?;
     let (a, b) = tokio::try_join!(
         create_pg(&f, "indexed-race", "race-a").send(),
         create_pg(&f, "indexed-race", "race-b").send()

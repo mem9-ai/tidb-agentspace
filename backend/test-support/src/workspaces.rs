@@ -33,13 +33,17 @@ async fn seed(region: &Meta, i: usize, fresh: bool) -> Result<()> {
             .replace("WORKSPACE_ID", IDS[i])
             .replace("$private-provider-credential", NATIVE_SECRET),
     )?;
-    let changes: Vec<_> = records
+    let mut changes: Vec<_> = records
         .into_iter()
         .filter(|(key, _)| {
             !fresh || !(key.starts_with("state/files/") || key.starts_with("state/resources/"))
         })
         .map(|(key, value)| json!({"key":key,"expectedVersion":null,"value":value}))
         .collect();
+    if fresh {
+        // Production writes the empty index in the same commit as a new Workspace.
+        changes.push(workspace_contracts::initial_resource_index());
+    }
     region.call(json!({"op":"commit","scope":scope(i),"mutationId":Uuid::new_v4().to_string(),"changes":changes})).await?;
     Ok(())
 }
