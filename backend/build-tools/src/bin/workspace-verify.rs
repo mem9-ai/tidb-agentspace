@@ -83,13 +83,19 @@ fn separate_hosts() -> Result<()> {
 fn run(profile: &str) -> Result<()> {
     let all = targets(Path::new("backend/test-support/tests"))?;
     if ![
+        "agent_trial",
+        "backend_workflows",
         "contract",
         "guest_host",
         "host_transport",
         "identity_directory",
         "meta",
         "product",
+        "product_api",
+        "product_lifecycle",
+        "sales_sample",
         "sso",
+        "tutorial",
     ]
     .iter()
     .all(|name| all.contains(*name))

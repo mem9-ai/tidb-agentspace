@@ -11,9 +11,14 @@ COPY backend ./backend
 COPY meta-service ./meta-service
 RUN cargo chef prepare --recipe-path recipe.json
 
-FROM planner AS duckdb
+# Cache native library preparation independently of API and test source changes.
+FROM chef AS duckdb
+COPY --from=planner /source/recipe.json ./recipe.json
+RUN cargo chef cook --locked -p workspace-build-tools --bin workspace-build-tools --recipe-path recipe.json
+COPY backend/build-tools ./backend/build-tools
 COPY scripts/duckdb-runtime.json ./scripts/duckdb-runtime.json
-RUN cargo run --locked -p workspace-build-tools -- prepare
+RUN find backend/build-tools -type f -exec touch {} + \
+    && cargo run --locked -p workspace-build-tools -- prepare
 
 FROM chef AS builder
 COPY .cargo ./.cargo

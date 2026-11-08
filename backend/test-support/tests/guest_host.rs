@@ -334,13 +334,20 @@ async fn hosted_guests_keep_private_workspaces_and_csv_during_global_outage() ->
             ("drive9".into(), "created-tenant-1".into())
         ]
     );
+    // The region clears the logout marker after it persists the deferred provider outcome.
     let key = format!("logout/{}", first.id);
-    assert!(
-        region
-            .call(json!({"op":"get","scope":scope,"keys":[key]}))
-            .await?["records"][&key]
-            .is_null()
-    );
+    tokio::time::timeout(Duration::from_secs(25), async {
+        loop {
+            let records = region
+                .call(json!({"op":"get","scope":scope,"keys":[key]}))
+                .await?;
+            if records["records"][&key].is_null() {
+                return Ok::<_, anyhow::Error>(());
+            }
+            tokio::time::sleep(Duration::from_millis(80)).await;
+        }
+    })
+    .await??;
     let remaining = status(second.req(&host, Method::GET, "/resources"), 200)
         .await?
         .json::<Value>()
