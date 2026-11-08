@@ -306,18 +306,29 @@ impl RegionReconciler {
     pub async fn run(self, stop: tokio_util::sync::CancellationToken) {
         let app = self.0;
         let mut tick = tokio::time::interval(Duration::from_secs(2));
-        loop {
-            tokio::select! {
-                _ = stop.cancelled() => return,
-                _ = tick.tick() => {
-                    for descriptor in &app.config.regions {
-                        if stop.is_cancelled() { return; }
-                        if app.region_connection.as_ref().expect("reconciler requires connection").connected(&descriptor.region_id).await {
-                            let _ = app.reconcile_region(&descriptor.region_id).await;
-                        }
+        let worker = async {
+            loop {
+                tick.tick().await;
+                for descriptor in &app.config.regions {
+                    if app
+                        .region_connection
+                        .as_ref()
+                        .expect("reconciler requires connection")
+                        .connected(&descriptor.region_id)
+                        .await
+                    {
+                        let _ = app.reconcile_region(&descriptor.region_id).await;
                     }
                 }
             }
+        };
+        // Only background reconciliation is interruptible. A pending record is removed
+        // conditionally after a matching Regional receipt. If shutdown races a delivery
+        // or its acknowledgement, the next worker replays the same policy command.
+        tokio::select! {
+            biased;
+            _ = stop.cancelled() => {},
+            _ = worker => {},
         }
     }
 }

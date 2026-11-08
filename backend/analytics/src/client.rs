@@ -55,6 +55,10 @@ impl Client {
                 .identity(reqwest::Identity::from_pem(&identity).map_err(|_| unavailable())?)
                 .tls_version_min(reqwest::tls::Version::TLS_1_3)
                 .tls_version_max(reqwest::tls::Version::TLS_1_3);
+        } else {
+            // Validation restricts plaintext to loopback; redirects are disabled.
+            // An HTTP-only producer has no use for the platform TLS trust store.
+            builder = builder.tls_certs_only([]);
         }
         let (sender, mut receiver) = mpsc::channel(1000);
         let transport = Arc::new(Transport {
@@ -217,6 +221,39 @@ impl Transport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    fn thread_cpu_time() -> Option<Duration> {
+        // Linux reports this thread's execution time in nanoseconds, excluding
+        // time it was runnable but waiting for CPU on a shared CI runner.
+        let stats = std::fs::read_to_string("/proc/thread-self/schedstat").ok()?;
+        let nanos = stats.split_whitespace().next()?.parse().ok()?;
+        Some(Duration::from_nanos(nanos))
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn plaintext_startup_is_independent_of_system_ca_certificates() {
+        // reqwest's Linux platform verifier fails to build with an empty system
+        // trust store. Set these variables only in the isolated test process.
+        let directory = tempfile::tempdir().unwrap();
+        let empty = directory.path().join("empty.pem");
+        std::fs::write(&empty, []).unwrap();
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("client::tests::absent_service_does_not_block_startup_or_enqueue_and_queue_is_bounded")
+            .env("SSL_CERT_FILE", empty)
+            .env("SSL_CERT_DIR", directory.path())
+            .output()
+            .unwrap();
+        let log = String::from_utf8_lossy(&result.stdout);
+        assert!(
+            result.status.success() && log.contains("1 passed"),
+            "{log}{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+
     #[tokio::test]
     async fn absent_service_does_not_block_startup_or_enqueue_and_queue_is_bounded() {
         let directory = tempfile::tempdir().unwrap();
@@ -227,10 +264,17 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
         }
-        let started = std::time::Instant::now();
+        // The current-thread runtime does not poll the delivery worker until we
+        // yield. A listening socket makes even a synchronous connection attempt
+        // observable without depending on the network or a response timeout.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        #[cfg(target_os = "linux")]
+        let (wall_started, cpu_started) = (std::time::Instant::now(), thread_cpu_time());
         let client = Client::new(
             &ClientConfig {
-                endpoint: "http://127.0.0.1:1".into(),
+                endpoint,
                 token_file: path,
                 insecure_loopback: true,
                 tls: None,
@@ -238,12 +282,50 @@ mod tests {
             "region:test",
         )
         .unwrap();
+        #[cfg(target_os = "linux")]
+        let startup = wall_started.elapsed();
         for id in 0..1001 {
             client.record(&format!("event-{id}"), "workspace", "api", "query", true);
         }
-        assert!(started.elapsed() < Duration::from_secs(1));
+        // Measure producer work independently of runner descheduling; verify
+        // the absence of upstream I/O and queue progress separately.
+        #[cfg(target_os = "linux")]
+        {
+            let wall = wall_started.elapsed();
+            // Kernels without scheduler accounting expose no file or a zero
+            // counter. Keep the wall-clock budget on those kernels.
+            let work = cpu_started
+                .zip(thread_cpu_time())
+                .filter(|(_, end)| !end.is_zero())
+                .map_or(wall, |(start, end)| end - start);
+            assert!(
+                work < Duration::from_secs(1),
+                "producer work {work:?}, startup wall {startup:?}, enqueue wall {:?}",
+                wall - startup
+            );
+        }
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
         assert_eq!(client.pending.load(Ordering::Relaxed), 1000);
         assert_eq!(client.unconfirmed.load(Ordering::Relaxed), 1001);
+
+        // Hold the first batch at the peer. Staged jobs still consume the
+        // admission budget even though the channel now has free slots.
+        let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+        let (stream, _) = tokio::time::timeout(Duration::from_secs(10), listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        let available = client.sender.capacity();
+        assert!(available > 0);
+        client.record("overflow-in-flight", "workspace", "api", "query", true);
+        assert_eq!(client.pending.load(Ordering::Relaxed), 1000);
+        assert_eq!(client.sender.capacity(), available);
+        drop(stream);
+        drop(listener);
+
         let today = Utc::now().date_naive();
         assert_eq!(
             client
@@ -258,7 +340,7 @@ mod tests {
                 .status,
             503
         );
-        assert_eq!(client.unconfirmed.load(Ordering::Relaxed), 1001);
+        assert_eq!(client.unconfirmed.load(Ordering::Relaxed), 1002);
     }
     #[tokio::test]
     async fn peer_auth_failure_is_unavailability_and_redirects_are_not_followed() {

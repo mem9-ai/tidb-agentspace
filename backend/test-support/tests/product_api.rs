@@ -3,6 +3,8 @@
 mod files;
 #[path = "product_api/import.rs"]
 mod import;
+#[path = "product_api/pending_policy.rs"]
+mod pending_policy;
 
 use anyhow::{Result, ensure};
 use reqwest::{Method, RequestBuilder};
@@ -349,7 +351,46 @@ async fn sql_roundtrip(f: &Workspaces, token: &str) -> Result<()> {
     Ok(())
 }
 
-async fn persistence(f: &mut Workspaces, token: &str) -> Result<()> {
+// A live HTTP request can only finish while this test's single-thread Tokio runtime
+// continues serving the SQL provider. Start the shutdown before releasing that response.
+async fn restart_during_query(f: &mut Workspaces, db: &Arc<Mutex<Option<Value>>>) -> Result<()> {
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    f.provider.set_sql_hook({
+        let entered = entered.clone();
+        let release = release.clone();
+        move |input| {
+            let entered = entered.clone();
+            let release = release.clone();
+            async move {
+                assert_eq!(input["sql"], "SELECT 42");
+                entered.notify_one();
+                release.notified().await;
+                Some(SqlResponse::Json(200, json!({"columns":["value"],"rows":[{"value":42}],"rowCount":1,"affectedRows":0})))
+            }
+        }
+    });
+    // Hosts stop in reverse dependency order, starting with ws_other.
+    let request = f
+        .owner(1, Method::POST, "/queries")
+        .json(&json!({"sql":"SELECT 42", "resourceId":"db_live"}));
+    let query = tokio::spawn(check(request, 200, ""));
+    tokio::time::timeout(std::time::Duration::from_secs(10), entered.notified()).await?;
+    let (restarted, ()) = tokio::join!(biased;
+        f.restart(false),
+        async { release.notify_one(); }
+    );
+    restarted?;
+    assert_eq!(query.await??["rows"], json!([{"value":42}]));
+    install_sql(f, db);
+    Ok(())
+}
+
+async fn persistence(
+    f: &mut Workspaces,
+    token: &str,
+    db: &Arc<Mutex<Option<Value>>>,
+) -> Result<()> {
     let file = json!({"resourceId":"fs_shared","path":"/durable.txt","type":"file","content":"durable 😀\r\n"});
     check(agent(f, Method::PUT, "/files", token).json(&file), 200, "").await?;
     let data = vec![0, 255, 1, 13, 10];
@@ -379,7 +420,7 @@ async fn persistence(f: &mut Workspaces, token: &str) -> Result<()> {
     .await?;
     let review = import::upload(f, "db_live", token, SOURCE, 201, "").await?;
     let initial = creates(f);
-    f.restart(false).await?;
+    restart_during_query(f, db).await?;
     let listed = check(
         agent(f, Method::GET, "/files?resourceId=fs_shared", token),
         200,
@@ -496,7 +537,7 @@ async fn verify(embedded: bool) -> Result<()> {
     files::exports(&f, &token).await?;
     import::verify(&f, &token).await?;
     install_sql(&f, &db);
-    persistence(&mut f, &token).await
+    persistence(&mut f, &token, &db).await
 }
 #[tokio::test]
 #[ignore = "requires isolated RustFS and native binaries"]

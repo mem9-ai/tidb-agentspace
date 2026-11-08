@@ -197,7 +197,11 @@ impl Engine {
                 if previous.installation_id != owner.installation_id
                     || (!previous.released && recover != Some(previous.id.as_str()))
                 {
-                    bail!("Owner active/uncertain: stop it before explicit recovery");
+                    return Err(anyhow::Error::new(workspace_contracts::ServiceError::new(
+                        409,
+                        "META_OWNER_ACTIVE_OR_UNCERTAIN",
+                    ))
+                    .context("Owner active/uncertain: stop it before explicit recovery"));
                 }
                 PutMode::Update(version)
             }

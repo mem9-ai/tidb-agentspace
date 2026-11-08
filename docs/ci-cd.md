@@ -339,6 +339,18 @@ host starts, so a metadata or control service cannot claim a released port and a
 wrong readiness probe. Keep the reservations distinct from the active metadata listener,
 including when that listener is subsequently restarted in-process.
 
+Clean-restart acceptance waits for a successful process exit while the fixture continues
+to serve in-flight requests. Only a deliberate crash uses the previous writer's identity
+for recovery. A readiness failure should identify the Workspace, the startup or restart
+phase, and the last observed health status or sanitized role-startup error.
+Shutdown may interrupt background policy delivery. The next worker resumes from the
+durable pending record and removes it only after confirming the Regional receipt.
+
+The Analytics producer test checks queue capacity and verifies that startup and enqueue
+make no connection to the collector. Its one-second Linux budget measures producer
+thread CPU time when scheduler accounting is available, with a wall-clock fallback.
+Use workflow wall time, including waits and retries, to report delivery latency.
+
 The pinned [rust-cache action](https://github.com/Swatinem/rust-cache/tree/d1527c8f67ef9af357290475d4af4b0fab8f12e0)
 caches Cargo registry/git dependencies and dependency build artifacts in the actual target
 directory, `meta-service/target`. It prunes workspace artifacts and incremental compilation
