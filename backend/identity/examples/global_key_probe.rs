@@ -28,6 +28,8 @@ async fn main() -> anyhow::Result<()> {
     let config: ClientConfig = serde_json::from_slice(&std::fs::read(&args[1])?)?;
     let keys = GlobalKeys::open(Arc::new(RemoteMetadata::connect(config).await?)).await?;
     if args[2] == "create" {
+        // Stay inside the server-side lifetime ceiling (see MAX_KEY_LIFETIME).
+        let expires_at = chrono::Utc::now().timestamp() + 3_600;
         let issued = keys
             .create(
                 &NewKey {
@@ -35,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
                     workspace_id: "ws_agentlab".into(),
                     principal_id: "legacy-owner".into(),
                     grant_ref: "grant:existing".into(),
-                    expires_at: 4_102_444_800,
+                    expires_at,
                 },
                 &args[4],
             )

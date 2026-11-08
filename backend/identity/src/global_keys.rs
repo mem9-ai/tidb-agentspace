@@ -12,6 +12,11 @@ use workspace_contracts::{MetaRequest, Metadata, Result, Scope};
 
 use crate::{error, now};
 
+/// Longest lifetime a Global Key may be issued with, in seconds. The console offers
+/// 7/30/90 days and the regional Key policy enforces the same set, so the Global
+/// endpoints must not accept a longer lifetime just because a client sent one.
+pub const MAX_KEY_LIFETIME: i64 = 90 * 24 * 60 * 60;
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KeyView {
@@ -350,6 +355,12 @@ impl GlobalKeys {
         {
             return Err(error(400, "INVALID_KEY_REQUEST"));
         }
+        let latest_expiry = current
+            .checked_add(MAX_KEY_LIFETIME)
+            .ok_or_else(|| error(400, "INVALID_KEY_REQUEST"))?;
+        if input.expires_at > latest_expiry {
+            return Err(error(400, "KEY_LIFETIME_OUT_OF_RANGE"));
+        }
         let operation = format!("operations/{mutation}");
         let fingerprint = fingerprint(input)?;
         let existing = self.get(&scope, vec![operation.clone()]).await?;
@@ -632,6 +643,12 @@ impl GlobalKeys {
             if record.view.expires_at <= current || expiry <= record.view.expires_at {
                 return Err(error(409, "KEY_RENEWAL_INVALID"));
             }
+            let latest_expiry = current
+                .checked_add(MAX_KEY_LIFETIME)
+                .ok_or_else(|| error(400, "INVALID_KEY_REQUEST"))?;
+            if expiry > latest_expiry {
+                return Err(error(400, "KEY_LIFETIME_OUT_OF_RANGE"));
+            }
             record.view.expires_at = expiry;
         } else {
             record.view.revoked = true;
@@ -679,6 +696,70 @@ mod tests {
             grant_ref: "grant:unchanged".into(),
             expires_at: 1000,
         }
+    }
+
+    #[tokio::test]
+    async fn key_lifetime_is_bounded_by_the_server_not_the_client() {
+        let metadata = Arc::new(MemoryMeta::default());
+        let keys = GlobalKeys::open(metadata).await.unwrap();
+        let current = now().unwrap();
+
+        let mut beyond = input();
+        beyond.expires_at = current + MAX_KEY_LIFETIME + 3_600;
+        assert_eq!(
+            keys.create(&beyond, &Uuid::new_v4().to_string())
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "KEY_LIFETIME_OUT_OF_RANGE"
+        );
+
+        let mut past = input();
+        past.expires_at = current - 1;
+        assert_eq!(
+            keys.create(&past, &Uuid::new_v4().to_string())
+                .await
+                .err()
+                .unwrap()
+                .code,
+            "INVALID_KEY_REQUEST"
+        );
+
+        let mut at_cap = input();
+        at_cap.expires_at = current + MAX_KEY_LIFETIME - 60;
+        let issued = keys
+            .create(&at_cap, &Uuid::new_v4().to_string())
+            .await
+            .unwrap();
+        assert_eq!(issued.view.expires_at, at_cap.expires_at);
+
+        // Renewing must not hand out a longer lifetime than creating may.
+        assert_eq!(
+            keys.renew(
+                "ws_agentlab",
+                &issued.view.key_id,
+                issued.view.key_version,
+                current + MAX_KEY_LIFETIME + 3_600,
+                &Uuid::new_v4().to_string(),
+            )
+            .await
+            .err()
+            .unwrap()
+            .code,
+            "KEY_LIFETIME_OUT_OF_RANGE"
+        );
+        let renewed = keys
+            .renew(
+                "ws_agentlab",
+                &issued.view.key_id,
+                issued.view.key_version,
+                current + MAX_KEY_LIFETIME - 30,
+                &Uuid::new_v4().to_string(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(renewed.expires_at, current + MAX_KEY_LIFETIME - 30);
     }
 
     #[tokio::test]
