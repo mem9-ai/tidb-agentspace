@@ -89,8 +89,11 @@ curl --fail-with-body "$REGION_API/api/v1/workspaces/$WORKSPACE_ID/context" \
 
 A Key is never a Region data credential. Region returns `EXCHANGE_KEY_AT_GLOBAL` for new
 raw Keys and rejects retired direct Keys. Regional `/keys` endpoints are removed. Portal
-Key management uses `/api/portal/v1/workspaces/{workspaceId}/keys` at **Global**. Provider/native
-credentials remain private. API keys cannot administer other Keys or acquire Owner privileges.
+Key management uses `/api/portal/v1/workspaces/{workspaceId}/keys` at **Global**. A create or
+renewal request names a supported lifetime (`expiresInDays` = 1, 2, 7, 30 or 90) and the server
+computes the expiry; the deprecated absolute `expiresAt` is still accepted for older clients but
+only inside the same 90-day ceiling. Provider/native credentials remain private. API keys cannot
+administer other Keys or acquire Owner privileges.
 Hosted Owner sign-in uses the configured OIDC client and ready Global Directory membership.
 On the bundled cloud deployment, sign in to Portal once. Its existing TiDB Account callback
 establishes separate Global management and Region browser sessions; creating a Key does not

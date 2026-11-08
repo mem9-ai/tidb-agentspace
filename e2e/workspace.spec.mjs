@@ -237,14 +237,12 @@ test('Guest API key creation explains the Workspace expiry', async ({ page, work
   await expect(dialog.getByRole('combobox', { name: 'Expiration' })).toHaveCount(0);
   await dialog.getByLabel('Key name').fill('guest-agent');
   await dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }).check();
-  const start = Math.floor(Date.now() / 1000);
   await dialog.getByRole('button', { name: 'Create key', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Your key is ready' })).toBeVisible();
   const creation = workspace.requests.findLast(
     (request) => request.method === 'POST' && request.path.endsWith('/keys'),
   );
-  expect(creation.body.expiresAt).toBeGreaterThanOrEqual(start + 172800);
-  expect(creation.body.expiresAt).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 172800);
+  expect(creation.body.expiresInDays).toBe(2);
 });
 
 test('@visual Guest can cancel or confirm sign-out from the workspace navigation', async ({
@@ -656,11 +654,10 @@ test('Key creation sends explicit resource/action grants and reveals its synthet
     name: 'file-reader',
     scopes: ['resources:read', 'files:read'],
     resourceIds: ['fs_fixture'],
-    expiresAt: expect.any(Number),
+    expiresInDays: 7,
   });
   const issued = workspace.requests.find((r) => r.path.endsWith('/keys') && r.method === 'POST');
   expect(issued.path).toContain('/api/global/api/');
-  expect(issued.body.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000) + 6 * 86400);
   await readyKey.getByRole('button', { name: 'Close dialog' }).click();
   await expect(readyKey.getByRole('alert')).toContainText('full key cannot be shown again');
   await readyKey.getByRole('button', { name: 'Close without copying' }).click();

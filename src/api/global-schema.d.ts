@@ -166,7 +166,7 @@ export interface paths {
     put?: never;
     /**
      * Create Global Key
-     * @description Owner only. Unix-second expiry. Store the returned secret securely; it cannot be retrieved or returned again.
+     * @description Owner only. Pass expiresInDays (1, 2, 7, 30 or 90) and the server computes the expiry; the deprecated absolute expiresAt is accepted only inside the same 90-day ceiling. Store the returned secret securely; it cannot be retrieved or returned again.
      */
     post: operations['createGlobalKey'];
     delete?: never;
@@ -910,13 +910,29 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': {
-          expiresAt: number;
-          /** @default Agent key */
-          name?: string;
-          resourceIds: string[];
-          scopes: string[];
-        };
+        'application/json':
+          | {
+              /**
+               * @description Lifetime choice; the server computes the expiry.
+               * @enum {integer}
+               */
+              expiresInDays: 1 | 2 | 7 | 30 | 90;
+              /** @default Agent key */
+              name?: string;
+              resourceIds: string[];
+              scopes: string[];
+            }
+          | {
+              /**
+               * @deprecated
+               * @description Deprecated absolute Unix-second expiry, accepted only inside the 90-day ceiling.
+               */
+              expiresAt: number;
+              /** @default Agent key */
+              name?: string;
+              resourceIds: string[];
+              scopes: string[];
+            };
       };
     };
     responses: {
@@ -1051,9 +1067,21 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': {
-          expiresAt: number;
-        };
+        'application/json':
+          | {
+              /**
+               * @description Renewal lifetime choice counted from now; the server computes the expiry.
+               * @enum {integer}
+               */
+              expiresInDays: 1 | 2 | 7 | 30 | 90;
+            }
+          | {
+              /**
+               * @deprecated
+               * @description Deprecated absolute Unix-second expiry, accepted only inside the 90-day ceiling.
+               */
+              expiresAt: number;
+            };
       };
     };
     responses: {

@@ -278,5 +278,64 @@ pub(super) async fn key_lifecycle(
     )
     .await?;
     checked(issue(g, new_secret, &issuance), 401).await?;
+
+    // Preferred form: the client asks for a supported lifetime and the server
+    // computes the expiry. Unsupported, ambiguous or missing choices are refused.
+    let days_key = checked(
+        g.owner(Method::POST, alice, cookie, "/keys")
+            .header("Idempotency-Key", id())
+            .json(&json!({"scopes":["resources:read"],"resourceIds":["fs_existing"],"expiresInDays":7})),
+        201,
+    )
+    .await?
+    .0;
+    let days_id = field(&days_key["data"], "keyId");
+    let days_detail = format!("/keys/{days_id}");
+    // The response carries Unix seconds; the value must be the 7-day window the
+    // server computed, not something echoed from the request.
+    let computed = days_key["data"]["expiresAt"]
+        .as_i64()
+        .expect("expiresAt is Unix seconds");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs() as i64;
+    assert!(
+        (computed - (now + 7 * 86400)).abs() <= 300,
+        "server computed expiry {computed}, expected about {}",
+        now + 7 * 86400
+    );
+    checked(
+        mutate(g.owner(Method::PATCH, alice, cookie, &days_detail), 1)
+            .json(&json!({"expiresInDays":90})),
+        200,
+    )
+    .await?;
+    for body in [
+        json!({"scopes":["resources:read"],"resourceIds":["fs_existing"],"expiresInDays":5}),
+        json!({"scopes":["resources:read"],"resourceIds":["fs_existing"],"expiresInDays":7,"expiresAt":expires}),
+        json!({"scopes":["resources:read"],"resourceIds":["fs_existing"]}),
+    ] {
+        let (body, _) = checked(
+            g.owner(Method::POST, alice, cookie, "/keys")
+                .header("Idempotency-Key", id())
+                .json(&body),
+            400,
+        )
+        .await?;
+        assert_eq!(body["error"]["code"], "INVALID_EXPIRY");
+    }
+    for body in [
+        json!({}),
+        json!({"expiresInDays":5}),
+        json!({"expiresAt":expires + 200 * 86400}),
+    ] {
+        let (body, _) = checked(
+            mutate(g.owner(Method::PATCH, alice, cookie, &days_detail), 2).json(&body),
+            400,
+        )
+        .await?;
+        assert_eq!(body["error"]["code"], "INVALID_EXPIRY");
+    }
+
     Ok(())
 }
