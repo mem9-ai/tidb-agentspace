@@ -1,6 +1,7 @@
 {
   "name": "@tidb-workspace/contract-tools",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "devDependencies": {
     "openapi-typescript": "7.13.0",

@@ -47,11 +47,11 @@ pub(super) async fn handle(
         return Ok(response);
     }
     if path == "/operator/openapi.json" && *method == Method::GET {
-        return Ok(Json(
-            serde_json::from_str::<Value>(include_str!("../../../../public/operator-openapi.json"))
-                .map_err(|_| err(503, "CONTRACT_UNAVAILABLE"))?,
+        return Ok((
+            [(header::CONTENT_TYPE, "application/json")],
+            workspace_openapi::View::Operator.rendered(),
         )
-        .into_response());
+            .into_response());
     }
     if path == "/analytics/config" && *method == Method::GET {
         return Ok(Json(json!({"enabled":settings.browser_enabled && app.analytics.is_some(),"campaigns":settings.campaigns,"policy":"session_only","version":1})).into_response());

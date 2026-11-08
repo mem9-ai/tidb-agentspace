@@ -77,8 +77,8 @@ follow its task-specific references before implementation. Keep detailed rules c
   domain types and `unknown` at untrusted boundaries; avoid `any` and unchecked casts.
 - Backend business services target Rust under [ADR 0020](docs/decisions/0020-modular-rust-backend.md):
   shared domain modules support in-process and independently deployed service composition.
-  The old Node business implementation and its dedicated regression tests are retired; do not restore them. Node ESM under `server/` is limited to build/operator tools and native integration fixtures. Follow [native verification](docs/native-backend-retirement.md). Rust owns SSO/public hosting under [the native hosted boundary](docs/decisions/0026-native-hosted-studio.md); follow [native deployment](docs/native-studio-deployment.md).
-  Fresh storage follows [ADR 0024](docs/decisions/0024-fresh-record-metadata.md); do not restore document import/handoff paths. Keep Node build/test tooling ESM.
+  Rust owns the API, Meta, local lifecycle, OpenAPI generation and backend acceptance under [ADR 0059](docs/decisions/0059-rust-backend-workflow.md). Follow [native verification](docs/native-backend-retirement.md). Rust owns SSO/public hosting under [the native hosted boundary](docs/decisions/0026-native-hosted-studio.md); follow [native deployment](docs/native-studio-deployment.md).
+  Fresh storage follows [ADR 0024](docs/decisions/0024-fresh-record-metadata.md); do not restore document import/handoff paths. Keep Console and client tooling ESM.
 - Product analytics uses an independent, lower-availability SlateDB service under
   [ADR 0050](docs/decisions/0050-isolated-analytics-service.md), never the business Meta
   service. Keep producer queues bounded and asynchronous; analytics failure must not
@@ -128,9 +128,10 @@ follow its task-specific references before implementation. Keep detailed rules c
   [browser verification](docs/standards/browser-verification.md). For visual changes, also
   inspect affected themes/viewports and provide representative screenshots. If browser
   verification is unavailable, state the limitation. Screenshots alone do not prove behavior.
-- Modify `server/generate-openapi.mjs` and run `npm run api:generate` when the public contract
-  changes. Keep the implementation, contract, generated client types, and tests aligned. Do not edit the
-  generated `public/openapi.json` by hand.
+- Update the Rust contract declarations in `backend/openapi/src` when the HTTP surface changes.
+  Run `cargo run --locked -p workspace-openapi -- export` for the seven OpenAPI views, or
+  `npm run api:generate` to refresh the Console types as well. Keep the implementation,
+  contract, generated types and tests aligned.
 - Report what changed, why, which checks actually ran, and any remaining limitations. Never
   claim an unrun check, remote CI run, deployment, or cloud integration succeeded.
 

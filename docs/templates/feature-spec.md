@@ -54,7 +54,7 @@ For each operation, specify:
 - Pagination, ordering, size/time limits, and async state transitions where relevant.
 - Behavior for existing clients, persisted data, grants, and unsupported capabilities.
 
-For HTTP changes, design the OpenAPI change and update `server/generate-openapi.mjs` during
+For HTTP changes, design the OpenAPI change and update `backend/openapi/src` during
 implementation. Keep the generated contract, domain operation, adapters, and affected clients
 aligned. Identify an ADR requirement for public contracts or other sensitive boundaries.
 

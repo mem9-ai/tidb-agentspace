@@ -59,7 +59,7 @@ Current inspected Console mappings (`src/api/client.ts`, with generated operatio
 | Auth/session lifecycle                     | `getAuthConfig`, local/Guest session operations, TiDB sign-in/callback/logout operations, each under its documented mode |
 
 This is a source-inspected capability map, not exhaustive behavioral evidence. The native
-cases below and the [coverage audit](../native-backend-retirement.md#openapi-behavior-coverage-audit)
+cases below and the [native verification map](../native-backend-retirement.md#verification-ownership)
 establish specific tested outcomes. Review this mapping when adding a supported capability.
 
 ### Backend behavioral compatibility
@@ -160,21 +160,15 @@ remain in force.
 
 ## Current executable evidence
 
-| Evidence                                                                                                                       | What it currently establishes                                                                                                                                                                                                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run api:check`                                                                                                            | Generator, checked-in OpenAPI and generated TypeScript client agree. It does not establish runtime behavior.                                                                                                                                                                                 |
-| `server/contract.test.mjs`                                                                                                     | Starts the native API, validates declared JSON operation coverage and response schemas/statuses, including denials. Coverage is operation coverage, not every status/input combination.                                                                                                      |
-| `server/rust-product.test.mjs`                                                                                                 | Native product HTTP scenarios with fixed expected values, provider call observations, binary files, actual DuckDB/Bash, import/export permission boundaries, retained bindings and lifecycle/restart recovery. Fake provider SQL responses do not prove live MySQL/PostgreSQL compatibility. |
-| `server/rust-backend.test.mjs`                                                                                                 | Native authorization/expiry/revocation and Workspace isolation, embedded/remote Meta, persistence, authority separation and Global-failure behavior.                                                                                                                                         |
-| `server/meta-service.test.mjs`, `server/identity-directory.test.mjs`, `server/guest-host.test.mjs`, `server/rust-sso.test.mjs` | Isolated real S3 durability/transactions plus native identity, Guest and SSO HTTP/session/restart cases. These do not establish unimplemented multi-region production HA.                                                                                                                    |
-| Rust workspace tests and `backend/host/tests/execute.rs`                                                                       | Domain/parser/driver and Execute process behavior, including secret-free bounded tasks and error/cancellation handling. Add driver-specific cases when touching native protocol behavior.                                                                                                    |
-| `scripts/package-runtime.test.mjs`, `server/local-runtime.test.mjs`                                                            | Clean-source/native artifact identity, execution without Node, and local orchestration. Packaging uses a committed source revision.                                                                                                                                                          |
+| Evidence                                                                                                              | What it currently establishes                                                                                                        |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `npm run api:check`                                                                                                   | Generator, checked-in OpenAPI and generated TypeScript client agree. It does not establish runtime behavior.                         |
+| [Live contract](../../backend/test-support/tests/contract.rs)                                                         | Schema checks and expected success and denial responses against running handlers.                                                    |
+| [Native integration suites](../../backend/test-support/tests/)                                                        | Product outcomes, provider call counts, privacy, restart, mTLS, role isolation and credential lifecycle in both Meta configurations. |
+| [Rust modules](../../backend/) and [Execute](../../backend/host/tests/execute.rs)                                     | Domain, parser, drivers, task limits and cancellation.                                                                               |
+| [Artifact](../../backend/build-tools/tests/package.rs) and [local runtime](../../backend/host/tests/local_runtime.rs) | Clean-source native artifact, offline execution and supervised local lifecycle.                                                      |
 
-`npm run backend:check` builds and runs all native phases, with `WORKSPACE_META_TEST=1` and
-`WORKSPACE_BACKEND_TEST=1` for the integration phase. A normal `npm test` that skips those
-opt-in cases does not satisfy backend acceptance. Reuse the installed RustFS binary and
-isolate test roots, ports and credentials. CI uses a pinned, checksum-verified RustFS binary
-and no cloud credentials. Node drives tests/tools only; do not restore a Node business oracle.
+Build the native executables and examples before running `cargo acceptance all`. The [contributor guide](../../CONTRIBUTING.md#rust-backend-modules) lists the commands. CI uses pinned, checksum-verified RustFS and isolated roots, ports and credentials. Public JavaScript and Python clients have their own integration checks against the Rust services.
 
 The normal `npm run check` remains shared formatting, lint, tooling/contract tests, type and
 build hygiene. It does not run the browser suite. Backend-only acceptance adds

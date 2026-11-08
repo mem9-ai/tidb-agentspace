@@ -1,1302 +1,9 @@
 {
-  "openapi": "3.1.0",
-  "info": {
-    "title": "Workspace Regional Owner API",
-    "version": "0.1.0",
-    "description": "Owner-session operations for partial regional request and audit history. Global activity is not included; read each response’s coverage and health before interpreting the records."
-  },
-  "servers": [{ "url": "/api/v1", "description": "Session-authenticated Regional Owner API" }],
-  "tags": [{ "name": "Owner" }],
-  "paths": {
-    "/workspaces/{workspaceId}/request-history": {
-      "get": {
-        "operationId": "listRequestHistory",
-        "summary": "List partial regional HTTP diagnostics",
-        "tags": ["Owner"],
-        "description": "Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Region access Tokens cannot perform this Owner operation.",
-        "x-required-scope": null,
-        "security": [{ "localOwner": [] }, { "accountOwner": [] }, { "guestOwner": [] }],
-        "parameters": [
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "schema": { "type": "string", "minLength": 1, "maxLength": 1024 }
-          },
-          {
-            "name": "from",
-            "in": "query",
-            "schema": { "type": "string", "format": "date-time", "maxLength": 40 }
-          },
-          {
-            "name": "to",
-            "in": "query",
-            "schema": { "type": "string", "format": "date-time", "maxLength": 40 }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["data", "nextCursor", "coverage", "retention", "health"],
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/RequestHistoryRecord" }
-                    },
-                    "nextCursor": { "type": ["string", "null"], "maxLength": 1024 },
-                    "coverage": { "$ref": "#/components/schemas/HistoryCoverage" },
-                    "retention": { "$ref": "#/components/schemas/HistoryRetention" },
-                    "health": { "$ref": "#/components/schemas/HistoryHealth" }
-                  },
-                  "additionalProperties": false
-                }
-              }
-            },
-            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, expired, or revoked credential",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "403": {
-            "description": "Insufficient permission",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "404": {
-            "description": "Resource or endpoint not found",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "405": {
-            "description": "Resource lifecycle operation unsupported by provider",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "409": {
-            "description": "Conflict or free-tier limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "410": {
-            "description": "History cursor expired; restart from the first page",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "412": {
-            "description": "Version precondition failed without a write",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "413": {
-            "description": "Content too large",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "415": {
-            "description": "Unsupported content type",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "422": {
-            "description": "SQL syntax, result limit, or unsupported demo query",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "429": {
-            "description": "Provider quota or rate limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "502": {
-            "description": "Provider unavailable or invalid response",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "503": {
-            "description": "Provider binding needs operator recovery",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "504": {
-            "description": "SQL timeout; a write outcome may be unknown",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          }
-        }
-      },
-      "parameters": [
-        {
-          "name": "workspaceId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[A-Za-z0-9_.:-]+$"
-          },
-          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
-        }
-      ]
-    },
-    "/workspaces/{workspaceId}/audit-history": {
-      "get": {
-        "operationId": "listAuditHistory",
-        "summary": "List partial regional audit history",
-        "tags": ["Owner"],
-        "description": "Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Region access Tokens cannot perform this Owner operation.",
-        "x-required-scope": null,
-        "security": [{ "localOwner": [] }, { "accountOwner": [] }, { "guestOwner": [] }],
-        "parameters": [
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "schema": { "type": "string", "minLength": 1, "maxLength": 1024 }
-          },
-          {
-            "name": "from",
-            "in": "query",
-            "schema": { "type": "string", "format": "date-time", "maxLength": 40 }
-          },
-          {
-            "name": "to",
-            "in": "query",
-            "schema": { "type": "string", "format": "date-time", "maxLength": 40 }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["data", "nextCursor", "coverage", "retention", "health"],
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/AuditHistoryRecord" }
-                    },
-                    "nextCursor": { "type": ["string", "null"], "maxLength": 1024 },
-                    "coverage": { "$ref": "#/components/schemas/HistoryCoverage" },
-                    "retention": { "$ref": "#/components/schemas/HistoryRetention" },
-                    "health": { "$ref": "#/components/schemas/HistoryHealth" }
-                  },
-                  "additionalProperties": false
-                }
-              }
-            },
-            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, expired, or revoked credential",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "403": {
-            "description": "Insufficient permission",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "404": {
-            "description": "Resource or endpoint not found",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "405": {
-            "description": "Resource lifecycle operation unsupported by provider",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "409": {
-            "description": "Conflict or free-tier limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "410": {
-            "description": "History cursor expired; restart from the first page",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "412": {
-            "description": "Version precondition failed without a write",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "413": {
-            "description": "Content too large",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "415": {
-            "description": "Unsupported content type",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "422": {
-            "description": "SQL syntax, result limit, or unsupported demo query",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "429": {
-            "description": "Provider quota or rate limit",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "502": {
-            "description": "Provider unavailable or invalid response",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "503": {
-            "description": "Provider binding needs operator recovery",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          },
-          "504": {
-            "description": "SQL timeout; a write outcome may be unknown",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
-            }
-          }
-        }
-      },
-      "parameters": [
-        {
-          "name": "workspaceId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[A-Za-z0-9_.:-]+$"
-          },
-          "description": "A Workspace ID returned by the authenticated Workspace discovery API."
-        }
-      ]
-    }
-  },
   "components": {
-    "securitySchemes": {
-      "localOwner": {
-        "type": "apiKey",
-        "in": "cookie",
-        "name": "aw_session",
-        "description": "Eight-hour, process-local Owner session for explicit local/legacy profiles, created by that profile's verified SSO callback or POST /api/session (loopback only). HttpOnly; Secure for HTTPS; logout revokes it. Managed account and regional Guest hosts use their separate credentials below."
-      },
-      "accountOwner": {
-        "type": "apiKey",
-        "in": "cookie",
-        "name": "aw_account",
-        "description": "Opaque, Workspace-bound regional Owner continuity grant issued after verified TiDB Account sign-in. Host-only, HttpOnly, SameSite=Strict and Secure on HTTPS. Browser-session cookie with no absolute server expiry; logout or regional policy denial revokes access. Existing grants survive Region restart and Global outage. Not a Workspace Key and never inferred from a Workspace URL."
-      },
-      "guestOwner": {
-        "type": "apiKey",
-        "in": "cookie",
-        "name": "aw_guest",
-        "description": "Opaque regional Guest Owner session issued by POST /api/auth/guest when enabled. Host-only, HttpOnly, Secure, SameSite=Strict, Workspace-bound and subject to its absolute Guest expiry. Guest logout revokes access and schedules scoped cleanup. Never grants access to an account or another Guest Workspace."
-      },
-      "regionalAccess": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "Region JWT",
-        "description": "Audience-bound regional access. Checked against Region-local Key, grant, family, denial and policy checkpoints; never introspected at Global."
-      },
-      "regionalRefresh": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "Authorization",
-        "description": "Refresh <credential>, bound to the enrolled client key and rotating nonce. Requires DPoP proof. Never sent to Global."
-      }
-    },
     "schemas": {
-      "Resource": {
-        "type": "object",
-        "required": ["id", "name", "kind", "region", "regionId", "status", "createdAt"],
-        "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "kind": { "enum": ["postgresql", "filesystem"] },
-          "region": {
-            "type": "string",
-            "description": "Provider-assigned data location; may be automatic and is distinct from the Workspace Region."
-          },
-          "regionId": {
-            "type": "string",
-            "description": "Region control plane owning this resource. Legacy records are interpreted in their existing Region."
-          },
-          "status": {
-            "enum": [
-              "active",
-              "provisioning",
-              "failed",
-              "suspended",
-              "deleting",
-              "deleted",
-              "expired"
-            ]
-          },
-          "provider": {
-            "enum": ["local", "drive9-anonymous", "db9-anonymous"],
-            "description": "Missing on legacy local resources. PostgreSQL-compatible databases support NUMERIC values of up to 28–29 significant digits. Provider compatibility limits apply."
-          },
-          "deletion": {
-            "type": "object",
-            "required": ["phase", "requestedAt"],
-            "properties": {
-              "phase": { "enum": ["outcome-unknown", "provider-accepted", "completed"] },
-              "requestedAt": { "type": "string", "format": "date-time" }
-            }
-          },
-          "allowedActions": { "type": "array", "items": { "type": "string" } },
-          "capabilities": {
-            "type": "object",
-            "required": [
-              "delete",
-              "deletionCompletion",
-              "readOnlyQueries",
-              "conditionalFileWrites"
-            ],
-            "properties": {
-              "delete": { "type": "boolean" },
-              "deletionCompletion": {
-                "enum": ["synchronous", "providerStatus", "operatorReconciliation", "unsupported"]
-              },
-              "readOnlyQueries": { "type": "boolean" },
-              "conditionalFileWrites": { "type": "boolean" }
-            }
-          },
-          "uploadLimitBytes": {
-            "type": "integer",
-            "description": "Negotiated gateway upload limit; zero means uploads are unavailable."
-          },
-          "connectionError": { "type": "string" },
-          "isDefault": {
-            "type": "boolean",
-            "description": "The File System created for a new Workspace."
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Expiry reported by the database provider. No automatic renewal or replacement."
-          },
-          "createdAt": { "type": "string", "format": "date-time" }
-        }
-      },
-      "File": {
-        "type": "object",
-        "required": ["id", "resourceId", "path", "type", "size", "updatedAt"],
-        "properties": {
-          "id": { "type": "string" },
-          "resourceId": { "type": "string" },
-          "path": { "type": "string" },
-          "type": { "enum": ["file", "directory"] },
-          "version": {
-            "type": "string",
-            "description": "Opaque strong version validator, including its double quotes; send unchanged in If-Match."
-          },
-          "content": { "type": "string" },
-          "size": { "type": "integer" },
-          "updatedAt": { "type": ["string", "null"], "format": "date-time" }
-        }
-      },
-      "Key": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "prefix",
-          "scopes",
-          "resourceIds",
-          "createdAt",
-          "expiresAt",
-          "lastUsedAt",
-          "revokedAt"
-        ],
-        "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "prefix": { "type": "string" },
-          "scopes": { "type": "array", "items": { "type": "string" } },
-          "resourceIds": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "Explicit allowed resource IDs, or [\"*\"] for all current and future resources."
-          },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "expiresAt": { "type": "string", "format": "date-time" },
-          "lastUsedAt": { "type": ["string", "null"] },
-          "revokedAt": { "type": ["string", "null"] }
-        }
-      },
-      "Error": {
-        "type": "object",
-        "required": ["error"],
-        "properties": {
-          "error": {
-            "type": "object",
-            "required": ["code", "message", "requestId"],
-            "properties": {
-              "code": { "type": "string" },
-              "message": { "type": "string" },
-              "requestId": { "type": "string" }
-            }
-          }
-        }
-      },
-      "ResultExportInput": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["sourceResourceId", "result", "target"],
-        "properties": {
-          "sourceResourceId": { "type": "string" },
-          "result": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["columns", "rows"],
-            "properties": {
-              "columns": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 100,
-                "uniqueItems": true,
-                "items": { "type": "string", "minLength": 1 }
-              },
-              "rows": {
-                "type": "array",
-                "maxItems": 1000,
-                "items": { "type": "object", "additionalProperties": true }
-              }
-            }
-          },
-          "target": {
-            "oneOf": [
-              {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["kind", "format"],
-                "properties": {
-                  "kind": { "const": "download" },
-                  "format": { "type": "string", "enum": ["csv", "json", "jsonl"] }
-                }
-              },
-              {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["kind", "resourceId", "path", "format"],
-                "properties": {
-                  "kind": { "const": "filesystem" },
-                  "resourceId": { "type": "string" },
-                  "path": { "type": "string", "maxLength": 512 },
-                  "format": { "type": "string", "enum": ["csv", "json", "jsonl"] }
-                }
-              },
-              {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["kind", "resourceId", "table"],
-                "properties": {
-                  "kind": { "const": "database" },
-                  "resourceId": { "type": "string" },
-                  "table": { "type": "string", "minLength": 1, "maxLength": 63 }
-                }
-              }
-            ]
-          }
-        }
-      },
-      "ResultExportOutput": {
-        "oneOf": [
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["kind", "rowCount", "format", "filename", "mimeType", "content", "bytes"],
-            "properties": {
-              "kind": { "const": "download" },
-              "rowCount": { "type": "integer", "minimum": 0, "maximum": 1000 },
-              "format": { "type": "string", "enum": ["csv", "json", "jsonl"] },
-              "filename": { "type": "string" },
-              "mimeType": { "type": "string" },
-              "content": { "type": "string" },
-              "bytes": { "type": "integer", "minimum": 0 }
-            }
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["kind", "rowCount", "resourceId", "path", "format", "bytes"],
-            "properties": {
-              "kind": { "const": "filesystem" },
-              "rowCount": { "type": "integer", "minimum": 0, "maximum": 1000 },
-              "resourceId": { "type": "string" },
-              "path": { "type": "string" },
-              "format": { "type": "string", "enum": ["csv", "json", "jsonl"] },
-              "bytes": { "type": "integer", "minimum": 0 }
-            }
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["kind", "rowCount", "resourceId", "table", "columns"],
-            "properties": {
-              "kind": { "const": "database" },
-              "rowCount": { "type": "integer", "minimum": 0, "maximum": 1000 },
-              "resourceId": { "type": "string" },
-              "table": { "type": "string" },
-              "columns": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": ["name", "type"],
-                  "properties": { "name": { "type": "string" }, "type": { "type": "string" } }
-                }
-              }
-            }
-          }
-        ]
-      },
-      "FileExportSource": {
-        "oneOf": [
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["kind", "resourceId", "path"],
-            "properties": {
-              "kind": { "const": "original" },
-              "resourceId": { "type": "string" },
-              "path": { "type": "string" }
-            }
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["kind", "resourceId", "stream", "text"],
-            "properties": {
-              "kind": { "const": "output" },
-              "resourceId": { "type": "string" },
-              "stream": { "enum": ["stdout", "stderr"] },
-              "text": { "type": "string" }
-            }
-          }
-        ]
-      },
-      "FileExportParsing": {
-        "oneOf": [
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["format", "header", "delimiter"],
-            "properties": {
-              "format": { "const": "csv" },
-              "header": { "type": "boolean" },
-              "delimiter": { "enum": [",", "\t", ";", "|"] }
-            }
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["format"],
-            "properties": { "format": { "enum": ["parquet", "lines"] } }
-          }
-        ]
-      },
-      "FileExportPreparationInput": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["source", "parsing"],
-        "properties": {
-          "source": { "$ref": "#/components/schemas/FileExportSource" },
-          "parsing": { "$ref": "#/components/schemas/FileExportParsing" }
-        }
-      },
-      "Preparation": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "status",
-          "createdAt",
-          "expiresAt",
-          "fields",
-          "rows",
-          "rowCount",
-          "sourceVersion",
-          "inputBytes",
-          "format"
-        ],
-        "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "status": { "enum": ["ready", "consumed"] },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "expiresAt": { "type": "string" },
-          "fields": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 100,
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["source", "name", "type"],
-              "properties": {
-                "source": { "type": "string" },
-                "name": { "type": "string" },
-                "type": { "enum": ["TEXT", "BIGINT", "DOUBLE", "BOOLEAN"] }
-              }
-            }
-          },
-          "rows": {
-            "type": "array",
-            "maxItems": 20,
-            "items": { "type": "object", "additionalProperties": true }
-          },
-          "rowCount": { "type": "integer", "minimum": 0, "maximum": 1000 },
-          "sourceVersion": { "type": "string" },
-          "inputBytes": { "type": "integer" },
-          "format": { "enum": ["csv", "parquet", "lines"] }
-        }
-      },
-      "FileExportInput": {
-        "oneOf": [
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["source", "target"],
-            "properties": {
-              "source": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["kind", "resourceId", "path"],
-                "properties": {
-                  "kind": { "const": "original" },
-                  "resourceId": { "type": "string" },
-                  "path": { "type": "string" }
-                }
-              },
-              "target": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["kind", "resourceId", "path"],
-                "properties": {
-                  "kind": { "const": "filesystem" },
-                  "resourceId": { "type": "string" },
-                  "path": { "type": "string" }
-                }
-              }
-            }
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["source", "target"],
-            "properties": {
-              "source": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["kind", "resourceId", "stream", "text"],
-                "properties": {
-                  "kind": { "const": "output" },
-                  "resourceId": { "type": "string" },
-                  "stream": { "enum": ["stdout", "stderr"] },
-                  "text": { "type": "string" }
-                }
-              },
-              "target": {
-                "oneOf": [
-                  {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": ["kind"],
-                    "properties": { "kind": { "const": "download" } }
-                  },
-                  {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": ["kind", "resourceId", "path"],
-                    "properties": {
-                      "kind": { "const": "filesystem" },
-                      "resourceId": { "type": "string" },
-                      "path": { "type": "string" }
-                    }
-                  }
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["preparationId", "confirmed", "fields", "target"],
-            "properties": {
-              "preparationId": { "type": "string" },
-              "confirmed": { "const": true },
-              "fields": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 100,
-                "items": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": ["source", "name", "type"],
-                  "properties": {
-                    "source": { "type": "string" },
-                    "name": { "type": "string" },
-                    "type": { "enum": ["TEXT", "BIGINT", "DOUBLE", "BOOLEAN"] }
-                  }
-                }
-              },
-              "target": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["kind", "resourceId", "table"],
-                "properties": {
-                  "kind": { "const": "database" },
-                  "resourceId": { "type": "string" },
-                  "table": { "type": "string" }
-                }
-              }
-            }
-          }
-        ]
-      },
-      "FileExportOutput": {
-        "oneOf": [
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["kind", "filename", "mimeType", "content", "bytes"],
-            "properties": {
-              "kind": { "const": "download" },
-              "filename": { "type": "string" },
-              "mimeType": { "type": "string" },
-              "content": { "type": "string" },
-              "bytes": { "type": "integer" }
-            }
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["kind", "resourceId", "path", "bytes"],
-            "properties": {
-              "kind": { "const": "filesystem" },
-              "resourceId": { "type": "string" },
-              "path": { "type": "string" },
-              "bytes": { "type": "integer" }
-            }
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["kind", "resourceId", "table", "rowCount", "columns"],
-            "properties": {
-              "kind": { "const": "database" },
-              "resourceId": { "type": "string" },
-              "table": { "type": "string" },
-              "rowCount": { "type": "integer" },
-              "columns": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": ["name", "type"],
-                  "properties": { "name": { "type": "string" }, "type": { "type": "string" } }
-                }
-              }
-            }
-          }
-        ]
-      },
-      "DatabaseImportParsing": {
-        "oneOf": [
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["format", "header", "delimiter"],
-            "properties": {
-              "format": { "const": "csv" },
-              "header": { "type": "boolean" },
-              "delimiter": { "enum": [",", "\t", ";", "|"] }
-            }
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["format"],
-            "properties": { "format": { "const": "parquet" } }
-          }
-        ]
-      },
-      "DatabaseImportPreparationInput": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["resourceId", "source", "parsing"],
-        "properties": {
-          "resourceId": { "type": "string", "minLength": 1 },
-          "source": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["resourceId", "path"],
-            "properties": {
-              "resourceId": { "type": "string", "minLength": 1 },
-              "path": { "type": "string", "minLength": 1 }
-            }
-          },
-          "parsing": { "$ref": "#/components/schemas/DatabaseImportParsing" }
-        }
-      },
-      "DatabaseImportInput": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["resourceId", "preparationId", "confirmed", "table", "fields"],
-        "properties": {
-          "resourceId": { "type": "string", "minLength": 1 },
-          "preparationId": { "type": "string", "minLength": 1 },
-          "confirmed": { "const": true },
-          "table": { "type": "string", "minLength": 1 },
-          "fields": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 100,
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["source", "name", "type"],
-              "properties": {
-                "source": { "type": "string" },
-                "name": { "type": "string" },
-                "type": { "enum": ["TEXT", "BIGINT", "DOUBLE", "BOOLEAN"] }
-              }
-            }
-          }
-        }
-      },
-      "DatabaseImportResult": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["kind", "resourceId", "table", "rowCount", "columns"],
-        "properties": {
-          "kind": { "const": "database" },
-          "resourceId": { "type": "string" },
-          "table": { "type": "string" },
-          "rowCount": { "type": "integer" },
-          "columns": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["name", "type"],
-              "properties": { "name": { "type": "string" }, "type": { "type": "string" } }
-            }
-          }
-        }
-      },
-      "QueryResult": {
-        "type": "object",
-        "required": ["columns", "rows", "rowCount", "mode", "durationMs"],
-        "properties": {
-          "columns": { "type": "array", "items": { "type": "string" } },
-          "rows": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
-          "rowCount": { "type": "integer" },
-          "mode": { "enum": ["demo", "live"] },
-          "affectedRows": {
-            "type": "integer",
-            "description": "Live statement affected-row count; SELECT returns zero."
-          },
-          "durationMs": { "type": "number" }
-        }
-      },
-      "DatabaseTable": {
-        "type": "object",
-        "required": ["name", "type"],
-        "properties": { "name": { "type": "string" }, "type": { "type": "string" } }
-      },
-      "TableList": {
-        "type": "object",
-        "required": ["data", "truncated", "mode"],
-        "properties": {
-          "data": {
-            "type": "array",
-            "maxItems": 500,
-            "items": { "$ref": "#/components/schemas/DatabaseTable" }
-          },
-          "truncated": { "type": "boolean" },
-          "mode": { "enum": ["demo", "live"] }
-        }
-      },
-      "TableDetail": {
-        "type": "object",
-        "required": ["name", "type", "mode", "query", "columns", "indexes"],
-        "properties": {
-          "name": { "type": "string" },
-          "type": { "type": "string" },
-          "mode": { "enum": ["demo", "live"] },
-          "query": { "type": "string" },
-          "columns": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": ["name", "type", "nullable", "default", "key", "extra"],
-              "properties": {
-                "name": { "type": "string" },
-                "type": { "type": "string" },
-                "nullable": { "type": "boolean" },
-                "default": { "type": ["string", "null"] },
-                "key": { "type": "string" },
-                "extra": { "type": "string" }
-              }
-            }
-          },
-          "indexes": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": ["name", "unique", "columns"],
-              "properties": {
-                "name": { "type": "string" },
-                "unique": { "type": "boolean" },
-                "columns": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "required": ["name", "position", "prefixLength"],
-                    "properties": {
-                      "name": { "type": ["string", "null"] },
-                      "position": { "type": "integer" },
-                      "prefixLength": { "type": ["integer", "null"] }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "Workspace": {
-        "type": "object",
-        "required": ["id", "name", "description", "plan", "defaultRegionId", "createdAt"],
-        "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "description": { "type": "string" },
-          "plan": { "type": "string" },
-          "defaultRegionId": {
-            "type": "string",
-            "description": "Default Region for new resources. Currently only this Region is available."
-          },
-          "createdAt": { "type": "string", "format": "date-time" }
-        }
-      },
-      "Profile": {
-        "type": "object",
-        "required": ["name", "email", "role"],
-        "properties": {
-          "name": { "type": "string" },
-          "email": { "type": "string" },
-          "role": { "type": "string" }
-        }
-      },
-      "Event": {
-        "type": "object",
-        "required": ["id", "action", "resource", "actor", "at", "outcome"],
-        "properties": {
-          "id": { "type": "string" },
-          "action": { "type": "string" },
-          "resource": { "type": "string" },
-          "resourceId": { "type": ["string", "null"] },
-          "actor": { "type": "string" },
-          "at": { "type": "string" },
-          "outcome": { "type": "string" }
-        }
-      },
-      "Usage": {
-        "type": "object",
-        "required": [
-          "resourceId",
-          "name",
-          "kind",
-          "storageBytes",
-          "storageLimitBytes",
-          "monthlyRU",
-          "monthlyRULimit",
-          "fileCount",
-          "measured"
-        ],
-        "properties": {
-          "resourceId": { "type": "string" },
-          "name": { "type": "string" },
-          "kind": { "enum": ["postgresql", "filesystem"] },
-          "storageBytes": { "type": ["integer", "null"] },
-          "storageLimitBytes": { "type": ["integer", "null"] },
-          "monthlyRU": { "type": ["integer", "null"] },
-          "monthlyRULimit": { "type": ["integer", "null"] },
-          "fileCount": { "type": ["integer", "null"] },
-          "measured": { "type": "boolean" }
-        }
-      },
-      "Capability": {
-        "type": "object",
-        "required": ["label", "regions", "storageGiB", "preview"],
-        "properties": {
-          "label": { "type": "string" },
-          "regions": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": ["aws-us-east-1", "aws-us-west-2", "automatic", "aws-ap-southeast-1"]
-            }
-          },
-          "storageGiB": { "type": ["number", "null"] },
-          "monthlyRU": { "type": ["number", "null"] },
-          "maxFiles": { "type": ["integer", "null"] },
-          "preview": { "type": "boolean" },
-          "provider": { "type": "string" },
-          "available": {
-            "type": "boolean",
-            "description": "False when this resource provider is not configured or available."
-          }
-        }
-      },
-      "Capabilities": {
-        "type": "object",
-        "required": ["postgresql", "filesystem"],
-        "properties": {
-          "postgresql": { "$ref": "#/components/schemas/Capability" },
-          "filesystem": { "$ref": "#/components/schemas/Capability" }
-        },
-        "additionalProperties": false
-      },
-      "Bootstrap": {
-        "type": "object",
-        "required": [
-          "workspace",
-          "profile",
-          "resources",
-          "files",
-          "keys",
-          "events",
-          "usage",
-          "queryCount",
-          "capabilities",
-          "mode"
-        ],
-        "properties": {
-          "workspace": { "$ref": "#/components/schemas/Workspace" },
-          "profile": { "$ref": "#/components/schemas/Profile" },
-          "resources": { "type": "array", "items": { "$ref": "#/components/schemas/Resource" } },
-          "resourceNextCursor": {
-            "type": ["string", "null"],
-            "description": "Continuation for the bounded initial resource page; counts are for loaded resources."
-          },
-          "files": { "type": "array", "items": { "$ref": "#/components/schemas/File" } },
-          "keys": { "type": "array", "items": { "$ref": "#/components/schemas/Key" } },
-          "keysNextCursor": {
-            "type": ["string", "null"],
-            "description": "Continuation for the bounded initial Key page."
-          },
-          "events": { "type": "array", "items": { "$ref": "#/components/schemas/Event" } },
-          "usage": { "type": "array", "items": { "$ref": "#/components/schemas/Usage" } },
-          "queryCount": { "type": "integer" },
-          "capabilities": { "$ref": "#/components/schemas/Capabilities" },
-          "mode": { "enum": ["demo", "hybrid"] }
-        }
-      },
-      "ResourceSetupAttempt": {
-        "type": "object",
-        "required": [
-          "id",
-          "resourceId",
-          "createdAt",
-          "updatedAt",
-          "status",
-          "errorCode",
-          "resource"
-        ],
-        "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "resourceId": { "type": "string" },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time" },
-          "status": { "enum": ["succeeded", "failed", "outcome-unknown"] },
-          "errorCode": { "type": ["string", "null"] },
-          "resource": { "$ref": "#/components/schemas/Resource" }
-        }
-      },
-      "SalesSampleAttempt": {
-        "type": "object",
-        "required": [
-          "id",
-          "fixture",
-          "status",
-          "resourceId",
-          "path",
-          "fileVersion",
-          "errorCode",
-          "createdAt",
-          "updatedAt"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-          },
-          "fixture": { "const": "us-sales-v1" },
-          "status": { "enum": ["preparing", "ready", "failed", "outcome_unknown"] },
-          "resourceId": { "type": ["string", "null"], "minLength": 1 },
-          "path": { "type": ["string", "null"], "enum": ["/us-sales.csv", null] },
-          "fileVersion": {
-            "type": ["string", "null"],
-            "maxLength": 256,
-            "pattern": "^\"[A-Za-z0-9-]+\"$"
-          },
-          "errorCode": { "type": ["string", "null"] },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time" }
-        },
-        "additionalProperties": false,
-        "allOf": [
-          {
-            "if": { "properties": { "status": { "const": "ready" } } },
-            "then": {
-              "properties": {
-                "resourceId": { "type": "string", "minLength": 1 },
-                "path": { "const": "/us-sales.csv" },
-                "fileVersion": { "type": "string", "minLength": 1 }
-              }
-            }
-          }
-        ]
-      },
-      "TutorialInput": {
-        "type": "object",
-        "required": ["sampleId", "state"],
-        "properties": {
-          "sampleId": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
-          "state": { "enum": ["pending", "attempted", "ready", "completed"] }
-        },
-        "additionalProperties": false
-      },
-      "Tutorial": {
-        "type": "object",
-        "required": ["sampleId", "state", "resourceId", "version", "updatedAt"],
-        "properties": {
-          "sampleId": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
-          "state": { "enum": ["pending", "attempted", "ready", "completed"] },
-          "resourceId": { "type": "string" },
-          "version": {
-            "type": "string",
-            "pattern": "^\"tutorial-[a-f0-9]{32}\"$",
-            "description": "Strong opaque ETag, including quotes. Send unchanged in If-Match."
-          },
-          "updatedAt": { "type": "string", "format": "date-time" }
-        }
-      },
-      "HistoryActor": {
-        "type": "object",
-        "required": ["kind", "id"],
-        "properties": { "kind": { "enum": ["owner", "workspaceKey"] }, "id": { "type": "string" } },
-        "additionalProperties": false
-      },
-      "RequestHistoryRecord": {
-        "type": "object",
-        "required": [
-          "id",
-          "requestId",
-          "authority",
-          "actor",
-          "operation",
-          "method",
-          "status",
-          "completion",
-          "startedAt",
-          "durationMs"
-        ],
-        "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "requestId": { "type": "string", "format": "uuid" },
-          "authority": { "type": "string" },
-          "actor": { "$ref": "#/components/schemas/HistoryActor" },
-          "operation": { "enum": ["workspace", "resources", "files", "query", "other"] },
-          "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "OTHER"] },
-          "status": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 },
-          "completion": { "enum": ["responded", "canceled", "unknown"] },
-          "startedAt": { "type": "string", "format": "date-time" },
-          "durationMs": { "type": "integer", "minimum": 0 }
-        },
-        "additionalProperties": false
-      },
       "AuditHistoryRecord": {
-        "type": "object",
-        "required": [
-          "id",
-          "operationId",
-          "authority",
-          "actor",
-          "action",
-          "decision",
-          "outcome",
-          "occurredAt"
-        ],
+        "additionalProperties": false,
         "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "operationId": { "type": "string", "format": "uuid" },
-          "requestId": { "type": "string", "format": "uuid" },
-          "authority": { "type": "string" },
-          "actor": { "$ref": "#/components/schemas/HistoryActor" },
           "action": {
             "enum": [
               "workspace.update",
@@ -1310,69 +17,1416 @@
               "database.import"
             ]
           },
-          "target": {
-            "type": "object",
-            "required": ["type", "id"],
-            "properties": {
-              "type": { "enum": ["workspace", "resource", "filesystem", "database"] },
-              "id": { "type": "string" }
-            },
-            "additionalProperties": false
+          "actor": {
+            "$ref": "#/components/schemas/HistoryActor"
           },
-          "decision": { "enum": ["allowed", "denied", "unknown"] },
-          "outcome": { "enum": ["attempted", "succeeded", "denied", "failed", "unknown"] },
-          "resolution": { "enum": ["inProgress", "succeeded", "denied", "failed", "unknown"] },
-          "occurredAt": { "type": "string", "format": "date-time" }
+          "authority": {
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "allowed",
+              "denied",
+              "unknown"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "operationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "attempted",
+              "succeeded",
+              "denied",
+              "failed",
+              "unknown"
+            ]
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "resolution": {
+            "enum": [
+              "inProgress",
+              "succeeded",
+              "denied",
+              "failed",
+              "unknown"
+            ]
+          },
+          "target": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "workspace",
+                  "resource",
+                  "filesystem",
+                  "database"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "type": "object"
+          }
         },
-        "additionalProperties": false
+        "required": [
+          "id",
+          "operationId",
+          "authority",
+          "actor",
+          "action",
+          "decision",
+          "outcome",
+          "occurredAt"
+        ],
+        "type": "object"
+      },
+      "Bootstrap": {
+        "properties": {
+          "capabilities": {
+            "$ref": "#/components/schemas/Capabilities"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "type": "array"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/File"
+            },
+            "type": "array"
+          },
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/Key"
+            },
+            "type": "array"
+          },
+          "keysNextCursor": {
+            "description": "Continuation for the bounded initial Key page.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "enum": [
+              "demo",
+              "hybrid"
+            ]
+          },
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "queryCount": {
+            "type": "integer"
+          },
+          "resourceNextCursor": {
+            "description": "Continuation for the bounded initial resource page; counts are for loaded resources.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/Resource"
+            },
+            "type": "array"
+          },
+          "usage": {
+            "items": {
+              "$ref": "#/components/schemas/Usage"
+            },
+            "type": "array"
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/Workspace"
+          }
+        },
+        "required": [
+          "workspace",
+          "profile",
+          "resources",
+          "files",
+          "keys",
+          "events",
+          "usage",
+          "queryCount",
+          "capabilities",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "Capabilities": {
+        "additionalProperties": false,
+        "properties": {
+          "filesystem": {
+            "$ref": "#/components/schemas/Capability"
+          },
+          "postgresql": {
+            "$ref": "#/components/schemas/Capability"
+          }
+        },
+        "required": [
+          "postgresql",
+          "filesystem"
+        ],
+        "type": "object"
+      },
+      "Capability": {
+        "properties": {
+          "available": {
+            "description": "False when this resource provider is not configured or available.",
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "maxFiles": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "monthlyRU": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "preview": {
+            "type": "boolean"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "regions": {
+            "items": {
+              "enum": [
+                "aws-us-east-1",
+                "aws-us-west-2",
+                "automatic",
+                "aws-ap-southeast-1"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "storageGiB": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "label",
+          "regions",
+          "storageGiB",
+          "preview"
+        ],
+        "type": "object"
+      },
+      "DatabaseImportInput": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed": {
+            "const": true
+          },
+          "fields": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "TEXT",
+                    "BIGINT",
+                    "DOUBLE",
+                    "BOOLEAN"
+                  ]
+                }
+              },
+              "required": [
+                "source",
+                "name",
+                "type"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          },
+          "preparationId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "resourceId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "table": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "resourceId",
+          "preparationId",
+          "confirmed",
+          "table",
+          "fields"
+        ],
+        "type": "object"
+      },
+      "DatabaseImportParsing": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "delimiter": {
+                "enum": [
+                  ",",
+                  "\t",
+                  ";",
+                  "|"
+                ]
+              },
+              "format": {
+                "const": "csv"
+              },
+              "header": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "format",
+              "header",
+              "delimiter"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "format": {
+                "const": "parquet"
+              }
+            },
+            "required": [
+              "format"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "DatabaseImportPreparationInput": {
+        "additionalProperties": false,
+        "properties": {
+          "parsing": {
+            "$ref": "#/components/schemas/DatabaseImportParsing"
+          },
+          "resourceId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "source": {
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "resourceId": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "resourceId",
+              "path"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "resourceId",
+          "source",
+          "parsing"
+        ],
+        "type": "object"
+      },
+      "DatabaseImportResult": {
+        "additionalProperties": false,
+        "properties": {
+          "columns": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "type"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "const": "database"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "rowCount": {
+            "type": "integer"
+          },
+          "table": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "resourceId",
+          "table",
+          "rowCount",
+          "columns"
+        ],
+        "type": "object"
+      },
+      "DatabaseTable": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "type": "object"
+      },
+      "Error": {
+        "properties": {
+          "error": {
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "requestId"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "Event": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "resource": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "resource",
+          "actor",
+          "at",
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "File": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "type": {
+            "enum": [
+              "file",
+              "directory"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "description": "Opaque strong version validator, including its double quotes; send unchanged in If-Match.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "resourceId",
+          "path",
+          "type",
+          "size",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "FileExportInput": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "source": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "original"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "resourceId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "resourceId",
+                  "path"
+                ],
+                "type": "object"
+              },
+              "target": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "filesystem"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "resourceId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "resourceId",
+                  "path"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "source",
+              "target"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "source": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "output"
+                  },
+                  "resourceId": {
+                    "type": "string"
+                  },
+                  "stream": {
+                    "enum": [
+                      "stdout",
+                      "stderr"
+                    ]
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "resourceId",
+                  "stream",
+                  "text"
+                ],
+                "type": "object"
+              },
+              "target": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "download"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "filesystem"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "resourceId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "resourceId",
+                      "path"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "source",
+              "target"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "confirmed": {
+                "const": true
+              },
+              "fields": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "enum": [
+                        "TEXT",
+                        "BIGINT",
+                        "DOUBLE",
+                        "BOOLEAN"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "name",
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "minItems": 1,
+                "type": "array"
+              },
+              "preparationId": {
+                "type": "string"
+              },
+              "target": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "database"
+                  },
+                  "resourceId": {
+                    "type": "string"
+                  },
+                  "table": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "resourceId",
+                  "table"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "preparationId",
+              "confirmed",
+              "fields",
+              "target"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "FileExportOutput": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "bytes": {
+                "type": "integer"
+              },
+              "content": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "download"
+              },
+              "mimeType": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "filename",
+              "mimeType",
+              "content",
+              "bytes"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "bytes": {
+                "type": "integer"
+              },
+              "kind": {
+                "const": "filesystem"
+              },
+              "path": {
+                "type": "string"
+              },
+              "resourceId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "resourceId",
+              "path",
+              "bytes"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "columns": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "kind": {
+                "const": "database"
+              },
+              "resourceId": {
+                "type": "string"
+              },
+              "rowCount": {
+                "type": "integer"
+              },
+              "table": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "resourceId",
+              "table",
+              "rowCount",
+              "columns"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "FileExportParsing": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "delimiter": {
+                "enum": [
+                  ",",
+                  "\t",
+                  ";",
+                  "|"
+                ]
+              },
+              "format": {
+                "const": "csv"
+              },
+              "header": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "format",
+              "header",
+              "delimiter"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "format": {
+                "enum": [
+                  "parquet",
+                  "lines"
+                ]
+              }
+            },
+            "required": [
+              "format"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "FileExportPreparationInput": {
+        "additionalProperties": false,
+        "properties": {
+          "parsing": {
+            "$ref": "#/components/schemas/FileExportParsing"
+          },
+          "source": {
+            "$ref": "#/components/schemas/FileExportSource"
+          }
+        },
+        "required": [
+          "source",
+          "parsing"
+        ],
+        "type": "object"
+      },
+      "FileExportSource": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "original"
+              },
+              "path": {
+                "type": "string"
+              },
+              "resourceId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "resourceId",
+              "path"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "output"
+              },
+              "resourceId": {
+                "type": "string"
+              },
+              "stream": {
+                "enum": [
+                  "stdout",
+                  "stderr"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "resourceId",
+              "stream",
+              "text"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "HistoryActor": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "owner",
+              "workspaceKey"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ],
+        "type": "object"
       },
       "HistoryCoverage": {
-        "type": "object",
-        "required": ["status", "startedAt", "operations", "exclusions"],
+        "additionalProperties": false,
         "properties": {
-          "status": { "enum": ["partial", "unavailable"] },
-          "startedAt": { "type": ["string", "null"], "format": "date-time" },
-          "operations": { "type": "array", "items": { "type": "string" } },
-          "exclusions": { "type": "array", "items": { "type": "string" } }
+          "exclusions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "operations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "partial",
+              "unavailable"
+            ]
+          }
         },
-        "additionalProperties": false
-      },
-      "HistoryRetention": {
-        "type": "object",
-        "required": ["maxAgeDays", "maxRecords", "earliestAt", "truncated"],
-        "properties": {
-          "maxAgeDays": { "type": "integer", "minimum": 1 },
-          "maxRecords": { "type": "integer", "minimum": 1 },
-          "earliestAt": { "type": ["string", "null"], "format": "date-time" },
-          "truncated": { "type": ["boolean", "null"] }
-        },
-        "additionalProperties": false
+        "required": [
+          "status",
+          "startedAt",
+          "operations",
+          "exclusions"
+        ],
+        "type": "object"
       },
       "HistoryHealth": {
-        "type": "object",
-        "required": ["status", "droppedCount", "lossDetectedAt"],
+        "additionalProperties": false,
         "properties": {
-          "status": { "enum": ["unknown", "degraded", "unavailable"] },
-          "droppedCount": { "type": ["integer", "null"], "minimum": 0 },
-          "lossDetectedAt": { "type": ["string", "null"], "format": "date-time" }
+          "droppedCount": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lossDetectedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "unknown",
+              "degraded",
+              "unavailable"
+            ]
+          }
         },
-        "additionalProperties": false
+        "required": [
+          "status",
+          "droppedCount",
+          "lossDetectedAt"
+        ],
+        "type": "object"
+      },
+      "HistoryRetention": {
+        "additionalProperties": false,
+        "properties": {
+          "earliestAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "maxAgeDays": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxRecords": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "truncated": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "maxAgeDays",
+          "maxRecords",
+          "earliestAt",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "Key": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "resourceIds": {
+            "description": "Explicit allowed resource IDs, or [\"*\"] for all current and future resources.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "revokedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "prefix",
+          "scopes",
+          "resourceIds",
+          "createdAt",
+          "expiresAt",
+          "lastUsedAt",
+          "revokedAt"
+        ],
+        "type": "object"
+      },
+      "Preparation": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "TEXT",
+                    "BIGINT",
+                    "DOUBLE",
+                    "BOOLEAN"
+                  ]
+                }
+              },
+              "required": [
+                "source",
+                "name",
+                "type"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          },
+          "format": {
+            "enum": [
+              "csv",
+              "parquet",
+              "lines"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "inputBytes": {
+            "type": "integer"
+          },
+          "rowCount": {
+            "maximum": 1000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "sourceVersion": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "consumed"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "createdAt",
+          "expiresAt",
+          "fields",
+          "rows",
+          "rowCount",
+          "sourceVersion",
+          "inputBytes",
+          "format"
+        ],
+        "type": "object"
+      },
+      "Profile": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "role"
+        ],
+        "type": "object"
+      },
+      "QueryResult": {
+        "properties": {
+          "affectedRows": {
+            "description": "Live statement affected-row count; SELECT returns zero.",
+            "type": "integer"
+          },
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "durationMs": {
+            "type": "number"
+          },
+          "mode": {
+            "enum": [
+              "demo",
+              "live"
+            ]
+          },
+          "rowCount": {
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "columns",
+          "rows",
+          "rowCount",
+          "mode",
+          "durationMs"
+        ],
+        "type": "object"
       },
       "RegionalEnrollment": {
-        "type": "object",
         "additionalProperties": false,
-        "required": ["keyId", "familyId", "refreshCredential", "nonce", "expiresAt"],
         "properties": {
-          "keyId": { "type": "string" },
-          "familyId": { "type": "string" },
-          "refreshCredential": { "type": "string" },
-          "nonce": { "type": "string" },
-          "expiresAt": { "type": "integer", "minimum": 1 }
-        }
+          "expiresAt": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "familyId": {
+            "type": "string"
+          },
+          "keyId": {
+            "type": "string"
+          },
+          "nonce": {
+            "type": "string"
+          },
+          "refreshCredential": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "keyId",
+          "familyId",
+          "refreshCredential",
+          "nonce",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "RegionalFamily": {
+        "additionalProperties": false,
+        "properties": {
+          "expiresAt": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "generation": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "keyId": {
+            "type": "string"
+          },
+          "keyVersion": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "revoked": {
+            "type": "boolean"
+          },
+          "securityEpoch": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "keyId",
+          "keyVersion",
+          "generation",
+          "securityEpoch",
+          "expiresAt",
+          "revoked"
+        ],
+        "type": "object"
+      },
+      "RegionalIssuance": {
+        "additionalProperties": false,
+        "properties": {
+          "expiresAt": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "familyId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "keyId": {
+            "type": "string"
+          },
+          "principalId": {
+            "type": "string"
+          },
+          "status": {
+            "const": "issued"
+          }
+        },
+        "required": [
+          "id",
+          "keyId",
+          "familyId",
+          "principalId",
+          "expiresAt",
+          "status"
+        ],
+        "type": "object"
       },
       "RegionalToken": {
-        "type": "object",
         "additionalProperties": false,
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "familyId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "keyId": {
+            "type": "string"
+          },
+          "nonce": {
+            "type": "string"
+          },
+          "refreshCredential": {
+            "type": "string"
+          },
+          "refreshExpiresAt": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tokenType": {
+            "const": "Bearer"
+          }
+        },
         "required": [
           "id",
           "accessToken",
@@ -1385,54 +1439,1497 @@
           "keyId",
           "scopes"
         ],
-        "properties": {
-          "id": { "type": "string" },
-          "accessToken": { "type": "string" },
-          "tokenType": { "const": "Bearer" },
-          "expiresAt": { "type": "integer", "minimum": 1 },
-          "refreshCredential": { "type": "string" },
-          "refreshExpiresAt": { "type": "integer", "minimum": 1 },
-          "nonce": { "type": "string" },
-          "familyId": { "type": "string" },
-          "keyId": { "type": "string" },
-          "scopes": { "type": "array", "items": { "type": "string" } }
-        }
+        "type": "object"
       },
-      "RegionalFamily": {
-        "type": "object",
+      "RequestHistoryRecord": {
         "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "$ref": "#/components/schemas/HistoryActor"
+          },
+          "authority": {
+            "type": "string"
+          },
+          "completion": {
+            "enum": [
+              "responded",
+              "canceled",
+              "unknown"
+            ]
+          },
+          "durationMs": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "method": {
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE",
+              "OTHER"
+            ]
+          },
+          "operation": {
+            "enum": [
+              "workspace",
+              "resources",
+              "files",
+              "query",
+              "other"
+            ]
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "maximum": 599,
+            "minimum": 100,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
         "required": [
           "id",
-          "keyId",
-          "keyVersion",
-          "generation",
-          "securityEpoch",
-          "expiresAt",
-          "revoked"
+          "requestId",
+          "authority",
+          "actor",
+          "operation",
+          "method",
+          "status",
+          "completion",
+          "startedAt",
+          "durationMs"
+        ],
+        "type": "object"
+      },
+      "Resource": {
+        "properties": {
+          "allowedActions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "capabilities": {
+            "properties": {
+              "conditionalFileWrites": {
+                "type": "boolean"
+              },
+              "delete": {
+                "type": "boolean"
+              },
+              "deletionCompletion": {
+                "enum": [
+                  "synchronous",
+                  "providerStatus",
+                  "operatorReconciliation",
+                  "unsupported"
+                ]
+              },
+              "readOnlyQueries": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "delete",
+              "deletionCompletion",
+              "readOnlyQueries",
+              "conditionalFileWrites"
+            ],
+            "type": "object"
+          },
+          "connectionError": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deletion": {
+            "properties": {
+              "phase": {
+                "enum": [
+                  "outcome-unknown",
+                  "provider-accepted",
+                  "completed"
+                ]
+              },
+              "requestedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "phase",
+              "requestedAt"
+            ],
+            "type": "object"
+          },
+          "expiresAt": {
+            "description": "Expiry reported by the database provider. No automatic renewal or replacement.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "description": "The File System created for a new Workspace.",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "postgresql",
+              "filesystem"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "description": "Missing on legacy local resources. PostgreSQL-compatible databases support NUMERIC values of up to 28–29 significant digits. Provider compatibility limits apply.",
+            "enum": [
+              "local",
+              "drive9-anonymous",
+              "db9-anonymous"
+            ]
+          },
+          "region": {
+            "description": "Provider-assigned data location; may be automatic and is distinct from the Workspace Region.",
+            "type": "string"
+          },
+          "regionId": {
+            "description": "Region control plane owning this resource. Legacy records are interpreted in their existing Region.",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "provisioning",
+              "failed",
+              "suspended",
+              "deleting",
+              "deleted",
+              "expired"
+            ]
+          },
+          "uploadLimitBytes": {
+            "description": "Negotiated gateway upload limit; zero means uploads are unavailable.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "region",
+          "regionId",
+          "status",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "ResourceSetupAttempt": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "errorCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "resource": {
+            "$ref": "#/components/schemas/Resource"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "succeeded",
+              "failed",
+              "outcome-unknown"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "resourceId",
+          "createdAt",
+          "updatedAt",
+          "status",
+          "errorCode",
+          "resource"
+        ],
+        "type": "object"
+      },
+      "ResultExportInput": {
+        "additionalProperties": false,
+        "properties": {
+          "result": {
+            "additionalProperties": false,
+            "properties": {
+              "columns": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "rows": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "maxItems": 1000,
+                "type": "array"
+              }
+            },
+            "required": [
+              "columns",
+              "rows"
+            ],
+            "type": "object"
+          },
+          "sourceResourceId": {
+            "type": "string"
+          },
+          "target": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "format": {
+                    "enum": [
+                      "csv",
+                      "json",
+                      "jsonl"
+                    ],
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "download"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "format"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "format": {
+                    "enum": [
+                      "csv",
+                      "json",
+                      "jsonl"
+                    ],
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "filesystem"
+                  },
+                  "path": {
+                    "maxLength": 512,
+                    "type": "string"
+                  },
+                  "resourceId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "resourceId",
+                  "path",
+                  "format"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "const": "database"
+                  },
+                  "resourceId": {
+                    "type": "string"
+                  },
+                  "table": {
+                    "maxLength": 63,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "resourceId",
+                  "table"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "required": [
+          "sourceResourceId",
+          "result",
+          "target"
+        ],
+        "type": "object"
+      },
+      "ResultExportOutput": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "bytes": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "content": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "format": {
+                "enum": [
+                  "csv",
+                  "json",
+                  "jsonl"
+                ],
+                "type": "string"
+              },
+              "kind": {
+                "const": "download"
+              },
+              "mimeType": {
+                "type": "string"
+              },
+              "rowCount": {
+                "maximum": 1000,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "rowCount",
+              "format",
+              "filename",
+              "mimeType",
+              "content",
+              "bytes"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "bytes": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "format": {
+                "enum": [
+                  "csv",
+                  "json",
+                  "jsonl"
+                ],
+                "type": "string"
+              },
+              "kind": {
+                "const": "filesystem"
+              },
+              "path": {
+                "type": "string"
+              },
+              "resourceId": {
+                "type": "string"
+              },
+              "rowCount": {
+                "maximum": 1000,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "rowCount",
+              "resourceId",
+              "path",
+              "format",
+              "bytes"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "columns": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "kind": {
+                "const": "database"
+              },
+              "resourceId": {
+                "type": "string"
+              },
+              "rowCount": {
+                "maximum": 1000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "table": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "rowCount",
+              "resourceId",
+              "table",
+              "columns"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "SalesSampleAttempt": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "ready"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "fileVersion": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "path": {
+                  "const": "/us-sales.csv"
+                },
+                "resourceId": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          }
         ],
         "properties": {
-          "id": { "type": "string" },
-          "keyId": { "type": "string" },
-          "keyVersion": { "type": "integer", "minimum": 1 },
-          "generation": { "type": "integer", "minimum": 1 },
-          "securityEpoch": { "type": "integer", "minimum": 1 },
-          "expiresAt": { "type": "integer", "minimum": 1 },
-          "revoked": { "type": "boolean" }
-        }
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "errorCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fileVersion": {
+            "maxLength": 256,
+            "pattern": "^\"[A-Za-z0-9-]+\"$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fixture": {
+            "const": "us-sales-v1"
+          },
+          "id": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "path": {
+            "enum": [
+              "/us-sales.csv",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resourceId": {
+            "minLength": 1,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "preparing",
+              "ready",
+              "failed",
+              "outcome_unknown"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "fixture",
+          "status",
+          "resourceId",
+          "path",
+          "fileVersion",
+          "errorCode",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
       },
-      "RegionalIssuance": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["id", "keyId", "familyId", "principalId", "expiresAt", "status"],
+      "TableDetail": {
         "properties": {
-          "id": { "type": "string" },
-          "keyId": { "type": "string" },
-          "familyId": { "type": "string" },
-          "principalId": { "type": "string" },
-          "expiresAt": { "type": "integer", "minimum": 1 },
-          "status": { "const": "issued" }
-        }
+          "columns": {
+            "items": {
+              "properties": {
+                "default": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "extra": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "nullable": {
+                  "type": "boolean"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "nullable",
+                "default",
+                "key",
+                "extra"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "indexes": {
+            "items": {
+              "properties": {
+                "columns": {
+                  "items": {
+                    "properties": {
+                      "name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "position": {
+                        "type": "integer"
+                      },
+                      "prefixLength": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "position",
+                      "prefixLength"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "unique": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "unique",
+                "columns"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "enum": [
+              "demo",
+              "live"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "mode",
+          "query",
+          "columns",
+          "indexes"
+        ],
+        "type": "object"
+      },
+      "TableList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/DatabaseTable"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "mode": {
+            "enum": [
+              "demo",
+              "live"
+            ]
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "data",
+          "truncated",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "Tutorial": {
+        "properties": {
+          "resourceId": {
+            "type": "string"
+          },
+          "sampleId": {
+            "pattern": "^[a-f0-9]{32}$",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "attempted",
+              "ready",
+              "completed"
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "description": "Strong opaque ETag, including quotes. Send unchanged in If-Match.",
+            "pattern": "^\"tutorial-[a-f0-9]{32}\"$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sampleId",
+          "state",
+          "resourceId",
+          "version",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "TutorialInput": {
+        "additionalProperties": false,
+        "properties": {
+          "sampleId": {
+            "pattern": "^[a-f0-9]{32}$",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "attempted",
+              "ready",
+              "completed"
+            ]
+          }
+        },
+        "required": [
+          "sampleId",
+          "state"
+        ],
+        "type": "object"
+      },
+      "Usage": {
+        "properties": {
+          "fileCount": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "postgresql",
+              "filesystem"
+            ]
+          },
+          "measured": {
+            "type": "boolean"
+          },
+          "monthlyRU": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "monthlyRULimit": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "storageBytes": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "storageLimitBytes": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "resourceId",
+          "name",
+          "kind",
+          "storageBytes",
+          "storageLimitBytes",
+          "monthlyRU",
+          "monthlyRULimit",
+          "fileCount",
+          "measured"
+        ],
+        "type": "object"
+      },
+      "Workspace": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "defaultRegionId": {
+            "description": "Default Region for new resources. Currently only this Region is available.",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "plan",
+          "defaultRegionId",
+          "createdAt"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "accountOwner": {
+        "description": "Opaque, Workspace-bound regional Owner continuity grant issued after verified TiDB Account sign-in. Host-only, HttpOnly, SameSite=Strict and Secure on HTTPS. Browser-session cookie with no absolute server expiry; logout or regional policy denial revokes access. Existing grants survive Region restart and Global outage. Not a Workspace Key and never inferred from a Workspace URL.",
+        "in": "cookie",
+        "name": "aw_account",
+        "type": "apiKey"
+      },
+      "guestOwner": {
+        "description": "Opaque regional Guest Owner session issued by POST /api/auth/guest when enabled. Host-only, HttpOnly, Secure, SameSite=Strict, Workspace-bound and subject to its absolute Guest expiry. Guest logout revokes access and schedules scoped cleanup. Never grants access to an account or another Guest Workspace.",
+        "in": "cookie",
+        "name": "aw_guest",
+        "type": "apiKey"
+      },
+      "localOwner": {
+        "description": "Eight-hour, process-local Owner session for explicit local/legacy profiles, created by that profile's verified SSO callback or POST /api/session (loopback only). HttpOnly; Secure for HTTPS; logout revokes it. Managed account and regional Guest hosts use their separate credentials below.",
+        "in": "cookie",
+        "name": "aw_session",
+        "type": "apiKey"
+      },
+      "regionalAccess": {
+        "bearerFormat": "Region JWT",
+        "description": "Audience-bound regional access. Checked against Region-local Key, grant, family, denial and policy checkpoints; never introspected at Global.",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "regionalRefresh": {
+        "description": "Refresh <credential>, bound to the enrolled client key and rotating nonce. Requires DPoP proof. Never sent to Global.",
+        "in": "header",
+        "name": "Authorization",
+        "type": "apiKey"
       }
     }
-  }
+  },
+  "info": {
+    "description": "Owner-session operations for partial regional request and audit history. Global activity is not included; read each response’s coverage and health before interpreting the records.",
+    "title": "Workspace Regional Owner API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/workspaces/{workspaceId}/audit-history": {
+      "get": {
+        "description": "Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Region access Tokens cannot perform this Owner operation.",
+        "operationId": "listAuditHistory",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "format": "date-time",
+              "maxLength": 40,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "format": "date-time",
+              "maxLength": 40,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "coverage": {
+                      "$ref": "#/components/schemas/HistoryCoverage"
+                    },
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/AuditHistoryRecord"
+                      },
+                      "type": "array"
+                    },
+                    "health": {
+                      "$ref": "#/components/schemas/HistoryHealth"
+                    },
+                    "nextCursor": {
+                      "maxLength": 1024,
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "retention": {
+                      "$ref": "#/components/schemas/HistoryRetention"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "nextCursor",
+                    "coverage",
+                    "retention",
+                    "health"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid, expired, or revoked credential"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Resource or endpoint not found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Resource lifecycle operation unsupported by provider"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict or free-tier limit"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "History cursor expired; restart from the first page"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version precondition failed without a write"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Content too large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unsupported content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "SQL syntax, result limit, or unsupported demo query"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Provider quota or rate limit"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Provider unavailable or invalid response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Provider binding needs operator recovery"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "SQL timeout; a write outcome may be unknown"
+          }
+        },
+        "security": [
+          {
+            "localOwner": []
+          },
+          {
+            "accountOwner": []
+          },
+          {
+            "guestOwner": []
+          }
+        ],
+        "summary": "List partial regional audit history",
+        "tags": [
+          "Owner"
+        ],
+        "x-required-scope": null
+      },
+      "parameters": [
+        {
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API.",
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/workspaces/{workspaceId}/request-history": {
+      "get": {
+        "description": "Requires an authenticated Workspace Owner session under the enabled account, Guest, or local/legacy profile. Region access Tokens cannot perform this Owner operation.",
+        "operationId": "listRequestHistory",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "format": "date-time",
+              "maxLength": 40,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "format": "date-time",
+              "maxLength": 40,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "coverage": {
+                      "$ref": "#/components/schemas/HistoryCoverage"
+                    },
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/RequestHistoryRecord"
+                      },
+                      "type": "array"
+                    },
+                    "health": {
+                      "$ref": "#/components/schemas/HistoryHealth"
+                    },
+                    "nextCursor": {
+                      "maxLength": 1024,
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "retention": {
+                      "$ref": "#/components/schemas/HistoryRetention"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "nextCursor",
+                    "coverage",
+                    "retention",
+                    "health"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid, expired, or revoked credential"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Insufficient permission"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Resource or endpoint not found"
+          },
+          "405": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Resource lifecycle operation unsupported by provider"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict or free-tier limit"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "History cursor expired; restart from the first page"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Version precondition failed without a write"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Content too large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unsupported content type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "SQL syntax, result limit, or unsupported demo query"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Provider quota or rate limit"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Provider unavailable or invalid response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Provider binding needs operator recovery"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "SQL timeout; a write outcome may be unknown"
+          }
+        },
+        "security": [
+          {
+            "localOwner": []
+          },
+          {
+            "accountOwner": []
+          },
+          {
+            "guestOwner": []
+          }
+        ],
+        "summary": "List partial regional HTTP diagnostics",
+        "tags": [
+          "Owner"
+        ],
+        "x-required-scope": null
+      },
+      "parameters": [
+        {
+          "description": "A Workspace ID returned by the authenticated Workspace discovery API.",
+          "in": "path",
+          "name": "workspaceId",
+          "required": true,
+          "schema": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "type": "string"
+          }
+        }
+      ]
+    }
+  },
+  "servers": [
+    {
+      "description": "Session-authenticated Regional Owner API",
+      "url": "/api/v1"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Owner"
+    }
+  ]
 }

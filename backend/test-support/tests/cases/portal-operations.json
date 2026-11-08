@@ -1,0 +1,395 @@
+[
+  { "operation": "getHealth", "status": 200 },
+  { "operation": "getAuthConfig", "status": 200 },
+  { "operation": "startGuestSession", "status": 404 },
+  { "operation": "logoutTidbSession", "status": 200 },
+  { "operation": "logoutTidbSessionAndRedirect", "status": 200 },
+  { "operation": "createLocalSession", "save": "session", "status": 200, "body": {} },
+  { "operation": "listWorkspaces", "status": 200 },
+  { "operation": "getWorkspace", "status": 200 },
+  { "operation": "getBootstrap", "status": 200 },
+  { "operation": "listSalesSampleAttempts", "status": 200, "query": "?fixture=us-sales-v1" },
+  {
+    "operation": "startSalesSample",
+    "save": "salesSample",
+    "status": 201,
+    "headers": { "Idempotency-Key": "$uuid" },
+    "body": { "fixture": "us-sales-v1" }
+  },
+  { "operation": "getSalesSampleAttempt", "status": 200, "attemptId": "$salesSample/data/id" },
+  { "operation": "listTutorials", "status": 200 },
+  {
+    "operation": "replaceTutorial",
+    "save": "tutorial",
+    "status": 201,
+    "resourceId": "db_memory",
+    "headers": { "If-None-Match": "*" },
+    "body": { "sampleId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "state": "attempted" }
+  },
+  { "operation": "getTutorial", "status": 200, "resourceId": "db_memory" },
+  {
+    "operation": "replaceTutorial",
+    "status": 200,
+    "resourceId": "db_memory",
+    "headers": { "If-Match": "$tutorial/data/version" },
+    "body": { "sampleId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "state": "completed" }
+  },
+  {
+    "operation": "replaceTutorial",
+    "status": 428,
+    "resourceId": "db_memory",
+    "body": { "sampleId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "state": "ready" }
+  },
+  { "operation": "listResources", "status": 200 },
+  { "operation": "getAgentContext", "status": 200 },
+  { "operation": "getResource", "status": 200, "resourceId": "db_memory" },
+  { "operation": "listDatabaseTables", "status": 200, "resourceId": "db_memory" },
+  {
+    "operation": "getDatabaseTable",
+    "status": 200,
+    "resourceId": "db_memory",
+    "tableName": "demo_table"
+  },
+  {
+    "operation": "getDatabaseTableRows",
+    "status": 200,
+    "resourceId": "db_memory",
+    "tableName": "demo_table"
+  },
+  {
+    "operation": "getDatabaseTable",
+    "status": 404,
+    "resourceId": "db_memory",
+    "tableName": "missing"
+  },
+  { "operation": "listResources", "status": 401, "owner": false },
+  {
+    "operation": "createResource",
+    "save": "database",
+    "status": 201,
+    "body": { "name": "contract-db", "kind": "postgresql", "region": "automatic" }
+  },
+  {
+    "operation": "createResource",
+    "status": 400,
+    "body": { "name": "contract-db2", "kind": "postgresql", "region": "unavailable" }
+  },
+  { "operation": "listFiles", "status": 200, "query": "?resourceId=fs_shared" },
+  {
+    "operation": "writeFile",
+    "status": 200,
+    "body": {
+      "resourceId": "fs_shared",
+      "path": "/contract.txt",
+      "type": "file",
+      "content": "hello"
+    }
+  },
+  {
+    "operation": "getFileMetadata",
+    "status": 200,
+    "query": "?resourceId=fs_shared&path=/contract.txt"
+  },
+  {
+    "operation": "writeFile",
+    "status": 401,
+    "owner": false,
+    "body": {
+      "resourceId": "fs_shared",
+      "path": "/contract-report.md",
+      "type": "file",
+      "content": "# Verified report",
+      "purpose": "report"
+    }
+  },
+  {
+    "operation": "writeFile",
+    "status": 400,
+    "body": {
+      "resourceId": "fs_shared",
+      "path": "/contract-report.md",
+      "type": "file",
+      "content": "# Verified report",
+      "purpose": "report"
+    }
+  },
+  {
+    "operation": "writeFile",
+    "status": 400,
+    "headers": { "If-None-Match": "*" },
+    "body": {
+      "resourceId": "fs_shared",
+      "path": "/contract-report.md",
+      "type": "directory",
+      "content": "# Verified report",
+      "purpose": "report"
+    }
+  },
+  {
+    "operation": "writeFile",
+    "save": "savedReport",
+    "status": 200,
+    "headers": { "If-None-Match": "*" },
+    "body": {
+      "resourceId": "fs_shared",
+      "path": "/contract-report.md",
+      "type": "file",
+      "content": "# Verified report",
+      "purpose": "report"
+    }
+  },
+  {
+    "operation": "writeFile",
+    "status": 412,
+    "headers": { "If-None-Match": "*" },
+    "body": {
+      "resourceId": "fs_shared",
+      "path": "/contract-report.md",
+      "type": "file",
+      "content": "must not overwrite",
+      "purpose": "report"
+    }
+  },
+  {
+    "operation": "getFileMetadata",
+    "save": "reportMetadata",
+    "status": 200,
+    "query": "?resourceId=fs_shared&path=/contract-report.md"
+  },
+  {
+    "operation": "writeFile",
+    "status": 200,
+    "body": {
+      "resourceId": "fs_shared",
+      "path": "/preview.csv",
+      "type": "file",
+      "content": "id,region\n1,APAC\n"
+    }
+  },
+  {
+    "operation": "tabularFilePreview",
+    "status": 200,
+    "query": "?resourceId=fs_shared&path=/preview.csv"
+  },
+  {
+    "operation": "exportFileContent",
+    "status": 200,
+    "body": {
+      "source": {
+        "kind": "output",
+        "resourceId": "fs_shared",
+        "stream": "stdout",
+        "text": "hello\n"
+      },
+      "target": { "kind": "download" }
+    }
+  },
+  {
+    "operation": "exportFileContent",
+    "status": 200,
+    "body": {
+      "source": { "kind": "original", "resourceId": "fs_shared", "path": "/preview.csv" },
+      "target": { "kind": "filesystem", "resourceId": "fs_shared", "path": "/copied.csv" }
+    }
+  },
+  {
+    "operation": "createFileExportPreparation",
+    "save": "fileReview",
+    "status": 201,
+    "body": {
+      "source": {
+        "kind": "output",
+        "resourceId": "fs_shared",
+        "stream": "stdout",
+        "text": "id\n001\n"
+      },
+      "parsing": { "format": "csv", "header": true, "delimiter": "," }
+    }
+  },
+  { "operation": "getFileExportPreparation", "status": 200, "preparationId": "$fileReview/id" },
+  { "operation": "deleteFileExportPreparation", "status": 204, "preparationId": "$fileReview/id" },
+  {
+    "operation": "fileAnalysisCapabilities",
+    "save": "textCapabilities",
+    "status": 200,
+    "query": "?resourceId=fs_shared&path=/contract.txt"
+  },
+  {
+    "operation": "analyzeFile",
+    "status": 200,
+    "body": {
+      "resourceId": "fs_shared",
+      "path": "/contract.txt",
+      "engine": "bash",
+      "command": "cat \"$FILE\""
+    }
+  },
+  {
+    "operation": "writeFile",
+    "status": 200,
+    "body": {
+      "resourceId": "fs_shared",
+      "path": "/contract.csv",
+      "type": "file",
+      "content": "n\n1\n2\n"
+    }
+  },
+  {
+    "operation": "fileAnalysisCapabilities",
+    "save": "csvCapabilities",
+    "status": 200,
+    "query": "?resourceId=fs_shared&path=/contract.csv"
+  },
+  {
+    "operation": "analyzeFile",
+    "status": 200,
+    "body": {
+      "resourceId": "fs_shared",
+      "path": "/contract.csv",
+      "engine": "duckdb",
+      "sql": "SELECT * FROM file"
+    }
+  },
+  {
+    "operation": "analyzeFile",
+    "status": 200,
+    "body": {
+      "resourceId": "fs_shared",
+      "path": "/contract.csv",
+      "engine": "bash",
+      "command": "cat /contract.csv"
+    }
+  },
+  { "operation": "deleteFile", "status": 200, "query": "?resourceId=fs_shared&path=/contract.txt" },
+  {
+    "operation": "executeQuery",
+    "status": 200,
+    "body": { "resourceId": "db_memory", "sql": "SELECT 1" }
+  },
+  {
+    "operation": "createResourceSetupAttempt",
+    "save": "setup",
+    "status": 201,
+    "resourceId": "$database/data/id",
+    "headers": { "Idempotency-Key": "contract-setup" }
+  },
+  { "operation": "listResourceSetupAttempts", "status": 200, "resourceId": "$database/data/id" },
+  {
+    "operation": "getResourceSetupAttempt",
+    "status": 200,
+    "resourceId": "$database/data/id",
+    "attemptId": "$setup/data/id"
+  },
+  {
+    "operation": "executeQuery",
+    "status": 200,
+    "body": { "resourceId": "$database/data/id", "sql": "SELECT 1" }
+  },
+  {
+    "operation": "createDatabaseImportPreparation",
+    "save": "imported",
+    "status": 201,
+    "body": {
+      "resourceId": "$database/data/id",
+      "source": { "resourceId": "fs_shared", "path": "/preview.csv" },
+      "parsing": { "format": "csv", "header": true, "delimiter": "," }
+    }
+  },
+  { "operation": "getDatabaseImportPreparation", "status": 200, "preparationId": "$imported/id" },
+  {
+    "operation": "createDatabaseImport",
+    "status": 200,
+    "body": {
+      "resourceId": "$database/data/id",
+      "preparationId": "$imported/id",
+      "confirmed": true,
+      "table": "database_import",
+      "fields": "$imported/fields"
+    }
+  },
+  {
+    "operation": "createDatabaseImportPreparation",
+    "save": "cancelled",
+    "status": 201,
+    "body": {
+      "resourceId": "$database/data/id",
+      "source": { "resourceId": "fs_shared", "path": "/preview.csv" },
+      "parsing": { "format": "csv", "header": true, "delimiter": "," }
+    }
+  },
+  {
+    "operation": "deleteDatabaseImportPreparation",
+    "status": 204,
+    "preparationId": "$cancelled/id"
+  },
+  {
+    "operation": "exportResult",
+    "status": 200,
+    "body": {
+      "sourceResourceId": "db_memory",
+      "result": { "columns": ["connected"], "rows": [{ "connected": 1 }] },
+      "target": { "kind": "download", "format": "csv" }
+    }
+  },
+  {
+    "operation": "exportResult",
+    "status": 200,
+    "body": {
+      "sourceResourceId": "db_memory",
+      "result": { "columns": ["connected"], "rows": [{ "connected": 1 }] },
+      "target": { "kind": "download", "format": "json" }
+    }
+  },
+  {
+    "operation": "exportResult",
+    "status": 200,
+    "body": {
+      "sourceResourceId": "db_memory",
+      "result": { "columns": ["connected"], "rows": [{ "connected": 1 }] },
+      "target": { "kind": "download", "format": "jsonl" }
+    }
+  },
+  {
+    "operation": "exportResult",
+    "status": 200,
+    "body": {
+      "sourceResourceId": "db_memory",
+      "result": { "columns": ["connected"], "rows": [{ "connected": 1 }] },
+      "target": {
+        "kind": "filesystem",
+        "resourceId": "fs_shared",
+        "path": "/result.json",
+        "format": "json"
+      }
+    }
+  },
+  {
+    "operation": "exportResult",
+    "status": 200,
+    "body": {
+      "sourceResourceId": "db_memory",
+      "result": { "columns": ["connected"], "rows": [{ "connected": 1 }] },
+      "target": { "kind": "database", "resourceId": "$database/data/id", "table": "result_export" }
+    }
+  },
+  { "operation": "exportResult", "status": 400, "body": {} },
+  { "operation": "exportResult", "status": 401, "owner": false, "body": {} },
+  { "operation": "getBootstrap", "status": 200 },
+  { "operation": "getUsage", "status": 200 },
+  { "operation": "listEvents", "status": 200 },
+  { "operation": "listRequestHistory", "status": 200 },
+  { "operation": "listAuditHistory", "status": 200 },
+  {
+    "operation": "updateSettings",
+    "status": 200,
+    "body": { "workspaceName": "Contract workspace", "name": "Contract owner" }
+  },
+  { "operation": "downloadFile", "status": 400, "query": "?resourceId=fs_shared&path=/test.bin" },
+  {
+    "operation": "uploadFile",
+    "status": 415,
+    "query": "?resourceId=fs_shared&path=/test.bin",
+    "body": {}
+  },
+  { "operation": "deleteResource", "status": 202, "resourceId": "db_memory" }
+]

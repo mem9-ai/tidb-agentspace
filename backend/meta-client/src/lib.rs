@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use reqwest::{Certificate, Client, Identity, Url, redirect, retry, tls};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     fs,
@@ -9,7 +9,7 @@ use std::{
 };
 use workspace_contracts::{Call, MetaRequest, Metadata, ServiceError};
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClientConfig {
     pub origin: String,
@@ -18,9 +18,10 @@ pub struct ClientConfig {
     pub token_file: PathBuf,
     #[serde(default)]
     pub insecure_loopback: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tls: Option<ClientTls>,
 }
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClientTls {
     pub ca_file: PathBuf,

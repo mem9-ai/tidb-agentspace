@@ -10,3 +10,11 @@ package-lock.json
 playwright-report/
 test-results/
 src/generated/workspace-agent.mjs
+# Canonical Rust OpenAPI exports
+public/openapi.json
+public/owner-openapi.json
+public/global-openapi.json
+public/agent-entry-openapi.json
+public/operator-openapi.json
+tools/api-contract/portal-regional-openapi.json
+tools/api-contract/portal-global-openapi.json

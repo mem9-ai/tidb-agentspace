@@ -1,0 +1,230 @@
+{
+  "state/workspace": {
+    "id": "WORKSPACE_ID",
+    "name": "Fixture workspace",
+    "description": "Isolated native integration test",
+    "plan": "Free",
+    "createdAt": "2026-01-01T00:00:00Z"
+  },
+  "state/profile": { "name": "Fixture owner", "email": "", "role": "Local developer" },
+  "state/resources/db_memory": {
+    "position": 0,
+    "record": {
+      "id": "db_memory",
+      "name": "fixture-postgresql",
+      "kind": "postgresql",
+      "provider": "db9-anonymous",
+      "region": "automatic",
+      "status": "active",
+      "createdAt": "2026-01-01T00:00:00Z"
+    }
+  },
+  "state/resources/fs_shared": {
+    "position": 1,
+    "record": {
+      "id": "fs_shared",
+      "name": "fixture-files",
+      "kind": "filesystem",
+      "region": "aws-ap-southeast-1",
+      "status": "active",
+      "createdAt": "2026-01-01T00:00:00Z"
+    }
+  },
+  "state/resources/fs_live": {
+    "position": 2,
+    "record": {
+      "id": "fs_live",
+      "kind": "filesystem",
+      "provider": "drive9-anonymous",
+      "name": "fs-live",
+      "status": "active",
+      "region": "aws-ap-southeast-1",
+      "createdAt": "2026-01-01T00:00:00Z"
+    }
+  },
+  "state/resources/db_live": {
+    "position": 3,
+    "record": {
+      "id": "db_live",
+      "kind": "postgresql",
+      "provider": "db9-anonymous",
+      "name": "db-live",
+      "status": "active",
+      "region": "automatic",
+      "createdAt": "2026-01-01T00:00:00Z"
+    }
+  },
+  "state/resources/db_retired_mysql": {
+    "position": 4,
+    "record": {
+      "id": "db_retired_mysql",
+      "kind": "mysql",
+      "provider": "tidb-cloud-zero",
+      "name": "db-retired-mysql",
+      "status": "active",
+      "region": "automatic",
+      "createdAt": "2026-01-01T00:00:00Z"
+    }
+  },
+  "state/resources/db_pg": {
+    "position": 5,
+    "record": {
+      "id": "db_pg",
+      "kind": "postgresql",
+      "provider": "db9-anonymous",
+      "name": "db-pg",
+      "status": "active",
+      "region": "automatic",
+      "createdAt": "2026-01-01T00:00:00Z"
+    }
+  },
+  "state/resources/db_duck": {
+    "position": 6,
+    "record": {
+      "id": "db_duck",
+      "kind": "duckdb",
+      "provider": "duckdb-drive9",
+      "name": "db-duck",
+      "status": "active",
+      "region": "automatic",
+      "createdAt": "2026-01-01T00:00:00Z"
+    }
+  },
+  "state/resources/db_legacy_local": {
+    "position": 7,
+    "record": {
+      "id": "db_legacy_local",
+      "kind": "mysql",
+      "provider": "local",
+      "name": "legacy-local",
+      "status": "active",
+      "region": "aws-us-east-1",
+      "createdAt": "2026-01-01T00:00:00Z"
+    }
+  },
+  "state/files/same-file-id": {
+    "position": 0,
+    "record": {
+      "id": "same-file-id",
+      "resourceId": "fs_shared",
+      "path": "/identity.txt",
+      "type": "file",
+      "content": "WORKSPACE_ID"
+    }
+  },
+  "state/keys/unavailable-key-0": {
+    "position": 0,
+    "record": {
+      "id": "unavailable-key-0",
+      "name": "expired-coverage-key",
+      "prefix": "synthetic",
+      "digest": "2144601e95076deda96a782b53d92d6ec2fd83d8c9dc5c9b3cd0c48d2794e987",
+      "scopes": ["resources:read", "files:read", "files:write", "files:analyze", "queries:execute"],
+      "resourceIds": ["*"],
+      "expiresAt": "2000-01-01T00:00:00.000Z",
+      "revokedAt": null
+    }
+  },
+  "state/keys/unavailable-key-1": {
+    "position": 1,
+    "record": {
+      "id": "unavailable-key-1",
+      "name": "revoked-coverage-key",
+      "prefix": "synthetic",
+      "digest": "f8c65831425f48f17796d8ce57c05ebd958fcd31bf26f8674d8a22d0825525af",
+      "scopes": ["resources:read", "files:read", "files:write", "files:analyze", "queries:execute"],
+      "resourceIds": ["*"],
+      "expiresAt": "2099-01-01T00:00:00.000Z",
+      "revokedAt": "2026-01-01T00:00:00Z"
+    }
+  },
+  "state/queryCount": 0,
+  "indexes/key-digest/2144601e95076deda96a782b53d92d6ec2fd83d8c9dc5c9b3cd0c48d2794e987": "unavailable-key-0",
+  "indexes/key-digest/f8c65831425f48f17796d8ce57c05ebd958fcd31bf26f8674d8a22d0825525af": "unavailable-key-1",
+  "credentials/drive9/fs_live": {
+    "apiKey": "$private-provider-credential",
+    "tenantId": "WORKSPACE_ID"
+  },
+  "bindings/drive9/fs_live": { "state": "bound", "credentialRef": "credentials/drive9/fs_live" },
+  "credentials/drive9/hidden-storage": {
+    "apiKey": "$private-provider-credential",
+    "tenantId": "hidden-tenant"
+  },
+  "bindings/drive9/hidden-storage": {
+    "state": "bound",
+    "credentialRef": "credentials/drive9/hidden-storage"
+  },
+  "credentials/zero/db_retired_mysql": {
+    "connection": {
+      "kind": "mysql",
+      "region": "automatic",
+      "host": "unit.fixture.tidbcloud.com",
+      "port": 4000,
+      "user": "w_original",
+      "password": "$private-provider-credential",
+      "database": "workspace"
+    }
+  },
+  "bindings/zero/db_retired_mysql": {
+    "state": "ready",
+    "instanceId": "WORKSPACE_ID",
+    "expiresAt": "2099-01-01T00:00:00.000Z",
+    "credentialRef": "credentials/zero/db_retired_mysql"
+  },
+  "bindings/duckdb/db_duck": { "state": "ready", "storageId": "hidden-storage" },
+  "credentials/db9/db_live": {
+    "connection": {
+      "kind": "postgresql",
+      "region": "automatic",
+      "host": "pg.db9.io",
+      "port": 5432,
+      "user": "tenant.wabcdef123456",
+      "password": "$private-provider-credential",
+      "database": "postgres"
+    }
+  },
+  "bindings/db9/db_live": {
+    "state": "ready",
+    "instanceId": "WORKSPACE_ID",
+    "credentialRef": "credentials/db9/db_live"
+  },
+  "credentials/db9/db_memory": {
+    "connection": {
+      "kind": "postgresql",
+      "region": "automatic",
+      "host": "pg.db9.io",
+      "port": 5432,
+      "user": "tenant.wabcdef123456",
+      "password": "$private-provider-credential",
+      "database": "postgres"
+    }
+  },
+  "bindings/db9/db_memory": {
+    "state": "ready",
+    "instanceId": "WORKSPACE_ID",
+    "credentialRef": "credentials/db9/db_memory"
+  },
+  "credentials/db9/db_pg": {
+    "connection": {
+      "kind": "postgresql",
+      "region": "automatic",
+      "host": "pg.db9.io",
+      "port": 5432,
+      "user": "tenant.wabcdef123456",
+      "password": "$private-provider-credential",
+      "database": "postgres"
+    }
+  },
+  "bindings/db9/db_pg": {
+    "state": "ready",
+    "instanceId": "WORKSPACE_ID",
+    "credentialRef": "credentials/db9/db_pg"
+  },
+  "credentials/accounts/db9": {
+    "state": "ready",
+    "anonymousId": "retained-account",
+    "anonymousSecret": "$private-provider-credential",
+    "token": "account-token",
+    "expiresAt": 4070908800000
+  }
+}

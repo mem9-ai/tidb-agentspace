@@ -8,7 +8,7 @@ import test from 'node:test';
 import { isBackendOnly, isUiOnlyChange } from './ci-ui-scope.mjs';
 
 test('only known native changes use API verification without a browser', () => {
-  const native = ['backend/product/src/files.rs', 'server/rust-product.test.mjs'];
+  const native = ['backend/product/src/files.rs', 'backend/test-support/tests/product.rs'];
   for (const event of ['pull_request', 'push']) {
     assert.equal(isBackendOnly(event, 2, native), true);
     for (const file of [
@@ -16,7 +16,7 @@ test('only known native changes use API verification without a browser', () => {
       'src/App.tsx',
       'public/openapi.json',
       'public/owner-openapi.json',
-      'server/generate-openapi.mjs',
+      'backend/openapi/src/lib.rs',
       'backend/contracts/src/lib.rs',
       'package.json',
       'package-lock.json',
@@ -31,7 +31,7 @@ test('only known native changes use API verification without a browser', () => {
     assert.equal(isBackendOnly(event, 2, native), false);
   for (const parents of [0, 1, 3])
     assert.equal(isBackendOnly('pull_request', parents, native), false);
-  assert.equal(isBackendOnly('push', 1, ['server/contract.test.mjs']), false);
+  assert.equal(isBackendOnly('push', 1, ['public/openapi.json']), false);
   assert.equal(isBackendOnly('push', 1, []), false);
 });
 

@@ -145,7 +145,7 @@ database and File System sample data, SQL and Bash analysis, and tutorial progre
 and File System changes additionally run the relevant behavioral, permission, failure and
 recovery cases in both metadata modes; Tutorial changes run progress in both modes. The
 specific files and cases are pinned in `scripts/ci-classic-scope.mjs` and
-`scripts/run-classic-integration.mjs`. Tests, fixtures, unknown or mixed boundaries, added,
+`backend/build-tools/src/bin/workspace-verify.rs`. Tests, fixtures, unknown or mixed boundaries, added,
 deleted or renamed files, contracts, security, workflows and selector changes run the full
 integration suite. Native-change main runs, merge queues, manual runs and release evidence remain full.
 The selected runner rejects missing, skipped, failing or renamed required cases, including
@@ -153,11 +153,10 @@ missing nested cases. All Rust unit tests, formatting, Clippy and native build s
 These profiles are a conservative initial allowlist; other changes retain their existing gates.
 No comparable CI timing has yet been established for the selected profiles.
 After building the native backend and providing the isolated RustFS prerequisites,
-`npm run backend:test:classic` runs just the classic native journey locally. Pass
-`-- tutorial`, `-- database` or `-- files` to add the corresponding risk suite.
+`cargo acceptance classic` runs just the classic native journey locally. Use `cargo acceptance tutorial`, `cargo acceptance database` or `cargo acceptance files` for a risk-specific run.
 
 For full PR and main-push integration runs, the trusted base can partition the unchanged full
-test command into the product API file and the remaining files. Both groups run serially within
+test command into the product suites and the remaining native targets. Both groups run serially within
 their own isolated runner and must pass in the same CI attempt. Unknown commands, unsupported
 events and an unavailable base manifest use the original unsharded full command. The exact-SHA
 release verifier requires both groups or explicit success of that full fallback; a skipped or

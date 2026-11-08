@@ -146,17 +146,20 @@ screenshots. If a check cannot run, report the specific gap instead of claiming 
 
 ## Rust backend modules
 
-Use the root Cargo workspace, pinned `rust-toolchain.toml` and root `Cargo.lock`.
-`npm run backend:build` verifies/prepares the pinned official static DuckDB library and builds the Rust modules. For direct Cargo commands, run `npm run backend:prepare` first; see the Rust runtime guide for supported native targets. Explicit native development launchers require
-`WORKSPACE_BACKEND_CONFIG` pointing to the private regional deployment; they never fall back
-to another backend or seed another data file. `npm run backend:check` runs workspace format/Clippy/tests and real isolated S3/native API tests in addition to `npm run check`. Hosted and local APIs both use Rust; [ADR 0026](docs/decisions/0026-native-hosted-studio.md) retires Node serving and permits deliberate fresh hosted storage. Node is limited to Console/build/operator tools and native integration fixtures; the old Node backend and its tests are removed. See [retirement and verification](docs/native-backend-retirement.md). Fresh installations follow [ADR 0024](docs/decisions/0024-fresh-record-metadata.md), replacing the retired document/import bridge. See [the Rust guide](docs/rust-backend.md) for module composition, private plans and explicit empty-Workspace bootstrap.
+Use the toolchain in `rust-toolchain.toml` and install RustFS 1.0.4. From the repository root, run:
 
-`backend:check` checks formatting before compiling. Its individual phases are available as
-`backend:fmt`, `backend:build`, `backend:clippy`, `backend:test` and `backend:test:integration`;
-the latter requires the built executables and installed RustFS. For a compilation report,
-run `npm run backend:build -- --timings`. CI runs the same complete gate in separate steps;
-see [Rust cache and timing evidence](docs/ci-cd.md#rust-build-cache-and-timing-evidence) for
-cache boundaries and measurement.
+```sh
+cargo run --locked -p workspace-build-tools -- prepare
+cargo fmt --all --check
+cargo build --locked --workspace --bins --examples
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked --workspace --exclude workspace-test-support
+cargo acceptance all
+```
+
+Acceptance uses local ports, temporary private credentials and isolated RustFS storage. The package acceptance case verifies the reviewed Git revision and requires a clean checkout. To iterate on one suite, for example, use `cargo test --locked -p workspace-test-support --test meta -- --ignored` after building the binaries and examples. `cargo acceptance history` and the selected product profiles are documented in the [verification guide](docs/standards/openapi-verification.md).
+
+Follow [the local setup](README.md#local-setup) to start a Workspace and [the Rust guide](docs/rust-backend.md) for deployment plans and private configuration. Run `npm run check` for the Console and repository-wide checks. Frontend SDK integration uses `npm run test:agent-clients` with the built native fixtures.
 
 ## Commits and review
 

@@ -22,12 +22,10 @@ for (const name of ['@duckdb/node-api', 'mysql2', 'pg', 'just-bash']) {
   assert.equal(
     pkg.dependencies[name] ?? pkg.devDependencies[name],
     undefined,
-    `The retired Node business runtime dependency ${name} must not return. See server/README.md.`,
+    `The retired Node business runtime dependency ${name} must not return. See docs/native-backend-retirement.md.`,
   );
 }
-for (const path of ['server/regression-api.mjs', 'server/store.mjs', 'server/providers']) {
-  await assert.rejects(access(new URL(path, root)), { code: 'ENOENT' });
-}
+await assert.rejects(access(new URL('server', root)), { code: 'ENOENT' });
 for (const path of [
   'CLAUDE.md',
   '.github/copilot-instructions.md',

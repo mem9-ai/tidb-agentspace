@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "workspace-backend"
 version.workspace = true
 edition.workspace = true
@@ -8,6 +9,9 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 hex.workspace = true
+getrandom.workspace = true
+uuid.workspace = true
+futures.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -16,6 +20,7 @@ tokio.workspace = true
 workspace-api.workspace = true
 workspace-analytics.workspace = true
 workspace-contracts.workspace = true
+workspace-openapi.workspace = true
 workspace-domain.workspace = true
 workspace-identity.workspace = true
 workspace-meta-client.workspace = true
@@ -23,5 +28,7 @@ workspace-meta-service.workspace = true
 workspace-execute.workspace = true
 workspace-cache-budget.workspace = true
 
-[dev-dependencies]
 tempfile.workspace = true
+
+[dev-dependencies]
+rustls.workspace = true

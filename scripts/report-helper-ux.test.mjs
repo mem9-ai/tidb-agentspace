@@ -11,7 +11,7 @@ test(
     skip: available ? false : 'Python is not installed; do not install a runtime for the trial',
   },
   () => {
-    execFileSync(python, ['-IB', 'server/test-support/report_helper_ux.py'], {
+    execFileSync(python, ['-IB', 'tools/agent-client-tests/report_helper_ux.py'], {
       cwd: new URL('../', import.meta.url),
       timeout: 30_000,
       stdio: 'pipe',

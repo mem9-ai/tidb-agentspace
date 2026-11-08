@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "workspace-meta-service"
 version = "0.1.0"
 edition = "2024"
@@ -6,6 +7,7 @@ rust-version = "1.99"
 publish = false
 
 [dependencies]
+reqwest.workspace = true
 aes-gcm = "=0.10.3"
 anyhow = "=1.0.100"
 axum = "=0.8.6"

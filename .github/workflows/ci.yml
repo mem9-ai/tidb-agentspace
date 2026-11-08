@@ -167,17 +167,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - name: Select the pinned npm version
-        run: npm install --global npm@11.6.2 --ignore-scripts
-      - run: npm ci
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
       - name: Check Rust formatting before compiling
-        run: npm run backend:fmt
+        run: cargo fmt --all --check
       - name: Restore Rust dependency cache
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -189,11 +182,11 @@ jobs:
           cache-workspace-crates: false
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
       - name: Build native backend with Cargo timings
-        run: npm run backend:build -- --timings
+        run: cargo run --locked -p workspace-build-tools -- prepare && cargo build --locked --workspace --bins --examples --timings
       - name: Check Rust with Clippy
-        run: npm run backend:clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Run Rust unit tests
-        run: npm run backend:test
+        run: cargo test --workspace --locked --exclude workspace-test-support
       - name: Install verified RustFS 1.0.4 binary
         shell: bash
         run: |
@@ -207,7 +200,7 @@ jobs:
           printf '%s\n' "$runtime_dir" >> "$GITHUB_PATH"
       - name: Run native API and real S3 integration tests
         if: ${{ needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile) && needs.scope.outputs.full_partition != 'true' }}
-        run: npm run backend:test:integration
+        run: cargo acceptance all
       - name: Run remaining native API and real S3 integration tests
         if: ${{ needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile) && needs.scope.outputs.full_partition == 'true' }}
         env:
@@ -217,17 +210,19 @@ jobs:
           set -euo pipefail
           policy_ref='HEAD^1'
           if [[ "$GITHUB_EVENT_NAME" == 'push' ]]; then policy_ref="$BEFORE_SHA"; fi
-          runner="$RUNNER_TEMP/ci-full-integration.mjs"
-          git show "$policy_ref:scripts/ci-full-integration.mjs" > "$runner"
-          node "$runner" other
+          runner="$RUNNER_TEMP/workspace-verify"
+          git show "$policy_ref:backend/build-tools/src/bin/workspace-verify.rs" > "$runner.rs"
+          rustc --edition=2024 "$runner.rs" -o "$runner"
+          "$runner" other
       - name: Run history authorization, isolation and storage integration tests
         if: ${{ needs.scope.outputs.history_only == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
-          runner="$RUNNER_TEMP/run-history-integration.mjs"
-          git show 'HEAD^1:scripts/run-history-integration.mjs' > "$runner"
-          node "$runner"
+          runner="$RUNNER_TEMP/workspace-verify"
+          git show 'HEAD^1:backend/build-tools/src/bin/workspace-verify.rs' > "$runner.rs"
+          rustc --edition=2024 "$runner.rs" -o "$runner"
+          "$runner" history
       - name: Run classic and risk-specific integration tests
         if: ${{ needs.scope.outputs.history_only != 'true' && contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile) }}
         env:
@@ -235,9 +230,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          runner="$RUNNER_TEMP/run-classic-integration.mjs"
-          git show 'HEAD^1:scripts/run-classic-integration.mjs' > "$runner"
-          node "$runner" "$CLASSIC_PROFILE"
+          runner="$RUNNER_TEMP/workspace-verify"
+          git show 'HEAD^1:backend/build-tools/src/bin/workspace-verify.rs' > "$runner.rs"
+          rustc --edition=2024 "$runner.rs" -o "$runner"
+          "$runner" "$CLASSIC_PROFILE"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: needs.scope.outputs.full_partition != 'true' && needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install dependencies for the public SDK tests
+        if: needs.scope.outputs.full_partition != 'true' && needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
+        run: npm install --global npm@11.6.2 --ignore-scripts && npm ci --ignore-scripts
+      - name: Exercise the published JavaScript client against native services
+        if: needs.scope.outputs.full_partition != 'true' && needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
+        run: npm run test:agent-clients
       - name: Save Cargo timing reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -263,13 +270,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - name: Select the pinned npm version
-        run: npm install --global npm@11.6.2 --ignore-scripts
-      - run: npm run check:runtime && npm ci --ignore-scripts
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install 1.99.1 --profile minimal
       - name: Restore Rust dependency cache
@@ -282,7 +282,7 @@ jobs:
           cache-workspace-crates: false
           save-if: false
       - name: Build native backend
-        run: npm run backend:build
+        run: cargo run --locked -p workspace-build-tools -- prepare && cargo build --locked --workspace --bins --examples
       - name: Install verified RustFS 1.0.4 binary
         shell: bash
         run: |
@@ -300,9 +300,18 @@ jobs:
           set -euo pipefail
           policy_ref='HEAD^1'
           if [[ "$GITHUB_EVENT_NAME" == 'push' ]]; then policy_ref="$BEFORE_SHA"; fi
-          runner="$RUNNER_TEMP/ci-full-integration.mjs"
-          git show "$policy_ref:scripts/ci-full-integration.mjs" > "$runner"
-          node "$runner" product
+          runner="$RUNNER_TEMP/workspace-verify"
+          git show "$policy_ref:backend/build-tools/src/bin/workspace-verify.rs" > "$runner.rs"
+          rustc --edition=2024 "$runner.rs" -o "$runner"
+          "$runner" product
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install dependencies for the public SDK tests
+        run: npm install --global npm@11.6.2 --ignore-scripts && npm ci --ignore-scripts
+      - name: Exercise the published JavaScript client against native services
+        run: npm run test:agent-clients
 
   backend-scope:
     name: Backend-only scope

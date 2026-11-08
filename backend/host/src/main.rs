@@ -1,3 +1,4 @@
+mod local;
 mod plan;
 use anyhow::{Result, bail};
 use std::time::Duration;
@@ -23,7 +24,10 @@ async fn stopped(mut receiver: watch::Receiver<bool>) {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args: Vec<_> = std::env::args().skip(1).collect();
+    let mut args: Vec<_> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "local") {
+        return local::run(&args[1..]).await;
+    }
     if matches!(args.len(), 3 | 5) && args[0] == "cache-budget" && args[1] == "--instances" {
         let total_mi_b = if args.len() == 5 {
             if args[3] != "--total-mib" {
@@ -39,6 +43,12 @@ async fn main() -> Result<()> {
         }
         .resolve(args[2].parse()?)?;
         println!("{}", serde_json::to_string(&budget)?);
+        return Ok(());
+    }
+    if let [command, view] = args.as_slice()
+        && command == "openapi"
+    {
+        print!("{}", view.parse::<workspace_openapi::View>()?.rendered());
         return Ok(());
     }
     if args.as_slice() == ["runtime-info"] {
@@ -58,13 +68,26 @@ async fn main() -> Result<()> {
     {
         return purge_legacy(plan::Plan::load(Path::new(&args[2]))?).await;
     }
+    if args.as_slice() == ["serve-api"] {
+        let path = std::env::var("WORKSPACE_BACKEND_CONFIG").map_err(|_| anyhow::anyhow!(
+            "Set WORKSPACE_BACKEND_CONFIG or pass serve-api --config <absolute private deployment file>"
+        ))?;
+        args.extend(["--config".into(), path]);
+    }
     if args.len() != 3
-        || !["serve", "initialize"].contains(&args[0].as_str())
+        || !["serve", "serve-api", "initialize"].contains(&args[0].as_str())
         || args[1] != "--config"
     {
         bail!("Use workspace-backend serve --config <private-deployment.json>");
     }
-    let mut plan = plan::Plan::load(Path::new(&args[2]))?;
+    let path = Path::new(&args[2]);
+    if args[0] == "serve-api" && !path.is_absolute() {
+        bail!("Use an absolute private deployment file for serve-api");
+    }
+    let mut plan = plan::Plan::load(path)?;
+    if args[0] == "serve-api" && plan.workspaces.is_empty() {
+        bail!("The deployment must include a regional Workspace API role");
+    }
     if let Some(analytics) = plan.analytics.take() {
         let service = workspace_analytics::server::Service::open(
             analytics.config,
