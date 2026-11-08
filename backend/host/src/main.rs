@@ -22,6 +22,22 @@ async fn stopped(mut receiver: watch::Receiver<bool>) {
     }
 }
 
+// Child diagnostics can be included in CI logs. Report only bounded internal codes and
+// OS error kinds, never configuration, credentials, URLs or provider error bodies.
+fn startup_cause(error: &anyhow::Error) -> String {
+    if let Some(e) = error.downcast_ref::<workspace_contracts::ServiceError>()
+        && !e.code.is_empty()
+        && e.code.len() <= 64
+        && e.code.bytes().all(|b| b.is_ascii_uppercase() || b == b'_')
+    {
+        return e.code.clone();
+    }
+    if let Some(io) = error.downcast_ref::<std::io::Error>() {
+        return format!("{:?}", io.kind());
+    }
+    "configuration or storage unavailable".into()
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut args: Vec<_> = std::env::args().skip(1).collect();
@@ -137,8 +153,9 @@ async fn main() -> Result<()> {
                     }
                 }));
             }
-            Err(_) => eprintln!(
-                "Metadata startup unavailable for {authority}; other roles continue. Inspect private deployment configuration and ownership."
+            Err(e) => eprintln!(
+                "Metadata startup unavailable for {authority}: {}. Other roles continue.",
+                startup_cause(&e)
             ),
         }
     }
@@ -385,8 +402,9 @@ async fn main() -> Result<()> {
                     }));
                     println!("Rust {profile} listening on {bind}.");
                 }
-                Err(_) => eprintln!(
-                    "Workspace startup unavailable for {authority}; inspect record metadata and Workspace writer ownership. Other roles continue."
+                Err(e) => eprintln!(
+                    "Workspace startup unavailable for {authority}: {}. Other roles continue.",
+                    startup_cause(&e)
                 ),
             }
         } else {

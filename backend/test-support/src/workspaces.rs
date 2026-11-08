@@ -86,6 +86,7 @@ impl Host {
         client: &Client,
         mut services: Vec<Value>,
         global_available: bool,
+        stage: &str,
     ) -> Result<()> {
         private_json(&self.region_file, &self.config)?;
         private_json(&self.global_file, &self.global)?;
@@ -94,24 +95,71 @@ impl Host {
             json!({"kind":"global","configFile":self.global_file}),
         ]);
         private_json(&self.plan, &json!({"format":1,"services":services}))?;
+        let log = self.directory.join(format!("{}.log", Uuid::new_v4()));
         let mut process = Process::spawn(
             Command::new(binary("workspace-backend"))
                 .args(["serve", "--config"])
                 .arg(&self.plan),
-            &self.directory.join(format!("{}.log", Uuid::new_v4())),
+            &log,
         )?;
+        let workspace = self.config["workspaceId"].as_str().context("workspaceId")?;
+        let ready = format!(
+            "Rust full regional API listening on {}.",
+            self.config["bind"].as_str().context("bind")?
+        );
         let deadline = Instant::now() + Duration::from_secs(20);
+        let mut observation = String::from("waiting for the child to bind the API");
         loop {
-            process.ensure_running()?;
-            if client
-                .get(format!("{}/api/health", self.origin))
-                .send()
-                .await
-                .is_ok_and(|r| r.status() == 200)
-            {
-                break;
+            let output = std::fs::read_to_string(&log)?;
+            if let Some(reason) = output.lines().find(|s| {
+                s.starts_with("Workspace startup unavailable for ")
+                    || s.starts_with("Metadata startup unavailable for ")
+                    || s.starts_with("Regional dependency unavailable for ")
+            }) {
+                anyhow::bail!("{workspace} {stage}: {reason}");
             }
-            ensure!(Instant::now() < deadline, "workspace did not start");
+            process
+                .ensure_running()
+                .with_context(|| format!("{workspace} {stage}: {observation}"))?;
+            // A refused HTTP request cannot distinguish a failed Workspace from its
+            // healthy sibling roles. Conversely, another listener can return HTTP 200.
+            if output.lines().any(|line| line == ready) {
+                let response = client
+                    .get(format!("{}/api/health", self.origin))
+                    .timeout(Duration::from_secs(1))
+                    .send()
+                    .await;
+                observation = match response {
+                    Ok(r) if r.status() == 200 => {
+                        if r.json::<Value>().await.is_ok_and(|v| v["status"] == "ok") {
+                            break;
+                        }
+                        "health returned an invalid readiness document".into()
+                    }
+                    Ok(r) => {
+                        let status = r.status();
+                        let code = r.json::<Value>().await.ok().and_then(|v| {
+                            v["error"]["code"]
+                                .as_str()
+                                .filter(|s| {
+                                    s.len() <= 64
+                                        && s.bytes().all(|b| b.is_ascii_uppercase() || b == b'_')
+                                })
+                                .map(str::to_owned)
+                        });
+                        format!(
+                            "health HTTP {status} ({})",
+                            code.as_deref().unwrap_or("unknown")
+                        )
+                    }
+                    Err(e) if e.is_timeout() => "health request timed out".into(),
+                    Err(_) => "could not connect to the bound API".into(),
+                };
+            }
+            ensure!(
+                Instant::now() < deadline,
+                "{workspace} {stage}: {observation}"
+            );
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         for (prefix, status) in [("", 200), ("/api/global", 201)] {
@@ -169,20 +217,42 @@ impl Workspaces {
         fresh: bool,
         metadata_security_state: bool,
     ) -> Result<Self> {
-        Self::with_files(embedded, fresh, metadata_security_state, "drive9-anonymous").await
+        Self::with_files(
+            embedded,
+            fresh,
+            metadata_security_state,
+            "drive9-anonymous",
+            |_| Ok(None),
+        )
+        .await
     }
     pub async fn local_files(embedded: bool, fresh: bool) -> Result<Self> {
-        Self::with_files(embedded, fresh, false, "local").await
+        Self::with_files(embedded, fresh, false, "local", |_| Ok(None)).await
     }
+    /// Route only the Global hosts' authenticated Meta traffic through a loopback fault fixture.
+    pub async fn with_global_meta_route(
+        route: impl FnOnce(&Meta) -> Result<String>,
+    ) -> Result<Self> {
+        Self::with_files(true, false, false, "drive9-anonymous", |meta| {
+            route(meta).map(Some)
+        })
+        .await
+    }
+
     async fn with_files(
         embedded: bool,
         fresh: bool,
         metadata_security_state: bool,
         files_provider: &str,
+        route_global: impl FnOnce(&Meta) -> Result<Option<String>>,
     ) -> Result<Self> {
         let storage = Fixture::start().await?;
         let mut region = storage.meta("api-coverage").await?;
         let global_meta = storage.meta("global").await?;
+        let mut global_client = global_meta.client.clone();
+        if let Some(origin) = route_global(&global_meta)? {
+            global_client["origin"] = json!(origin);
+        }
         let provider = Provider::start(false).await?;
         {
             let mut state = provider.state.lock().unwrap();
@@ -197,7 +267,11 @@ impl Workspaces {
             seed(&region, i, fresh).await?;
         }
         if embedded {
-            region.process.stop()?;
+            region
+                .process
+                .stop_cleanly()
+                .await
+                .context("stopping regional Meta")?;
         }
         let mut hosts = Vec::new();
         for (i, (listen, control)) in reservations.into_iter().enumerate() {
@@ -215,7 +289,7 @@ impl Workspaces {
             region_connection["bind"] = json!(control_addr);
             region_connection["allowedRegions"] =
                 json!([{"regionId":REGION,"certificateFile":client_tls["certificateFile"]}]);
-            let global = json!({"bind":addr,"metadata":{"transport":"remote","client":global_meta.client},"publicOrigin":origin,"publicPath":"/api/global","sharedListener":true,"environment":"test","signerId":"global-fixture","signingKeyFile":g_priv,"verificationKeyFile":g_pub,"clockDirectory":dir.join("global-clock"),"initializeClock":true,"localWorkspace":{"workspaceId":IDS[i],"regionId":REGION},"regions":[{"regionId":REGION,"apiOrigin":origin,"apiPathPrefix":""}],"regionConnection":region_connection,"regionControls":[{"regionId":REGION,"origin":control_origin,"tls":client_tls}]});
+            let global = json!({"bind":addr,"metadata":{"transport":"remote","client":global_client},"publicOrigin":origin,"publicPath":"/api/global","sharedListener":true,"environment":"test","signerId":"global-fixture","signingKeyFile":g_priv,"verificationKeyFile":g_pub,"clockDirectory":dir.join("global-clock"),"initializeClock":true,"localWorkspace":{"workspaceId":IDS[i],"regionId":REGION},"regions":[{"regionId":REGION,"apiOrigin":origin,"apiPathPrefix":""}],"regionConnection":region_connection,"regionControls":[{"regionId":REGION,"origin":control_origin,"tls":client_tls}]});
             let mut server_control = server_tls.clone();
             server_control["bind"] = json!(control_addr);
             server_control["globalClientCertificates"] = json!([client_tls["certificateFile"]]);
@@ -246,7 +320,7 @@ impl Workspaces {
                 private_json(&metadata, &region.server)?;
                 roles.push(json!({"kind":"metadata","configFile":metadata}));
             }
-            host.launch(&client, roles, true).await?;
+            host.launch(&client, roles, true, "initial startup").await?;
             hosts.push(host);
         }
         Ok(Self {
@@ -310,6 +384,9 @@ impl Workspaces {
             .await?;
         }
         Ok(())
+    }
+    pub fn global_meta(&self) -> &Meta {
+        &self.global_meta
     }
     pub fn crash_global_meta(&mut self) -> Result<()> {
         self.global_meta.process.crash()?;
@@ -482,12 +559,19 @@ impl Workspaces {
                 if crash {
                     process.crash()?;
                 } else {
-                    process.stop()?;
+                    process
+                        .stop_cleanly()
+                        .await
+                        .with_context(|| format!("draining {}", host.config["workspaceId"]))?;
                 }
             }
         }
         if !self.embedded {
-            self.region.process.stop()?;
+            self.region
+                .process
+                .stop_cleanly()
+                .await
+                .context("stopping regional Meta")?;
             self.region = self
                 .storage
                 .start_meta(self.region.server.clone(), false, None)
@@ -501,8 +585,17 @@ impl Workspaces {
             if self.embedded && i == 0 {
                 roles.push(json!({"kind":"metadata","configFile":self.storage.directory().join("embedded-meta.json"),"recoverOwner":meta_owner}));
             }
-            host.launch(&self.http, roles, self.global_available)
-                .await?;
+            host.launch(
+                &self.http,
+                roles,
+                self.global_available,
+                if crash {
+                    "crash recovery"
+                } else {
+                    "graceful restart"
+                },
+            )
+            .await?;
         }
         Ok(())
     }

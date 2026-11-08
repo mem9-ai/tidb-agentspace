@@ -83,6 +83,21 @@ impl Process {
             std::thread::sleep(Duration::from_millis(20));
         }
     }
+    /// A restart without a recovery owner is valid only after the old process drained.
+    /// Keep async providers and open HTTP requests progressing while the child exits.
+    pub async fn stop_cleanly(&mut self) -> Result<()> {
+        self.ensure_running()?;
+        self.terminate()?;
+        let status = self
+            .wait_for_exit(Duration::from_secs(10))
+            .await
+            .context("graceful shutdown did not finish; cannot restart as a clean writer")?;
+        ensure!(
+            status.success(),
+            "graceful shutdown exited with {status}; cannot restart as a clean writer"
+        );
+        Ok(())
+    }
     pub fn stop(&mut self) -> Result<()> {
         if self.0.try_wait()?.is_some() {
             return Ok(());
