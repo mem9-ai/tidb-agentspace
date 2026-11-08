@@ -23,6 +23,7 @@ function fixture({ location = region, issuanceOrigin = region } = {}) {
       authorization: request.headers.get('authorization'),
       body,
       redirect: request.redirect,
+      credentials: request.credentials,
     });
     if (url.origin === global) {
       if (offline) throw new Error('Global offline');
@@ -200,7 +201,24 @@ test('a saved proof-bound connection resumes and renews directly while Global is
     },
   };
   const proofKey = await crypto.subtle.generateKey('Ed25519', false, ['sign', 'verify']);
-  await connectAgent({ endpoint: apiEndpoint, key, fetcher: f.fetcher, proofKey, secrets });
+  const active = await connectAgent({
+    endpoint: apiEndpoint,
+    key,
+    fetcher: f.fetcher,
+    proofKey,
+    secrets,
+  });
+  const refreshCount = () =>
+    f.requests.filter((r) => r.url.startsWith(region) && r.url.endsWith('/token-issuances')).length;
+  const previous = refreshCount();
+  await Promise.all([active.renew(), active.renew(), active.renew()]);
+  assert.equal(refreshCount(), previous + 1);
+  assert.equal(saved.state, 'ready');
+  assert.equal(JSON.stringify(saved).includes(key), false);
+  for (const request of f.requests.filter((r) => r.url.startsWith(region))) {
+    assert.equal(request.credentials, 'omit');
+    assert.equal(request.authorization?.includes(key) ?? false, false);
+  }
   f.stopGlobal();
   const before = f.requests.length;
   const agent = await connectAgent({

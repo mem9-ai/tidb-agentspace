@@ -14,9 +14,10 @@ The static React Console builds independently of the Rust API. The native API ar
 Follow [Meta bootstrap](meta-service.md) for a new local deployment. It creates independent Global/Region Meta roots and an empty Workspace. Fresh installation format 2 rejects old document roots; [ADR 0024](decisions/0024-fresh-record-metadata.md) records the explicit local reset boundary. No cloud resources are created automatically.
 
 ```sh
-npm run backend:build
-npm run meta:local -- init --directory .data/meta-runtime --api-port 4318
-npm run meta:local -- serve --directory .data/meta-runtime
+cargo run --locked -p workspace-build-tools -- prepare
+cargo build --locked -p workspace-backend
+./meta-service/target/debug/workspace-backend local init --directory .data/meta-runtime --api-port 4318
+./meta-service/target/debug/workspace-backend local serve --directory .data/meta-runtime
 ```
 
 In a separate terminal:
@@ -60,7 +61,7 @@ Customer isolation and direct multi-region public API discovery remain proposed 
 
 ## Contract and packaging
 
-`server/generate-openapi.mjs` owns the public contract; `npm run api:generate` regenerates OpenAPI and Console types, and `npm run api:check` rejects drift. Console and agent requests share the selected runtime's domain operations. Internal record protocol changes do not require changing the public contract when the observed product API remains the same.
+Regional, Global, Owner, entry and operator HTTP handlers use the contracts assembled by the Rust crate in `backend/openapi/src`. Run `cargo run --locked -p workspace-openapi -- export` for the checked-in public and Portal contracts, or `npm run api:generate` to refresh the Console types as well. Run `npm run api:check` to check both sets for drift. Console and agent requests share the selected runtime's domain operations. Internal record protocol changes do not require changing the public contract when the observed product API remains the same.
 
 After building both components from reviewed clean source, run:
 

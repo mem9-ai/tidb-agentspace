@@ -123,3 +123,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0056: Report continuity](0056-report-continuity.md) — canonical project/Workspace files, visible updates and explicit link revocation.
 
 - [0057: Account display identity](0057-account-display-identity.md) — verified session name/email, separate from the editable Workspace display profile.
+
+- [0059: Rust backend workflow](0059-rust-backend-workflow.md) — one native entry point for local operation, OpenAPI and backend verification.

@@ -1,76 +1,49 @@
-import { spawnSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
 import { appendFile, lstat, readFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-// This manifest is executed from the trusted base, never from the candidate.
-// An edited full command falls back to the existing unsharded test command.
+// GitHub scope classification runs from the verified base. The native runner discovers
+// every Cargo integration target and executes both independent partitions.
+export const runner = 'backend/build-tools/src/bin/workspace-verify.rs';
 export const files = [
-  'server/meta-service.test.mjs',
-  'server/identity-directory.test.mjs',
-  'server/guest-host.test.mjs',
-  'server/rust-backend.test.mjs',
-  'server/rust-product.test.mjs',
-  'server/contract.test.mjs',
-  'scripts/package-runtime.test.mjs',
-  'server/local-runtime.test.mjs',
-  'server/rust-sso.test.mjs',
+  runner,
+  ...[
+    'agent_trial',
+    'backend_workflows',
+    'contract',
+    'guest_host',
+    'host_transport',
+    'identity_directory',
+    'meta',
+    'product',
+    'product_api',
+    'product_lifecycle',
+    'sales_sample',
+    'sso',
+    'tutorial',
+  ].map((name) => `backend/test-support/tests/${name}.rs`),
+  'backend/host/tests/local_runtime.rs',
+  'backend/build-tools/tests/package.rs',
 ];
-const prefix = 'WORKSPACE_META_TEST=1 WORKSPACE_BACKEND_TEST=1 node --test --test-concurrency=1 ';
-export const fullCommand = prefix + files.join(' ');
-
-export function partition(command, event) {
-  if (!['pull_request', 'push'].includes(event) || command !== fullCommand) return null;
-  return {
-    product: files.filter((file) => file === 'server/rust-product.test.mjs'),
-    other: files.filter((file) => file !== 'server/rust-product.test.mjs'),
-  };
+export const fullCommand = 'cargo acceptance all';
+export async function partition(command, event) {
+  if (command !== fullCommand || !['pull_request', 'push'].includes(event)) return false;
+  try {
+    return (await Promise.all(files.map((file) => lstat(file)))).every((stat) => stat.isFile());
+  } catch {
+    return false;
+  }
 }
-
-async function presentFiles() {
-  const present = await Promise.all(
-    files.map(async (file) => {
-      try {
-        return (await lstat(file)).isFile();
-      } catch {
-        return false;
-      }
-    }),
-  );
-  return present.every(Boolean);
-}
-
 if (
   process.argv[1] &&
   realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
 ) {
-  try {
-    const command = JSON.parse(await readFile('package.json', 'utf8')).scripts?.[
-      'backend:test:integration'
-    ];
-    const candidate = partition(command, process.env.GITHUB_EVENT_NAME);
-    const groups = candidate && (await presentFiles()) ? candidate : null;
-    const action = process.argv[2];
-    if (action === 'classify') {
-      await appendFile(process.env.GITHUB_OUTPUT, `full_partition=${Boolean(groups)}\n`);
-      console.log(`Full integration partition: ${groups ? 'enabled' : 'unsharded fallback'}`);
-    } else {
-      if (!groups || !['product', 'other'].includes(action))
-        throw new Error('The trusted full integration partition is unavailable.');
-      console.log(`Full integration group ${action}: ${groups[action].join(', ')}`);
-      const result = spawnSync(
-        process.execPath,
-        ['--test', '--test-concurrency=1', ...groups[action]],
-        {
-          stdio: 'inherit',
-          env: { ...process.env, WORKSPACE_META_TEST: '1', WORKSPACE_BACKEND_TEST: '1' },
-        },
-      );
-      if (result.error) throw result.error;
-      process.exitCode = result.status ?? 1;
-    }
-  } catch (error) {
-    console.error(error.message);
-    process.exitCode = 1;
-  }
+  if (process.argv[2] !== 'classify') throw new Error('Expected classify');
+  const command = JSON.parse(await readFile('package.json', 'utf8')).scripts?.[
+    'backend:test:integration'
+  ];
+  await appendFile(
+    process.env.GITHUB_OUTPUT,
+    `full_partition=${await partition(command, process.env.GITHUB_EVENT_NAME)}\n`,
+  );
 }

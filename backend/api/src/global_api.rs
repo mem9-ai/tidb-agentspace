@@ -1440,9 +1440,7 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
     }
     let now = app.clock.now().await?;
     if path == "/api/openapi.json" && method == Method::GET {
-        let mut schema: Value =
-            serde_json::from_str(include_str!("../../../public/agent-entry-openapi.json"))
-                .map_err(|_| err(503, "CONTRACT_UNAVAILABLE"))?;
+        let mut schema = workspace_openapi::View::Entry.document();
         let prefix = app
             .config
             .public_path
@@ -1452,9 +1450,7 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
         return Ok(Json(schema).into_response());
     }
     if path == "/openapi.json" && method == Method::GET {
-        let mut schema: Value =
-            serde_json::from_str(include_str!("../../../public/global-openapi.json"))
-                .map_err(|_| err(503, "CONTRACT_UNAVAILABLE"))?;
+        let mut schema = workspace_openapi::View::Global.document();
         schema["servers"] =
             json!([{"url":format!("{}{}",app.config.public_origin,app.config.public_path)}]);
         return Ok(Json(schema).into_response());

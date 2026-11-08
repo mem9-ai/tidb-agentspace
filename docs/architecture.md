@@ -285,7 +285,7 @@ and [GH-88](../specs/gh-88/spec.md). Domain modules, ports and transport adapter
 implementation; a common executable can embed roles or start them as independent services.
 Global/regional authority and separate Meta instances remain mandatory in either form.
 Co-located roles share process failure; production regional independence requires separate
-processes/hosts. Customer computation remains isolated. The old Node backend and its dedicated tests are removed. Node is limited to build/operator tooling and native test fixtures; the full Rust regional profile implements the existing API. The diagram
+processes/hosts. Customer computation remains isolated. The old Node backend and its dedicated tests are removed. Rust owns provisioning fixtures and HTTP acceptance; the full Rust regional profile implements the existing API. The diagram
 below shows the implemented regional execution boundary. Execute is a module called by
 Product, with a same-binary child as its internal strategy. It has no independently deployed
 service, listener or task queue. Global control/policy and production scale remain separate
@@ -433,7 +433,7 @@ GET        /v1/operations/{operation_id}
 ```
 
 This is a proposed surface. The exact implemented contract is `public/openapi.json`;
-`server/generate-openapi.mjs` is its source. The prototype has one workspace, synchronous
+`backend/openapi/src` is its source. The prototype has one workspace, synchronous
 simulated provisioning, bounded UTF-8 file operations, supported demo SELECT patterns, keys,
 usage, activity, and settings. Production needs pagination, streaming, conditional writes,
 query timeout/cancellation, and stable typed errors with request IDs/retryability. Generate

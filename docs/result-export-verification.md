@@ -71,8 +71,8 @@ reports completed data with a missing activity record. Audit records omit result
 | EX-08      | Light/Dark at 1280×800/900 and 390×844. Measured 16px form text, 48px inputs/actions, 44px close button and no horizontal page overflow. Busy fields/actions/dismissal are locked; Escape afterward restores Export focus without closing file preview. Conflict retains name for correction. |
 | EX-09      | Generated schema/client checks, all destination response variants in contract tests, API packaging, lint/types/build and full `npm run check` pass (126 tests). Latest-head remote CI is recorded on the implementation PR.                                                                   |
 
-Sources: `server/result-exports.test.mjs`, `server/contract.test.mjs`, isolated
-`server/test-support/export-fixture.mjs`, and actual Console browser interactions. Fixtures use
+Sources: `backend/test-support/tests/lifecycle/transfers.rs`, `backend/test-support/tests/contract.rs`, isolated
+`backend/test-support/src/provider.rs`, and actual Console browser interactions. Fixtures use
 temporary local state and native DuckDB. MySQL/PostgreSQL and live Drive9 transports are controlled
 fixtures; this is not a claim of testing export writes against hosted services or the live
 tidbfs extension. Existing adapters retain their separately documented integration boundaries.

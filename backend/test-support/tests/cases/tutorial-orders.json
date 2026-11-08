@@ -1,0 +1,52 @@
+{
+  "csv": "id,region,amount\n1,APAC,120\n2,EMEA,80\n3,AMER,50\n4,APAC,120\n5,EMEA,100\n6,AMER,40\n",
+  "rows": [
+    {
+      "id": 1,
+      "region": "APAC",
+      "amount": 120
+    },
+    {
+      "id": 2,
+      "region": "EMEA",
+      "amount": 80
+    },
+    {
+      "id": 3,
+      "region": "AMER",
+      "amount": 50
+    },
+    {
+      "id": 4,
+      "region": "APAC",
+      "amount": 120
+    },
+    {
+      "id": 5,
+      "region": "EMEA",
+      "amount": 100
+    },
+    {
+      "id": 6,
+      "region": "AMER",
+      "amount": 40
+    }
+  ],
+  "totals": [
+    {
+      "region": "AMER",
+      "total": 90
+    },
+    {
+      "region": "APAC",
+      "total": 240
+    },
+    {
+      "region": "EMEA",
+      "total": 180
+    }
+  ],
+  "table": "tutorial_orders_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "path": "/tutorial-orders-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.csv",
+  "query": "SELECT region, SUM(amount) AS total\nFROM file\nGROUP BY region\nORDER BY region;"
+}

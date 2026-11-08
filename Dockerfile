@@ -1,9 +1,3 @@
-# API and Console remain independent. Node is build tooling only in the preparation stage.
-FROM node:24.22.1-bookworm-slim AS duckdb
-WORKDIR /source
-COPY scripts/prepare-duckdb.mjs scripts/duckdb-runtime.json ./scripts/
-RUN node scripts/prepare-duckdb.mjs
-
 FROM rust:1.99.1-bookworm AS chef
 RUN cargo install --locked --version 0.1.77 cargo-chef
 WORKDIR /source
@@ -16,6 +10,16 @@ COPY .cargo ./.cargo
 COPY backend ./backend
 COPY meta-service ./meta-service
 RUN cargo chef prepare --recipe-path recipe.json
+
+# Cache native library preparation independently of API and test source changes.
+FROM chef AS duckdb
+COPY --from=planner /source/recipe.json ./recipe.json
+RUN cargo chef cook --locked --target-dir /source/meta-service/target \
+    -p workspace-build-tools --bin workspace-build-tools --recipe-path recipe.json
+COPY backend/build-tools ./backend/build-tools
+COPY scripts/duckdb-runtime.json ./scripts/duckdb-runtime.json
+RUN find backend/build-tools -type f -exec touch {} + \
+    && cargo run --locked -p workspace-build-tools -- prepare
 
 FROM chef AS builder
 COPY .cargo ./.cargo
@@ -48,9 +52,9 @@ RUN find backend/product -type f -exec touch {} + \
     && cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend
 
 COPY backend/analytics ./backend/analytics
+COPY backend/openapi ./backend/openapi
 COPY backend/api ./backend/api
-COPY public/openapi.json public/owner-openapi.json public/global-openapi.json public/agent-entry-openapi.json public/operator-openapi.json ./public/
-RUN find backend/api backend/analytics -type f -exec touch {} + \
+RUN find backend/api backend/openapi backend/analytics -type f -exec touch {} + \
     && cargo build --release --locked --target-dir /source/meta-service/target -p workspace-backend
 
 # Copy the complete workspace for the final binary, including any new crates.
@@ -59,7 +63,7 @@ COPY meta-service ./meta-service
 RUN find backend/host -type f -exec touch {} + \
     && for manifest in backend/*/Cargo.toml; do \
       case "$manifest" in \
-        backend/contracts/*|backend/cache-budget/*|backend/meta-client/*|backend/workspace/*|backend/identity/*|backend/providers/*|backend/execute/*|backend/product/*|backend/analytics/*|backend/api/*|backend/host/*) ;; \
+        backend/contracts/*|backend/cache-budget/*|backend/meta-client/*|backend/workspace/*|backend/identity/*|backend/providers/*|backend/execute/*|backend/product/*|backend/analytics/*|backend/openapi/*|backend/api/*|backend/host/*) ;; \
         *) find "$(dirname "$manifest")" -type f -exec touch {} + ;; \
       esac; \
     done \
@@ -71,6 +75,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 1000 workspace && useradd --uid 1000 --gid 1000 --no-create-home workspace
 WORKDIR /app
+COPY LICENSE /usr/share/doc/workspace-backend/LICENSE
 COPY --from=builder /source/meta-service/target/release/workspace-backend /usr/local/bin/workspace-backend
 USER 1000:1000
 EXPOSE 4318

@@ -35,7 +35,7 @@ fn main() {
         let path = directory.join(name);
         println!("cargo:rerun-if-changed={}", path.display());
         let metadata =
-            fs::symlink_metadata(&path).expect("Run npm run backend:prepare before Cargo");
+            fs::symlink_metadata(&path).expect("Run cargo run --locked -p workspace-build-tools -- prepare before building the backend");
         assert!(
             metadata.is_file() && !metadata.file_type().is_symlink(),
             "DuckDB build input must be an ordinary verified file"

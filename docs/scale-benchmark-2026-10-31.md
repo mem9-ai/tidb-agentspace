@@ -49,7 +49,7 @@ removed afterward.
 Run the following command to start a fresh isolated RustFS/SlateDB fixture with the same page
 size and hot/cold request shape:
 
-    SCALE_RESOURCES=1000000 SCALE_REQUESTS=100 node scripts/benchmark-resource-pages.mjs
+    SCALE_RESOURCES=1000000 SCALE_REQUESTS=100 cargo run --locked -p workspace-test-support --bin resource-pages
 
 The checked-in harness seeds sequentially, so it does **not** reproduce the mixed
 sequential/parallel preparation used for the measurement above. Use the repository's pinned

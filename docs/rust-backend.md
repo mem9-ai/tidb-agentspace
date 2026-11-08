@@ -6,7 +6,7 @@
 - Rust **1.99.1**, a root Cargo workspace and committed `Cargo.lock`.
 - Hosted integration: [ADR 0026](decisions/0026-native-hosted-studio.md) and [deployment/login guide](native-studio-deployment.md). Rust owns SSO, trusted public HTTP policy and `/studio`; old Node serving is retired. The owner permits fresh S3 roots/keys without migrating old data.
 - The Rust full profile serves Workspace/Keys, lifecycle, SQL/browser, files, analysis,
-  result/file exports and confirmed imports. The Node business implementation and its dedicated regression tests are removed. Node runs build/operator tools and native test fixtures only; Rust never forwards business operations to it.
+  result/file exports and confirmed imports. The Node business implementation and its dedicated regression tests are removed. Rust also generates OpenAPI, supervises local roles and drives native acceptance.
 - Explicit local guest mode and hosted shared-Workspace SSO are supported. Typed multi-tenant
   repositories, Global policy distribution and million-resource sharding remain GH-74 work.
 
@@ -21,7 +21,7 @@ The fresh record profile supersedes the document migration baseline; see [ADR 00
 | `meta-service`         | Encrypted SlateDB/S3 authority, durable commits, fencing and mTLS server                     |
 | `backend/meta-client`  | Authority-bound remote Meta adapter; TLS 1.3/mTLS, bounded requests, no retries              |
 | `backend/workspace`    | Workspace/Key domain, authorization and versioned record repositories                        |
-| `backend/providers`    | Private Drive9, Zero and db9 lifecycle/vault adapters; native MySQL/PostgreSQL drivers       |
+| `backend/providers`    | Private Drive9 and db9 lifecycle adapters and the native PostgreSQL driver                   |
 | `backend/execute`      | Region-internal Executor; prebuilt static DuckDB 2.0/Bashkit tasks via the same binary       |
 | `backend/product`      | Regional resources, database browser, files, snapshots, analysis, exports/imports            |
 | `backend/analytics`    | Independent SlateDB analytics process and bounded asynchronous producers; no Meta dependency |
@@ -99,33 +99,16 @@ See [ADR 0021](decisions/0021-native-rust-computation.md) and the implemented
 ## Build, check and package
 
 ```sh
-npm run backend:build
-npm run backend:check
-npm run check
-npm run package:api:rust -- FULL_REVIEWED_SOURCE_SHA
+cargo run --locked -p workspace-build-tools -- prepare
+cargo build --locked --workspace --bins --examples
+cargo acceptance all
+cargo run --locked -p workspace-build-tools -- package FULL_REVIEWED_SOURCE_SHA
 ```
 
-`backend:check` checks formatting first, then builds the workspace and runs Clippy with warnings denied, Rust tests, and isolated
-real RustFS/S3 metadata, ownership, native API contracts and provider-recovery integration tests.
-Heavy native test files run serially to bound concurrent RustFS/role startup and packaging resources; concurrency behavior is exercised explicitly inside those tests. Ordinary `npm test` skips explicitly gated S3 cases; those skips are not integration evidence.
-CI uses two Cargo jobs and omits Rust debug symbols to bound cold-build time and memory. Functional checks and warnings-as-errors remain enabled. Reuse installed RustFS locally.
+[Contribution checks](../CONTRIBUTING.md#rust-backend-modules) include workspace formatting, Clippy and unit tests. For compilation timings add `--timings` to the build command. The [CI policy](ci-cd.md) describes which jobs can reuse the compiled dependencies.
 
-For focused checks after preparing/building the native backend, use `backend:fmt`,
-`backend:clippy`, `backend:test` and `backend:test:integration`. CI runs those same phases as
-separate steps and caches dependency builds, excluding workspace binaries, incremental
-state and private runtime data. See [the cache and timing policy](ci-cd.md#rust-build-cache-and-timing-evidence)
-for cache scope, invalidation and cold/warm verification. `npm run backend:build -- --timings`
-produces a local Cargo HTML report in `meta-service/target/cargo-timings/`; CI retains this
-report as an artifact. A warm cache still builds the current workspace and runs every check.
+The prepare command checks the platform, archive length and SHA-256 digests pinned in `scripts/duckdb-runtime.json`. It verifies the local cache or downloads the official static libraries used for File System SQL analysis. Cargo's checked-in configuration selects that directory. The Execute build script verifies each linked library.
 
-DuckDB 2.0.0 uses official **prebuilt static libraries**, with release/archive and individual-file
-SHA-256 pins in `scripts/duckdb-runtime.json`. `npm run backend:build` first runs
-`backend:prepare`, which verifies or downloads the matching native artifact into ignored build
-cache. There is no bundled DuckDB C++ compilation, system-library probing or automatic fallback.
-For direct Cargo commands, first run `npm run backend:prepare`; checked-in Cargo configuration
-selects the fixed static path, and the Execute build script verifies every linked library. A
-native-only build environment can supply those exact pinned files at that path and run Cargo
-without Node; the preparation script itself uses only Node built-ins, without Console packages.
 Native macOS ARM64 and Linux x86-64 GNU are currently pinned; cross builds and other targets
 fail explicitly until an appropriate artifact is pinned and verified.
 
@@ -139,21 +122,14 @@ The separate tidbfs extension still requires its own verified artifact. See
 and [Rust linking options](https://duckdb.org/docs/2.0/clients/rust/troubleshoot).
 
 The debug executable is `meta-service/target/debug/workspace-backend`. For an optimized
-artifact, run `npm run backend:prepare`, then build `cargo build --release --locked -p workspace-backend` and supply that executable
+artifact, run `cargo run --locked -p workspace-build-tools -- prepare`, then build `cargo build --release --locked -p workspace-backend` and supply that executable
 as the package command's second argument. Packaging requires the current clean reviewed Git
 revision, writes source SHA/binary SHA-256/platform/architecture and archive checksums, and
 includes only the binary, Cargo lockfile, contract and instructions. It excludes private
 configuration, state, credentials, Console assets and Node runtime dependencies. A verified
 native tidbfs extension is a separately supplied artifact, with its checksum preserved.
 
-`start:api:rust`, `dev:api` and the API portion of `npm run dev` explicitly start Rust. `npm start` and `start:api` also select Rust.
-Set `WORKSPACE_BACKEND_CONFIG` to the absolute private deployment file; optionally set
-`WORKSPACE_BACKEND_BINARY` to the absolute reviewed artifact. The default binary is the local
-Cargo debug build. Missing configuration fails explicitly, with no alternate data file or
-fallback backend. No alternate backend is started when native configuration is missing.
-The optional npm launcher is tooling; the distributed native artifact runs directly without it.
-
-`build:api:rust` builds Rust and `package` creates the native API and separate static Console artifacts. The API contains no Node backend, provider state or frontend assets. `build:api` is the native build; the hosted image contains no Node runtime.
+`workspace-backend serve-api --config /absolute/private/deployment.json` runs a regional plan. For a local installation use `workspace-backend local init` and `workspace-backend local serve`. See the [quick start](../README.md#local-setup).
 
 ## One executable, independent roles
 

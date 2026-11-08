@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "workspace-analytics"
 version.workspace = true
 edition.workspace = true

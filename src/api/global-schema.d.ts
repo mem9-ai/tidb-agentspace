@@ -1,117 +1,4 @@
 export interface paths {
-  '/api/v1/workspaces/{workspaceId}/token-issuances': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Create Global Token Issuance
-     * @description Exchange the Workspace Key at Global only. Region audience requests require matching applied regional policy. Without clientThumbprint the response is a short-lived Region access Token. With an Ed25519 client JWK thumbprint it also includes a client-bound enrollment ticket for direct regional refresh enrollment.
-     */
-    post: operations['createGlobalTokenIssuance'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/workspaces/{workspaceId}/token-issuances/{issuanceId}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Global Token Issuance */
-    get: operations['getGlobalTokenIssuance'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/workspaces/{workspaceId}/regions': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Authorized Regions
-     * @description Requires resources:read on a current Global Token. Only the Key-granted Region is returned. Data requests go directly to Region.
-     */
-    get: operations['listAuthorizedRegions'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/token-issuances': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Exchange a Workspace Key without configuring a Workspace or Region
-     * @description The Key identifies its Workspace. Use audience global or region; region selects the Key-granted Region. Legacy Keys without a Workspace hint continue to use the Workspace-scoped issuance endpoint. Never forward the Workspace Key to a Region.
-     */
-    post: operations['createDiscoveredTokenIssuance'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/workspaces/{workspaceId}/region-route': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Discover the Region through a bodyless redirect
-     * @description Send only a Global access Token. Inspect the redirect without automatic credential forwarding; validate the HTTPS target against authenticated Global discovery before using the Region Token. Do not send SQL or file content to this endpoint.
-     */
-    get: operations['getGlobalRegionRoute'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/health': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get: operations['getGlobalHealth'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/api/auth/config': {
     parameters: {
       query?: never;
@@ -144,17 +31,17 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/session': {
+  '/api/auth/tidbcloud/callback': {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /** @description For independently configured Global OIDC only: verified one-use PKCE callback with browser-bound state and Global Directory membership. Bundled Portal deployments use their existing Portal callback instead and do not register or enable this second callback. */
+    get: operations['completeGlobalOwnerLogin'];
     put?: never;
-    /** @description Explicit development profile only, real loopback peer and trusted Origin required. Unavailable in hosted deployments. */
-    post: operations['createLocalGlobalOwnerSession'];
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -170,23 +57,6 @@ export interface paths {
     };
     /** @description Bundled hosted deployments redirect to the existing Portal login; its single verified callback establishes both separate sessions. Independently configured Global OIDC deployments begin their own registered flow. */
     get: operations['startGlobalOwnerLogin'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/auth/tidbcloud/callback': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** @description For independently configured Global OIDC only: verified one-use PKCE callback with browser-bound state and Global Directory membership. Bundled Portal deployments use their existing Portal callback instead and do not register or enable this second callback. */
-    get: operations['completeGlobalOwnerLogin'];
     put?: never;
     post?: never;
     delete?: never;
@@ -211,20 +81,16 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/portal/v1/workspaces/{workspaceId}/regional-session-tickets': {
+  '/api/health': {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    get: operations['getGlobalHealth'];
     put?: never;
-    /**
-     * Create Portal Region Session Ticket
-     * @description Create a short-lived one-use user-session exchange ticket for the Workspace Region. A verified Portal Owner session is required.
-     */
-    post: operations['createPortalRegionSessionTicket'];
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -263,6 +129,23 @@ export interface paths {
      * @description Observe durable application evidence without contacting Region or retrying effects.
      */
     get: operations['getGlobalKeyPolicyDelivery'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/portal/v1/workspaces/{workspaceId}/key-revocations/{revocationId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Global Key Revocation */
+    get: operations['getGlobalKeyRevocation'];
     put?: never;
     post?: never;
     delete?: never;
@@ -348,15 +231,132 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/portal/v1/workspaces/{workspaceId}/key-revocations/{revocationId}': {
+  '/api/portal/v1/workspaces/{workspaceId}/regional-session-tickets': {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    /** Get Global Key Revocation */
-    get: operations['getGlobalKeyRevocation'];
+    get?: never;
+    put?: never;
+    /**
+     * Create Portal Region Session Ticket
+     * @description Create a short-lived one-use user-session exchange ticket for the Workspace Region. A verified Portal Owner session is required.
+     */
+    post: operations['createPortalRegionSessionTicket'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/session': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** @description Explicit development profile only, real loopback peer and trusted Origin required. Unavailable in hosted deployments. */
+    post: operations['createLocalGlobalOwnerSession'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/token-issuances': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Exchange a Workspace Key without configuring a Workspace or Region
+     * @description The Key identifies its Workspace. Use audience global or region; region selects the Key-granted Region. Legacy Keys without a Workspace hint continue to use the Workspace-scoped issuance endpoint. Never forward the Workspace Key to a Region.
+     */
+    post: operations['createDiscoveredTokenIssuance'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/workspaces/{workspaceId}/region-route': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Discover the Region through a bodyless redirect
+     * @description Send only a Global access Token. Inspect the redirect without automatic credential forwarding; validate the HTTPS target against authenticated Global discovery before using the Region Token. Do not send SQL or file content to this endpoint.
+     */
+    get: operations['getGlobalRegionRoute'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/workspaces/{workspaceId}/regions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Authorized Regions
+     * @description Requires resources:read on a current Global Token. Only the Key-granted Region is returned. Data requests go directly to Region.
+     */
+    get: operations['listAuthorizedRegions'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/workspaces/{workspaceId}/token-issuances': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Create Global Token Issuance
+     * @description Exchange the Workspace Key at Global only. Region audience requests require matching applied regional policy. Without clientThumbprint the response is a short-lived Region access Token. With an Ed25519 client JWK thumbprint it also includes a client-bound enrollment ticket for direct regional refresh enrollment.
+     */
+    post: operations['createGlobalTokenIssuance'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/workspaces/{workspaceId}/token-issuances/{issuanceId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Global Token Issuance */
+    get: operations['getGlobalTokenIssuance'];
     put?: never;
     post?: never;
     delete?: never;
@@ -369,6 +369,44 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    DiscoveredRegionAccessToken: {
+      accessToken: string;
+      expiresAt: number;
+      id: string;
+      keyId: string;
+      keyVersion: number;
+      principalId: string;
+      region: components['schemas']['Region'];
+      scopes: string[];
+      /** @constant */
+      tokenType: 'Bearer';
+      workspaceId: string;
+    };
+    DiscoveredRegionToken: {
+      accessToken: string;
+      enrollmentExpiresAt: number;
+      enrollmentTicket: string;
+      expiresAt: number;
+      id: string;
+      keyId: string;
+      keyVersion: number;
+      nonce: string;
+      principalId: string;
+      region: components['schemas']['Region'];
+      scopes: string[];
+      /** @constant */
+      tokenType: 'Bearer';
+      workspaceId: string;
+    };
+    DiscoveredToken: {
+      accessToken: string;
+      expiresAt: number;
+      id: string;
+      scopes: string[];
+      /** @constant */
+      tokenType: 'Bearer';
+      workspaceId: string;
+    };
     Error: {
       error: {
         code: string;
@@ -376,110 +414,72 @@ export interface components {
         requestId: string;
       };
     };
-    Key: {
-      name: string;
-      createdAt: number;
-      workspaceId: string;
-      /** Format: uuid */
-      keyId: string;
-      principalId: string;
-      keyVersion: number;
-      grantRef: string;
-      expiresAt: number;
-      revoked: boolean;
-    };
     Grants: {
-      scopes: string[];
+      regionId: string;
       resourceIds: string[];
-      regionId: string;
-    };
-    Region: {
-      regionId: string;
-      /** Format: uri */
-      apiOrigin: string;
-      apiPathPrefix: string;
+      scopes: string[];
     };
     Issuance: {
+      audience: string;
+      expiresAt: number;
       id: string;
       keyId: string;
       principalId: string;
-      expiresAt: number;
-      audience: string;
       /** @constant */
       status: 'issued';
     };
-    Token: {
-      id: string;
-      accessToken: string;
-      /** @constant */
-      tokenType: 'Bearer';
+    Key: {
+      createdAt: number;
       expiresAt: number;
-      scopes: string[];
-    };
-    RegionToken: {
-      id: string;
-      accessToken: string;
-      /** @constant */
-      tokenType: 'Bearer';
-      expiresAt: number;
-      scopes: string[];
+      grantRef: string;
+      /** Format: uuid */
       keyId: string;
-      principalId: string;
       keyVersion: number;
-      region: components['schemas']['Region'];
-      enrollmentTicket: string;
-      enrollmentExpiresAt: number;
-      nonce: string;
+      name: string;
+      principalId: string;
+      revoked: boolean;
+      workspaceId: string;
+    };
+    Region: {
+      /** Format: uri */
+      apiOrigin: string;
+      apiPathPrefix: string;
+      regionId: string;
     };
     RegionAccessToken: {
-      id: string;
       accessToken: string;
-      /** @constant */
-      tokenType: 'Bearer';
       expiresAt: number;
-      scopes: string[];
+      id: string;
       keyId: string;
-      principalId: string;
       keyVersion: number;
+      principalId: string;
       region: components['schemas']['Region'];
-    };
-    DiscoveredToken: {
-      id: string;
-      accessToken: string;
+      scopes: string[];
       /** @constant */
       tokenType: 'Bearer';
-      expiresAt: number;
-      scopes: string[];
-      workspaceId: string;
     };
-    DiscoveredRegionAccessToken: {
-      id: string;
+    RegionToken: {
       accessToken: string;
-      /** @constant */
-      tokenType: 'Bearer';
-      expiresAt: number;
-      scopes: string[];
-      keyId: string;
-      principalId: string;
-      keyVersion: number;
-      region: components['schemas']['Region'];
-      workspaceId: string;
-    };
-    DiscoveredRegionToken: {
-      id: string;
-      accessToken: string;
-      /** @constant */
-      tokenType: 'Bearer';
-      expiresAt: number;
-      scopes: string[];
-      keyId: string;
-      principalId: string;
-      keyVersion: number;
-      region: components['schemas']['Region'];
-      enrollmentTicket: string;
       enrollmentExpiresAt: number;
+      enrollmentTicket: string;
+      expiresAt: number;
+      id: string;
+      keyId: string;
+      keyVersion: number;
       nonce: string;
-      workspaceId: string;
+      principalId: string;
+      region: components['schemas']['Region'];
+      scopes: string[];
+      /** @constant */
+      tokenType: 'Bearer';
+    };
+    Token: {
+      accessToken: string;
+      expiresAt: number;
+      id: string;
+      scopes: string[];
+      /** @constant */
+      tokenType: 'Bearer';
     };
   };
   responses: never;
@@ -490,234 +490,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-  createGlobalTokenIssuance: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspaceId: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': {
-          audience: string;
-          scopes?: string[];
-          clientThumbprint?: string;
-        };
-      };
-    };
-    responses: {
-      /** @description Successful response */
-      201: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json':
-            | components['schemas']['Token']
-            | components['schemas']['RegionAccessToken']
-            | components['schemas']['RegionToken'];
-        };
-      };
-      /** @description Structured denial or unknown outcome; no credential is echoed. */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  getGlobalTokenIssuance: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspaceId: string;
-        issuanceId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful response */
-      200: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            data: components['schemas']['Issuance'];
-          };
-        };
-      };
-      /** @description Structured denial or unknown outcome; no credential is echoed. */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  listAuthorizedRegions: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspaceId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful response */
-      200: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            data: components['schemas']['Region'][];
-            nextCursor: null;
-          };
-        };
-      };
-      /** @description Structured denial or unknown outcome; no credential is echoed. */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  createDiscoveredTokenIssuance: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': {
-          /** @enum {unknown} */
-          audience: 'global' | 'region';
-          scopes?: string[];
-          clientThumbprint?: string;
-        };
-      };
-    };
-    responses: {
-      /** @description Successful response */
-      201: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json':
-            | components['schemas']['DiscoveredToken']
-            | components['schemas']['DiscoveredRegionAccessToken']
-            | components['schemas']['DiscoveredRegionToken'];
-        };
-      };
-      /** @description Successful response */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  getGlobalRegionRoute: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspaceId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Region API base URL. No data request has been sent to Global. */
-      307: {
-        headers: {
-          Location: string;
-          'X-Region-Id': string;
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Successful response */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  getGlobalHealth: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful response */
-      200: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            /** @constant */
-            status: 'ok';
-            /** @constant */
-            authority: 'global';
-          };
-        };
-      };
-      /** @description Successful response */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
   getGlobalAuthConfig: {
     parameters: {
       query?: never;
@@ -735,10 +507,10 @@ export interface operations {
         };
         content: {
           'application/json': {
+            localSessionPath: string;
+            loginPath: string;
             /** @enum {unknown} */
             mode: 'local' | 'oidc';
-            loginPath: string;
-            localSessionPath: string;
           };
         };
       };
@@ -773,80 +545,10 @@ export interface operations {
         };
         content: {
           'application/json': {
-            workspaceId: string;
             regionId: string;
+            workspaceId: string;
           };
         };
-      };
-      /** @description Successful response */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  createLocalGlobalOwnerSession: {
-    parameters: {
-      query?: never;
-      header: {
-        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
-        Origin: string;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful response */
-      201: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            workspaceId: string;
-            regionId: string;
-          };
-        };
-      };
-      /** @description Successful response */
-      default: {
-        headers: {
-          'Cache-Control'?: 'no-store';
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Error'];
-        };
-      };
-    };
-  };
-  startGlobalOwnerLogin: {
-    parameters: {
-      query?: {
-        /** @description Optional for first login when one Region is configured and registered. */
-        workspaceId?: string;
-        /** @description Optional return URL on an explicitly trusted Console origin. */
-        returnTo?: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Redirect to the existing Portal sign-in or the explicitly configured identity provider. */
-      303: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
       };
       /** @description Successful response */
       default: {
@@ -880,13 +582,46 @@ export interface operations {
         };
         content: {
           'application/json': {
-            workspaceId: string;
-            regionId: string;
             expiresAt: number;
+            regionId: string;
+            workspaceId: string;
           };
         };
       };
       /** @description Owner cookie issued; redirect to the validated Console return URL. */
+      303: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  startGlobalOwnerLogin: {
+    parameters: {
+      query?: {
+        /** @description Optional for first login when one Region is configured and registered. */
+        workspaceId?: string;
+        /** @description Optional return URL on an explicitly trusted Console origin. */
+        returnTo?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redirect to the existing Portal sign-in or the explicitly configured identity provider. */
       303: {
         headers: {
           [name: string]: unknown;
@@ -938,36 +673,31 @@ export interface operations {
       };
     };
   };
-  createPortalRegionSessionTicket: {
+  getGlobalHealth: {
     parameters: {
       query?: never;
-      header: {
-        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
-        Origin: string;
-      };
-      path: {
-        workspaceId: string;
-      };
+      header?: never;
+      path?: never;
       cookie?: never;
     };
     requestBody?: never;
     responses: {
       /** @description Successful response */
-      201: {
+      200: {
         headers: {
           'Cache-Control'?: 'no-store';
           [name: string]: unknown;
         };
         content: {
           'application/json': {
-            ticket: string;
-            region: components['schemas']['Region'];
             /** @constant */
-            expiresIn: 60;
+            authority: 'global';
+            /** @constant */
+            status: 'ok';
           };
         };
       };
-      /** @description Structured denial or unknown outcome; no credential is echoed. */
+      /** @description Successful response */
       default: {
         headers: {
           'Cache-Control'?: 'no-store';
@@ -1015,9 +745,9 @@ export interface operations {
               keyId: string;
               keyVersion: number;
               /** @enum {unknown} */
-              regionalStatus: 'pending' | 'applied';
-              /** @enum {unknown} */
               regionalContinuity: 'pending' | 'eligible' | 'unavailable';
+              /** @enum {unknown} */
+              regionalStatus: 'pending' | 'applied';
             };
           };
         };
@@ -1059,9 +789,51 @@ export interface operations {
               keyId: string;
               keyVersion: number;
               /** @enum {unknown} */
-              regionalStatus: 'pending' | 'applied';
-              /** @enum {unknown} */
               regionalContinuity: 'pending' | 'eligible' | 'unavailable';
+              /** @enum {unknown} */
+              regionalStatus: 'pending' | 'applied';
+            };
+          };
+        };
+      };
+      /** @description Structured denial or unknown outcome; no credential is echoed. */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  getGlobalKeyRevocation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceId: string;
+        revocationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      200: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            data: {
+              id: string;
+              keyId: string;
+              keyVersion: number;
+              /** @enum {unknown} */
+              regionalStatus: 'pending' | 'applied';
             };
           };
         };
@@ -1139,11 +911,11 @@ export interface operations {
     requestBody: {
       content: {
         'application/json': {
+          expiresAt: number;
           /** @default Agent key */
           name?: string;
-          scopes: string[];
           resourceIds: string[];
-          expiresAt: number;
+          scopes: string[];
         };
       };
     };
@@ -1157,10 +929,10 @@ export interface operations {
         content: {
           'application/json': {
             data: components['schemas']['Key'];
-            secret: string;
             grants: components['schemas']['Grants'];
             /** @enum {unknown} */
             regionalStatus: 'pending' | 'applied';
+            secret: string;
           };
         };
       };
@@ -1295,9 +1067,9 @@ export interface operations {
           'application/json': {
             data: components['schemas']['Key'];
             /** @enum {unknown} */
-            regionalStatus: 'pending' | 'applied';
-            /** @enum {unknown} */
             regionalContinuity: 'pending' | 'eligible' | 'unavailable';
+            /** @enum {unknown} */
+            regionalStatus: 'pending' | 'applied';
           };
         };
       };
@@ -1341,9 +1113,9 @@ export interface operations {
         content: {
           'application/json': {
             data: components['schemas']['Key'];
-            secret: string;
             /** @enum {unknown} */
             regionalStatus: 'pending' | 'applied';
+            secret: string;
           };
         };
       };
@@ -1396,13 +1168,166 @@ export interface operations {
       };
     };
   };
-  getGlobalKeyRevocation: {
+  createPortalRegionSessionTicket: {
+    parameters: {
+      query?: never;
+      header: {
+        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
+        Origin: string;
+      };
+      path: {
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      201: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            /** @constant */
+            expiresIn: 60;
+            region: components['schemas']['Region'];
+            ticket: string;
+          };
+        };
+      };
+      /** @description Structured denial or unknown outcome; no credential is echoed. */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  createLocalGlobalOwnerSession: {
+    parameters: {
+      query?: never;
+      header: {
+        /** @description Must equal the Global public origin or an explicitly trusted Console origin for Owner mutations. */
+        Origin: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      201: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            regionId: string;
+            workspaceId: string;
+          };
+        };
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  createDiscoveredTokenIssuance: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          /** @enum {unknown} */
+          audience: 'global' | 'region';
+          clientThumbprint?: string;
+          scopes?: string[];
+        };
+      };
+    };
+    responses: {
+      /** @description Successful response */
+      201: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json':
+            | components['schemas']['DiscoveredToken']
+            | components['schemas']['DiscoveredRegionAccessToken']
+            | components['schemas']['DiscoveredRegionToken'];
+        };
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  getGlobalRegionRoute: {
     parameters: {
       query?: never;
       header?: never;
       path: {
         workspaceId: string;
-        revocationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Region API base URL. No data request has been sent to Global. */
+      307: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          Location: string;
+          'X-Region-Id': string;
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Successful response */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  listAuthorizedRegions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceId: string;
       };
       cookie?: never;
     };
@@ -1416,13 +1341,88 @@ export interface operations {
         };
         content: {
           'application/json': {
-            data: {
-              id: string;
-              keyId: string;
-              keyVersion: number;
-              /** @enum {unknown} */
-              regionalStatus: 'pending' | 'applied';
-            };
+            data: components['schemas']['Region'][];
+            nextCursor: null;
+          };
+        };
+      };
+      /** @description Structured denial or unknown outcome; no credential is echoed. */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  createGlobalTokenIssuance: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          audience: string;
+          clientThumbprint?: string;
+          scopes?: string[];
+        };
+      };
+    };
+    responses: {
+      /** @description Successful response */
+      201: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json':
+            | components['schemas']['Token']
+            | components['schemas']['RegionAccessToken']
+            | components['schemas']['RegionToken'];
+        };
+      };
+      /** @description Structured denial or unknown outcome; no credential is echoed. */
+      default: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Error'];
+        };
+      };
+    };
+  };
+  getGlobalTokenIssuance: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceId: string;
+        issuanceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful response */
+      200: {
+        headers: {
+          'Cache-Control'?: 'no-store';
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            data: components['schemas']['Issuance'];
           };
         };
       };

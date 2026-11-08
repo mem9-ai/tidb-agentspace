@@ -117,6 +117,18 @@ test('full partition uses the verified merge base and fails closed on mismatched
     classify({ GITHUB_EVENT_NAME: 'push', BEFORE_SHA: 'f'.repeat(40) }),
     'full_partition=false\n',
   );
+  // An edited runner command or missing suite must fall back to the full native gate.
+  const manifest = join(root, 'package.json');
+  const previous = readFileSync(manifest);
+  writeFileSync(
+    manifest,
+    JSON.stringify({ scripts: { 'backend:test:integration': 'cargo test' } }),
+  );
+  assert.equal(classify(), 'full_partition=false\n');
+  writeFileSync(manifest, previous);
+  const missing = join(root, integrationFiles.at(-1));
+  rmSync(missing);
+  assert.equal(classify(), 'full_partition=false\n');
   git('switch', '-q', 'candidate');
   assert.equal(classify(), 'full_partition=false\n');
 });
@@ -356,15 +368,8 @@ test('automatic checks execute once and releases require exact-commit native evi
     'rust-toolchain.toml',
     '.cargo/config.toml',
     'scripts/duckdb-runtime.json',
-    'scripts/prepare-duckdb.mjs',
-    'public/openapi.json',
-    'public/owner-openapi.json',
-    'public/global-openapi.json',
-    'public/agent-entry-openapi.json',
-    'public/operator-openapi.json',
-    'package.json',
-    'package-lock.json',
-    '.node-version',
+    'backend/build-tools/src/duckdb.rs',
+    'LICENSE',
     'Dockerfile',
     '.dockerignore',
   ])
@@ -377,6 +382,14 @@ test('automatic checks execute once and releases require exact-commit native evi
     'scripts/deploy-dev.test.mjs',
     '.github/workflows/dev-cd.yml',
     '.github/workflows/ci.yml',
+    'public/openapi.json',
+    'public/owner-openapi.json',
+    'public/global-openapi.json',
+    'public/agent-entry-openapi.json',
+    'public/operator-openapi.json',
+    'package.json',
+    'package-lock.json',
+    '.node-version',
     'src/App.tsx',
     'README.md',
   ])
@@ -543,7 +556,7 @@ test('automatic checks execute once and releases require exact-commit native evi
   assert.match(partitionScope.run, /full_partition=false/);
   assert.equal(ci.jobs.scope.steps[0].with['fetch-depth'], 0);
   const fullIntegration = ci.jobs.metadata.steps.find(
-    (step) => step.run === 'npm run backend:test:integration',
+    (step) => step.run === 'cargo acceptance all',
   );
   assert.equal(
     fullIntegration.if,
@@ -556,8 +569,11 @@ test('automatic checks execute once and releases require exact-commit native evi
     otherIntegration.if,
     '${{ needs.scope.outputs.history_only != \'true\' && !contains(fromJSON(\'["tutorial","database","files"]\'), needs.scope.outputs.classic_profile) && needs.scope.outputs.full_partition == \'true\' }}',
   );
-  assert.match(otherIntegration.run, /git show "\$policy_ref:scripts\/ci-full-integration\.mjs"/);
-  assert.match(otherIntegration.run, /node "\$runner" other/);
+  assert.match(
+    otherIntegration.run,
+    /git show "\$policy_ref:backend\/build-tools\/src\/bin\/workspace-verify\.rs"/,
+  );
+  assert.match(otherIntegration.run, /"\$runner" other/);
   const productIntegration = ci.jobs.product_integration;
   assert.equal(
     ci.jobs.metadata.steps.find((step) => step.name === 'Save Cargo timing reports').if,
@@ -580,13 +596,19 @@ test('automatic checks execute once and releases require exact-commit native evi
   const productStep = productIntegration.steps.find(
     (step) => step.name === 'Run product API integration tests',
   );
-  assert.match(productStep.run, /git show "\$policy_ref:scripts\/ci-full-integration\.mjs"/);
-  assert.match(productStep.run, /node "\$runner" product/);
+  assert.match(
+    productStep.run,
+    /git show "\$policy_ref:backend\/build-tools\/src\/bin\/workspace-verify\.rs"/,
+  );
+  assert.match(productStep.run, /"\$runner" product/);
   const historyIntegration = ci.jobs.metadata.steps.find(
     (step) => step.name === 'Run history authorization, isolation and storage integration tests',
   );
   assert.equal(historyIntegration.if, "${{ needs.scope.outputs.history_only == 'true' }}");
-  assert.match(historyIntegration.run, /git show 'HEAD\^1:scripts\/run-history-integration\.mjs'/);
+  assert.match(
+    historyIntegration.run,
+    /git show 'HEAD\^1:backend\/build-tools\/src\/bin\/workspace-verify\.rs'/,
+  );
   const classicIntegration = ci.jobs.metadata.steps.find(
     (step) => step.name === 'Run classic and risk-specific integration tests',
   );
@@ -594,14 +616,17 @@ test('automatic checks execute once and releases require exact-commit native evi
     classicIntegration.if,
     '${{ needs.scope.outputs.history_only != \'true\' && contains(fromJSON(\'["tutorial","database","files"]\'), needs.scope.outputs.classic_profile) }}',
   );
-  assert.match(classicIntegration.run, /git show 'HEAD\^1:scripts\/run-classic-integration\.mjs'/);
+  assert.match(
+    classicIntegration.run,
+    /git show 'HEAD\^1:backend\/build-tools\/src\/bin\/workspace-verify\.rs'/,
+  );
   assert.equal(ci.jobs.metadata.steps[0].with['fetch-depth'], 0);
   for (const command of [
-    'npm run backend:fmt',
-    'npm run backend:build -- --timings',
-    'npm run backend:clippy',
-    'npm run backend:test',
-    'npm run backend:test:integration',
+    'cargo fmt --all --check',
+    'cargo run --locked -p workspace-build-tools -- prepare && cargo build --locked --workspace --bins --examples --timings',
+    'cargo clippy --workspace --all-targets --locked -- -D warnings',
+    'cargo test --workspace --locked --exclude workspace-test-support',
+    'cargo acceptance all',
   ]) {
     assert.equal(ci.jobs.metadata.steps.filter((step) => step.run === command).length, 1, command);
     assert.ok(!JSON.stringify(workflow).includes(command), `CD duplicates ${command}`);

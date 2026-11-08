@@ -2,7 +2,7 @@
 
 Status: GH-13 implementation; live rollout and real-account login require separate observed evidence. The contract is [NAT-01–06](../specs/gh-13/spec.md), originally accepted at `b6bf3645547ee2f172fc93b6249a966fb3f19079`. The owner’s 2026-10-31 direction adds readiness and bounded image recovery; see [ADR 0032](decisions/0032-writer-safe-dev-release.md). Runtime configuration remains operator-owned.
 
-Rust is the only product API runtime. Node builds the Console and runs operator tools and native test fixtures; it is absent from the deployed API image. The existing hosted Node image/JSON/vault path is retired. The owner permits discarding its data. Fresh native metadata uses the existing S3 bucket with a new unique prefix and new independent Global/Region encryption keys and service tokens. No old data or upstream credentials are imported, and no shared bucket is deleted.
+Rust is the only product API runtime. Rust runs local supervision, contract generation and backend tests. Node builds the Console and runs its client tests. The existing hosted Node image/JSON/vault path is retired. The owner permits discarding its data. Fresh native metadata uses the existing S3 bucket with a new unique prefix and new independent Global/Region encryption keys and service tokens. No old data or upstream credentials are imported, and no shared bucket is deleted.
 
 ## Authentication and gateway
 

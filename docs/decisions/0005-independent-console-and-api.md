@@ -28,7 +28,7 @@ business rules and providers in another language is outside this deployment refa
 language is an implementation choice behind the HTTP contract. Keep backend modules separated
 by responsibility rather than introducing microservices for this change.
 
-`server/generate-openapi.mjs` remains the canonical contract source; `public/openapi.json` and
+`backend/openapi/src` remains the canonical contract source; `public/openapi.json` and
 `src/api/schema.d.ts` are generated and checked for drift. Define HTTP behavior before its
 Console interaction. The Console uses `openapi-fetch` with generated request/response types.
 Document the existing local session, health, and Console aggregation endpoints as well as the

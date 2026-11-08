@@ -1,18 +1,24 @@
-# Public contract tooling
+# OpenAPI and Console types
 
-`server/generate-openapi.mjs` is the editable OpenAPI generator; these schema-only modules
-describe its public shapes and fixed limits. They contain no provider, persistence,
-authorization or execution implementation. Native response tests check the generated schema
-against the Rust API; runtime capability discovery remains authoritative for availability.
+The Rust backend defines the HTTP contracts in [backend/openapi/src](../../backend/openapi/src).
+Its HTTP handlers and command-line export use the same regional, Global and operator definitions.
+Run these commands from the repository root.
 
-`generate-client.mjs` produces the shared Portal client types from the generated internal
-`portal-regional-openapi.json` and `portal-global-openapi.json`. Public `openapi.json` and
-`global-openapi.json` describe Agent operations; `owner-openapi.json` describes the regional
-owner-only history operations. Portal session and Key administration
-operations are kept in the separate Portal contracts. Use
-`npm run api:generate` and `npm run api:check`; do not edit generated outputs manually.
+```sh
+cargo run --locked -p workspace-backend -- openapi regional
+cargo run --locked -p workspace-openapi -- export
+cargo run --locked -p workspace-openapi -- check
+```
 
-The native import fixture `server/test-support/fixtures/import.parquet` is a fixed DuckDB
-2.0.0-generated Parquet file: one BIGINT column `id`, values 0 through 24. Native tests read
-and import all 25 rows while returning only the 20-row review sample. Its bytes are checked
-in so running the tests does not require a second Node DuckDB engine.
+The first command prints one view. Choose `regional`, `owner`, `global`, `entry` or
+`operator` for a public contract. Choose `portal-regional` or `portal-global` for the
+session-authenticated Portal. The export writes the five public artifacts under `public/`
+and the two Portal artifacts in this directory. The check reports drift in either set.
+
+[generate-client.mjs](generate-client.mjs) uses the Portal and operator exports to build the
+Console's TypeScript declarations. Run `npm run api:generate` to regenerate the contracts and
+Console types together. Run `npm run api:check` to verify both.
+
+[Rust HTTP acceptance tests](../../backend/test-support/tests) exercise the published responses
+and authorization boundaries. Use the resource capabilities returned by the running API to
+determine which providers are available.

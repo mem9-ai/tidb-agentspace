@@ -3,8 +3,11 @@
 target-dir = "meta-service/target"
 
 [env]
-# Prepared and checksum-verified by npm run backend:prepare; never probe a system library.
+# Prepared and checksum-verified by workspace-build-tools prepare; never probe a system library.
 DUCKDB_LIB_DIR = { value = ".data/duckdb-native/2.0.0", relative = true, force = true }
 DUCKDB_INCLUDE_DIR = { value = ".data/duckdb-native/2.0.0", relative = true, force = true }
 DUCKDB_STATIC = { value = "1", force = true }
 DUCKDB_DOWNLOAD_LIB = { value = "0", force = true }
+
+[alias]
+acceptance = "run --locked -p workspace-build-tools --bin workspace-verify --"

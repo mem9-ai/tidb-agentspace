@@ -1,5 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import {
+  expectedTotals,
+  matchesTotals,
+  orderRows,
+  ordersCsv,
+  totalsQuery,
+  tutorialSample,
+} from './tutorial-data.ts';
 import { loadDatabaseSample } from './tutorial-import.ts';
 
 const sampleId = 'a'.repeat(32);
@@ -154,4 +163,22 @@ test('database writes wait for durable progress acknowledgement and stop on a fa
     calls.map((call) => call.action),
     ['prepare'],
   );
+});
+
+test('the Portal tutorial matches the exercised Rust sample', () => {
+  const data = JSON.parse(
+    readFileSync(
+      new URL('../../../backend/test-support/tests/cases/tutorial-orders.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  assert.equal(ordersCsv, data.csv);
+  assert.deepEqual(orderRows, data.rows);
+  assert.deepEqual(expectedTotals, data.totals);
+  assert.equal(matchesTotals(data.totals), true);
+  assert.equal(matchesTotals([{ region: 'AMER', total: 90 }]), false);
+  assert.deepEqual(tutorialSample(sampleId), { table: data.table, path: data.path });
+  assert.equal(totalsQuery('file'), data.query);
+  assert.throws(() => tutorialSample('../orders'));
+  assert.throws(() => tutorialSample('orders; DROP TABLE data;'));
 });

@@ -116,9 +116,10 @@ defines a machine-readable description that tools and people can consume. It des
 interface; authorization correctness, retry safety, and product usefulness still need behavioral
 specifications and tests.
 
-In this repository, `server/generate-openapi.mjs` remains the canonical contract source and
-`public/openapi.json` its generated artifact. The same command generates
-`src/api/schema.d.ts` for the Console client, and `npm run api:check` verifies both artifacts.
+The Rust backend assembles the OpenAPI views in `backend/openapi/src`.
+Run `cargo run --locked -p workspace-openapi -- export` to export the public and Portal
+contracts. `npm run api:generate` also regenerates the Console client declarations, and
+`npm run api:check` checks both sets of artifacts for drift.
 See [independent delivery](../independent-delivery.md) for build/runtime boundaries. Design the contract first, then update the
 generator, implementation, affected clients, and tests together. Run `npm run api:generate`;
 never hand-edit the generated file. API-first design does not require changing the current
@@ -537,7 +538,7 @@ and generated/client/test alignment.
 | Capability                                                              | Status at this design baseline                                                                                 |
 | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Shared agent instructions and reusable standards                        | Implemented through `AGENTS.md`, tool entry points, and the standards index                                    |
-| Public API contract                                                     | OpenAPI 3.1 generated from `server/generate-openapi.mjs`; contract drift checked                               |
+| Public API contract                                                     | OpenAPI 3.1 generated from `backend/openapi/src`; contract drift checked                                       |
 | Common local/CI gate                                                    | `npm run check` covers runtime, repository policy, formatting, lint, contract, tests, types, and build         |
 | API behavior and provider fixtures                                      | Existing tests use temporary state and controlled provider behavior; coverage must be assessed per requirement |
 | Internal artifact packaging                                             | Existing manual workflow records source SHA and checksums; it does not deploy                                  |

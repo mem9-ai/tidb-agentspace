@@ -1,5 +1,5 @@
 [workspace]
-members = ["meta-service", "backend/contracts", "backend/meta-client", "backend/workspace", "backend/identity", "backend/api", "backend/host", "backend/providers", "backend/execute", "backend/product", "backend/analytics", "backend/cache-budget"]
+members = ["backend/test-support", "backend/build-tools", "meta-service", "backend/contracts", "backend/openapi", "backend/meta-client", "backend/workspace", "backend/identity", "backend/api", "backend/host", "backend/providers", "backend/execute", "backend/product", "backend/analytics", "backend/cache-budget"]
 resolver = "3"
 
 [workspace.package]
@@ -7,6 +7,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
 publish = false
+license = "Apache-2.0"
 
 [workspace.dependencies]
 anyhow = "=1.0.100"
@@ -23,6 +24,7 @@ sha2 = "=0.10.9"
 tokio = { version = "=1.48.0", features = ["macros", "rt-multi-thread", "signal", "sync", "net", "time", "process", "fs", "io-util", "io-std"] }
 uuid = { version = "=1.18.1", features = ["v4"] }
 workspace-contracts = { path = "backend/contracts" }
+workspace-openapi = { path = "backend/openapi" }
 workspace-meta-client = { path = "backend/meta-client" }
 workspace-meta-service = { path = "meta-service" }
 workspace-domain = { path = "backend/workspace" }

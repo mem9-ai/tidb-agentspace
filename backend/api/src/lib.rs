@@ -849,14 +849,14 @@ async fn dispatch(
     if path == "/openapi.json" && method == Method::GET && app.product.is_some() {
         return Ok((
             [("Content-Type", "application/json")],
-            include_str!("../../../public/openapi.json"),
+            workspace_openapi::View::Regional.rendered(),
         )
             .into_response());
     }
     if path == "/owner-openapi.json" && method == Method::GET && app.product.is_some() {
         return Ok((
             [("Content-Type", "application/json")],
-            include_str!("../../../public/owner-openapi.json"),
+            workspace_openapi::View::Owner.rendered(),
         )
             .into_response());
     }
