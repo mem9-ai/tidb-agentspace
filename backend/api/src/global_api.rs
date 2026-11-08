@@ -274,6 +274,7 @@ struct Acquisition {
     expires: Instant,
 }
 struct App {
+    openapi: crate::openapi::Published,
     acquisition: Mutex<BTreeMap<String, Acquisition>>,
     analytics: Option<crate::analytics::Client>,
     operators: Option<crate::analytics::operator::Operators>,
@@ -709,6 +710,7 @@ impl GlobalServer {
         Ok(Self {
             listener,
             app: Arc::new(App {
+                openapi: Default::default(),
                 config,
                 acquisition: Mutex::new(BTreeMap::new()),
                 analytics,

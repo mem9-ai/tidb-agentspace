@@ -1,3 +1,5 @@
+#[path = "common/openapi.rs"]
+mod openapi;
 #[path = "sso/site.rs"]
 mod site;
 use anyhow::{Context, Result, ensure};
