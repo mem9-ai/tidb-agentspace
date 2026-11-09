@@ -350,47 +350,51 @@ impl WorkspaceServer {
             config.recover_writer_owner.as_deref(),
         )
         .await?;
-        if let Err(error) = repository.discard_regional_keys().await {
-            let _ = repository.close().await;
-            return Err(error.into());
-        }
         let workspace = Arc::new(Workspace::new(repository));
-        let product = if let Some(config) = config.product.clone() {
-            match workspace_product::Product::new(workspace.clone(), config).await {
-                Ok(p) => Some(Arc::new(p)),
-                Err(e) => {
-                    let _ = workspace.close().await;
-                    return Err(e.into());
+        let setup: Result<_> = async {
+            workspace.repository().discard_regional_keys().await?;
+            let product = match config.product.clone() {
+                Some(config) => Some(Arc::new(
+                    workspace_product::Product::new(workspace.clone(), config).await?,
+                )),
+                None => None,
+            };
+            let security = match config.security.clone() {
+                Some(settings) => Some(
+                    region_security::Runtime::open(
+                        settings,
+                        guest_runtime.is_none().then(|| config.workspace_id.clone()),
+                        metadata_port_for_security,
+                        &config.authority_id,
+                        &config.public_path,
+                        config.insecure_loopback,
+                    )
+                    .await?,
+                ),
+                None => None,
+            };
+            let sso = config
+                .sso
+                .clone()
+                .map(sso::Runtime::new)
+                .transpose()?
+                .map(Arc::new);
+            Ok((product, security, sso))
+        }
+        .await;
+        let (product, security, sso) = match setup {
+            Ok(setup) => setup,
+            Err(error) => {
+                if workspace.close().await.is_err() {
+                    return Err(workspace_contracts::ServiceError::new(
+                        503,
+                        "META_WRITER_RELEASE_UNCERTAIN",
+                    )
+                    .into());
                 }
+                return Err(error);
             }
-        } else {
-            None
         };
-        let security = if let Some(settings) = config.security.clone() {
-            Some(
-                region_security::Runtime::open(
-                    settings,
-                    if guest_runtime.is_some() {
-                        None
-                    } else {
-                        Some(config.workspace_id.clone())
-                    },
-                    metadata_port_for_security,
-                    &config.authority_id,
-                    &config.public_path,
-                    config.insecure_loopback,
-                )
-                .await?,
-            )
-        } else {
-            None
-        };
-        let sso = config
-            .sso
-            .clone()
-            .map(sso::Runtime::new)
-            .transpose()?
-            .map(Arc::new);
         let history_processor = Arc::new(history_maintenance::HistoryProcessor::new(
             workspace.clone(),
             guest_runtime
@@ -536,17 +540,15 @@ impl WorkspaceServer {
         .await;
         cancellation.cancel();
         let _ = history_stop.send(true);
-        let _ = history_task.await;
-        if let Some(task) = task {
-            task.await??;
-        }
-        if let Some(task) = connection_task {
-            task.await??;
+        let mut drained = history_task.await.is_ok();
+        for worker in [task, connection_task].into_iter().flatten() {
+            drained &= matches!(worker.await, Ok(Ok(())));
         }
         if let Some(task) = reconcile_task {
-            task.await?;
+            drained &= task.await.is_ok();
         }
         result?;
+        anyhow::ensure!(drained, "Regional background task did not stop cleanly");
         Ok(())
     }
 }

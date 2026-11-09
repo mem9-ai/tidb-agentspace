@@ -31,6 +31,67 @@ struct Session {
     origin: String,
     cookie: String,
 }
+
+#[tokio::test]
+#[ignore = "requires isolated RustFS and built native binaries"]
+async fn failed_workspace_start_rolls_back_and_failed_shutdown_requires_recovery() -> Result<()> {
+    let fixture = Fixture::start().await?;
+    let mut meta = fixture.meta("lifecycle").await?;
+    let bind = format!("127.0.0.1:{}", port()?);
+    let origin = format!("http://{bind}");
+    let workspace = "ws_lifecycle";
+    let missing = fixture.directory().join("missing-key");
+    let mut cfg = json!({
+        "bind":bind,"workspaceId":workspace,"authorityId":meta.server["authorityId"],"initializeWorkspace":true,
+        "insecureLoopback":true,"publicOrigins":[origin],"consoleOrigins":[origin],"metadata":{"transport":"remote","client":meta.client},
+        "security":{"publicOrigin":origin,"environment":"test","globalIssuer":origin,"globalSignerId":"global",
+            "globalPublicKeyFile":missing,"regionalSignerId":"regional","regionalSigningKeyFile":missing,"regionalPublicKeyFile":missing,
+            "control":{"bind":"127.0.0.1:0","certificateFile":missing,"privateKeyFile":missing,"clientCaFile":missing,"globalClientCertificates":[]}}
+    });
+    let file = config(fixture.directory(), "workspace", &cfg)?;
+    let roles = json!([{"kind":"workspace","configFile":file}]);
+    let mut failed = launch(fixture.directory(), &roles)?;
+    assert!(
+        !failed
+            .wait_for_exit(Duration::from_secs(15))
+            .await?
+            .success()
+    );
+    let mut read = json!({"op":"get","scope":{"authorityId":meta.server["authorityId"],"ownerKind":"workspace","ownerId":workspace,"family":"workspace","partitionId":"primary"},"keys":["system/writer","state/workspace"]});
+    let records = meta.call(read.clone()).await?["records"].clone();
+    // The durable core proves this failed after acquiring the writer.
+    assert_eq!(records["state/workspace"]["value"]["id"], workspace);
+    assert!(records["system/writer"].is_null());
+    read["keys"] = json!(["system/writer"]);
+
+    cfg.as_object_mut().unwrap().remove("security");
+    cfg.as_object_mut().unwrap().remove("publicOrigins");
+    cfg["initializeWorkspace"] = false.into();
+    private_json(&file, &cfg)?;
+    let mut api = launch(fixture.directory(), &roles)?;
+    let _ = Session::connect(&mut api, &bind).await?;
+    let owned = meta.call(read.clone()).await?["records"]["system/writer"].clone();
+    let owner = owned["value"]["ownerId"]
+        .as_str()
+        .context("writer missing")?;
+    // Make writer release definitely unavailable before requesting a graceful exit.
+    meta.process.stop_cleanly().await?;
+    api.terminate()?;
+    assert!(!api.wait_for_exit(Duration::from_secs(15)).await?.success());
+    let restored = fixture.start_meta(meta.server.clone(), false, None).await?;
+    assert_eq!(
+        restored.call(read.clone()).await?["records"]["system/writer"],
+        owned
+    );
+
+    cfg["recoverWriterOwner"] = owner.into();
+    private_json(&file, &cfg)?;
+    let mut api = launch(fixture.directory(), &roles)?;
+    let _ = Session::connect(&mut api, &bind).await?;
+    api.stop_cleanly().await?;
+    assert!(restored.call(read).await?["records"]["system/writer"].is_null());
+    Ok(())
+}
 impl Session {
     async fn connect(process: &mut Process, bind: &str) -> Result<Self> {
         let client = http_client()?;

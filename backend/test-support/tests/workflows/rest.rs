@@ -262,9 +262,8 @@ async fn setup_history(f: &mut Workspaces, full: &Key, read: &Key) -> Result<()>
     }
     Ok(())
 }
-async fn fresh_setup(embedded: bool, crash: bool) -> Result<()> {
+async fn verify_setup_recovery(f: &mut Workspaces, crash: bool) -> Result<()> {
     use workspace_test_support::provider::SqlResponse;
-    let mut f = Workspaces::start(embedded, true).await?;
     let fail = Arc::new(std::sync::atomic::AtomicBool::new(true));
     let flag = fail.clone();
     let entered = Arc::new(tokio::sync::Notify::new());
@@ -292,9 +291,12 @@ async fn fresh_setup(embedded: bool, crash: bool) -> Result<()> {
             .header("Idempotency-Key", id)
             .json(&json!({"name":name,"kind":"postgresql","region":"automatic"}))
     };
-    let resource = check(create(&f, "partial-setup", "partial-resource"), 201, "")
-        .await?
-        .data;
+    let name = if crash {
+        "crashed-setup"
+    } else {
+        "partial-setup"
+    };
+    let resource = check(create(f, name, name), 201, "").await?.data;
     assert_ne!(resource["data"]["status"], "active");
     let id = text(&resource["data"], "id");
     let setup = |f: &Workspaces, id: &str, attempt: &str| {
@@ -303,7 +305,7 @@ async fn fresh_setup(embedded: bool, crash: bool) -> Result<()> {
     };
     if crash {
         hold.store(true, std::sync::atomic::Ordering::SeqCst);
-        let active = tokio::spawn(send(setup(&f, id, "crashed")));
+        let active = tokio::spawn(send(setup(f, id, "crashed")));
         tokio::time::timeout(Duration::from_secs(15), entered.notified()).await?;
         let state = check(
             f.owner(0, Method::GET, &format!("/resources/{id}/setup-attempts")),
@@ -314,19 +316,19 @@ async fn fresh_setup(embedded: bool, crash: bool) -> Result<()> {
         .data;
         assert_eq!(state["data"].as_array().unwrap().len(), 1);
         assert_eq!(state["data"][0]["status"], "outcome-unknown");
-        let before = statements(&f);
+        let before = statements(f);
         f.restart(true).await?;
         hold.store(false, std::sync::atomic::Ordering::SeqCst);
         fail.store(false, std::sync::atomic::Ordering::SeqCst);
         release.notify_one();
         let _ = active.await?;
         assert_eq!(
-            check(setup(&f, id, "crashed"), 201, "").await?.data["data"],
+            check(setup(f, id, "crashed"), 201, "").await?.data["data"],
             state["data"][0]
         );
-        assert_eq!(statements(&f), before);
+        assert_eq!(statements(f), before);
         assert_eq!(
-            check(setup(&f, id, "explicit-new-attempt"), 201, "")
+            check(setup(f, id, "explicit-new-attempt"), 201, "")
                 .await?
                 .data["data"]["status"],
             "succeeded"
@@ -340,10 +342,10 @@ async fn fresh_setup(embedded: bool, crash: bool) -> Result<()> {
             let s = f.provider.state.lock().unwrap();
             (s.database_creates, s.account_creates)
         };
-        let before = counts(&f);
+        let before = counts(f);
         fail.store(false, std::sync::atomic::Ordering::SeqCst);
         assert_eq!(
-            check(setup(&f, id, "resume"), 201, "").await?.data["data"]["status"],
+            check(setup(f, id, "resume"), 201, "").await?.data["data"]["status"],
             "succeeded"
         );
         let after = f.records(0, &keys).await?;
@@ -355,23 +357,23 @@ async fn fresh_setup(embedded: bool, crash: bool) -> Result<()> {
             after[&binding]["value"]["instanceId"],
             saved[&binding]["value"]["instanceId"]
         );
-        assert_eq!(counts(&f), before);
+        assert_eq!(counts(f), before);
         f.provider.state.lock().unwrap().lost = true;
-        let unknown = check(create(&f, "lost-setup", "lost-resource"), 201, "")
+        let unknown = check(create(f, "lost-setup", "lost-resource"), 201, "")
             .await?
             .data;
         f.provider.state.lock().unwrap().lost = false;
         assert_ne!(unknown["data"]["status"], "active");
         let id = text(&unknown["data"], "id");
-        let recovered = check(setup(&f, id, "reconcile"), 201, "").await?.data;
+        let recovered = check(setup(f, id, "reconcile"), 201, "").await?.data;
         assert_eq!(recovered["data"]["status"], "succeeded");
-        let calls_before = calls(&f);
+        let calls_before = calls(f);
         f.restart(true).await?;
         assert_eq!(
-            check(setup(&f, id, "reconcile"), 201, "").await?.data,
+            check(setup(f, id, "reconcile"), 201, "").await?.data,
             recovered
         );
-        assert_eq!(calls(&f), calls_before);
+        assert_eq!(calls(f), calls_before);
     }
     Ok(())
 }
@@ -472,6 +474,8 @@ pub(super) async fn run(embedded: bool) -> Result<()> {
         .await?;
         assert_eq!(calls(&f), before);
     }
-    fresh_setup(embedded, false).await?;
-    fresh_setup(embedded, true).await
+    // Each scenario creates its own database and installs its own fault hook.
+    let mut f = Workspaces::start(embedded, true).await?;
+    verify_setup_recovery(&mut f, false).await?;
+    verify_setup_recovery(&mut f, true).await
 }

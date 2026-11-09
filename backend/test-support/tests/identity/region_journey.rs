@@ -120,7 +120,7 @@ async fn pending_reconciliation(
     );
     let reconnect = new_key(g, ws, cookie, &["resources:read"], resources, now() + 3600).await?;
     assert_eq!(reconnect["regionalStatus"], "applied");
-    r.stop()?;
+    r.stop().await?;
     assert_eq!(
         revoke(g, ws, cookie, &reconnect).await?["regionalStatus"],
         "pending"
@@ -581,7 +581,7 @@ async fn regional_token_enrollment_delivery_and_outage_recovery() -> Result<()> 
     assert_eq!(extended["regionalContinuity"], "eligible");
     assert_eq!(extended["data"]["keyVersion"], 2);
     let health = global_meta.health().await?;
-    g.process.as_mut().unwrap().crash()?;
+    g.crash()?;
     global_meta.process.crash()?;
     tokio::time::sleep(Duration::from_secs(
         4.max((expires + 1).saturating_sub(now())),
@@ -627,7 +627,7 @@ async fn regional_token_enrollment_delivery_and_outage_recovery() -> Result<()> 
     data(&r, ws, &resources, &token, Some((&mut saved, &proof))).await?;
     assert_eq!(counts(), before);
     assert_eq!(credentials.lock().unwrap().len(), native_credentials);
-    r.stop()?;
+    r.stop().await?;
     let restored = f
         .start_meta(
             global_meta.server.clone(),
@@ -657,6 +657,6 @@ async fn regional_token_enrollment_delivery_and_outage_recovery() -> Result<()> 
         .0["data"]["grantRef"],
         keep["data"]["grantRef"]
     );
-    g.stop()?;
+    g.stop().await?;
     oidc.close().await
 }

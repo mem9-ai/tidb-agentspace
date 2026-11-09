@@ -165,6 +165,10 @@ independently, but only the primary job saves it. The baseline unsharded integra
 15m16s in [main CI at `650a196`](https://github.com/mem9-ai/tidb.ai/actions/runs/41425499855);
 measure partitioned CI on comparable runners before claiming a speedup.
 
+The primary Rust/S3 job also exercises the published clients against native services on
+full runs. This puts SDK installation and verification on the shorter of the two jobs,
+and keeps the same verification on the unsharded fallback.
+
 Dev CD no longer triggers on PRs or repeats quality/native commands. Its read-only verify
 job runs `scripts/require-ci.mjs full "$SOURCE_SHA"`. In parallel, an unprivileged main-only
 job warms an image cache named for that exact SHA, without publishing or deployment credentials.
@@ -345,6 +349,11 @@ for recovery. A readiness failure should identify the Workspace, the startup or 
 phase, and the last observed health status or sanitized role-startup error.
 Shutdown may interrupt background policy delivery. The next worker resumes from the
 durable pending record and removes it only after confirming the Regional receipt.
+
+The test Meta service flushes its SlateDB write-ahead log every 10 ms when its object
+store uses validated loopback HTTP. This reduces the wait between sequential writes to
+isolated RustFS. Every commit still waits for remote durability. Local development and
+hosted storage retain SlateDB's default batching interval.
 
 The Analytics producer test checks queue capacity and verifies that startup and enqueue
 make no connection to the collector. Its one-second Linux budget measures producer

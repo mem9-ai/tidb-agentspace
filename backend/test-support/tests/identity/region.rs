@@ -127,14 +127,15 @@ impl Regional {
         region.restart(f).await?;
         Ok(region)
     }
-    fn stop(&mut self) -> Result<()> {
-        if let Some(mut p) = self.process.take() {
-            p.stop()?;
+    async fn stop(&mut self) -> Result<()> {
+        if let Some(p) = self.process.as_mut() {
+            p.stop_cleanly().await?;
+            self.process.take();
         }
         Ok(())
     }
     async fn restart(&mut self, f: &Fixture) -> Result<()> {
-        self.stop()?;
+        self.stop().await?;
         private_json(&f.directory().join("regional-http"), &self.config)?;
         let mut p = Process::spawn(
             std::process::Command::new(binary("workspace-backend"))

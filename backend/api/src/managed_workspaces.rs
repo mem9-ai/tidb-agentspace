@@ -723,16 +723,23 @@ impl ManagedWorkspaces {
         {
             return Err(ServiceError::new(409, "WORKSPACE_POOL_BUSY"));
         }
-        let entries = std::mem::take(&mut state.entries);
+        let mut failed = state.release_uncertain;
+        // Keep each cached entry until its writer is released. Cancellation leaves the
+        // owner available for a later close, and concurrent close sees active references.
+        let entries: Vec<_> = state
+            .entries
+            .iter()
+            .map(|(id, cached)| (id.clone(), cached.entry.clone()))
+            .collect();
         drop(state);
-        let mut failed = false;
-        for cached in entries.into_values() {
-            if cached.entry.workspace.close().await.is_err() {
+        for (id, entry) in entries {
+            if entry.workspace.close().await.is_err() {
                 failed = true;
+            } else {
+                self.state.lock().await.entries.remove(&id);
             }
         }
         if failed {
-            self.state.lock().await.release_uncertain = true;
             Err(ServiceError::new(503, "WORKSPACE_RELEASE_UNCERTAIN"))
         } else {
             Ok(())
@@ -1339,6 +1346,32 @@ mod pool_concurrency_tests {
     }
 
     #[tokio::test]
+    async fn cancelled_writer_release_is_verified_on_the_next_close() {
+        let a = id(0);
+        let gate = Arc::new(WriterGate::new(1, a.clone()));
+        let pool = Arc::new(pool(gate.clone(), 1));
+        drop(pool.acquire(&a, &credential(&a)).await.unwrap());
+        let repo = pool.state.lock().await.entries[&a]
+            .entry
+            .workspace
+            .repository();
+        gate.pause_release.store(true, Ordering::Release);
+        let close = tokio::spawn({
+            let pool = pool.clone();
+            async move { pool.close().await }
+        });
+        gate.entered.notified().await;
+        assert_eq!(pool.close().await.unwrap_err().code, "WORKSPACE_POOL_BUSY");
+        close.abort();
+        assert!(close.await.unwrap_err().is_cancelled());
+        assert!(gate.writers.lock().unwrap().contains_key(&a));
+        assert_eq!(repo.health().await.unwrap_err().code, "META_WRITER_CLOSED");
+        pool.close().await.unwrap();
+        assert!(!gate.writers.lock().unwrap().contains_key(&a));
+        repo.close().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn uncertain_writer_release_fails_closed_without_reopening() {
         let a = id(0);
         let b = id(1);
@@ -1356,6 +1389,14 @@ mod pool_concurrency_tests {
         );
         assert_eq!(gate.claim_count(&a), 1);
         assert_eq!(gate.claim_count(&b), 0);
+        assert_eq!(
+            pool.close().await.unwrap_err().code,
+            "WORKSPACE_RELEASE_UNCERTAIN"
+        );
+        assert_eq!(
+            pool.close().await.unwrap_err().code,
+            "WORKSPACE_RELEASE_UNCERTAIN"
+        );
         drop(pool);
         let restarted = self::pool(gate.clone(), 1);
         let entry = restarted.acquire(&a, &credential(&a)).await.unwrap();

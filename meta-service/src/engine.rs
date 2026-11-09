@@ -35,8 +35,16 @@ pub struct Engine {
     owner: Owner,
     healthy: AtomicBool,
     closed: AtomicBool,
-    lifecycle: RwLock<()>,
+    lifecycle: RwLock<CloseProgress>,
 }
+#[derive(Clone, Copy)]
+enum CloseProgress {
+    Serving,
+    ClosingDatabase,
+    ReleasingOwnership,
+    Released,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Owner {
@@ -218,13 +226,20 @@ impl Engine {
                 },
             )
             .await?;
-        let db = database_builder(
+        let mut builder = database_builder(
             format!("{}/slatedb", config.s3.prefix),
             store.clone(),
             config.block_cache_mib.unwrap_or(0),
-        )
-        .build()
-        .await?;
+        );
+        // An HTTP object store is validated to be loopback-only. Isolated test
+        // stores can flush smaller WAL batches without paying hosted PUT costs.
+        if config.environment == "test" && config.s3.endpoint.starts_with("http://") {
+            builder = builder.with_settings(slatedb::config::Settings {
+                flush_interval: Some(Duration::from_millis(10)),
+                ..Default::default()
+            });
+        }
+        let db = builder.build().await?;
         Ok(Self {
             config,
             db,
@@ -233,7 +248,7 @@ impl Engine {
             owner,
             healthy: AtomicBool::new(true),
             closed: AtomicBool::new(false),
-            lifecycle: RwLock::new(()),
+            lifecycle: RwLock::new(CloseProgress::Serving),
         })
     }
     pub async fn barrier(&self) -> Outcome<()> {
@@ -666,11 +681,22 @@ impl Engine {
         json!({"authorityId":self.config.authority_id,"installationId":self.config.installation_id,"engine":"slatedb","engineVersion":"0.18.0","ownerId":self.owner.id,"capabilities":["recordsV1","workspaceWriterFencing"]})
     }
     pub async fn close(&self) -> Result<()> {
-        let _drained = self.lifecycle.write().await;
-        if self.closed.swap(true, Ordering::AcqRel) {
-            return Ok(());
+        let mut progress = self.lifecycle.write().await;
+        match *progress {
+            CloseProgress::Released => return Ok(()),
+            CloseProgress::ClosingDatabase => {
+                bail!("Previous SlateDB close was not confirmed; preserve ownership for recovery")
+            }
+            CloseProgress::Serving => {
+                self.closed.store(true, Ordering::Release);
+                *progress = CloseProgress::ClosingDatabase;
+                self.db.close().await?;
+                // SlateDB close is not repeatable. Only the conditional owner release
+                // may be retried once the database shutdown returned successfully.
+                *progress = CloseProgress::ReleasingOwnership;
+            }
+            CloseProgress::ReleasingOwnership => {}
         }
-        self.db.close().await?;
         let path = Path::from(format!("{}/control/owner.json", self.config.s3.prefix));
         let object = self.store.get(&path).await?;
         let version = UpdateVersion {
@@ -678,7 +704,7 @@ impl Engine {
             version: object.meta.version.clone(),
         };
         let owner: Owner = serde_json::from_slice(&object.bytes().await?)?;
-        if owner.id == self.owner.id {
+        if owner.id == self.owner.id && !owner.released {
             self.store
                 .put_opts(
                     &path,
@@ -694,6 +720,7 @@ impl Engine {
                 )
                 .await?;
         }
+        *progress = CloseProgress::Released;
         Ok(())
     }
 }

@@ -92,7 +92,7 @@ async fn verified_account_login_and_guest_continuity() -> Result<()> {
         fs::read_to_string(dir.join("alice-cookie"))?
     );
     super::global::key_lifecycle(&f, &mut global, a, b, &owner_cookie).await?;
-    global.stop()?;
+    global.stop().await?;
     let mut guests = Vec::new();
     for cookie in ["guest1", "guest2"] {
         private_write(&dir.join(cookie), b"")?;

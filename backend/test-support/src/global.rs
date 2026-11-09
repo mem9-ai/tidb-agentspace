@@ -17,7 +17,7 @@ pub struct Global {
     pub origin: String,
     pub config: Value,
     pub http: Client,
-    pub process: Option<Process>,
+    process: Option<Process>,
     config_file: PathBuf,
     plan: PathBuf,
 }
@@ -55,14 +55,25 @@ impl Global {
         global.restart(f).await?;
         Ok(global)
     }
-    pub fn stop(&mut self) -> Result<()> {
-        if let Some(mut p) = self.process.take() {
-            p.stop()?;
+    pub async fn stop(&mut self) -> Result<()> {
+        if let Some(p) = self.process.as_mut() {
+            p.stop_cleanly().await?;
+            self.process.take();
         }
         Ok(())
     }
+    pub fn crash(&mut self) -> Result<()> {
+        let process = self
+            .process
+            .as_mut()
+            .context("Global host is not running")?;
+        process.ensure_running()?;
+        process.crash()?;
+        self.process.take();
+        Ok(())
+    }
     pub async fn restart(&mut self, f: &Fixture) -> Result<()> {
-        self.stop()?;
+        self.stop().await?;
         private_json(&self.config_file, &self.config)?;
         let mut p = Process::spawn(
             Command::new(binary("workspace-backend"))
