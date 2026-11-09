@@ -165,6 +165,10 @@ independently, but only the primary job saves it. The baseline unsharded integra
 15m16s in [main CI at `650a196`](https://github.com/mem9-ai/tidb.ai/actions/runs/41425499855);
 measure partitioned CI on comparable runners before claiming a speedup.
 
+The primary Rust/S3 job also exercises the published clients against native services on
+full runs. This puts SDK installation and verification on the shorter of the two jobs,
+and keeps the same verification on the unsharded fallback.
+
 Dev CD no longer triggers on PRs or repeats quality/native commands. Its read-only verify
 job runs `scripts/require-ci.mjs full "$SOURCE_SHA"`. In parallel, an unprivileged main-only
 job warms an image cache named for that exact SHA, without publishing or deployment credentials.

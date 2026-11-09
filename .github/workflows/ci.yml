@@ -235,15 +235,15 @@ jobs:
           rustc --edition=2024 "$runner.rs" -o "$runner"
           "$runner" "$CLASSIC_PROFILE"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: needs.scope.outputs.full_partition != 'true' && needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
+        if: needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
         with:
           node-version-file: .node-version
           cache: npm
       - name: Install dependencies for the public SDK tests
-        if: needs.scope.outputs.full_partition != 'true' && needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
+        if: needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
         run: npm install --global npm@11.6.2 --ignore-scripts && npm ci --ignore-scripts
       - name: Exercise the published JavaScript client against native services
-        if: needs.scope.outputs.full_partition != 'true' && needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
+        if: needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
         run: npm run test:agent-clients
       - name: Save Cargo timing reports
         if: ${{ !cancelled() }}
@@ -304,14 +304,6 @@ jobs:
           git show "$policy_ref:backend/build-tools/src/bin/workspace-verify.rs" > "$runner.rs"
           rustc --edition=2024 "$runner.rs" -o "$runner"
           "$runner" product
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - name: Install dependencies for the public SDK tests
-        run: npm install --global npm@11.6.2 --ignore-scripts && npm ci --ignore-scripts
-      - name: Exercise the published JavaScript client against native services
-        run: npm run test:agent-clients
 
   backend-scope:
     name: Backend-only scope
