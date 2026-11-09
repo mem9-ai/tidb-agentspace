@@ -17,7 +17,7 @@ pub struct Global {
     pub origin: String,
     pub config: Value,
     pub http: Client,
-    pub process: Option<Process>,
+    process: Option<Process>,
     config_file: PathBuf,
     plan: PathBuf,
 }
@@ -60,6 +60,16 @@ impl Global {
             p.stop_cleanly().await?;
             self.process.take();
         }
+        Ok(())
+    }
+    pub fn crash(&mut self) -> Result<()> {
+        let process = self
+            .process
+            .as_mut()
+            .context("Global host is not running")?;
+        process.ensure_running()?;
+        process.crash()?;
+        self.process.take();
         Ok(())
     }
     pub async fn restart(&mut self, f: &Fixture) -> Result<()> {
