@@ -17,10 +17,17 @@ fn checked(command: &mut Command) -> Result<()> {
     Ok(())
 }
 fn cargo() -> Command {
-    // cargo run sets its package directory for this executable. Forwarding it to
-    // another Cargo invocation invalidates ring's build-script fingerprint.
+    // cargo run describes the launcher package in its environment. Passing that
+    // metadata to Cargo invalidates ring's build script and its downstream crates.
     let mut command = Command::new("cargo");
-    command.env_remove("CARGO_MANIFEST_DIR");
+    for (key, _) in env::vars_os() {
+        if key
+            .to_str()
+            .is_some_and(|k| k.starts_with("CARGO_PKG_") || k.starts_with("CARGO_MANIFEST_"))
+        {
+            command.env_remove(key);
+        }
+    }
     command
 }
 
