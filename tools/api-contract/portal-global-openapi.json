@@ -1325,7 +1325,7 @@
         "summary": "List Global Keys"
       },
       "post": {
-        "description": "Owner only. Unix-second expiry. Store the returned secret securely; it cannot be retrieved or returned again.",
+        "description": "Owner only. Pass expiresInDays (1, 2, 7, 30 or 90) and the server computes the expiry; the deprecated absolute expiresAt is accepted only inside the same 90-day ceiling. Store the returned secret securely; it cannot be retrieved or returned again.",
         "operationId": "createGlobalKey",
         "parameters": [
           {
@@ -1362,41 +1362,91 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "expiresAt": {
-                    "minimum": 1,
-                    "type": "integer"
-                  },
-                  "name": {
-                    "default": "Agent key",
-                    "maxLength": 80,
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "resourceIds": {
-                    "items": {
-                      "type": "string"
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "expiresInDays": {
+                        "description": "Lifetime choice; the server computes the expiry.",
+                        "enum": [
+                          1,
+                          2,
+                          7,
+                          30,
+                          90
+                        ],
+                        "type": "integer"
+                      },
+                      "name": {
+                        "default": "Agent key",
+                        "maxLength": 80,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "resourceIds": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 1024,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "scopes": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 8,
+                        "minItems": 1,
+                        "type": "array"
+                      }
                     },
-                    "maxItems": 1024,
-                    "minItems": 1,
-                    "type": "array"
+                    "required": [
+                      "scopes",
+                      "resourceIds",
+                      "expiresInDays"
+                    ],
+                    "type": "object"
                   },
-                  "scopes": {
-                    "items": {
-                      "type": "string"
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "expiresAt": {
+                        "deprecated": true,
+                        "description": "Deprecated absolute Unix-second expiry, accepted only inside the 90-day ceiling.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "name": {
+                        "default": "Agent key",
+                        "maxLength": 80,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "resourceIds": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 1024,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "scopes": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 8,
+                        "minItems": 1,
+                        "type": "array"
+                      }
                     },
-                    "maxItems": 8,
-                    "minItems": 1,
-                    "type": "array"
+                    "required": [
+                      "scopes",
+                      "resourceIds",
+                      "expiresAt"
+                    ],
+                    "type": "object"
                   }
-                },
-                "required": [
-                  "scopes",
-                  "resourceIds",
-                  "expiresAt"
-                ],
-                "type": "object"
+                ]
               }
             }
           },
@@ -1719,17 +1769,43 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "expiresAt": {
-                    "minimum": 1,
-                    "type": "integer"
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "expiresInDays": {
+                        "description": "Renewal lifetime choice counted from now; the server computes the expiry.",
+                        "enum": [
+                          1,
+                          2,
+                          7,
+                          30,
+                          90
+                        ],
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "expiresInDays"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "expiresAt": {
+                        "deprecated": true,
+                        "description": "Deprecated absolute Unix-second expiry, accepted only inside the 90-day ceiling.",
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "expiresAt"
+                    ],
+                    "type": "object"
                   }
-                },
-                "required": [
-                  "expiresAt"
-                ],
-                "type": "object"
+                ]
               }
             }
           },

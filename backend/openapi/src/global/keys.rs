@@ -155,6 +155,70 @@ fn list_global_keys() -> Value {
     })
 }
 
+/// The two accepted lifetime forms. `expiresInDays` is the preferred one: the
+/// client picks from the product's own choices and the server computes the expiry.
+/// `expiresAt` is the deprecated absolute form, kept for clients built earlier and
+/// still bounded by the same ceiling.
+fn key_lifetime_days(description: &str) -> Value {
+    json!({"type": "integer", "enum": [1, 2, 7, 30, 90], "description": description})
+}
+
+fn key_lifetime_absolute() -> Value {
+    json!({
+        "type": "integer",
+        "minimum": 1,
+        "deprecated": true,
+        "description": "Deprecated absolute Unix-second expiry, accepted only inside the 90-day ceiling.",
+    })
+}
+
+fn key_create_branch(expiry_field: &str, expiry: Value) -> Value {
+    let mut properties = serde_json::Map::new();
+    properties.insert(
+        "name".into(),
+        json!({"type": "string", "minLength": 1, "maxLength": 80, "default": "Agent key"}),
+    );
+    properties.insert(
+        "scopes".into(),
+        json!({"type": "array", "items": string(), "minItems": 1, "maxItems": 8}),
+    );
+    properties.insert(
+        "resourceIds".into(),
+        json!({"type": "array", "items": string(), "minItems": 1, "maxItems": 1024}),
+    );
+    properties.insert(expiry_field.into(), expiry);
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": properties,
+        "required": [json!("scopes"), json!("resourceIds"), json!(expiry_field)],
+    })
+}
+
+fn key_create_request() -> Value {
+    json!({"oneOf": [
+        key_create_branch("expiresInDays", key_lifetime_days("Lifetime choice; the server computes the expiry.")),
+        key_create_branch("expiresAt", key_lifetime_absolute()),
+    ]})
+}
+
+fn key_renewal_request() -> Value {
+    json!({"oneOf": [
+        {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {"expiresInDays": key_lifetime_days("Renewal lifetime choice counted from now; the server computes the expiry.")},
+            "required": ["expiresInDays"],
+        },
+        {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {"expiresAt": key_lifetime_absolute()},
+            "required": ["expiresAt"],
+        },
+    ]})
+}
+
 fn create_global_key() -> Value {
     json!({
         "operationId": "createGlobalKey",
@@ -182,18 +246,8 @@ fn create_global_key() -> Value {
                 "content": {"application/json": {"schema": reference("Error")}},
             },
         },
-        "requestBody": request(json!({
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "name": {"type": "string", "minLength": 1, "maxLength": 80, "default": "Agent key"},
-                "scopes": {"type": "array", "items": string(), "minItems": 1, "maxItems": 8},
-                "resourceIds": {"type": "array", "items": string(), "minItems": 1, "maxItems": 1024},
-                "expiresAt": {"type": "integer", "minimum": 1},
-            },
-            "required": ["scopes", "resourceIds", "expiresAt"],
-        })),
-        "description": "Owner only. Unix-second expiry. Store the returned secret securely; it cannot be retrieved or returned again.",
+        "requestBody": request(key_create_request()),
+        "description": "Owner only. Pass expiresInDays (1, 2, 7, 30 or 90) and the server computes the expiry; the deprecated absolute expiresAt is accepted only inside the same 90-day ceiling. Store the returned secret securely; it cannot be retrieved or returned again.",
     })
 }
 
@@ -258,7 +312,7 @@ fn renew_global_key() -> Value {
                 "content": {"application/json": {"schema": reference("Error")}},
             },
         },
-        "requestBody": request(closed_object([("expiresAt", json!({"type": "integer", "minimum": 1}))])),
+        "requestBody": request(key_renewal_request()),
         "description": "Extends expiry while retaining the Key secret, advances Key version and invalidates old Global Tokens. Regional application is reported separately. Only an explicit same-secret renewal durably observed by both authorities before the previous expiry enables existing proof-bound families to cross versions. An unreachable Region remains pending; unavailable continuity requires fresh enrollment.",
     })
 }

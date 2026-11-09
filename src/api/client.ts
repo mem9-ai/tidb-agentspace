@@ -493,7 +493,7 @@ export const workspaceApi = {
         name: body.name,
         scopes: body.scopes,
         resourceIds: body.resourceIds,
-        expiresAt: Math.floor(Date.now() / 1000) + body.expiresInDays * 86400,
+        expiresInDays: body.expiresInDays,
       },
     });
     const value = await globalResult(result);

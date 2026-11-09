@@ -434,11 +434,19 @@ export const test = base.extend({
       if (path.startsWith('/keys/') && method === 'GET')
         return reply(summary(state.keys.find((key) => key.id === path.slice('/keys/'.length))));
       if (path === '/keys' && method === 'POST') {
+        // The Console names a supported lifetime; the server computes the expiry.
+        // The deprecated absolute form is still honoured for older bundles.
+        const absoluteExpiry = Number.isInteger(body.expiresInDays)
+          ? Math.floor(Date.now() / 1000) + body.expiresInDays * 86400
+          : body.expiresAt;
+        if (!Number.isInteger(absoluteExpiry)) {
+          return reply({ error: { code: 'INVALID_EXPIRY' } }, 400);
+        }
         const key = {
           ...body,
           id: 'key_fixture',
           createdAt: new Date().toISOString(),
-          expiresAt: new Date(body.expiresAt * 1000).toISOString(),
+          expiresAt: new Date(absoluteExpiry * 1000).toISOString(),
           revokedAt: null,
           regionalStatus: state.keyCreateRegionalStatus || 'applied',
         };

@@ -240,7 +240,12 @@ struct CreateKey {
     name: String,
     scopes: Vec<String>,
     resource_ids: Vec<String>,
-    expires_at: i64,
+    /// Deprecated absolute expiry, accepted only inside the same ceiling.
+    #[serde(default)]
+    expires_at: Option<i64>,
+    /// Preferred lifetime choice; the server computes the absolute expiry.
+    #[serde(default)]
+    expires_in_days: Option<i64>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -252,7 +257,10 @@ struct TokenInput {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Renewal {
-    expires_at: i64,
+    #[serde(default)]
+    expires_at: Option<i64>,
+    #[serde(default)]
+    expires_in_days: Option<i64>,
 }
 struct LoginFlow {
     workspace: Option<String>,
@@ -1390,6 +1398,32 @@ fn key_expiry_in_range(now: i64, expires_at: i64) -> bool {
             .is_some_and(|lifetime| lifetime <= MAX_KEY_LIFETIME)
 }
 
+/// Lifetime choices the product offers. A client picks one of these; the absolute
+/// expiry is computed on the server and never taken from the request.
+const KEY_LIFETIME_CHOICES: [i64; 5] = [1, 2, 7, 30, 90];
+
+/// Resolves the expiry the server will store. `expiresInDays` is the preferred form;
+/// `expiresAt` stays accepted for clients built before it existed, inside the same
+/// ceiling, and is deprecated in the contract.
+fn resolve_key_expiry(
+    now: i64,
+    expires_in_days: Option<i64>,
+    expires_at: Option<i64>,
+) -> workspace_contracts::Result<i64> {
+    match (expires_in_days, expires_at) {
+        (Some(days), None) => {
+            if !KEY_LIFETIME_CHOICES.contains(&days) {
+                return Err(err(400, "INVALID_EXPIRY"));
+            }
+            days.checked_mul(86_400)
+                .and_then(|lifetime| now.checked_add(lifetime))
+                .ok_or_else(|| err(400, "INVALID_EXPIRY"))
+        }
+        (None, Some(at)) if key_expiry_in_range(now, at) => Ok(at),
+        _ => Err(err(400, "INVALID_EXPIRY")),
+    }
+}
+
 async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Response> {
     let h = request.headers().clone();
     let method = request.method().clone();
@@ -1856,8 +1890,13 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
         }
         ("POST", ["keys"]) => {
             let mut input: CreateKey = parse(&h, &bytes)?;
+            let mut expires_at = resolve_key_expiry(
+                app.clock.now().await?,
+                input.expires_in_days,
+                input.expires_at,
+            )?;
             if let Some(expiry) = owner.guest_expires_at {
-                input.expires_at = input.expires_at.min(expiry);
+                expires_at = expires_at.min(expiry);
             }
             input.scopes.sort();
             input.scopes.dedup();
@@ -1882,11 +1921,6 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
                 || input.resource_ids.len() > 1 && input.resource_ids.iter().any(|r| r == "*")
             {
                 return Err(err(400, "INVALID_GRANTS"));
-            }
-            // The lifetime is a privilege: never trust the absolute expiry a client
-            // computed, and never persist a grant for a request that can't be issued.
-            if !key_expiry_in_range(app.clock.now().await?, input.expires_at) {
-                return Err(err(400, "INVALID_EXPIRY"));
             }
             app.region_descriptor(&owner.region_id)
                 .await
@@ -1918,7 +1952,7 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
                         workspace_id: workspace.into(),
                         principal_id,
                         grant_ref,
-                        expires_at: input.expires_at,
+                        expires_at,
                     },
                     &mutation_id,
                 )
@@ -2035,16 +2069,16 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
             let operation = mutation(&h)?;
             if method == Method::PATCH {
                 let update: Renewal = parse(&h, &bytes)?;
+                let expires_at = resolve_key_expiry(
+                    app.clock.now().await?,
+                    update.expires_in_days,
+                    update.expires_at,
+                )?;
                 if owner
                     .guest_expires_at
-                    .is_some_and(|expiry| update.expires_at > expiry)
+                    .is_some_and(|expiry| expires_at > expiry)
                 {
                     return Err(err(400, "GUEST_EXPIRY_LIMIT"));
-                }
-                // Same ceiling as creation: a renewal is not a way to mint an
-                // effectively permanent Key.
-                if !key_expiry_in_range(app.clock.now().await?, update.expires_at) {
-                    return Err(err(400, "INVALID_EXPIRY"));
                 }
                 let region = app.grant(&old).await?.region_id;
                 app.mark_region_sync(
@@ -2060,13 +2094,7 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
                 .await?;
                 let key = app
                     .keys
-                    .renew(
-                        workspace,
-                        key,
-                        old.key_version,
-                        update.expires_at,
-                        &operation,
-                    )
+                    .renew(workspace, key, old.key_version, expires_at, &operation)
                     .await?;
                 let observed = app.clock.now().await?;
                 if observed < old.expires_at {
