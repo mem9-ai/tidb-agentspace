@@ -16,8 +16,16 @@ fn checked(command: &mut Command) -> Result<()> {
     }
     Ok(())
 }
+fn cargo() -> Command {
+    // cargo run sets its package directory for this executable. Forwarding it to
+    // another Cargo invocation invalidates ring's build-script fingerprint.
+    let mut command = Command::new("cargo");
+    command.env_remove("CARGO_MANIFEST_DIR");
+    command
+}
+
 fn tests(targets: &[&str], names: &[&str]) -> Result<()> {
-    let mut cmd = Command::new("cargo");
+    let mut cmd = cargo();
     cmd.args(["test", "--locked"]);
     if targets.is_empty() {
         cmd.args(["-p", SUPPORT, "--tests"]);
@@ -72,7 +80,7 @@ fn product(name: &str) -> bool {
         )
 }
 fn separate_hosts() -> Result<()> {
-    checked(Command::new("cargo").args([
+    checked(cargo().args([
         "test",
         "--locked",
         "--workspace",
@@ -120,7 +128,7 @@ fn run(profile: &str) -> Result<()> {
                 .collect();
             tests(&group, &[])?;
             if profile == "other" {
-                checked(Command::new("cargo").args(["test", "--locked", "-p", SUPPORT, "--lib"]))?;
+                checked(cargo().args(["test", "--locked", "-p", SUPPORT, "--lib"]))?;
                 separate_hosts()?;
             }
             Ok(())

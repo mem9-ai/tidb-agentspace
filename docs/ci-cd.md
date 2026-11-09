@@ -339,7 +339,9 @@ Clippy, Rust unit-test and native/S3 integration-test steps. Together these run 
 checks as local `npm run backend:check`; warnings remain errors and integration tests still
 use isolated real RustFS. Two Cargo jobs and disabled debug symbols bound runner memory.
 Builds, unit tests and named integration targets select the whole Cargo workspace so
-their dependency features match. The default unit run also discovers future targets and
+their dependency features match. The Rust acceptance runner clears its parent Cargo
+package directory before launching Cargo, keeping the ring build-script inputs stable.
+The default unit run also discovers future targets and
 doctests. RustFS cases still run in their isolated acceptance partitions. SDK CI runs
 the client fixture built by the same job; standalone SDK testing can build it with Cargo.
 
