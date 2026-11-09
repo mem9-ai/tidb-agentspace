@@ -249,7 +249,7 @@ async fn short_expiry(
     resources: &Value,
     proof: &Proof,
 ) -> Result<()> {
-    let expires = now() + 15;
+    let expires = proof.clock.now() + 120;
     let fixed = new_key(g, ws, cookie, &["resources:read"], resources, expires).await?;
     let late = new_key(g, ws, cookie, &["resources:read"], resources, expires).await?;
     let fixed = r
@@ -267,7 +267,7 @@ async fn short_expiry(
         extend_key(g, ws, cookie, &late).await?["regionalStatus"],
         "pending"
     );
-    tokio::time::sleep(Duration::from_secs((expires + 1).saturating_sub(now()))).await;
+    proof.clock.advance_past(expires)?;
     for expired in [&fixed, &family] {
         r.security(r.refresh(ws, expired, Some(proof)), &[401])
             .await?;
@@ -293,6 +293,8 @@ async fn short_expiry(
 async fn regional_token_enrollment_delivery_and_outage_recovery() -> Result<()> {
     let f = Fixture::start().await?;
     let dir = f.directory();
+    let clock = ExpiryClock::in_directory(dir);
+    clock.initialize()?;
     let mut global_meta = f.meta("global").await?;
     let meta = f.meta("other").await?;
     private_json(&dir.join("g-meta"), &global_meta.client)?;
@@ -330,7 +332,14 @@ async fn regional_token_enrollment_delivery_and_outage_recovery() -> Result<()> 
         "aw_global_owner={}",
         fs::read_to_string(dir.join("bob-cookie"))?
     );
-    let mut g = Global::start(&f, &global_meta, origin, settings).await?;
+    let mut g = Global::start_with_host(
+        &f,
+        &global_meta,
+        origin,
+        settings,
+        binary("examples").join("expiry_clock_host"),
+    )
+    .await?;
     g.config["initializeClock"] = false.into();
     let provider = Provider::start(false).await?;
     provider.state.lock().unwrap().require_file_auth = true;
@@ -384,7 +393,7 @@ async fn regional_token_enrollment_delivery_and_outage_recovery() -> Result<()> 
         records["records"]["ownership/onboarding"]["value"]["workspaceId"],
         first["workspaceId"]
     );
-    let proof = Proof::create()?;
+    let proof = Proof::create(clock)?;
     let setup = new_key(
         &g,
         ws,
@@ -570,7 +579,7 @@ async fn regional_token_enrollment_delivery_and_outage_recovery() -> Result<()> 
         .collect()
     );
     short_expiry(&f, &mut g, &r, ws, &cookie, &resources, &proof).await?;
-    let expires = now() + 30;
+    let expires = proof.clock.now() + 120;
     let keep = new_key(&g, ws, &cookie, &DATA_SCOPES, &resources, expires).await?;
     let mut continuity = r
         .enroll(ws, &issuance(&g, ws, &keep, &proof, 201).await?, &proof)
@@ -583,10 +592,7 @@ async fn regional_token_enrollment_delivery_and_outage_recovery() -> Result<()> 
     let health = global_meta.health().await?;
     g.crash()?;
     global_meta.process.crash()?;
-    tokio::time::sleep(Duration::from_secs(
-        4.max((expires + 1).saturating_sub(now())),
-    ))
-    .await;
+    proof.clock.advance_past(expires)?;
     result(
         r.req(Method::GET, ws, "/resources").bearer_auth(&token),
         401,

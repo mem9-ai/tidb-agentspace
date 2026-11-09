@@ -103,6 +103,7 @@ pub enum Clock {
     Meta {
         metadata: Arc<dyn Metadata>,
         scope: Scope,
+        read_time: fn() -> i64,
         state: tokio::sync::Mutex<(i64, Value)>,
         reserved_until: AtomicI64,
         last_observed: AtomicI64,
@@ -119,6 +120,16 @@ impl Clock {
         authority: &str,
         initialize: bool,
     ) -> anyhow::Result<Self> {
+        Self::open_meta_with_time(metadata, authority, initialize, None).await
+    }
+
+    pub async fn open_meta_with_time(
+        metadata: Arc<dyn Metadata>,
+        authority: &str,
+        initialize: bool,
+        time_source: Option<fn() -> i64>,
+    ) -> anyhow::Result<Self> {
+        let read_time = time_source.unwrap_or(|| chrono::Utc::now().timestamp());
         let scope = Scope::system(
             authority,
             "control-plane",
@@ -134,7 +145,7 @@ impl Clock {
         let mut record = existing["records"]["time-floor"].clone();
         if initialize {
             anyhow::ensure!(record.is_null(), "Security clock already initialized");
-            let now = chrono::Utc::now().timestamp();
+            let now = read_time();
             anyhow::ensure!(now > 0, "Invalid security clock");
             metadata
                 .execute(MetaRequest::Commit {
@@ -154,7 +165,7 @@ impl Clock {
             .ok_or_else(|| anyhow::anyhow!("Security clock missing or invalid"))?;
         let version = record["version"].clone();
         anyhow::ensure!(!version.is_null(), "Security clock version missing");
-        let now = chrono::Utc::now().timestamp();
+        let now = read_time();
         anyhow::ensure!(
             floor <= now.saturating_add(META_LEASE_SECONDS),
             "Security clock rollback"
@@ -162,19 +173,16 @@ impl Clock {
         if floor > now {
             tokio::time::sleep(std::time::Duration::from_secs((floor - now) as u64)).await;
         }
-        let now = chrono::Utc::now().timestamp();
+        let now = read_time();
         anyhow::ensure!(now >= floor, "Security clock rollback");
         Ok(Self::Meta {
             metadata,
             scope,
+            read_time,
             state: tokio::sync::Mutex::new((floor, version)),
             reserved_until: AtomicI64::new(floor),
             last_observed: AtomicI64::new(now),
         })
-    }
-
-    fn observe(last: &AtomicI64) -> Result<i64> {
-        Self::observe_with(last, || chrono::Utc::now().timestamp())
     }
 
     fn observe_with(last: &AtomicI64, mut read_time: impl FnMut() -> i64) -> Result<i64> {
@@ -198,10 +206,11 @@ impl Clock {
             Self::File(clock) => clock.now(),
             Self::Meta {
                 reserved_until,
+                read_time,
                 last_observed,
                 ..
             } => {
-                let now = Self::observe(last_observed)?;
+                let now = Self::observe_with(last_observed, read_time)?;
                 if now > reserved_until.load(Ordering::Acquire) {
                     return Err(ServiceError::new(503, "TRUSTED_CLOCK_UNAVAILABLE"));
                 }
@@ -218,18 +227,19 @@ impl Clock {
                 scope,
                 state,
                 reserved_until,
+                read_time,
                 last_observed,
             } => {
                 // A reservation is usable only after its Meta commit is durable. While it
                 // remains valid, the synchronous authorization snapshot and this async path
                 // need neither an object-store request nor the renewal mutex.
-                let now = Self::observe(last_observed)?;
+                let now = Self::observe_with(last_observed, read_time)?;
                 if now < reserved_until.load(Ordering::Acquire) {
                     return Ok(now);
                 }
                 let mut state = state.lock().await;
                 for _ in 0..4 {
-                    let now = Self::observe(last_observed)?;
+                    let now = Self::observe_with(last_observed, read_time)?;
                     if now < state.0 {
                         return Ok(now);
                     }
