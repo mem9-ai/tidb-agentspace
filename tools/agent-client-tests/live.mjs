@@ -8,9 +8,12 @@ import { connectAgent } from '../../src/api/agent-client.ts';
 
 // These are tests of the distributed JS and Python clients. The fixture owns all storage,
 // keys and native processes and releases them on EOF, including failed client assertions.
+const fixture = process.argv[2];
 const native = spawn(
-  'cargo',
-  ['run', '--quiet', '--locked', '-p', 'workspace-test-support', '--bin', 'client-fixture'],
+  fixture ?? 'cargo',
+  fixture
+    ? []
+    : ['run', '--quiet', '--locked', '-p', 'workspace-test-support', '--bin', 'client-fixture'],
   { stdio: ['pipe', 'pipe', 'inherit'] },
 );
 const exited = once(native, 'exit');

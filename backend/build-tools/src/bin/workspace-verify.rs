@@ -16,24 +16,34 @@ fn checked(command: &mut Command) -> Result<()> {
     }
     Ok(())
 }
-fn tests(package: &str, targets: &[&str], names: &[&str]) -> Result<()> {
-    let mut cmd = Command::new("cargo");
-    cmd.args(["test", "--locked", "-p", package]);
+fn cargo() -> Command {
+    // cargo run describes the launcher package in its environment. Passing that
+    // metadata to Cargo invalidates ring's build script and its downstream crates.
+    let mut command = Command::new("cargo");
+    for (key, _) in env::vars_os() {
+        if key
+            .to_str()
+            .is_some_and(|k| k.starts_with("CARGO_PKG_") || k.starts_with("CARGO_MANIFEST_"))
+        {
+            command.env_remove(key);
+        }
+    }
+    command
+}
+
+fn tests(targets: &[&str], names: &[&str]) -> Result<()> {
+    let mut cmd = cargo();
+    cmd.args(["test", "--locked"]);
     if targets.is_empty() {
-        cmd.arg("--tests");
+        cmd.args(["-p", SUPPORT, "--tests"]);
+    } else {
+        // All named acceptance targets share the binaries' workspace feature selection.
+        cmd.arg("--workspace");
     }
     for target in targets {
         cmd.args(["--test", target]);
     }
-    cmd.args([
-        "--",
-        if package == SUPPORT {
-            "--include-ignored"
-        } else {
-            "--ignored"
-        },
-        "--test-threads=1",
-    ]);
+    cmd.args(["--", "--include-ignored", "--test-threads=1"]);
     if names.is_empty() {
         return checked(&mut cmd);
     }
@@ -77,7 +87,7 @@ fn product(name: &str) -> bool {
         )
 }
 fn separate_hosts() -> Result<()> {
-    checked(Command::new("cargo").args([
+    checked(cargo().args([
         "test",
         "--locked",
         "--workspace",
@@ -114,7 +124,7 @@ fn run(profile: &str) -> Result<()> {
     }
     match profile {
         "all" => {
-            tests(SUPPORT, &[], &[])?;
+            tests(&[], &[])?;
             separate_hosts()
         }
         "product" | "other" => {
@@ -123,22 +133,20 @@ fn run(profile: &str) -> Result<()> {
                 .map(String::as_str)
                 .filter(|name| product(name) == (profile == "product"))
                 .collect();
-            tests(SUPPORT, &group, &[])?;
+            tests(&group, &[])?;
             if profile == "other" {
-                checked(Command::new("cargo").args(["test", "--locked", "-p", SUPPORT, "--lib"]))?;
+                checked(cargo().args(["test", "--locked", "-p", SUPPORT, "--lib"]))?;
                 separate_hosts()?;
             }
             Ok(())
         }
         "history" => {
             tests(
-                SUPPORT,
                 &["meta"],
                 &["inactive_history_remains_isolated_across_restart"],
             )?;
-            tests(SUPPORT, &["guest_host", "contract"], &[])?;
+            tests(&["guest_host", "contract"], &[])?;
             tests(
-                SUPPORT,
                 &["sso"],
                 &[
                     "hosted_sso_verifies_browser_identity_grants_and_single_use_state",
@@ -146,7 +154,6 @@ fn run(profile: &str) -> Result<()> {
                 ],
             )?;
             tests(
-                SUPPORT,
                 &["product"],
                 &[
                     "audit_outage_blocks_mutation_before_provider_io",
@@ -159,11 +166,10 @@ fn run(profile: &str) -> Result<()> {
         }
         "classic" | "tutorial" | "files" | "database" => {
             tests(
-                SUPPORT,
                 &["meta"],
                 &["metadata_isolates_records_replays_receipts_and_fences_crashed_owners"],
             )?;
-            tests(SUPPORT, &["contract", "guest_host"], &[])?;
+            tests(&["contract", "guest_host"], &[])?;
             let mut tutorial = vec![
                 "progress_with_remote_metadata",
                 "portal_sample_imports_and_analyzes_the_same_orders_after_crash",
@@ -171,9 +177,9 @@ fn run(profile: &str) -> Result<()> {
             if profile == "tutorial" {
                 tutorial.push("progress_with_embedded_metadata");
             }
-            tests(SUPPORT, &["tutorial"], &tutorial)?;
+            tests(&["tutorial"], &tutorial)?;
             if matches!(profile, "database" | "files") {
-                tests(SUPPORT, &["product_api", "backend_workflows"], &[])?;
+                tests(&["product_api", "backend_workflows"], &[])?;
                 let mut cases = vec![
                     "remote_metadata_hybrid_workflows",
                     "embedded_metadata_hybrid_workflows",
@@ -181,10 +187,9 @@ fn run(profile: &str) -> Result<()> {
                 if profile == "database" {
                     cases.push("provider_creation_intents_survive_uncertain_outcomes_and_restart");
                 }
-                tests(SUPPORT, &["product_lifecycle"], &cases)?;
+                tests(&["product_lifecycle"], &cases)?;
                 if profile == "files" {
                     tests(
-                        SUPPORT,
                         &["product"],
                         &[
                             "audit_outage_blocks_mutation_before_provider_io",
@@ -201,7 +206,6 @@ fn run(profile: &str) -> Result<()> {
                 Ok(())
             } else {
                 tests(
-                    SUPPORT,
                     &["product_lifecycle"],
                     &["remote_metadata_hybrid_workflows"],
                 )
