@@ -15,6 +15,7 @@ use std::{
 use workspace_openapi::View;
 use workspace_test_support::{
     Process,
+    expiry_clock::ExpiryClock,
     global::Global,
     http_client,
     oidc::Provider as Oidc,
@@ -42,12 +43,13 @@ fn create_signer() -> Result<(Vec<u8>, Ed25519KeyPair)> {
     Ok((der.as_ref().to_owned(), key))
 }
 struct Proof {
+    clock: ExpiryClock,
     key: Ed25519KeyPair,
     jwk: Value,
     thumbprint: String,
 }
 impl Proof {
-    fn create() -> Result<Self> {
+    fn create(clock: ExpiryClock) -> Result<Self> {
         let (_, key) = create_signer()?;
         let x = B64.encode(key.public_key().as_ref());
         let jwk = json!({"crv":"Ed25519","kty":"OKP","x":x});
@@ -56,6 +58,7 @@ impl Proof {
         )));
         Ok(Self {
             key,
+            clock,
             jwk,
             thumbprint,
         })
@@ -66,7 +69,7 @@ impl Proof {
         );
         let claims = B64.encode(
             serde_json::to_vec(
-                &json!({"jti":id(),"htm":"POST","htu":uri,"nonce":nonce,"iat":now()}),
+                &json!({"jti":id(),"htm":"POST","htu":uri,"nonce":nonce,"iat":self.clock.now()}),
             )
             .unwrap(),
         );
@@ -138,7 +141,7 @@ impl Regional {
         self.stop().await?;
         private_json(&f.directory().join("regional-http"), &self.config)?;
         let mut p = Process::spawn(
-            std::process::Command::new(binary("workspace-backend"))
+            std::process::Command::new(binary("examples").join("expiry_clock_host"))
                 .args(["serve", "--config"])
                 .arg(f.directory().join("region-plan")),
             &f.directory().join(format!("region-{}.log", id())),

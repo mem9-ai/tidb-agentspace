@@ -77,8 +77,18 @@ fn product(name: &str) -> bool {
         )
 }
 fn separate_hosts() -> Result<()> {
-    tests("workspace-backend", &["local_runtime"], &[])?;
-    tests("workspace-build-tools", &["package"], &[])
+    checked(Command::new("cargo").args([
+        "test",
+        "--locked",
+        "--workspace",
+        "--test",
+        "local_runtime",
+        "--test",
+        "package",
+        "--",
+        "--ignored",
+        "--test-threads=1",
+    ]))
 }
 fn run(profile: &str) -> Result<()> {
     let all = targets(Path::new("backend/test-support/tests"))?;

@@ -69,6 +69,8 @@ pub struct Config {
     pub clock_directory: PathBuf,
     #[serde(default)]
     pub initialize_clock: bool,
+    #[serde(skip)]
+    pub security_time: Option<fn() -> i64>,
     #[serde(default)]
     pub metadata_security_state: bool,
     pub regions: Vec<RegionDescriptor>,
@@ -694,7 +696,13 @@ impl GlobalServer {
             );
         }
         let clock = if config.metadata_security_state {
-            Clock::open_meta(metadata.clone(), "global", config.initialize_clock).await?
+            Clock::open_meta_with_time(
+                metadata.clone(),
+                "global",
+                config.initialize_clock,
+                config.security_time,
+            )
+            .await?
         } else {
             Clock::open(&config.clock_directory, config.initialize_clock)?
         };

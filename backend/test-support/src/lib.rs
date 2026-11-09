@@ -1,4 +1,5 @@
 //! Isolated native HTTP acceptance fixtures. A fixture owns all of its processes and data.
+pub mod expiry_clock;
 pub mod global;
 pub mod oidc;
 pub mod provider;

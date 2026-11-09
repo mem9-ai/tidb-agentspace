@@ -15,6 +15,7 @@ use std::{
 
 pub struct Global {
     pub origin: String,
+    executable: PathBuf,
     pub config: Value,
     pub http: Client,
     process: Option<Process>,
@@ -22,7 +23,17 @@ pub struct Global {
     plan: PathBuf,
 }
 impl Global {
-    pub async fn start(f: &Fixture, meta: &Meta, origin: String, mut sso: Value) -> Result<Self> {
+    pub async fn start(f: &Fixture, meta: &Meta, origin: String, sso: Value) -> Result<Self> {
+        Self::start_with_host(f, meta, origin, sso, binary("workspace-backend")).await
+    }
+
+    pub async fn start_with_host(
+        f: &Fixture,
+        meta: &Meta,
+        origin: String,
+        mut sso: Value,
+        executable: PathBuf,
+    ) -> Result<Self> {
         let dir = f.directory();
         let key = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new())
             .map_err(|_| anyhow::anyhow!("generate fixture signing key"))?;
@@ -46,6 +57,7 @@ impl Global {
         )?;
         let mut global = Self {
             origin,
+            executable,
             config,
             plan,
             config_file,
@@ -76,7 +88,7 @@ impl Global {
         self.stop().await?;
         private_json(&self.config_file, &self.config)?;
         let mut p = Process::spawn(
-            Command::new(binary("workspace-backend"))
+            Command::new(&self.executable)
                 .arg("serve")
                 .arg("--config")
                 .arg(&self.plan),

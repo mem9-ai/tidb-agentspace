@@ -50,6 +50,8 @@ pub struct Config {
     pub clock_directory: PathBuf,
     #[serde(default)]
     pub initialize_clock: bool,
+    #[serde(skip)]
+    pub security_time: Option<fn() -> i64>,
     #[serde(default)]
     pub metadata_security_state: bool,
     pub control: ServerTls,
@@ -367,7 +369,13 @@ impl Runtime {
         )?;
         local_verifier.verify(&sample.token, now)?;
         let clock = Arc::new(if config.metadata_security_state {
-            Clock::open_meta(metadata.clone(), region, config.initialize_clock).await?
+            Clock::open_meta_with_time(
+                metadata.clone(),
+                region,
+                config.initialize_clock,
+                config.security_time,
+            )
+            .await?
         } else {
             Clock::open(&config.clock_directory, config.initialize_clock)?
         });

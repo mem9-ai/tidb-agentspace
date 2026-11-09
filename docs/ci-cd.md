@@ -355,6 +355,11 @@ store uses validated loopback HTTP. This reduces the wait between sequential wri
 isolated RustFS. Every commit still waits for remote durability. Local development and
 hosted storage retain SlateDB's default batching interval.
 
+The regional expiry journey advances a private clock shared by the test proof signer,
+Global and Region. Its acceptance-only host runs the native entry point and advances
+past each deadline while keeping durable clock reservations, signatures, HTTP checks
+and restart recovery active. A packaged host always takes its time from the system.
+
 The Analytics producer test checks queue capacity and verifies that startup and enqueue
 make no connection to the collector. Its one-second Linux budget measures producer
 thread CPU time when scheduler accounting is available, with a wall-clock fallback.

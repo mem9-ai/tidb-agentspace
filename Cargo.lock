@@ -5672,6 +5672,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "uuid",
+ "workspace-backend",
  "workspace-contracts",
  "workspace-meta-client",
  "workspace-meta-service",
