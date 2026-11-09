@@ -338,6 +338,11 @@ The Rust CI job checks formatting before compiling, then runs separately named b
 Clippy, Rust unit-test and native/S3 integration-test steps. Together these run the same
 checks as local `npm run backend:check`; warnings remain errors and integration tests still
 use isolated real RustFS. Two Cargo jobs and disabled debug symbols bound runner memory.
+Builds, unit tests and named integration targets select the whole Cargo workspace so
+their dependency features match. The default unit run also discovers future targets and
+doctests. RustFS cases still run in their isolated acceptance partitions. SDK CI runs
+the client fixture built by the same job; standalone SDK testing can build it with Cargo.
+
 Multi-service product fixtures hold their selected Workspace and control ports until each
 host starts, so a metadata or control service cannot claim a released port and answer the
 wrong readiness probe. Keep the reservations distinct from the active metadata listener,

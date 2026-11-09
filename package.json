@@ -36,7 +36,7 @@
     "backend:build": "cargo run --locked -p workspace-build-tools -- prepare && cargo build --locked --workspace --bins --examples",
     "backend:fmt": "cargo fmt --all --check",
     "backend:clippy": "cargo clippy --workspace --all-targets --locked -- -D warnings",
-    "backend:test": "cargo test --workspace --locked --exclude workspace-test-support",
+    "backend:test": "cargo test --workspace --locked",
     "backend:test:integration": "cargo acceptance all",
     "backend:test:classic": "cargo acceptance classic",
     "backend:check": "npm run backend:fmt && npm run backend:build && npm run backend:clippy && npm run backend:test && npm run backend:test:integration",

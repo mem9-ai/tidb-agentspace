@@ -625,8 +625,9 @@ test('automatic checks execute once and releases require exact-commit native evi
     'cargo fmt --all --check',
     'cargo run --locked -p workspace-build-tools -- prepare && cargo build --locked --workspace --bins --examples --timings',
     'cargo clippy --workspace --all-targets --locked -- -D warnings',
-    'cargo test --workspace --locked --exclude workspace-test-support',
+    'cargo test --workspace --locked',
     'cargo acceptance all',
+    'npm run test:agent-clients -- ./meta-service/target/debug/client-fixture',
   ]) {
     assert.equal(ci.jobs.metadata.steps.filter((step) => step.run === command).length, 1, command);
     assert.ok(!JSON.stringify(workflow).includes(command), `CD duplicates ${command}`);
