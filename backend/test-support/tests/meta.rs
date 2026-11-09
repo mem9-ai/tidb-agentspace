@@ -5,6 +5,59 @@ use std::{fs, process::Command};
 use uuid::Uuid;
 use workspace_test_support::{Fixture, Meta, binary, http_client, port, private_json};
 
+#[tokio::test]
+#[ignore = "requires isolated RustFS and native binaries"]
+async fn repeated_meta_close_confirms_the_durable_owner_release() -> Result<()> {
+    use workspace_meta_service::{config::Config, engine::Engine, local_s3::LocalS3};
+    let fixture = Fixture::start().await?;
+    let mut meta = fixture.meta("release").await?;
+    meta.process.stop_cleanly().await?;
+    let cfg: Config = serde_json::from_value(meta.server.clone())?;
+    let s3 = LocalS3::new(
+        &cfg.s3.endpoint,
+        &cfg.s3.region,
+        cfg.s3.access_key_id.as_deref().unwrap(),
+        cfg.s3.secret_access_key.as_deref().unwrap(),
+    )?;
+    let path = format!("/{}/{}/control/owner.json", cfg.s3.bucket, cfg.s3.prefix);
+    let engine = Engine::open(cfg.clone(), false, None).await?;
+    let original = fixture
+        .s3(Method::GET, &path)
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+    s3.request(Method::PUT, &path, b"invalid owner record".to_vec())
+        .await?
+        .error_for_status()?;
+    assert!(engine.close().await.is_err());
+    assert!(engine.close().await.is_err());
+    assert!(engine.check_health().await.is_err());
+    // Restore the original fixture record, then require the positive CAS confirmation.
+    s3.request(Method::PUT, &path, original.to_vec())
+        .await?
+        .error_for_status()?;
+    engine.close().await?;
+    let owner = fixture
+        .s3(Method::GET, &path)
+        .await?
+        .error_for_status()?
+        .json::<Value>()
+        .await?;
+    assert_eq!(owner["id"], engine.health()["ownerId"]);
+    assert_eq!(owner["released"], true);
+    let next = Engine::open(cfg, false, None).await?;
+    engine.close().await?;
+    assert_ne!(
+        next.check_health()
+            .await
+            .map_err(|e| anyhow::anyhow!(e.1))?["ownerId"],
+        owner["id"]
+    );
+    next.close().await?;
+    Ok(())
+}
+
 fn scope(authority: &Value) -> Value {
     json!({"authorityId":authority,"ownerKind":"workspace","ownerId":"ws_test","family":"workspace","partitionId":"primary"})
 }

@@ -12,7 +12,7 @@ use std::{
     collections::BTreeMap,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
     },
 };
 use tokio::sync::RwLock;
@@ -62,13 +62,19 @@ struct Projection<'a> {
     keys: KeyLoad<'a>,
     exclusive: bool,
 }
+// Stop admitting operations as soon as close starts. Confirmation is separate so a
+// failed or cancelled release can be retried under the writer lock.
+const WRITER_OPEN: u8 = 0;
+const WRITER_CLOSING: u8 = 1;
+const WRITER_RELEASED: u8 = 2;
+
 pub struct Repository {
     metadata: Arc<dyn Metadata>,
     scope: Scope,
     guard: WriterGuard,
     queue: RwLock<()>,
     history_maintenance: tokio::sync::OnceCell<()>,
-    closed: AtomicBool,
+    writer_state: AtomicU8,
     resource_backfill_running: AtomicBool,
     resource_backfill_error: std::sync::Mutex<Option<ServiceError>>,
 }
@@ -125,7 +131,7 @@ impl Repository {
             guard: WriterGuard { owner_id: owner },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         };
@@ -155,7 +161,7 @@ impl Repository {
         Ok(result)
     }
     async fn call(&self, request: MetaRequest) -> Result<Value> {
-        if self.closed.load(Ordering::Acquire) {
+        if self.writer_state.load(Ordering::Acquire) != WRITER_OPEN {
             return Err(error("META_WRITER_CLOSED"));
         }
         self.metadata.execute(request).await
@@ -176,7 +182,7 @@ impl Repository {
     /// ownership marker or policy fails closed. The caller must still authenticate the
     /// specific session or Key, and reauthorize long-running work at effect boundaries.
     pub async fn managed_owner(&self) -> Result<(String, u64)> {
-        if self.closed.load(Ordering::Acquire) {
+        if self.writer_state.load(Ordering::Acquire) != WRITER_OPEN {
             return Err(error("META_WRITER_CLOSED"));
         }
         let mut policy_scope = self.scope.clone();
@@ -1288,14 +1294,15 @@ impl Repository {
             json!({"key":"system/writer", "expectedVersion":version(&writer), "delete":true}),
         ])
         .await?;
-        self.closed.store(true, Ordering::Release);
+        self.writer_state.store(WRITER_RELEASED, Ordering::Release);
         Ok(())
     }
     pub async fn close(&self) -> Result<()> {
         let _lock = self.queue.write().await;
-        if self.closed.swap(true, Ordering::AcqRel) {
+        if self.writer_state.load(Ordering::Acquire) == WRITER_RELEASED {
             return Ok(());
         }
+        self.writer_state.store(WRITER_CLOSING, Ordering::Release);
         let prior = self
             .metadata
             .execute(MetaRequest::Get {
@@ -1308,6 +1315,7 @@ impl Repository {
         if writer["value"]["ownerId"] == self.guard.owner_id {
             self.metadata.execute(MetaRequest::Commit{scope:self.scope.clone(),guard:Some(self.guard.clone()),mutation_id:Uuid::new_v4().to_string(),changes:vec![json!({"key":"system/writer","expectedVersion":version(writer),"delete":true})]}).await?;
         }
+        self.writer_state.store(WRITER_RELEASED, Ordering::Release);
         Ok(())
     }
 }
@@ -1628,7 +1636,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         };
@@ -1707,7 +1715,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         };
@@ -1720,10 +1728,10 @@ mod concurrency_tests {
             action: AuditAction::ResourceDelete,
             target_id: None,
         };
-        first.closed.store(true, Ordering::Release);
+        first.writer_state.store(WRITER_CLOSING, Ordering::Release);
         assert!(first.begin_audit_operation(intent()).await.is_err());
         assert!(metadata.values.lock().unwrap().is_empty());
-        first.closed.store(false, Ordering::Release);
+        first.writer_state.store(WRITER_OPEN, Ordering::Release);
         let operation = first.begin_audit_operation(intent()).await.unwrap();
         assert_eq!(
             second
@@ -1814,7 +1822,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         };
@@ -1883,7 +1891,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         };
@@ -1996,7 +2004,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         };
@@ -2137,7 +2145,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         };
@@ -2194,7 +2202,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         });
@@ -2314,7 +2322,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         });
@@ -2383,7 +2391,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         });
@@ -2444,7 +2452,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         });
@@ -2507,7 +2515,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         });
@@ -2581,7 +2589,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         });
@@ -2647,7 +2655,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         };
@@ -2714,7 +2722,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(true),
             resource_backfill_error: std::sync::Mutex::new(None),
         });
@@ -2769,7 +2777,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         };
@@ -2876,7 +2884,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         };
@@ -2962,7 +2970,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         };
@@ -3034,7 +3042,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         };
@@ -3107,7 +3115,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         };
@@ -3178,7 +3186,7 @@ mod concurrency_tests {
             },
             queue: RwLock::new(()),
             history_maintenance: tokio::sync::OnceCell::new(),
-            closed: AtomicBool::new(false),
+            writer_state: AtomicU8::new(WRITER_OPEN),
             resource_backfill_running: AtomicBool::new(false),
             resource_backfill_error: std::sync::Mutex::new(None),
         };

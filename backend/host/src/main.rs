@@ -22,6 +22,22 @@ async fn stopped(mut receiver: watch::Receiver<bool>) {
     }
 }
 
+// Keep independent roles serving, but carry failures back to the process exit status.
+fn completed<T, E>(result: std::result::Result<T, E>, message: &str) -> bool {
+    if result.is_err() {
+        eprintln!("{message}");
+        return false;
+    }
+    true
+}
+async fn join_roles(tasks: impl IntoIterator<Item = tokio::task::JoinHandle<bool>>) -> bool {
+    let mut clean = true;
+    for task in tasks {
+        clean &= matches!(task.await, Ok(true));
+    }
+    clean
+}
+
 // Child diagnostics can be included in CI logs. Report only bounded internal codes and
 // OS error kinds, never configuration, credentials, URLs or provider error bodies.
 fn startup_cause(error: &anyhow::Error) -> String {
@@ -138,6 +154,7 @@ async fn main() -> Result<()> {
     let mut api_tasks = Vec::new();
     let mut cleanup_tasks = Vec::new();
     let mut workspaces = Vec::new();
+    let mut clean = true;
     for role in plan.metadata {
         let authority = role.config.authority_id.clone();
         match MetaService::open(role.config, role.initialize, role.recover_owner.as_deref()).await {
@@ -146,11 +163,12 @@ async fn main() -> Result<()> {
                 metadata.insert(authority.clone(), service.clone());
                 let receiver = meta_receiver.clone();
                 meta_tasks.push(tokio::spawn(async move {
-                    if service.serve(stopped(receiver)).await.is_err() {
-                        eprintln!(
+                    completed(
+                        service.serve(stopped(receiver)).await,
+                        &format!(
                             "Metadata listener unavailable for {authority}; other roles continue."
-                        );
-                    }
+                        ),
+                    )
                 }));
             }
             Err(e) => eprintln!(
@@ -191,26 +209,23 @@ async fn main() -> Result<()> {
             let bind = config.bind;
             match workspace_api::global_api::GlobalServer::open(config, port).await {
                 Ok(server) => {
-                    global_started = true;
                     if let Some((hub, config, catalog)) = server.region_connection() {
                         let receiver = api_receiver.clone();
                         api_tasks.push(tokio::spawn(async move {
-                            if workspace_api::region_connection::serve(hub, config, catalog, stopped(receiver)).await.is_err() {
-                                eprintln!("Global Region control connection unavailable; inspect private configuration.");
-                            }
+                            completed(workspace_api::region_connection::serve(hub, config, catalog, stopped(receiver)).await, "Global Region control connection unavailable; inspect private configuration.")
                         }));
                     }
                     if shared {
                         shared_globals.insert(bind, server);
                         continue;
                     }
+                    global_started = true;
                     let receiver = api_receiver.clone();
                     api_tasks.push(tokio::spawn(async move {
-                        if server.serve(stopped(receiver)).await.is_err() {
-                            eprintln!(
-                                "Global public API listener unavailable; other roles continue."
-                            );
-                        }
+                        completed(
+                            server.serve(stopped(receiver)).await,
+                            "Global public API listener unavailable; other roles continue.",
+                        )
                     }));
                     println!("Rust Global public API started.");
                 }
@@ -364,29 +379,26 @@ async fn main() -> Result<()> {
                             eprintln!(
                                 "Workspace history maintenance is unavailable for {authority}."
                             );
-                            if let Some(pool) = guest_pool
-                                && pool.close().await.is_err()
-                            {
-                                eprintln!(
-                                    "Guest Workspace ownership release is uncertain; reconcile regionally before restart."
+                            if let Some(pool) = guest_pool {
+                                clean &= completed(
+                                    pool.close().await,
+                                    "Guest Workspace ownership release is uncertain; reconcile regionally before restart.",
                                 );
                             }
-                            let _ = workspace.close().await;
+                            clean &= completed(
+                                workspace.close().await,
+                                "Workspace ownership release is uncertain; reconcile regionally before restart.",
+                            );
                             continue;
                         }
                     };
                     if let Some(scheduler) = scheduler {
                         let receiver = api_receiver.clone();
                         cleanup_tasks.push(tokio::spawn(async move {
-                            if scheduler
-                                .run(receiver, Duration::from_secs(1))
-                                .await
-                                .is_err()
-                            {
-                                eprintln!(
-                                    "Guest expiry scheduler stopped; pending records are retained."
-                                );
-                            }
+                            completed(
+                                scheduler.run(receiver, Duration::from_secs(1)).await,
+                                "Guest expiry scheduler stopped; pending records are retained.",
+                            )
                         }));
                     }
                     workspaces.push(workspace.clone());
@@ -394,48 +406,60 @@ async fn main() -> Result<()> {
                     api_tasks.push(tokio::spawn(async move {
                         let (history_stop, history_receiver) = watch::channel(false);
                         let history_task = tokio::spawn(workspace_api::history_maintenance::supervise(history_scheduler, history_receiver));
-                        if server.serve(stopped(receiver)).await.is_err() {eprintln!("Workspace listener unavailable for {authority}; other roles continue.");}
+                        let mut clean = completed(server.serve(stopped(receiver)).await, &format!("Workspace listener unavailable for {authority}; other roles continue."));
                         let _ = history_stop.send(true);
-                        let _ = history_task.await;
-                        if let Some(pool) = guest_pool && pool.close().await.is_err() { eprintln!("Guest Workspace ownership release is uncertain; reconcile regionally before restart."); }
-                        if workspace.close().await.is_err() {eprintln!("Workspace ownership release is uncertain; reconcile regionally before restart.");}
+                        clean &= completed(history_task.await, "Workspace history maintenance task failed.");
+                        if let Some(pool) = guest_pool {
+                            clean &= completed(pool.close().await, "Guest Workspace ownership release is uncertain; reconcile regionally before restart.");
+                        }
+                        clean &= completed(workspace.close().await, "Workspace ownership release is uncertain; reconcile regionally before restart.");
+                        clean
                     }));
                     println!("Rust {profile} listening on {bind}.");
                 }
-                Err(e) => eprintln!(
-                    "Workspace startup unavailable for {authority}: {}. Other roles continue.",
-                    startup_cause(&e)
-                ),
+                Err(e) => {
+                    let cause = startup_cause(&e);
+                    if e.downcast_ref::<workspace_contracts::ServiceError>()
+                        .is_some_and(|error| error.code == "META_WRITER_RELEASE_UNCERTAIN")
+                    {
+                        clean = false;
+                    }
+                    eprintln!(
+                        "Workspace startup unavailable for {authority}: {cause}. Other roles continue."
+                    );
+                }
             }
         } else {
             eprintln!("Regional dependency unavailable for {authority}; no fallback selected.");
         }
     }
-    if metadata.is_empty() && workspaces.is_empty() && !global_started {
-        bail!("No configured service could start");
+    let serving = !metadata.is_empty() || !workspaces.is_empty() || global_started;
+    if serving {
+        shutdown_signal().await;
     }
-    shutdown_signal().await;
     let _ = api_stop.send(true);
-    for task in api_tasks {
-        let _ = task.await;
-    }
-    for task in cleanup_tasks {
-        let _ = task.await;
-    }
+    clean &= join_roles(api_tasks.into_iter().chain(cleanup_tasks)).await;
+    // Each listener releases its writer on exit, even while other roles keep serving.
+    // Recheck here in case the listener task panicked or its first release failed.
     for workspace in workspaces {
-        let _ = workspace.close().await;
+        clean &= completed(
+            workspace.close().await,
+            "Workspace ownership release was not confirmed.",
+        );
     }
     let _ = meta_stop.send(true);
-    for task in meta_tasks {
-        let _ = task.await;
-    }
+    clean &= join_roles(meta_tasks).await;
     for service in metadata.values() {
-        if service.close().await.is_err() {
-            eprintln!(
-                "Metadata ownership release is uncertain; preserve private configuration for recovery."
-            );
-        }
+        clean &= completed(
+            service.close().await,
+            "Metadata ownership release is uncertain; preserve private configuration for recovery.",
+        );
     }
+    anyhow::ensure!(
+        clean,
+        "Role shutdown or ownership release was not confirmed"
+    );
+    anyhow::ensure!(serving, "No configured service could start");
     Ok(())
 }
 

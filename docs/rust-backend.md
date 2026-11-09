@@ -44,6 +44,12 @@ identifies the active browser session, and sign-out revokes and clears attached 
 sessions. With Global down, existing regional sessions continue while new signup is unavailable. A failed Global startup
 requires a host restart before new signups can resume.
 
+If Regional initialization fails after acquiring the Workspace writer, the host attempts
+to release that writer before reporting the error. On shutdown it drains the roles,
+releases Workspace writers, then closes Meta. An unconfirmed release makes the host
+exit with an error. A restart after an uncertain exit requires checking ownership and
+using the existing explicit recovery procedure.
+
 The opt-in host runs a bounded regional scheduler that claims expired Guest jobs and marks them
 `providerCleanupDeferred`. It does not contact providers or delete resource or credential records;
 it does not assert that in-flight work has drained or resources were deleted. The queue preserves

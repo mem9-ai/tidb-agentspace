@@ -346,6 +346,11 @@ phase, and the last observed health status or sanitized role-startup error.
 Shutdown may interrupt background policy delivery. The next worker resumes from the
 durable pending record and removes it only after confirming the Regional receipt.
 
+The test Meta service flushes its SlateDB write-ahead log every 10 ms when its object
+store uses validated loopback HTTP. This reduces the wait between sequential writes to
+isolated RustFS. Every commit still waits for remote durability. Local development and
+hosted storage retain SlateDB's default batching interval.
+
 The Analytics producer test checks queue capacity and verifies that startup and enqueue
 make no connection to the collector. Its one-second Linux budget measures producer
 thread CPU time when scheduler accounting is available, with a wall-clock fallback.
