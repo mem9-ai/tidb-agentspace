@@ -193,7 +193,7 @@ jobs:
           set -euo pipefail
           runtime_dir="$RUNNER_TEMP/workspace-rustfs"
           mkdir -p "$runtime_dir"
-          curl --fail --location --retry 3 https://github.com/rustfs/rustfs/releases/download/1.0.4/rustfs-linux-x86_64-gnu-v1.0.4.zip --output "$runtime_dir/rustfs.zip"
+          curl --fail --location --retry 3 https://dl.rustfs.com/artifacts/rustfs/release/rustfs-linux-x86_64-gnu-v1.0.4.zip --output "$runtime_dir/rustfs.zip"
           printf '%s  %s\n' '4a25e48f5b5ae610a679b5324206962c6fb0eb20a9fa7ab6cb20e178cf6c534b' "$runtime_dir/rustfs.zip" | sha256sum --check
           unzip -q "$runtime_dir/rustfs.zip" -d "$runtime_dir"
           chmod +x "$runtime_dir/rustfs"
@@ -289,7 +289,7 @@ jobs:
           set -euo pipefail
           runtime_dir="$RUNNER_TEMP/workspace-rustfs"
           mkdir -p "$runtime_dir"
-          curl --fail --location --retry 3 https://github.com/rustfs/rustfs/releases/download/1.0.4/rustfs-linux-x86_64-gnu-v1.0.4.zip --output "$runtime_dir/rustfs.zip"
+          curl --fail --location --retry 3 https://dl.rustfs.com/artifacts/rustfs/release/rustfs-linux-x86_64-gnu-v1.0.4.zip --output "$runtime_dir/rustfs.zip"
           printf '%s  %s\n' '4a25e48f5b5ae610a679b5324206962c6fb0eb20a9fa7ab6cb20e178cf6c534b' "$runtime_dir/rustfs.zip" | sha256sum --check
           unzip -q "$runtime_dir/rustfs.zip" -d "$runtime_dir"
           chmod +x "$runtime_dir/rustfs"
