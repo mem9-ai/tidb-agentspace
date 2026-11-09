@@ -96,10 +96,7 @@ fn install(
         .prefix(".download-")
         .tempdir_in(parent)?;
     let archive = tmp.path().join("download.tar.gz");
-    let url = format!(
-        "https://github.com/duckdb/duckdb/releases/download/v{version}/{}",
-        pins.asset
-    );
+    let url = format!("https://install.duckdb.org/v{version}/{}", pins.asset);
     download(&url, &archive, pins.size)?;
     ensure!(
         fs::metadata(&archive)?.len() == pins.size && digest(&archive)? == pins.sha256,
@@ -226,7 +223,7 @@ mod tests {
         let save = |url: &str, path: &Path, size: u64| {
             assert_eq!(
                 url,
-                "https://github.com/duckdb/duckdb/releases/download/v2.0.0/duckdb-static-libs-osx-arm64.tar.gz"
+                "https://install.duckdb.org/v2.0.0/duckdb-static-libs-osx-arm64.tar.gz"
             );
             assert_eq!(archive.len() as u64, size);
             fs::write(path, &archive)?;
