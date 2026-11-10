@@ -118,6 +118,149 @@ jobs:
             echo 'full_partition=false' >> "$GITHUB_OUTPUT"
           fi
 
+  gitleaks:
+    name: Secret scan
+    # The release digests for this version are pinned below; bump them together
+    # with the version, never one without the other.
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_LINUX_X64_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+      GITLEAKS_LINUX_ARM64_SHA256: e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Runs on `pull_request`, not `pull_request_target`: privileged PR execution
+      # is prohibited by scripts/check-repo.mjs, so this job never gets the base
+      # repository's secrets and never needs them. It reads the candidate's git
+      # objects only — it executes nothing from the checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The scanned range and its allowlist are resolved with git, so the
+          # base commit must be present locally.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install gitleaks
+        # Install the scanner from the pinned release into a per-run directory
+        # outside the workspace, and verify the digest as well as the reported
+        # version, so a binary committed to the tree can never be the one that
+        # runs.
+        run: |
+          set -euo pipefail
+          install_dir="$RUNNER_TEMP/gitleaks-bin"
+          mkdir -p "$install_dir"
+          case "$(uname -m)" in
+            x86_64)
+              arch=x64
+              expected_sha="$GITLEAKS_LINUX_X64_SHA256"
+              ;;
+            aarch64)
+              arch=arm64
+              expected_sha="$GITLEAKS_LINUX_ARM64_SHA256"
+              ;;
+            *)
+              echo "unsupported runner architecture: $(uname -m)" >&2
+              exit 1
+              ;;
+          esac
+          archive="$RUNNER_TEMP/gitleaks.tar.gz"
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_${arch}.tar.gz"
+          printf '%s  %s\n' "$expected_sha" "$archive" | sha256sum -c -
+          tar -xzf "$archive" -C "$install_dir" gitleaks
+          rm -f "$archive"
+          scanner="$install_dir/gitleaks"
+          case "$scanner" in
+            "$GITHUB_WORKSPACE"/*)
+              echo "refusing to run a scanner from the checkout" >&2
+              exit 1
+              ;;
+          esac
+          reported="$("$scanner" version)"
+          if [ "$reported" != "$GITLEAKS_VERSION" ]; then
+            echo "refusing to run an unexpected scanner build: version=$reported" >&2
+            exit 1
+          fi
+          echo "scanner: $scanner (gitleaks $reported)"
+
+      - name: Scan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        run: |
+          set -euo pipefail
+          scanner="$RUNNER_TEMP/gitleaks-bin/gitleaks"
+          case "$scanner" in
+            "$GITHUB_WORKSPACE"/*)
+              echo "refusing to run a scanner from the checkout" >&2
+              exit 1
+              ;;
+          esac
+          # `--text` keeps a `.gitattributes` entry (`-diff`/`binary`) from hiding
+          # a file from `git log -p`. `--diff-merges=remerge` scans the merge
+          # result, so a credential introduced while resolving a conflict is seen,
+          # while content merely inherited from the base branch is not re-reported
+          # (which plain `-m` would do).
+          #
+          # A pull request and a merge-queue candidate are scanned for the commits
+          # they add; a push or a manual run audits the full history, which is
+          # cheap here (~0.6s for this repository).
+          if [ -n "$BASE_SHA" ] && [ -n "$HEAD_SHA" ]; then
+            range="$BASE_SHA..$HEAD_SHA"
+            config_ref="$BASE_SHA"
+          elif [ -n "$MERGE_BASE_SHA" ] && [ -n "$MERGE_HEAD_SHA" ]; then
+            range="$MERGE_BASE_SHA..$MERGE_HEAD_SHA"
+            config_ref="$MERGE_BASE_SHA"
+          else
+            range="--all"
+            config_ref="HEAD"
+          fi
+          log_opts="$range --text --diff-merges=remerge"
+
+          # Read the allowlist from the trusted revision (the base the candidate
+          # is measured against), never from the candidate itself. If that
+          # revision predates .gitleaks.toml, fall back to the built-in rules
+          # with no allowlist — stricter, never the candidate's own copy.
+          if git show "$config_ref:.gitleaks.toml" > "$RUNNER_TEMP/gitleaks.toml" 2>/dev/null; then
+            echo "allowlist source: $config_ref:.gitleaks.toml"
+          else
+            printf '[extend]\nuseDefault = true\n' > "$RUNNER_TEMP/gitleaks.toml"
+            echo "allowlist source: built-in defaults, no allowlist ($config_ref has no .gitleaks.toml)"
+          fi
+
+          # gitleaks exits 0 with "0 commits scanned" when git cannot read the
+          # requested history, so traverse the range first and fail closed.
+          if ! git log -p -U0 $log_opts >/dev/null 2>&1; then
+            echo "cannot read the full history of '$log_opts' (missing objects or an unknown revision)" >&2
+            exit 1
+          fi
+
+          # `--diff-merges=remerge` emits no patch for merges with three or more
+          # parents, so such a commit could hide a credential; refuse to report a
+          # pass instead of scanning nothing for it.
+          octopus="$(git rev-list --merges --min-parents=3 $range)"
+          if [ -n "$octopus" ]; then
+            echo "octopus merge(s) in '$range' cannot be remerge-diffed:" >&2
+            echo "$octopus" >&2
+            echo "re-create the merge with two parents, or review its result manually" >&2
+            exit 1
+          fi
+
+          # Belt and braces: the allowlist and ignore lookups must never resolve
+          # inside the checkout.
+          rm -f "$GITHUB_WORKSPACE/.gitleaksignore"
+
+          # --ignore-gitleaks-allow: an inline `gitleaks:allow` comment is a
+          # suppression, and a candidate should not be able to suppress its own
+          # finding.
+          "$scanner" git . --no-banner --redact \
+            --config "$RUNNER_TEMP/gitleaks.toml" \
+            --gitleaks-ignore-path "$RUNNER_TEMP" \
+            --ignore-gitleaks-allow \
+            --log-opts="$log_opts"
+
   quality:
     name: Quality
     needs: scope
