@@ -36,7 +36,9 @@ impl Repository {
                 principal.scope(scope)?;
             }
             if let Some(resource_id) = attempt["requestedResourceId"].as_str() {
-                if !principal.has(resource_id) {
+                if !principal.has(resource_id)
+                    && !principal.permits_record(&self.resource(resource_id).await?)
+                {
                     return Err(ServiceError::new(403, "FORBIDDEN"));
                 }
             } else {

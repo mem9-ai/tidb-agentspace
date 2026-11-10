@@ -45,17 +45,19 @@ fn key_schema() -> Value {
 }
 
 fn grants() -> Value {
-    closed_object([
+    let mut schema = closed_object([
         (
             "scopes",
             json!({"type": "array", "items": string(), "minItems": 1, "maxItems": 8}),
         ),
         (
             "resourceIds",
-            json!({"type": "array", "items": string(), "minItems": 1, "maxItems": 1024}),
+            json!({"type": "array", "items": string(), "maxItems": 1024}),
         ),
         ("regionId", string()),
-    ])
+    ]);
+    schema["properties"]["resourceTypes"] = resource_types();
+    schema
 }
 
 fn region() -> Value {

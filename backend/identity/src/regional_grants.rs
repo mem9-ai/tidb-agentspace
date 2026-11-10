@@ -11,6 +11,9 @@ use workspace_contracts::{MetaRequest, Result, ServiceError};
 pub struct Grant {
     pub scopes: Vec<String>,
     pub resource_ids: Vec<String>,
+    // Omitting this field preserves all previously signed grant references.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resource_types: Vec<workspace_contracts::ResourceType>,
     pub region_id: String,
 }
 const ACTIONS: &[&str] = &[
@@ -42,7 +45,8 @@ impl Grant {
                 .iter()
                 .any(|s| s != "*" && !ACTIONS.contains(&s.as_str()))
             || self.scopes.len() > 1 && self.scopes.iter().any(|s| s == "*")
-            || self.resource_ids.is_empty()
+            || self.resource_ids.is_empty() == self.resource_types.is_empty()
+            || !self.resource_types.windows(2).all(|pair| pair[0] < pair[1])
             || self.resource_ids.len() > 1024
             || !ordered(&self.resource_ids)
             || self.resource_ids.iter().any(|s| s != "*" && !id(s))
@@ -75,6 +79,10 @@ impl Grant {
         self.region_id == other.region_id
             && self.scopes.iter().all(|s| other.permits_action(s))
             && self
+                .resource_types
+                .iter()
+                .all(|t| other.resource_ids == ["*"] || other.resource_types.contains(t))
+            && self
                 .resource_ids
                 .iter()
                 .all(|r| other.resource_ids.iter().any(|p| p == "*" || p == r))
@@ -98,7 +106,19 @@ impl Grant {
                 .cloned()
                 .collect()
         };
+        let resource_types = if other.resource_ids == ["*"] {
+            self.resource_types.clone()
+        } else if self.resource_ids == ["*"] {
+            other.resource_types.clone()
+        } else {
+            self.resource_types
+                .iter()
+                .copied()
+                .filter(|t| other.resource_types.contains(t))
+                .collect()
+        };
         let mut value = Self {
+            resource_types,
             scopes,
             resource_ids,
             region_id: self.region_id.clone(),
@@ -252,6 +272,7 @@ mod tests {
         let active = Grant {
             region_id: "region:a".into(),
             scopes: vec!["files:read".into(), "files:write".into()],
+            resource_types: vec![],
             resource_ids: vec!["fs1".into()],
         };
         let ceiling = Grant {
@@ -313,15 +334,56 @@ mod tests {
     }
 
     #[test]
+    fn resource_type_intersections_and_legacy_references() {
+        use workspace_contracts::ResourceType::{Database, Filesystem};
+        let json = serde_json::json!({"resourceIds":["db1"],"regionId":"region:a","scopes":["resources:read"]});
+        let old: Grant = serde_json::from_value(json.clone()).unwrap();
+        let old_ref = format!(
+            "grant-{:x}",
+            Sha256::digest(serde_json::to_vec(&json).unwrap())
+        );
+        assert_eq!(old.reference().unwrap(), old_ref);
+        let typed = Grant {
+            resource_ids: vec![],
+            resource_types: vec![Database],
+            ..old.clone()
+        };
+        let both = Grant {
+            resource_types: vec![Database, Filesystem],
+            ..typed.clone()
+        };
+        let wildcard = Grant {
+            resource_ids: vec!["*".into()],
+            ..old.clone()
+        };
+        assert_ne!(typed.reference().unwrap(), old_ref);
+        assert!(typed.intersection(&old).is_err());
+        assert_eq!(typed.intersection(&both).unwrap(), typed);
+        assert_eq!(wildcard.intersection(&both).unwrap(), both);
+        assert!(typed.subset_of(&both) && both.subset_of(&wildcard));
+        assert!(!both.subset_of(&typed) && !typed.subset_of(&old) && !wildcard.subset_of(&both));
+        assert!(
+            Grant {
+                resource_types: vec![Database],
+                ..old
+            }
+            .validate()
+            .is_err()
+        );
+    }
+
+    #[test]
     fn intersections_never_expand_actions_resources_or_region() {
         let a = Grant {
             region_id: "region:a".into(),
             scopes: vec!["files:read".into(), "queries:execute".into()],
+            resource_types: vec![],
             resource_ids: vec!["db1".into(), "fs1".into()],
         };
         let b = Grant {
             region_id: "region:a".into(),
             scopes: vec!["queries:read".into()],
+            resource_types: vec![],
             resource_ids: vec!["db1".into()],
         };
         let c = a.intersection(&b).unwrap();
@@ -346,6 +408,7 @@ mod tests {
         let grant = Grant {
             region_id: "region:a".into(),
             scopes: vec!["files:read".into()],
+            resource_types: vec![],
             resource_ids: vec!["fs1".into()],
         };
         let policy = KeyPolicy {

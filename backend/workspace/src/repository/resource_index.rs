@@ -55,6 +55,16 @@ fn counter(record: &Value, group: &str) -> Result<u64> {
 }
 
 impl Repository {
+    pub async fn resource_named(self: &Arc<Self>, name: &str) -> Result<Option<Value>> {
+        self.prepare_sample_resource_index().await?;
+        let entry = self.get(&name_key(name)).await?;
+        let Some(id) = entry["value"]["id"].as_str() else {
+            return Ok(None);
+        };
+        let record = self.resource(id).await?;
+        Ok((record["name"] == name).then_some(record))
+    }
+
     /// Prepare the index before recording a sample attempt. If migration takes too long,
     /// the caller can retry explicitly without leaving an unrecoverable sample slot.
     pub async fn prepare_sample_resource_index(self: &Arc<Self>) -> Result<()> {

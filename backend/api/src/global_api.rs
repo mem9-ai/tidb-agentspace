@@ -241,13 +241,21 @@ struct CreateKey {
     #[serde(default = "default_key_name")]
     name: String,
     scopes: Vec<String>,
-    resource_ids: Vec<String>,
+    #[serde(default, deserialize_with = "present_selector")]
+    resource_ids: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "present_selector")]
+    resource_types: Option<Vec<workspace_contracts::ResourceType>>,
     /// Deprecated absolute expiry, accepted only inside the same ceiling.
     #[serde(default)]
     expires_at: Option<i64>,
     /// Preferred lifetime choice; the server computes the absolute expiry.
     #[serde(default)]
     expires_in_days: Option<i64>,
+}
+fn present_selector<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+    d: D,
+) -> Result<Option<Vec<T>>, D::Error> {
+    Vec::deserialize(d).map(Some)
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -1912,8 +1920,14 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
             }
             input.scopes.sort();
             input.scopes.dedup();
-            input.resource_ids.sort();
-            input.resource_ids.dedup();
+            if input.resource_ids.is_some() == input.resource_types.is_some() {
+                return Err(err(400, "INVALID_GRANTS"));
+            }
+            let mut resource_ids = input.resource_ids.unwrap_or_default();
+            let mut resource_types = input.resource_types.unwrap_or_default();
+            resource_types.sort();
+            resource_ids.sort();
+            resource_ids.dedup();
             let allowed = [
                 "resources:read",
                 "resources:write",
@@ -1927,10 +1941,11 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
             if input.scopes.is_empty()
                 || input.scopes.len() > allowed.len()
                 || input.scopes.iter().any(|s| !allowed.contains(&s.as_str()))
-                || input.resource_ids.is_empty()
-                || input.resource_ids.len() > 1024
-                || input.resource_ids.iter().any(|r| r != "*" && !id(r))
-                || input.resource_ids.len() > 1 && input.resource_ids.iter().any(|r| r == "*")
+                || resource_ids.is_empty() == resource_types.is_empty()
+                || resource_types.windows(2).any(|w| w[0] == w[1])
+                || resource_ids.len() > 1024
+                || resource_ids.iter().any(|r| r != "*" && !id(r))
+                || resource_ids.len() > 1 && resource_ids.iter().any(|r| r == "*")
             {
                 return Err(err(400, "INVALID_GRANTS"));
             }
@@ -1939,7 +1954,8 @@ async fn dispatch(app: &App, request: Request) -> workspace_contracts::Result<Re
                 .map_err(|_| err(409, "REGION_UNAVAILABLE"))?;
             let grant = Grant {
                 scopes: input.scopes,
-                resource_ids: input.resource_ids,
+                resource_ids,
+                resource_types,
                 region_id: owner.region_id.clone(),
             };
             let value = serde_json::to_value(&grant).map_err(|_| err(503, "GRANT_UNAVAILABLE"))?;

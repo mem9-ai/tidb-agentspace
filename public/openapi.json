@@ -3252,7 +3252,7 @@
     },
     "/workspaces": {
       "get": {
-        "description": "Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: resources:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "listWorkspaces",
         "responses": {
           "200": {
@@ -3441,7 +3441,7 @@
     },
     "/workspaces/{workspaceId}": {
       "get": {
-        "description": "Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: resources:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "getWorkspace",
         "responses": {
           "200": {
@@ -3696,7 +3696,7 @@
     },
     "/workspaces/{workspaceId}/context": {
       "get": {
-        "description": "Required Region access Token scope: authenticated caller; no additional action scope. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Bootstrap with the regional Workspace API URL (including workspaceId) and one Key. No Global lookup or bearer-only scan across Workspaces. No other Key or upstream credentials are returned; effective grants do not override resource/provider availability. queries:execute implies queries:read. Owner session expiry remains governed by its authentication profile.",
+        "description": "Required Region access Token scope: authenticated caller; no additional action scope. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. Bootstrap with the regional Workspace API URL (including workspaceId) and one Key. No Global lookup or bearer-only scan across Workspaces. No other Key or upstream credentials are returned; effective grants do not override resource/provider availability. queries:execute implies queries:read. Owner session expiry remains governed by its authentication profile.",
         "operationId": "getAgentContext",
         "responses": {
           "200": {
@@ -3803,6 +3803,19 @@
                             "type": "string"
                           },
                           "type": "array"
+                        },
+                        "resourceTypes": {
+                          "description": "Selected types include current and future public resources in this Workspace.",
+                          "items": {
+                            "enum": [
+                              "database",
+                              "filesystem"
+                            ],
+                            "type": "string"
+                          },
+                          "maxItems": 2,
+                          "type": "array",
+                          "uniqueItems": true
                         },
                         "scopes": {
                           "items": {
@@ -4031,7 +4044,7 @@
         }
       ],
       "post": {
-        "description": "Required Region access Token scope: queries:execute on destination; Workspace inputs also require source files:read/analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
+        "description": "Required Region access Token scope: queries:execute on destination; Workspace inputs also require source files:read/analyze. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
         "operationId": "createDatabaseImportPreparation",
         "parameters": [
           {
@@ -4288,7 +4301,7 @@
     },
     "/workspaces/{workspaceId}/database-import-preparations/{preparationId}": {
       "delete": {
-        "description": "Required Region access Token scope: queries:execute on destination; source files:read/analyze when present. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: queries:execute on destination; source files:read/analyze when present. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "deleteDatabaseImportPreparation",
         "responses": {
           "204": {
@@ -4457,7 +4470,7 @@
         "x-required-scope": "queries:execute on destination; source files:read/analyze when present"
       },
       "get": {
-        "description": "Required Region access Token scope: queries:execute on destination; source files:read/analyze when present. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: queries:execute on destination; source files:read/analyze when present. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "getDatabaseImportPreparation",
         "responses": {
           "200": {
@@ -4672,7 +4685,7 @@
         }
       ],
       "post": {
-        "description": "Required Region access Token scope: queries:execute on destination; Workspace files additionally require source files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
+        "description": "Required Region access Token scope: queries:execute on destination; Workspace files additionally require source files:read and files:analyze. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.",
         "operationId": "createDatabaseImport",
         "requestBody": {
           "content": {
@@ -4860,7 +4873,7 @@
     },
     "/workspaces/{workspaceId}/events": {
       "get": {
-        "description": "Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: resources:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "listEvents",
         "responses": {
           "200": {
@@ -5077,7 +5090,7 @@
         }
       ],
       "post": {
-        "description": "Required Region access Token scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Also requires files:read. Discover engines from capabilities: CSV supports DuckDB SQL over table file or Just Bash over its raw UTF-8 text. Bash exposes the selected absolute Workspace path; discover input.path, input.workingDirectory and compatibility aliases on its engine option. Paths refer only to the virtual selected-file snapshot. Parquet supports only DuckDB, and other recognized text only Just Bash. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.",
+        "description": "Required Region access Token scope: files:analyze. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. Also requires files:read. Discover engines from capabilities: CSV supports DuckDB SQL over table file or Just Bash over its raw UTF-8 text. Bash exposes the selected absolute Workspace path; discover input.path, input.workingDirectory and compatibility aliases on its engine option. Paths refer only to the virtual selected-file snapshot. Parquet supports only DuckDB, and other recognized text only Just Bash. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.",
         "operationId": "analyzeFile",
         "requestBody": {
           "content": {
@@ -5418,7 +5431,7 @@
     },
     "/workspaces/{workspaceId}/file-analyses/capabilities": {
       "get": {
-        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: files:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "fileAnalysisCapabilities",
         "parameters": [
           {
@@ -5786,7 +5799,7 @@
         }
       ],
       "post": {
-        "description": "Required Region access Token scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Also requires files:read and the source File System grant. Fixed CSV/Parquet/text-line parsing, no scripts. Up to 16 MiB original or 1 MiB output text, 1000 rows/100 columns/1 MiB parsed data and 15 seconds, shared worker admission. Returns 20 sample rows and suggested field types with an actor-bound five-minute preparation. Parsing writes nothing. CSV keeps leading zeros and distinguishes quoted empty strings from NULL. Text lines are explicit one-column records.",
+        "description": "Required Region access Token scope: files:analyze. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. Also requires files:read and the source File System grant. Fixed CSV/Parquet/text-line parsing, no scripts. Up to 16 MiB original or 1 MiB output text, 1000 rows/100 columns/1 MiB parsed data and 15 seconds, shared worker admission. Returns 20 sample rows and suggested field types with an actor-bound five-minute preparation. Parsing writes nothing. CSV keeps leading zeros and distinguishes quoted empty strings from NULL. Text lines are explicit one-column records.",
         "operationId": "createFileExportPreparation",
         "requestBody": {
           "content": {
@@ -5982,7 +5995,7 @@
     },
     "/workspaces/{workspaceId}/file-export-preparations/{preparationId}": {
       "delete": {
-        "description": "Required Region access Token scope: files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: files:read and files:analyze. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "deleteFileExportPreparation",
         "responses": {
           "204": {
@@ -6151,7 +6164,7 @@
         "x-required-scope": "files:read and files:analyze"
       },
       "get": {
-        "description": "Required Region access Token scope: files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: files:read and files:analyze. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "getFileExportPreparation",
         "responses": {
           "200": {
@@ -6366,7 +6379,7 @@
         }
       ],
       "post": {
-        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Original copies require read access; Bash output requires read plus analyze. File targets require files:write and a target grant. Database commits require the exact actor preparation, confirmed=true, reviewed fields, source read/analyze and target queries:execute/grant. Original versions must match; single-use writes, no append/overwrite/retry. Output text is client-supplied authorization context, not attested command lineage. Only file-exports and file-export-preparations permit an 8 MiB JSON envelope for at most 1 MiB output text. Original downloads retain /files/content (local files use /files).",
+        "description": "Required Region access Token scope: files:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. Original copies require read access; Bash output requires read plus analyze. File targets require files:write and a target grant. Database commits require the exact actor preparation, confirmed=true, reviewed fields, source read/analyze and target queries:execute/grant. Original versions must match; single-use writes, no append/overwrite/retry. Output text is client-supplied authorization context, not attested command lineage. Only file-exports and file-export-preparations permit an 8 MiB JSON envelope for at most 1 MiB output text. Original downloads retain /files/content (local files use /files).",
         "operationId": "exportFileContent",
         "requestBody": {
           "content": {
@@ -6554,7 +6567,7 @@
     },
     "/workspaces/{workspaceId}/files": {
       "get": {
-        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: files:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "listFiles",
         "parameters": [
           {
@@ -6800,7 +6813,7 @@
         }
       ],
       "put": {
-        "description": "Required Region access Token scope: files:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: files:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "writeFile",
         "parameters": [
           {
@@ -7071,7 +7084,7 @@
     },
     "/workspaces/{workspaceId}/files/content": {
       "get": {
-        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: files:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "downloadFile",
         "parameters": [
           {
@@ -7239,7 +7252,7 @@
         }
       ],
       "put": {
-        "description": "Required Region access Token scope: files:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: files:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "uploadFile",
         "parameters": [
           {
@@ -7471,7 +7484,7 @@
     },
     "/workspaces/{workspaceId}/files/entry": {
       "delete": {
-        "description": "Required Region access Token scope: files:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: files:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "deleteFile",
         "parameters": [
           {
@@ -7689,7 +7702,7 @@
     },
     "/workspaces/{workspaceId}/files/metadata": {
       "get": {
-        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: files:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "getFileMetadata",
         "parameters": [
           {
@@ -7949,7 +7962,7 @@
     },
     "/workspaces/{workspaceId}/files/tabular-preview": {
       "get": {
-        "description": "Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Fixed CSV/Parquet schema/sample only: accepts resourceId/path, no custom SQL or engine settings. Requires files:read, not files:analyze. Whole version-verified snapshot up to 16 MiB, 15 seconds and shared two-worker budget; at most 20 rows, 50 columns, 128 KiB. CSV types are inferred and totalRows unknown; Parquet count is metadata. No automatic retry. Download unsupported or over-budget files.",
+        "description": "Required Region access Token scope: files:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. Fixed CSV/Parquet schema/sample only: accepts resourceId/path, no custom SQL or engine settings. Requires files:read, not files:analyze. Whole version-verified snapshot up to 16 MiB, 15 seconds and shared two-worker budget; at most 20 rows, 50 columns, 128 KiB. CSV types are inferred and totalRows unknown; Parquet count is metadata. No automatic retry. Download unsupported or over-budget files.",
         "operationId": "tabularFilePreview",
         "parameters": [
           {
@@ -8700,9 +8713,19 @@
     },
     "/workspaces/{workspaceId}/resources": {
       "get": {
-        "description": "Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: resources:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "listResources",
         "parameters": [
+          {
+            "description": "Exact resource name within the authorized Workspace. Omit cursor.",
+            "in": "query",
+            "name": "name",
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
           {
             "description": "Page size, default 100; evaluated before authorization and visibility filtering, so a page may be empty.",
             "in": "query",
@@ -8934,7 +8957,7 @@
         }
       ],
       "post": {
-        "description": "Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: resources:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "createResource",
         "parameters": [
           {
@@ -9209,7 +9232,7 @@
     },
     "/workspaces/{workspaceId}/resources/{resourceId}": {
       "delete": {
-        "description": "Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Local removal completes synchronously (200). Drive9 and PostgreSQL may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; PostgreSQL requires operator reconciliation. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.",
+        "description": "Required Region access Token scope: resources:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. Local removal completes synchronously (200). Drive9 and PostgreSQL may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; PostgreSQL requires operator reconciliation. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.",
         "operationId": "deleteResource",
         "responses": {
           "200": {
@@ -9419,7 +9442,7 @@
         "x-required-scope": "resources:write"
       },
       "get": {
-        "description": "Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: resources:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "getResource",
         "responses": {
           "200": {
@@ -9627,7 +9650,7 @@
     },
     "/workspaces/{workspaceId}/resources/{resourceId}/setup-attempts": {
       "get": {
-        "description": "Required Region access Token scope: resources:read or resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: resources:read or resources:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "listResourceSetupAttempts",
         "parameters": [
           {
@@ -9864,7 +9887,7 @@
         }
       ],
       "post": {
-        "description": "Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Journaled before I/O; executes inline without a queue. Same caller/resource/idempotency key replays without effects. A different key explicitly requests a new attempt using saved bindings and supported reconciliation/idempotent setup only. Missing bindings cannot provision a replacement. succeeded/failed/outcome-unknown describe the attempt, not HTTP resource creation. GET never executes setup; existing credentials are retained.",
+        "description": "Required Region access Token scope: resources:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. Journaled before I/O; executes inline without a queue. Same caller/resource/idempotency key replays without effects. A different key explicitly requests a new attempt using saved bindings and supported reconciliation/idempotent setup only. Missing bindings cannot provision a replacement. succeeded/failed/outcome-unknown describe the attempt, not HTTP resource creation. GET never executes setup; existing credentials are retained.",
         "operationId": "createResourceSetupAttempt",
         "parameters": [
           {
@@ -10071,7 +10094,7 @@
     },
     "/workspaces/{workspaceId}/resources/{resourceId}/setup-attempts/{attemptId}": {
       "get": {
-        "description": "Required Region access Token scope: resources:read or resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: resources:read or resources:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "getResourceSetupAttempt",
         "responses": {
           "200": {
@@ -10288,7 +10311,7 @@
     },
     "/workspaces/{workspaceId}/resources/{resourceId}/tables": {
       "get": {
-        "description": "Required Region access Token scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: queries:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "listDatabaseTables",
         "responses": {
           "200": {
@@ -10488,7 +10511,7 @@
     },
     "/workspaces/{workspaceId}/resources/{resourceId}/tables/{tableName}": {
       "get": {
-        "description": "Required Region access Token scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: queries:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "getDatabaseTable",
         "parameters": [
           {
@@ -10701,7 +10724,7 @@
     },
     "/workspaces/{workspaceId}/resources/{resourceId}/tables/{tableName}/rows": {
       "get": {
-        "description": "Required Region access Token scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: queries:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "getDatabaseTableRows",
         "parameters": [
           {
@@ -10927,7 +10950,7 @@
         }
       ],
       "post": {
-        "description": "Required Region access Token scope: Source database: queries:read (also implied by queries:execute); source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.",
+        "description": "Required Region access Token scope: Source database: queries:read (also implied by queries:execute); source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.",
         "operationId": "exportResult",
         "requestBody": {
           "content": {
@@ -11125,7 +11148,7 @@
     },
     "/workspaces/{workspaceId}/sales-sample-attempts": {
       "get": {
-        "description": "Required Region access Token scope: files:read on the selected File System. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: files:read on the selected File System. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "listSalesSampleAttempts",
         "parameters": [
           {
@@ -11337,7 +11360,7 @@
         }
       ],
       "post": {
-        "description": "Required Region access Token scope: files:read and files:write on the selected File System; without resourceId, resources:write and wildcard resource grant. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: files:read and files:write on the selected File System; without resourceId, resources:write and wildcard resource grant. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "startSalesSample",
         "parameters": [
           {
@@ -11593,7 +11616,7 @@
     },
     "/workspaces/{workspaceId}/sales-sample-attempts/{attemptId}": {
       "get": {
-        "description": "Required Region access Token scope: files:read on the selected File System. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: files:read on the selected File System. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "getSalesSampleAttempt",
         "responses": {
           "200": {
@@ -11969,7 +11992,7 @@
     },
     "/workspaces/{workspaceId}/usage": {
       "get": {
-        "description": "Required Region access Token scope: usage:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.",
+        "description": "Required Region access Token scope: usage:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.",
         "operationId": "getUsage",
         "parameters": [
           {

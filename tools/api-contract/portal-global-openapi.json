@@ -196,8 +196,20 @@
               "type": "string"
             },
             "maxItems": 1024,
-            "minItems": 1,
             "type": "array"
+          },
+          "resourceTypes": {
+            "description": "Selected types include current and future public resources in this Workspace.",
+            "items": {
+              "enum": [
+                "database",
+                "filesystem"
+              ],
+              "type": "string"
+            },
+            "maxItems": 2,
+            "type": "array",
+            "uniqueItems": true
           },
           "scopes": {
             "items": {
@@ -1362,6 +1374,19 @@
           "content": {
             "application/json": {
               "schema": {
+                "examples": [
+                  {
+                    "expiresInDays": 30,
+                    "name": "Database reader",
+                    "resourceTypes": [
+                      "database"
+                    ],
+                    "scopes": [
+                      "resources:read",
+                      "queries:read"
+                    ]
+                  }
+                ],
                 "oneOf": [
                   {
                     "additionalProperties": false,
@@ -1384,6 +1409,7 @@
                         "type": "string"
                       },
                       "resourceIds": {
+                        "description": "Explicit resource IDs or the existing workspace-wide wildcard.",
                         "items": {
                           "type": "string"
                         },
@@ -1423,6 +1449,7 @@
                         "type": "string"
                       },
                       "resourceIds": {
+                        "description": "Explicit resource IDs or the existing workspace-wide wildcard.",
                         "items": {
                           "type": "string"
                         },
@@ -1442,6 +1469,101 @@
                     "required": [
                       "scopes",
                       "resourceIds",
+                      "expiresAt"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "expiresInDays": {
+                        "description": "Lifetime choice; the server computes the expiry.",
+                        "enum": [
+                          1,
+                          2,
+                          7,
+                          30,
+                          90
+                        ],
+                        "type": "integer"
+                      },
+                      "name": {
+                        "default": "Agent key",
+                        "maxLength": 80,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "resourceTypes": {
+                        "description": "Selected types include current and future public resources in this Workspace.",
+                        "items": {
+                          "enum": [
+                            "database",
+                            "filesystem"
+                          ],
+                          "type": "string"
+                        },
+                        "maxItems": 2,
+                        "minItems": 1,
+                        "type": "array",
+                        "uniqueItems": true
+                      },
+                      "scopes": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 8,
+                        "minItems": 1,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "scopes",
+                      "resourceTypes",
+                      "expiresInDays"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "expiresAt": {
+                        "deprecated": true,
+                        "description": "Deprecated absolute Unix-second expiry, accepted only inside the 90-day ceiling.",
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "name": {
+                        "default": "Agent key",
+                        "maxLength": 80,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "resourceTypes": {
+                        "description": "Selected types include current and future public resources in this Workspace.",
+                        "items": {
+                          "enum": [
+                            "database",
+                            "filesystem"
+                          ],
+                          "type": "string"
+                        },
+                        "maxItems": 2,
+                        "minItems": 1,
+                        "type": "array",
+                        "uniqueItems": true
+                      },
+                      "scopes": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 8,
+                        "minItems": 1,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "scopes",
+                      "resourceTypes",
                       "expiresAt"
                     ],
                     "type": "object"

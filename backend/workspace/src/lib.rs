@@ -124,6 +124,7 @@ pub struct Principal {
     pub id: String,
     pub scopes: Vec<String>,
     pub resource_ids: Vec<String>,
+    pub resource_types: Vec<workspace_contracts::ResourceType>,
     pub expires_at: Option<String>,
 }
 /// An authority-verified opaque identity, never a token, cookie or display label.
@@ -146,17 +147,28 @@ impl Principal {
     pub fn has(&self, id: &str) -> bool {
         self.owner || self.resource_ids.iter().any(|r| r == "*" || r == id)
     }
+    pub fn permits_type(&self, kind: &str) -> bool {
+        workspace_contracts::ResourceType::from_public_kind(kind)
+            .is_some_and(|t| self.resource_types.contains(&t))
+    }
+    pub fn permits_record(&self, record: &Value) -> bool {
+        visible_resource(record)
+            && record["id"].as_str().is_some_and(|id| {
+                self.has(id)
+                    || record["kind"]
+                        .as_str()
+                        .is_some_and(|kind| self.permits_type(kind))
+            })
+    }
     pub fn resource(&self, state: &Value, id: &str, kind: Option<&str>) -> Result<Value> {
-        if !self.has(id) {
+        let record = state["resources"]
+            .as_array()
+            .and_then(|rows| rows.iter().find(|r| r["id"] == id));
+        if !self.has(id) && !record.is_some_and(|r| self.permits_record(r)) {
             return Err(reject(403, "RESOURCE_ACCESS_DENIED"));
         }
-        state["resources"]
-            .as_array()
-            .and_then(|v| {
-                v.iter().find(|r| {
-                    visible_resource(r) && r["id"] == id && kind.is_none_or(|k| r["kind"] == k)
-                })
-            })
+        record
+            .filter(|r| visible_resource(r) && kind.is_none_or(|k| r["kind"] == k))
             .cloned()
             .ok_or_else(|| reject(404, "NOT_FOUND"))
     }
@@ -191,6 +203,7 @@ pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
                 .ok_or_else(|| reject(401, "INVALID_KEY"))?
                 .into(),
             scopes: strings(&key["scopes"]).ok_or_else(|| reject(401, "INVALID_KEY"))?,
+            resource_types: vec![],
             resource_ids: strings(&key["resourceIds"]).unwrap_or_default(),
             expires_at: key["expiresAt"].as_str().map(str::to_owned),
         });
@@ -219,6 +232,7 @@ pub fn principal(state: &Value, credential: &Credential) -> Result<Principal> {
         actor,
         id,
         scopes: vec!["*".into()],
+        resource_types: vec![],
         resource_ids: vec!["*".into()],
         expires_at: match credential {
             Credential::SessionOwner { expires_at, .. } => DateTime::from_timestamp(*expires_at, 0)
@@ -577,6 +591,20 @@ fn execute_operation(
             json!({"saved":true})
         }
         Operation::ListEvents => {
+            resources.extend(
+                state["resources"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|r| {
+                        visible_resource(r)
+                            && r["kind"]
+                                .as_str()
+                                .and_then(workspace_contracts::ResourceType::from_public_kind)
+                                .is_some_and(|t| owner_principal.resource_types.contains(&t))
+                    })
+                    .filter_map(|r| r["id"].as_str().map(str::to_owned)),
+            );
             let data = filtered_events(state, owner, &resources);
             json!({"data":data})
         }
@@ -641,6 +669,7 @@ mod tests {
                 id: "principal".into(),
                 actor: "Scoped agent".into(),
                 scopes: vec!["files:read".into()],
+                resource_types: vec![],
                 resource_ids: vec!["fs1".into()],
                 expires_at: None,
             })
@@ -651,6 +680,39 @@ mod tests {
         {
             Box::pin(async { self.snapshot() })
         }
+    }
+    #[test]
+    fn explicit_ids_and_database_grants_resolve_against_public_records() {
+        let old = ScopedFixture { owner: false }.snapshot().unwrap();
+        let explicit = Principal {
+            resource_ids: vec!["chosen".into()],
+            ..old.clone()
+        };
+        let typed = Principal {
+            resource_ids: vec![],
+            resource_types: vec![workspace_contracts::ResourceType::Database],
+            ..old
+        };
+        let state = json!({"resources":[
+            {"id":"chosen","kind":"postgresql","provider":"db9-anonymous"},
+            {"id":"later","kind":"postgresql","provider":"db9-anonymous"},
+            {"id":"db_looks_like_a_database","kind":"filesystem"},
+            {"id":"simulated","kind":"postgresql","provider":"retired"},
+            {"id":"private","kind":"duckdb"}
+        ]});
+        assert!(explicit.resource(&state, "chosen", None).is_ok());
+        assert_eq!(
+            explicit.resource(&state, "later", None).unwrap_err().code,
+            "RESOURCE_ACCESS_DENIED"
+        );
+        assert!(typed.resource(&state, "later", None).is_ok());
+        for id in ["db_looks_like_a_database", "simulated", "private"] {
+            assert_eq!(
+                typed.resource(&state, id, None).unwrap_err().code,
+                "RESOURCE_ACCESS_DENIED"
+            );
+        }
+        assert!(!typed.has("*"));
     }
     #[test]
     fn scoped_authorization_cannot_become_owner_or_default_to_wildcard_grants() {

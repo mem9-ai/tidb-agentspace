@@ -337,6 +337,15 @@ export const test = base.extend({
         return reply({ data: resource, mode: 'demo' }, 201);
       }
       if (path === '/resources') {
+        if (url.searchParams.has('name')) {
+          const all = [...state.resources, ...[...resourcePages.values()].flatMap((p) => p.data)];
+          const row = all.find((r) => r.name === url.searchParams.get('name'));
+          return reply({
+            data: row ? [row] : [],
+            nextCursor: null,
+            capabilities: state.capabilities,
+          });
+        }
         const cursor = url.searchParams.get('cursor');
         if (cursor && resourcePages.has(cursor)) return reply(resourcePages.get(cursor));
         return reply({ data: state.resources, capabilities: state.capabilities, nextCursor: null });
@@ -404,7 +413,12 @@ export const test = base.extend({
           expiresAt: Math.floor(Date.parse(key.expiresAt) / 1000),
           revoked: Boolean(key.revokedAt),
         },
-        grants: { scopes: key.scopes, resourceIds: key.resourceIds, regionId: 'region:fixture' },
+        grants: {
+          scopes: key.scopes,
+          resourceIds: key.resourceIds ?? [],
+          resourceTypes: key.resourceTypes,
+          regionId: 'region:fixture',
+        },
         regionalStatus: key.regionalStatus || 'applied',
       });
       if (path === '/key-policy-deliveries' && method === 'POST') {

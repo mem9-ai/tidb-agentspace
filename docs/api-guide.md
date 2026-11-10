@@ -10,6 +10,12 @@ provider's data location, which may be `automatic`; it is separate from `regionI
 resources and provider credentials remain in place. Use the same single endpoint and Key for
 the client below; you do not need to configure a Region URL.
 
+## Choose a Key's resources
+
+In **API keys**, choose specific resources by default. Search and select as many as needed (up to 1,024). In a paginated Workspace, a partial name filters loaded resources. Enter the full name to find a resource on another page. For access that follows new resources, choose **By resource type** and select databases, file systems, or both.
+
+The Owner Key creation API accepts either `"resourceIds": ["fs_a", "fs_b"]` or `"resourceTypes": ["filesystem"]`. For example, a database reader uses `"resourceTypes": ["database"]` with `"scopes": ["resources:read", "queries:read"]`. The agent can inspect its effective selection in the Region context response. When listing resources, follow `nextCursor` even if the current page contains no matches.
+
 ## Start with one endpoint
 
 New Workspace Keys allow an agent to start with only the Global API base URL and Key. The

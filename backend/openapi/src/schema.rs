@@ -4,6 +4,10 @@ pub(crate) fn reference(name: &str) -> Value {
     json!({"$ref": format!("#/components/schemas/{name}")})
 }
 
+pub(crate) fn resource_types() -> Value {
+    json!({"type":"array","items":{"type":"string","enum":["database","filesystem"]},"maxItems":2,"uniqueItems":true,"description":"Selected types include current and future public resources in this Workspace."})
+}
+
 pub(crate) fn string() -> Value {
     json!({"type": "string"})
 }

@@ -117,6 +117,7 @@ impl ScopedAuthorization for HistoryKey {
             actor: "Key".into(),
             id: "separate-principal-id".into(),
             scopes: vec!["*".into()],
+            resource_types: vec![],
             resource_ids: vec!["*".into()],
             expires_at: None,
         })

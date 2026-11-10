@@ -268,6 +268,7 @@ fn list_resources() -> Value {
         "",
         json!({
             "parameters": [
+                {"name":"name","in":"query","schema":{"type":"string","minLength":1,"maxLength":128},"description":"Exact resource name within the authorized Workspace. Omit cursor."},
                 {
                     "name": "limit",
                     "in": "query",
@@ -455,6 +456,17 @@ fn update_settings() -> Value {
 }
 
 fn get_agent_context() -> Value {
+    let mut principal = object([
+        ("id", string()),
+        ("kind", json!({"enum": ["owner", "workspaceKey"]})),
+        ("scopes", array(string())),
+        ("resourceIds", array(string())),
+        (
+            "expiresAt",
+            json!({"type": ["string", "null"], "format": "date-time"}),
+        ),
+    ]);
+    principal["properties"]["resourceTypes"] = resource_types();
     json!({
         "operationId": "getAgentContext",
         "summary": "Discover the current caller and effective Workspace permissions",
@@ -465,13 +477,7 @@ fn get_agent_context() -> Value {
         "responses": responses(json!({
             "200": response("Success", object([
                 ("workspaceId", string()),
-                ("principal", object([
-                    ("id", string()),
-                    ("kind", json!({"enum": ["owner", "workspaceKey"]})),
-                    ("scopes", array(string())),
-                    ("resourceIds", array(string())),
-                    ("expiresAt", json!({"type": ["string", "null"], "format": "date-time"})),
-                ])),
+                ("principal", principal),
                 ("links", object([("self", string()), ("resources", string()), ("queries", string()), ("files", string())])),
                 ("capabilities", reference("Capabilities")),
                 ("limits", object([

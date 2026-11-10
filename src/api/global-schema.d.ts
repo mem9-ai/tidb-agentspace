@@ -417,6 +417,8 @@ export interface components {
     Grants: {
       regionId: string;
       resourceIds: string[];
+      /** @description Selected types include current and future public resources in this Workspace. */
+      resourceTypes?: ('database' | 'filesystem')[];
       scopes: string[];
     };
     Issuance: {
@@ -919,6 +921,7 @@ export interface operations {
               expiresInDays: 1 | 2 | 7 | 30 | 90;
               /** @default Agent key */
               name?: string;
+              /** @description Explicit resource IDs or the existing workspace-wide wildcard. */
               resourceIds: string[];
               scopes: string[];
             }
@@ -930,7 +933,32 @@ export interface operations {
               expiresAt: number;
               /** @default Agent key */
               name?: string;
+              /** @description Explicit resource IDs or the existing workspace-wide wildcard. */
               resourceIds: string[];
+              scopes: string[];
+            }
+          | {
+              /**
+               * @description Lifetime choice; the server computes the expiry.
+               * @enum {integer}
+               */
+              expiresInDays: 1 | 2 | 7 | 30 | 90;
+              /** @default Agent key */
+              name?: string;
+              /** @description Selected types include current and future public resources in this Workspace. */
+              resourceTypes: ('database' | 'filesystem')[];
+              scopes: string[];
+            }
+          | {
+              /**
+               * @deprecated
+               * @description Deprecated absolute Unix-second expiry, accepted only inside the 90-day ceiling.
+               */
+              expiresAt: number;
+              /** @default Agent key */
+              name?: string;
+              /** @description Selected types include current and future public resources in this Workspace. */
+              resourceTypes: ('database' | 'filesystem')[];
               scopes: string[];
             };
       };

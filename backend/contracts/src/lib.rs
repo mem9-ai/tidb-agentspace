@@ -12,6 +12,23 @@ pub fn valid_guest_session_window(created: i64, expires: i64) -> bool {
     )
 }
 
+/// Public resource families which may receive a dynamic Workspace Key grant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ResourceType {
+    Database,
+    Filesystem,
+}
+impl ResourceType {
+    pub fn from_public_kind(kind: &str) -> Option<Self> {
+        match kind {
+            "postgresql" => Some(Self::Database),
+            "filesystem" => Some(Self::Filesystem),
+            _ => None,
+        }
+    }
+}
+
 pub const RESOURCE_INDEX_SCHEMA: &str = "indexes/resource-v1/schema";
 
 /// Commit only atomically with a brand-new, empty Workspace. Existing Workspaces must

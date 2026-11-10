@@ -14,27 +14,45 @@ impl Product {
         if !(1..=512).contains(&limit) {
             return Err(err(400, "INVALID_PAGE_LIMIT"));
         }
-        let after = query
-            .get("cursor")
-            .map(|cursor| {
-                if cursor.len() > 1024 {
-                    return Err(err(400, "INVALID_PAGE_CURSOR"));
-                }
-                String::from_utf8(
-                    URL_SAFE_NO_PAD
-                        .decode(cursor)
-                        .map_err(|_| err(400, "INVALID_PAGE_CURSOR"))?,
-                )
-                .map_err(|_| err(400, "INVALID_PAGE_CURSOR"))
+        let typed = !p.resource_types.is_empty();
+        let after = if let Some(token) = query.get("cursor") {
+            let invalid = || err(400, "INVALID_PAGE_CURSOR");
+            if token.len() > 1024 {
+                return Err(invalid());
+            }
+            let bytes = URL_SAFE_NO_PAD.decode(token).map_err(|_| invalid())?;
+            Some(if typed {
+                self.open_resource_cursor(&bytes, &p.id).await?
+            } else {
+                String::from_utf8(bytes).map_err(|_| invalid())?
             })
-            .transpose()?;
-        if after
-            .as_ref()
-            .is_some_and(|id| id.is_empty() || id.contains('/') || !p.has(id))
-        {
+        } else {
+            None
+        };
+        let repository = self.workspace.repository();
+        if let Some(name) = query.get("name") {
+            if name.is_empty() || name.len() > 128 || after.is_some() {
+                return Err(err(400, "INVALID_RESOURCE_NAME"));
+            }
+            let record = repository.resource_named(name).await?;
+            return Ok((
+                record
+                    .into_iter()
+                    .filter(|r| p.permits_record(r) && r["status"] != "deleted")
+                    .collect(),
+                None,
+            ));
+        }
+        if after.as_ref().is_some_and(|id| {
+            id.is_empty()
+                || id.contains('/')
+                || id == "."
+                || id == ".."
+                || (p.resource_types.is_empty() && !p.has(id))
+        }) {
             return Err(err(400, "INVALID_PAGE_CURSOR"));
         }
-        let (items, next) = if p.owner || p.resource_ids.iter().any(|id| id == "*") {
+        let (items, next) = if typed || p.has("*") {
             let (items, next) = self
                 .workspace
                 .repository()
@@ -65,8 +83,12 @@ impl Product {
         };
         let data = items
             .into_iter()
-            .filter(|r| visible_resource(r) && r["status"] != "deleted")
+            .filter(|r| p.permits_record(r) && r["status"] != "deleted")
             .collect::<Vec<_>>();
-        Ok((data, next.map(|value| URL_SAFE_NO_PAD.encode(value))))
+        let next = match next {
+            Some(id) if typed => Some(self.seal_resource_cursor(&id, &p.id).await?),
+            other => other.map(|id| URL_SAFE_NO_PAD.encode(id)),
+        };
+        Ok((data, next))
     }
 }

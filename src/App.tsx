@@ -93,9 +93,11 @@ import {
   IconHelpCircle as CircleHelp,
 } from '@tidbcloud/uikit/icons';
 import type { IconProps } from '@tidbcloud/uikit/icons';
+import type { KeyResourceType } from './api/client';
 import { ResourceAccessPicker } from './features/keys/ResourceAccessPicker';
 import {
   KeyPermissions,
+  keyAccessSummary,
   permitsSalesTask,
   retainApplicablePermissions,
 } from './features/keys/KeyPermissions';
@@ -1972,7 +1974,14 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
                   </Table.Td>
                   <Table.Td>
                     <div className="scope-chips">
-                      {k.resourceIds.includes('*') ? (
+                      {k.resourceTypes?.length ? (
+                        k.resourceTypes.map((t) => (
+                          <Badge key={t}>
+                            {t === 'database' ? 'All databases' : 'All file systems'} · current
+                            &amp; future
+                          </Badge>
+                        ))
+                      ) : k.resourceIds.includes('*') ? (
                         <Badge>All current & future resources</Badge>
                       ) : k.resourceIds.length ? (
                         k.resourceIds.map((id) => (
@@ -2439,6 +2448,8 @@ function CreateKey({
         : ['resources:read'],
     ),
     [resourceIds, setResourceIds] = useState(preset ? [preset.id] : []),
+    [resourceTypes, setResourceTypes] = useState<KeyResourceType[]>(),
+    [foundResources, setFoundResources] = useState<Resource[]>([]),
     [expires, setExpires] = useState<CreateKeyInput['expiresInDays']>(30),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
@@ -2448,17 +2459,27 @@ function CreateKey({
   const [launchPrepared, setLaunchPrepared] = useState(false);
   const [createdKey, setCreatedKey] = useState<ApiKey>();
   const [closeIntent, setCloseIntent] = useState<'close' | 'continue' | null>(null);
-  const availableResources =
+  const loadedResources =
     preset && !data.resources.some((resource) => resource.id === preset.id)
       ? [...data.resources, preset]
       : data.resources;
+  const availableResources = [
+    ...loadedResources,
+    ...foundResources.filter((r) => !loadedResources.some((other) => other.id === r.id)),
+  ];
   const visibleResourceIds = new Set(availableResources.map((resource) => resource.id));
   const hiddenSelections = resourceIds.filter((id) => id !== '*' && !visibleResourceIds.has(id));
-  const activeScopes = retainApplicablePermissions(scopes, resourceIds, availableResources);
+  const activeScopes = retainApplicablePermissions(
+    scopes,
+    resourceIds,
+    availableResources,
+    resourceTypes,
+  );
   const excludedScopes = scopes.filter((scope) => !activeScopes.includes(scope));
-  function changeResourceIds(ids: string[]) {
+  function changeResourceIds(ids: string[], types?: KeyResourceType[]) {
+    setResourceTypes(types);
     setResourceIds(ids);
-    const retained = retainApplicablePermissions(activeScopes, ids, availableResources);
+    const retained = retainApplicablePermissions(activeScopes, ids, availableResources, types);
     const removed = scopes.filter((scope) => !retained.includes(scope));
     setScopes(retained);
     setScopeNotice(
@@ -2481,7 +2502,7 @@ function CreateKey({
       const result = await workspaceApi.createKey({
         name,
         scopes: activeScopes,
-        resourceIds,
+        ...(resourceTypes ? { resourceTypes } : { resourceIds }),
         expiresInDays: isGuest ? 2 : expires,
       });
       setSecret(result.secret);
@@ -2563,6 +2584,11 @@ function CreateKey({
           <ResourceAccessPicker
             resources={availableResources}
             resourceIds={resourceIds}
+            resourceTypes={resourceTypes}
+            hasUnloaded={Boolean(data.resourceNextCursor || data.resourceWindowTruncated)}
+            remember={(r) =>
+              setFoundResources((old) => (old.some((x) => x.id === r.id) ? old : [...old, r]))
+            }
             onChange={changeResourceIds}
           />
           {hiddenSelections.length > 0 && (
@@ -2582,7 +2608,7 @@ function CreateKey({
               </Button>
             </Group>
           )}
-          {(data.resourceNextCursor || data.resourceWindowTruncated) && (
+          {!resourceTypes && (data.resourceNextCursor || data.resourceWindowTruncated) && (
             <Group mt="sm">
               {data.resourceWindowTruncated && (
                 <Button type="button" onClick={() => void refresh()}>
@@ -2605,6 +2631,7 @@ function CreateKey({
           <KeyPermissions
             resources={availableResources}
             resourceIds={resourceIds}
+            resourceTypes={resourceTypes}
             scopes={activeScopes}
             notice={
               excludedScopes.length
@@ -2639,6 +2666,7 @@ function CreateKey({
               {error}
             </Alert>
           )}
+          <Text size="sm">{keyAccessSummary(activeScopes, resourceIds, resourceTypes)}</Text>
           <div className="modal-actions">
             <Button type="button" onClick={onClose}>
               Cancel
@@ -2647,7 +2675,7 @@ function CreateKey({
               variant="filled"
               leftSection={React.createElement(KeyRound, { size: 18 })}
               loading={busy}
-              disabled={busy || !activeScopes.length || !resourceIds.length}
+              disabled={busy || !activeScopes.length || !(resourceTypes ?? resourceIds).length}
               type="submit"
             >
               {busy ? 'Creating…' : 'Create key'}

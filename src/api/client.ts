@@ -19,7 +19,13 @@ export type RequestHistory =
   operations['listRequestHistory']['responses'][200]['content']['application/json'];
 export type TableList = components['schemas']['TableList'];
 export type TableDetail = components['schemas']['TableDetail'];
-export type ApiKey = components['schemas']['Key'] & { regionalStatus?: 'pending' | 'applied' };
+export type KeyResourceType = NonNullable<
+  GlobalComponents['schemas']['Grants']['resourceTypes']
+>[number];
+export type ApiKey = components['schemas']['Key'] & {
+  resourceTypes?: KeyResourceType[];
+  regionalStatus?: 'pending' | 'applied';
+};
 export type Data = components['schemas']['Bootstrap'];
 export type WorkspaceFile = components['schemas']['File'];
 export type QueryResult =
@@ -29,9 +35,11 @@ type JsonBody<T extends { requestBody: { content: { 'application/json': unknown 
 export type CreateKeyInput = {
   name: string;
   scopes: string[];
-  resourceIds: string[];
   expiresInDays: 1 | 2 | 7 | 30 | 90;
-};
+} & (
+  | { resourceIds: string[]; resourceTypes?: never }
+  | { resourceTypes: KeyResourceType[]; resourceIds?: never }
+);
 export type FileAnalysisResult =
   operations['analyzeFile']['responses'][200]['content']['application/json'];
 export type FileAnalysisInput = JsonBody<operations['analyzeFile']>;
@@ -355,6 +363,13 @@ export const workspaceApi = {
     return true;
   },
   resources: () => responseData(client.GET('/workspaces/{workspaceId}/resources', { params })),
+  resourcesNamed: (name: string, signal: AbortSignal) =>
+    responseData(
+      client.GET('/workspaces/{workspaceId}/resources', {
+        params: { path: params.path, query: { name } },
+        signal,
+      }),
+    ),
   resourcesPage: (cursor?: string) =>
     responseData(
       client.GET('/workspaces/{workspaceId}/resources', {
@@ -492,7 +507,9 @@ export const workspaceApi = {
       body: {
         name: body.name,
         scopes: body.scopes,
-        resourceIds: body.resourceIds,
+        ...(body.resourceTypes
+          ? { resourceTypes: body.resourceTypes }
+          : { resourceIds: body.resourceIds }),
         expiresInDays: body.expiresInDays,
       },
     });
@@ -633,6 +650,7 @@ function portalKey(summary: GlobalKeySummary): ApiKey {
     prefix: 'awk_' + key.keyId,
     scopes: grants.scopes,
     resourceIds: grants.resourceIds,
+    resourceTypes: grants.resourceTypes,
     createdAt: new Date(key.createdAt * 1000).toISOString(),
     expiresAt: new Date(key.expiresAt * 1000).toISOString(),
     lastUsedAt: null,
