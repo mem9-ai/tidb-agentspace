@@ -10,7 +10,7 @@ impl Product {
             scopes.push("queries:read".into());
         }
         Ok(
-            json!({"workspaceId":id,"principal":{"id":p.id,"kind":if p.owner{"owner"}else{"workspaceKey"},"scopes":scopes,"resourceIds":p.resource_ids,"expiresAt":p.expires_at},"links":{"self":format!("{base}/context"),"resources":format!("{base}/resources"),"queries":format!("{base}/queries"),"files":format!("{base}/files")},"capabilities":self.capabilities(),"limits":{"sqlBytes":65536,"queryRows":1000,"queryResultBytes":1048576,"fileUploadBytes":1048576,"sqlTimeoutSeconds":15,"readOnlySqlTokens":1024,"readOnlySqlNesting":32},"permissions":{"manageKeys":p.owner,"createResources":p.scope("resources:write").is_ok()&&p.has("*")}}),
+            json!({"workspaceId":id,"principal":{"id":p.id,"kind":if p.owner{"owner"}else{"workspaceKey"},"scopes":scopes,"resourceIds":p.resource_ids,"resourceTypes":p.resource_types,"expiresAt":p.expires_at},"links":{"self":format!("{base}/context"),"resources":format!("{base}/resources"),"queries":format!("{base}/queries"),"files":format!("{base}/files")},"capabilities":self.capabilities(),"limits":{"sqlBytes":65536,"queryRows":1000,"queryResultBytes":1048576,"fileUploadBytes":1048576,"sqlTimeoutSeconds":15,"readOnlySqlTokens":1024,"readOnlySqlNesting":32},"permissions":{"manageKeys":p.owner,"createResources":p.scope("resources:write").is_ok()&&p.has("*")}}),
         )
     }
     fn resource_view(&self, mut r: Value, p: &Principal) -> Value {

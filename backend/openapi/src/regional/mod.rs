@@ -183,7 +183,7 @@ pub(super) const OWNER_DESCRIPTION: &str = "Requires an authenticated Workspace 
 
 pub(super) fn scope_description(scope: &str, details: &str) -> String {
     format!(
-        "Required Region access Token scope: {scope}. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources.{PORTAL_ACCESS}{details}"
+        "Required Region access Token scope: {scope}. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources.{PORTAL_ACCESS}{details}"
     )
 }
 

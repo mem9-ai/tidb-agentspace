@@ -252,11 +252,11 @@ impl Repository {
                 };
                 let actor = crate::principal(&state, credential)?;
                 actor.scope("resources:write")?;
-                if !actor.has(resource) {
-                    return Err(ServiceError::new(403, "RESOURCE_ACCESS_DENIED"));
-                }
                 let resource_key = format!("state/resources/{resource}");
                 let owner = self.get(&resource_key).await?;
+                if !actor.permits_record(&owner["value"]["record"]) {
+                    return Err(ServiceError::new(403, "RESOURCE_ACCESS_DENIED"));
+                }
                 if owner["value"]["record"]["kind"] != "filesystem"
                     || !["deleting", "deleted"]
                         .contains(&owner["value"]["record"]["status"].as_str().unwrap_or(""))

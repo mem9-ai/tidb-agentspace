@@ -268,6 +268,7 @@ fn list_resources() -> Value {
         "",
         json!({
             "parameters": [
+                {"name":"name","in":"query","schema":{"type":"string","minLength":1,"maxLength":128},"description":"Exact resource name within the authorized Workspace. Omit cursor."},
                 {
                     "name": "limit",
                     "in": "query",
@@ -470,6 +471,7 @@ fn get_agent_context() -> Value {
                     ("kind", json!({"enum": ["owner", "workspaceKey"]})),
                     ("scopes", array(string())),
                     ("resourceIds", array(string())),
+                    ("resourceTypes", resource_types()),
                     ("expiresAt", json!({"type": ["string", "null"], "format": "date-time"})),
                 ])),
                 ("links", object([("self", string()), ("resources", string()), ("queries", string()), ("files", string())])),

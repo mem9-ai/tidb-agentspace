@@ -4,6 +4,7 @@ mod files;
 mod imports;
 mod preparations;
 mod read_only;
+mod resource_cursor;
 mod resource_locks;
 mod resource_pages;
 mod resources;
@@ -44,6 +45,7 @@ pub struct Product {
     lifecycle: Vec<tokio::sync::RwLock<()>>,
     file_mutations: Vec<Mutex<()>>,
     setup_admission: Vec<Mutex<()>>,
+    cursor_cipher: tokio::sync::OnceCell<aes_gcm::Aes256Gcm>,
     preparations: Mutex<BTreeMap<String, exports::Preparation>>,
 }
 pub struct Request<'a> {
@@ -91,6 +93,7 @@ impl Product {
             setup_admission: (0..resource_locks::STRIPES)
                 .map(|_| Mutex::new(()))
                 .collect(),
+            cursor_cipher: tokio::sync::OnceCell::new(),
             preparations: Mutex::new(BTreeMap::new()),
         })
     }
@@ -501,10 +504,10 @@ impl Product {
                 } else {
                     state["resourceQueryCounts"]
                         .as_object()
-                        .map(|v| {
-                            v.iter()
-                                .filter(|(k, _)| p.has(k))
-                                .map(|(_, v)| v.as_u64().unwrap_or(0))
+                        .map(|counts| {
+                            resources
+                                .iter()
+                                .filter_map(|r| counts.get(r["id"].as_str()?)?.as_u64())
                                 .sum()
                         })
                         .unwrap_or(0)

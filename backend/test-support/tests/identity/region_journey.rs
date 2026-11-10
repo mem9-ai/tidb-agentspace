@@ -394,6 +394,26 @@ async fn regional_token_enrollment_delivery_and_outage_recovery() -> Result<()> 
         first["workspaceId"]
     );
     let proof = Proof::create(clock)?;
+    let typed = checked(g.owner(Method::POST, ws, &cookie, "/keys")
+        .header("Idempotency-Key",id())
+        .json(&json!({"scopes":["resources:read","files:read"],"resourceTypes":["filesystem"],"expiresInDays":1})),201).await?.0;
+    assert_eq!(typed["regionalStatus"], "applied");
+    for invalid in [
+        json!({"resourceTypes":[]}),
+        json!({"resourceTypes":["unknown"]}),
+        json!({"resourceTypes":["database"], "resourceIds":["*"]}),
+    ] {
+        let mut body = invalid;
+        body["scopes"] = json!(["resources:read"]);
+        body["expiresInDays"] = json!(1);
+        checked(
+            g.owner(Method::POST, ws, &cookie, "/keys")
+                .header("Idempotency-Key", id())
+                .json(&body),
+            400,
+        )
+        .await?;
+    }
     let setup = new_key(
         &g,
         ws,
@@ -422,6 +442,61 @@ async fn regional_token_enrollment_delivery_and_outage_recovery() -> Result<()> 
         resources.push(resource["data"]["id"].clone());
     }
     let resources = json!(resources);
+    let typed_issued = issuance(&g, ws, &typed, &proof, 201).await?;
+    let mut typed_family = r.enroll(ws, &typed_issued, &proof).await?;
+    let typed_token = r.renew(ws, &mut typed_family, &proof).await?;
+    let typed_get = |w: &str, path: &str| r.req(Method::GET, w, path).bearer_auth(&typed_token);
+    assert_eq!(
+        result(typed_get(ws, "/context"), 200).await?["principal"]["resourceTypes"],
+        json!(["filesystem"])
+    );
+    let selected = result(typed_get(ws, "/resources"), 200).await?;
+    assert_eq!(selected["data"].as_array().unwrap().len(), 1);
+    assert_eq!(selected["data"][0]["id"], resources[1]);
+    let page = result(typed_get(ws, "/resources?limit=1"), 200).await?;
+    assert!(page["data"].as_array().unwrap().is_empty()); // First stored record is a database.
+    let cursor = field(&page, "nextCursor");
+    let decoded = B64.decode(cursor)?;
+    assert!(
+        !decoded
+            .windows(resources[0].as_str().unwrap().len())
+            .any(|w| w == resources[0].as_str().unwrap().as_bytes())
+    );
+    let last = result(
+        typed_get(ws, &format!("/resources?limit=1&cursor={cursor}")),
+        200,
+    )
+    .await?;
+    assert_eq!(last["data"][0]["id"], resources[1]);
+    result(typed_get(ws, "/resources?cursor=Zm9yZ2Vk"), 400).await?;
+    for (name, count) in [("continuity-fs", 1), ("continuity-db", 0)] {
+        let named = result(typed_get(ws, &format!("/resources?name={name}")), 200).await?;
+        assert_eq!(named["data"].as_array().unwrap().len(), count);
+    }
+    result(
+        typed_get(
+            ws,
+            &format!("/resources/{}", resources[0].as_str().unwrap()),
+        ),
+        403,
+    )
+    .await?;
+    result(
+        r.req(
+            Method::PUT,
+            ws,
+            &format!(
+                "/files/content?resourceId={}&path=/denied",
+                resources[1].as_str().unwrap()
+            ),
+        )
+        .bearer_auth(&typed_token)
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .body("x"),
+        403,
+    )
+    .await?;
+
     assert_eq!(
         result(r.req(Method::GET, ws, "").bearer_auth(access), 200).await?["data"]["defaultRegionId"],
         AUTHORITY
@@ -480,6 +555,13 @@ async fn regional_token_enrollment_delivery_and_outage_recovery() -> Result<()> 
             .iter()
             .all(|v| !resources.as_array().unwrap().contains(&v["id"]))
     );
+    let renewed = r.renew(ws, &mut typed_family, &proof).await?;
+    result(
+        r.req(Method::GET, other, "/resources")
+            .bearer_auth(&renewed),
+        401,
+    )
+    .await?;
     let listed = result(
         r.http
             .get(format!("{}/api/v1/workspaces", r.origin))

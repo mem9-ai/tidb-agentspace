@@ -196,8 +196,20 @@
               "type": "string"
             },
             "maxItems": 1024,
-            "minItems": 1,
             "type": "array"
+          },
+          "resourceTypes": {
+            "description": "Selected types include current and future public resources in this Workspace.",
+            "items": {
+              "enum": [
+                "database",
+                "filesystem"
+              ],
+              "type": "string"
+            },
+            "maxItems": 2,
+            "type": "array",
+            "uniqueItems": true
           },
           "scopes": {
             "items": {

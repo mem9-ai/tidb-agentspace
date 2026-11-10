@@ -270,6 +270,27 @@ impl Repository {
         }
         Ok((user.into(), generation))
     }
+    /// A filtered page can end on a hidden resource. Keep continuation keys private
+    /// and stable across Region restarts, within this Workspace's guarded Meta scope.
+    pub async fn resource_cursor_key(&self) -> Result<[u8; 32]> {
+        const PATH: &str = "system/resource-cursor-key-v1";
+        let mut stored = self.get(PATH).await?;
+        if stored.is_null() {
+            let key = crate::secret(32)?;
+            match self
+                .commit(vec![json!({"key":PATH,"expectedVersion":null,"value":key})])
+                .await
+            {
+                Ok(()) => stored = json!({"value":key}),
+                Err(e) if e.code == "META_CONFLICT" => stored = self.get(PATH).await?,
+                Err(e) => return Err(e),
+            }
+        }
+        let mut key = [0; 32];
+        hex::decode_to_slice(stored["value"].as_str().unwrap_or(""), &mut key)
+            .map_err(|_| error("META_RECORD_CORRUPT"))?;
+        Ok(key)
+    }
     async fn commit(&self, changes: Vec<Value>) -> Result<()> {
         if changes.is_empty() {
             return Ok(());

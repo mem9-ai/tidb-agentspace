@@ -172,7 +172,7 @@ fn key_lifetime_absolute() -> Value {
     })
 }
 
-fn key_create_branch(expiry_field: &str, expiry: Value) -> Value {
+fn key_create_branch(expiry_field: &str, expiry: Value, by_type: bool) -> Value {
     let mut properties = serde_json::Map::new();
     properties.insert(
         "name".into(),
@@ -182,24 +182,41 @@ fn key_create_branch(expiry_field: &str, expiry: Value) -> Value {
         "scopes".into(),
         json!({"type": "array", "items": string(), "minItems": 1, "maxItems": 8}),
     );
-    properties.insert(
-        "resourceIds".into(),
-        json!({"type": "array", "items": string(), "minItems": 1, "maxItems": 1024}),
-    );
+    let selector = if by_type {
+        "resourceTypes"
+    } else {
+        "resourceIds"
+    };
+    let selection = if by_type {
+        extend(resource_types(), json!({"minItems":1}))
+    } else {
+        json!({"type":"array","items":string(),"minItems":1,"maxItems":1024,"description":"Explicit resource IDs or the existing workspace-wide wildcard."})
+    };
+    properties.insert(selector.into(), selection);
     properties.insert(expiry_field.into(), expiry);
     json!({
         "type": "object",
         "additionalProperties": false,
         "properties": properties,
-        "required": [json!("scopes"), json!("resourceIds"), json!(expiry_field)],
+        "required": [json!("scopes"), json!(selector), json!(expiry_field)],
     })
 }
 
 fn key_create_request() -> Value {
-    json!({"oneOf": [
-        key_create_branch("expiresInDays", key_lifetime_days("Lifetime choice; the server computes the expiry.")),
-        key_create_branch("expiresAt", key_lifetime_absolute()),
-    ]})
+    let alternatives = [false, true]
+        .into_iter()
+        .flat_map(|by_type| {
+            [
+                key_create_branch(
+                    "expiresInDays",
+                    key_lifetime_days("Lifetime choice; the server computes the expiry."),
+                    by_type,
+                ),
+                key_create_branch("expiresAt", key_lifetime_absolute(), by_type),
+            ]
+        })
+        .collect::<Vec<_>>();
+    json!({"oneOf": alternatives, "examples":[{"name":"Database reader","scopes":["resources:read","queries:read"],"resourceTypes":["database"],"expiresInDays":30}]})
 }
 
 fn key_renewal_request() -> Value {

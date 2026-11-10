@@ -32,7 +32,7 @@ fn can_observe(p: &Principal, attempt: &Value) -> bool {
         return false;
     }
     if let Some(id) = attempt["resourceId"].as_str() {
-        return p.has(id);
+        return p.has(id) || p.permits_type("filesystem");
     }
     p.has("*") && p.scope("resources:write").is_ok() && p.scope("files:write").is_ok()
 }
@@ -107,10 +107,10 @@ impl Product {
         }
         let requested_resource = input["resourceId"].as_str();
         if let Some(resource_id) = requested_resource {
-            if !p.has(resource_id) {
+            let resource = repository.resource(resource_id).await?;
+            if !p.has(resource_id) && !p.permits_record(&resource) {
                 return Err(err(403, "FORBIDDEN"));
             }
-            let resource = repository.resource(resource_id).await?;
             if resource["kind"] != "filesystem"
                 || resource["status"] != "active"
                 || !resource["deletion"].is_null()

@@ -665,6 +665,63 @@ test('Key creation sends explicit resource/action grants and reveals its synthet
   await expect(page.getByRole('cell', { name: /^file-reader/ })).toBeVisible();
 });
 
+test('Key search retains multiple selections; type grants include future resources', async ({
+  page,
+  workspace,
+}) => {
+  workspace.addResources();
+  const later = {
+    ...workspace.state.resources[0],
+    id: 'db_later',
+    name: 'database-on-another-page',
+    kind: 'postgresql',
+  };
+  workspace.state.resourceNextCursor = 'next';
+  workspace.setResourcePage('next', [later], null);
+  await workspace.open('#keys');
+  await page.getByRole('button', { name: 'Create API key', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create API key' });
+  await dialog.getByLabel('Key name').fill('reader');
+  const submit = dialog.getByRole('button', { name: 'Create key', exact: true });
+  await expect(submit).toBeDisabled();
+  const search = dialog.getByLabel('Search resources');
+  await search.fill('filesystem-fixt');
+  await dialog.getByRole('checkbox', { name: 'filesystem-fixture', exact: true }).check();
+  await search.fill(later.name);
+  await dialog.getByRole('checkbox', { name: later.name, exact: true }).check();
+  await search.fill('');
+  await expect(dialog.getByText('2 selected. Future resources are excluded.')).toBeVisible();
+  await dialog.getByText('By resource type', { exact: true }).click();
+  await expect(submit).toBeDisabled();
+  await dialog.getByLabel('All databases', { exact: true }).check();
+  await expect(dialog.getByLabel(/queries:read/)).toBeVisible();
+  await expect(dialog.getByLabel(/files:read/)).toHaveCount(0);
+  await dialog.getByLabel('All file systems', { exact: true }).check();
+  await expect(dialog.getByLabel(/files:read/)).toBeVisible();
+  await dialog.getByLabel('All file systems', { exact: true }).uncheck();
+  await dialog.getByLabel(/queries:read/).check();
+  await expect(dialog.getByText(/Includes current and future resources/)).toBeVisible();
+  await expect(
+    dialog.getByText(
+      'For all current and future databases in this workspace, this key can discover resources and read database data.',
+    ),
+  ).toBeVisible();
+  if (process.env.KEY_SCOPE_SCREENSHOTS) {
+    await dialog.screenshot({
+      path: `${process.env.KEY_SCOPE_SCREENSHOTS}/${test.info().project.name}.png`,
+      animations: 'disabled',
+    });
+  }
+  await submit.click();
+  await expect(page.getByRole('dialog', { name: 'Your key is ready' })).toBeVisible();
+  const body = workspace.requests.findLast(
+    (r) => r.method === 'POST' && r.path.endsWith('/keys'),
+  ).body;
+  expect(body.resourceTypes).toEqual(['database']);
+  expect(body.scopes).toEqual(['resources:read', 'queries:read']);
+  expect(body).not.toHaveProperty('resourceIds');
+});
+
 test('@visual key permissions follow resource types and restore a specific selection', async ({
   page,
   workspace,

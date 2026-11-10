@@ -29,6 +29,38 @@ fn schema(contract: &Value, source: &Value) -> Result<Validator> {
 }
 
 #[test]
+fn key_creation_requires_exactly_one_resource_selection() -> Result<()> {
+    let api = workspace_openapi::View::PortalGlobal.document();
+    let body = &api["paths"]["/api/portal/v1/workspaces/{workspaceId}/keys"]["post"]["requestBody"]
+        ["content"]["application/json"]["schema"];
+    let validator = schema(&api, body)?;
+    for (selector, valid) in [
+        (json!({"resourceIds":["db_a","fs_b"]}), true),
+        (json!({"resourceIds":["*"]}), true),
+        (json!({"resourceTypes":["database","filesystem"]}), true),
+        (json!({}), false),
+        (json!({"resourceTypes":[]}), false),
+        (json!({"resourceTypes":["unknown"]}), false),
+        (json!({"resourceTypes":["filesystem","filesystem"]}), false),
+        (
+            json!({"resourceTypes":["filesystem"],"resourceIds":["fs_b"]}),
+            false,
+        ),
+    ] {
+        for expiry in [json!({"expiresInDays":7}), json!({"expiresAt":1900000000})] {
+            let mut request = selector.clone();
+            request
+                .as_object_mut()
+                .unwrap()
+                .extend(expiry.as_object().unwrap().clone());
+            request["scopes"] = json!(["resources:read"]);
+            assert_eq!(validator.is_valid(&request), valid, "{request}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn resource_names_enforce_database_and_filesystem_rules() -> Result<()> {
     let api = contract();
     let create = &api["paths"]["/workspaces/{workspaceId}/resources"]["post"]["requestBody"]["content"]

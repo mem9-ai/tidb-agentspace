@@ -852,6 +852,7 @@ impl Runtime {
             id: token.principal_id().into(),
             scopes: token.scopes().into(),
             resource_ids: grant.resource_ids,
+            resource_types: grant.resource_types,
             expires_at: chrono::DateTime::from_timestamp(token.expires_at(), 0)
                 .map(|t| t.to_rfc3339()),
         })

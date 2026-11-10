@@ -163,7 +163,7 @@ export interface paths {
     };
     /**
      * List available workspaces
-     * @description Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: resources:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['listWorkspaces'];
     put?: never;
@@ -186,7 +186,7 @@ export interface paths {
     };
     /**
      * Describe a workspace
-     * @description Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: resources:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['getWorkspace'];
     put?: never;
@@ -272,7 +272,7 @@ export interface paths {
     };
     /**
      * Discover the current caller and effective Workspace permissions
-     * @description Required Region access Token scope: authenticated caller; no additional action scope. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Bootstrap with the regional Workspace API URL (including workspaceId) and one Key. No Global lookup or bearer-only scan across Workspaces. No other Key or upstream credentials are returned; effective grants do not override resource/provider availability. queries:execute implies queries:read. Owner session expiry remains governed by its authentication profile.
+     * @description Required Region access Token scope: authenticated caller; no additional action scope. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Bootstrap with the regional Workspace API URL (including workspaceId) and one Key. No Global lookup or bearer-only scan across Workspaces. No other Key or upstream credentials are returned; effective grants do not override resource/provider availability. queries:execute implies queries:read. Owner session expiry remains governed by its authentication profile.
      */
     get: operations['getAgentContext'];
     put?: never;
@@ -297,7 +297,7 @@ export interface paths {
     put?: never;
     /**
      * Create a private destination-bound import review
-     * @description Required Region access Token scope: queries:execute on destination; Workspace inputs also require source files:read/analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.
+     * @description Required Region access Token scope: queries:execute on destination; Workspace inputs also require source files:read/analyze. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.
      */
     post: operations['createDatabaseImportPreparation'];
     delete?: never;
@@ -319,14 +319,14 @@ export interface paths {
     };
     /**
      * Read the current actor review without parsing or provider I/O
-     * @description Required Region access Token scope: queries:execute on destination; source files:read/analyze when present. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: queries:execute on destination; source files:read/analyze when present. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['getDatabaseImportPreparation'];
     put?: never;
     post?: never;
     /**
      * Cancel an unconsumed review
-     * @description Required Region access Token scope: queries:execute on destination; source files:read/analyze when present. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: queries:execute on destination; source files:read/analyze when present. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     delete: operations['deleteDatabaseImportPreparation'];
     options?: never;
@@ -348,7 +348,7 @@ export interface paths {
     put?: never;
     /**
      * Confirm reviewed server rows and create a new database table
-     * @description Required Region access Token scope: queries:execute on destination; Workspace files additionally require source files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.
+     * @description Required Region access Token scope: queries:execute on destination; Workspace files additionally require source files:read and files:analyze. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. CSV/Parquet only. Preparations are principal- and destination-bound, expire after five minutes, and retain at most 1,000 rows/100 columns/1 MiB parsed data. Preview returns at most 20 rows; commit uses all retained rows. Local uploads are ephemeral and never create a File System resource. Workspace inputs retain a 16 MiB snapshot budget. Parsing has a 15-second deadline and two slots. Existing 64 KiB SQL-statement budgets apply. New tables only; no append, overwrite, DROP or automatic write retry. Inspect the destination after an incomplete or uncertain outcome. Changing the target requires a new preparation. API restart invalidates preparations.
      */
     post: operations['createDatabaseImport'];
     delete?: never;
@@ -369,7 +369,7 @@ export interface paths {
     };
     /**
      * List the latest 200 successful local mutation events
-     * @description Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: resources:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['listEvents'];
     put?: never;
@@ -394,7 +394,7 @@ export interface paths {
     put?: never;
     /**
      * Run bounded read-only DuckDB SQL or Just Bash on one selected file
-     * @description Required Region access Token scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Also requires files:read. Discover engines from capabilities: CSV supports DuckDB SQL over table file or Just Bash over its raw UTF-8 text. Bash exposes the selected absolute Workspace path; discover input.path, input.workingDirectory and compatibility aliases on its engine option. Paths refer only to the virtual selected-file snapshot. Parquet supports only DuckDB, and other recognized text only Just Bash. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.
+     * @description Required Region access Token scope: files:analyze. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Also requires files:read. Discover engines from capabilities: CSV supports DuckDB SQL over table file or Just Bash over its raw UTF-8 text. Bash exposes the selected absolute Workspace path; discover input.path, input.workingDirectory and compatibility aliases on its engine option. Paths refer only to the virtual selected-file snapshot. Parquet supports only DuckDB, and other recognized text only Just Bash. Only the selected snapshot is available; no provider credentials, network, persistent writes or host paths. Limits: 16 MiB input, 64 KiB script, 15 seconds, 1000 rows / 1 MiB output, two active analyses. Large/unsupported files remain downloadable. No implicit retry.
      */
     post: operations['analyzeFile'];
     delete?: never;
@@ -415,7 +415,7 @@ export interface paths {
     };
     /**
      * Discover read-only analysis for a selected file
-     * @description Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: files:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['fileAnalysisCapabilities'];
     put?: never;
@@ -440,7 +440,7 @@ export interface paths {
     put?: never;
     /**
      * Parse an original file or Bash stream for explicit schema review
-     * @description Required Region access Token scope: files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Also requires files:read and the source File System grant. Fixed CSV/Parquet/text-line parsing, no scripts. Up to 16 MiB original or 1 MiB output text, 1000 rows/100 columns/1 MiB parsed data and 15 seconds, shared worker admission. Returns 20 sample rows and suggested field types with an actor-bound five-minute preparation. Parsing writes nothing. CSV keeps leading zeros and distinguishes quoted empty strings from NULL. Text lines are explicit one-column records.
+     * @description Required Region access Token scope: files:analyze. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Also requires files:read and the source File System grant. Fixed CSV/Parquet/text-line parsing, no scripts. Up to 16 MiB original or 1 MiB output text, 1000 rows/100 columns/1 MiB parsed data and 15 seconds, shared worker admission. Returns 20 sample rows and suggested field types with an actor-bound five-minute preparation. Parsing writes nothing. CSV keeps leading zeros and distinguishes quoted empty strings from NULL. Text lines are explicit one-column records.
      */
     post: operations['createFileExportPreparation'];
     delete?: never;
@@ -462,14 +462,14 @@ export interface paths {
     };
     /**
      * Read the current actor review without parsing or provider I/O
-     * @description Required Region access Token scope: files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: files:read and files:analyze. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['getFileExportPreparation'];
     put?: never;
     post?: never;
     /**
      * Cancel an unconsumed review
-     * @description Required Region access Token scope: files:read and files:analyze. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: files:read and files:analyze. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     delete: operations['deleteFileExportPreparation'];
     options?: never;
@@ -491,7 +491,7 @@ export interface paths {
     put?: never;
     /**
      * Copy original bytes, export Bash text or commit a confirmed database import
-     * @description Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Original copies require read access; Bash output requires read plus analyze. File targets require files:write and a target grant. Database commits require the exact actor preparation, confirmed=true, reviewed fields, source read/analyze and target queries:execute/grant. Original versions must match; single-use writes, no append/overwrite/retry. Output text is client-supplied authorization context, not attested command lineage. Only file-exports and file-export-preparations permit an 8 MiB JSON envelope for at most 1 MiB output text. Original downloads retain /files/content (local files use /files).
+     * @description Required Region access Token scope: files:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Original copies require read access; Bash output requires read plus analyze. File targets require files:write and a target grant. Database commits require the exact actor preparation, confirmed=true, reviewed fields, source read/analyze and target queries:execute/grant. Original versions must match; single-use writes, no append/overwrite/retry. Output text is client-supplied authorization context, not attested command lineage. Only file-exports and file-export-preparations permit an 8 MiB JSON envelope for at most 1 MiB output text. Original downloads retain /files/content (local files use /files).
      */
     post: operations['exportFileContent'];
     delete?: never;
@@ -512,12 +512,12 @@ export interface paths {
     };
     /**
      * List files (Drive9 metadata only; local files include UTF-8 contents)
-     * @description Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: files:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['listFiles'];
     /**
      * Create or replace a UTF-8 file or directory
-     * @description Required Region access Token scope: files:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: files:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     put: operations['writeFile'];
     post?: never;
@@ -539,12 +539,12 @@ export interface paths {
     };
     /**
      * Download original bytes or request a bounded file preview (Drive9)
-     * @description Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: files:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['downloadFile'];
     /**
      * Upload original bytes to Drive9 (gateway maximum 1 MiB)
-     * @description Required Region access Token scope: files:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: files:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     put: operations['uploadFile'];
     post?: never;
@@ -569,7 +569,7 @@ export interface paths {
     post?: never;
     /**
      * Delete a file or empty directory identified by its URI
-     * @description Required Region access Token scope: files:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: files:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     delete: operations['deleteFile'];
     options?: never;
@@ -589,7 +589,7 @@ export interface paths {
     };
     /**
      * Read file identity and an opaque conditional-write version
-     * @description Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: files:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['getFileMetadata'];
     put?: never;
@@ -612,7 +612,7 @@ export interface paths {
     };
     /**
      * Read a fixed bounded CSV/Parquet schema and sample
-     * @description Required Region access Token scope: files:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Fixed CSV/Parquet schema/sample only: accepts resourceId/path, no custom SQL or engine settings. Requires files:read, not files:analyze. Whole version-verified snapshot up to 16 MiB, 15 seconds and shared two-worker budget; at most 20 rows, 50 columns, 128 KiB. CSV types are inferred and totalRows unknown; Parquet count is metadata. No automatic retry. Download unsupported or over-budget files.
+     * @description Required Region access Token scope: files:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Fixed CSV/Parquet schema/sample only: accepts resourceId/path, no custom SQL or engine settings. Requires files:read, not files:analyze. Whole version-verified snapshot up to 16 MiB, 15 seconds and shared two-worker budget; at most 20 rows, 50 columns, 128 KiB. CSV types are inferred and totalRows unknown; Parquet count is metadata. No automatic retry. Download unsupported or over-budget files.
      */
     get: operations['tabularFilePreview'];
     put?: never;
@@ -716,13 +716,13 @@ export interface paths {
     };
     /**
      * Discover databases and file systems
-     * @description Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: resources:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['listResources'];
     put?: never;
     /**
      * Create a resource using the configured provider
-     * @description Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: resources:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     post: operations['createResource'];
     delete?: never;
@@ -744,14 +744,14 @@ export interface paths {
     };
     /**
      * Read one resource, its permitted actions and lifecycle status
-     * @description Required Region access Token scope: resources:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: resources:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['getResource'];
     put?: never;
     post?: never;
     /**
      * Request removal and retain an observable deletion tombstone
-     * @description Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Local removal completes synchronously (200). Drive9 and PostgreSQL may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; PostgreSQL requires operator reconciliation. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.
+     * @description Required Region access Token scope: resources:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Local removal completes synchronously (200). Drive9 and PostgreSQL may return 202 with deletion.phase=provider-accepted or outcome-unknown. This is not proof of physical erasure. Drive9 completion is observed from provider status; PostgreSQL requires operator reconciliation. No automatic retry or re-provisioning, including after restart. Deleting/deleted resources deny new data operations; admitted bounded downloads may finish.
      */
     delete: operations['deleteResource'];
     options?: never;
@@ -772,13 +772,13 @@ export interface paths {
     };
     /**
      * List retained setup attempts by opaque ID
-     * @description Required Region access Token scope: resources:read or resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: resources:read or resources:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['listResourceSetupAttempts'];
     put?: never;
     /**
      * Create a durable setup attempt on the saved target
-     * @description Required Region access Token scope: resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Journaled before I/O; executes inline without a queue. Same caller/resource/idempotency key replays without effects. A different key explicitly requests a new attempt using saved bindings and supported reconciliation/idempotent setup only. Missing bindings cannot provision a replacement. succeeded/failed/outcome-unknown describe the attempt, not HTTP resource creation. GET never executes setup; existing credentials are retained.
+     * @description Required Region access Token scope: resources:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Journaled before I/O; executes inline without a queue. Same caller/resource/idempotency key replays without effects. A different key explicitly requests a new attempt using saved bindings and supported reconciliation/idempotent setup only. Missing bindings cannot provision a replacement. succeeded/failed/outcome-unknown describe the attempt, not HTTP resource creation. GET never executes setup; existing credentials are retained.
      */
     post: operations['createResourceSetupAttempt'];
     delete?: never;
@@ -801,7 +801,7 @@ export interface paths {
     };
     /**
      * Observe a setup attempt without provider calls or retry
-     * @description Required Region access Token scope: resources:read or resources:write. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: resources:read or resources:write. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['getResourceSetupAttempt'];
     put?: never;
@@ -825,7 +825,7 @@ export interface paths {
     };
     /**
      * List up to 500 tables and views in the selected database, ordered by name; truncated means more exist
-     * @description Required Region access Token scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: queries:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['listDatabaseTables'];
     put?: never;
@@ -849,7 +849,7 @@ export interface paths {
     };
     /**
      * Read columns and ordered index parts for an exact table name; includes a SELECT for the editor
-     * @description Required Region access Token scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: queries:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['getDatabaseTable'];
     put?: never;
@@ -873,7 +873,7 @@ export interface paths {
     };
     /**
      * Read up to 100 unordered rows, bounded by 1 MiB and 15 seconds per statement; not pagination or a full export
-     * @description Required Region access Token scope: queries:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: queries:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['getDatabaseTableRows'];
     put?: never;
@@ -898,7 +898,7 @@ export interface paths {
     put?: never;
     /**
      * Export a supplied result snapshot without rerunning its source query
-     * @description Required Region access Token scope: Source database: queries:read (also implied by queries:execute); source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.
+     * @description Required Region access Token scope: Source database: queries:read (also implied by queries:execute); source File System: files:read and files:analyze. Destination additionally requires files:write or queries:execute and its resource grant. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint. Client-supplied snapshot, not attested provenance. Up to 100 columns, 1000 rows, 16 nesting levels and 1 MiB request. Downloads: CSV/JSON/JSON Lines, up to 4 MiB encoded output. Files: conditional create, 256 KiB local / 1 MiB live plus provider limits. Database targets: active live resources, CREATE then one INSERT, each up to 64 KiB and 15 seconds; no transaction across both statements. Name collisions never append/replace. EXPORT_INCOMPLETE or a timeout may leave a new table; inspect before retrying. No automatic retry. Precision strings remain text; CSV renders null as empty and prefixes spreadsheet-formula strings. No result values are audited.
      */
     post: operations['exportResult'];
     delete?: never;
@@ -919,13 +919,13 @@ export interface paths {
     };
     /**
      * Observe the current US sales sample without creating one
-     * @description Required Region access Token scope: files:read on the selected File System. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: files:read on the selected File System. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['listSalesSampleAttempts'];
     put?: never;
     /**
      * Explicitly prepare the US sales sample
-     * @description Required Region access Token scope: files:read and files:write on the selected File System; without resourceId, resources:write and wildcard resource grant. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: files:read and files:write on the selected File System; without resourceId, resources:write and wildcard resource grant. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     post: operations['startSalesSample'];
     delete?: never;
@@ -947,7 +947,7 @@ export interface paths {
     };
     /**
      * Observe one US sales sample attempt
-     * @description Required Region access Token scope: files:read on the selected File System. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: files:read on the selected File System. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['getSalesSampleAttempt'];
     put?: never;
@@ -1078,7 +1078,7 @@ export interface paths {
     };
     /**
      * Get local usage; live trial usage and allowances are unmeasured
-     * @description Required Region access Token scope: usage:read. Resource operations also require the target in resourceIds (or an explicit wildcard). Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
+     * @description Required Region access Token scope: usage:read. Resource operations also require a matching resource ID, resource type, or workspace-wide wildcard. Lists are filtered to permitted resources. An authenticated Workspace Owner session under the enabled profile may also call this endpoint.
      */
     get: operations['getUsage'];
     put?: never;
@@ -2913,6 +2913,8 @@ export interface operations {
               /** @enum {unknown} */
               kind: 'owner' | 'workspaceKey';
               resourceIds: string[];
+              /** @description Selected types include current and future public resources in this Workspace. */
+              resourceTypes: ('database' | 'filesystem')[];
               scopes: string[];
             };
             workspaceId: string;
@@ -6516,6 +6518,8 @@ export interface operations {
   listResources: {
     parameters: {
       query?: {
+        /** @description Exact resource name within the authorized Workspace. Omit cursor. */
+        name?: string;
         /** @description Page size, default 100; evaluated before authorization and visibility filtering, so a page may be empty. */
         limit?: number;
         /** @description Opaque cursor from the previous page. Each page is independently authorized; concurrent changes can affect results. Pages contain stored state without refreshing providers. */
