@@ -26,12 +26,15 @@ impl ExpiryClock {
             .as_secs()
     }
 
-    pub fn now(&self) -> u64 {
-        let offset: u64 = fs::read_to_string(&self.0)
+    pub fn offset_seconds(&self) -> u64 {
+        fs::read_to_string(&self.0)
             .expect("read fixture clock")
             .parse()
-            .expect("valid fixture clock");
-        Self::wall_seconds() + offset
+            .expect("valid fixture clock")
+    }
+
+    pub fn now(&self) -> u64 {
+        Self::wall_seconds() + self.offset_seconds()
     }
 
     pub fn advance_past(&self, deadline: u64) -> Result<()> {

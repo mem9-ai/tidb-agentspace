@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import { createInterface } from 'node:readline';
-import { setTimeout as delay } from 'node:timers/promises';
+import { mock } from 'node:test';
 import { connectWorkspace } from '../../src/generated/workspace-agent.mjs';
 import { connectAgent } from '../../src/api/agent-client.ts';
 
@@ -96,6 +96,7 @@ try {
     assert.equal(file.response.status, 200);
   }
   await dataAccess(agent);
+  assert.equal(saved.expiresAt, config.expiresAt);
   const extended = await action('extend');
   assert.equal(extended.regionalStatus, 'applied');
   assert.equal(extended.regionalContinuity, 'eligible');
@@ -103,8 +104,13 @@ try {
   const calls = globalCalls;
   await action('offline');
   offline = true;
-  await delay(Math.max(0, (config.expiresAt + 1) * 1000 - Date.now()));
+  const { offsetSeconds } = await action('expire');
+  const wallNow = Date.now;
+  mock.method(Date, 'now', () => wallNow() + offsetSeconds * 1000);
+  assert.ok(Math.floor(Date.now() / 1000) > config.expiresAt);
+  const beforeExpiryRenewal = renewals;
   await dataAccess(agent);
+  assert.equal(renewals, beforeExpiryRenewal + 1);
   assert.equal(saved.expiresAt, extended.data.expiresAt);
   await action('restart');
   await dataAccess(await connectAgent(options));
@@ -122,6 +128,7 @@ try {
   }
   console.log('Public client discovery, scoped access, renewal and restart passed.');
 } finally {
+  mock.restoreAll();
   native.stdin.end();
   const [code] = await exited;
   assert.equal(code, 0, 'native fixture exited unsuccessfully');

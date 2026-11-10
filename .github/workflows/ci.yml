@@ -128,12 +128,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Locate the pinned Node toolchain
+        id: node_pin
+        run: &node_toolchain_pin |
+          echo "path=$RUNNER_TOOL_CACHE/node/$(cat .node-version)" >> "$GITHUB_OUTPUT"
+          echo "npm=$(node -p 'require("./package.json").packageManager')" >> "$GITHUB_OUTPUT"
+      - name: Restore the pinned Node toolchain
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with: &node_toolchain_cache
+          path: ${{ steps.node_pin.outputs.path }}
+          key: node-toolchain-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version') }}-${{ steps.node_pin.outputs.npm }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           cache: npm
-      - name: Select the pinned npm version
-        run: npm install --global npm@11.6.2 --ignore-scripts
+      - name: Verify the pinned npm toolchain
+        env: &node_toolchain_env
+          PINNED_NPM: ${{ steps.node_pin.outputs.npm }}
+        run: &node_toolchain_npm |
+          if [[ "npm@$(npm --version)" != "$PINNED_NPM" ]]; then
+            npm install --global "$PINNED_NPM" --ignore-scripts
+          fi
       - run: npm ci
       - name: Install zsh for agent launch compatibility tests
         if: ${{ needs.scope.outputs.docs_only != 'true' }}
@@ -186,7 +201,25 @@ jobs:
       - name: Check Rust with Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Run Rust unit tests
+        if: ${{ needs.scope.outputs.history_only == 'true' || contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile) || needs.scope.outputs.full_partition != 'true' }}
         run: cargo test --workspace --locked
+      - name: Run workspace tests outside the native acceptance partitions
+        if: ${{ needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile) && needs.scope.outputs.full_partition == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Each top-level acceptance test file is already built and run by its owner.
+          # Select all other test targets from Cargo's actual workspace, including future additions.
+          cargo metadata --locked --no-deps --format-version 1 | jq -r --arg acceptance "$PWD/backend/test-support/tests" '
+            .packages[].targets[] | select(.test) |
+            select(.kind[0] == "test" or .kind[0] == "example" or .kind[0] == "bench") |
+            select(.src_path != ($acceptance + "/" + .name + ".rs")) |
+            "--" + .kind[0], .name
+          ' > "$RUNNER_TEMP/workspace-unit-targets"
+          targets=(--lib --bins)
+          while IFS= read -r arg; do targets+=("$arg"); done < "$RUNNER_TEMP/workspace-unit-targets"
+          cargo test --workspace --locked "${targets[@]}"
+          cargo test --workspace --locked --doc
       - name: Install verified RustFS 1.0.4 binary
         shell: bash
         run: |
@@ -234,14 +267,26 @@ jobs:
           git show 'HEAD^1:backend/build-tools/src/bin/workspace-verify.rs' > "$runner.rs"
           rustc --edition=2024 "$runner.rs" -o "$runner"
           "$runner" "$CLASSIC_PROFILE"
+      - name: Locate the pinned Node toolchain
+        id: node_pin
+        if: needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
+        run: *node_toolchain_pin
+      - name: Reuse the pinned Node toolchain from Quality
+        if: needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with: *node_toolchain_cache
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
         with:
           node-version-file: .node-version
-          cache: npm
+          package-manager-cache: false
+      - name: Verify the pinned npm toolchain
+        if: needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
+        env: *node_toolchain_env
+        run: *node_toolchain_npm
       - name: Install dependencies for the public SDK tests
         if: needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
-        run: npm install --global npm@11.6.2 --ignore-scripts && npm ci --ignore-scripts
+        run: npm ci --workspace=tools/agent-client-tests --ignore-scripts --no-audit --no-fund
       - name: Exercise the published JavaScript client against native services
         if: needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
         run: npm run test:agent-clients -- ./meta-service/target/debug/client-fixture
@@ -281,8 +326,11 @@ jobs:
           cache-bin: false
           cache-workspace-crates: false
           save-if: false
-      - name: Build native backend
-        run: cargo run --locked -p workspace-build-tools -- prepare && cargo build --locked --workspace --bins --examples
+      - name: Build product test services
+        run: |
+          cargo run --locked -p workspace-build-tools -- prepare
+          # This product target also selects the dev-dependencies used by the acceptance runner.
+          cargo build --locked --workspace --profile test --bin workspace-backend --bin workspace-meta-service --test product
       - name: Install verified RustFS 1.0.4 binary
         shell: bash
         run: |

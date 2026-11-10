@@ -377,7 +377,11 @@ impl Runtime {
             )
             .await?
         } else {
-            Clock::open(&config.clock_directory, config.initialize_clock)?
+            Clock::open(
+                &config.clock_directory,
+                config.initialize_clock,
+                config.security_time,
+            )?
         });
         clock.now().await?;
         let policies = Arc::new(KeyPolicies::open(metadata.clone(), region).await?);

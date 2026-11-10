@@ -574,12 +574,31 @@ test('automatic checks execute once and releases require exact-commit native evi
     /git show "\$policy_ref:backend\/build-tools\/src\/bin\/workspace-verify\.rs"/,
   );
   assert.match(otherIntegration.run, /"\$runner" other/);
+  const unitTests = ci.jobs.metadata.steps.find(
+    (step) => step.run === 'cargo test --workspace --locked',
+  );
+  assert.equal(
+    unitTests.if,
+    '${{ needs.scope.outputs.history_only == \'true\' || contains(fromJSON(\'["tutorial","database","files"]\'), needs.scope.outputs.classic_profile) || needs.scope.outputs.full_partition != \'true\' }}',
+  );
+  const partitionedUnits = ci.jobs.metadata.steps.find(
+    (step) => step.name === 'Run workspace tests outside the native acceptance partitions',
+  );
+  assert.equal(partitionedUnits.if, otherIntegration.if);
+  assert.match(partitionedUnits.run, /cargo test --workspace --locked --doc/);
   const productIntegration = ci.jobs.product_integration;
   assert.equal(
     ci.jobs.metadata.steps.find((step) => step.name === 'Save Cargo timing reports').if,
     '${{ !cancelled() }}',
   );
   assert.equal(productIntegration.name, 'Native product integration');
+  const productBuild = productIntegration.steps.find(
+    (step) => step.name === 'Build product test services',
+  );
+  assert.match(
+    productBuild.run.trimEnd(),
+    /cargo build --locked --workspace --profile test --bin workspace-backend --bin workspace-meta-service --test product$/,
+  );
   assert.equal(productIntegration.needs, 'scope');
   assert.equal(
     productIntegration.if,

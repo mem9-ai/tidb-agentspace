@@ -88,6 +88,7 @@
   },
   "packageManager": "npm@11.6.2",
   "workspaces": [
+    "tools/agent-client-tests",
     "tools/api-contract"
   ]
 }
