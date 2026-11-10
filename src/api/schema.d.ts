@@ -2914,7 +2914,7 @@ export interface operations {
               kind: 'owner' | 'workspaceKey';
               resourceIds: string[];
               /** @description Selected types include current and future public resources in this Workspace. */
-              resourceTypes: ('database' | 'filesystem')[];
+              resourceTypes?: ('database' | 'filesystem')[];
               scopes: string[];
             };
             workspaceId: string;

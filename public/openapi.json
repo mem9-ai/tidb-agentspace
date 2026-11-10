@@ -3829,7 +3829,6 @@
                         "kind",
                         "scopes",
                         "resourceIds",
-                        "resourceTypes",
                         "expiresAt"
                       ],
                       "type": "object"
