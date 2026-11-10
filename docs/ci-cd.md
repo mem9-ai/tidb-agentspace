@@ -156,8 +156,10 @@ After building the native backend and providing the isolated RustFS prerequisite
 `cargo acceptance classic` runs just the classic native journey locally. Use `cargo acceptance tutorial`, `cargo acceptance database` or `cargo acceptance files` for a risk-specific run.
 
 For full PR and main-push integration runs, the trusted base can partition the unchanged full
-test command into the product suites and the remaining native targets. Both groups run serially within
-their own isolated runner and must pass in the same CI attempt. Unknown commands, unsupported
+test command into the product suites and the remaining native targets. Both groups must pass
+in the same CI attempt. Each runner executes its test targets serially. The product HTTP case
+exercises embedded and remote Meta concurrently, with separate RustFS processes, storage roots,
+listeners and providers. It waits for both deployments to finish. Unknown commands, unsupported
 events and an unavailable base manifest use the original unsharded full command. The exact-SHA
 release verifier requires both groups or explicit success of that full fallback; a skipped or
 missing required group cannot authorize deployment. The two jobs restore the native cache
@@ -166,8 +168,10 @@ independently, but only the primary job saves it. The baseline unsharded integra
 measure partitioned CI on comparable runners before claiming a speedup.
 
 The primary Rust/S3 job also exercises the published clients against native services on
-full runs. This puts SDK installation and verification on the shorter of the two jobs,
-and keeps the same verification on the unsharded fallback.
+full runs, including the unsharded fallback. The SDK uses the Rust client fixture built by
+the same job and installs its locked runtime dependencies through its npm workspace.
+Quality and the native job share an exact Node/npm toolchain cache for the runner platform.
+On a miss, each can install the pinned versions independently.
 
 Dev CD no longer triggers on PRs or repeats quality/native commands. Its read-only verify
 job runs `scripts/require-ci.mjs full "$SOURCE_SHA"`. In parallel, an unprivileged main-only
@@ -341,9 +345,12 @@ use isolated real RustFS. Two Cargo jobs and disabled debug symbols bound runner
 Builds, unit tests and named integration targets select the whole Cargo workspace so
 their dependency features match. The Rust acceptance runner clears the launcher’s Cargo
 package and manifest metadata before launching Cargo, keeping the ring build-script inputs stable.
-The default unit run also discovers future targets and
-doctests. RustFS cases still run in their isolated acceptance partitions. SDK CI runs
-the client fixture built by the same job; standalone SDK testing can build it with Cargo.
+On full partitioned runs, the unit step uses Cargo metadata to select the targets outside
+the native acceptance partitions and runs workspace doctests separately. The product and
+remaining native jobs each build and execute their own integration test targets, including
+ordinary tests in those files. The product job prepares just its two native services and the
+first product test together to keep the same dependency features as acceptance. The primary
+job still builds all workspace binaries and examples. Scoped and unpartitioned runs retain Cargo’s default unit discovery.
 
 Multi-service product fixtures hold their selected Workspace and control ports until each
 host starts, so a metadata or control service cannot claim a released port and answer the
@@ -351,7 +358,8 @@ wrong readiness probe. Keep the reservations distinct from the active metadata l
 including when that listener is subsequently restarted in-process.
 
 Clean-restart acceptance waits for a successful process exit while the fixture continues
-to serve in-flight requests. Only a deliberate crash uses the previous writer's identity
+to serve in-flight requests. In the gated Meta tests, asynchronous shutdown keeps the local
+storage proxy available while Meta drains its writes. Only a deliberate crash uses the previous writer's identity
 for recovery. A readiness failure should identify the Workspace, the startup or restart
 phase, and the last observed health status or sanitized role-startup error.
 Shutdown may interrupt background policy delivery. The next worker resumes from the
@@ -365,7 +373,10 @@ hosted storage retain SlateDB's default batching interval.
 The regional expiry journey advances a private clock shared by the test proof signer,
 Global and Region. Its acceptance-only host runs the native entry point and advances
 past each deadline while keeping durable clock reservations, signatures, HTTP checks
-and restart recovery active. A packaged host always takes its time from the system.
+and restart recovery active. The public SDK expiry case shares the same offset between its
+proof signer and the native fixture. It verifies regional renewal past the original expiry
+while Global is offline, then reconnects after a restart. A packaged host always takes
+its time from the system.
 
 The Analytics producer test checks queue capacity and verifies that startup and enqueue
 make no connection to the collector. Its one-second Linux budget measures producer

@@ -1,7 +1,9 @@
 //! Two real Workspace APIs sharing a regional metadata authority. Both Workspaces deliberately
 //! contain the same resource IDs and file paths so an isolation assertion cannot pass by accident.
 use crate::{
-    Fixture, Meta, Process, binary, http_client, private_json, private_write,
+    Fixture, Meta, Process, binary,
+    expiry_clock::ExpiryClock,
+    http_client, private_json, private_write,
     provider::{NATIVE_SECRET, Provider},
     tls::certificates,
 };
@@ -75,6 +77,7 @@ struct Host {
     global_file: PathBuf,
     directory: PathBuf,
     plan: PathBuf,
+    executable: PathBuf,
     process: Option<Process>,
     cookie: String,
     global_cookie: String,
@@ -97,7 +100,7 @@ impl Host {
         private_json(&self.plan, &json!({"format":1,"services":services}))?;
         let log = self.directory.join(format!("{}.log", Uuid::new_v4()));
         let mut process = Process::spawn(
-            Command::new(binary("workspace-backend"))
+            Command::new(&self.executable)
                 .args(["serve", "--config"])
                 .arg(&self.plan),
             &log,
@@ -222,18 +225,29 @@ impl Workspaces {
             fresh,
             metadata_security_state,
             "drive9-anonymous",
+            None,
             |_| Ok(None),
         )
         .await
     }
     pub async fn local_files(embedded: bool, fresh: bool) -> Result<Self> {
-        Self::with_files(embedded, fresh, false, "local", |_| Ok(None)).await
+        Self::with_files(embedded, fresh, false, "local", None, |_| Ok(None)).await
+    }
+    /// Only the primary Workspace and its Global authority use the SDK's adjustable clock.
+    pub async fn with_expiry_clock() -> Result<(Self, ExpiryClock)> {
+        let host = binary("examples").join("expiry_clock_host");
+        let f = Self::with_files(false, false, false, "drive9-anonymous", Some(host), |_| {
+            Ok(None)
+        })
+        .await?;
+        let clock = ExpiryClock::in_directory(&f.hosts[0].directory);
+        Ok((f, clock))
     }
     /// Route only the Global hosts' authenticated Meta traffic through a loopback fault fixture.
     pub async fn with_global_meta_route(
         route: impl FnOnce(&Meta) -> Result<String>,
     ) -> Result<Self> {
-        Self::with_files(true, false, false, "drive9-anonymous", |meta| {
+        Self::with_files(true, false, false, "drive9-anonymous", None, |meta| {
             route(meta).map(Some)
         })
         .await
@@ -244,6 +258,7 @@ impl Workspaces {
         fresh: bool,
         metadata_security_state: bool,
         files_provider: &str,
+        mut primary_clock_host: Option<PathBuf>,
         route_global: impl FnOnce(&Meta) -> Result<Option<String>>,
     ) -> Result<Self> {
         let storage = Fixture::start().await?;
@@ -300,7 +315,14 @@ impl Workspaces {
                 json!({"transport":"remote","client":region.client})
             };
             let config = json!({"bind":addr,"workspaceId":IDS[i],"authorityId":REGION,"insecureLoopback":true,"publicOrigins":[origin],"consoleOrigins":["http://127.0.0.1:5173"],"metadata":transport,"security":security,"product":{"providers":{"filesProvider":files_provider,"postgresProvider":"db9-anonymous","testMode":true,"drive9Endpoint":provider.origin,"db9Endpoint":format!("{}/customer",provider.origin),"sqlFixture":format!("{}/sql",provider.origin)}}});
+            let executable = if let Some(host) = primary_clock_host.take() {
+                ExpiryClock::in_directory(&dir).initialize()?;
+                host
+            } else {
+                binary("workspace-backend")
+            };
             let mut host = Host {
+                executable,
                 origin,
                 config,
                 global,

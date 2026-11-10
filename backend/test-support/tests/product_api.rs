@@ -6,7 +6,7 @@ mod import;
 #[path = "product_api/pending_policy.rs"]
 mod pending_policy;
 
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use reqwest::{Method, RequestBuilder};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
@@ -351,8 +351,7 @@ async fn sql_roundtrip(f: &Workspaces, token: &str) -> Result<()> {
     Ok(())
 }
 
-// A live HTTP request can only finish while this test's single-thread Tokio runtime
-// continues serving the SQL provider. Start the shutdown before releasing that response.
+// Start shutdown before releasing the SQL provider's response to the outstanding request.
 async fn restart_during_query(f: &mut Workspaces, db: &Arc<Mutex<Option<Value>>>) -> Result<()> {
     let entered = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Notify::new());
@@ -539,13 +538,15 @@ async fn verify(embedded: bool) -> Result<()> {
     install_sql(&f, &db);
     persistence(&mut f, &token, &db).await
 }
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires isolated RustFS and native binaries"]
-async fn remote_product_http() -> Result<()> {
-    verify(false).await
-}
-#[tokio::test]
-#[ignore = "requires isolated RustFS and native binaries"]
-async fn embedded_product_http() -> Result<()> {
-    verify(true).await
+async fn product_http_with_embedded_and_remote_meta() -> Result<()> {
+    // Each mode owns its RustFS, metadata, hosts and provider. Join both before reporting errors.
+    let (embedded, remote) = tokio::join!(tokio::spawn(verify(true)), tokio::spawn(verify(false)));
+    embedded
+        .context("embedded Meta task")?
+        .context("embedded Meta HTTP acceptance")?;
+    remote
+        .context("remote Meta task")?
+        .context("remote Meta HTTP acceptance")
 }

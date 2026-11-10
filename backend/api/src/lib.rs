@@ -2303,7 +2303,7 @@ pub async fn initialize_security_checkpoint(
             .mode(0o700)
             .create(parent)?;
     }
-    let clock = security_clock::Clock::open(directory, initialize)?;
+    let clock = security_clock::Clock::open(directory, initialize, None)?;
     clock.now().await?;
     Ok(())
 }

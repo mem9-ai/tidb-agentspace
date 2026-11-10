@@ -21,9 +21,15 @@ pub struct FileClock {
     directory: PathBuf,
     _lock: File,
     floor: Mutex<i64>,
+    read_time: fn() -> i64,
 }
 impl FileClock {
-    pub fn open(directory: &Path, initialize: bool) -> anyhow::Result<Self> {
+    fn open(
+        directory: &Path,
+        initialize: bool,
+        time_source: Option<fn() -> i64>,
+    ) -> anyhow::Result<Self> {
+        let read_time = time_source.unwrap_or(|| chrono::Utc::now().timestamp());
         anyhow::ensure!(
             directory.is_absolute(),
             "Absolute clock checkpoint directory required"
@@ -54,7 +60,7 @@ impl FileClock {
                 .create_new(true)
                 .mode(0o600)
                 .open(&path)?;
-            file.write_all(chrono::Utc::now().timestamp().to_string().as_bytes())?;
+            file.write_all(read_time().to_string().as_bytes())?;
             file.sync_all()?;
             File::open(directory)?.sync_all()?;
         }
@@ -64,12 +70,13 @@ impl FileClock {
             directory: directory.into(),
             _lock: lock,
             floor: Mutex::new(floor),
+            read_time,
         })
     }
     pub fn now(&self) -> Result<i64> {
         let failed = || ServiceError::new(503, "TRUSTED_CLOCK_UNAVAILABLE");
-        let now = chrono::Utc::now().timestamp();
         let mut floor = self.floor.lock().map_err(|_| failed())?;
+        let now = (self.read_time)();
         if now < *floor {
             return Err(ServiceError::new(503, "CLOCK_ROLLBACK"));
         }
@@ -111,8 +118,16 @@ pub enum Clock {
 }
 
 impl Clock {
-    pub fn open(directory: &Path, initialize: bool) -> anyhow::Result<Self> {
-        Ok(Self::File(FileClock::open(directory, initialize)?))
+    pub fn open(
+        directory: &Path,
+        initialize: bool,
+        time_source: Option<fn() -> i64>,
+    ) -> anyhow::Result<Self> {
+        Ok(Self::File(FileClock::open(
+            directory,
+            initialize,
+            time_source,
+        )?))
     }
 
     pub async fn open_meta(
@@ -404,12 +419,12 @@ mod tests {
     fn checkpoint_survives_restart_locks_one_writer_and_detects_backwards_time() {
         let directory =
             std::env::temp_dir().join(format!("workspace-clock-{}", uuid::Uuid::new_v4()));
-        let clock = FileClock::open(&directory, true).unwrap();
-        assert!(FileClock::open(&directory, false).is_err());
+        let clock = FileClock::open(&directory, true, None).unwrap();
+        assert!(FileClock::open(&directory, false, None).is_err());
         assert!(clock.now().unwrap() > 0);
         drop(clock);
-        assert!(FileClock::open(&directory, true).is_err());
-        let clock = FileClock::open(&directory, false).unwrap();
+        assert!(FileClock::open(&directory, true, None).is_err());
+        let clock = FileClock::open(&directory, false, None).unwrap();
         assert!(clock.now().unwrap() > 0);
         drop(clock);
         fs::write(
@@ -417,11 +432,11 @@ mod tests {
             (chrono::Utc::now().timestamp() + 1000).to_string(),
         )
         .unwrap();
-        let clock = FileClock::open(&directory, false).unwrap();
+        let clock = FileClock::open(&directory, false, None).unwrap();
         assert_eq!(clock.now().unwrap_err().code, "CLOCK_ROLLBACK");
         drop(clock);
         fs::remove_file(directory.join("time-floor")).unwrap();
-        assert!(FileClock::open(&directory, false).is_err());
+        assert!(FileClock::open(&directory, false, None).is_err());
         fs::remove_dir_all(directory).unwrap();
     }
 }

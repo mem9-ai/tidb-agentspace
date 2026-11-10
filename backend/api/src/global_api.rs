@@ -704,7 +704,11 @@ impl GlobalServer {
             )
             .await?
         } else {
-            Clock::open(&config.clock_directory, config.initialize_clock)?
+            Clock::open(
+                &config.clock_directory,
+                config.initialize_clock,
+                config.security_time,
+            )?
         };
         clock.now().await?;
         let owners = OwnerSessions::open(metadata.clone()).await?;

@@ -135,7 +135,6 @@ fn run(profile: &str) -> Result<()> {
                 .collect();
             tests(&group, &[])?;
             if profile == "other" {
-                checked(cargo().args(["test", "--locked", "-p", SUPPORT, "--lib"]))?;
                 separate_hosts()?;
             }
             Ok(())

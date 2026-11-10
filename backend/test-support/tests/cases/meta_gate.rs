@@ -122,12 +122,11 @@ async fn until(predicate: impl Fn() -> bool) -> Result<()> {
 #[ignore = "requires native Meta and gated RustFS"]
 async fn stalled_ownership_read_allows_independent_progress() -> Result<()> {
     let f = Fixture::start().await?;
-    let (gate, a) = Gate::start(&f, "progress").await?;
+    let (gate, mut a) = Gate::start(&f, "progress").await?;
     let s = scope(&a.server["authorityId"]);
     gate.state.owner_release.send_replace(false);
     gate.state.next_owner.store(true, SeqCst);
-    let slow = a.call(get(&s, &["slow"]));
-    tokio::pin!(slow);
+    let mut slow = Box::pin(a.call(get(&s, &["slow"])));
     tokio::select! {
         result=&mut slow=>anyhow::bail!("expected a stalled ownership read, got {result:?}"),
         ready=until(||gate.state.blocked.load(SeqCst)==1)=>ready?,
@@ -143,7 +142,7 @@ async fn stalled_ownership_read_allows_independent_progress() -> Result<()> {
     assert_eq!(gate.state.blocked.load(SeqCst), 1);
     gate.state.owner_release.send_replace(true);
     slow.await?;
-    Ok(())
+    a.process.stop_cleanly().await
 }
 
 #[tokio::test]
@@ -197,7 +196,7 @@ async fn mutations_reads_and_receipts_wait_for_durability_and_shutdown_drains() 
     assert_eq!(resolved["version"], written["version"]);
     let mut a = Arc::try_unwrap(a).map_err(|_| anyhow::anyhow!("outstanding Meta client"))?;
     tokio::task::spawn_blocking(move || a.process.wait_success()).await??;
-    let reopened = f.start_meta(config, false, None).await?;
+    let mut reopened = f.start_meta(config, false, None).await?;
     assert_eq!(reopened.call(lookup).await?, records);
-    Ok(())
+    reopened.process.stop_cleanly().await
 }
