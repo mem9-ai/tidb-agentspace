@@ -150,8 +150,13 @@ export function ApiDocumentation({
         <Paper className="panel api-guide" p={24} withBorder>
           <Heading level={2}>2. Give your agent the instructions</Heading>
           <Text>
-            Save the key in your agent’s environment or secret manager as WORKSPACE_API_KEY, then
-            share these instructions. The instructions do not include your key.
+            Set <code>WORKSPACE_API_KEY</code> in your agent’s environment or secret manager. Start
+            a session with access to the key, then paste only the instructions and your task into
+            chat.
+          </Text>
+          <Text size="sm">
+            Using a terminal? In the shell where you set the key, start Codex CLI with{' '}
+            <code>codex</code>, Claude Code with <code>claude</code>, or Pi with <code>pi</code>.
           </Text>
           {error ? (
             <Alert color="yellow">Couldn’t load the API endpoint. Refresh to try again.</Alert>
@@ -168,18 +173,6 @@ export function ApiDocumentation({
           <Text size="sm">
             Copying instructions does not confirm a connection. You can revoke a key from API keys.
           </Text>
-          <details>
-            <summary>Example: connect Pi</summary>
-            <Text mt="sm">
-              After creating a key, follow the terminal setup shown with it. In the same Bash or Zsh
-              terminal, run <code>pi</code> to start a new Pi session. Copy the agent instructions
-              above and paste them into Pi with your task. Pi must have a model configured and
-              access to the Workspace API.
-            </Text>
-            <Text size="sm" mt="sm">
-              The key stays in the terminal environment. Do not paste it into Pi or a chat.
-            </Text>
-          </details>
         </Paper>
         <Text>
           Want to connect with code? <Anchor href="#api">See the API documentation</Anchor>.

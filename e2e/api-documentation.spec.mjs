@@ -16,9 +16,9 @@ test('@visual agent connection explains scoped access and copies instructions wi
   await expect(page.getByRole('heading', { name: 'Connect an agent', level: 1 })).toBeVisible();
   await expect(page.getByText(/File write access also permits/)).toBeVisible();
   await expect(page.getByText(/Copying instructions does not confirm a connection/)).toBeVisible();
-  await page.getByText('Example: connect Pi').click();
-  await expect(page.getByText(/run pi to start a new Pi session/)).toBeVisible();
-  await expect(page.getByText(/Do not paste it into Pi or a chat/)).toBeVisible();
+  await expect(
+    page.getByText(/Codex CLI with codex, Claude Code with claude, or Pi with pi/),
+  ).toBeVisible();
   if (process.env.AGENT_CONNECT_SCREENSHOTS)
     await page.screenshot({
       path: `${process.env.AGENT_CONNECT_SCREENSHOTS}/${testInfo.project.name}.png`,
