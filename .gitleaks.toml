@@ -13,21 +13,31 @@
 #   sha256sum console/public/skills/drive9-workspace/workspace-api.md
 #   # 93d3acc36e4f55d34bf4700a3634373cfbedd96514a12171af51f9e44cb4ed0b
 #
-# which reproduces the reported value exactly.
+# which reproduces the reported value exactly, and scripts/check-trial-installer.mjs
+# verifies the same digests against the assets independently.
 #
-# The allowlist matches on the shape of the value plus the path, not on a list
-# of today's digests: every skill asset update rewrites the manifest, and a
-# value list would make each legitimate update trip the scan and invite a habit
-# of appending hashes to this file.
+# The exception is deliberately narrow. It matches only a manifest *entry* — a
+# quoted asset file name followed by a colon and a quoted 64-character lowercase
+# hex digest, e.g. `"workspace-api.md":"93d3...ed0b"` — and only when ALL of the
+# following hold:
 #
-# Both conditions must hold (condition = "AND"):
+#   * the finding is raised by the `generic-api-key` rule,
+#   * the finding is in an installer script at exactly
+#     console/public/skills/<name>/install.py (anchored, so a copy such as
+#     install.py.bak is not covered),
+#   * the rule's match is a manifest entry of the shape above.
 #
-#   * the finding is in one of the generated skill installer scripts, and
-#   * the detected secret is exactly 64 lowercase hex characters,
+# A credential assignment is not a manifest entry, so it is still reported even
+# when it happens to be a bare 64-character lowercase hex string:
 #
-# which is what a SHA-256 digest looks like. A credential in those files that is
-# not a bare 64-character hex string — anything with a prefix, a different
-# length, or mixed case — is still reported.
+#   api_key = "<64 hex>"          → reported (no "name.ext":"digest" shape)
+#   {"api_key": "<64 hex>"}       → reported (the name is not an asset file name)
+#
+# Matching on the rule's match rather than on the extracted secret is what keeps
+# that distinction: the value alone cannot tell a checksum from a credential.
+# A value list of today's digests is avoided because every skill asset update
+# rewrites the manifest, which would make each legitimate update trip the scan
+# and invite a habit of appending hashes to this file.
 #
 # Do not add real credentials here — rotate and remove them instead.
 
@@ -37,8 +47,9 @@ title = "tidb.ai gitleaks config"
 useDefault = true
 
 [[allowlists]]
-description = "SHA-256 integrity manifest of the bundled skill assets"
-paths = ['''console/public/skills/[^/]+/install\.py''']
-regexTarget = "secret"
+description = "SHA-256 integrity manifest entries of the bundled skill assets"
+paths = ['''^console/public/skills/[^/]+/install\.py$''']
+targetRules = ["generic-api-key"]
+regexTarget = "match"
 condition = "AND"
-regexes = ['''^[0-9a-f]{64}$''']
+regexes = ['''^[A-Za-z0-9._-]+\.(?:md|py)":"[0-9a-f]{64}"$''']
