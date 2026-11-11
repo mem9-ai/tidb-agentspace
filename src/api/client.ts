@@ -601,6 +601,8 @@ async function ownerGlobalClient() {
   const client = createGlobalApiClient(baseUrl, [new URL(baseUrl).origin], fetch, true);
   const session = await client.GET('/api/auth/session', { params: { query: { workspaceId } } });
   if (session.error) {
+    // A denial or service outage is not evidence that the user should sign in again.
+    if (session.response.status !== 401) await globalResult(session);
     const config = await globalResult(await client.GET('/api/auth/config'));
     if (config.mode === 'local')
       await globalResult(
@@ -608,7 +610,12 @@ async function ownerGlobalClient() {
           params: { header: { Origin: window.location.origin } },
         }),
       );
-    else throw new Error('Sign in to manage API keys.');
+    else
+      throw new WorkspaceApiError(
+        'Sign in again to manage access.',
+        401,
+        'GLOBAL_SIGN_IN_REQUIRED',
+      );
   }
   return client;
 }
