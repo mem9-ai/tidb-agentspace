@@ -377,9 +377,12 @@ mod tests {
             .build()
             .await
             .unwrap();
+        // Production loads key material from its private key file; generate a
+        // fresh test key so no cryptographic value is hard-coded.
+        let key = Aes256Gcm::generate_key(OsRng);
         let database = Database {
             db,
-            cipher: Aes256Gcm::new_from_slice(&[9; 32]).unwrap(),
+            cipher: Aes256Gcm::new(&key),
             installation: "independent-test".into(),
             serial: Mutex::new(()),
         };
@@ -451,7 +454,7 @@ mod tests {
                 .build()
                 .await
                 .unwrap(),
-            cipher: Aes256Gcm::new_from_slice(&[9; 32]).unwrap(),
+            cipher: Aes256Gcm::new(&key),
             installation: "independent-test".into(),
             serial: Mutex::new(()),
         };

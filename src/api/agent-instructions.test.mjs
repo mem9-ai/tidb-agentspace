@@ -37,8 +37,19 @@ test('task points to the portable skill without exposing credentials', () => {
   const task = 'Analyze /us-sales.csv and write /us-sales-report.md.';
   const skill = workspaceSkillUrl('https://workspace.example', '/studio/');
   const text = workspaceSkillTask('https://workspace.example/studio/api', skill, task);
-  assert.ok(text.includes('https://workspace.example/studio/api'));
-  assert.ok(text.includes('https://workspace.example/studio/skills/tidb-agent-workspace/SKILL.md'));
+  const linked = [...text.matchAll(/https?:\/\/\S+/g)].map(
+    ([value]) => new URL(value.replace(/[.,;:]+$/, '')),
+  );
+  const endpoint = new URL('https://workspace.example/studio/api');
+  assert.ok(
+    linked.some((url) => url.origin === endpoint.origin && url.pathname === endpoint.pathname),
+  );
+  const expectedSkill = new URL(skill);
+  assert.ok(
+    linked.some(
+      (url) => url.origin === expectedSkill.origin && url.pathname === expectedSkill.pathname,
+    ),
+  );
   assert.ok(text.includes(task));
   assert.match(text, /unauthenticated GET/);
   assert.match(text, /If the skill is unavailable, stop/);

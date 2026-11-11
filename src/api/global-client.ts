@@ -1,4 +1,5 @@
 import createClient from 'openapi-fetch';
+import { isBoundedApiPath } from './api-path.ts';
 import type { paths } from './global-schema';
 
 /** The Global authority manages Keys and discovery; a data request uses a Region client. */
@@ -13,7 +14,7 @@ export function createGlobalApiClient(
   if (
     url.search ||
     url.hash ||
-    !/^\/(?:[A-Za-z0-9_-]+\/?)*$/.test(url.pathname) ||
+    !isBoundedApiPath(url.pathname) ||
     !trustedOrigins.includes(url.origin) ||
     (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) ||
     url.username ||

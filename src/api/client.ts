@@ -8,6 +8,7 @@ import { createUploadFetch, type UploadProgress } from './upload-transport';
 import { firstWorkspaceId } from './workspace-selection';
 import type { components, operations } from './schema';
 import { createGlobalApiClient } from './global-client';
+import { isBoundedApiPath } from './api-path.ts';
 import type { components as GlobalComponents } from './global-schema';
 
 export type Resource = components['schemas']['Resource'];
@@ -582,10 +583,7 @@ export async function globalApiSettings(auth?: SsoAuthConfig) {
     );
   }
   const url = new URL(descriptor.apiOrigin);
-  if (
-    url.origin !== descriptor.apiOrigin ||
-    !/^\/(?:[A-Za-z0-9_-]+\/?)*$/.test(descriptor.apiPathPrefix || '/')
-  )
+  if (url.origin !== descriptor.apiOrigin || !isBoundedApiPath(descriptor.apiPathPrefix || '/'))
     throw new Error('Invalid Global API configuration.');
   return {
     baseUrl: descriptor.apiOrigin + descriptor.apiPathPrefix,
