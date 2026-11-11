@@ -102,6 +102,7 @@ import {
   retainApplicablePermissions,
 } from './features/keys/KeyPermissions';
 import { KeyReady } from './features/keys/KeyReady';
+import { AccessSignIn, requiresAccessSignIn } from './features/keys/AccessSignIn';
 import { WorkspaceLayout } from './ui/WorkspaceLayout';
 import { DatabaseWorkspace } from './features/databases/DatabaseWorkspace';
 import {
@@ -1809,7 +1810,7 @@ function Connect({ data, copy, onNewKey }: Shared & { onNewKey: () => void }) {
 function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => void }) {
   const [revoke, setRevoke] = useState<ApiKey | null>(null),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
+    [error, setError] = useState<Error>();
   const [keyWindow, setKeyWindow] = useState<{
     keys: ApiKey[];
     next: string | null;
@@ -1820,24 +1821,25 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
     earlier: false,
   });
   const [pageBusy, setPageBusy] = useState(false);
-  const [pageError, setPageError] = useState('');
+  const [pageError, setPageError] = useState<Error>();
   const [keysLoaded, setKeysLoaded] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   useEffect(() => {
     let active = true;
     setPageBusy(true);
-    setPageError('');
+    setPageError(undefined);
     void workspaceApi
       .keysPage()
       .then((page) => {
         if (active) {
-          setPageError('');
+          setPageError(undefined);
           setKeyWindow({ keys: page.data, next: page.nextCursor, earlier: false });
           setKeysLoaded(true);
         }
       })
       .catch((cause) => {
-        if (active) setPageError(cause instanceof Error ? cause.message : 'Unable to load keys.');
+        if (active)
+          setPageError(cause instanceof Error ? cause : new Error('Unable to load keys.'));
       })
       .finally(() => {
         if (active) setPageBusy(false);
@@ -1848,7 +1850,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
   }, [data.keys, data.keysNextCursor, loadAttempt]);
   async function retryPolicy(id: string) {
     setBusy(true);
-    setPageError('');
+    setPageError(undefined);
     try {
       const result = await workspaceApi.retryKeyPolicy(id);
       await refresh();
@@ -1858,7 +1860,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
           : 'Region delivery is still pending.',
       );
     } catch (cause) {
-      setPageError(cause instanceof Error ? cause.message : 'Unable to deliver policy.');
+      setPageError(cause instanceof Error ? cause : new Error('Unable to deliver policy.'));
     } finally {
       setBusy(false);
     }
@@ -1867,7 +1869,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
     if (!keyWindow.next || pageBusy) return;
     const cursor = keyWindow.next;
     setPageBusy(true);
-    setPageError('');
+    setPageError(undefined);
     try {
       const page = await workspaceApi.keysPage(cursor);
       setKeyWindow((current) => {
@@ -1882,7 +1884,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
         };
       });
     } catch (cause) {
-      setPageError(cause instanceof Error ? cause.message : 'Unable to load keys.');
+      setPageError(cause instanceof Error ? cause : new Error('Unable to load keys.'));
     } finally {
       setPageBusy(false);
     }
@@ -1901,7 +1903,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
           : 'Key revoked. Access in this region is still being updated.',
       );
     } catch (e) {
-      setError((e as Error).message);
+      setError(e instanceof Error ? e : new Error('Unable to revoke the key.'));
     } finally {
       setBusy(false);
     }
@@ -1945,10 +1947,22 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
         {!keysLoaded && pageError ? (
           <Empty
             icon={KeyRound}
-            title="Unable to load API keys"
-            description="Please try again. If the problem continues, contact support."
+            title={
+              requiresAccessSignIn(pageError)
+                ? 'Sign in again to manage access'
+                : 'Unable to load API keys'
+            }
+            description={
+              requiresAccessSignIn(pageError)
+                ? 'Your files and databases are still available. Sign in again to view and manage your keys.'
+                : 'Please try again. If the problem continues, contact support.'
+            }
             action={
-              <Button onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try again</Button>
+              requiresAccessSignIn(pageError) ? (
+                <AccessSignIn onError={setPageError} />
+              ) : (
+                <Button onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try again</Button>
+              )
             }
           />
         ) : !keysLoaded ? (
@@ -2035,7 +2049,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
                         className="text-link danger-link"
                         onClick={() => {
                           setRevoke(k);
-                          setError('');
+                          setError(undefined);
                         }}
                         variant="subtle"
                       >
@@ -2063,7 +2077,8 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
             }
           />
         )}
-        {keysLoaded && pageError && <Alert color="red">{pageError}</Alert>}
+        {keysLoaded && pageError && <Alert color="red">{pageError.message}</Alert>}
+        {keysLoaded && requiresAccessSignIn(pageError) && <AccessSignIn onError={setPageError} />}
         {(keyWindow.next || keyWindow.earlier) && (
           <Group justify="center" my="md">
             {keyWindow.earlier && (
@@ -2113,9 +2128,10 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
         >
           {error && (
             <Alert className="inline-error" color="red">
-              {error}
+              {error.message}
             </Alert>
           )}
+          {requiresAccessSignIn(error) && <AccessSignIn onError={setError} />}
           <div className="modal-actions">
             <Button onClick={() => setRevoke(null)}>Cancel</Button>
             <Button variant="filled" color="red" disabled={busy} onClick={doRevoke}>
@@ -2460,7 +2476,7 @@ function CreateKey({
     [foundResources, setFoundResources] = useState<Resource[]>([]),
     [expires, setExpires] = useState<CreateKeyInput['expiresInDays']>(30),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
+    [error, setError] = useState<Error>(),
     [secret, setSecret] = useState('');
   const [scopeNotice, setScopeNotice] = useState('');
   const [keyCopied, setKeyCopied] = useState(false);
@@ -2505,7 +2521,7 @@ function CreateKey({
   async function create(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
-    setError('');
+    setError(undefined);
     try {
       const result = await workspaceApi.createKey({
         name,
@@ -2519,7 +2535,7 @@ function CreateKey({
       await refresh();
       notify('API key created');
     } catch (e) {
-      setError((e as Error).message);
+      setError(e instanceof Error ? e : new Error('Unable to create the key.'));
     } finally {
       setBusy(false);
     }
@@ -2671,9 +2687,10 @@ function CreateKey({
           )}
           {error && (
             <Alert className="inline-error" color="red">
-              {error}
+              {error.message}
             </Alert>
           )}
+          {requiresAccessSignIn(error) && <AccessSignIn onError={setError} />}
           <Text size="sm">{keyAccessSummary(activeScopes, resourceIds, resourceTypes)}</Text>
           <div className="modal-actions">
             <Button type="button" onClick={onClose}>
@@ -2683,7 +2700,12 @@ function CreateKey({
               variant="filled"
               leftSection={React.createElement(KeyRound, { size: 18 })}
               loading={busy}
-              disabled={busy || !activeScopes.length || !(resourceTypes ?? resourceIds).length}
+              disabled={
+                busy ||
+                requiresAccessSignIn(error) ||
+                !activeScopes.length ||
+                !(resourceTypes ?? resourceIds).length
+              }
               type="submit"
             >
               {busy ? 'Creating…' : 'Create key'}

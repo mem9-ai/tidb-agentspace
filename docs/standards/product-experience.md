@@ -128,6 +128,19 @@ may preselect only the resource and actions it needs. Changing resource selectio
 that no longer apply, while selections outside the loaded resource window remain disclosed and
 are not silently discarded. Review the actual grants and expiry before creation.
 
+**Access session recovery (live review, 2026-11-11):** regional file/database access can remain
+valid after the Global management session expires. A Key-management `401` must offer an explicit
+**Sign in again** action through the existing Portal login, preserving the Workspace and return
+URL. Keep the regional workspace available. Do not turn a `403`, a service failure or missing
+Global configuration into a sign-in loop or a local-session bootstrap. The explicitly local
+profile retains its existing bootstrap on `401` only. Apply the same recovery to Key creation
+and management failures; never automatically retry a Key mutation, reveal an earlier secret or
+broaden grants. Browser cases in `e2e/access-session.spec.mjs` cover recovery, return context,
+retained choices before navigation, non-authentication failures and local compatibility.
+This is presentation/client error handling under [ADR 0037](../decisions/0037-single-portal-login.md),
+not a new session exchange or authorization mechanism. Revisit with a documented session-renewal
+API; fixtures do not establish live identity-provider behavior.
+
 After creating a Key, make its next use concrete before closing the reveal-once view. For agents
 that inherit a local terminal environment, provide a copyable setup command that prompts for the
 Key without embedding it in the command or task; explain that a new agent session must inherit
