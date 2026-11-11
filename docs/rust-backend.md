@@ -245,6 +245,14 @@ JSON/temporal text preservation and binary base64. Query results retain duplicat
 1,000-row/1 MiB limits and safe errors. Neither SQL nor uncertain writes are automatically
 retried. Provider compatibility limits in the existing Zero/db9 guides still apply.
 
+Sales sample status reads reconcile a recorded `outcome_unknown` file-write intent by
+reading only its existing File System and `/us-sales.csv`. The bounded bytes must exactly
+match the public fixture and have a stable version across verification before the attempt
+is durably marked `ready`. Missing, changed, inaccessible or unverifiable files retain their
+unknown outcome. This also recovers conditional-create conflicts with an existing identical
+sample; it never overwrites files, provisions resources or replays provider writes. Native
+sales-sample acceptance covers scoped observation, concurrent checks, restart and no replay.
+
 DuckDB is bundled into the executable at the existing engine major. The verified tidbfs
 artifact is loaded only by native database workers. Selected-file SQL/preview/imports use
 bundled CSV/JSON/Parquet support; they do not require provider extensions. Bashkit implements

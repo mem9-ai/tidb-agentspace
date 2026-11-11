@@ -140,6 +140,24 @@ impl Repository {
     }
 
     pub async fn update_sales_sample(&self, id: &str, update: Value) -> Result<Value> {
+        self.change_sales_sample(id, update, "preparing").await
+    }
+
+    pub async fn confirm_sales_sample(&self, id: &str, file_version: &str) -> Result<Value> {
+        self.change_sales_sample(
+            id,
+            json!({"status":"ready","fileVersion":file_version,"errorCode":null}),
+            "outcome_unknown",
+        )
+        .await
+    }
+
+    async fn change_sales_sample(
+        &self,
+        id: &str,
+        update: Value,
+        expected_status: &str,
+    ) -> Result<Value> {
         for retry in 0..8 {
             let _guard = self.queue.read().await;
             let key = attempt_key(id);
@@ -148,7 +166,10 @@ impl Repository {
                 return Err(error("META_RECORD_CORRUPT"));
             }
             let mut value = prior["value"].clone();
-            if value["status"] != "preparing" {
+            if value["status"] != expected_status {
+                if expected_status == "outcome_unknown" {
+                    return Ok(value);
+                }
                 return Err(error("SAMPLE_ALREADY_FINISHED"));
             }
             for (field, entry) in update

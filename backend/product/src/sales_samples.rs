@@ -38,6 +38,66 @@ fn can_observe(p: &Principal, attempt: &Value) -> bool {
 }
 
 impl Product {
+    async fn sales_sample_file_version(
+        &self,
+        credential: &Credential,
+        resource_id: &str,
+    ) -> Result<String> {
+        let resource = self.workspace.repository().resource(resource_id).await?;
+        if resource["status"] != "active" || !resource["deletion"].is_null() {
+            return Err(err(409, "SAMPLE_RESOURCE_NOT_READY"));
+        }
+        let query = BTreeMap::from([
+            ("resourceId".into(), resource_id.into()),
+            ("path".into(), PATH.into()),
+        ]);
+        let metadata = || files::FileRequest {
+            method: "GET",
+            route: "/files/metadata",
+            query: &query,
+            input: json!({}),
+            raw: &[],
+            if_match: None,
+            if_none_match: None,
+        };
+        let (_, first_metadata) = self.files(credential, metadata()).await?;
+        let version = match first_metadata {
+            Reply::Entity { etag, .. } => etag,
+            _ => return Err(err(409, "FILE_VERSION_UNAVAILABLE")),
+        };
+        let (_, bytes) = self
+            .snapshot(credential, &resource, PATH, false, FIXTURE.len())
+            .await?;
+        if bytes != FIXTURE.as_bytes() {
+            return Err(err(409, "FILE_CHANGED"));
+        }
+        let (_, last_metadata) = self.files(credential, metadata()).await?;
+        if !matches!(last_metadata, Reply::Entity { etag, .. } if etag == version) {
+            return Err(err(409, "FILE_CHANGED"));
+        }
+        Ok(version)
+    }
+
+    async fn observe_sales_sample(&self, credential: &Credential, attempt: Value) -> Result<Value> {
+        // Inspect only the recorded file. A failed observation never replays a write
+        // or treats an existing customer file as the public fixture.
+        if attempt["status"] == "outcome_unknown"
+            && attempt["writeIntent"] == true
+            && attempt["path"] == PATH
+            && let Some(resource_id) = attempt["resourceId"].as_str()
+            && let Ok(version) = self
+                .sales_sample_file_version(credential, resource_id)
+                .await
+        {
+            return self
+                .workspace
+                .repository()
+                .confirm_sales_sample(text(&attempt, "id")?, &version)
+                .await;
+        }
+        Ok(attempt)
+    }
+
     pub(super) async fn sales_sample_request(
         &self,
         credential: &Credential,
@@ -57,11 +117,13 @@ impl Product {
                 return Err(err(400, "INVALID_INPUT"));
             }
             let attempt = repository.current_sales_sample().await?;
-            let data = attempt
-                .filter(|value| can_observe(p, value))
-                .map(|value| visible_attempt(&value))
-                .into_iter()
-                .collect::<Vec<_>>();
+            let data = if let Some(attempt) = attempt.filter(|value| can_observe(p, value)) {
+                vec![visible_attempt(
+                    &self.observe_sales_sample(credential, attempt).await?,
+                )]
+            } else {
+                vec![]
+            };
             return Ok((200, Reply::Json(json!({"data":data}))));
         }
         if method == "GET" {
@@ -76,6 +138,7 @@ impl Product {
             if !can_observe(p, &attempt) {
                 return Err(err(404, "NOT_FOUND"));
             }
+            let attempt = self.observe_sales_sample(credential, attempt).await?;
             return Ok((200, Reply::Json(json!({"data":visible_attempt(&attempt)}))));
         }
         if method != "POST" || route != "/sales-sample-attempts" {
@@ -136,6 +199,7 @@ impl Product {
             .begin_sales_sample(credential, &p.id, key, attempt)
             .await?;
         if !created {
+            let attempt = self.observe_sales_sample(credential, attempt).await?;
             return Ok((200, Reply::Json(json!({"data":visible_attempt(&attempt)}))));
         }
         let id = text(&attempt, "id")?.to_owned();
@@ -189,34 +253,9 @@ impl Product {
                 },
             )
             .await?;
-            let query = BTreeMap::from([
-                ("resourceId".into(), resource_id.clone()),
-                ("path".into(), PATH.into()),
-            ]);
-            let metadata = || files::FileRequest {
-                method: "GET",
-                route: "/files/metadata",
-                query: &query,
-                input: json!({}),
-                raw: &[],
-                if_match: None,
-                if_none_match: None,
-            };
-            let (_, first_metadata) = self.files(credential, metadata()).await?;
-            let version = match first_metadata {
-                Reply::Entity { etag, .. } => etag,
-                _ => return Err(err(409, "FILE_VERSION_UNAVAILABLE")),
-            };
-            let (_, bytes) = self
-                .snapshot(credential, &resource, PATH, false, FIXTURE.len())
+            let version = self
+                .sales_sample_file_version(credential, &resource_id)
                 .await?;
-            if bytes != FIXTURE.as_bytes() {
-                return Err(err(409, "FILE_CHANGED"));
-            }
-            let (_, last_metadata) = self.files(credential, metadata()).await?;
-            if !matches!(last_metadata, Reply::Entity { etag, .. } if etag == version) {
-                return Err(err(409, "FILE_CHANGED"));
-            }
             repository
                 .update_sales_sample(&id, json!({"status":"ready","fileVersion":version}))
                 .await
