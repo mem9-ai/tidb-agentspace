@@ -805,7 +805,7 @@ test('a created key leads to agent instructions after it is copied', async ({
   await ready.getByRole('button', { name: 'Copy key', exact: true }).click();
   await ready.getByRole('button', { name: 'I’ve added the key' }).click();
   await expect(page).toHaveURL(/#connect$/);
-  await expect(page.getByRole('heading', { name: 'Connect an agent', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Connect agent', level: 1 })).toBeVisible();
   await expect(page.getByText('synthetic-browser-key-never-valid-on-a-provider')).toHaveCount(0);
 });
 

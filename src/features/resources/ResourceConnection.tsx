@@ -107,7 +107,7 @@ export function ResourceConnection({
       <Text mt="md">
         For direct HTTP and other languages, see the{' '}
         <Anchor href="#api" onClick={onClose}>
-          API documentation
+          API docs
         </Anchor>
         .
       </Text>

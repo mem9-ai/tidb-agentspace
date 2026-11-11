@@ -13,7 +13,7 @@ test('@visual agent connection explains scoped access and copies instructions wi
   });
   workspace.addResources();
   await workspace.open('#connect');
-  await expect(page.getByRole('heading', { name: 'Connect an agent', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Connect agent', level: 1 })).toBeVisible();
   await expect(page.getByText(/File write access also permits/)).toBeVisible();
   await expect(page.getByText(/Copying instructions does not confirm a connection/)).toBeVisible();
   await expect(
@@ -33,10 +33,7 @@ test('@visual agent connection explains scoped access and copies instructions wi
   await page.getByRole('button', { name: 'Create API key' }).click();
   await expect(page.getByRole('dialog', { name: 'Create API key' })).toBeVisible();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(page.getByRole('link', { name: 'See the API documentation' })).toHaveAttribute(
-    'href',
-    '#api',
-  );
+  await expect(page.getByRole('link', { name: 'Open API docs' })).toHaveAttribute('href', '#api');
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     .toBe(true);
@@ -69,7 +66,7 @@ test('@visual API docs use one configured endpoint with runnable examples and co
   });
   workspace.addResources();
   await workspace.open('#api');
-  await expect(page.getByRole('heading', { name: 'API documentation', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'API docs', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'API endpoint' })).toBeVisible();
   await expect(page.getByText('http://127.0.0.1:4389/api', { exact: true })).toBeVisible();
   await expect(page.getByText('http://127.0.0.1:4389', { exact: true })).toHaveCount(0);
@@ -94,6 +91,31 @@ test('@visual API docs use one configured endpoint with runnable examples and co
   const clientFile = testInfo.outputPath('workspace-agent.mjs');
   await (await clientDownload).saveAs(clientFile);
   expect(typeof (await import(pathToFileURL(clientFile).href)).connectWorkspace).toBe('function');
+  await page.getByRole('tab', { name: 'Python' }).click();
+  const panel = page.getByRole('tabpanel', { name: 'Python' });
+  await expect(panel.getByRole('link', { name: 'View source on GitHub' })).toHaveAttribute(
+    'href',
+    'https://github.com/mem9-ai/tidb.ai/blob/main/src/clients/python/workspace_agent.py',
+  );
+  const pythonExample = panel
+    .locator('.code-example')
+    .filter({ hasText: 'from workspace_agent import' });
+  await pythonExample.getByRole('button', { name: 'Copy code' }).click();
+  expect(await page.evaluate(() => globalThis.__copiedText)).toContain(
+    'workspace.list_resources()',
+  );
+  const pythonDownload = page.waitForEvent('download');
+  await panel.getByRole('link', { name: 'Download Python client' }).click();
+  const downloadedPython = await pythonDownload;
+  expect(downloadedPython.suggestedFilename()).toBe('workspace_agent.py');
+  expect(await readFile(await downloadedPython.path(), 'utf8')).toBe(
+    await readFile(new URL('../src/clients/python/workspace_agent.py', import.meta.url), 'utf8'),
+  );
+  if (process.env.API_SCREENSHOTS) {
+    await panel.locator('..').screenshot({ path: testInfo.outputPath('client-guide.png') });
+  }
+  await page.getByRole('tab', { name: 'JavaScript' }).click();
+  await expect(page.getByRole('link', { name: 'Download JavaScript client' })).toBeVisible();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download agent instructions', exact: true }).click();
   const downloaded = await downloadPromise;

@@ -657,7 +657,7 @@ test('Guest sees expiry and can use their own files from the sample entry', asyn
   await expect(page.getByText(/Your temporary workspace expires 48 hours/)).toBeVisible();
   await expect(guide.getByRole('button', { name: 'Explore sample' })).toBeVisible();
   await page.goto('/#connect');
-  await expect(page.getByRole('heading', { name: 'Connect an agent', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Connect agent', level: 1 })).toBeVisible();
   await page.goto('/#overview');
   await guide.getByRole('link', { name: 'Use your own files' }).click();
   await expect(page).toHaveURL(/#files\?resourceId=fs_sales$/);
@@ -738,9 +738,10 @@ test('@visual populated collections share metadata, exact-resource entry, connec
       'download',
       'workspace-agent.mjs',
     );
-    await expect(
-      page.getByRole('dialog').getByRole('link', { name: 'API documentation' }),
-    ).toHaveAttribute('href', '#api');
+    await expect(page.getByRole('dialog').getByRole('link', { name: 'API docs' })).toHaveAttribute(
+      'href',
+      '#api',
+    );
     await page.getByRole('button', { name: 'Close dialog', exact: true }).press('Escape');
   }
   expect(

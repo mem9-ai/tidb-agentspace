@@ -96,6 +96,10 @@ try {
     assert.equal(file.response.status, 200);
   }
   await dataAccess(agent);
+  execFileSync('python3', ['-IB', 'tools/agent-client-tests/workspace_client.py'], {
+    input: JSON.stringify({ endpoint: config.endpoint, key: config.key, sdkKey: config.sdkKey }),
+    timeout: 60_000,
+  });
   assert.equal(saved.expiresAt, config.expiresAt);
   const extended = await action('extend');
   assert.equal(extended.regionalStatus, 'applied');
