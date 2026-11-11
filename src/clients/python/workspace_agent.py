@@ -1,4 +1,4 @@
-"""A standard-library client for the TiDB Agent Workspace API."""
+"""A standard-library client for the TiDB AgentSpace API."""
 
 import json
 import re

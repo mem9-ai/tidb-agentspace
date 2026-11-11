@@ -4,7 +4,7 @@ import { Heading } from '../../ui/WorkspaceHeading';
 import javascriptUrl from '../../generated/workspace-agent.mjs?url';
 import pythonUrl from '../../clients/python/workspace_agent.py?url&inline';
 
-const source = 'https://github.com/mem9-ai/tidb.ai/blob/main/src/clients';
+const source = 'https://github.com/mem9-ai/tidb-agentspace/blob/main/src/clients';
 const clients = [
   {
     name: 'JavaScript',

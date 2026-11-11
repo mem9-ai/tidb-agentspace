@@ -72,9 +72,9 @@ and the repository's quality gates. Use the [feature specification template](doc
 for new capabilities or consequential changes; a small fix can use a reproduction and
 regression test. Existing review and merge authority remains governed by the CI/CD policy.
 
-Start on GitHub with an [intent](https://github.com/mem9-ai/tidb.ai/issues/new?template=01-intent.yml),
-[bounded task](https://github.com/mem9-ai/tidb.ai/issues/new?template=02-task.yml), or
-[acceptance case](https://github.com/mem9-ai/tidb.ai/issues/new?template=03-acceptance.yml).
+Start on GitHub with an [intent](https://github.com/mem9-ai/tidb-agentspace/issues/new?template=01-intent.yml),
+[bounded task](https://github.com/mem9-ai/tidb-agentspace/issues/new?template=02-task.yml), or
+[acceptance case](https://github.com/mem9-ai/tidb-agentspace/issues/new?template=03-acceptance.yml).
 Follow the [GitHub contribution workflow](docs/standards/github-contribution-workflow.md):
 refine the intent, merge a specification PR, implement against that revision in a separate
 PR, evaluate the candidate, and complete the agreed delivery endpoint. A design PR references
@@ -185,7 +185,7 @@ Keep frontend and backend independently buildable and runnable in one repository
 [independent delivery](docs/independent-delivery.md) for configuration and packaging and
 [ADR 0005](docs/decisions/0005-independent-console-and-api.md) for the accepted boundary.
 
-See [CI/CD policy](docs/ci-cd.md). The repository is hosted at `mem9-ai/tidb.ai` and GitHub
+See [CI/CD policy](docs/ci-cd.md). The repository is hosted at `mem9-ai/tidb-agentspace` and GitHub
 CI is running. Branch protections, required reviewers, deployment environments, and a real
 hosting target are not configured by the workflow files themselves.
 

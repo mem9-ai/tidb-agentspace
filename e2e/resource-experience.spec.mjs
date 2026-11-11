@@ -214,7 +214,7 @@ test('@visual live workspaces show recorded state without illustrative charts or
   await expect(page.getByRole('main')).toContainText('Workspace owner session');
 });
 
-test('@visual the shared shell identifies Agent Workspace and separates Cloud attribution from help', async ({
+test('@visual the shared shell identifies AgentSpace and separates Cloud attribution from help', async ({
   page,
   workspace,
 }, testInfo) => {
@@ -222,8 +222,8 @@ test('@visual the shared shell identifies Agent Workspace and separates Cloud at
   workspace.signInAsAccount();
   workspace.state.resources[0].provider = 'db9-anonymous';
   await workspace.open('#overview');
-  await expect(page).toHaveTitle('TiDB Agent Workspace');
-  const brand = page.getByRole('link', { name: 'TiDB Agent Workspace', exact: true });
+  await expect(page).toHaveTitle('TiDB AgentSpace');
+  const brand = page.getByRole('link', { name: 'TiDB AgentSpace', exact: true });
   const narrow = testInfo.project.name.startsWith('narrow');
   if (!narrow) {
     await expect(brand).toBeVisible();
@@ -252,22 +252,25 @@ test('@visual the shared shell identifies Agent Workspace and separates Cloud at
     });
   if (narrow) {
     await page.getByRole('button', { name: 'Open navigation' }).click();
-    await expect(
-      page.getByRole('dialog', { name: 'TiDB Agent Workspace', exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'TiDB AgentSpace', exact: true })).toBeVisible();
     if (process.env.BRANDING_SCREENSHOTS)
       await page.screenshot({
         path: `${process.env.BRANDING_SCREENSHOTS}/navigation-${testInfo.project.name}.png`,
         animations: 'disabled',
       });
   }
-  await page.getByRole('link', { name: 'Usage & billing', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Usage & billing', exact: true })).toBeVisible();
+  await page
+    .getByRole('navigation', { name: 'Main navigation' })
+    .filter({ visible: true })
+    .getByText('More', { exact: true })
+    .click();
+  await page.getByRole('link', { name: 'Usage', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Usage', exact: true })).toBeVisible();
   await expect(page.locator('a[href^="https://docs.pingcap.com/"]')).toHaveCount(0);
   if (!narrow) await brand.click();
   else {
     await page.getByRole('button', { name: 'Open navigation' }).click();
-    await page.getByRole('link', { name: 'Overview', exact: true }).click();
+    await page.getByRole('link', { name: 'Home', exact: true }).click();
   }
   await expect(page).toHaveURL(/#overview$/);
   await expect
@@ -565,7 +568,7 @@ test('@visual empty collections share one in-context create action and readable 
   expect(presentations[0]).toEqual(presentations[1]);
   await workspace.open('#overview');
   await expect(
-    page.getByRole('heading', { level: 1, name: 'Work with your data, your way', exact: true }),
+    page.getByRole('heading', { level: 1, name: 'Build with agents', exact: true }),
   ).toBeVisible();
   const startingChoices = page.getByRole('region', { name: 'Get started', exact: true });
   if (process.env.QUICKSTART_SCREENSHOTS)
@@ -657,7 +660,7 @@ test('Guest sees expiry and can use their own files from the sample entry', asyn
   await expect(page.getByText(/Your temporary workspace expires 48 hours/)).toBeVisible();
   await expect(guide.getByRole('button', { name: 'Explore sample' })).toBeVisible();
   await page.goto('/#connect');
-  await expect(page.getByRole('heading', { name: 'Connect agent', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Agents', level: 1 })).toBeVisible();
   await page.goto('/#overview');
   await guide.getByRole('link', { name: 'Use your own files' }).click();
   await expect(page).toHaveURL(/#files\?resourceId=fs_sales$/);

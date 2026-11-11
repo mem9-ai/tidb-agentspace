@@ -554,7 +554,7 @@ test('@visual Guest starts a sales task, grants only its file system and returns
   await expect(task.getByRole('heading', { name: 'Explore US sales' })).toBeVisible();
   await expect(page.getByText('Temporary workspace · Access expires after 48 hours')).toBeVisible();
   if (await page.getByRole('button', { name: 'Open navigation' }).isVisible()) {
-    await expect(page.locator('.workspace-mobile-crumb')).toHaveText('Workspace');
+    await expect(page.locator('.workspace-mobile-crumb')).toHaveText('Home');
   }
   await expect(task.getByRole('button', { name: 'Try with an agent' })).toBeVisible();
   expect(
@@ -801,8 +801,6 @@ test('@visual Guest starts a sales task, grants only its file system and returns
     .filter({ visible: true });
   await expect(navigation.getByRole('link', { name: 'Files', exact: true })).toBeVisible();
   await expect(navigation.getByRole('link', { name: 'Access', exact: true })).toBeVisible();
-  await expect(navigation.getByRole('link', { name: 'Databases', exact: true })).toBeHidden();
-  await navigation.getByText('More', { exact: true }).click();
   await expect(navigation.getByRole('link', { name: 'Databases', exact: true })).toBeVisible();
   await navigation.getByRole('link', { name: 'Databases', exact: true }).click();
   await expect(page).toHaveURL(/#databases$/);

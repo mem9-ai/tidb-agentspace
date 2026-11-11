@@ -56,7 +56,7 @@ Do not request provider credentials or commit the Workspace API key to source co
 }
 
 export function workspaceSkillTask(endpoint: string, skillUrl: string, task: string): string {
-  return `Read and follow the TiDB Agent Workspace skill at ${skillUrl} using an unauthenticated GET.
+  return `Read and follow the TiDB AgentSpace skill at ${skillUrl} using an unauthenticated GET.
 Do not send the Workspace Key or any token to the skill URL. If the skill is unavailable, stop
 and report the error rather than guessing. The Workspace Global API endpoint is ${endpoint}.
 Read WORKSPACE_API_KEY from the environment or a secret manager; never put it in chat or a URL.

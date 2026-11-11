@@ -19,6 +19,7 @@ import { ThemePicker } from '../features/theme/ThemePicker';
 type NavigationItem = { id: string; label: string; group: string; icon: ComponentType<IconProps> };
 type Props = {
   workspaceName: string;
+  hasResources: boolean;
   liveFiles?: boolean;
   liveDatabases?: boolean;
   isHostedSession?: boolean;
@@ -38,6 +39,7 @@ type Props = {
 
 export function WorkspaceLayout({
   workspaceName,
+  hasResources,
   liveFiles = false,
   liveDatabases = false,
   isHostedSession = false,
@@ -58,7 +60,7 @@ export function WorkspaceLayout({
   const [moreOpen, setMoreOpen] = useState(false);
   useEffect(() => {
     setOpened(false);
-    setMoreOpen(['databases', 'tutorials', 'api', 'billing', 'settings'].includes(active));
+    setMoreOpen(['tutorials', 'api', 'billing', 'settings'].includes(active));
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [active, databaseId, databaseView, fileSystemId]);
   const navigate = (page: string) => {
@@ -76,79 +78,43 @@ export function WorkspaceLayout({
         </Text>
       )}
       <nav aria-label="Main navigation">
-        {isGuest ? (
-          <>
-            <Stack gap={6} mt={24}>
-              {navigation
-                .filter((item) => ['overview', 'files', 'connect', 'keys'].includes(item.id))
-                .map((item) => (
-                  <NavLink
-                    component="a"
-                    key={item.id}
-                    href={`#${item.id}`}
-                    active={active === item.id}
-                    aria-current={active === item.id ? 'page' : undefined}
-                    label={
-                      item.id === 'overview'
-                        ? 'Workspace'
-                        : item.id === 'files'
-                          ? 'Files'
-                          : item.id === 'keys'
-                            ? 'Access'
-                            : item.label
-                    }
-                    leftSection={<item.icon size={20} />}
-                    onClick={() => setOpened(false)}
-                  />
-                ))}
-            </Stack>
-            <details
-              className="sidebar-more"
-              open={moreOpen}
-              onToggle={(event) => setMoreOpen(event.currentTarget.open)}
-            >
-              <summary>More</summary>
-              {navigation
-                .filter((item) =>
-                  ['databases', 'tutorials', 'api', 'billing', 'settings'].includes(item.id),
-                )
-                .map((item) => (
-                  <NavLink
-                    component="a"
-                    key={item.id}
-                    href={`#${item.id}`}
-                    active={active === item.id}
-                    aria-current={active === item.id ? 'page' : undefined}
-                    label={item.label}
-                    leftSection={<item.icon size={20} />}
-                    onClick={() => setOpened(false)}
-                  />
-                ))}
-            </details>
-          </>
-        ) : (
-          ['Workspace', 'Build', 'Manage'].map((group) => (
-            <Stack key={group} gap={6} mt={24}>
-              <Text size="sm" fw={600} c="carbon.7">
-                {group}
-              </Text>
-              {navigation
-                .filter((item) => item.group === group)
-                .map((item) => (
-                  <NavLink
-                    component="a"
-                    key={item.id}
-                    href={`#${item.id}`}
-                    active={active === item.id}
-                    aria-current={active === item.id ? 'page' : undefined}
-                    label={item.label}
-                    leftSection={<item.icon size={20} />}
-                    onClick={() => setOpened(false)}
-                  />
-                ))}
-            </Stack>
-          ))
-        )}
+        <Stack gap={6} mt={24}>
+          {navigation
+            .filter((item) => item.group === 'Space')
+            .map((item) => (
+              <NavLink
+                component="a"
+                key={item.id}
+                href={`#${item.id}`}
+                active={active === item.id}
+                aria-current={active === item.id ? 'page' : undefined}
+                label={item.label}
+                leftSection={<item.icon size={20} />}
+                onClick={() => setOpened(false)}
+              />
+            ))}
+        </Stack>
+        <details
+          className="sidebar-more"
+          open={moreOpen}
+          onToggle={(event) => setMoreOpen(event.currentTarget.open)}
+        >
+          <summary>More</summary>
+          {navigation
+            .filter((item) => item.group === 'More')
+            .map((item) => (
+              <NavLink
+                component="a"
+                key={item.id}
+                href={`#${item.id}`}
+                active={active === item.id}
+                aria-current={active === item.id ? 'page' : undefined}
+                label={item.label}
+                leftSection={<item.icon size={20} />}
+                onClick={() => setOpened(false)}
+              />
+            ))}
+        </details>
       </nav>
       <div className="sidebar-bottom">
         <NavLink
@@ -176,15 +142,7 @@ export function WorkspaceLayout({
       </div>
     </div>
   );
-  const label =
-    (isGuest &&
-      new Map([
-        ['overview', 'Workspace'],
-        ['files', 'Files'],
-        ['keys', 'Access'],
-      ]).get(active)) ||
-    navigation.find((item) => item.id === active)?.label ||
-    'Workspace';
+  const label = navigation.find((item) => item.id === active)?.label || 'Home';
   return (
     <AppShell
       header={{ height: 80 }}
@@ -193,15 +151,10 @@ export function WorkspaceLayout({
     >
       <AppShell.Header>
         <div className="workspace-header">
-          <Anchor
-            href="#overview"
-            className="brand"
-            underline="never"
-            aria-label="TiDB Agent Workspace"
-          >
+          <Anchor href="#overview" className="brand" underline="never" aria-label="TiDB AgentSpace">
             <span className="brand-mark">TiDB</span>
             <Text span fw={600}>
-              Agent Workspace
+              AgentSpace
             </Text>
           </Anchor>
           <ActionIcon hiddenFrom="sm" aria-label="Open navigation" onClick={() => setOpened(true)}>
@@ -217,7 +170,7 @@ export function WorkspaceLayout({
             </Text>
             {(databaseId || fileSystemId) && (
               <Anchor href={databaseId ? '#databases' : '#files'} size="sm">
-                {databaseId ? 'Databases' : 'File Systems'}
+                {databaseId ? 'Databases' : 'Files'}
               </Anchor>
             )}
             <Text className="workspace-resource-crumb" title={resourceName} size="sm" fw={600}>
@@ -227,7 +180,7 @@ export function WorkspaceLayout({
           <Group hiddenFrom="sm" className="workspace-mobile-crumb">
             {databaseId || fileSystemId ? (
               <Anchor href={databaseId ? '#databases' : '#files'} size="sm">
-                {databaseId ? 'Databases' : 'File Systems'}
+                {databaseId ? 'Databases' : 'Files'}
               </Anchor>
             ) : (
               <Text size="sm" fw={600}>
@@ -250,7 +203,7 @@ export function WorkspaceLayout({
         closeButtonProps={{ 'aria-label': 'Close navigation', size: 44 }}
         opened={opened}
         onClose={() => setOpened(false)}
-        title="TiDB Agent Workspace"
+        title="TiDB AgentSpace"
         size={300}
       >
         {sidebar}
@@ -291,7 +244,9 @@ export function WorkspaceLayout({
                 : liveFiles
                   ? 'File storage is connected · Databases and telemetry are simulated'
                   : isHostedSession
-                    ? 'Create a resource to get started'
+                    ? hasResources
+                      ? 'Open Files or Databases to continue your work'
+                      : 'Create a resource to get started'
                     : 'Local demo · Cloud resources and telemetry are simulated'}
           </Text>
         </footer>

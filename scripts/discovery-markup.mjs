@@ -88,7 +88,7 @@ export function discoveryMarkup(page, base) {
       h(
         'nav',
         { className: 'discovery-shell discovery-nav', 'aria-label': 'Main' },
-        h(Anchor, { href: base + 'discover/', fw: 700, size: 'xl' }, 'TiDB Agent Workspace'),
+        h(Anchor, { href: base + 'discover/', fw: 700, size: 'xl' }, 'TiDB AgentSpace'),
         h(
           Group,
           { gap: 'lg' },

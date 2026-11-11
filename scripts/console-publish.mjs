@@ -4,7 +4,7 @@ import { appendFile, lstat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const sourceRepository = 'mem9-ai/tidb.ai';
+export const sourceRepository = 'mem9-ai/tidb-agentspace';
 export const websiteRepository = 'mem9-ai/drive9-fe';
 export const publicationBranch = 'automation/studio-console';
 

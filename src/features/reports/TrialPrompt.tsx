@@ -3,7 +3,7 @@ import { Button, Stack, Text, Textarea } from '@tidbcloud/uikit';
 import { IconCheck, IconCopy03 } from '@tidbcloud/uikit/icons';
 
 const skillUrl = 'https://drive9.ai/studio/skills/tidb-agent-workspace/SKILL.md';
-const trialInstruction = `Follow the official TiDB Agent Workspace skill at ${skillUrl} to find the top US state by sales in the public sample, show the calculation, and save a report I can continue in this project using only the free trial. Give me the read-only Studio link and the local report, so I can open the report in Workspace.`;
+const trialInstruction = `Follow the official TiDB AgentSpace skill at ${skillUrl} to find the top US state by sales in the public sample, show the calculation, and save a report I can continue in this project using only the free trial. Give me the read-only Studio link and the local report, so I can open the report in Workspace.`;
 
 export function TrialPrompt({
   leadingState,
@@ -15,9 +15,9 @@ export function TrialPrompt({
   const followUp = leadingState !== undefined;
   const compact = followUp || sampleSales !== undefined;
   const prompt = sampleSales
-    ? `Follow the current TiDB Agent Workspace skill at ${skillUrl} to continue this public sales report. What share of total sales comes from the top two states? Use these figures from the report: ${sampleSales}. Use the existing sample and report. Continue in this project using the current skill and return the verified online report link and local Markdown. Show the calculation, then direct me to Open report in Workspace. I can read and explore it immediately; the temporary workspace offers Save to TiDB Cloud when I want to keep the report and its data. Reply in the language we have been using. In a new chat, use ${navigator.language}.`
+    ? `Follow the current TiDB AgentSpace skill at ${skillUrl} to continue this public sales report. What share of total sales comes from the top two states? Use these figures from the report: ${sampleSales}. Use the existing sample and report. Continue in this project using the current skill and return the verified online report link and local Markdown. Show the calculation, then direct me to Open report in Workspace. I can read and explore it immediately; the temporary workspace offers Save to TiDB Cloud when I want to keep the report and its data. Reply in the language we have been using. In a new chat, use ${navigator.language}.`
     : followUp
-      ? `Follow ${skillUrl} in the local project that created my TiDB Agent Workspace sales report. Add the top product by sales in ${leadingState} and its share of state sales to the same report, then give me the updated Studio link.`
+      ? `Follow ${skillUrl} in the local project that created my TiDB AgentSpace sales report. Add the top product by sales in ${leadingState} and its share of state sales to the same report, then give me the updated Studio link.`
       : trialInstruction;
   const [result, setResult] = useState<'idle' | 'copied' | 'manual'>('idle');
   return (

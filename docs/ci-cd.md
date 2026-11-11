@@ -35,7 +35,7 @@
   Document presence does not prove an agent read the rule or that the UI conforms to TiUI;
   the [design standard](standards/tiui-design-system.md) requires code and browser evidence.
 
-The private repository is [mem9-ai/tidb.ai](https://github.com/mem9-ai/tidb.ai).
+The public repository is [mem9-ai/tidb-agentspace](https://github.com/mem9-ai/tidb-agentspace).
 GitHub CI is running; branch protection, deployment environments, and hosting are not
 configured. At initial setup, GitHub reported that branch protection for this private
 repository requires a plan upgrade. Do not change repository visibility to work around it.

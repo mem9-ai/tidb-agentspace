@@ -1,6 +1,19 @@
-# TiDB Agent Workspace
+# TiDB AgentSpace
 
-Create a PostgreSQL-compatible database or File System, work with it in Studio, and give an agent access to selected resources through a Workspace Key. Studio and agents use the same Rust API.
+**A persistent space for AI agents.**
+
+Give your agent a place to work with files and data across sessions. Connect Codex CLI, Claude Code, Pi, or another external agent with scoped access, then reopen the saved work in Studio. Studio and agents use the same Rust API.
+
+AgentSpace currently provides PostgreSQL-compatible databases, persistent File Systems, and resource/action permissions through Workspace Keys. Agents run in their own tools. Agent identity, online status, hosted agent execution, Runs, and Memory are not implemented.
+
+## Get your first result
+
+1. Open [Home in Studio](https://drive9.ai/studio/#overview) and sign in or choose **Try without an account**. A new Workspace prepares a default File System; temporary workspaces expire after 48 hours.
+2. Select **Try with an agent** in the US sales sample. The existing sales journey saves a CSV and lets you grant only its File System and the required actions.
+3. Follow the key handoff to start your external agent. Keep the key in its environment or secret settings, outside chat.
+4. Ask the agent to analyze the sample and save the report. Open the report in Studio, then return to **Files** to find the saved result in a later session. A report file's existence alone does not verify which agent wrote it.
+
+Home links to saved resources and resumable quickstarts. **Agents** explains connection, **Files** and **Databases** open resource collections, and **Access** manages Workspace Keys. **More** contains Quickstarts, Developers, Usage, and Settings. Existing Studio URLs and Workspace APIs remain supported.
 
 ## Run your first query
 
@@ -13,11 +26,11 @@ For files, open the [File System tutorial](https://drive9.ai/studio/#tutorials?k
 
 ## Connect an agent
 
-In Studio, open **Keys**, create a Workspace Key and select the actions and resources the agent needs. Save the revealed secret in the agent's secret store. Exchange it at the Global API for a short-lived Region access Token, then call the Region API with that Token. The [API guide](docs/api-guide.md) includes requests for discovery, exchange and renewal. Key administration uses Owner authentication.
+In Studio, open **Agents** for the setup guide, or **Access** to create a Workspace Key and select the actions and resources the agent needs. Save the revealed secret in the agent's secret store. Exchange it at the Global API for a short-lived Region access Token, then call the Region API with that Token. The [API guide](docs/api-guide.md) includes requests for discovery, exchange and renewal. Key administration uses Owner authentication.
 
 ### API clients
 
-Download a client and copy a list-resources example from [Studio API docs](https://drive9.ai/studio/#api). Both clients use a Workspace endpoint and a scoped API key.
+Download a client and copy a list-resources example from [Studio Developers](https://drive9.ai/studio/#api). Both clients use a Workspace endpoint and a scoped API key.
 
 | Language   | Source in this repository                                                                                                         | Runtime                       |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
@@ -63,6 +76,10 @@ Rust generates the Agent, Owner and operator contracts. The [API guide](docs/api
 | Console and generated client                     | [React application](src/) · [API client](src/api/)                                                                     |
 | Product status, limitations and design decisions | [start-here.md](start-here.md) · [architecture](docs/architecture.md)                                                  |
 
+## Project name
+
+The repository is [mem9-ai/tidb-agentspace](https://github.com/mem9-ai/tidb-agentspace). The service domain and existing API, SDK, skill URLs, and local helper identifiers remain unchanged. TiDB AgentSpace is the selected project name; potential confusion with Google’s historical Agentspace branding remains a consideration before broad launch. This implementation does not establish trademark clearance.
+
 ## License
 
-TiDB Agent Workspace is licensed under the [Apache License, Version 2.0](LICENSE). Third-party components retain their respective licenses.
+TiDB AgentSpace is licensed under the [Apache License, Version 2.0](LICENSE). Third-party components retain their respective licenses.

@@ -1,6 +1,6 @@
 # Automatic Studio Console publishing
 
-Console changes merged into `mem9-ai/tidb.ai` main are built by **Publish Studio Console**.
+Console changes merged into `mem9-ai/tidb-agentspace` main are built by **Publish Studio Console**.
 The workflow updates one generated-artifact PR in `mem9-ai/drive9-fe`, validates it, and
 waits for the independent required website check, then merges. Netlify's existing main-branch deployment then
 publishes `https://drive9.ai/studio/`. Daily changes need no manual synchronization or deploy click.
@@ -103,7 +103,7 @@ source/checksum/origin tests and protected independent website checks remain req
 For timing comparisons, record the exact run/attempt and source SHA, website checkout step,
 publish job, build/evidence-wait stages, queue time and total elapsed time. Compare equivalent
 changed or unchanged artifact outcomes and distinguish waiting from validation work. The
-[pre-optimization run](https://github.com/mem9-ai/tidb.ai/actions/runs/41057309793) took 241s
+[pre-optimization run](https://github.com/mem9-ai/tidb-agentspace/actions/runs/41057309793) took 241s
 overall, including a 110s CI-evidence wait, 62s website checkout and 85s publish job. These
 overlapping/stage times must not be added or treated as a controlled benchmark. Record
 post-change observed timings in the task/PR; GitHub publication does not establish Netlify

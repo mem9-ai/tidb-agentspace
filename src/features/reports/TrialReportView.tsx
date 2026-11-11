@@ -214,7 +214,7 @@ function subscribe(listener: () => void) {
 export function TrialReportView() {
   const grant = useSyncExternalStore(subscribe, getGrant);
   useEffect(() => {
-    document.title = 'US sales report · TiDB Agent Workspace';
+    document.title = 'US sales report · TiDB AgentSpace';
   }, []);
   return <Viewer key={grant} grant={grant} />;
 }

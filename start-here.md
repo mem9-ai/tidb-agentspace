@@ -1,4 +1,4 @@
-# Start here with TiDB Agent Workspace
+# Start here with TiDB AgentSpace
 
 This is the shared entry point for people and coding agents opening the repository for the
 first time. Follow the reading route, then inspect the sources for your task. The shared
@@ -12,6 +12,11 @@ For product and UI work, apply [product experience](docs/standards/product-exper
 consumer product clarity and care, consistent shared interactions and minimum complete paths to useful value.
 
 ## What we are building
+
+The product is **TiDB AgentSpace**, an agent-first home for persistent files, databases and
+scoped access. Home, Agents, Files, Databases and Access reuse the existing Workspace model
+and Rust API; agent runtime, identity, Runs and Memory remain future work. See the
+[phase-one product guidance](docs/standards/product-experience.md#one-interaction-language).
 
 The project has two connected goals:
 
@@ -285,8 +290,8 @@ Report the checks and results that actually ran.
 
 ## Take a task through GitHub
 
-1. Find or open the relevant [Issue](https://github.com/mem9-ai/tidb.ai/issues), using the
-   [native forms](https://github.com/mem9-ai/tidb.ai/issues/new/choose). Check ownership
+1. Find or open the relevant [Issue](https://github.com/mem9-ai/tidb-agentspace/issues), using the
+   [native forms](https://github.com/mem9-ai/tidb-agentspace/issues/new/choose). Check ownership
    and preserve unrelated work.
 2. Read the accepted specification at its Git revision, or a sufficient small-fix reproduction.
    Identify requirement IDs, dependencies, allowed changes, and the delivery endpoint.
@@ -315,6 +320,6 @@ changes. Update detailed rules in their canonical homes and adjust these links. 
 checks verify required routing and document availability; they cannot prove that a client
 loaded the documents or an agent understood them.
 
-The canonical public skill is [TiDB Agent Workspace](console/public/skills/tidb-agent-workspace/SKILL.md); legacy public paths remain compatible. Public agent report continuation follows [ADR 0056](docs/decisions/0056-report-continuity.md): canonical report bytes in the project and Workspace, automatic viewer refresh, and explicit sharing revocation. This bounded sample remains separate from the proposed general Workspace pairing flow.
+The canonical public skill is [TiDB AgentSpace](console/public/skills/tidb-agent-workspace/SKILL.md); legacy public paths remain compatible. Public agent report continuation follows [ADR 0056](docs/decisions/0056-report-continuity.md): canonical report bytes in the project and Workspace, automatic viewer refresh, and explicit sharing revocation. This bounded sample remains separate from the proposed general Workspace pairing flow.
 
 Signed-in account presentation follows [ADR 0057](docs/decisions/0057-account-display-identity.md); connection dialogs reuse one Workspace Key through agent/client-managed authentication.

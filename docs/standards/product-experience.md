@@ -194,8 +194,30 @@ supersedes the earlier Monitoring presentation and the historical GH-98 experien
 
 ## One interaction language
 
-**Product identity and attribution (owner correction, GH-92, 2026-11-01):** use **TiDB Agent
-Workspace** for the Console brand, skill, agent prompts, public discovery and document title. The skill metadata uses `tidb-agent-workspace`; its existing distribution URL and local helper paths remain compatibility identifiers. Do not label the entire Workspace
+**AgentSpace phase one (owner direction, 2026-11-11):** the product is **TiDB AgentSpace** and
+its source repository is `mem9-ai/tidb-agentspace`. The service domain, Workspace model/API,
+SDK names, skill distribution URLs/metadata and existing local helper paths remain compatibility
+identifiers. Do not rename them as part of branding work. Home leads with an actual agent task
+and existing saved resources; Agents explains external-agent setup and scoped access. Files,
+Databases and Access remain primary destinations for both account and Guest sessions. Quickstarts,
+Developers, Usage and Settings live under More; existing hashes remain valid. Quickstarts are
+also reachable from Home and retain durable progress. This supersedes the former requirement
+for a primary Tutorials entry. Key creation, copy/download and a report's existence are not
+proof of Agent identity, connectivity or execution. Do not expose Runs or Memory until backed
+by implemented capabilities. Verify first use, return, exact resource URLs, both session types,
+and manual credential handoff in the browser matrix. Revisit with verified agent pairing and
+activity APIs. The chosen name has a potential historical Google Agentspace brand-confusion
+risk; this phase implements the selected name without asserting clearance.
+
+Phase-one browser evidence: [Home, desktop dark](../screenshots/agentspace/home-desktop-dark.png),
+[Home, narrow light](../screenshots/agentspace/home-narrow-light.png),
+[Agents, desktop light](../screenshots/agentspace/agents-desktop-light.png), and
+[navigation, narrow dark](../screenshots/agentspace/navigation-narrow-dark.png).
+`e2e/agentspace.spec.mjs` covers both session types, existing hashes, explicit access, first-task
+entry and resource re-entry. The existing Key/sales cases retain grant, secret and saved-file
+assertions. These use synthetic API fixtures and do not establish live agent connectivity.
+
+**Product attribution (GH-92; identity updated above):** use **TiDB AgentSpace** for the Console brand, skill, agent prompts, public discovery and document title. The skill metadata uses `tidb-agent-workspace`; its existing distribution URL and local helper paths remain compatibility identifiers. Do not label the entire Workspace
 **Live resources** or use TiDB Cloud documentation as Workspace help. Remove the unrelated
 help/Documentation and Cloud quota-documentation links; keep actual limits and resource-specific
 provider/demo/expiry information explicit. Use one quiet footer **Powered by TiDB Cloud** link
@@ -213,7 +235,7 @@ brand return and mobile navigation. Reviewed evidence: [desktop dark header](../
 
 **Executable, resumable tutorials (owner correction 2026-10-31):** database and File System
 tutorials continue beyond creation with prepared sample data and an explicit path to a useful
-result. Retain a named Tutorials destination after completion,
+result. Retain a named Quickstarts destination under More after completion,
 show attempted/completed tutorials on Overview, and link back from each resource. Reopening
 reuses the exact sample and resource; it must not automatically seed or execute another copy.
 Keep uncertain writes inspectable without automatic replay, resource availability explicit and
