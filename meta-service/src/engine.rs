@@ -730,7 +730,10 @@ mod tests {
     use super::*;
     #[test]
     fn ciphertext_is_bound_to_record_identity_and_detects_corruption() {
-        let cipher = Aes256Gcm::new_from_slice(&[7; 32]).unwrap();
+        // Production loads the key from its private key file; generate a fresh
+        // test key so no cryptographic value is hard-coded.
+        let key = Aes256Gcm::generate_key(OsRng);
+        let cipher = Aes256Gcm::new(&key);
         let bytes = seal(&cipher, b"installation-a:record-a", b"private credential").unwrap();
         assert_eq!(
             unseal(&cipher, b"installation-a:record-a", &bytes).unwrap(),
