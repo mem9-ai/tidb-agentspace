@@ -1,4 +1,4 @@
-import { connectAgent, type RegionalSecretStore } from './agent-client.ts';
+import { connectAgent, type RegionalSecretStore } from '../../api/agent-client.ts';
 
 /** A Workspace connection configured with one public endpoint and one API key. */
 export async function connectWorkspace(options: {

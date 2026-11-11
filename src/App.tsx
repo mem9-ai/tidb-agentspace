@@ -128,10 +128,10 @@ const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string 
   overview: { label: 'Overview', icon: LayoutDashboard, group: 'Workspace' },
   files: { label: 'File Systems', icon: Folder, group: 'Workspace' },
   databases: { label: 'Databases', icon: Database, group: 'Workspace' },
-  connect: { label: 'Connect an agent', icon: Workflow, group: 'Build' },
+  connect: { label: 'Connect agent', icon: Workflow, group: 'Build' },
   tutorials: { label: 'Tutorials', icon: CircleHelp, group: 'Build' },
   keys: { label: 'API keys', icon: KeyRound, group: 'Build' },
-  api: { label: 'API documentation', icon: Terminal, group: 'Build' },
+  api: { label: 'API docs', icon: Terminal, group: 'Build' },
   billing: { label: 'Usage & billing', icon: CreditCard, group: 'Manage' },
   settings: { label: 'Settings', icon: Settings, group: 'Manage' },
 };

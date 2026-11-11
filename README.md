@@ -15,6 +15,15 @@ For files, open the [File System tutorial](https://drive9.ai/studio/#tutorials?k
 
 In Studio, open **Keys**, create a Workspace Key and select the actions and resources the agent needs. Save the revealed secret in the agent's secret store. Exchange it at the Global API for a short-lived Region access Token, then call the Region API with that Token. The [API guide](docs/api-guide.md) includes requests for discovery, exchange and renewal. Key administration uses Owner authentication.
 
+### API clients
+
+Download a client and copy a list-resources example from [Studio API docs](https://drive9.ai/studio/#api). Both clients use a Workspace endpoint and a scoped API key.
+
+| Language   | Source in this repository                                                                                                         | Runtime                       |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| JavaScript | [TypeScript source](src/clients/javascript/workspace-agent.ts) · [Single-file download source](src/generated/workspace-agent.mjs) | Node.js 24+                   |
+| Python     | [Single-file source](src/clients/python/workspace_agent.py)                                                                       | Python 3.9+, standard library |
+
 ## Local setup
 
 Install the [pinned Rust toolchain](rust-toolchain.toml) and make `rustfs` 1.0.4, `curl` and `tar` available on your path. From the repository root:

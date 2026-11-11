@@ -5,7 +5,7 @@ import { Heading } from '../../ui/WorkspaceHeading';
 import { CodeExample } from '../../ui/CodeExample';
 import { apiBaseUrl, globalApiSettings, type Data } from '../../api/client';
 import { agentInstructions } from '../../api/agent-instructions';
-import agentClientUrl from '../../generated/workspace-agent.mjs?url';
+import { ClientExamples } from './ClientExamples';
 import { WorkspaceApiPlayground } from './WorkspaceApiPlayground';
 import './api-documentation.css';
 
@@ -107,8 +107,6 @@ export function ApiDocumentation({
       active = false;
     };
   }, [connect, settings?.endpoint]);
-  const setup = `export WORKSPACE_ENDPOINT='${settings?.endpoint || 'YOUR_API_ENDPOINT'}'\n# Set WORKSPACE_API_KEY to your API key.`;
-  const example = `import { connectWorkspace } from './workspace-agent.mjs';\n\nconst workspace = await connectWorkspace({\n  endpoint: process.env.WORKSPACE_ENDPOINT,\n  apiKey: process.env.WORKSPACE_API_KEY,\n});\n\nconsole.log(await workspace.listResources());`;
   const filtered = operations.filter((o) =>
     search
       .toLowerCase()
@@ -130,7 +128,7 @@ export function ApiDocumentation({
     return (
       <>
         <WorkspacePageHeader
-          title="Connect an agent"
+          title="Connect agent"
           description="Give your agent access to the workspace resources you choose."
         />
         <Paper className="panel api-guide" p={24} withBorder>
@@ -175,7 +173,7 @@ export function ApiDocumentation({
           </Text>
         </Paper>
         <Text>
-          Want to connect with code? <Anchor href="#api">See the API documentation</Anchor>.
+          Want to connect with code? <Anchor href="#api">Open API docs</Anchor>.
         </Text>
       </>
     );
@@ -183,7 +181,7 @@ export function ApiDocumentation({
   return (
     <>
       <WorkspacePageHeader
-        title={connect ? 'Connect an agent' : 'API documentation'}
+        title="API docs"
         description="Use one endpoint and a scoped API key to connect your agent."
         actions={
           onNewKey ? (
@@ -218,18 +216,7 @@ export function ApiDocumentation({
           <Button onClick={downloadInstructions}>Download agent instructions</Button>
         </Group>
       </Paper>
-      <Paper className="panel api-guide" p={24} withBorder>
-        <Heading level={2}>Use JavaScript</Heading>
-        <Text>
-          Download the client into your project, then set the endpoint and API key in your
-          environment. Requires Node.js 24 or later.
-        </Text>
-        <Anchor href={agentClientUrl} download="workspace-agent.mjs">
-          Download JavaScript client
-        </Anchor>
-        <CodeExample label="SHELL" value={setup} copy={copy} />
-        <CodeExample label="JAVASCRIPT" value={example} copy={copy} />
-      </Paper>
+      <ClientExamples endpoint={settings?.endpoint} copy={copy} />
       {!connect && <WorkspaceApiPlayground data={data} copy={copy} />}
       {!connect && (
         <Paper className="panel api-guide" p={24} withBorder>

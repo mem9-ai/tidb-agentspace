@@ -10,7 +10,7 @@ const result = await build({
     write: false,
     minify: false,
     lib: {
-      entry: resolve('src/api/agent-sdk.ts'),
+      entry: resolve('src/clients/javascript/workspace-agent.ts'),
       formats: ['es'],
       fileName: () => 'workspace-agent.mjs',
     },

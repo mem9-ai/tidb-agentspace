@@ -20,7 +20,7 @@ export default [
       'meta-service/target/**',
       'playwright-report/**',
       'test-results/**',
-      // Generated from src/api/agent-sdk.ts; verified by agent-sdk:check.
+      // Generated from src/clients/javascript/workspace-agent.ts; verified by agent-sdk:check.
       'src/generated/workspace-agent.mjs',
     ],
   },

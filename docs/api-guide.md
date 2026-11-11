@@ -1,7 +1,7 @@
 # Use the Workspace API
 
-The Console’s **API documentation** page provides your endpoint, agent instructions, a
-downloadable JavaScript client and a searchable reference. Its read-only playground uses
+The Console’s **API docs** page provides your endpoint, agent instructions, downloadable
+JavaScript and Python clients, and a searchable reference. Its read-only playground uses
 your signed-in Workspace session. Keep API keys in environment variables or secret storage.
 
 A Workspace has a `defaultRegionId` and each resource reports its own `regionId`. Initially,
@@ -17,6 +17,21 @@ In **API keys**, choose specific resources by default. Search and select as many
 The Owner Key creation API accepts either `"resourceIds": ["fs_a", "fs_b"]` or `"resourceTypes": ["filesystem"]`. For example, a database reader uses `"resourceTypes": ["database"]` with `"scopes": ["resources:read", "queries:read"]`. The agent can inspect its effective selection in the Region context response. When listing resources, follow `nextCursor` even if the current page contains no matches.
 
 ## Start with one endpoint
+
+Choose **JavaScript** or **Python** in Studio’s **API clients** section. Both clients list resources and files and run SQL with read-only queries by default. Set the endpoint and key in your environment. The [Python client](../src/clients/python/workspace_agent.py) uses only the standard library. Download it next to your script:
+
+```python
+import os
+from workspace_agent import connect_workspace
+
+workspace = connect_workspace(
+    endpoint=os.environ["WORKSPACE_ENDPOINT"],
+    api_key=os.environ["WORKSPACE_API_KEY"],
+)
+print(workspace.list_resources())
+```
+
+Python holds a short-lived Region token in memory. Call `connect_workspace` again after expiry. The [JavaScript client](../src/clients/javascript/workspace-agent.ts) also supports automatic regional renewal as described below.
 
 New Workspace Keys allow an agent to start with only the Global API base URL and Key. The
 downloadable Node.js client handles discovery, redirects and Token renewal. Download
