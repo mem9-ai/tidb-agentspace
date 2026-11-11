@@ -151,6 +151,15 @@ async fn sample_reuses_filesystem_without_overwriting_customer_file() -> Result<
     )
     .await?;
     assert_eq!(result["data"]["status"], "outcome_unknown");
+    let attempt = format!("{ATTEMPTS}/{}", result["data"]["id"].as_str().unwrap());
+    assert_eq!(
+        expect(f.owner(0, Method::GET, &attempt), 200).await?["data"],
+        result["data"]
+    );
+    assert_eq!(
+        expect(f.owner(0, Method::GET, LIST), 200).await?["data"],
+        json!([result["data"]])
+    );
     assert_eq!(content(&f, id).await?, "customer data");
     assert_eq!(resource_count(&f).await?, 1);
     Ok(())
@@ -284,8 +293,14 @@ async fn live_sample_handles_confirmed_lost_and_uncertain_provider_responses() -
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
-    for scenario in ["confirmed", "lost", "uncertain", "existing"] {
-        let f = Workspaces::start(true, true).await?;
+    for scenario in [
+        "confirmed",
+        "lost",
+        "uncertain",
+        "existing",
+        "existing-sample",
+    ] {
+        let mut f = Workspaces::start(true, true).await?;
         let writes = Arc::new(AtomicUsize::new(0));
         {
             let mut p = f.provider.state.lock().unwrap();
@@ -303,6 +318,10 @@ async fn live_sample_handles_confirmed_lost_and_uncertain_provider_responses() -
                     p.files
                         .insert("/us-sales.csv".into(), b"existing customer data".to_vec());
                 }
+                "existing-sample" => {
+                    p.files
+                        .insert("/us-sales.csv".into(), CSV.as_bytes().into());
+                }
                 _ => {}
             }
         }
@@ -318,7 +337,7 @@ async fn live_sample_handles_confirmed_lost_and_uncertain_provider_responses() -
         );
         assert_eq!(f.provider.state.lock().unwrap().creates, 1);
         let id = applied["data"]["resourceId"].as_str();
-        let preview = || {
+        let preview = |f: &Workspaces| {
             f.owner(0, Method::GET, "/files/content").query(&[
                 ("resourceId", id.unwrap()),
                 ("path", "/us-sales.csv"),
@@ -331,7 +350,49 @@ async fn live_sample_handles_confirmed_lost_and_uncertain_provider_responses() -
             CSV
         };
         if scenario != "lost" {
-            assert_eq!(expect(preview(), 200).await?["content"], expected);
+            assert_eq!(expect(preview(&f), 200).await?["content"], expected);
+        }
+        let attempt = format!("{ATTEMPTS}/{}", applied["data"]["id"].as_str().unwrap());
+        if scenario == "existing-sample" {
+            let no_read = token(&f, "no-sample-read", &["resources:read"], &["*"]).await?;
+            let calls = f.provider.state.lock().unwrap().calls;
+            expect(f.agent(0, Method::GET, &attempt, Some(&no_read)), 404).await?;
+            expect(f.owner(1, Method::GET, &attempt), 404).await?;
+            assert_eq!(
+                expect(f.agent(0, Method::GET, LIST, Some(&no_read)), 200).await?["data"],
+                json!([])
+            );
+            assert_eq!(f.provider.state.lock().unwrap().calls, calls);
+            f.provider.state.lock().unwrap().versions_available = false;
+            assert_eq!(
+                expect(f.owner(0, Method::GET, &attempt), 200).await?["data"],
+                applied["data"]
+            );
+            f.provider.state.lock().unwrap().versions_available = true;
+            // A late write hook makes any attempted replay observable.
+            let count = writes.clone();
+            f.provider.state.lock().unwrap().write_race = Some(Box::new(move |_, _| {
+                count.fetch_add(1, Ordering::SeqCst);
+                Some((503, json!({})))
+            }));
+            f.restart(true).await?;
+        }
+        let reader = token(&f, "sample-status-reader", &["files:read"], &[id.unwrap()]).await?;
+        let (listed, observed) = tokio::try_join!(
+            expect(f.agent(0, Method::GET, LIST, Some(&reader)), 200),
+            expect(f.agent(0, Method::GET, &attempt, Some(&reader)), 200)
+        )?;
+        let status = if matches!(scenario, "confirmed" | "uncertain" | "existing-sample") {
+            "ready"
+        } else {
+            "outcome_unknown"
+        };
+        assert_eq!(listed["data"][0]["status"], status);
+        assert_eq!(observed["data"]["status"], status);
+        assert_eq!(observed["data"]["id"], applied["data"]["id"]);
+        if status == "ready" {
+            assert!(observed["data"]["fileVersion"].is_string());
+            assert!(observed["data"]["errorCode"].is_null());
         }
         assert_eq!(
             expect(start(&f, &key), 200).await?["data"]["id"],
@@ -341,8 +402,16 @@ async fn live_sample_handles_confirmed_lost_and_uncertain_provider_responses() -
         if scenario == "uncertain" {
             assert_eq!(writes.load(Ordering::SeqCst), 1);
         }
+        if scenario == "existing-sample" {
+            assert_eq!(writes.load(Ordering::SeqCst), 0);
+            f.restart(true).await?;
+            assert_eq!(
+                expect(f.owner(0, Method::GET, &attempt), 200).await?["data"],
+                observed["data"]
+            );
+        }
         if scenario == "existing" {
-            assert_eq!(expect(preview(), 200).await?["content"], expected);
+            assert_eq!(expect(preview(&f), 200).await?["content"], expected);
         }
     }
     Ok(())
