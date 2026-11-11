@@ -123,7 +123,7 @@ test('@visual Guest sign-in opens the Workspace when the server enables it', asy
 }, testInfo) => {
   workspace.requireSignIn({ guestEnabled: true });
   await page.goto('/');
-  await expect(page.locator('.sign-in-brand')).toHaveText('TiDB Agent Workspace');
+  await expect(page.locator('.sign-in-brand')).toHaveText('TiDB AgentSpace');
   await expect(page.locator('.sign-in-brand')).toBeVisible();
   await expect(
     page.getByRole('heading', { name: 'How would you like to work?', level: 1 }),
@@ -253,7 +253,7 @@ test('@visual Guest can cancel or confirm sign-out from the workspace navigation
   await page.goto('/');
   await page.getByRole('button', { name: 'Try without an account' }).click();
   await expect(
-    page.getByRole('main').getByRole('heading', { name: 'Work with your data, your way' }),
+    page.getByRole('main').getByRole('heading', { name: 'Build with agents' }),
   ).toBeVisible();
 
   async function openSignOut() {
@@ -302,7 +302,7 @@ test('Guest sign-out is not offered until the backend supports cleanup', async (
   await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toHaveCount(0);
 });
 
-test('@visual an empty personal account workspace is described accurately', async ({
+test('@visual a personal account workspace keeps account and resource guidance accurate', async ({
   page,
   workspace,
 }, testInfo) => {
@@ -316,7 +316,10 @@ test('@visual an empty personal account workspace is described accurately', asyn
   await expect(
     page.getByText('Product prototype · Cloud resources & telemetry are simulated'),
   ).toHaveCount(0);
-  await expect(page.getByText('Create a resource to get started')).toBeVisible();
+  await expect(page.getByText('Open Files or Databases to continue your work')).toBeVisible();
+  expect(workspace.state.resources).toEqual([
+    expect.objectContaining({ kind: 'filesystem', isDefault: true }),
+  ]);
   if (process.env.PERSONAL_SETTINGS_SCREENSHOT) {
     await page.locator('.account-session-summary').scrollIntoViewIfNeeded();
     await page.screenshot({
@@ -330,7 +333,7 @@ async function openFileSystemsFromSidebar(page) {
   if (await mobileNavigation.isVisible()) await mobileNavigation.click();
   await page
     .getByRole('navigation', { name: 'Main navigation', exact: true })
-    .getByRole('link', { name: 'File Systems', exact: true })
+    .getByRole('link', { name: 'Files', exact: true })
     .click();
 }
 
@@ -793,7 +796,7 @@ test('a created key leads to agent instructions after it is copied', async ({
     });
   });
   workspace.addResources();
-  await workspace.open('#keys');
+  await workspace.open('#connect');
   await page.getByRole('button', { name: 'Create API key', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create API key', exact: true });
   await dialog.getByLabel('Key name').fill('agent-access');
@@ -805,7 +808,7 @@ test('a created key leads to agent instructions after it is copied', async ({
   await ready.getByRole('button', { name: 'Copy key', exact: true }).click();
   await ready.getByRole('button', { name: 'I’ve added the key' }).click();
   await expect(page).toHaveURL(/#connect$/);
-  await expect(page.getByRole('heading', { name: 'Connect agent', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Agents', level: 1 })).toBeVisible();
   await expect(page.getByText('synthetic-browser-key-never-valid-on-a-provider')).toHaveCount(0);
 });
 

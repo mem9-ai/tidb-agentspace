@@ -13,7 +13,7 @@ test('@visual agent connection explains scoped access and copies instructions wi
   });
   workspace.addResources();
   await workspace.open('#connect');
-  await expect(page.getByRole('heading', { name: 'Connect agent', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Agents', level: 1 })).toBeVisible();
   await expect(page.getByText(/File write access also permits/)).toBeVisible();
   await expect(page.getByText(/Copying instructions does not confirm a connection/)).toBeVisible();
   await expect(
@@ -66,7 +66,7 @@ test('@visual API docs use one configured endpoint with runnable examples and co
   });
   workspace.addResources();
   await workspace.open('#api');
-  await expect(page.getByRole('heading', { name: 'API docs', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Developers', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'API endpoint' })).toBeVisible();
   await expect(page.getByText('http://127.0.0.1:4389/api', { exact: true })).toBeVisible();
   await expect(page.getByText('http://127.0.0.1:4389', { exact: true })).toHaveCount(0);
@@ -95,7 +95,7 @@ test('@visual API docs use one configured endpoint with runnable examples and co
   const panel = page.getByRole('tabpanel', { name: 'Python' });
   await expect(panel.getByRole('link', { name: 'View source on GitHub' })).toHaveAttribute(
     'href',
-    'https://github.com/mem9-ai/tidb.ai/blob/main/src/clients/python/workspace_agent.py',
+    'https://github.com/mem9-ai/tidb-agentspace/blob/main/src/clients/python/workspace_agent.py',
   );
   const pythonExample = panel
     .locator('.code-example')

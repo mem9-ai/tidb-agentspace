@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
-export const repository = 'mem9-ai/tidb.ai';
+export const repository = 'mem9-ai/tidb-agentspace';
 const checks = {
   console: ['Quality', 'Browser smoke'],
   'dev-smoke': ['Quality'],

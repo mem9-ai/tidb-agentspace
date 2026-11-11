@@ -1,3 +1,4 @@
+import { AgentConnection } from '../agents/AgentConnection';
 import { useEffect, useState } from 'react';
 import { Alert, Anchor, Badge, Button, Group, Paper, Text, TextInput } from '@tidbcloud/uikit';
 import { WorkspacePageHeader } from '../../ui/WorkspacePageHeader';
@@ -126,62 +127,19 @@ export function ApiDocumentation({
   }
   if (connect) {
     return (
-      <>
-        <WorkspacePageHeader
-          title="Connect agent"
-          description="Give your agent access to the workspace resources you choose."
-        />
-        <Paper className="panel api-guide" p={24} withBorder>
-          <Heading level={2}>1. Choose access</Heading>
-          <Text>
-            Create a Workspace API key and select the resources and actions your agent needs.
-            Analyzing files requires file read and analyze access. File write access also permits
-            editing and deleting files in the selected resources.
-          </Text>
-          <Group>
-            <Button variant="filled" onClick={onNewKey}>
-              Create API key
-            </Button>
-            <Anchor href="#keys">Manage existing keys</Anchor>
-          </Group>
-        </Paper>
-        <Paper className="panel api-guide" p={24} withBorder>
-          <Heading level={2}>2. Give your agent the instructions</Heading>
-          <Text>
-            Set <code>WORKSPACE_API_KEY</code> in your agent’s environment or secret manager. Start
-            a session with access to the key, then paste only the instructions and your task into
-            chat.
-          </Text>
-          <Text size="sm">
-            Using a terminal? In the shell where you set the key, start Codex CLI with{' '}
-            <code>codex</code>, Claude Code with <code>claude</code>, or Pi with <code>pi</code>.
-          </Text>
-          {error ? (
-            <Alert color="yellow">Couldn’t load the API endpoint. Refresh to try again.</Alert>
-          ) : !settings ? (
-            <Text role="status">Loading connection details…</Text>
-          ) : (
-            <Group>
-              <Button variant="filled" onClick={() => copy(agentInstructions(settings.endpoint))}>
-                Copy agent instructions
-              </Button>
-              <Button onClick={downloadInstructions}>Download instructions</Button>
-            </Group>
-          )}
-          <Text size="sm">
-            Copying instructions does not confirm a connection. You can revoke a key from API keys.
-          </Text>
-        </Paper>
-        <Text>
-          Want to connect with code? <Anchor href="#api">Open API docs</Anchor>.
-        </Text>
-      </>
+      <AgentConnection
+        endpoint={settings?.endpoint}
+        error={error}
+        hasResources={Boolean(data.resources.length || data.resourceNextCursor)}
+        copy={copy}
+        onNewKey={onNewKey}
+      />
     );
   }
   return (
     <>
       <WorkspacePageHeader
-        title="API docs"
+        title="Developers"
         description="Use one endpoint and a scoped API key to connect your agent."
         actions={
           onNewKey ? (

@@ -31,7 +31,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.repository == 'mem9-ai/tidb.ai' && github.ref == 'refs/heads/main'
+    if: github.repository == 'mem9-ai/tidb-agentspace' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     permissions:
@@ -169,11 +169,11 @@ jobs:
           commit-message: 'chore(studio): update Console artifact'
           title: 'chore(studio): update Console artifact'
           body: |
-            Automated Console-only publication from mem9-ai/tidb.ai at `${{ needs.build.outputs.sha }}`.
+            Automated Console-only publication from mem9-ai/tidb-agentspace at `${{ needs.build.outputs.sha }}`.
 
             Pinned toolchain, source quality checks, artifact allowlist/checksums and website tests passed.
             Only `vendor/studio/` and `vendor/studio-build.json` are published. No private source or source maps.
-            Evidence: https://github.com/mem9-ai/tidb.ai/actions/runs/${{ github.run_id }}
+            Evidence: https://github.com/mem9-ai/tidb-agentspace/actions/runs/${{ github.run_id }}
       - name: Verify PR preparation kept release blobs excluded
         if: steps.pr.outputs.pull-request-number != ''
         run: node scripts/console-publish.mjs checkout website

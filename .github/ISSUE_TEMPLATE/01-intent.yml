@@ -8,7 +8,7 @@ body:
       value: |
         Describe a useful outcome. Maintainers can help refine it into a specification,
         and another contributor or agent can implement it. Code and detailed design are optional.
-        See the [GitHub contribution workflow](https://github.com/mem9-ai/tidb.ai/blob/main/docs/standards/github-contribution-workflow.md).
+        See the [GitHub contribution workflow](https://github.com/mem9-ai/tidb-agentspace/blob/main/docs/standards/github-contribution-workflow.md).
         Keep credentials and private user data out of this Issue. Submission does not start an agent run.
   - type: input
     id: user

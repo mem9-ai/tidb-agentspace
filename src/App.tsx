@@ -125,15 +125,15 @@ type WorkspaceIcon = React.ComponentType<IconProps>;
 type PortalData = Data & { resourceWindowTruncated?: boolean; usageNeedsRefresh?: boolean };
 
 const routes: Record<Route, { label: string; icon: WorkspaceIcon; group: string }> = {
-  overview: { label: 'Overview', icon: LayoutDashboard, group: 'Workspace' },
-  files: { label: 'File Systems', icon: Folder, group: 'Workspace' },
-  databases: { label: 'Databases', icon: Database, group: 'Workspace' },
-  connect: { label: 'Connect agent', icon: Workflow, group: 'Build' },
-  tutorials: { label: 'Tutorials', icon: CircleHelp, group: 'Build' },
-  keys: { label: 'API keys', icon: KeyRound, group: 'Build' },
-  api: { label: 'API docs', icon: Terminal, group: 'Build' },
-  billing: { label: 'Usage & billing', icon: CreditCard, group: 'Manage' },
-  settings: { label: 'Settings', icon: Settings, group: 'Manage' },
+  overview: { label: 'Home', icon: LayoutDashboard, group: 'Space' },
+  connect: { label: 'Agents', icon: Workflow, group: 'Space' },
+  files: { label: 'Files', icon: Folder, group: 'Space' },
+  databases: { label: 'Databases', icon: Database, group: 'Space' },
+  keys: { label: 'Access', icon: KeyRound, group: 'Space' },
+  tutorials: { label: 'Quickstarts', icon: CircleHelp, group: 'More' },
+  api: { label: 'Developers', icon: Terminal, group: 'More' },
+  billing: { label: 'Usage', icon: CreditCard, group: 'More' },
+  settings: { label: 'Settings', icon: Settings, group: 'More' },
 };
 
 function go(route: Route) {
@@ -558,7 +558,7 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
         <div className="sign-in-brand">
           <span className="brand-mark">TiDB</span>{' '}
           <Text span fw={600}>
-            Agent Workspace
+            AgentSpace
           </Text>
         </div>
         {showSignIn && routeLocation.openForUpload ? (
@@ -633,6 +633,9 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
         liveFiles={visibleData!.resources.some((r) => r.provider === 'drive9-anonymous')}
         liveDatabases={visibleData!.resources.some((r) => r.provider === 'db9-anonymous')}
         workspaceName={data.workspace.name}
+        hasResources={Boolean(
+          visibleData?.resources.length || data.resourceNextCursor || data.resourceWindowTruncated,
+        )}
         profileName={
           sso.sessionKind === 'account'
             ? sso.account?.name || sso.account?.email || 'TiDB Cloud account'
@@ -702,7 +705,7 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
           {route === 'tutorials' && (
             <>
               <PageHeading
-                title="Tutorials"
+                title="Quickstarts"
                 description="Explore a guided example with your agent or on your own."
               />
               <DataTutorials
@@ -897,20 +900,20 @@ function Overview({
   return (
     <>
       <PageHeading
-        eyebrow="YOUR WORKSPACE"
-        title={hasResources && !isGuest ? data.workspace.name : 'Work with your data, your way'}
+        eyebrow="YOUR SPACE"
+        title={hasResources && !isGuest ? data.workspace.name : 'Build with agents'}
         description={
           hasResources && !isGuest
-            ? 'Your files, data, and agents. All in one place.'
-            : 'Connect an agent to work with your files and data, or explore them yourself.'
+            ? 'Continue with your saved files and data, or give an agent scoped access.'
+            : 'Give your agent a persistent place to work with files and data. Start with a sample or bring your own.'
         }
         actions={
           hasResources && !isGuest ? (
             <Group>
-              <Button component="a" href="#connect" variant="default">
+              <Button component="a" href="#connect" variant="filled">
                 Connect an agent
               </Button>
-              <Button variant="filled" leftSection={<Plus size={18} />} onClick={() => onCreate()}>
+              <Button variant="default" leftSection={<Plus size={18} />} onClick={() => onCreate()}>
                 Create resource
               </Button>
             </Group>
@@ -999,6 +1002,11 @@ function Overview({
         </section>
       )}
       {hasResources && !freshGuest && <TutorialResume data={data} />}
+      <Group mt="xl" aria-label="Space quickstarts">
+        <Anchor href="#overview?example=sales">Explore the sales sample</Anchor>
+        <Anchor href="#tutorials">Quickstarts</Anchor>
+        <Anchor href="#files">Open saved files</Anchor>
+      </Group>
     </>
   );
 }
@@ -1901,7 +1909,7 @@ function Keys({ data, refresh, notify, onNewKey }: Shared & { onNewKey: () => vo
   return (
     <>
       <PageHeading
-        title="API keys"
+        title="Access"
         description="Scoped access for every agent, application, and workflow."
         actions={
           keysLoaded && (keyWindow.keys.length || keyWindow.next || keyWindow.earlier) ? (
@@ -2139,7 +2147,7 @@ function Billing({ data, refreshUsage }: Shared) {
   return (
     <>
       <PageHeading
-        title="Usage & billing"
+        title="Usage"
         description="Start free. Know your limits before you reach them."
         actions={
           <Badge color="green">

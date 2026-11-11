@@ -1,4 +1,4 @@
-# TiDB Workspace: product and service architecture
+# TiDB AgentSpace: product and service architecture
 
 Design baseline: 2026-10-27. This describes the proposed architecture for an independent developer
 and agent product. Current database support is PostgreSQL-compatible resources through opt-in
@@ -153,17 +153,24 @@ and follows the Workspace across browsers, with conditional Owner writes and saf
 stored query results or an execution audit. Reopening never automatically repeats a write or
 query. See [tutorial behavior and verification](tutorial-verification.md).
 
-| Page             | Primary task                                  | Important states and interactions                                                                                                                    |
-| ---------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Overview         | Understand resources and the next useful step | Resource health, create resource, connect agent, allowance summary, recent activity, empty-workspace onboarding                                      |
-| Databases        | Create and use MySQL or PG resources          | Resource list, per-database SQL editor and connection actions, protocol, region, lifecycle, supported capabilities; future native client integration |
-| File System      | Manage agent context and output               | Directory navigation, filtering, preview/edit/upload/download, scoped access; future streaming and checkpoints                                       |
-| Connect an agent | Complete the first authenticated request      | Workspace Key, environment setup, OpenAPI, project instructions, REST examples, future MCP integration                                               |
-| API keys         | Grant access to a workflow                    | Allowed resources, allowed actions, explicit future-resource permission, expiry, last use, rotation and revocation                                   |
-| API explorer     | Try the actual public API                     | Endpoint/scope selection, request and response examples, error codes, request ID, contract download                                                  |
-| Monitoring       | Understand behavior and performance           | Resource health, actual activity, query/file metrics, actor/resource filters, measurement freshness                                                  |
-| Usage & billing  | Understand allowances and charges             | Per-resource usage, customer allocation, upstream allowance attribution, estimated/settled spend, limits                                             |
-| Settings         | Manage the personal workspace                 | Names, profile and account/session status; future account claim, security, export and deletion                                                       |
+The implemented primary navigation is **Home**, **Agents**, **Files**, **Databases** and
+**Access**. Quickstarts, Developers, Usage and Settings are under **More**. Guest and account
+sessions share these destinations. Existing route hashes remain compatible.
+
+| Page                       | Primary task                             | Implemented boundary                                                                                                 |
+| -------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Home (`#overview`)         | Start an agent task or reopen saved work | Existing sales journey, real resource links, saved quickstart progress                                               |
+| Agents (`#connect`)        | Set up an external agent                 | Scoped Workspace Key, private environment/secret setup, instructions and a first saved report task; no online status |
+| Files (`#files`)           | Manage persistent context and output     | Explicit File System selection, preview/edit/upload/download and analysis                                            |
+| Databases (`#databases`)   | Create and query supported databases     | PostgreSQL-compatible resource collection and per-database SQL workspace                                             |
+| Access (`#keys`)           | Grant or revoke access                   | Resource/action permissions, expiry, reveal-once Key and policy delivery status                                      |
+| Quickstarts (`#tutorials`) | Complete a guided example                | Existing database/file tutorials and durable progress                                                                |
+| Developers (`#api`)        | Use the existing Rust API                | Endpoint, clients, instructions, playground and generated API reference                                              |
+| Usage (`#billing`)         | Inspect available usage information      | Existing demo/provider/measurement limitations remain explicit                                                       |
+| Settings (`#settings`)     | Manage the Workspace                     | Existing name, profile and account/session settings                                                                  |
+
+AgentSpace is the product name; Workspace remains the API and storage abstraction. Agent
+runtime, identity, verified connectivity, Runs and Memory are not current Console capabilities.
 
 SQL Editor belongs inside Databases, scoped to a selected MySQL, PostgreSQL or DuckDB resource;
 it is not a peer of Databases in the workspace navigation. The implemented route is
