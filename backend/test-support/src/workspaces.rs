@@ -226,19 +226,26 @@ impl Workspaces {
             metadata_security_state,
             "drive9-anonymous",
             None,
+            None,
             |_| Ok(None),
         )
         .await
     }
     pub async fn local_files(embedded: bool, fresh: bool) -> Result<Self> {
-        Self::with_files(embedded, fresh, false, "local", None, |_| Ok(None)).await
+        Self::with_files(embedded, fresh, false, "local", None, None, |_| Ok(None)).await
     }
     /// Only the primary Workspace and its Global authority use the SDK's adjustable clock.
     pub async fn with_expiry_clock() -> Result<(Self, ExpiryClock)> {
         let host = binary("examples").join("expiry_clock_host");
-        let f = Self::with_files(false, false, false, "drive9-anonymous", Some(host), |_| {
-            Ok(None)
-        })
+        let f = Self::with_files(
+            false,
+            false,
+            false,
+            "drive9-anonymous",
+            Some(host),
+            None,
+            |_| Ok(None),
+        )
         .await?;
         let clock = ExpiryClock::in_directory(&f.hosts[0].directory);
         Ok((f, clock))
@@ -247,7 +254,7 @@ impl Workspaces {
     pub async fn with_global_meta_route(
         route: impl FnOnce(&Meta) -> Result<String>,
     ) -> Result<Self> {
-        Self::with_files(true, false, false, "drive9-anonymous", None, |meta| {
+        Self::with_files(true, false, false, "drive9-anonymous", None, None, |meta| {
             route(meta).map(Some)
         })
         .await
@@ -259,9 +266,11 @@ impl Workspaces {
         metadata_security_state: bool,
         files_provider: &str,
         mut primary_clock_host: Option<PathBuf>,
+        binary_dir: Option<&Path>,
         route_global: impl FnOnce(&Meta) -> Result<Option<String>>,
     ) -> Result<Self> {
-        let storage = Fixture::start().await?;
+        let executable = |name: &str| binary_dir.map_or_else(|| binary(name), |dir| dir.join(name));
+        let storage = Fixture::with_meta_binary(executable("workspace-meta-service")).await?;
         let mut region = storage.meta("api-coverage").await?;
         let global_meta = storage.meta("global").await?;
         let mut global_client = global_meta.client.clone();
@@ -319,7 +328,7 @@ impl Workspaces {
                 ExpiryClock::in_directory(&dir).initialize()?;
                 host
             } else {
-                binary("workspace-backend")
+                executable("workspace-backend")
             };
             let mut host = Host {
                 executable,
@@ -561,7 +570,20 @@ impl Workspaces {
             .await?["records"]
             .clone())
     }
+    pub async fn start_version(dir: &Path) -> Result<Self> {
+        Self::with_files(false, false, false, "local", None, Some(dir), |_| Ok(None)).await
+    }
+
+    /// Drain all writers before switching both Meta authorities and both API hosts.
+    pub async fn change_version(&mut self, dir: &Path) -> Result<()> {
+        self.restart_services(false, Some(dir)).await
+    }
+
     pub async fn restart(&mut self, crash: bool) -> Result<()> {
+        self.restart_services(crash, None).await
+    }
+
+    async fn restart_services(&mut self, crash: bool, version: Option<&Path>) -> Result<()> {
         let mut owners = Vec::new();
         let mut meta_owner = Value::Null;
         if crash {
@@ -586,6 +608,17 @@ impl Workspaces {
                         .await
                         .with_context(|| format!("draining {}", host.config["workspaceId"]))?;
                 }
+            }
+        }
+        if let Some(dir) = version {
+            self.storage.meta_binary = dir.join("workspace-meta-service");
+            self.global_meta.process.stop_cleanly().await?;
+            self.global_meta = self
+                .storage
+                .start_meta(self.global_meta.server.clone(), false, None)
+                .await?;
+            for host in &mut self.hosts {
+                host.executable = dir.join("workspace-backend");
             }
         }
         if !self.embedded {

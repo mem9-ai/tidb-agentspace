@@ -20,3 +20,31 @@ Introduce record changes with explicit compatible reads or resumable migrations.
 an interruption/retry case for each new migration. An image rollback requires separate
 evidence that the old program can handle the candidate's writes. An isolated compatibility
 test supplies evidence about its exercised states; deployment recovery still follows ADR 0032.
+
+## Release evidence
+
+The [baseline manifest](../../tools/api-contract/compatibility-baseline.json) pins the frozen
+seven contract views and the public predecessor used to build historical writers and obtain
+the downloadable JS and Python clients. Keep both Git revisions reachable. Native CI
+compares the candidate with the frozen contract and with the preceding main revision after
+the freeze. It retains a JSON report with contract findings, SHA-256 artifact identities
+and the outcomes of historical-client, storage-upgrade and rollback probes. Attach that
+report to the release before its CI artifact expires. Record additional release-specific
+migration and provider tests when the affected behavior goes beyond the fixture.
+
+For local reproduction, use the pinned Node/Rust toolchains and an isolated RustFS binary
+as in the native verification guide. Build the predecessor before the candidate because
+they share the Cargo dependency cache. Use oasdiff 1.37.0 on PATH or set OASDIFF_BINARY.
+
+```sh
+bash scripts/build-compatibility-baseline.sh /tmp/agentspace-predecessor
+npm run backend:build
+node scripts/compatibility-report.mjs /tmp/agentspace-predecessor meta-service/target/debug /tmp/agentspace-compatibility.json
+```
+
+The probe uses two isolated loopback Owner sessions and a controlled SQL provider. It
+exercises existing scoped and revoked Keys, a regional token, two Workspaces with the same
+paths, distinct content and a conflicted sales sample, old conditional versions and
+a post-upgrade write. It does not attest external provider durability, OIDC login, or
+every possible historical record. Preserve the oldest supported fixtures when adding a
+new released runtime. The report does not enable deployment rollback automatically.

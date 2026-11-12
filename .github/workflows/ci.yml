@@ -339,6 +339,15 @@ jobs:
           cache-bin: false
           cache-workspace-crates: false
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
+      - name: Restore pinned predecessor API and Meta binaries
+        id: compatibility_runtime
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/compatibility-predecessor
+          key: compatibility-runtime-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/api-contract/compatibility-baseline.json', 'scripts/build-compatibility-baseline.sh', 'rust-toolchain.toml') }}
+      - name: Build the predecessor from the reviewed revision
+        if: steps.compatibility_runtime.outputs.cache-hit != 'true'
+        run: bash scripts/build-compatibility-baseline.sh "$RUNNER_TEMP/compatibility-predecessor"
       - name: Build native backend with Cargo timings
         run: cargo run --locked -p workspace-build-tools -- prepare && cargo build --locked --workspace --bins --examples --timings
       - name: Check Rust with Clippy
@@ -419,7 +428,6 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with: *node_toolchain_cache
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
         with:
           node-version-file: .node-version
           package-manager-cache: false
@@ -433,6 +441,24 @@ jobs:
       - name: Exercise the published JavaScript client against native services
         if: needs.scope.outputs.history_only != 'true' && !contains(fromJSON('["tutorial","database","files"]'), needs.scope.outputs.classic_profile)
         run: npm run test:agent-clients -- ./meta-service/target/debug/client-fixture
+      - name: Verify compatibility with released clients and format-2 storage
+        env:
+          BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          tool="$RUNNER_TEMP/oasdiff.tgz"
+          curl --fail --silent --show-error --location --retry 3 https://github.com/oasdiff/oasdiff/releases/download/v1.37.0/oasdiff_1.37.0_linux_amd64.tar.gz -o "$tool"
+          echo "eac87307d31d08c36800c58a409c247f1c5db37fbb72e2544402f22a87cbca3c  $tool" | sha256sum --check
+          tar -xzf "$tool" -C "$RUNNER_TEMP" oasdiff
+          OASDIFF_BINARY="$RUNNER_TEMP/oasdiff" node scripts/compatibility-report.mjs "$RUNNER_TEMP/compatibility-predecessor" meta-service/target/debug "$RUNNER_TEMP/compatibility.json" "$BASE_REVISION"
+      - name: Retain the release compatibility report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: compatibility-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/compatibility.json
+          if-no-files-found: warn
+          retention-days: 90
       - name: Save Cargo timing reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
