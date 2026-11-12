@@ -7,7 +7,7 @@ trial resource. This evidence describes a loopback prototype, not a public deplo
 
 - `npm run check`: runtime/repository policy, formatting, lint, generated contract, 52 tests,
   TypeScript, and production build. CI remains credential-free.
-- `node scripts/verify-drive9.mjs <loopback-origin> <resource-id>`: a scoped Workspace Key
+- The [original live verification script](https://github.com/mem9-ai/tidb-agentspace/blob/2ea36925024a53c9cd2bae198cf9cdb4655423e3/scripts/verify-drive9.mjs) used the retired regional Key flow. A scoped Workspace Key
   uploaded Markdown (415 bytes), JSON (50), CSV (64), binary (9), and oversized Markdown
   (165,014). All downloads matched original bytes. The large and binary previews returned
   explanations without editable source; other previews returned the expected UTF-8 text.
@@ -21,7 +21,7 @@ trial resource. This evidence describes a loopback prototype, not a public deplo
 
 Generated live examples remain in the trial's verification folder for manual viewing. No
 customer secrets, provider tokens, internal tenant IDs, or personal files are in these fixtures
-or screenshots. Smoke-test Workspace Keys are revoked in the script's cleanup block.
+or screenshots. The script revoked its temporary Workspace Keys at the end of the run. See [the native file tests](../backend/test-support/tests/product_api/files.rs) for executable coverage today.
 
 ## Browser checks
 

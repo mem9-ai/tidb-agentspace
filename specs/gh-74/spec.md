@@ -1,5 +1,7 @@
 # GH-74: Multi-tenant Workspace control plane with portable KV metadata
 
+> **Implementation update.** The Node source paths and document importer below belong to the original prototype. Start with the [Rust crate map](../../docs/rust-backend.md#modules) and [Meta service](../../docs/meta-service.md) for the running implementation. [ADR 0043](../../docs/decisions/0043-portal-agent-region-control.md) updates the control connection direction.
+
 ## Identity, authority, and delivery
 
 | Field                                       | Value                                                                                                                                                                                                                                                                          |

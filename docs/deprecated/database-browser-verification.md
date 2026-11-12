@@ -1,11 +1,9 @@
 # Database browser verification
 
-This records the initial split-view implementation. The subsequent
-[unified workspace verification](database-workspace-verification.md) covers the current
-same-page table navigator and editor; the API evidence below remains applicable.
+This report records the initial split-view implementation against the retired Zero MySQL gateway. For the supported database, see [PostgreSQL browsing](../db9-postgres.md) and [catalog verification](../postgres-column-latency-verification.md).
 
-Verified on 2026-10-28 against the [DB-BROWSER specification](../specs/database-browser/spec.md)
-and [ADR 0007](decisions/0007-database-browser.md). Source baseline:
+Verified on 2026-10-28 against the [DB-BROWSER specification](../../specs/database-browser/spec.md)
+and [ADR 0007](../decisions/0007-database-browser.md). Source baseline:
 `08daa919415dd063d8294786bedeecf909f6a52c`. The implementation PR identifies the evaluated head;
 CI must pass again if that head changes. No new dependency or provider was introduced.
 
@@ -21,11 +19,7 @@ CI must pass again if that head changes. No new dependency or provider was intro
 | DB-06       | TiUI 2.9.1 Paper, Stack, NavLink, Tabs, Table, TextInput, Button, Alert and Loader; official SQL Editor 0.0.6. Light/dark at 1280×900 and 390×844. Computed body 16px, cells 15px, actions 48px; page width matched viewport. Keyboard horizontal scroll moves the table region on narrow screens.                                     |
 | DB-07       | Full `npm run check`: runtime/repository policy, formatting, lint, generated OpenAPI/client, 74 tests, type checking and independent Console/API builds. Contract validation covers every new JSON operation. Existing SQL-route and demo-query regressions pass.                                                                      |
 
-CI uses injected provider connections and no cloud secrets. The optional live check is:
-
-```sh
-node scripts/verify-database-browser.mjs http://127.0.0.1:4318 RESOURCE_ID
-```
+The [original live verification script](https://github.com/mem9-ai/tidb-agentspace/blob/2ea36925024a53c9cd2bae198cf9cdb4655423e3/scripts/verify-database-browser.mjs) used a loopback API and an existing Zero MySQL database.
 
 It reuses an existing Zero resource through the public Workspace API, creates a temporary
 resource-scoped Workspace Key and a uniquely named fixture table, verifies reads/limits, then
@@ -36,11 +30,11 @@ the final run passed. Existing `workspace_notes` data was not modified.
 
 ## Screenshots
 
-- [Desktop light, columns](screenshots/database-browser/desktop-light.png)
-- [Desktop dark, data](screenshots/database-browser/desktop-dark.png)
-- [Mobile light, columns](screenshots/database-browser/mobile-light.png)
-- [Mobile dark, columns](screenshots/database-browser/mobile-dark.png)
-- [Table query executed in SQL Editor](screenshots/database-browser/editor-query.png)
+- [Desktop light, columns](../screenshots/database-browser/desktop-light.png)
+- [Desktop dark, data](../screenshots/database-browser/desktop-dark.png)
+- [Mobile light, columns](../screenshots/database-browser/mobile-light.png)
+- [Mobile dark, columns](../screenshots/database-browser/mobile-dark.png)
+- [Table query executed in SQL Editor](../screenshots/database-browser/editor-query.png)
 
 ## Limits and delivery
 

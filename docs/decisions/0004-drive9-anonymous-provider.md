@@ -87,19 +87,10 @@ its bounded request lifetime. Long-lived sessions need stronger revocation propa
 
 ## Verification and revisit conditions
 
-`server/drive9.test.mjs` uses an injected fake transport with temporary state and no cloud
-credentials. It covers provisioning/restart/idempotency, ambiguous outcomes, private storage,
-secret-free responses/errors, path handling, original binary bytes, bounded previews,
-conditional creates, non-empty directory protection, scope/resource/workspace denial,
-expiration, and revocation. Existing local-provider tests continue to run.
+The [native file acceptance cases](../../backend/test-support/tests/product_api/files.rs) exercise the regional API against an isolated provider fixture. The [agent workflow](../../backend/test-support/tests/workflows/agent.rs) covers access with scoped credentials. Follow the [Cargo build and verification guide](../../CONTRIBUTING.md#rust-backend-modules) for fixture setup.
 
-Run `node scripts/verify-drive9.mjs <origin> <resource-id>` only against an explicitly authorized
-trial. It writes generated examples, verifies checksums through a scoped Workspace Key, and
-revokes its test keys. It never provisions another tenant. Live verification and UI screenshots
-are recorded in [Drive9 verification](../drive9-verification.md); they are separate from CI.
+The [historical live report](../drive9-verification.md) records an earlier test against a Singapore trial. Its manual script used regional Key administration and direct Workspace Key authentication, retired under [ADR 0036](0036-global-keys-only.md). For current client authentication, use the [API guide](../api-guide.md).
 Revalidate on upstream changes, new transfer formats, production hosting, billing integration,
 or changes to the public key model.
 
-The [file analysis discovery](../file-analysis-discovery.md) records later live DuckDB/Just Bash
-proofs and the checked service's unavailable remote Exec routes. These findings do not add
-analysis or generic command execution to the current Workspace API.
+The original [file analysis discovery](../file-analysis-discovery.md) probed provider-hosted Exec. The current [Rust analysis worker](../../backend/execute/README.md) runs against a selected snapshot in the Region.

@@ -43,7 +43,7 @@ Drafts and results are retained while browsing tables within the mounted databas
 They are not saved across reloads, leaving the database page or switching databases. Table
 inspection still makes bounded reads; it does not refresh automatically after SQL mutations.
 Use Refresh tables / Refresh data. Existing provider, authorization, expiry and query budgets
-are unchanged; see the [original browser verification](database-browser-verification.md).
+are unchanged; see the [original browser verification](deprecated/database-browser-verification.md).
 No multiple query documents, cross-schema navigation or complete accessibility audit is claimed.
 Existing upstream build warnings from `google-libphonenumber` remain non-failing.
 

@@ -1,5 +1,7 @@
 # GH-119: Workspace audit and request history
 
+> **Implementation update.** [ADR 0044](../../docs/decisions/0044-workspace-observability.md) records regional HTTP/audit coverage and the retirement of the original Console views. The [Rust OpenAPI crate](../../backend/openapi/README.md) owns the current contract.
+
 - Status: accepted direction when merged; implementation pending. Parent intent: [GH-119](https://github.com/mem9-ai/tidb.ai/issues/119).
 - Source baseline: `9ad45f75e0263da00787ed813190a9d2a92a042b`.
 - Authority: Workspace Key and regional security decisions; [security design](../gh-84/openapi-security.md), section 7, and [metadata scale](../gh-74/metadata-scale.md).

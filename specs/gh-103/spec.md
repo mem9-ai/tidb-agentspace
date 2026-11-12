@@ -1,5 +1,7 @@
 # GH-103: Import files from a database workspace
 
+> **Supported databases today.** The create-only import workflow uses PostgreSQL. Standalone DuckDB and MySQL target cases in the original acceptance matrix are historical. See [public resource kinds](../../docs/decisions/0058-public-resource-kinds.md) and [regional imports](../../backend/product/src/imports.rs).
+
 - Parent: [GH-103](https://github.com/siddontang/tidb.ai/issues/103).
 - Status: Accepted in PR #104 at `69b3adfc770e346047205638475d6966a5442961`; implementation and evidence follow [verification](../../docs/database-import-verification.md).
 - Baseline: `cd4e9a88ab0837cf93616f2a5d184e9f92e45d49` (includes GH-99 upload feedback and GH-100 metadata changes).

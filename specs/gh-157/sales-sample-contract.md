@@ -1,6 +1,6 @@
 # GH-157: durable US sales sample contract
 
-- Status: proposed; these operations and states are not implemented.
+- Status: historical proposal. The published sales-sample attempt operations are defined in [regional OpenAPI](../../backend/openapi/src/regional/workspace.rs). See [the implementation](../../backend/product/src/sales_samples.rs) and [native acceptance](../../backend/test-support/tests/sales_sample.rs) for supported states and retry behavior.
 - Task: [GH-157](https://github.com/mem9-ai/tidb.ai/issues/157); parent: [GH-150](https://github.com/mem9-ai/tidb.ai/issues/150).
 - Accepted journey: [GH-150 at `5ea06a3f9edfb6dbf471c217ee2cd1b112888ee1`](https://github.com/mem9-ai/tidb.ai/blob/5ea06a3f9edfb6dbf471c217ee2cd1b112888ee1/specs/gh-150/spec.md), especially AF-02, AF-03, AF-09 and AF-A1, AF-A2, AF-A6, AF-A7.
 - Source baseline: `9a766ba12573fc09a0338abade4f5b20b00f867f`.
