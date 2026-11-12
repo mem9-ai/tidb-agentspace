@@ -185,7 +185,27 @@ async function run(command, args) {
     const changed = JSON.stringify(previous) !== JSON.stringify(await studioHashes(destination));
     await output('changed', changed);
     if (changed) {
-      execFileSync('git', ['add', '--', 'vendor/studio', 'vendor/studio-build.json'], {
+      const added = ['vendor/studio', 'vendor/studio-build.json'];
+      // Publisher provenance (#147 in mem9-ai/drive9-fe): sign the manifest with a
+      // detached key so the trusted gate can verify who built it. The website owns
+      // the format, so its signer is used rather than a second implementation. The
+      // key is optional: without it the artifact ships unsigned, exactly as before,
+      // and the gate's pinned key is what decides whether that is acceptable.
+      const signingKey = (process.env.STUDIO_ARTIFACT_SIGNING_KEY ?? '').replace(/\\n/g, '\n');
+      if (signingKey.trim()) {
+        const signer = resolve(root, 'scripts/sign-studio-manifest.mjs');
+        execFileSync(
+          process.execPath,
+          [signer, '--manifest', manifest, '--out', resolve(root, 'vendor/studio-build.json.sig')],
+          {
+            env: { ...process.env, STUDIO_ARTIFACT_SIGNING_KEY: signingKey },
+            stdio: ['ignore', 'pipe', 'pipe'],
+          },
+        );
+        added.push('vendor/studio-build.json.sig');
+        console.log('Console manifest signed for publication.');
+      }
+      execFileSync('git', ['add', '--', ...added], {
         cwd: root,
       });
       const tree = execFileSync('git', ['write-tree'], { cwd: root, encoding: 'utf8' }).trim();
