@@ -127,3 +127,5 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0059: Rust backend workflow](0059-rust-backend-workflow.md) — one native entry point for local operation, OpenAPI and backend verification.
 
 - [0060: Workspace Key resource types](0060-workspace-key-resource-types.md) — explicit and dynamic resource grants.
+
+- [0061: Public compatibility](0061-public-compatibility.md) — supported clients, discovery and data upgrades.

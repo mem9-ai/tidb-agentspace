@@ -5,6 +5,7 @@ import {
   WorkspaceApiError,
 } from './transport';
 import { createUploadFetch, type UploadProgress } from './upload-transport';
+import { consoleCapabilities, supportsResource } from './resource-discovery';
 import { firstWorkspaceId } from './workspace-selection';
 import type { components, operations } from './schema';
 import { createGlobalApiClient } from './global-client';
@@ -27,7 +28,9 @@ export type ApiKey = components['schemas']['Key'] & {
   resourceTypes?: KeyResourceType[];
   regionalStatus?: 'pending' | 'applied';
 };
-export type Data = components['schemas']['Bootstrap'];
+export type Data = Omit<components['schemas']['Bootstrap'], 'capabilities'> & {
+  capabilities: ReturnType<typeof consoleCapabilities>;
+};
 export type WorkspaceFile = components['schemas']['File'];
 export type QueryResult =
   operations['executeQuery']['responses'][200]['content']['application/json'];
@@ -326,7 +329,10 @@ export const workspaceApi = {
     if (!response.ok) return { enabled: false };
     return (await response.json()) as SsoAuthConfig;
   },
-  bootstrap: () => responseData(client.GET('/workspaces/{workspaceId}/bootstrap', { params })),
+  bootstrap: async (): Promise<Data> => {
+    const data = await responseData(client.GET('/workspaces/{workspaceId}/bootstrap', { params }));
+    return { ...data, capabilities: consoleCapabilities(data.capabilities) };
+  },
   listSalesSampleAttempts: () =>
     responseData(
       client.GET('/workspaces/{workspaceId}/sales-sample-attempts', {
@@ -370,20 +376,24 @@ export const workspaceApi = {
         params: { path: params.path, query: { name } },
         signal,
       }),
-    ),
+    ).then((page) => ({ ...page, data: page.data.filter(supportsResource) })),
   resourcesPage: (cursor?: string) =>
     responseData(
       client.GET('/workspaces/{workspaceId}/resources', {
         params: { path: params.path, query: { limit: 100, cursor } },
       }),
-    ),
+    ).then((page) => ({ ...page, data: page.data.filter(supportsResource) })),
   resource: (resourceId: string, signal?: AbortSignal) =>
     responseData(
       client.GET('/workspaces/{workspaceId}/resources/{resourceId}', {
         params: { path: { workspaceId, resourceId } },
         signal,
       }),
-    ),
+    ).then((result) => {
+      if (!supportsResource(result.data))
+        throw new Error('This Console version cannot open this resource.');
+      return result;
+    }),
   usage: () => responseData(client.GET('/workspaces/{workspaceId}/usage', { params })),
   usagePage: (cursor?: string) =>
     responseData(

@@ -346,6 +346,7 @@ fn create_resource() -> Value {
                         "application/json": {
                             "schema": {
                                 "type": "object",
+                                "required": ["data", "mode"],
                                 "properties": {"data": reference("Resource"), "mode": {"enum": ["demo", "live"]}},
                             },
                         },

@@ -1,3 +1,4 @@
+import { supportsResource } from './api/resource-discovery';
 import { ReportFilesEntry } from './features/reports/ReportFilesEntry';
 import { TemporaryReportNotice } from './features/reports/TemporaryReportNotice';
 import { ReportNextSteps } from './features/reports/ReportNextSteps';
@@ -204,9 +205,7 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
     () =>
       data && {
         ...data,
-        resources: data.resources.filter(
-          (resource) => resource.kind === 'postgresql' || resource.kind === 'filesystem',
-        ),
+        resources: data.resources.filter(supportsResource),
         usage: data.usage.filter(
           (item) => item.kind === 'postgresql' || item.kind === 'filesystem',
         ),
@@ -227,6 +226,7 @@ function App({ enterWorkspaceFiles }: { enterWorkspaceFiles: boolean }) {
     data?.resources.some(
       (resource) =>
         resource.id === selectedResourceId &&
+        supportsResource(resource) &&
         resource.kind === 'filesystem' &&
         resource.status === 'active' &&
         !resource.connectionError,

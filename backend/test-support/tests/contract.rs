@@ -29,6 +29,50 @@ fn schema(contract: &Value, source: &Value) -> Result<Validator> {
 }
 
 #[test]
+fn discovery_can_describe_new_capabilities_while_mutations_keep_their_contract() -> Result<()> {
+    let api = contract();
+    let capability =
+        json!({"label":"Database","regions":["future-location"],"storageGiB":null,"preview":false});
+    let validator = schema(&api, &api["components"]["schemas"]["Capabilities"])?;
+    assert!(
+        validator.is_valid(
+            &json!({"postgresql":capability,"filesystem":capability,"future":capability})
+        )
+    );
+    assert!(!validator.is_valid(&json!({"future":capability})));
+    let resource = json!({"id":"id","name":"name","region":"future","regionId":"region:x","kind":"future",
+        "provider":"future-provider","status":"active","createdAt":"2026-11-12T00:00:00Z"});
+    let collection = &api["paths"]["/workspaces/{workspaceId}/resources"]["post"];
+    let create_request = schema(
+        &api,
+        &collection["requestBody"]["content"]["application/json"]["schema"],
+    )?;
+    assert!(
+        !create_request.is_valid(&json!({"kind":"future","name":"example","region":"automatic"}))
+    );
+    assert!(
+        !create_request
+            .is_valid(&json!({"kind":"filesystem","name":"example","region":"future-location"}))
+    );
+    let created = schema(
+        &api,
+        &collection["responses"]["201"]["content"]["application/json"]["schema"],
+    )?;
+    assert!(created.is_valid(&json!({"data":resource,"mode":"live"})));
+    assert!(!created.is_valid(&json!({"mode":"live"})));
+    assert!(!created.is_valid(&json!({"data":resource})));
+    let upload = &api["paths"]["/workspaces/{workspaceId}/files/content"]["put"];
+    let saved = schema(
+        &api,
+        &upload["responses"]["200"]["content"]["application/json"]["schema"],
+    )?;
+    assert!(saved.is_valid(&json!({"saved":true,"size":0})));
+    assert!(!saved.is_valid(&json!({"saved":true})));
+    assert!(!saved.is_valid(&json!({"size":0})));
+    Ok(())
+}
+
+#[test]
 fn key_creation_requires_exactly_one_resource_selection() -> Result<()> {
     let api = workspace_openapi::View::PortalGlobal.document();
     let body = &api["paths"]["/api/portal/v1/workspaces/{workspaceId}/keys"]["post"]["requestBody"]
