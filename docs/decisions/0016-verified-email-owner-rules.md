@@ -1,5 +1,7 @@
 # ADR 0016: Verified email grants for a shared workspace
 
+> **Partially deprecated.** Shared-Workspace owner admission now applies only to the loopback SSO compatibility fixture. Managed hosting assigns a personal Workspace using verified issuer and subject under [ADR 0030](0030-personal-account-isolation.md).
+
 - Status: Accepted owner direction; implemented with synthetic-provider tests.
 - Date: 2026-10-29
 - Scope: Opt-in SSO owner eligibility for an internal shared workspace.
@@ -39,7 +41,7 @@ out of browser responses does not restrict a shared owner from using the resourc
 through the API. The deployed Node implementation stores Drive9 credentials in
 `<WORKSPACE_DATA_FILE>.providers.json`; this is private plaintext file storage, not an
 encrypted secret manager. See [ADR 0004](0004-drive9-anonymous-provider.md) and
-[DuckDB private storage](0008-duckdb-private-storage.md).
+[DuckDB private storage](../deprecated/decisions/0008-duckdb-private-storage.md).
 
 ## Operations and compatibility
 

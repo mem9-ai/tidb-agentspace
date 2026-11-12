@@ -21,7 +21,7 @@ and Rust API; agent runtime, identity, Runs and Memory remain future work. See t
 The project has two connected goals:
 
 1. Build an independent TiDB workspace for developers and agents. PostgreSQL-compatible databases and File Systems are currently available; standalone MySQL
-   and DuckDB databases are retired under [ADR 0048](docs/decisions/0048-postgresql-only-databases.md). Persistent TiDB Cloud Starter integrations remain planned. Resource
+   and DuckDB databases are retired under [ADR 0058](docs/decisions/0058-public-resource-kinds.md). Persistent TiDB Cloud Starter integrations remain planned. Resource
    types have distinct capabilities. Customers use a Workspace Key; backend services manage
    provider credentials. The README and accepted decisions own current provider availability.
 2. Make intent, specifications, and acceptance cases useful open source contributions.
@@ -63,6 +63,8 @@ For the agent single-entry flow, see [ADR 0041](docs/decisions/0041-single-globa
 new Keys identify their Workspace to Global, which supplies a bodyless redirect to Region.
 The client validates the route and sends data directly; older Keys keep scoped issuance.
 
+Browse the [documentation index](docs/README.md) for current operating guides or the [deprecated archive](docs/deprecated/README.md) for historical designs.
+
 ## First reading route
 
 | Order | Read                                                                                                                                    | Understand                                                                                 |
@@ -82,13 +84,13 @@ note. An intent contribution can start with a user problem and a concrete exampl
 
 [ADR 0026](docs/decisions/0026-native-hosted-studio.md) makes Rust the only hosted/local serving runtime, including SSO and `/studio`. All API build/start commands select Rust; The Rust backend also owns local setup, OpenAPI and HTTP acceptance. Node builds the Console and tests its clients. The owner permits fresh native S3 roots and keys without migrating old data. Follow [native deployment](docs/native-studio-deployment.md) for bootstrap, local login and live verification.
 
-| Area                | Current interpretation                                                                                                                                                                                                                                                                                                  |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Product runtime     | Independently runnable Console and API in a loopback-only prototype. File Systems support local and live-provider modes. PostgreSQL is available through opt-in db9; standalone MySQL and DuckDB databases and retired simulated PG remain hidden. Read the README for current availability, limits, and configuration. |
-| Public API          | [Generated OpenAPI](public/openapi.json) and [client types](src/api/schema.d.ts) describe the implemented HTTP surface. The [contract generator](backend/openapi/src) is the editable source.                                                                                                                           |
-| Product target      | Persistent Starter/PG, production identity, telemetry, billing, SDK/CLI/MCP, and public delivery include proposed work. Use the architecture, README, and accepted decisions to assess each capability.                                                                                                                 |
-| Contribution system | GitHub forms, labels, versioned specs, local checks and PR/CI procedures support the current local agent. `/agent` comments are handoff requests; execution stays in the already running session.                                                                                                                       |
-| Delivery            | [CI/CD policy](docs/ci-cd.md) distinguishes accepted specs, passing checks, merged source, packaged artifacts, and verified deployments.                                                                                                                                                                                |
+| Area                | Current interpretation                                                                                                                                                                                                                                                                                                                              |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product runtime     | Independently runnable Console and API with loopback development and configured hosted profiles. File Systems support local and live-provider modes. PostgreSQL is available through opt-in db9; standalone MySQL and DuckDB databases and retired simulated PG remain hidden. Read the README for current availability, limits, and configuration. |
+| Public API          | [Generated OpenAPI](public/openapi.json) and [client types](src/api/schema.d.ts) describe the implemented HTTP surface. The [contract generator](backend/openapi/src) is the editable source.                                                                                                                                                       |
+| Product target      | Persistent Starter/PG, production identity, telemetry, billing, SDK/CLI/MCP, and public delivery include proposed work. Use the architecture, README, and accepted decisions to assess each capability.                                                                                                                                             |
+| Contribution system | GitHub forms, labels, versioned specs, local checks and PR/CI procedures support the current local agent. `/agent` comments are handoff requests; execution stays in the already running session.                                                                                                                                                   |
+| Delivery            | [CI/CD policy](docs/ci-cd.md) distinguishes accepted specs, passing checks, merged source, packaged artifacts, and verified deployments.                                                                                                                                                                                                            |
 
 Distinguish **verified implementation**, **accepted project rule**, and **proposal**. Check
 relevant behavior against current source, contracts, and tests. When documents disagree,
@@ -129,12 +131,7 @@ binary for one bounded task. It has no independent service, listener or task que
 For millions of Workspaces or a million-resource Workspace, also read the
 [metadata scale profile](specs/gh-74/metadata-scale.md): Workspace ownership is distinct from
 atomic-group granularity, shared-cell routing, query indexes and workload capacity evidence.
-For Global/Region communication, read the [control-channel contract](specs/gh-74/control-channel.md):
-Global initiates commands, policy delivery and information reads; Region has no upstream
-callback/admission dependency. Region must keep serving known authorized work during Global
-failure using durable policy, independent local authentication/session refresh and regional
-state/recovery. Policy-sync age never expires access; actual credential expiry and received
-denials still apply. Production mTLS and regional autonomy require implementation evidence.
+For Global/Region communication, start with [ADR 0043](docs/decisions/0043-portal-agent-region-control.md) and [regional security](docs/regional-token-api.md). Region opens the mTLS connection. Global sends policy over it. Region keeps serving known authorized work and renewing eligible sessions when Global is unavailable, subject to the locally installed grant, expiry and revocation.
 For direct regional OpenAPI/SDK routes and credential lifetime/renewal, read the
 [regional API/auth contract](specs/gh-74/regional-api-auth.md). It separates explicit continuity
 grants from actual Key expiry. See the implemented [Global/Region flow](docs/api-guide.md) and its configured deployment profile.
@@ -144,20 +141,17 @@ and [ADR 0034](docs/decisions/0034-openapi-security-authorities.md). The public 
 Global is the common management/discovery entry; clients use the selected Region OpenAPI
 directly for data and regional operation status, with no mandatory Global hop for known routes.
 
-| Task                                                      | Required starting points                                                                                                                                                                                                                                                    |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Intent, specification, or agent delivery                  | [Development system](docs/standards/intent-driven-development.md), [GitHub workflow](docs/standards/github-contribution-workflow.md), and [feature template](docs/templates/feature-spec.md)                                                                                |
-| UI, theme, icons, layout, or frontend dependencies        | [Frontend instructions](src/AGENTS.md), [TiUI standard](docs/standards/tiui-design-system.md), and [shared resource workspace verification](docs/resource-workspace-verification.md); reuse the resource header/bar, browser and item adapters in `src/ui/`                 |
-| Public API, authorization, or credentials                 | [Architecture](docs/architecture.md), [Workspace Key decision](docs/decisions/0001-unified-workspace-key.md), generator, and affected API tests                                                                                                                             |
-| File System providers or regions                          | [Regions and modes](docs/decisions/0003-filesystem-regions-and-modes.md), [Drive9 boundary](docs/decisions/0004-drive9-anonymous-provider.md), and [provider verification](docs/drive9-verification.md)                                                                     |
-| SQL providers, query behavior, or database availability   | [Zero SQL boundary](docs/decisions/0006-zero-sql-gateway.md) and [SQL verification](docs/starter-sql-verification.md); table browsing follows [ADR 0007](docs/decisions/0007-database-browser.md); DuckDB follows [ADR 0008](docs/decisions/0008-duckdb-private-storage.md) |
-| TiDB Cloud API, protocol, SDK, or CLI integration choices | [TiDB Cloud integration policy](docs/architecture.md#tidb-cloud-integration-policy)                                                                                                                                                                                         |
-| Build, review, merge, artifacts, or deployment            | [Contribution guide](CONTRIBUTING.md), [CI/CD policy](docs/ci-cd.md), and [workflow sources](.github/workflows/)                                                                                                                                                            |
-| Separate Console/API builds, configuration, or packaging  | [Independent delivery](docs/independent-delivery.md) and [ADR 0005](docs/decisions/0005-independent-console-and-api.md)                                                                                                                                                     |
-| Reusable corrections or integration findings              | [Knowledge maintenance](docs/standards/knowledge-maintenance.md); update the canonical standard or ADR and its entry points                                                                                                                                                 |
-
-DuckDB browsing also follows the bounded read-only catalog-reader exception in
-[ADR 0012](docs/decisions/0012-duckdb-catalog-reader.md). Customer SQL remains disposable.
+| Task                                                      | Required starting points                                                                                                                                                                                                                                    |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Intent, specification, or agent delivery                  | [Development system](docs/standards/intent-driven-development.md), [GitHub workflow](docs/standards/github-contribution-workflow.md), and [feature template](docs/templates/feature-spec.md)                                                                |
+| UI, theme, icons, layout, or frontend dependencies        | [Frontend instructions](src/AGENTS.md), [TiUI standard](docs/standards/tiui-design-system.md), and [shared resource workspace verification](docs/resource-workspace-verification.md); reuse the resource header/bar, browser and item adapters in `src/ui/` |
+| Public API, authorization, or credentials                 | [Architecture](docs/architecture.md), [Workspace Key decision](docs/decisions/0001-unified-workspace-key.md), generator, and affected API tests                                                                                                             |
+| File System providers or regions                          | [Regions and modes](docs/decisions/0003-filesystem-regions-and-modes.md), [Drive9 boundary](docs/decisions/0004-drive9-anonymous-provider.md), and [provider verification](docs/drive9-verification.md)                                                     |
+| SQL providers, query behavior, or database availability   | [Public resource kinds](docs/decisions/0058-public-resource-kinds.md), [db9 setup and recovery](docs/db9-postgres.md) and [database browsing](docs/decisions/0007-database-browser.md)                                                                      |
+| TiDB Cloud API, protocol, SDK, or CLI integration choices | [TiDB Cloud integration policy](docs/architecture.md#tidb-cloud-integration-policy)                                                                                                                                                                         |
+| Build, review, merge, artifacts, or deployment            | [Contribution guide](CONTRIBUTING.md), [CI/CD policy](docs/ci-cd.md), and [workflow sources](.github/workflows/)                                                                                                                                            |
+| Separate Console/API builds, configuration, or packaging  | [Independent delivery](docs/independent-delivery.md) and [ADR 0005](docs/decisions/0005-independent-console-and-api.md)                                                                                                                                     |
+| Reusable corrections or integration findings              | [Knowledge maintenance](docs/standards/knowledge-maintenance.md); update the canonical standard or ADR and its entry points                                                                                                                                 |
 
 Backend action/resource authorization, service-owned provider secrets, shared domain
 operations, and actual TiUI components/adapters are central project boundaries. Their detailed
@@ -193,7 +187,7 @@ PostgreSQL. Follow the accepted [GH-103 contract](specs/gh-103/spec.md),
 [verification/API usage](docs/database-import-verification.md). Source/review/write phases share
 TiUI controls; new preparations bind their principal and destination, including through legacy export routes.
 
-Standalone DuckDB databases are retired under [ADR 0048](docs/decisions/0048-postgresql-only-databases.md).
+Standalone DuckDB databases are retired under [ADR 0058](docs/decisions/0058-public-resource-kinds.md).
 DuckDB remains available for bounded File System analysis under [ADR 0010](docs/decisions/0010-read-only-file-analysis.md).
 File System navigation starts with the global resource list (`#files`), followed by a selected
 resource (`#files?resourceId=…`). See [navigation verification](docs/filesystem-list-verification.md)
@@ -237,6 +231,8 @@ Its best-effort availability/durability must not become a business Meta dependen
 
 ## Find the implementation
 
+Start with the [Rust crate map](docs/rust-backend.md#modules) or the [Console contributor guide](src/README.md). Each crate README links its entry points, dependencies and focused verification commands.
+
 For executable sample data, tutorial creation handoff and Workspace-persisted cross-browser re-entry from Overview
 or resource workspaces, read [tutorial verification](docs/tutorial-verification.md) and
 [product experience](docs/standards/product-experience.md).
@@ -265,23 +261,9 @@ An existing accepted example is the [independent Console/API specification](spec
 
 ## Set up and verify
 
-Select Node from [.node-version](.node-version) and npm from [package.json](package.json),
-following [reproducible setup](CONTRIBUTING.md#reproducible-setup). Use the committed lockfile. Before starting the default Rust API, follow
-[regional Meta/import setup](docs/rust-backend.md) and set `WORKSPACE_BACKEND_CONFIG` to its
-absolute private deployment file. Missing configuration never falls back to another data file.
+Follow the [local setup](README.md#local-setup) to prepare native libraries, initialize an isolated runtime and start the API. Check its health before starting the Console in another terminal with the pinned Node and npm versions. The default setup uses local storage and needs no cloud credentials.
 
-```sh
-npm ci
-npm run check
-npm run dev
-```
-
-The README explains local addresses and optional provider behavior. Default development and
-tests need no cloud credentials. Live-adapter use can cause external effects and must stay
-within the task's authorization.
-
-`npm run dev` starts both development servers. For separate builds/runs, runtime API-origin
-configuration, and the Console/API artifacts, follow [independent delivery](docs/independent-delivery.md).
+For separate builds, runtime API-origin configuration and packaging, follow [independent delivery](docs/independent-delivery.md).
 
 Use focused checks during development, then `npm run check` before handoff. Public contract
 changes update the generator and run `npm run api:generate`, keeping implementation, clients,

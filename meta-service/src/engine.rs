@@ -611,6 +611,8 @@ impl Engine {
                 let fingerprint = hex::encode(Sha256::digest(
                     serde_json::to_vec(&ordered).map_err(corrupt)?,
                 ));
+                // Look up the receipt before comparing record versions. After a lost reply,
+                // an identical retry still carries the versions from before the first commit.
                 let receipt_key = format!("{prefix}receipts/{mutation_id}");
                 if let Some(receipt) = self.get(&tx, &receipt_key).await? {
                     if receipt["fingerprint"] != fingerprint {

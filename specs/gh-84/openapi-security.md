@@ -375,7 +375,7 @@ failures without leaking tenant secrets. Use bounded retention, access control a
 ## 8. Metadata layout and scale
 
 Illustrative logical KV records, each independently addressable and encrypted; final scopes,
-transaction boundaries and indexes require the [metadata scale design](metadata-scale.md):
+transaction boundaries and indexes require the [metadata scale design](../gh-74/metadata-scale.md):
 
 | Authority | Key pattern                                      | Value / constraint                                                                              |
 | --------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------- |

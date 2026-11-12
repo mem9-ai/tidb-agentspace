@@ -41,9 +41,9 @@ credential boundary and **must allow only the `main` branch** in GitHub deployme
 rules. The workflow also checks the branch, but a branch-local check cannot protect secrets
 against a modified workflow on another branch. PRs cannot enter the deploy job. All Actions are pinned and AWS credentials use OIDC, not static keys.
 
-## Existing runtime contract
+## Historical Node runtime contract
 
-The image runs only the API (`node server/index.mjs`); it does not serve the Console.
+The original image ran `node server/index.mjs`. The current [native deployment](../native-studio-deployment.md) runs the Rust executable and uses private role configuration. The remaining settings in this section describe the original installation.
 Its multi-stage Docker build packages the runtime dependency closure in `dist/api` and
 runs as the non-root `node` user. The Console and public `/studio` gateway are separate.
 

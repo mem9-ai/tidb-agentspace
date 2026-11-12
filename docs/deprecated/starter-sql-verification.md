@@ -1,7 +1,7 @@
 # Zero SQL verification
 
 > Historical report: standalone MySQL/TiDB Zero is retired and its manual verification script
-> has been removed. See [ADR 0048](decisions/0048-postgresql-only-databases.md).
+> has been removed. See [ADR 0048](../decisions/0048-postgresql-only-databases.md).
 
 Date: 2026-10-28. Real anonymous TiDB Cloud Zero MySQL and Singapore Drive9 were verified.
 PG is intentionally disabled; no equivalent anonymous PG service is assumed. See
@@ -42,10 +42,10 @@ Real provider responses, TiUI 2.9.1 and official SQL Editor 0.0.6. Shared 16px t
 - 390 × 844 Light/Dark: toolbar stacks and editor wraps, with no page horizontal overflow.
 - SQL remains scoped under Databases; local demo resources retain their separate explicit label.
 
-![Desktop light, real Zero SQL](screenshots/zero-sql/desktop-light.png)
-![Desktop dark, real Zero SQL](screenshots/zero-sql/desktop-dark.png)
-![Mobile light](screenshots/zero-sql/mobile-light.png)
-![Mobile dark](screenshots/zero-sql/mobile-dark.png)
+![Desktop light, real Zero SQL](../screenshots/zero-sql/desktop-light.png)
+![Desktop dark, real Zero SQL](../screenshots/zero-sql/desktop-dark.png)
+![Mobile light](../screenshots/zero-sql/mobile-light.png)
+![Mobile dark](../screenshots/zero-sql/mobile-dark.png)
 
 ## Limits
 

@@ -10,8 +10,7 @@ and [ADR 0011](decisions/0011-db9-postgres.md) define the boundary.
 ## Run
 
 Set `product.providers.postgresProvider` to `db9-anonymous` in the private regional API
-configuration. Optionally enable `mysqlProvider: "tidb-cloud-zero"` and
-`filesProvider: "drive9-anonymous"` independently. Start the reviewed native artifact:
+configuration. Set `filesProvider` to `drive9-anonymous` to enable live File Systems independently. Start the reviewed native artifact:
 
 ```sh
 workspace-backend serve --config /absolute/private/regional-api-plan.json
@@ -23,7 +22,7 @@ The backend uses official REST endpoints and its native Rust PostgreSQL driver; 
 The service does not promise a region or database expiry not supplied by the provider. Token
 expiry is an internal account concern, not a database lifetime.
 
-The default `postgresProvider: "disabled"` prevents new PostgreSQL creation. Existing
+The default `postgresProvider: "local"` prevents new PostgreSQL creation. Existing
 configured PG bindings remain usable; historical simulated PG is never rebound or exposed.
 
 ## Credentials and isolation
@@ -54,7 +53,7 @@ Queries use fresh sessions, one statement and no automatic retries. Budgets
 remain 64 KiB SQL, four concurrent PG queries, 15 seconds including connection, 1,000 rows and
 1 MiB retained results. Closing/overflow/timeouts can leave a write outcome unknown; inspect
 before retrying. Table browsing is restricted to workspace, lists at most 500 tables/views and
-previews 100 unordered rows. It requires queries:execute and the database resource grant.
+previews 100 unordered rows. Browsing requires `queries:read` and access to the selected database. A `queries:execute` grant also permits reads.
 The Rust table-description operation reuses one fresh native session for its three generated
 metadata statements, sharing the 15-second/1,000-row/1 MiB operation budget. It never reuses a
 customer SQL session or returns a partial description. Console database reads also have an

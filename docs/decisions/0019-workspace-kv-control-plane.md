@@ -1,10 +1,12 @@
 # ADR 0019: Portable KV metadata for the Workspace control plane
 
+> **Partially deprecated.** The Node document importer and identity-preserving migration described below were retired by [ADR 0024](0024-fresh-record-metadata.md). The authority split and portable KV direction still apply. [ADR 0043](0043-portal-agent-region-control.md) updates the Region connection direction.
+
 - Status: Proposed; portable KV, SlateDB on object storage and the global/regional three-plane split are owner-accepted direction; detailed contracts remain under review
 - Date: 2026-10-29
 - Parent: [GH-74](https://github.com/siddontang/tidb.ai/issues/74)
 - Specification: [Multi-tenant Workspace control plane](../../specs/gh-74/spec.md)
-- Implementation: Initial independent Rust/SlateDB service, bounded Node compatibility adapter and lossless importer/exporter in the [GH-86 runtime guide](../meta-service.md); full domain/scale design remains phased
+- Current implementation: [Rust Meta service](../meta-service.md). The full scale design remains phased.
 
 ## Context
 
@@ -206,9 +208,9 @@ regional bootstrap/shards, queried configuration progress and fenced root change
 This ADR does not claim those tests or a production migration exist. Repository checks only
 verify the current source/documents.
 
-GH-86 supplies executable evidence for the initial storage profile, including real local S3,
+GH-86 recorded historical evidence for the initial storage profile, including real local S3,
 durability blocking, fencing, TLS negatives and exact legacy import/updated rollback export.
-See the [runtime coverage and limitations](../meta-service.md#hosted-configuration-and-evidence-limits).
+See the [runtime coverage and limitations](../meta-service.md#validation-and-current-limits).
 That implementation does not establish the full acceptance list, production IAM/HA/KMS or
 million-resource capacity. Local migration does not change native provider identity or data.
 

@@ -1,13 +1,9 @@
 # ADR 0012: Reuse a bounded read-only DuckDB catalog reader
 
-- Status: Implemented for the loopback prototype, 2026-10-28.
+> **Deprecated.** The reusable catalog reader belonged to the retired Node implementation. [ADR 0021](../../decisions/0021-native-rust-computation.md) defines disposable workers. [ADR 0058](../../decisions/0058-public-resource-kinds.md) removed standalone DuckDB from public database access.
+
 - Reproduction and scope: [GH-39](https://github.com/siddontang/tidb.ai/issues/39).
 - Amends: [ADR 0008](0008-duckdb-private-storage.md) for **server-generated browsing SQL only**.
-
-Rust runtime amendment: the retired implementation's reusable reader below is not present in the
-current Rust runtime. [ADR 0021](0021-native-rust-computation.md) uses disposable workers, and
-[ADR 0045](0045-duckdb-creation-table-snapshot.md) reuses the initialization operation only for
-an explicitly labeled creation-time table snapshot.
 
 ## Context and decision
 

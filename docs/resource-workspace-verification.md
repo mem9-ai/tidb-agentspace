@@ -75,7 +75,7 @@ reachable. Analyze retains its existing page-flow expansion rather than clipping
 
 At the GH-48 baseline, DuckDB file sources were inside SQL Editor. The later native-database
 correction in [GH-50](https://github.com/siddontang/tidb.ai/issues/50) removes that picker/counter;
-see [current verification](duckdb-verification.md#native-database-workspace-correction).
+see the [historical DuckDB report](deprecated/duckdb-verification.md#native-database-workspace-correction).
 The editor toolbar identifies the tool and its Run action; resource identity belongs to the
 outer resource bar. Existing database,
 table and file URLs, route keys, data permissions and draft lifetimes remain unchanged.

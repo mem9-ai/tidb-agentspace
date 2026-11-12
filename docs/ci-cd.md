@@ -339,9 +339,7 @@ workflow, one-time GitHub App setup, and Netlify verification. It is separate fr
 ## Rust build cache and timing evidence
 
 The Rust CI job checks formatting before compiling, then runs separately named build,
-Clippy, Rust unit-test and native/S3 integration-test steps. Together these run the same
-checks as local `npm run backend:check`; warnings remain errors and integration tests still
-use isolated real RustFS. Two Cargo jobs and disabled debug symbols bound runner memory.
+Clippy, Rust unit-test and native/S3 integration-test steps. The [local Cargo commands](../CONTRIBUTING.md#rust-backend-modules) exercise these same phases. Clippy warnings fail the check and integration tests use isolated RustFS. Two Cargo jobs and disabled debug symbols bound runner memory.
 Builds, unit tests and named integration targets select the whole Cargo workspace so
 their dependency features match. The Rust acceptance runner clears the launcher’s Cargo
 package and manifest metadata before launching Cargo, keeping the ring build-script inputs stable.

@@ -68,13 +68,13 @@ cargo run --locked -p workspace-openapi -- check
 
 Rust generates the Agent, Owner and operator contracts. The [API guide](docs/api-guide.md) explains which contract and credentials to use. For contributor setup, acceptance tests and delivery checks, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-| Looking for                                      | Start here                                                                                                             |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| API executable, local commands and deployment    | [Rust host](backend/host/) · [runtime guide](docs/rust-backend.md) · [hosted Studio](docs/native-studio-deployment.md) |
-| HTTP handlers, OpenAPI and product operations    | [API](backend/api/) · [OpenAPI](backend/openapi/) · [product](backend/product/)                                        |
-| Workspace permissions and metadata storage       | [Workspace](backend/workspace/) · [Meta](meta-service/) · [metadata architecture](docs/slatedb-metadata-design.md)     |
-| Console and generated client                     | [React application](src/) · [API client](src/api/)                                                                     |
-| Product status, limitations and design decisions | [start-here.md](start-here.md) · [architecture](docs/architecture.md)                                                  |
+| Looking for                                      | Start here                                                                                                                 |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| API executable, local commands and deployment    | [Rust host](backend/host/) · [crate map](docs/rust-backend.md#modules) · [hosted Studio](docs/native-studio-deployment.md) |
+| HTTP handlers, OpenAPI and product operations    | [API](backend/api/) · [OpenAPI](backend/openapi/) · [product](backend/product/)                                            |
+| Workspace permissions and metadata storage       | [Workspace](backend/workspace/) · [Meta](meta-service/) · [metadata architecture](docs/slatedb-metadata-design.md)         |
+| Console and generated client                     | [React application](src/) · [API client](src/api/)                                                                         |
+| Product status, limitations and design decisions | [start-here.md](start-here.md) · [architecture](docs/architecture.md)                                                      |
 
 ## Project name
 

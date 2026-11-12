@@ -38,7 +38,8 @@ by source and toolchain. Use oasdiff 1.37.0 on PATH or set OASDIFF_BINARY.
 
 ```sh
 bash scripts/build-compatibility-baseline.sh /tmp/agentspace-predecessor
-npm run backend:build
+cargo run --locked -p workspace-build-tools -- prepare
+cargo build --locked --workspace --bins --examples
 node scripts/compatibility-report.mjs /tmp/agentspace-predecessor meta-service/target/debug /tmp/agentspace-compatibility.json
 ```
 

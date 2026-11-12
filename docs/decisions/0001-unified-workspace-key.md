@@ -1,5 +1,7 @@
 # ADR 0001: One customer-facing Workspace Key
 
+> **Current implementation.** The single customer Key and action/resource boundary remain current. [Global-only Keys](0036-global-keys-only.md) defines exchange for regional Tokens, and [ADR 0060](0060-workspace-key-resource-types.md) adds dynamic resource-family grants.
+
 - Status: Accepted
 - Date: 2026-10-27
 - Scope: Public authorization boundary and upstream credential ownership

@@ -25,6 +25,21 @@ impl Policy {
         self.allocate(memory_capacity()?, local_instances)
     }
 
+    /// Divide one memory allocation among the databases that share it.
+    /// `local_instances` counts databases in this process. Set [`Policy::instances`]
+    /// to include databases in other processes sharing the same memory limit.
+    ///
+    /// ```
+    /// use workspace_cache_budget::{MIB, Policy};
+    ///
+    /// // Two Meta roles and a separate analytics process share this allocation.
+    /// let policy = Policy { total_mi_b: Some(300), instances: Some(3) };
+    /// let allocation = policy.allocate(4096 * MIB, 2)?;
+    /// assert_eq!(allocation.instance(None)?, 100);
+    /// assert_eq!(allocation.instance(Some(64))?, 64);
+    /// assert!(allocation.instance(Some(101)).is_err());
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn allocate(&self, memory_bytes: u64, local_instances: usize) -> Result<Allocation> {
         ensure!(
             memory_bytes > 0,

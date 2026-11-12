@@ -1,5 +1,7 @@
 # Repository history integration verification
 
+> **Historical report.** This verifies the retired mixed Node/Rust release. See [native backend verification](../native-backend-retirement.md) for current coverage.
+
 - Date: 2026-10-30.
 - Tracking: [MRG-01–06 / Issue 11](https://github.com/mem9-ai/tidb.ai/issues/11), [PR 12](https://github.com/mem9-ai/tidb.ai/pull/12).
 - Runtime candidate: `899ef88af65bc2f4efe853a23b44d6caa4d3c23f`.
@@ -45,12 +47,12 @@ came from the repository's local DuckDB/export fixture; no cloud provisioning oc
   wide result tables scroll within their own region. Modal confirmation and Done/Open table
   actions remained usable. No claim is made for other viewport sizes.
 
-![Desktop Light query read-back](screenshots/history-integration/workspace-light-1280.jpg)
-![Desktop Dark import completion](screenshots/history-integration/import-complete-dark-1280.jpg)
-![Desktop Light raw local upload completion](screenshots/history-integration/local-upload-complete-light-1280.jpg)
-![Narrow Light workspace](screenshots/history-integration/workspace-light-390.jpg)
-![Narrow Dark workspace](screenshots/history-integration/workspace-dark-390.jpg)
-![Narrow sign-in entry](screenshots/history-integration/signin-dark-390.jpg)
+![Desktop Light query read-back](../screenshots/history-integration/workspace-light-1280.jpg)
+![Desktop Dark import completion](../screenshots/history-integration/import-complete-dark-1280.jpg)
+![Desktop Light raw local upload completion](../screenshots/history-integration/local-upload-complete-light-1280.jpg)
+![Narrow Light workspace](../screenshots/history-integration/workspace-light-390.jpg)
+![Narrow Dark workspace](../screenshots/history-integration/workspace-dark-390.jpg)
+![Narrow sign-in entry](../screenshots/history-integration/signin-dark-390.jpg)
 
 Remote checks and delivery are recorded on the PR's actual head. A green local run does not
 claim hosted rollout, real SSO account login, Rust public identity or JSON-to-SlateDB migration.

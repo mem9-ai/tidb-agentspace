@@ -74,6 +74,29 @@ pub struct MetaRead {
     pub keys: Vec<String>,
 }
 
+/// Check that a grouped read stays within one authority, Workspace and partition.
+/// Record families can differ. The engine checks writer guards when executing the reads.
+/// See [`Metadata::read_workspace_scopes`] for the consistency of each implementation.
+///
+/// ```
+/// use workspace_contracts::{MetaRead, Scope, validate_meta_reads};
+///
+/// let data = MetaRead {
+///     scope: Scope {
+///         authority_id: "region:local".into(), owner_kind: "workspace".into(),
+///         owner_id: "ws_a".into(), family: "workspace".into(), partition_id: "primary".into(),
+///     },
+///     guard: None,
+///     keys: vec!["system/writer".into()],
+/// };
+/// let mut policy = data.clone();
+/// policy.scope.family = "regional-policy".into();
+/// validate_meta_reads(&[data.clone(), policy.clone()])?;
+///
+/// policy.scope.owner_id = "ws_b".into();
+/// assert_eq!(validate_meta_reads(&[data, policy]).unwrap_err().code, "META_INVALID_REQUEST");
+/// # Ok::<(), workspace_contracts::ServiceError>(())
+/// ```
 pub fn validate_meta_reads(reads: &[MetaRead]) -> Result<()> {
     let Some(first) = reads.first() else {
         return Err(ServiceError::new(400, "META_INVALID_REQUEST"));

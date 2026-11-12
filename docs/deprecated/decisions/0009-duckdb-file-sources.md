@@ -1,7 +1,8 @@
 # ADR 0009: Authorized query-scoped file sources
 
-- Status: Accepted and implemented for the loopback prototype; see [verification](../duckdb-sources-verification.md).
-- Date: 2026-10-28. [GH-34 baseline](../../specs/gh-34/spec.md).
+> **Deprecated.** The standalone database query API with attached file sources was retired by [ADR 0058](../../decisions/0058-public-resource-kinds.md). Use [File System analysis](../../decisions/0010-read-only-file-analysis.md) for a selected file.
+
+- Date: 2026-10-28. [GH-34 baseline](../../../specs/gh-34/spec.md).
 
 ## Console presentation amendment
 
@@ -39,7 +40,7 @@ This trades remote scan/pruning for a bounded 16 MiB snapshot and an explicit pe
 list. Validate size and metadata changes where observable; no multi-file transactional snapshot
 is promised. Existing ordinary database SQL stays unchanged. Source queries cannot persist
 data, mounts, credentials or new file permissions. Read/write operations on standalone Files
-remain governed by their existing actions. GH-26's separate single-file analysis/Just Bash UI is implemented in [ADR 0010](0010-read-only-file-analysis.md); query-scoped database sources are implemented separately by GH-34.
+remain governed by their existing actions. GH-26's separate single-file analysis/Just Bash UI is implemented in [ADR 0010](../../decisions/0010-read-only-file-analysis.md); query-scoped database sources are implemented separately by GH-34.
 
 ## Verification and recovery
 

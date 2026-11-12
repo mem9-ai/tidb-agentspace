@@ -1,5 +1,7 @@
 # MySQL column expansion latency
 
+> **Historical report.** These measurements cover the retired Zero MySQL gateway. See [PostgreSQL catalog measurements](../postgres-column-latency-verification.md) for the supported database.
+
 Verified 2026-10-29 against the existing anonymous TiDB Cloud Zero database and table.
 No database was provisioned and no schema/data mutation was used for this verification.
 
@@ -37,10 +39,10 @@ avoids another request. Refresh/retry/resource changes invalidate this route-loc
 - TiUI 2.9.1 and the official SQL Editor remain unchanged; no typography, palette, spacing or
   component override was introduced. Checked Light/Dark at 1280×900 and 390×844.
 
-Screenshots: [desktop dark](screenshots/column-latency/desktop-dark.png),
-[desktop light](screenshots/column-latency/desktop-light.png),
-[mobile dark](screenshots/column-latency/mobile-dark.png),
-[mobile light](screenshots/column-latency/mobile-light.png).
+Screenshots: [desktop dark](../screenshots/column-latency/desktop-dark.png),
+[desktop light](../screenshots/column-latency/desktop-light.png),
+[mobile dark](../screenshots/column-latency/mobile-dark.png),
+[mobile light](../screenshots/column-latency/mobile-light.png).
 
-Canonical behavior and limits: [ADR 0007](decisions/0007-database-browser.md).
+Canonical behavior and limits: [ADR 0007](../decisions/0007-database-browser.md).
 PG native-session optimization and whole-read UI deadlines are tracked separately in GH-94.

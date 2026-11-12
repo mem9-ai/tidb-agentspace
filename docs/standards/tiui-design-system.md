@@ -127,7 +127,7 @@ before optional analytics JavaScript runs. This boundary is implemented by the d
 | Product pattern                | TiUI building blocks                                                                          | Project responsibility                                                        |
 | ------------------------------ | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | Navigation and page header     | Primitive `AppShell`, `NavLink`, `Breadcrumbs`; business page shells when appropriate         | Workspace identity, active route, mobile navigation, one clear primary action |
-| Resource cards and details     | `Card`, `Paper`, `Stack`, `Group`, business `PropertyCard`                                    | MySQL/PostgreSQL/DuckDB/Files labels, region, lifecycle, preview/limit text   |
+| Resource cards and details     | `Card`, `Paper`, `Stack`, `Group`, business `PropertyCard`                                    | PostgreSQL/File System labels, region, lifecycle, preview/limit text          |
 | Resource, key, activity tables | Primitive `Table`; business `ProTable` where filtering/pagination needs justify it            | Column meaning, empty/error/loading states, accessible row actions            |
 | Keys and settings forms        | `TextInput`, `Select`, `Checkbox`, `Fieldset`, `PasswordInput`; business `Form` when suitable | Validation, resource/action grants, expiration, reveal-once secret behavior   |
 | Dialogs and secondary panels   | `Modal`, `Drawer`, `Alert`, `Button`, `ActionIcon`                                            | Focus return, clear submit/cancel, failure recovery, pending state            |
@@ -223,17 +223,12 @@ domain differences. See the [cross-page audit](../product-experience-audit.md).
   Revisit when adding collection filters or pagination.
 - **Contextual resource creation (owner correction, GH-29, 2026-10-30):** creation actions
   carry an explicit target from their entry point, rather than inferring a type later from
-  the current route or falling back to MySQL. File System entry points and individual resource
+  the current route. File System entry points and individual resource
   cards open a kind-specific form with a matching title and region; omit a redundant type picker.
-  The database collection chooser contains only supported database kinds. Only the global
-  resource action offers both databases and File System. In the default database dialog, make the
-  optional type change a clearly separated keyboard-operable disclosure, and initially focus the
-  dialog title rather than visually highlighting that optional choice (owner correction,
-  2026-11-03). Keep action labels and accessible
+  The database collection opens the PostgreSQL form. Expose a type choice only for entry points that offer both PostgreSQL and File System. Keep action labels and accessible
   names specific, reset region/errors and suggest a fresh automatic name when reopening,
   and lock the form while creating. File System suggestions use two readable words, such as
-  `quiet-harbor` (owner correction, 2026-11-03); database suggestions use the resource kind
-  (`mysql-`, `postgresql-`, `duckdb-`) and a random suffix. Check all suggestions against known
+  `quiet-harbor` (owner correction, 2026-11-03); PostgreSQL suggestions use the `tidb_pg-` prefix and a random suffix under [ADR 0046](../decisions/0046-postgresql-resource-names.md). Check all suggestions against known
   Workspace resource names (owner correction, GH-31). Update automatic names on type
   changes; preserve nonempty manual names. Leaving the field empty generates a name at submit.
   Server uniqueness validation remains authoritative for concurrent creates. On an explicit
@@ -259,7 +254,7 @@ domain differences. See the [cross-page audit](../product-experience-audit.md).
   outside. Use the shared 320px/56px browser layout, heading/metadata spacing and
   `WorkspaceBrowserItem` (TiUI NavLink) for icons, names, secondary text, selection and row
   actions. File System keeps a desktop unselected-file panel, shared narrow disclosure and
-  Back to files flow. DuckDB uses its native database workspace without a file-source picker.
+  Back to files flow. File System analysis runs in the selected file workspace.
   Preserve exact URLs and existing draft/resource
   lifetimes, and disable resource selection during active operations. Verify both themes at
   1280×800/900 and 390×844, resource switching, busy states, keyboard and draft guards. See
@@ -520,15 +515,7 @@ changes, rather than repeating every functional flow through images. Claim TiUI 
 for components actually migrated. Browser smoke asserts behavior, readability metrics and
 routes; it does not establish visual fidelity.
 
-DuckDB is a customer database type with internal storage. Its create form, database pages and Key targets show DuckDB only; do not add its backing File System to Console navigation or permissions. Native worker/runtime configuration belongs in operator docs, not customer workflows. See [ADR 0008](../decisions/0008-duckdb-private-storage.md).
-
-Following the owner's native-database correction in [GH-50](https://github.com/siddontang/tidb.ai/issues/50),
-DuckDB uses the ordinary database workspace: Tables, SQL Editor and results. Do not present
-selected-file snapshots as the database model or add a file-source picker/counter to its SQL
-Editor. The retained query-source API is an optional analysis capability; Console file analysis
-belongs under File System Analyze. This supersedes the earlier Console picker guidance in
-[ADR 0009](../decisions/0009-duckdb-file-sources.md). Revisit when explicitly designing native
-file import/access with its own authorization boundary; a UI shortcut cannot imply that support.
+Use the [public resource kinds](../decisions/0058-public-resource-kinds.md) in resource creation, navigation and Key selectors. DuckDB runs tabular analysis of a selected File System snapshot. Keep its worker settings and any legacy private backing stores outside customer resource lists.
 
 For db9 PostgreSQL resources, use the existing database page and PostgreSQL dialect. Show the
 actual db9 provider, anonymous availability and its NUMERIC precision boundary in Details.

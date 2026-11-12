@@ -146,6 +146,8 @@ screenshots. If a check cannot run, report the specific gap instead of claiming 
 
 ## Rust backend modules
 
+Use the [crate map](docs/rust-backend.md#modules) to find ownership, entry points and a focused test command. Run the executable Rustdoc examples for authorization, grouped metadata reads and cache sizing with `cargo test --locked --doc -p workspace-domain -p workspace-contracts -p workspace-cache-budget`. The ordinary workspace test run below includes these examples.
+
 Use the toolchain in `rust-toolchain.toml` and install RustFS 1.0.4. From the repository root, run:
 
 ```sh
