@@ -120,6 +120,8 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 - [0060: Workspace Key resource types](0060-workspace-key-resource-types.md) — explicit and dynamic resource grants.
 
+- [0061: Public compatibility](0061-public-compatibility.md) — supported clients, discovery and data upgrades.
+
 ## Deprecated decisions
 
 These records preserve the rationale and evidence for retired product paths. [ADR 0058](0058-public-resource-kinds.md) defines the supported public resources. File System SQL analysis continues under [ADR 0010](0010-read-only-file-analysis.md).

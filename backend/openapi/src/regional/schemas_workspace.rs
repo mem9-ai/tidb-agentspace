@@ -30,7 +30,7 @@ fn resource_schema() -> Value {
         "properties": {
             "id": string(),
             "name": string(),
-            "kind": {"enum": ["postgresql", "filesystem"]},
+            "kind": {"type": "string", "description": "Resource kind. Clients must skip kinds they do not recognize."},
             "region": {
                 "type": "string",
                 "description": "Provider-assigned data location; may be automatic and is distinct from the Workspace Region.",
@@ -41,7 +41,7 @@ fn resource_schema() -> Value {
             },
             "status": {"enum": ["active", "provisioning", "failed", "suspended", "deleting", "deleted", "expired"]},
             "provider": {
-                "enum": ["local", "drive9-anonymous", "db9-anonymous"],
+                "type": "string",
                 "description": "Missing on legacy local resources. PostgreSQL-compatible databases support NUMERIC values of up to 28–29 significant digits. Provider compatibility limits apply.",
             },
             "deletion": object([
@@ -153,7 +153,7 @@ fn usage() -> Value {
     object([
         ("resourceId", string()),
         ("name", string()),
-        ("kind", json!({"enum": ["postgresql", "filesystem"]})),
+        ("kind", string()),
         ("storageBytes", json!({"type": ["integer", "null"]})),
         ("storageLimitBytes", json!({"type": ["integer", "null"]})),
         ("monthlyRU", json!({"type": ["integer", "null"]})),
@@ -171,7 +171,7 @@ fn capability_schema() -> Value {
             "label": string(),
             "regions": array(json!({
                 "type": "string",
-                "enum": ["aws-us-east-1", "aws-us-west-2", "automatic", "aws-ap-southeast-1"],
+                "description": "Advertised provider location. Clients may encounter new locations.",
             })),
             "storageGiB": {"type": ["number", "null"]},
             "monthlyRU": {"type": ["number", "null"]},
@@ -187,10 +187,14 @@ fn capability_schema() -> Value {
 }
 
 fn capabilities() -> Value {
-    closed_object([
+    let mut schema = object([
         ("postgresql", reference("Capability")),
         ("filesystem", reference("Capability")),
-    ])
+    ]);
+    schema["additionalProperties"] = reference("Capability");
+    schema["description"] =
+        json!("Ignore unrecognized capability entries when selecting an operation.");
+    schema
 }
 
 fn bootstrap() -> Value {

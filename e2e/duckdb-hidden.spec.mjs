@@ -110,3 +110,27 @@ test('a hidden DuckDB resolved outside the first page cannot be opened', async (
     false,
   );
 });
+
+test('new providers and capability entries leave known resources usable', async ({
+  page,
+  workspace,
+}) => {
+  workspace.addResources();
+  const known = workspace.state.resources.find((resource) => resource.kind === 'postgresql');
+  workspace.state.resources.push({
+    ...known,
+    id: 'future-provider',
+    name: 'future database',
+    provider: 'future',
+  });
+  workspace.state.capabilities.future = { ...workspace.state.capabilities.filesystem };
+  workspace.state.capabilities.postgresql.regions.unshift('future-region');
+  await workspace.open('#databases');
+  await expect(page.getByRole('link', { name: known.name, exact: true })).toBeVisible();
+  await expect(page.getByText('future database', { exact: true })).toHaveCount(0);
+  await page.goto('/#databases/future-provider/sql');
+  await expect(page.getByText('Database unavailable', { exact: true })).toBeVisible();
+  expect(
+    workspace.requests.some((request) => request.path.includes('/future-provider/tables')),
+  ).toBe(false);
+});

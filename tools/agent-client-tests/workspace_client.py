@@ -5,7 +5,8 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src/clients/python"))
+sdk = Path(sys.argv[1]) if len(sys.argv) == 2 else Path(__file__).resolve().parents[2] / "src/clients/python"
+sys.path.insert(0, str(sdk))
 import workspace_agent as client
 
 

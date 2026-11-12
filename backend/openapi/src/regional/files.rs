@@ -367,7 +367,7 @@ fn upload_file() -> Value {
                 if_none_match_parameter(),
             ],
             "responses": responses(json!({
-                "200": response("Success", json!({"type": "object", "properties": {"saved": boolean(), "size": integer()}})),
+                "200": response("Success", object([("saved", boolean()), ("size", integer())])),
             })),
             "requestBody": {
                 "required": true,

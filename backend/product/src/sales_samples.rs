@@ -16,12 +16,23 @@ fn canonical_uuid(value: &str) -> bool {
 }
 
 fn visible_attempt(value: &Value) -> Value {
-    let mut result = value.clone();
-    if let Some(object) = result.as_object_mut() {
-        object.remove("writeIntent");
-        object.remove("requestedResourceId");
-    }
-    result
+    const FIELDS: [&str; 9] = [
+        "id",
+        "fixture",
+        "status",
+        "resourceId",
+        "path",
+        "fileVersion",
+        "errorCode",
+        "createdAt",
+        "updatedAt",
+    ];
+    Value::Object(
+        FIELDS
+            .into_iter()
+            .filter_map(|key| value.get(key).map(|field| (key.to_owned(), field.clone())))
+            .collect(),
+    )
 }
 
 fn can_observe(p: &Principal, attempt: &Value) -> bool {
@@ -272,5 +283,22 @@ impl Product {
             }
         };
         Ok((201, Reply::Json(json!({"data":visible_attempt(&result)}))))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn internal_attempt_fields_stay_out_of_customer_responses() {
+        let public = json!({"id":"example","fixture":"us-sales-v1","status":"outcome_unknown",
+            "resourceId":"fs","path":"/us-sales.csv","fileVersion":null,"errorCode":null,
+            "createdAt":"before","updatedAt":"after"});
+        let mut stored = public.clone();
+        stored["writeIntent"] = json!(true);
+        stored["requestedResourceId"] = json!("fs");
+        stored["futureRecoveryField"] = json!("private");
+        assert_eq!(visible_attempt(&stored), public);
     }
 }

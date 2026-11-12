@@ -48,6 +48,7 @@ test('only proven UI-only PR and main changes use the fast path', () => {
     'backend/api/src/lib.rs',
     'src/api/client.ts',
     'src/api/client.test.mjs',
+    'src/clients/javascript/workspace-agent.ts',
     'package-lock.json',
     'public/openapi.json',
     'public/owner-openapi.json',
