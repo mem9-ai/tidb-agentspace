@@ -1144,9 +1144,12 @@ export interface components {
       usage: components['schemas']['Usage'][];
       workspace: components['schemas']['Workspace'];
     };
+    /** @description Ignore unrecognized capability entries when selecting an operation. */
     Capabilities: {
       filesystem: components['schemas']['Capability'];
       postgresql: components['schemas']['Capability'];
+    } & {
+      [key: string]: components['schemas']['Capability'];
     };
     Capability: {
       /** @description False when this resource provider is not configured or available. */
@@ -1156,7 +1159,7 @@ export interface components {
       monthlyRU?: number | null;
       preview: boolean;
       provider?: string;
-      regions: ('aws-us-east-1' | 'aws-us-west-2' | 'automatic' | 'aws-ap-southeast-1')[];
+      regions: string[];
       storageGiB: number | null;
     };
     DatabaseImportInput: {
@@ -1511,14 +1514,11 @@ export interface components {
       id: string;
       /** @description The File System created for a new Workspace. */
       isDefault?: boolean;
-      /** @enum {unknown} */
-      kind: 'postgresql' | 'filesystem';
+      /** @description Resource kind. Clients must skip kinds they do not recognize. */
+      kind: string;
       name: string;
-      /**
-       * @description Missing on legacy local resources. PostgreSQL-compatible databases support NUMERIC values of up to 28–29 significant digits. Provider compatibility limits apply.
-       * @enum {unknown}
-       */
-      provider?: 'local' | 'drive9-anonymous' | 'db9-anonymous';
+      /** @description Missing on legacy local resources. PostgreSQL-compatible databases support NUMERIC values of up to 28–29 significant digits. Provider compatibility limits apply. */
+      provider?: string;
       /** @description Provider-assigned data location; may be automatic and is distinct from the Workspace Region. */
       region: string;
       /** @description Region control plane owning this resource. Legacy records are interpreted in their existing Region. */
@@ -1668,8 +1668,7 @@ export interface components {
     };
     Usage: {
       fileCount: number | null;
-      /** @enum {unknown} */
-      kind: 'postgresql' | 'filesystem';
+      kind: string;
       measured: boolean;
       monthlyRU: number | null;
       monthlyRULimit: number | null;
@@ -5402,8 +5401,8 @@ export interface operations {
         };
         content: {
           'application/json': {
-            saved?: boolean;
-            size?: number;
+            saved: boolean;
+            size: number;
           };
         };
       };
@@ -6726,9 +6725,9 @@ export interface operations {
         };
         content: {
           'application/json': {
-            data?: components['schemas']['Resource'];
+            data: components['schemas']['Resource'];
             /** @enum {unknown} */
-            mode?: 'demo' | 'live';
+            mode: 'demo' | 'live';
           };
         };
       };

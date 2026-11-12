@@ -178,7 +178,10 @@
         "type": "object"
       },
       "Capabilities": {
-        "additionalProperties": false,
+        "additionalProperties": {
+          "$ref": "#/components/schemas/Capability"
+        },
+        "description": "Ignore unrecognized capability entries when selecting an operation.",
         "properties": {
           "filesystem": {
             "$ref": "#/components/schemas/Capability"
@@ -222,12 +225,7 @@
           },
           "regions": {
             "items": {
-              "enum": [
-                "aws-us-east-1",
-                "aws-us-west-2",
-                "automatic",
-                "aws-ap-southeast-1"
-              ],
+              "description": "Advertised provider location. Clients may encounter new locations.",
               "type": "string"
             },
             "type": "array"
@@ -1591,21 +1589,15 @@
             "type": "boolean"
           },
           "kind": {
-            "enum": [
-              "postgresql",
-              "filesystem"
-            ]
+            "description": "Resource kind. Clients must skip kinds they do not recognize.",
+            "type": "string"
           },
           "name": {
             "type": "string"
           },
           "provider": {
             "description": "Missing on legacy local resources. PostgreSQL-compatible databases support NUMERIC values of up to 28–29 significant digits. Provider compatibility limits apply.",
-            "enum": [
-              "local",
-              "drive9-anonymous",
-              "db9-anonymous"
-            ]
+            "type": "string"
           },
           "region": {
             "description": "Provider-assigned data location; may be automatic and is distinct from the Workspace Region.",
@@ -2242,10 +2234,7 @@
             ]
           },
           "kind": {
-            "enum": [
-              "postgresql",
-              "filesystem"
-            ]
+            "type": "string"
           },
           "measured": {
             "type": "boolean"
@@ -7730,6 +7719,10 @@
                       "type": "integer"
                     }
                   },
+                  "required": [
+                    "saved",
+                    "size"
+                  ],
                   "type": "object"
                 }
               }
@@ -9800,6 +9793,10 @@
                       ]
                     }
                   },
+                  "required": [
+                    "data",
+                    "mode"
+                  ],
                   "type": "object"
                 }
               }

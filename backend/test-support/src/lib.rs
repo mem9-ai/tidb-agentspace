@@ -166,9 +166,13 @@ pub struct Fixture {
     pub storage_config: Value,
     directory: TempDir,
     s3: LocalS3,
+    pub(crate) meta_binary: PathBuf,
 }
 impl Fixture {
     pub async fn start() -> Result<Self> {
+        Self::with_meta_binary(binary("workspace-meta-service")).await
+    }
+    pub(crate) async fn with_meta_binary(meta_binary: PathBuf) -> Result<Self> {
         let directory = tempfile::Builder::new()
             .prefix("native-workspace-test-")
             .tempdir()?;
@@ -210,6 +214,7 @@ impl Fixture {
             directory,
             s3,
             storage_config,
+            meta_binary,
         })
     }
     pub fn directory(&self) -> &Path {
@@ -255,7 +260,7 @@ impl Fixture {
         let id = uuid::Uuid::new_v4();
         let cfg = self.directory().join(format!("meta-{id}.json"));
         private_json(&cfg, &server)?;
-        let mut cmd = Command::new(binary("workspace-meta-service"));
+        let mut cmd = Command::new(&self.meta_binary);
         cmd.arg("--config").arg(&cfg);
         if initialize {
             cmd.arg("--initialize");
