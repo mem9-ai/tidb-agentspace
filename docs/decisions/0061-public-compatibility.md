@@ -33,8 +33,8 @@ report to the release before its CI artifact expires. Record additional release-
 migration and provider tests when the affected behavior goes beyond the fixture.
 
 For local reproduction, use the pinned Node/Rust toolchains and an isolated RustFS binary
-as in the native verification guide. Build the predecessor before the candidate because
-they share the Cargo dependency cache. Use oasdiff 1.37.0 on PATH or set OASDIFF_BINARY.
+as in the native verification guide. Build each revision in its own Cargo target. CI caches the two predecessor binaries
+by source and toolchain. Use oasdiff 1.37.0 on PATH or set OASDIFF_BINARY.
 
 ```sh
 bash scripts/build-compatibility-baseline.sh /tmp/agentspace-predecessor
