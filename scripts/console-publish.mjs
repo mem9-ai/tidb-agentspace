@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { appendFile, lstat } from 'node:fs/promises';
+import { appendFile, lstat, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -182,14 +182,53 @@ async function run(command, args) {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     await verifyStudioArtifact(destination, manifest);
-    const changed = JSON.stringify(previous) !== JSON.stringify(await studioHashes(destination));
+    const payloadChanged =
+      JSON.stringify(previous) !== JSON.stringify(await studioHashes(destination));
+
+    // Publisher provenance (#147 in mem9-ai/drive9-fe): sign the manifest with a
+    // detached key so the trusted gate can verify who built it. The website owns
+    // the format, so its signer is used rather than a second implementation.
+    //
+    // The signature is a publication input of its own: first activation and key
+    // rotation leave the Console payload byte-identical, so `payloadChanged` alone
+    // would skip publication and leave the site unsigned or signed by an old key —
+    // which the pinned-key validator then rejects. Always sign when a key is
+    // configured and treat a changed signature as a publication.
+    const signingKey = (process.env.STUDIO_ARTIFACT_SIGNING_KEY ?? '').replace(/\\n/g, '\n');
+    const signature = resolve(root, 'vendor/studio-build.json.sig');
+    let signatureChanged = false;
+    let signed = false;
+    if (signingKey.trim()) {
+      const before = await readFile(signature, 'utf8').catch(() => '');
+      execFileSync(
+        process.execPath,
+        [
+          resolve(root, 'scripts/sign-studio-manifest.mjs'),
+          '--manifest',
+          manifest,
+          '--out',
+          signature,
+        ],
+        {
+          env: { ...process.env, STUDIO_ARTIFACT_SIGNING_KEY: signingKey },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+      signatureChanged = before.trim() !== (await readFile(signature, 'utf8')).trim();
+      signed = true;
+    }
+
+    const changed = payloadChanged || signatureChanged;
     await output('changed', changed);
     if (changed) {
-      execFileSync('git', ['add', '--', 'vendor/studio', 'vendor/studio-build.json'], {
+      const added = ['vendor/studio', 'vendor/studio-build.json'];
+      if (signed) added.push('vendor/studio-build.json.sig');
+      execFileSync('git', ['add', '--', ...added], {
         cwd: root,
       });
       const tree = execFileSync('git', ['write-tree'], { cwd: root, encoding: 'utf8' }).trim();
       await output('tree', tree);
+      if (signed) console.log('Console manifest signed for publication.');
     }
     console.log(
       changed

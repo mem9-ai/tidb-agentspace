@@ -301,3 +301,96 @@ test('waits for registration and pending checks, accepts only Actions success', 
     /Timed out/,
   );
 });
+
+test('prepare publishes a signature change even when the Console payload is unchanged', async (t) => {
+  const { generateKeyPairSync } = await import('node:crypto');
+  const { cp, mkdtemp, readFile, rm, writeFile, mkdir } = await import('node:fs/promises');
+  const directory = await mkdtemp(join(tmpdir(), 'console-sign-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const website = join(directory, 'website');
+  const artifact = join(directory, 'artifact');
+  const output = join(directory, 'output');
+  const script = new URL('./console-publish.mjs', import.meta.url);
+
+  // The website owns the artifact format and the signer, so the fixture copies the
+  // real implementations from a drive9-fe checkout instead of re-deriving them.
+  const websiteSource = process.env.STUDIO_WEBSITE_CHECKOUT;
+  if (!websiteSource) {
+    t.skip(
+      'set STUDIO_WEBSITE_CHECKOUT to a drive9-fe checkout to run the prepare-path regression',
+    );
+    return;
+  }
+  await mkdir(join(website, 'scripts'), { recursive: true });
+  await mkdir(join(artifact, 'assets'), { recursive: true });
+  for (const name of ['studio-artifact.mjs', 'studio-signature.mjs', 'sign-studio-manifest.mjs']) {
+    await cp(join(websiteSource, 'scripts', name), join(website, 'scripts', name));
+  }
+  await writeFile(
+    join(artifact, 'index.html'),
+    '<!doctype html><script src="/studio/assets/app.js"></script>',
+  );
+  await writeFile(join(artifact, 'config.json'), '{"apiOrigin":"","apiPathPrefix":"/studio"}\n');
+  await writeFile(join(artifact, 'assets/app.js'), 'export const version = 1;\n');
+  execFileSync('git', ['init', '-q'], { cwd: website });
+  execFileSync('git', ['-c', 'user.name=F', '-c', 'user.email=f@example.invalid', 'add', '-A'], {
+    cwd: website,
+  });
+  execFileSync(
+    'git',
+    ['-c', 'user.name=F', '-c', 'user.email=f@example.invalid', 'commit', '-qm', 'baseline'],
+    { cwd: website },
+  );
+  // Seed the already-published state the workflow checks out.
+  execFileSync(process.execPath, [join(website, 'scripts/studio-artifact.mjs'), artifact, old], {
+    cwd: website,
+  });
+  execFileSync('git', ['-c', 'user.name=F', '-c', 'user.email=f@example.invalid', 'add', '-A'], {
+    cwd: website,
+  });
+  execFileSync(
+    'git',
+    ['-c', 'user.name=F', '-c', 'user.email=f@example.invalid', 'commit', '-qm', 'published'],
+    { cwd: website },
+  );
+  await writeFile(output, '');
+
+  const key = () =>
+    generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' });
+  const keyA = key();
+  const keyB = key();
+  const signaturePath = join(website, 'vendor/studio-build.json.sig');
+  const prepare = async (signingKey) => {
+    execFileSync(process.execPath, [script.pathname, 'prepare', website, artifact, old], {
+      env: { ...process.env, GITHUB_OUTPUT: output, STUDIO_ARTIFACT_SIGNING_KEY: signingKey },
+      encoding: 'utf8',
+    });
+    return readFile(output, 'utf8');
+  };
+  const lastValue = (text, name) =>
+    text
+      .split('\n')
+      .filter((line) => line.startsWith(`${name}=`))
+      .map((line) => line.split('=')[1])
+      .pop();
+
+  // Unchanged payload, no key: a genuine no-op.
+  assert.equal(lastValue(await prepare(''), 'changed'), 'false');
+  await assert.rejects(readFile(signaturePath, 'utf8'), { code: 'ENOENT' });
+
+  // First activation: the payload is identical, but the signature is new.
+  const first = await prepare(keyA);
+  assert.equal(lastValue(first, 'changed'), 'true');
+  assert.match(lastValue(first, 'tree'), /^[a-f0-9]{40}$/);
+  const firstSignature = await readFile(signaturePath, 'utf8');
+  assert.ok(firstSignature.trim().length > 0);
+
+  // Key rotation: same payload, different key, so the signature changes again.
+  const rotated = await prepare(keyB);
+  assert.equal(lastValue(rotated, 'changed'), 'true');
+  const rotatedSignature = await readFile(signaturePath, 'utf8');
+  assert.notEqual(rotatedSignature.trim(), firstSignature.trim());
+
+  // The complete intended publication is current again: a real no-op.
+  assert.equal(lastValue(await prepare(keyB), 'changed'), 'false');
+});

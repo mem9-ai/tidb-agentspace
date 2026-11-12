@@ -136,6 +136,9 @@ jobs:
         if: steps.source.outputs.current == 'true'
         env:
           SOURCE_SHA: ${{ needs.build.outputs.sha }}
+          # Optional: when set, the manifest is signed for publication and the
+          # website's trusted gate verifies it against its pinned public key.
+          STUDIO_ARTIFACT_SIGNING_KEY: ${{ secrets.STUDIO_ARTIFACT_SIGNING_KEY }}
         run: node scripts/console-publish.mjs prepare website "$RUNNER_TEMP/studio-console" "$SOURCE_SHA"
       - name: Validate website routes and artifact checksums
         if: steps.source.outputs.current == 'true'
@@ -162,9 +165,12 @@ jobs:
           path: website
           branch: automation/studio-console
           base: main
+          # The glob carries the optional detached signature
+          # (vendor/studio-build.json.sig) when signing is configured, so the
+          # publication PR matches the tree `prepare` reported to `verify`.
           add-paths: |
             vendor/studio/
-            vendor/studio-build.json
+            vendor/studio-build.json*
           author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
           commit-message: 'chore(studio): update Console artifact'
           title: 'chore(studio): update Console artifact'
@@ -172,7 +178,8 @@ jobs:
             Automated Console-only publication from mem9-ai/tidb-agentspace at `${{ needs.build.outputs.sha }}`.
 
             Pinned toolchain, source quality checks, artifact allowlist/checksums and website tests passed.
-            Only `vendor/studio/` and `vendor/studio-build.json` are published. No private source or source maps.
+            Only `vendor/studio/`, `vendor/studio-build.json` and, when signing is configured,
+            `vendor/studio-build.json.sig` are published. No private source or source maps.
             Evidence: https://github.com/mem9-ai/tidb-agentspace/actions/runs/${{ github.run_id }}
       - name: Verify PR preparation kept release blobs excluded
         if: steps.pr.outputs.pull-request-number != ''
