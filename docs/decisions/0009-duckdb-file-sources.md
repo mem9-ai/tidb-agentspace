@@ -1,6 +1,7 @@
 # ADR 0009: Authorized query-scoped file sources
 
-- Status: Accepted and implemented for the loopback prototype; see [verification](../duckdb-sources-verification.md).
+> **Deprecated.** The standalone database query API with attached file sources was retired by [ADR 0058](0058-public-resource-kinds.md). Use [File System analysis](0010-read-only-file-analysis.md) for a selected file.
+
 - Date: 2026-10-28. [GH-34 baseline](../../specs/gh-34/spec.md).
 
 ## Console presentation amendment

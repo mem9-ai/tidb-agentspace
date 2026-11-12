@@ -1,6 +1,7 @@
 # ADR 0048: Retire standalone MySQL and DuckDB databases
 
-- Status: Implemented. [ADR 0058](0058-public-resource-kinds.md) supersedes the capability records and public lifecycle access described below.
+> **Partially deprecated.** PostgreSQL remains the only public database family. [ADR 0058](0058-public-resource-kinds.md) removed the compatibility entries and customer cleanup routes for retired kinds.
+
 - Date: 2026-11-04.
 - Scope: database discovery, creation and customer data operations.
 

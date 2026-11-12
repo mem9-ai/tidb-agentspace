@@ -7,27 +7,31 @@
 - Hosted integration: [ADR 0026](decisions/0026-native-hosted-studio.md) and [deployment/login guide](native-studio-deployment.md). Rust owns SSO, trusted public HTTP policy and `/studio`; old Node serving is retired. The owner permits fresh S3 roots/keys without migrating old data.
 - The Rust full profile serves Workspace/Keys, lifecycle, SQL/browser, files, analysis,
   result/file exports and confirmed imports. The Node business implementation and its dedicated regression tests are removed. Rust also generates OpenAPI, supervises local roles and drives native acceptance.
-- Explicit local guest mode and hosted shared-Workspace SSO are supported. Typed multi-tenant
-  repositories, Global policy distribution and million-resource sharding remain GH-74 work.
+- Managed TiDB Account login reserves a personal Workspace under [ADR 0030](decisions/0030-personal-account-isolation.md). The shared-owner SSO profile is a local compatibility fixture.
 
 The fresh record profile supersedes the document migration baseline; see [ADR 0024](decisions/0024-fresh-record-metadata.md). Old format-1 installations are rejected, and no import or Node rollback backend is retained.
 
 ## Modules
 
-| Crate                  | Responsibility                                                                               |
-| ---------------------- | -------------------------------------------------------------------------------------------- |
-| `backend/contracts`    | Metadata port, scoped context and structured errors                                          |
-| `backend/identity`     | Inactive Global identity reservations and Region-local owner policy primitives               |
-| `meta-service`         | Encrypted SlateDB/S3 authority, durable commits, fencing and mTLS server                     |
-| `backend/meta-client`  | Authority-bound remote Meta adapter; TLS 1.3/mTLS, bounded requests, no retries              |
-| `backend/workspace`    | Workspace/Key domain, authorization and versioned record repositories                        |
-| `backend/providers`    | Private Drive9 and db9 lifecycle adapters and the native PostgreSQL driver                   |
-| `backend/execute`      | Region-internal Executor; prebuilt static DuckDB 2.0/Bashkit tasks via the same binary       |
-| `backend/product`      | Regional resources, database browser, files, snapshots, analysis, exports/imports            |
-| `backend/analytics`    | Independent SlateDB analytics process and bounded asynchronous producers; no Meta dependency |
-| `backend/api`          | Public HTTP contract, sessions, Host/Origin/CORS, request/cancellation/stream limits         |
-| `backend/host`         | Configuration, dependency wiring, real role composition and ordered shutdown                 |
-| `backend/cache-budget` | System and container memory limits; one cache budget divided among database instances        |
+Follow a regional file request from **API → product → Workspace** for authorization. Product then calls a provider for file I/O or Execute for analysis of an authorized snapshot. Follow a metadata write from **Workspace → contracts → Meta**. The host chooses embedded Meta or the remote client. Each module guide includes a focused test command to run from the repository root.
+
+| Module                                            | Responsibility                                                        |
+| ------------------------------------------------- | --------------------------------------------------------------------- |
+| [Host](../backend/host/README.md)                 | Executable, local supervision, role composition and shutdown          |
+| [API](../backend/api/README.md)                   | Global and regional HTTP handlers, authentication and request limits  |
+| [OpenAPI](../backend/openapi/README.md)           | Contract definitions, served views and offline exports                |
+| [Product](../backend/product/README.md)           | Regional resource lifecycle, files, SQL, analysis and transfers       |
+| [Workspace](../backend/workspace/README.md)       | Action and resource grants, versioned record repositories             |
+| [Identity](../backend/identity/README.md)         | Personal identity reservations, Global Keys and regional grants       |
+| [Providers](../backend/providers/README.md)       | Private Drive9 and db9 adapters and native PostgreSQL driver          |
+| [Execute](../backend/execute/README.md)           | Disposable DuckDB and Bashkit tasks for selected snapshots            |
+| [Contracts](../backend/contracts/README.md)       | Scoped metadata port, requests and service errors                     |
+| [Meta client](../backend/meta-client/README.md)   | Authority-bound remote transport with mutual TLS                      |
+| [Meta service](../meta-service/README.md)         | Encrypted SlateDB records, durable commit receipts and writer fencing |
+| [Cache budget](../backend/cache-budget/README.md) | Shared host or container memory budget for database block caches      |
+| [Analytics](../backend/analytics/README.md)       | Separate best-effort measurement service and asynchronous producers   |
+| [Build tools](../backend/build-tools/README.md)   | Pinned native dependencies, packaging and acceptance profiles         |
+| [Test support](../backend/test-support/README.md) | Isolated native processes, fixtures and HTTP acceptance cases         |
 
 The identity module reserves a complete Global personal identity group atomically and stores only
 verifiers for Guest secrets. The co-located Global-initiated Region initialization installs owner
@@ -50,24 +54,7 @@ releases Workspace writers, then closes Meta. An unconfirmed release makes the h
 exit with an error. A restart after an uncertain exit requires checking ownership and
 using the existing explicit recovery procedure.
 
-The opt-in host runs a bounded regional scheduler that claims expired Guest jobs and marks them
-`providerCleanupDeferred`. It does not contact providers or delete resource or credential records;
-it does not assert that in-flight work has drained or resources were deleted. The queue preserves
-claims and uncertain outcomes for later reconciliation. See [ADR 0028](decisions/0028-guest-expiry-retention.md).
-
-This is not yet complete hosted multi-tenancy. The default configuration leaves Guest disabled;
-account SSO still grants the legacy shared Workspace. Guest Keys can address an explicit Workspace without a browser cookie; Key-based Workspace
-discovery and crash recovery for active Workspace writers remain outstanding. Regional identity checks deny
-expired Guest access, but a future destructive executor must fence in-flight operations before
-provider effects or removal of records. Production rollout has not been verified.
-
-An inactive DB9 cleanup adapter can issue one deletion request for a durably claimed Guest
-resource after checking the scoped Workspace, provider binding, existing account and Region
-policy. A successful [DB9 deletion response](https://db9.ai/docs/api/) is acceptance only, not
-proof that the resource has been deleted. A production executor must fence and drain in-flight
-operations, reconcile provider state, and verify every owned resource before removing metadata
-or credentials. Missing credentials or an uncertain outcome must remain visible for recovery.
-There is no running cleanup executor or verified live-provider deletion in this implementation.
+The regional [Guest cleanup processor](../backend/api/src/guest_cleanup.rs) claims work through the identity scheduler. It records provider deletion attempts before I/O. An uncertain outcome remains available for reconciliation. Provider acceptance alone cannot establish physical erasure. See [Guest logout and cleanup](decisions/0029-guest-logout-cleanup.md).
 
 Domain operations are shared by Console and agent requests. Providers and computation are
 separate crates behind regional application operations. Metadata supports in-process and remote
@@ -82,18 +69,7 @@ JSON request through stdin and receives one bounded JSON reply through stdout. T
 exits after that task. There is no Execute listener, service discovery, broker, durable task
 queue, independently deployed binary or separately configured service.
 
-`product.execute` is the sole native-extension configuration. Unknown product fields reject
-at startup rather than silently selecting a fallback. Pre-production development names are
-replaced directly; there are no transitional command/configuration aliases. Provider
-connections, metadata and public HTTP request/response contracts are unchanged. This refactor
-does not add an in-process thread strategy.
-
-Execute owns child lifecycle, an empty environment, bounded pipes, discarded stderr and
-kill-on-drop cancellation. The normal deadline is 15 seconds; only server-generated native
-import writes retain the existing 30-second commit budget. Analysis admission remains two
-tasks; native DuckDB admission remains four tasks with one active query per database.
-Snapshot tasks receive selected data only. Persistent DuckDB tasks receive only their own
-private storage connection. Native MySQL/PostgreSQL requests use provider drivers directly.
+Execute owns the child lifecycle, an empty environment, bounded pipes and kill-on-drop cancellation. Each task has a 15-second deadline. Snapshot tasks receive the selected data. PostgreSQL queries use the provider driver directly. The [public resource boundary](decisions/0058-public-resource-kinds.md) retired standalone MySQL and DuckDB databases.
 
 Each child flushes the same stdout handle before process/runtime exit. Awaiting Tokio
 `write_all` alone is not a completion barrier for its background writer. Buffered-output,
@@ -123,7 +99,7 @@ opening a database. Existing autoload/autoinstall, external access and selected-
 remain enforced. The API stays one executable without a DuckDB shared-library runtime dependency.
 `workspace-backend runtime-info` reports its embedded DuckDB version/target/archive identity;
 packaging rejects an executable that disagrees with the source pins and records that identity.
-The separate tidbfs extension still requires its own verified artifact. See
+See
 [DuckDB's official library distribution](https://duckdb.org/docs/2.0/operations_manual/installing_duckdb/install_script)
 and [Rust linking options](https://duckdb.org/docs/2.0/clients/rust/troubleshoot).
 
@@ -132,8 +108,7 @@ artifact, run `cargo run --locked -p workspace-build-tools -- prepare`, then bui
 as the package command's second argument. Packaging requires the current clean reviewed Git
 revision, writes source SHA/binary SHA-256/platform/architecture and archive checksums, and
 includes only the binary, Cargo lockfile, contract and instructions. It excludes private
-configuration, state, credentials, Console assets and Node runtime dependencies. A verified
-native tidbfs extension is a separately supplied artifact, with its checksum preserved.
+configuration, state, credentials, Console assets and Node runtime dependencies.
 
 `workspace-backend serve-api --config /absolute/private/deployment.json` runs a regional plan. For a local installation use `workspace-backend local init` and `workspace-backend local serve`. See the [quick start](../README.md#local-setup).
 
@@ -180,12 +155,7 @@ A full regional API configuration is:
   "product": {
     "providers": {
       "filesProvider": "drive9-anonymous",
-      "mysqlProvider": "tidb-cloud-zero",
       "postgresProvider": "db9-anonymous"
-    },
-    "execute": {
-      "extensionPath": "/srv/artifacts/tidbfs.duckdb_extension",
-      "extensionSha256": "verified-64-character-sha256"
     }
   }
 }
@@ -218,14 +188,12 @@ failure leaves healthy roles running; the host is not an automatic HA supervisor
 
 Omitting `product` deliberately selects the original `workspace-keys-only` partial profile.
 It does not advertise the full contract and must not replace a complete Portal API.
-`product: {}` enables the full local/demo profile, including snapshot computation without
-native tidbfs. Creating/querying native DuckDB databases requires the verified extension;
-missing or incompatible artifacts fail before allocating private storage.
+`product: {}` enables the full local/demo profile, including snapshot computation with the bundled DuckDB engine.
 
 ## Compatibility and boundaries
 
 The full profile serves the unchanged generated `public/openapi.json`. Resource IDs, native
-IDs, regional placement, opaque fields, contents, Key digests/grants/expiry/revocation and private Binding and Credential records use the fresh versioned schema. Domain aggregate views are bounded to 4096 records/24 MiB; ordinary authorization uses point reads. Public pagination, provider claims and sharding still require separate implementation.
+IDs, regional placement, opaque fields, contents, Key digests/grants/expiry/revocation and private Binding and Credential records use the fresh versioned schema. Domain aggregate views are bounded to 4096 records/24 MiB; ordinary authorization uses point reads. The product [pages resource lists](../backend/product/src/resource_pages.rs) using bounded index reads. The [scale design](decisions/0035-sparse-scale-metadata.md) records the limits of that implementation.
 
 The API retains the eight-hour local owner cookie, backend authorization, grant filtering,
 Host/Origin/CORS policy, eight admitted requests, bounded bodies/timeouts and secret-once Key
@@ -234,7 +202,7 @@ expected-length validation. Export bodies allow 8 MiB; other request bodies allo
 Native credentials, Key digests and private DuckDB storage do not enter public resource lists,
 usage rows or worker snapshots. Hosted sessions require verified TiDB Account sign-in; local guest sessions remain explicit loopback only.
 
-Provider creation persists intent before a non-idempotent request. Unknown Zero/Drive9
+Provider creation persists intent before a non-idempotent request. Unknown Drive9
 creation outcomes are not retried. db9 can recover the one deterministic database name under
 the original anonymous account. Configuring bindings keep their generated restricted native
 roles; restart/setup never rotates credentials or creates a replacement database. Pending
@@ -243,7 +211,7 @@ binding values are validated before interpolating server-generated setup SQL.
 Native SQL drivers use verified TLS, fresh bounded connections, one statement, exact decimal/int8/
 JSON/temporal text preservation and binary base64. Query results retain duplicate columns,
 1,000-row/1 MiB limits and safe errors. Neither SQL nor uncertain writes are automatically
-retried. Provider compatibility limits in the existing Zero/db9 guides still apply.
+retried. Provider compatibility limits in the [db9 guide](db9-postgres.md) still apply.
 
 Sales sample status reads reconcile a recorded `outcome_unknown` file-write intent by
 reading only its existing File System and `/us-sales.csv`. The bounded bytes must exactly
@@ -253,9 +221,7 @@ unknown outcome. This also recovers conditional-create conflicts with an existin
 sample; it never overwrites files, provisions resources or replays provider writes. Native
 sales-sample acceptance covers scoped observation, concurrent checks, restart and no replay.
 
-DuckDB is bundled into the executable at the existing engine major. The verified tidbfs
-artifact is loaded only by native database workers. Selected-file SQL/preview/imports use
-bundled CSV/JSON/Parquet support; they do not require provider extensions. Bashkit implements
+Selected-file SQL, previews and imports use the bundled DuckDB engine with CSV, JSON and Parquet support. Bashkit implements
 the existing allowlisted virtual shell instead of spawning a host shell. See
 [ADR 0021](decisions/0021-native-rust-computation.md) for the worker boundary and limits.
 
@@ -272,7 +238,7 @@ Resources, Keys, files, bindings and credentials are independent encrypted recor
 
 The API has one active writer per Workspace until provider lifecycle claims support concurrent API writers. `recoverWriterOwner` names the exact stopped owner after a crash; there is no lease timeout or global dependency. Storage version 2 intentionally rejects the old five-document installation. JSON import/export, legacy vault codecs and Node/Rust handoff are retired under [ADR 0024](decisions/0024-fresh-record-metadata.md).
 
-Package reviewed clean source with a full SHA and binary/archive checksums. Keep configuration and state outside the artifact. Deploy all version-coupled API/Meta roles, verify readiness, authorized/denied reads and the Portal. A source upgrade cannot silently reset an incompatible root. The owner now authorizes a fresh hosted deployment under ADR 0026, using a new S3 prefix and keys. Distributed policy, customer isolation, sharding and automatic HA remain future work.
+Package reviewed clean source with a full SHA and binary/archive checksums. Keep configuration and state outside the artifact. Deploy all version-coupled API/Meta roles, verify readiness, authorized/denied reads and the Portal. A source upgrade cannot silently reset an incompatible root. The owner now authorizes a fresh hosted deployment under ADR 0026, using a new S3 prefix and keys. For managed customer isolation and its deployment limits, see [ADR 0030](decisions/0030-personal-account-isolation.md). Sharding and automatic HA remain future work.
 
 ## Shared Global listener behind a gateway
 

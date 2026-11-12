@@ -1,10 +1,11 @@
 # ADR 0008: DuckDB owns a private File System
 
+> **Deprecated.** Standalone DuckDB databases were retired by [ADR 0058](0058-public-resource-kinds.md). Existing backing storage stays private. For current DuckDB use see [File System analysis](0010-read-only-file-analysis.md).
+
 Runtime/storage amendment: [ADR 0020](0020-modular-rust-backend.md) selects the Rust backend;
 [ADR 0024](0024-fresh-record-metadata.md) replaces the original JSON vault/runtime with
 individual encrypted Meta records. Original integration evidence below remains historical.
 
-- Status: Accepted owner direction, 2026-10-28; implementation complete; verification is recorded in [DuckDB evidence](../duckdb-verification.md).
 - Intent/specification: [GH-28](../../specs/gh-28/spec.md).
 
 ## Decision

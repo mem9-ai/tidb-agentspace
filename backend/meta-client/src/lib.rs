@@ -111,6 +111,8 @@ impl RemoteMetadata {
     }
     async fn call(&self, request: Option<MetaRequest>) -> workspace_contracts::Result<Value> {
         let write = matches!(request, Some(MetaRequest::Commit { .. }));
+        // A transport failure can arrive after Meta made a write durable. Preserve that
+        // distinction so the caller can resolve the original mutation ID.
         let failure = || {
             ServiceError::new(
                 503,

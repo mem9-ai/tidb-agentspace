@@ -1,10 +1,12 @@
 # ADR 0019: Portable KV metadata for the Workspace control plane
 
+> **Partially deprecated.** The Node document importer and identity-preserving migration described below were retired by [ADR 0024](0024-fresh-record-metadata.md). The authority split and portable KV direction still apply. [ADR 0043](0043-portal-agent-region-control.md) updates the Region connection direction.
+
 - Status: Proposed; portable KV, SlateDB on object storage and the global/regional three-plane split are owner-accepted direction; detailed contracts remain under review
 - Date: 2026-10-29
 - Parent: [GH-74](https://github.com/siddontang/tidb.ai/issues/74)
 - Specification: [Multi-tenant Workspace control plane](../../specs/gh-74/spec.md)
-- Implementation: Initial independent Rust/SlateDB service, bounded Node compatibility adapter and lossless importer/exporter in the [GH-86 runtime guide](../meta-service.md); full domain/scale design remains phased
+- Current implementation: [Rust Meta service](../meta-service.md). The full scale design remains phased.
 
 ## Context
 

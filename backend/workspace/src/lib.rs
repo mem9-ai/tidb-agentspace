@@ -151,6 +151,28 @@ impl Principal {
         workspace_contracts::ResourceType::from_public_kind(kind)
             .is_some_and(|t| self.resource_types.contains(&t))
     }
+    /// Check the resource half of a grant against a record from the authenticated Workspace.
+    /// Call [`Self::scope`] for the action. A type grant also covers future visible records.
+    ///
+    /// ```
+    /// use serde_json::json;
+    /// use workspace_contracts::ResourceType;
+    /// use workspace_domain::Principal;
+    ///
+    /// // In request handlers, obtain the principal from Workspace::authenticate.
+    /// let reader = Principal {
+    ///     owner: false, actor: "agent".into(), id: "key_a".into(),
+    ///     scopes: vec!["files:read".into()], resource_ids: vec![],
+    ///     resource_types: vec![ResourceType::Filesystem], expires_at: None,
+    /// };
+    /// let files = json!({"id":"fs_new", "kind":"filesystem"});
+    /// let database = json!({"id":"db_a", "kind":"postgresql", "provider":"db9-anonymous"});
+    /// reader.scope("files:read")?;
+    /// assert!(reader.permits_record(&files));
+    /// assert!(!reader.permits_record(&database));
+    /// assert!(reader.scope("files:write").is_err());
+    /// # Ok::<(), workspace_contracts::ServiceError>(())
+    /// ```
     pub fn permits_record(&self, record: &Value) -> bool {
         visible_resource(record)
             && record["id"].as_str().is_some_and(|id| {

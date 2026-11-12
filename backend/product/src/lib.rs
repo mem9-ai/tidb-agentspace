@@ -97,6 +97,8 @@ impl Product {
             preparations: Mutex::new(BTreeMap::new()),
         })
     }
+    /// Authenticate, check the action and resolve the selected resource before provider I/O.
+    /// Operations with separate source and destination resources must authorize both.
     pub async fn context(
         &self,
         credential: &Credential,

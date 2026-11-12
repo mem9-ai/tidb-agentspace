@@ -71,14 +71,11 @@ Tool-specific entry files should route here rather than maintain competing polic
 The repository check validates that required documents and instruction links exist. It does
 not prove that a model read them or that the UI conforms to TiUI; code and browser review do.
 
-For database integration, read [the Zero SQL boundary](../decisions/0006-zero-sql-gateway.md): anonymous provisioning, private database-scoped credentials, expiry and recovery, verified TLS, bounded sessions, and no automatic SQL retries.
+For database availability and direct access, follow [the public resource boundary](../decisions/0058-public-resource-kinds.md).
 
 For File System analytics or shell tooling, read [the capability discovery](../file-analysis-discovery.md)
 and [GH-26 design baseline](../../specs/gh-26/spec.md). Read [ADR 0010](../decisions/0010-read-only-file-analysis.md) for the implemented snapshot-worker boundary. Verify deployed Exec availability separately
 from DuckDB/Just Bash library support; preserve the Workspace credential and selected-file boundaries.
-
-For DuckDB integrations, read [private database storage](../decisions/0008-duckdb-private-storage.md) and [the runtime guide](../duckdb-databases.md). Backing filesystems are internal bindings, not public resources or Key targets.
-For DuckDB file queries, follow [ADR 0009](../decisions/0009-duckdb-file-sources.md) and the runtime guide's source contract. Database and every File System require separate resource authorization plus query/read/analyze actions; never forward source-provider credentials into customer SQL.
 
 For File System Analyze, follow [ADR 0014](../decisions/0014-file-analysis-engine-options.md):
 file format is distinct from available methods. Discover per-engine capabilities, allow
@@ -98,7 +95,7 @@ the accepted [GH-103 specification](../../specs/gh-103/spec.md) and
 destination query grant; Workspace files additionally require source read/analyze grants.
 Preserve the explicit review, destination-bound preparation and create-only write boundaries.
 
-For DuckDB browsing performance, follow [ADR 0045](../decisions/0045-duckdb-creation-table-snapshot.md) and the disposable-worker boundary in [ADR 0021](../decisions/0021-native-rust-computation.md). The reusable reader in ADR 0012 was retired. Do not turn customer SQL or file-source workers into shared sessions to reduce attachment cost. Measure cold and warm paths separately and retain authorization on every request.
+For DuckDB execution over a selected File System snapshot, see [the disposable worker boundary](../decisions/0021-native-rust-computation.md). The standalone database designs are indexed under [deprecated decisions](../decisions/README.md#deprecated-decisions).
 
 For preview-first file UI and bounded tabular samples, follow
 [ADR 0017](../decisions/0017-preview-first-file-workspace.md) and the
@@ -106,5 +103,4 @@ For preview-first file UI and bounded tabular samples, follow
 Fixed preview uses read permission; custom SQL/Bash retains explicit analyze permission.
 
 For backend language, module boundaries or service composition, follow [ADR 0020](../decisions/0020-modular-rust-backend.md)
-and [the Rust migration contract](../../specs/gh-88/spec.md). Rust is the accepted target;
-Node is retained only for regression oracles/tooling; fresh record metadata and native packaging follow [ADR 0024](../decisions/0024-fresh-record-metadata.md).
+and [the Rust migration contract](../../specs/gh-88/spec.md). [ADR 0059](../decisions/0059-rust-backend-workflow.md) describes the current Rust runtime, OpenAPI generation and native acceptance. Fresh record metadata follows [ADR 0024](../decisions/0024-fresh-record-metadata.md).

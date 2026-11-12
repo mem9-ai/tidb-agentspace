@@ -172,7 +172,7 @@ sessions share these destinations. Existing route hashes remain compatible.
 AgentSpace is the product name; Workspace remains the API and storage abstraction. Agent
 runtime, identity, verified connectivity, Runs and Memory are not current Console capabilities.
 
-SQL Editor belongs inside Databases, scoped to a selected MySQL, PostgreSQL or DuckDB resource;
+SQL Editor belongs inside Databases, scoped to a selected PostgreSQL resource;
 it is not a peer of Databases in the workspace navigation. The implemented route is
 `#databases/<resource-id>/sql`. Database names, row actions, and connection dialogs must
 open that exact resource, with Databases remaining active in the sidebar. Reload and
@@ -195,9 +195,7 @@ one compact resource selector/status/actions toolbar, then a browser
 beside the working panel. The database selector is above both Tables and SQL Editor; it must
 not live inside the editor it controls. File System uses the same layout even before selecting
 a file, with an explicit unselected-file panel on desktop. Tables and Files share item chrome,
-browser width and collapse behavior. DuckDB uses tidbfs native database mode and the same
-Tables/SQL experience; its workspace has no custom file-source picker. Optional snapshot
-queries remain a separate API capability, with File System Analyze for Console file analysis.
+browser width and collapse behavior. File System Analyze runs SQL over a selected file snapshot.
 Table rows expand column names, types and available key/null/default properties in place.
 Clicking a table keeps SQL Editor and Query results primary; full Table details remains an
 explicit secondary choice. Query table prepares SQL with the edited-draft guard and never
@@ -257,7 +255,7 @@ Use real TiUI components, its semantic palette and theme provider, with the Work
 larger typography and spacing requirements. The [TiUI standard](standards/tiui-design-system.md)
 defines verified defaults, component selection, light/dark/system behavior, responsive
 interaction, and migration evidence. [ADR 0002](decisions/0002-tiui-design-system.md) records
-the accepted foundation. Preview status, limits, and the three resource types need text labels.
+the accepted foundation. Preview status, limits, and resource types need text labels.
 
 The prototype now uses TiUI components and a single provider-controlled theme. Shared
 readability, modal, navigation, code, and SQL adapters live under `src/ui/` and `src/features/`.
@@ -274,18 +272,13 @@ Product analytics uses an independent, lower-availability SlateDB service under
 bounded asynchronous observations. Analytics has separate processes, roots and credentials;
 it never uses the business Meta engine or supplies authoritative permissions/billing state.
 
-Implemented DuckDB file queries use explicit query-scoped CSV/JSON/Parquet sources, authorized
-with database query access plus read/analyze access to every public File System. The backend
-loads bounded private snapshots and materializes an in-memory catalog before disabling external
-access; source queries attach the native database read-only and admit only SELECT. Source tokens,
-snapshots and database backing storage stay internal. See [ADR 0009](decisions/0009-duckdb-file-sources.md)
-and [the source contract](duckdb-databases.md#workspace-file-sources).
+The standalone DuckDB database with attached file sources is [deprecated](decisions/0009-duckdb-file-sources.md). For supported file SQL, see [selected-file analysis](decisions/0010-read-only-file-analysis.md).
 
 Implemented delivery: the Console and API have independent builds, processes, and artifacts in
 one repository. The API serves only HTTP API/schema endpoints; the static Console uses runtime
 API-origin configuration and an OpenAPI-generated typed client. The native regional API owns SSO and public Host/Origin policy under [ADR 0026](decisions/0026-native-hosted-studio.md); its [modular backend](rust-backend.md)
 and composable host run against embedded or remote metadata. See [ADR 0005](decisions/0005-independent-console-and-api.md) and the
-[operating guide](independent-delivery.md). Customer-level identity isolation remains proposed; hosted SSO admits explicitly allowed owners to the same Workspace.
+[operating guide](independent-delivery.md). Managed TiDB Account sign-in assigns each verified identity a personal Workspace under [ADR 0030](decisions/0030-personal-account-isolation.md).
 
 The accepted backend target is Rust, following [ADR 0020](decisions/0020-modular-rust-backend.md)
 and [GH-88](../specs/gh-88/spec.md). Domain modules, ports and transport adapters share one
@@ -312,8 +305,7 @@ flowchart TB
     repo --> meta[Regional Meta Service / SlateDB]
     meta --> rs3[Regional S3: WAL / SST / manifests]
   end
-  adapters --> provider[MySQL / PostgreSQL / public File Systems]
-  child -->|persistent DuckDB tasks only| private[Dedicated private DuckDB storage]
+  adapters --> provider[PostgreSQL / public File Systems]
   gm[Independent Global Meta / SlateDB] --> gs3[Independent Global S3 root]
 ```
 
@@ -325,9 +317,8 @@ browser interactions may remain UI-only. Owner and Workspace Key permissions rem
 The [capability completeness standard](standards/openapi-verification.md#product-capability-completeness)
 defines workflow coverage and acceptance; it does not mark proposed capabilities implemented.
 MCP maps tool calls onto the same operations. File preview/analysis/import tasks receive only
-selected immutable snapshots; persistent DuckDB tasks receive only their dedicated private
-storage connection. Execute retains cancellation, bounded admission, the existing deadlines
-and flushed result pipes. Native MySQL/PostgreSQL calls use provider drivers directly.
+selected immutable snapshots. Execute retains cancellation, bounded admission, the existing deadlines
+and flushed result pipes. PostgreSQL calls use the native provider driver directly.
 See [the Execute runtime](rust-backend.md#regional-execute) and [ADR 0021](decisions/0021-native-rust-computation.md).
 
 Separate resource management from bounded SQL/file data operations. Both public paths accept
@@ -365,17 +356,12 @@ diagnostics may use the CLI when useful; they must not become a prerequisite for
 If a required API or protocol capability is unverified, record the gap and verify the official
 contract rather than assuming CLI availability establishes a supported integration.
 
-Current implementation: Zero provisioning uses its HTTP API, SQL uses the mysql2 driver, and
-Drive9 file operations use its service API; see [ADR 0006](decisions/0006-zero-sql-gateway.md)
-and [ADR 0004](decisions/0004-drive9-anonymous-provider.md). This records implementation evidence,
-not a claim that every future TiDB Cloud feature has a verified API.
+The [db9 adapter](decisions/0011-db9-postgres.md) provisions PostgreSQL-compatible databases and uses a native PostgreSQL driver. The [Drive9 adapter](decisions/0004-drive9-anonymous-provider.md) uses its service API for file operations.
 
 Review adapter calls, dependency manifests, build/release scripts, and setup documentation for
 CLI prerequisites. Run the shared quality gate without requiring Ti CLI; current checks do not
 automatically prove every integration follows this rule. Revisit it only when the owner changes
 the integration requirement, documenting any accepted exception and its scope.
-
-DuckDB uses a dedicated hidden backing File System and native worker runtime. Only its database resource is public; read [ADR 0008](decisions/0008-duckdb-private-storage.md) and [runtime operations](duckdb-databases.md).
 
 ## Customer identity and single-key access
 
@@ -475,9 +461,11 @@ mutation events and displays clearly labeled illustrative charts; it is not clou
 
 ## Delivery stages and acceptance
 
+The table records the original roadmap. For capabilities available today, see [public resource kinds](decisions/0058-public-resource-kinds.md) and the [local setup](../README.md#local-setup).
+
 | Stage                            | Scope                                                                                                                             | Acceptance                                                                                                                                                                        |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Current prototype                | Guest owner, three demo resource types, persistent local files, single-key action/resource policy, OpenAPI and all Console routes | Local quality gate, API regression tests, browser inspection; no real cloud resources                                                                                             |
+| Original prototype               | Guest owner, three demo resource types, persistent local files, single-key action/resource policy, OpenAPI and all Console routes | Local quality gate, API regression tests, browser inspection; no real cloud resources                                                                                             |
 | V0 real free-resource validation | Controlled internal tenant, real MySQL/PG/Files adapters, internal credentials, allocated free capacity                           | One customer key queries both databases and writes/reads Files across sessions; forbidden component access fails; revocation affects every component; usage matches provider data |
 | V1 developer beta                | Product sign-in/guest claim, multiple workspaces, real metrics, SDK/CLI/MCP, finer policies                                       | Successful first agent read/write is measurable; cross-workspace isolation; retry-safe operations; no customer provider-key requirement                                           |
 | V2 commercial/collaborative use  | Payments/invoices, budgets, account security, sharing/team capabilities, provider-specific features                               | Accurate customer/upstream ledger reconciliation, tested revocation, export/delete and safe migration/rollback                                                                    |

@@ -5,7 +5,7 @@ billing behavior, design-system foundation, or deployment architecture. Number f
 sequentially as `NNNN-short-title.md`. Include status, context, decision, consequences,
 migration, and how the decision is verified. Routine implementation choices do not need an ADR.
 
-## Accepted decisions
+## Decisions and implementation status
 
 - [0058: Public resource kinds](0058-public-resource-kinds.md) — PostgreSQL databases and File Systems across API discovery and direct access.
 
@@ -35,24 +35,18 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0004: Drive9 anonymous provider](0004-drive9-anonymous-provider.md) — real Singapore files, private backend bindings, bounded transfers, and explicit provisioning recovery.
 
 - [0005: Independently delivered Console and API](0005-independent-console-and-api.md) — one repository, OpenAPI-generated client, separate runtime artifacts, and retained loopback identity.
-- [0006: Zero SQL gateway](0006-zero-sql-gateway.md) — real anonymous MySQL, backend credentials, scoped Workspace Keys, expiry/recovery, and temporary PG withdrawal.
 
 - [0007: Database browsing](0007-database-browser.md) — scoped schema reads, bounded data preview, and table-to-editor navigation.
-
-- [0008: DuckDB private storage](0008-duckdb-private-storage.md) — implemented with a verified native runtime; dedicated backing files hidden behind each DuckDB database.
-- [0009: Query-scoped file sources](0009-duckdb-file-sources.md) — implemented authorized, query-scoped CSV/JSON/Parquet inputs in DuckDB; source credentials remain in the backend.
 
 - [0010: Read-only file analysis](0010-read-only-file-analysis.md) — scoped snapshot workers, DuckDB SQL and Just Bash, explicit compute permission and bounded execution.
 
 - [0011: Anonymous db9 PostgreSQL](0011-db9-postgres.md) — implemented anonymous PostgreSQL with private credentials, restricted native roles and provider compatibility limits.
 
-- [0012: DuckDB catalog reader](0012-duckdb-catalog-reader.md) — bounded read-only reuse for server-generated browsing, while customer SQL remains disposable.
-
 - [0014: Automatic Console publishing](0014-console-auto-publishing.md) — a scoped GitHub App synchronizes tested static artifacts to the existing Netlify site.
 
 - [0015: Public-client TiDB Account sign-in](0015-public-client-sso.md) — code + S256 PKCE without a client secret; provider registration and owner authorization remain explicit.
 
-- [0016: Verified email owner grants](0016-verified-email-owner-rules.md) — opt-in verified email rules for full owner access to the existing shared workspace; no user isolation.
+- [0016: Verified email owner grants](0016-verified-email-owner-rules.md) — partially deprecated. Shared-owner rules apply to the loopback fixture. Managed hosting follows [ADR 0030](0030-personal-account-isolation.md).
 
 - [0013: Result snapshot exports](0013-result-snapshot-exports.md) — accepted and implemented bounded downloads and create-only copies into public workspace resources.
 
@@ -80,7 +74,7 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0032: Writer-safe dev release](0032-writer-safe-dev-release.md) — bounded health checks and explicitly compatible, fenced image recovery for the single-writer profile.
 
 - [0038: Bounded raster image previews](0038-bounded-image-preview.md) — authorized, size-limited image preview with signature checks and an export fallback.
-- [0040: Authority-local System State](0040-system-state-metadata.md) — system-owned metadata in each existing Meta authority; security checkpoints use Meta in fresh installations.
+- [0040: Authority-local System State](0040-system-state-metadata.md) — system-owned metadata in each existing Meta authority; security checkpoints use Meta in fresh installations. [ADR 0043](0043-portal-agent-region-control.md) updates connection direction.
 - [0041: One Global endpoint for agents](0041-single-global-entry.md) — Key-based discovery, bodyless redirect and direct regional requests.
 - [0042: Global Workspaces and regional resources](0042-workspace-resource-regions.md) — one default Region per Workspace initially, independently recorded resource placement, and non-destructive legacy interpretation.
 - [0043: Portal, Agent and Region control boundaries](0043-portal-agent-region-control.md) — separate browser, Agent and service interfaces; Region-initiated authenticated control.
@@ -92,7 +86,7 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 - [0035: Sparse-activity metadata scale](0035-sparse-scale-metadata.md) — proposed independent authority shards and Workspace resource partitioning; bounded resource page reads are a first slice.
 
-- [0019: Portable Workspace KV control plane](0019-workspace-kv-control-plane.md) — Global-initiated encrypted control, independent regional serving, pooled cells/bounded groups, selected hosted SlateDB/object storage, private regional storage directory and identity-preserving migration; phased implementation.
+- [0019: Portable Workspace KV control plane](0019-workspace-kv-control-plane.md) — Global-initiated encrypted control, independent regional serving, pooled cells/bounded groups, selected hosted SlateDB/object storage, private regional storage directory and phased implementation. The document migration was retired by [ADR 0024](0024-fresh-record-metadata.md).
 
 - [0021: Native Rust computation](0021-native-rust-computation.md) — Region-internal Execute with same-binary child tasks; bundled DuckDB, restricted Bashkit snapshot workers, native SQL and Node-free regional serving.
 
@@ -107,8 +101,6 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0032: REST workflow resources](0032-rest-workflow-resources.md) — addressable preparations, durable setup attempts and removal of historical command routes under GH-76.
 
 - [0036: Global-only Workspace Keys](0036-global-keys-only.md) — retire regional customer Keys, preserve resources/provider credentials, and expose the new Global/Region flow with complete examples.
-
-- [0045: DuckDB creation-time table snapshot](0045-duckdb-creation-table-snapshot.md) — reuse initialization to return an explicitly historical catalog snapshot without caching current tables.
 
 - [0046: PostgreSQL-compatible resource names](0046-postgresql-resource-names.md) — permit underscores for PostgreSQL Workspace names and use compatibility wording in the Console.
 
@@ -127,3 +119,13 @@ migration, and how the decision is verified. Routine implementation choices do n
 - [0059: Rust backend workflow](0059-rust-backend-workflow.md) — one native entry point for local operation, OpenAPI and backend verification.
 
 - [0060: Workspace Key resource types](0060-workspace-key-resource-types.md) — explicit and dynamic resource grants.
+
+## Deprecated decisions
+
+These records preserve the rationale and evidence for retired product paths. [ADR 0058](0058-public-resource-kinds.md) defines the supported public resources. File System SQL analysis continues under [ADR 0010](0010-read-only-file-analysis.md).
+
+- [0006: Zero SQL gateway](0006-zero-sql-gateway.md)
+- [0008: DuckDB private storage](0008-duckdb-private-storage.md)
+- [0009: Query-scoped file sources](0009-duckdb-file-sources.md)
+- [0012: DuckDB catalog reader](0012-duckdb-catalog-reader.md)
+- [0045: DuckDB creation-time table snapshot](0045-duckdb-creation-table-snapshot.md)

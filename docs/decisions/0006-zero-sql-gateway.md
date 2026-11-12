@@ -1,6 +1,7 @@
 # ADR 0006: Anonymous Zero SQL through the Workspace gateway
 
-- Status: Accepted and implemented; real MySQL and unified-key acceptance passed.
+> **Deprecated.** The public Zero MySQL gateway was retired. For current database availability see [ADR 0058](0058-public-resource-kinds.md) and the [db9 provider](0011-db9-postgres.md).
+
 - Date: 2026-10-28.
 - Scope: Anonymous provisioning, credential isolation, SQL execution, expiry, and PG withdrawal.
 

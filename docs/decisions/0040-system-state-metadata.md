@@ -1,5 +1,7 @@
 # ADR 0040: Authority-local System State
 
+> **Partially deprecated.** [ADR 0043](0043-portal-agent-region-control.md) supersedes the original Global-to-Region connection direction. Authority-local System State and regional data-path autonomy still apply.
+
 - Status: Meta-backed security state implemented; targeted local verification passed.
 - Date: 2026-11-01.
 - Scope: application configuration and runtime state that do not belong to a Workspace.

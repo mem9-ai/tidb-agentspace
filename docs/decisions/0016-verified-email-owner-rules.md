@@ -1,5 +1,7 @@
 # ADR 0016: Verified email grants for a shared workspace
 
+> **Partially deprecated.** Shared-Workspace owner admission now applies only to the loopback SSO compatibility fixture. Managed hosting assigns a personal Workspace using verified issuer and subject under [ADR 0030](0030-personal-account-isolation.md).
+
 - Status: Accepted owner direction; implemented with synthetic-provider tests.
 - Date: 2026-10-29
 - Scope: Opt-in SSO owner eligibility for an internal shared workspace.

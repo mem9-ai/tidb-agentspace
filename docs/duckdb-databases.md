@@ -1,7 +1,7 @@
 # DuckDB databases
 
-> Historical design and verification notes: standalone DuckDB databases have been retired
-> under [ADR 0048](decisions/0048-postgresql-only-databases.md). File System analysis still
+> **Deprecated.** Standalone DuckDB databases have been retired
+> under [ADR 0058](decisions/0058-public-resource-kinds.md). [File System analysis](decisions/0010-read-only-file-analysis.md) still
 > uses DuckDB. Provider-specific manual acceptance scripts and tests have been removed; a
 > future restoration requires new verification before the provider can be enabled.
 
