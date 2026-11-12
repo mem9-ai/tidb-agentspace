@@ -176,7 +176,7 @@ Build the native executables and examples before running `cargo acceptance all`.
 
 The normal `npm run check` remains shared formatting, lint, tooling/contract tests, type and
 build hygiene. It does not run the browser suite. Backend-only acceptance adds
-`npm run backend:check`; it does not add frontend interaction or screenshot work. Run focused
+the [native Cargo checks](../../CONTRIBUTING.md#rust-backend-modules). Run focused
 cases during development, then the final required gates on the stable candidate. Repeat
 only after a relevant change, failure or unresolved concern.
 

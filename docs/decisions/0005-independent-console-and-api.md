@@ -1,5 +1,7 @@
 # ADR 0005: Independently delivered Console and Workspace API
 
+> **Current implementation.** Independent delivery remains current. The Node backend, npm API packaging and Node contract tests below document the original implementation. Use the [Rust workflow](0059-rust-backend-workflow.md) and [current delivery guide](../independent-delivery.md).
+
 - Status: Accepted; implemented in this change.
 - Decision date: 2026-10-28.
 - Evidence: The product owner requested one repository, independently built/run/deployed
@@ -17,7 +19,7 @@ This made replacing or releasing one client depend on the other layer's runtime 
 
 Keep `src/` (Console), `server/` (API), and shared build/tooling in one repository. Each has
 an independent build/start command and artifact. The API never serves Console assets and
-runs on the pinned Node runtime without frontend dependencies. [ADR 0006](0006-zero-sql-gateway.md)
+runs on the pinned Node runtime without frontend dependencies. [ADR 0006](../deprecated/decisions/0006-zero-sql-gateway.md)
 extends the API artifact with pinned mysql2 dependencies for real SQL, without requiring an
 install when the artifact starts. The Console is static output
 that selects the API origin using `/config.json` before rendering. All API examples, schema

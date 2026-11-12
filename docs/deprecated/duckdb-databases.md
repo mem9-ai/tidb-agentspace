@@ -1,15 +1,15 @@
 # DuckDB databases
 
 > **Deprecated.** Standalone DuckDB databases have been retired
-> under [ADR 0058](decisions/0058-public-resource-kinds.md). [File System analysis](decisions/0010-read-only-file-analysis.md) still
+> under [ADR 0058](../decisions/0058-public-resource-kinds.md). [File System analysis](../decisions/0010-read-only-file-analysis.md) still
 > uses DuckDB. Provider-specific manual acceptance scripts and tests have been removed; a
 > future restoration requires new verification before the provider can be enabled.
 
 The Rust API uses the private deployment described in the
-[Rust runtime guide](rust-backend.md), with record metadata under [ADR 0024](decisions/0024-fresh-record-metadata.md).
+[Rust runtime guide](../rust-backend.md), with record metadata under [ADR 0024](../decisions/0024-fresh-record-metadata.md).
 
 Historical status: implemented for the loopback prototype before retirement. [ADR 0008](decisions/0008-duckdb-private-storage.md)
-and [GH-28](../specs/gh-28/spec.md) define the accepted isolation and acceptance boundary.
+and [GH-28](../../specs/gh-28/spec.md) define the accepted isolation and acceptance boundary.
 
 ## Customer experience
 
@@ -44,7 +44,7 @@ public file interface.
 For the optional API for CSV, JSON and Parquet in public File Systems, see
 [Workspace file sources](#workspace-file-sources).
 
-The native Rust executable statically links the pinned official DuckDB 2.0.0 prebuilt libraries, avoiding a C++ source build. See [build setup](rust-backend.md#build-check-and-package). Supply the exact matching platform/version
+The native Rust executable statically links the pinned official DuckDB 2.0.0 prebuilt libraries, avoiding a C++ source build. See [build setup](../rust-backend.md#build-check-and-package). Supply the exact matching platform/version
 of the native tidbfs artifact from [drive9-ai/duckdb](https://github.com/drive9-ai/duckdb).
 Its release build statically links its runtime dependencies. No Community Extensions
 publication, Ti CLI, DuckDB CLI or runtime extension download is required by this product.
@@ -79,7 +79,7 @@ provisioning; it never creates cloud resources.
 Regional Meta stores each public database's private DuckDB binding and its backing-store
 credentials as separate encrypted records, committed atomically where paired. Public records
 never contain the private token, native filename or endpoint. Preserve the regional object-store
-metadata and its encryption keys together; see [metadata operations](meta-service.md). The old
+metadata and its encryption keys together; see [metadata operations](../meta-service.md). The old
 sibling JSON vaults remain only in isolated regression fixtures, with no serving/import path.
 
 Creation persists binding intent before the upstream POST. Retries with the same Idempotency-Key
@@ -102,7 +102,7 @@ Limits: 64 KiB SQL, 15 seconds including native startup and storage open, 1,000 
 disabled. DuckDB's memory setting is not an operating-system memory limit. Confirmed database
 Import has a bounded exception: server-generated CREATE/
 INSERT statements receive 30 seconds each for cold storage commit/close. Parsing and ordinary
-SQL keep 15 seconds, and uncertain writes are never retried; see [ADR 0023](decisions/0023-database-import-workspace.md).
+SQL keep 15 seconds, and uncertain writes are never retried; see [ADR 0023](../decisions/0023-database-import-workspace.md).
 
 Each worker has a separate process, minimal environment and no public listener; secrets
 travel in private IPC, not process arguments.

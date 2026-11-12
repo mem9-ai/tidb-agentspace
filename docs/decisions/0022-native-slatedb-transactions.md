@@ -1,5 +1,7 @@
 # ADR 0022: Native SlateDB metadata transactions
 
+> **Current implementation.** Native transactions, durable reads and writer fencing remain current. The original SlateDB version and Node/Rust migration tests below are historical. See [the running Meta service](../meta-service.md) for the pinned engine and Cargo verification.
+
 - Status: Accepted owner direction; implemented under [GH-100](https://github.com/siddontang/tidb.ai/issues/100).
 - Date: 2026-10-29.
 - Complements [ADR 0019](0019-workspace-kv-control-plane.md) and [ADR 0020](0020-modular-rust-backend.md).

@@ -1,5 +1,7 @@
 # ADR 0021: Native computation in the Rust serving artifact
 
+> **Current implementation.** The disposable worker still runs file preview, analysis and import computations. The persistent database tasks described below were retired under [ADR 0058](0058-public-resource-kinds.md). See [Execute](../../backend/execute/README.md) for supported inputs.
+
 - Status: Implemented under GH-92; Region-internal Execute under GH-52, canonical-only interfaces under GH-54 (2026-10-31).
 - Date: 2026-10-29.
 - Complements [ADR 0020](0020-modular-rust-backend.md); preserves the selected-file and

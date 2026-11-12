@@ -4,10 +4,7 @@
 - Date: 2026-10-29.
 - Parent: [control-plane specification](spec.md), [scale profile](metadata-scale.md), and
   [proposed ADR 0019](../../docs/decisions/0019-workspace-kv-control-plane.md).
-- Implementation: The [GH-86 runtime guide](../../docs/meta-service.md) covers independent
-  Rust services with SlateDB 0.17.0, authenticated transport, S3-durable commits and a bounded
-  legacy Node adapter/importer. Full domain migration, automatic HA and scale remain phased.
-  The optional JSON demo profile still uses [`createStore`](../../server/store.mjs).
+- Historical baseline: GH-86 introduced the Rust Meta service on SlateDB 0.17.0 alongside a Node adapter. The [original JSON store](https://github.com/mem9-ai/tidb-agentspace/blob/d7f9a01551e9dd37f2f664e550ed648cd12c275c/server/store.mjs) and document importer are retired. See [the Meta runtime guide](../../docs/meta-service.md) for current startup, persistence and verification.
 
 ## 1. Persistence direction and reference
 

@@ -274,8 +274,7 @@ Refine it into observable requirements:
 | KEY-06 | A new resource is created after an explicit resource grant            | The existing grant does not expand to include it                                             |
 
 These cases describe a regression specification for an existing capability, not a newly
-introduced API. `server/api.test.mjs` already exercises scope/resource restrictions and key
-expiration. The full acceptance package would map each row to exact assertions, add missing
+introduced API. The [native product acceptance suite](../../backend/test-support/tests/product.rs) exercises access controls, and the [identity suites](../../backend/test-support/tests/identity/) cover credential expiry. The full acceptance package would map each row to exact assertions, add missing
 side-effect checks, and identify any unsupported cases before claiming coverage. Native data
 sessions and multi-workspace execution require their own implemented fixtures; this example
 does not claim those integrations exist.

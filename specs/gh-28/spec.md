@@ -3,7 +3,7 @@
 - Status: Accepted owner direction; revision 1, 2026-10-28. Implementation pending.
 - Intent: [#28](https://github.com/siddontang/tidb.ai/issues/28), contributor/maintainer Siddon Tang.
 - Source baseline: `cee381a`; dependency: existing MySQL, Drive9, Workspace Key and table APIs.
-- Decision: [ADR 0008](../../docs/decisions/0008-duckdb-private-storage.md).
+- Decision: [ADR 0008](../../docs/deprecated/decisions/0008-duckdb-private-storage.md).
 
 ## Outcome and contract
 

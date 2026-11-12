@@ -75,7 +75,7 @@ For database availability and direct access, follow [the public resource boundar
 
 For File System analytics or shell tooling, read [the capability discovery](../file-analysis-discovery.md)
 and [GH-26 design baseline](../../specs/gh-26/spec.md). Read [ADR 0010](../decisions/0010-read-only-file-analysis.md) for the implemented snapshot-worker boundary. Verify deployed Exec availability separately
-from DuckDB/Just Bash library support; preserve the Workspace credential and selected-file boundaries.
+from the native DuckDB/Bashkit snapshot workers; preserve the Workspace credential and selected-file boundaries.
 
 For File System Analyze, follow [ADR 0014](../decisions/0014-file-analysis-engine-options.md):
 file format is distinct from available methods. Discover per-engine capabilities, allow

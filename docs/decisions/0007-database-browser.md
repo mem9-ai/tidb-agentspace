@@ -1,6 +1,6 @@
 # ADR 0007: Database browsing through the SQL boundary
 
-HTTP naming in this historical decision is superseded by [ADR 0032](0032-rest-workflow-resources.md): use setup-attempt resources and `/resources/{id}/tables/{tableName}[/rows]`; old routes are removed.
+The original MySQL catalog implementation, URL names and execute-only grants below are historical. The [PostgreSQL browser](../db9-postgres.md) checks the selected database and `queries:read` (also implied by `queries:execute`). [ADR 0032](0032-rest-workflow-resources.md) defines the current table and row routes.
 
 - Status: Accepted project choice for the owner-requested database browser, 2026-10-28.
 - Implementation evidence: [verification](../database-browser-verification.md).
@@ -47,7 +47,7 @@ revisiting a table does not extend that window. Resource changes, refresh and re
 Errors and aborted reads are not cached. Explicit refresh remains the way to observe external
 schema changes immediately. Do not add background catalog reads that compete with DuckDB work
 or cache authorization/provider credentials to hide latency. Measure actual API requests and
-cold/revisited UI paths separately when changing this behavior. See [latency verification](../database-column-latency-verification.md).
+cold/revisited UI paths separately when changing this behavior. See [latency verification](../deprecated/database-column-latency-verification.md).
 Console table-list, metadata and row reads have a 20-second whole-read deadline, including body
 decoding. A stalled request aborts and becomes an explicit retryable error; navigation aborts
 remain silent, and failed/aborted reads never enter the success cache. This UI bound does not

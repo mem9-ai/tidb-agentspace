@@ -1,5 +1,7 @@
 # ADR 0004: Drive9 Anonymous File System behind the Workspace gateway
 
+> **Current implementation.** The provider boundary still applies. The original Node integration test below is historical. For current verification see [the native provider and HTTP suites](../native-backend-retirement.md).
+
 - Status: Accepted and implemented for loopback evaluation
 - Date: 2026-10-27
 - Scope: Live file storage, internal credentials, provisioning recovery, and file transfer API

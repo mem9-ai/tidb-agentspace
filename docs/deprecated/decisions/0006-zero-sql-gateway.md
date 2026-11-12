@@ -1,16 +1,16 @@
 # ADR 0006: Anonymous Zero SQL through the Workspace gateway
 
-> **Deprecated.** The public Zero MySQL gateway was retired. For current database availability see [ADR 0058](0058-public-resource-kinds.md) and the [db9 provider](0011-db9-postgres.md).
+> **Deprecated.** The public Zero MySQL gateway was retired. For current database availability see [ADR 0058](../../decisions/0058-public-resource-kinds.md) and the [db9 provider](../../decisions/0011-db9-postgres.md).
 
 - Date: 2026-10-28.
 - Scope: Anonymous provisioning, credential isolation, SQL execution, expiry, and PG withdrawal.
 
-The PG withdrawal described here is historical. [ADR 0011](0011-db9-postgres.md) adds opt-in
+The PG withdrawal described here is historical. [ADR 0011](../../decisions/0011-db9-postgres.md) adds opt-in
 real db9 PostgreSQL while keeping retired simulated PG records inaccessible. TiDB Cloud PG
 Starter remains a separate future integration.
 
 HTTP naming in this historical decision is superseded by
-[ADR 0032](0032-rest-workflow-resources.md): use addressable setup attempts and
+[ADR 0032](../../decisions/0032-rest-workflow-resources.md): use addressable setup attempts and
 `/resources/{id}/tables/{tableName}[/rows]`. Old command/singular-table URLs are removed.
 
 ## Decision and verified sources
@@ -19,7 +19,7 @@ The owner explicitly chose TiDB Cloud Zero for the first real SQL integration an
 remove PG if no equivalent is available. The running product offers MySQL and Files. Persistent
 Starter and PG remain future integrations, not capabilities implied by the current Console.
 
-The implementation follows the shared [TiDB Cloud integration policy](../architecture.md#tidb-cloud-integration-policy):
+The implementation follows the shared [TiDB Cloud integration policy](../../architecture.md#tidb-cloud-integration-policy):
 direct HTTP provisioning and native MySQL execution, with no Ti CLI product dependency.
 
 Verified on 2026-10-28:

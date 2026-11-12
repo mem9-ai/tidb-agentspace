@@ -57,7 +57,7 @@ Each durable rule must make these points clear (a short paragraph or table is su
 6. **Revisit condition:** an upgrade, implementation milestone, or evidence that invalidates
    the rule. Update or supersede stale guidance rather than accumulating contradictions.
 
-When a later decision retires a design, mark the original document **Deprecated** near its title and link the replacement. For a partial change, name the superseded behavior and the part that still applies. Update the decision index and any contributor guide that still directs readers to the retired path. A proposal awaiting implementation keeps its proposed status.
+When a later decision retires a design, mark the original document **Deprecated** near its title and link the replacement. Move wholly retired designs and their feature-specific operating guides or evidence into [the archive](../deprecated/README.md). Update incoming links and rebase relative references, including images inside the moved files. For a partial change, name the superseded behavior and the part that still applies. Update the decision index and any contributor guide that still directs readers to the retired path. A proposal awaiting implementation keeps its proposed status.
 
 Do not promote speculation into a binding requirement. If a gap can be resolved by reading
 official docs, inspecting the pinned package, or running a bounded check, do that work first.

@@ -1,6 +1,6 @@
 # ADR 0012: Reuse a bounded read-only DuckDB catalog reader
 
-> **Deprecated.** The reusable catalog reader belonged to the retired Node implementation. [ADR 0021](0021-native-rust-computation.md) defines disposable workers. [ADR 0058](0058-public-resource-kinds.md) removed standalone DuckDB from public database access.
+> **Deprecated.** The reusable catalog reader belonged to the retired Node implementation. [ADR 0021](../../decisions/0021-native-rust-computation.md) defines disposable workers. [ADR 0058](../../decisions/0058-public-resource-kinds.md) removed standalone DuckDB from public database access.
 
 - Reproduction and scope: [GH-39](https://github.com/siddontang/tidb.ai/issues/39).
 - Amends: [ADR 0008](0008-duckdb-private-storage.md) for **server-generated browsing SQL only**.

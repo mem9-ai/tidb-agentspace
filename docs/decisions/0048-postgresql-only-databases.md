@@ -30,7 +30,7 @@ and restoring provider-specific acceptance and safety coverage before release.
 The internal provider and execution implementations remain present for potential restoration
 and for existing lifecycle cleanup. Their presence must not be presented as a currently supported
 customer database capability. Earlier decisions describing database support, including
-[ADR 0006](0006-zero-sql-gateway.md) and [ADR 0008](0008-duckdb-private-storage.md), are
+[ADR 0006](../deprecated/decisions/0006-zero-sql-gateway.md) and [ADR 0008](../deprecated/decisions/0008-duckdb-private-storage.md), are
 historical for the retired customer operations.
 
 Provider-specific standalone MySQL and DuckDB acceptance scripts and disabled unit tests are

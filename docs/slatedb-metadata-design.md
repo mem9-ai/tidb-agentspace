@@ -3,7 +3,7 @@
 - Edition: 1, 2026-10-30.
 - Audience: backend, infrastructure, security and product engineers.
 - Direction: independent Global and regional metadata authorities, Rust services and SlateDB with object storage as the source of truth.
-- Initial Meta implementation baseline: [141652e501c942128ccae617d088a2cdccf9f780](https://github.com/mem9-ai/tidb.ai/tree/141652e501c942128ccae617d088a2cdccf9f780), using SlateDB 0.17.0. Hosted Studio SSO has since been implemented under [ADR 0026](decisions/0026-native-hosted-studio.md); regional continuity grants and autonomous renewal remain future work.
+- Initial Meta implementation baseline: [141652e501c942128ccae617d088a2cdccf9f780](https://github.com/mem9-ai/tidb.ai/tree/141652e501c942128ccae617d088a2cdccf9f780), using SlateDB 0.17.0. Hosted Studio SSO has since been implemented under [ADR 0026](decisions/0026-native-hosted-studio.md); current regional continuity and proof-bound renewal are described in [the regional Token API](regional-token-api.md).
 - Status: architecture reference for iteration. The foundations below reflect accepted owner direction; target domain schemas, control protocols and scale mechanisms require implementation as identified in [Implementation and iteration](#implementation-and-iteration).
 
 The metadata system records ownership, permissions, resource placement, lifecycle operations and private provider bindings. Each authority owns a Rust Meta Service and independent SlateDB storage. A successful mutation is recoverable from object storage without the original compute host, provided the object service, encryption roots and required bootstrap identity remain available. Authority-owned application and runtime metadata use the [System State boundary](decisions/0040-system-state-metadata.md); fresh installations store security checkpoints in Meta.
@@ -28,7 +28,7 @@ Design records around domain entities and bounded consistency groups. Historical
 ## Architecture and authority
 
 Play the [animated architecture](diagrams/slatedb-metadata-architecture.html) to follow a
-durable regional commit, Global-initiated control and regional serving during a Global outage.
+durable regional commit, a policy command issued by Global, and regional serving during a Global outage. The control arrows show command flow over the connection established by Region.
 It supports playback, chapter selection, stepping and scrubbing. The [diagram guide](diagrams/README.md)
 explains offline/local viewing and the illustrative timeline; GitHub displays the HTML source.
 
@@ -69,7 +69,7 @@ flowchart TB
   GC -->|"Initiate commands and observation reads"| APIB
 ```
 
-This is the target topology. Independent Meta installations and regional serving exist; Global business control, policy distribution, hosted multi-tenant routing and multi-shard cells remain future work.
+The diagram shows logical command flow and the target multi-shard layout. Today Global and Region use distinct Meta installations. Region opens the control connection to Global, which delivers policy over it. Public discovery routes an agent to its assigned Region. Multi-shard cells remain proposed. See [ADR 0043](decisions/0043-portal-agent-region-control.md) and [the Global API](global-public-api.md).
 
 | Plane            | Authoritative responsibilities                                                                                                         | Request path                                             |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
@@ -108,7 +108,7 @@ Its queued acknowledgments, loss tolerance and lower availability do not relax t
 `async` execution and asynchronous durability are different decisions. A Rust `.await`
 on SlateDB or Meta yields the executor while waiting; it does not require a blocking thread.
 The durability decision is whether the caller can proceed before the acknowledged state can
-survive process loss. SlateDB 0.17 returns a write handle after accepting a transaction;
+survive process loss. The engine receives a write handle after the transaction commits;
 `await_durable()` waits for its recovery data to reach the configured object store. It does
 not mean that every write needs an individual `flush()`: concurrent writes can share a WAL
 flush, and only callers that need durability wait for their own handle.
@@ -305,19 +305,19 @@ Binding records expose only safe metadata and opaque secret references. Credenti
 
 Remote Meta uses TLS 1.3/mTLS plus service-token, authority and installation checks. Production object access uses HTTPS and region-scoped IAM/KMS. HTTP is permitted only in explicit loopback tests. Separate prefixes alone do not enforce IAM isolation.
 
-Regional continuity requires a locally installed grant and explicitly delegated regional authentication/rotation authority. Region validates, refreshes and reauthenticates locally within that ceiling. Existing expiring Keys retain their hard expiry; an actual grant end or received denial still applies. Synchronization age is not a lease that expires otherwise valid regional access. Distributed grants and regional renewal remain future implementation under the [regional auth contract](../specs/gh-74/regional-api-auth.md).
+Regional continuity requires a locally installed grant and explicitly delegated regional authentication/rotation authority. Region validates, refreshes and reauthenticates locally within that ceiling. Existing expiring Keys retain their hard expiry; an actual grant end or received denial still applies. Synchronization age is not a lease that expires otherwise valid regional access. The [regional Token API](regional-token-api.md) implements installed grants and proof-bound renewal. The [regional auth design](../specs/gh-74/regional-api-auth.md) records the wider target.
 
 ## Global and regional communication
 
-Global initiates every cross-plane command, policy delivery, observation read, health read and result query. Region returns a bounded response to that request. It does not call Global for renewal, policy pull, callbacks, telemetry publication or startup discovery. No indirect broker or shared global store may create the reverse dependency.
+Region registers with Global and maintains an authenticated control connection. Global issues policy and initialization commands over that connection. Region validates each command and persists the result before acknowledging application. A disconnected Region can continue serving already authorized requests and renewing eligible grants from regional state. New assignments and undelivered policy changes wait for connectivity.
 
-Production uses authenticated TLS 1.3/mTLS and network rules denying Region-initiated Global connections. Identity bootstrap and certificate/key renewal need regional or out-of-band deployment paths. Global may request rotation material and deliver replacements; Region cannot depend on a Global enrollment endpoint to remain available.
+[ADR 0043](decisions/0043-portal-agent-region-control.md) supersedes the original Global-initiated network connection design. Independent deployment uses TLS 1.3/mTLS. The [regional runtime guide](regional-token-api.md) describes configuration and the distinction between receiving and applying policy.
 
 Desired generations originate from an authorized Global workflow. Regional observations report actual progress for that generation. Global polling updates projections and cursors, without manufacturing new desired generations or commands. This separates retries from new work and prevents response/command echo loops.
 
 Region atomically installs verified policy generations and retains deny/version floors through restart and recovery. Global tracks per-target applied evidence. A deny issued while Region is unreachable is pending there; arbitrary outage continuity and a finite global revocation deadline cannot both be guaranteed. Received denials and real credential expiries remain effective.
 
-During Global failure, known authorized regional requests, locally renewable sessions, admitted operations and regional restart continue using regional state. New globally coordinated enrollment, placement or budget allocation may wait. This availability depends on regional storage, IAM/KMS, PKI, DNS and authenticators remaining usable. SQL/file payloads and native secrets remain regional. Protocol details are canonical in the [control-channel contract](../specs/gh-74/control-channel.md).
+During Global failure, known authorized regional requests, locally renewable sessions, admitted operations and regional restart continue using regional state. New globally coordinated enrollment, placement or budget allocation may wait. This availability depends on regional storage, IAM/KMS, PKI, DNS and authenticators remaining usable. SQL/file payloads and native secrets remain regional. The [original channel proposal](../specs/gh-74/control-channel.md) records the broader observation and recovery design.
 
 ## Scale and discovery
 
@@ -377,22 +377,22 @@ Test with independent temporary storage and credentials. Functional RustFS tests
 
 The running implementation is deliberately narrower than the target model.
 
-| Area                         | Baseline implementation                                                                                          | Next iteration                                                                           |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Rust composition             | In-process or remote metadata modules; common executable with independent roles                                  | Hosted deployment automation and failure-domain qualification                            |
-| Storage                      | Independent Global/Region installations and SlateDB 0.18.0 roots; bounded Foyer caches; local RustFS development | Production IAM/KMS, storage qualification and backup drills                              |
-| Record semantics             | Versioned encrypted records, native transactions, durable reads/ACKs and receipts                                | Typed small-group domain repositories and retention policy                               |
-| Domain access                | Point authentication/resource checks; some bounded aggregate views                                               | Remove aggregate-dependent operations; public collection indexes/pagination              |
-| Business concurrency         | One active API writer per Workspace and process-local provider coordination                                      | Distributed operation claims and qualified HA                                            |
-| Global directory             | Local initialization records regional storage descriptors                                                        | Durable regional shard catalog and controlled relocation                                 |
-| Regional autonomy            | Regional startup/auth/request path does not call Global                                                          | Installed policy distribution, delegated renewal and independent hosted reauthentication |
-| Control channel              | Direction and protocol specified                                                                                 | Commands, inbox/journal, Global polling and network enforcement                          |
-| Scale                        | One physical shard per authority; internal bounded record pages                                                  | Shared cells, hot-tenant distribution, route epochs and measured capacity                |
-| Advanced engine integrations | Native transactional storage path                                                                                | Checkpoints/backup, qualified readers and replayable projections where needed            |
+| Area                         | Baseline implementation                                                                                          | Next iteration                                                                     |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Rust composition             | In-process or remote metadata modules; common executable with independent roles                                  | Hosted deployment automation and failure-domain qualification                      |
+| Storage                      | Independent Global/Region installations and SlateDB 0.18.0 roots; bounded Foyer caches; local RustFS development | Production IAM/KMS, storage qualification and backup drills                        |
+| Record semantics             | Versioned encrypted records, native transactions, durable reads/ACKs and receipts                                | Typed small-group domain repositories and retention policy                         |
+| Domain access                | Point authorization checks and indexed resource pages with scoped cursors                                        | Remove remaining aggregate-dependent operations and measure hot-Workspace behavior |
+| Business concurrency         | One active API writer per Workspace and process-local provider coordination                                      | Distributed operation claims and qualified HA                                      |
+| Global directory             | Local initialization records regional storage descriptors                                                        | Durable regional shard catalog and controlled relocation                           |
+| Regional autonomy            | Installed policy, regional sessions and proof-bound agent renewal                                                | Qualify continuity and recovery across production failure domains                  |
+| Control channel              | Region-initiated connection with Global policy commands and regional acknowledgments                             | Broader desired-state workflows and observation reconciliation                     |
+| Scale                        | One physical shard per authority; internal bounded record pages                                                  | Shared cells, hot-tenant distribution, route epochs and measured capacity          |
+| Advanced engine integrations | Native transactional storage path                                                                                | Checkpoints/backup, qualified readers and replayable projections where needed      |
 
 Current aggregate views reject more than 4096 records or 24 MiB. That is an implementation ceiling to remove, not the target entity model. Million-resource capacity needs representative skew, crash recovery, pagination and tenant-isolation benchmarks; record-level storage by itself does not establish it.
 
-Implement in bounded steps: typed repositories and public pagination first; independently verifiable Global/Region policy and operation flows next; then measured sharding, HA and retention/recovery automation. An iteration must name its record schema, API behavior, fault model and acceptance evidence. Keep this reference and the implementation-status table current as those pieces ship.
+Remaining work includes replacing bounded aggregate reads, qualifying sharding and failover, and automating retention and recovery. An iteration must name its record schema, API behavior, fault model and acceptance evidence. Keep this reference and the implementation-status table current as those pieces ship.
 
 The existing native/S3 suites cover version races, ordered pagination, receipts, object durability, coherent reads, shutdown, writer recovery, mTLS, authority/Workspace separation, regional independence and remote/in-process API behavior. New features add negative/failure cases for their own contracts. Local and CI commands remain in [the runtime guide](meta-service.md) and [Rust backend guide](rust-backend.md).
 
@@ -402,7 +402,7 @@ The existing native/S3 suites cover version races, ordered pagination, receipts,
 - [ADR 0022](decisions/0022-native-slatedb-transactions.md): native transaction and durable-snapshot rationale.
 - [ADR 0024](decisions/0024-fresh-record-metadata.md): independent fresh record storage and bootstrap boundaries.
 - [Object metastore](../specs/gh-74/object-metastore.md): durability, storage directory and recovery requirements.
-- [Global control channel](../specs/gh-74/control-channel.md), [regional auth](../specs/gh-74/regional-api-auth.md) and [metadata scale](../specs/gh-74/metadata-scale.md): detailed future contracts.
+- [Global control channel](../specs/gh-74/control-channel.md), [regional auth](../specs/gh-74/regional-api-auth.md) and [metadata scale](../specs/gh-74/metadata-scale.md): original control, authorization and scale proposals. Follow [ADR 0043](decisions/0043-portal-agent-region-control.md) for the accepted connection direction.
 - [Meta engine](../meta-service/src/engine.rs), [service transport](../meta-service/src/server.rs), [Rust contract](../backend/contracts/src/lib.rs) and [Workspace repository](../backend/workspace/src/repository.rs): implementation source.
 - [SlateDB 0.18.0 source](https://github.com/slatedb/slatedb/tree/v0.18.0): current pinned upstream release; see [cache budgets](meta-service.md#memory-cache-budget). The initial implementation baseline above used 0.17.0.
 - [SlateDB write path](https://slatedb.io/docs/design/writes/): write handles, WAL and durability; reconcile live documentation with the pinned source when upgrading.

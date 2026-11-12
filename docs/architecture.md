@@ -50,9 +50,6 @@ The first-run path is: create/open a Workspace, add one resource, create a scope
 Key, complete a useful request from an agent, then inspect the resulting data and usage.
 A new Workspace does not require provisioning every resource type. On first authenticated account or temporary-session Console entry, a new Workspace automatically prepares one default File System; other resources remain explicit. The atomic first-resource condition prevents this from recreating resources in Workspaces with prior resource history. PostgreSQL is available through the opt-in db9 adapter; TiDB Cloud PG Starter remains planned. See [ADR 0047](decisions/0047-default-file-system.md).
 
-Supabase's project-level grouping is a useful product reference; TiDB Workspace groups an
-optional mix of three distinct resource types. [Supabase Platform](https://supabase.com/docs/guides/platform)
-
 ## Global and regional deployment (proposed)
 
 Start with [SlateDB Metadata Architecture Version 1](slatedb-metadata-design.md) for the
@@ -61,8 +58,7 @@ durability, control flow, security, recovery and scale. It designs directly arou
 historical storage shapes are not constraints. The [multi-tenant control-plane design](../specs/gh-74/spec.md)
 and [proposed ADR 0019](decisions/0019-workspace-kv-control-plane.md) preserve detailed product requirements.
 The [Rust Meta Service](meta-service.md) implements independent SlateDB/S3 installations and
-encrypted versioned records. Local guest and hosted shared-Workspace SSO profiles are available;
-hosted multi-tenancy and the Global/regional public API split require further implementation.
+encrypted versioned records. Managed login assigns a [personal Workspace](decisions/0030-personal-account-isolation.md). The [Global API](global-public-api.md) handles Key issuance and Region discovery, and the [regional API](regional-token-api.md) serves data requests.
 
 The [object-metastore design](../specs/gh-74/object-metastore.md) requires object recovery of
 every acknowledged metadata commit, including the accepted WAL tail; local caches and query
@@ -91,7 +87,7 @@ for canonical records, routing, dispatch, failure and migration semantics.
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Global control   | Identity, Organization/Workspace policy and Keys, product/account quotas, region eligibility, resource placement/desired state and durable task dispatch |
 | Regional control | Local capacity, admitted task execution/recovery, provider bindings, regional credentials, observed state and data-plane configuration                   |
-| Regional data    | SQL/file requests, managed connections, private DuckDB storage and bounded analysis workers within the declared location policy                          |
+| Regional data    | SQL/file requests, managed connections and bounded file-analysis workers within the declared location policy                                             |
 
 Workspace is a global logical boundary and can hold resources in several regions. Each
 resource has an assigned `regionId`; `homeRegion` is a default for future creation. Preserve
@@ -100,22 +96,7 @@ residency claims. Global and regional metadata share the Rust Meta contract whil
 separate authorities and SlateDB storage roots. Global
 status projections do not replace regional execution records or durable installed local policy.
 
-Local functional tests may package the modules in one API. Hosted independence requires separate
-Global/regional processes, stores/failure domains and direct regional entry points, even with
-one Region. The design requires authenticated
-Global-initiated command/policy delivery and result/health/journal queries, with no Region ->
-Global callback, broker publication, introspection or policy pull. Region uses atomically
-installed durable policy with no Global heartbeat, renewal deadline or synchronization-age
-shutdown. Known regional serving, session renewal, accepted work and restart continue while
-Global is unavailable. Local verifiers/refresh, routing, Vault/KMS/PKI and leadership must be
-independent; real credential expiry and received denials still apply. New Global-coordinated
-changes may wait. Revocation remains pending for an unreachable Region without a finite
-propagation guarantee; Global needs per-target applied evidence to mark it effective.
-The [channel contract](../specs/gh-74/control-channel.md) requires TLS 1.3/mTLS in production
-and permits explicitly selected loopback test relaxation. SQL/file payloads remain regional.
-A region outage preserves identity/pending state without replacement provisioning. This is design-only.
-Resolved telemetry may be archived/compacted in Region without Global ACK; recovery pulls
-missing observations or a snapshot and preserves regional policy/deny floors and resource IDs.
+The same Rust executable supports bundled roles and independently deployed Global and Region processes. Region initiates an authenticated TLS 1.3/mTLS control connection. Global sends policy and initialization commands over it. Region acknowledges durable application and serves authorized data requests using local policy. A Global outage delays new assignments and policy delivery. Existing regional grants still enforce expiry and revocation already received. See [ADR 0043](decisions/0043-portal-agent-region-control.md) for the transport and [regional Token verification](regional-token-api.md) for continuity and recovery.
 
 The [regional API/auth contract](../specs/gh-74/regional-api-auth.md) separates public Global,
 public Region and private control OpenAPI/client origins. Global provides the common
@@ -212,13 +193,11 @@ Existing resource/table/file URLs and busy/draft protections remain authoritativ
 [resource workspace verification](resource-workspace-verification.md).
 
 File System analysis is implemented as bounded server-side snapshot workers: CSV supports
-DuckDB SQL over parsed rows and Just Bash over raw UTF-8 text; Parquet uses SQL, while recognized
-logs and text use Just Bash. [ADR 0014](decisions/0014-file-analysis-engine-options.md) separates
+DuckDB SQL over parsed rows and Bash over raw UTF-8 text. The API describes the Bash option as Just Bash. The native worker implements it with Bashkit. Parquet uses SQL and recognized logs and text use Bash. [ADR 0014](decisions/0014-file-analysis-engine-options.md) separates
 format, default engine and individual capability availability. Analysis requires `files:read`, `files:analyze`
 and the resource grant. [ADR 0015](decisions/0015-bash-workspace-paths.md) preserves the selected
 Workspace path inside the Bash snapshot, with discovered input metadata and compatible aliases.
-Provider credentials never enter workers. This is a read-only local
-prototype; public compute isolation and larger remote scans remain future work. See
+Provider credentials never enter workers. The native worker runs one bounded task and exits. Stronger isolation for untrusted public computation and larger remote scans remain future work. See
 [ADR 0010](decisions/0010-read-only-file-analysis.md).
 
 File System opens a unified non-modal file workspace beside the desktop browser. Preview is
@@ -272,7 +251,7 @@ Product analytics uses an independent, lower-availability SlateDB service under
 bounded asynchronous observations. Analytics has separate processes, roots and credentials;
 it never uses the business Meta engine or supplies authoritative permissions/billing state.
 
-The standalone DuckDB database with attached file sources is [deprecated](decisions/0009-duckdb-file-sources.md). For supported file SQL, see [selected-file analysis](decisions/0010-read-only-file-analysis.md).
+The standalone DuckDB database with attached file sources is [deprecated](deprecated/decisions/0009-duckdb-file-sources.md). For supported file SQL, see [selected-file analysis](decisions/0010-read-only-file-analysis.md).
 
 Implemented delivery: the Console and API have independent builds, processes, and artifacts in
 one repository. The API serves only HTTP API/schema endpoints; the static Console uses runtime
@@ -365,20 +344,9 @@ the integration requirement, documenting any accepted exception and its scope.
 
 ## Customer identity and single-key access
 
-Production customers sign in to this product. Human, agent, and service-account principals
-share one authorization model. The local prototype uses a guest owner; a later identity
-service should allow a guest workspace to be claimed without moving its resources.
+Managed TiDB Account login establishes a personal Workspace. A temporary session has its own scope and recorded deadline. See [personal account isolation](decisions/0030-personal-account-isolation.md) and [trial duration](decisions/0055-unified-trial-duration.md).
 
-A public key combines workspace ownership, allowed actions, allowed resource IDs, and expiry.
-For example, a key can query PG and read/write Files while being denied access to MySQL.
-Resource discovery, usage, and activity also respect this boundary. Resource-level checks
-must occur in the service before returning data or making provider calls.
-
-The prototype supports `resourceIds: ["db_vectors", "fs_shared"]` or an explicit `["*"]`.
-Exact selections never expand to newly created resources. Resource creation needs the explicit
-wildcard plus `resources:write`. A key cannot create/administer other keys; the local owner
-session manages credentials. More granular per-resource actions and filesystem path rules
-can extend this model later.
+An Owner creates a Workspace Key at Global. The grant combines actions and a resource selection. Explicit IDs cover only those resources. A `database` or `filesystem` type grant also covers future matching resources in the same Workspace. Resource creation requires the workspace-wide wildcard and `resources:write`. Agents exchange the Key at Global and present a Region-bound Token for data operations. Region checks the requested action and selected resource before provider I/O. See [the grant model](decisions/0060-workspace-key-resource-types.md) and [API guide](api-guide.md).
 
 Internally retain distinct secrets: cloud management credentials, native SQL users/passwords,
 and filesystem owner/scoped tokens. Store production secrets in a secret manager and keep
@@ -393,12 +361,9 @@ long-lived sessions and delegated access must also implement bounded lifetime/re
 
 ## Resource lifecycle, metadata, and API contract
 
-Real provisioning uses persistent operation state:
-`requested → provisioning → active / failed → deleting → deleted`.
-Creation accepts `Idempotency-Key` and returns `202 + operation_id`. Workers retain provider
-request IDs, retry safely, reconcile observed state, and recover partial failures. Commit
-metadata and outbox records atomically. Never solve an uncertain upstream outcome by blindly
-creating another potentially billable resource.
+The regional API accepts an optional `Idempotency-Key` on resource creation. A fresh creation returns the resource with HTTP 201. A lost provider reply can leave an uncertain outcome. Reconcile the stored intent and binding before attempting another provider operation. The [setup-attempt contract](decisions/0032-rest-workflow-resources.md) describes how to inspect or recover that resource.
+
+The original production proposal envisioned queued operations with a separate operation ID and an atomic outbox. Its planned metadata and endpoints are recorded below.
 
 Core metadata includes product accounts/tenants, principals, workspaces, resource/provider
 bindings, key digests/grants, secret references, operations, idempotency records, outbox events,
@@ -425,12 +390,7 @@ GET        /v1/workspaces/{workspace_id}/events
 GET        /v1/operations/{operation_id}
 ```
 
-This is a proposed surface. The exact implemented contract is `public/openapi.json`;
-`backend/openapi/src` is its source. The prototype has one workspace, synchronous
-simulated provisioning, bounded UTF-8 file operations, supported demo SELECT patterns, keys,
-usage, activity, and settings. Production needs pagination, streaming, conditional writes,
-query timeout/cancellation, and stable typed errors with request IDs/retryability. Generate
-SDK/CLI types from the public contract and keep changes backward compatible where required.
+For the implemented routes, status codes and authentication schemes, use the [API guide](api-guide.md) and the [Rust contract definitions](../backend/openapi/README.md). The [compatibility policy](decisions/0061-public-compatibility.md) applies to published contracts and persisted records.
 
 ## Usage, billing, and monitoring
 
@@ -455,9 +415,7 @@ paths and existing sessions obey them.
 
 User observability covers resource status, queries, file activity, usage and agent attribution.
 Platform observability covers provisioning latency, upstream failures, retries, quota exhaustion,
-orphaned resources and ledger reconciliation. Production audit includes denied and failed
-requests with redacted sensitive payloads. The prototype retains only the latest 200 successful
-mutation events and displays clearly labeled illustrative charts; it is not cloud telemetry.
+orphaned resources and ledger reconciliation. [Regional HTTP and audit history](decisions/0044-workspace-observability.md) expose scoped, Owner-authorized records with coverage and retention limits. The legacy activity feed retains up to 200 events. [Product analytics](product-analytics.md) measures usage in separate best-effort storage.
 
 ## Delivery stages and acceptance
 

@@ -2,12 +2,12 @@
 
 The static React Console builds independently of the Rust API. The native API artifact contains no Node runtime, private state or Console assets. [ADR 0026](decisions/0026-native-hosted-studio.md) retires hosted Node serving and allows deliberately fresh S3 roots and keys. [Native Studio deployment](native-studio-deployment.md) owns public SSO, `/studio`, one-time bootstrap and recurring image delivery.
 
-| Component  | Build                                     | Run                                                                  |
-| ---------- | ----------------------------------------- | -------------------------------------------------------------------- |
-| Console    | `npm run build:console` → `dist/console/` | Static hosting or `npm run start:console`                            |
-| API / Meta | `npm run build:api`                       | `workspace-backend serve --config /absolute/private/deployment.json` |
+| Component  | Build                                                                  | Run                                                                  |
+| ---------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Console    | `npm run build:console` → `dist/console/`                              | Static hosting or `npm run start:console`                            |
+| API / Meta | `cargo build --locked -p workspace-backend` (after native preparation) | `workspace-backend serve --config /absolute/private/deployment.json` |
 
-`npm run check` verifies policy, formatting, lint, generated API/client consistency, isolated Console/tool tests, types and Console build. `npm run backend:check` builds and verifies native modules, SSO/public policy, real S3, transport, API and native packaging. Both gates are required. No check needs cloud credentials or developer data.
+`npm run check` verifies policy, formatting, lint, generated API/client consistency, isolated Console/tool tests, types and Console build. The [Cargo build and acceptance commands](../CONTRIBUTING.md#rust-backend-modules) verify the backend, its two Meta transports and native packaging. Both gates are required. No check needs cloud credentials or developer data.
 
 ## Configuration and startup
 
@@ -26,22 +26,22 @@ In a separate terminal:
 npm run dev:console
 ```
 
-The local operator manages the native roles and RustFS. For independent deployment, use a metadata role plan and an API role plan, with private absolute configuration references; see [the Rust guide](rust-backend.md). `WORKSPACE_BACKEND_CONFIG=/absolute/private/api-plan.json npm run start:api:rust` is an optional launcher for the API role. Its metadata dependency must already be available. There is no alternate JSON data source or fallback backend.
+The local operator manages the native roles and RustFS. For independent deployment, use a metadata role plan and an API role plan, with private absolute configuration references; see [the Rust guide](rust-backend.md). Start the API role with `workspace-backend serve-api --config /absolute/private/api-plan.json`. Its metadata dependency must already be available. There is no alternate JSON data source or fallback backend.
 
 ## Configuration
 
-| Setting                              | Default                        | Behavior                                                                                                                                                 |
-| ------------------------------------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Console `/config.json` → `apiOrigin` | `http://127.0.0.1:4318`        | Exact HTTP(S) origin; set an empty string for an explicitly configured same-origin gateway. No paths, userinfo, or secrets. Read before Console startup. |
-| `WORKSPACE_API_ORIGIN`               | unset                          | Local static runner override for the response at `/config.json`; does not rebuild JavaScript. Generic static hosts serve the edited JSON file.           |
-| `WORKSPACE_CONSOLE_PORT`             | `4173`                         | Port of the optional Node static runner. Vite development uses `5173`.                                                                                   |
-| `WORKSPACE_CONSOLE_DIRECTORY`        | `dist/console/`                | Optional static runner's content directory.                                                                                                              |
-| Native API `bind`                    | Explicit private configuration | Loopback for guest development; an explicitly configured public SSO API may bind `0.0.0.0:4318`.                                                         |
-| Native `consoleOrigins`              | Explicit list                  | Exact allowed browser origins; public origins must be HTTPS and explicitly trusted.                                                                      |
-| Native `product.providers`           | Local/demo defaults            | Explicit provider modes; private bindings/credentials remain encrypted records.                                                                          |
-| `WORKSPACE_BACKEND_CONFIG`           | Required by npm launcher       | Absolute owner-only native role plan, with external metadata and credential configuration.                                                               |
+| Setting                              | Default                               | Behavior                                                                                                                                                 |
+| ------------------------------------ | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Console `/config.json` → `apiOrigin` | `http://127.0.0.1:4318`               | Exact HTTP(S) origin; set an empty string for an explicitly configured same-origin gateway. No paths, userinfo, or secrets. Read before Console startup. |
+| `WORKSPACE_API_ORIGIN`               | unset                                 | Local static runner override for the response at `/config.json`; does not rebuild JavaScript. Generic static hosts serve the edited JSON file.           |
+| `WORKSPACE_CONSOLE_PORT`             | `4173`                                | Port of the optional Node static runner. Vite development uses `5173`.                                                                                   |
+| `WORKSPACE_CONSOLE_DIRECTORY`        | `dist/console/`                       | Optional static runner's content directory.                                                                                                              |
+| Native API `bind`                    | Explicit private configuration        | Loopback for guest development; an explicitly configured public SSO API may bind `0.0.0.0:4318`.                                                         |
+| Native `consoleOrigins`              | Explicit list                         | Exact allowed browser origins; public origins must be HTTPS and explicitly trusted.                                                                      |
+| Native `product.providers`           | Local/demo defaults                   | Explicit provider modes; private bindings/credentials remain encrypted records.                                                                          |
+| `WORKSPACE_BACKEND_CONFIG`           | Used by `serve-api` without arguments | Absolute owner-only native role plan, with external metadata and credential configuration.                                                               |
 
-Provider setup and native tidbfs requirements are in [the Rust guide](rust-backend.md). Node data-file, provider-vault and environment flags are not product configuration.
+Provider setup and bundled file-analysis build inputs are in [the Rust guide](rust-backend.md). Node data-file, provider-vault and environment flags are not product configuration.
 
 Use the same hostname for Console and API (`127.0.0.1` for both, or `localhost` for both).
 They can use different ports. The HttpOnly SameSite=Strict cookie is not shared between
@@ -57,7 +57,7 @@ cookies between independent API processes. Preserve the active serving process a
 the user's actual tab, URL and authenticated read after a preview update; another working
 directory or an already loaded tab can still serve an older Console build.
 
-Customer isolation and direct multi-region public API discovery remain proposed in [the regional API/auth design](../specs/gh-74/regional-api-auth.md). The current public contract has one configured origin. Separate internal Meta authorities do not implement production global policy distribution by themselves.
+Managed accounts have [personal Workspace isolation](decisions/0030-personal-account-isolation.md). The [Global entry](global-public-api.md) issues Tokens and advertises the assigned Region. The [regional API](regional-token-api.md) handles authorized data requests. See [ADR 0042](decisions/0042-workspace-resource-regions.md) for current single-Region placement.
 
 ## Contract and packaging
 
@@ -70,7 +70,7 @@ npm run build
 npm run package -- FULL_REVIEWED_SOURCE_SHA
 ```
 
-The package contains a platform-specific native API archive, a separate `workspace-console.tar.gz`, source/build metadata and SHA-256 sums. The native API requires neither Node nor frontend dependencies; its common executable can host API and Meta roles; the Region-internal Execute module starts short-lived same-binary tasks. Private configuration, service tokens, encryption keys, user files and provider credentials stay outside every artifact. The optional native tidbfs extension is supplied separately with its verified checksum.
+The package contains a platform-specific native API archive, a separate `workspace-console.tar.gz`, source/build metadata and SHA-256 sums. The native API requires neither Node nor frontend dependencies; its common executable can host API and Meta roles; the Region-internal Execute module starts short-lived same-binary tasks. Private configuration, service tokens, encryption keys, user files and provider credentials stay outside every artifact.
 
 The release workflow packages reviewed main-branch source; it does not deploy. Public hosting still requires a configured target, real identity, environment protection, verification and recovery under [CI/CD policy](ci-cd.md). A source rollback cannot make a different metadata layout readable. The authorized disposable local reset is not a general production migration strategy.
 

@@ -38,7 +38,7 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 - [0007: Database browsing](0007-database-browser.md) — scoped schema reads, bounded data preview, and table-to-editor navigation.
 
-- [0010: Read-only file analysis](0010-read-only-file-analysis.md) — scoped snapshot workers, DuckDB SQL and Just Bash, explicit compute permission and bounded execution.
+- [0010: Read-only file analysis](0010-read-only-file-analysis.md) — scoped snapshot workers, DuckDB SQL and bounded Bash analysis, explicit compute permission and bounded execution.
 
 - [0011: Anonymous db9 PostgreSQL](0011-db9-postgres.md) — implemented anonymous PostgreSQL with private credentials, restricted native roles and provider compatibility limits.
 
@@ -92,8 +92,6 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 - [0024: Fresh record metadata](0024-fresh-record-metadata.md) — accepted local reset direction; removes document/import and Node handoff paths.
 
-- [0025: Consolidated hosted and native runtime profiles](0025-consolidated-runtime-profiles.md) — retain hosted SSO/CD/storage while merging the complete native profile.
-
 - [0026: Native hosted Studio](0026-native-hosted-studio.md) — Rust SSO/public hosting, independent `/studio` publication, and explicitly fresh S3 roots/keys; supersedes hosted Node compatibility.
 
 - [0031: Agent REST P0](0031-agent-rest-p0.md) — authenticated context, parsed read-only SQL, retained resource deletion status and atomic file preconditions.
@@ -124,10 +122,13 @@ migration, and how the decision is verified. Routine implementation choices do n
 
 ## Deprecated decisions
 
+See the [archive index](../deprecated/README.md) for replacement designs and historical verification reports.
+
 These records preserve the rationale and evidence for retired product paths. [ADR 0058](0058-public-resource-kinds.md) defines the supported public resources. File System SQL analysis continues under [ADR 0010](0010-read-only-file-analysis.md).
 
-- [0006: Zero SQL gateway](0006-zero-sql-gateway.md)
-- [0008: DuckDB private storage](0008-duckdb-private-storage.md)
-- [0009: Query-scoped file sources](0009-duckdb-file-sources.md)
-- [0012: DuckDB catalog reader](0012-duckdb-catalog-reader.md)
-- [0045: DuckDB creation-time table snapshot](0045-duckdb-creation-table-snapshot.md)
+- [0006: Zero SQL gateway](../deprecated/decisions/0006-zero-sql-gateway.md)
+- [0008: DuckDB private storage](../deprecated/decisions/0008-duckdb-private-storage.md)
+- [0009: Query-scoped file sources](../deprecated/decisions/0009-duckdb-file-sources.md)
+- [0012: DuckDB catalog reader](../deprecated/decisions/0012-duckdb-catalog-reader.md)
+- [0045: DuckDB creation-time table snapshot](../deprecated/decisions/0045-duckdb-creation-table-snapshot.md)
+- [0025: Hosted Node and native runtime profiles](../deprecated/decisions/0025-consolidated-runtime-profiles.md)

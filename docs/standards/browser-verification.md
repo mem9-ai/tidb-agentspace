@@ -16,7 +16,7 @@ The trusted classifier and explicit native-backed applicability evidence are des
 | Layer                   | Verify                                                                                | Command                                                                         |
 | ----------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | Unit and contract tools | Pure state, parsing, generated contracts, workflow/evidence policy                    | `npm run check`                                                                 |
-| Native integration      | Actual Rust authorization, records/restart, S3, providers and compute boundaries      | `npm run backend:check`                                                         |
+| Native integration      | Actual Rust authorization, records/restart, S3, providers and compute boundaries      | [Native build and acceptance](../../CONTRIBUTING.md#rust-backend-modules)       |
 | Browser smoke           | Rendered Console flows, URLs, form values, request payloads, focus and download bytes | `npm run test:browser` after building the Console                               |
 | Visual review           | Changed typography, colors, spacing, clipping and overall composition                 | Inspect the affected states/themes/viewports and attach representative evidence |
 

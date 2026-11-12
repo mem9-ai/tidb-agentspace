@@ -1,5 +1,7 @@
 # ADR 0020: Modular Rust backend with composable deployment
 
+> **Current implementation.** The Rust crate and service boundaries are implemented. The transitional Node compatibility and document migration steps below are historical. [ADR 0024](0024-fresh-record-metadata.md) defines the record layout and [ADR 0059](0059-rust-backend-workflow.md) the native workflow.
+
 - Status: Accepted direction, implementation in stages under [GH-88](https://github.com/siddontang/tidb.ai/issues/88).
 - Decision date: 2026-10-29.
 - Source baseline: `7cf93b148c2f2830f1063ec6f24affb60c0f4416`.

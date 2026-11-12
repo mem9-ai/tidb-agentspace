@@ -2,14 +2,14 @@
 
 > Historical report: the standalone DuckDB database is retired and its manual verification
 > script has been removed. File System analysis remains supported; see
-> [ADR 0048](decisions/0048-postgresql-only-databases.md).
+> [ADR 0048](../decisions/0048-postgresql-only-databases.md).
 
 Historical Console evidence: [GH-50](https://github.com/siddontang/tidb.ai/issues/50) removes
 the custom database picker/counter in favor of the native database workspace. At the time,
 the API and its snapshot/authorization verification applied; earlier Console picker screenshots
 below describe the GH-34 baseline. See the [ADR amendment](decisions/0009-duckdb-file-sources.md#console-presentation-amendment).
 
-Date: 2026-10-28. Baseline: [GH-34 revision 1](../specs/gh-34/spec.md), accepted at
+Date: 2026-10-28. Baseline: [GH-34 revision 1](../../specs/gh-34/spec.md), accepted at
 `8fcab93ef90843fc3b80cba4743f4ee963871c00`. Uses the existing pinned DuckDB 2.0.0 native
 runtime, Node API 2.0.0-r.1, TiUI 2.9.1 and SQL Editor 0.0.6. No new dependency or CI-policy change in this feature; synchronized with the existing analysis runtime and compact database workspace on main.
 
@@ -78,11 +78,11 @@ adapter’s revision field as the canonical ETag for existing analysis If-Match 
 additional data revision and identity fields supplement source checks. No multi-file transaction
 or atomic snapshot is claimed when upstream metadata cannot establish one.
 
-![Key actions and resources, Dark](screenshots/duckdb-sources/key-permissions-dark.png)
-![Desktop source picker, Dark](screenshots/duckdb-sources/picker-dark.png)
-![Desktop real aggregate, Light](screenshots/duckdb-sources/results-light.png)
-![Narrow SQL/source context, Light](screenshots/duckdb-sources/mobile-light.png)
-![Narrow duplicate-name validation, Dark](screenshots/duckdb-sources/mobile-dark.png)
+![Key actions and resources, Dark](../screenshots/duckdb-sources/key-permissions-dark.png)
+![Desktop source picker, Dark](../screenshots/duckdb-sources/picker-dark.png)
+![Desktop real aggregate, Light](../screenshots/duckdb-sources/results-light.png)
+![Narrow SQL/source context, Light](../screenshots/duckdb-sources/mobile-light.png)
+![Narrow duplicate-name validation, Dark](../screenshots/duckdb-sources/mobile-dark.png)
 
 The integrated Console preserves main’s compact database header, editor sizing, Samples and
 Limits controls. File-source controls use a compact summary with an explicit picker; source

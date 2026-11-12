@@ -63,6 +63,8 @@ For the agent single-entry flow, see [ADR 0041](docs/decisions/0041-single-globa
 new Keys identify their Workspace to Global, which supplies a bodyless redirect to Region.
 The client validates the route and sends data directly; older Keys keep scoped issuance.
 
+Browse the [documentation index](docs/README.md) for current operating guides or the [deprecated archive](docs/deprecated/README.md) for historical designs.
+
 ## First reading route
 
 | Order | Read                                                                                                                                    | Understand                                                                                 |
@@ -129,12 +131,7 @@ binary for one bounded task. It has no independent service, listener or task que
 For millions of Workspaces or a million-resource Workspace, also read the
 [metadata scale profile](specs/gh-74/metadata-scale.md): Workspace ownership is distinct from
 atomic-group granularity, shared-cell routing, query indexes and workload capacity evidence.
-For Global/Region communication, read the [control-channel contract](specs/gh-74/control-channel.md):
-Global initiates commands, policy delivery and information reads; Region has no upstream
-callback/admission dependency. Region must keep serving known authorized work during Global
-failure using durable policy, independent local authentication/session refresh and regional
-state/recovery. Policy-sync age never expires access; actual credential expiry and received
-denials still apply. Production mTLS and regional autonomy require implementation evidence.
+For Global/Region communication, start with [ADR 0043](docs/decisions/0043-portal-agent-region-control.md) and [regional security](docs/regional-token-api.md). Region opens the mTLS connection. Global sends policy over it. Region keeps serving known authorized work and renewing eligible sessions when Global is unavailable, subject to the locally installed grant, expiry and revocation.
 For direct regional OpenAPI/SDK routes and credential lifetime/renewal, read the
 [regional API/auth contract](specs/gh-74/regional-api-auth.md). It separates explicit continuity
 grants from actual Key expiry. See the implemented [Global/Region flow](docs/api-guide.md) and its configured deployment profile.

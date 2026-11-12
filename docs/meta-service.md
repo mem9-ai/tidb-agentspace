@@ -74,31 +74,56 @@ A pinned native sequence is awaited to the object-durable frontier before readin
 
 Workspace/profile, each Resource, Key, local file, activity entry, provider Binding and private Credential are separate records. Key digest indexes reference canonical Key records; authentication reads that Key and its real expiry/revocation before authorizing a resource. The engine checks its configured authority and binds ciphertext to the installation and record path. Scope hashing organizes the namespace; tenant authorization and Workspace selection remain in the business backend. Service tokens and provider credentials never reach the Console.
 
-`system/writer` retains one active API writer per Workspace while provider coordination remains process-local. A lost writer requires explicit recovery with its exact stopped owner; no timeout steals ownership. The same Region can host multiple independent Workspaces. This is not production identity or multi-writer provider execution.
+`system/writer` retains one active API writer per Workspace while provider coordination remains process-local. A lost writer requires explicit recovery with its exact stopped owner; no timeout steals ownership. The same Region can host multiple independent Workspaces. The [identity layer](../backend/identity/README.md) establishes caller identity and grants. Provider operations still require Workspace-level writer coordination.
 
 ## Local development
 
+From the repository root, use the pinned [Rust toolchain](../rust-toolchain.toml) and RustFS 1.0.4 on your path. The local stack includes the API and its file-analysis worker, so prepare the pinned DuckDB build inputs first. For work on Meta alone, `cargo build --locked -p workspace-meta-service` builds the standalone service.
+
 ```sh
-npm ci
-npm run backend:build
-npm run meta:local -- init --directory .data/meta-runtime --api-port 4318
-npm run meta:local -- serve --directory .data/meta-runtime
+cargo run --locked -p workspace-build-tools -- prepare
+cargo build --locked -p workspace-backend
+./meta-service/target/debug/workspace-backend local init --directory .data/meta-runtime --api-port 4318
+./meta-service/target/debug/workspace-backend local serve --directory .data/meta-runtime
 ```
 
-Init creates a **new** owner-only directory, three distinct Meta configurations, fresh encryption/service/storage credentials and an empty Workspace configuration. It does not read `.data/workspace.json`, import old state or provision cloud resources. Pass `--binary /absolute/reviewed/workspace-backend` to pin an immutable native artifact. `--workspace ws_example` selects a different API Workspace identity for backend evaluation; the current Console targets `ws_agentlab`. API provider/compute configuration lives in private `rust-api.json`; see [the Rust guide](rust-backend.md).
+Run `local init` once. It creates a new private directory with credentials and a configuration for Global and each of two regional Meta authorities. The first serve initializes their separate object-store buckets. The default Workspace ID is `ws_agentlab`. Use `--workspace` at initialization to select another ID, or `--binary` to pin the native executable. The regional API reads its private provider settings from `rust-api.json`.
 
-Serving uses the common native executable for Global Meta, each Region Meta and the regional API, each in its own process. The optional Node supervisor owns only local orchestration and RustFS. Initial creation is explicit; successful initialization is persisted and later startup refuses missing expected metadata. Stop the supervisor gracefully before another start. Preserve a held/uncertain runtime lock until its processes have been inspected and stopped.
+`local serve` runs in the foreground. The [Rust supervisor](../backend/host/src/local/supervisor.rs) starts RustFS and a child of the same native executable for each Meta role and the regional API. Set `RUSTFS_BINARY` to select an installed RustFS executable. In another terminal, inspect the supervisor and check API readiness:
 
-Reuse installed RustFS **1.0.4** (`RUSTFS_BINARY` can select it). Tests use independent temporary data directories, ports, buckets and credentials. They never load the developer's persistent state.
+```sh
+./meta-service/target/debug/workspace-backend local status --directory .data/meta-runtime
+curl --fail http://127.0.0.1:4318/api/health
+```
+
+Stop the stack with Ctrl-C in the serving terminal, or run `./meta-service/target/debug/workspace-backend local stop --directory .data/meta-runtime`. Use `local serve` with the same directory to reopen it. If shutdown leaves ownership uncertain, inspect the existing processes and writer identity before recovery.
+
+### Run a standalone Meta authority
+
+For an independently managed object store, the [standalone entry point](../meta-service/src/main.rs) accepts a private [Meta configuration](../meta-service/src/config.rs). Provision its storage access, encryption key and service token first. For a fresh installation add `--initialize` on the first run. Reopen the existing installation with its original configuration:
+
+```sh
+cargo run --locked -p workspace-meta-service -- --config /absolute/private/meta.json
+```
+
+Use `--recover-owner <stopped-owner-id>` only after confirming the recorded writer has stopped. Clients authenticate with the configured authority, installation and service token. The local stack's public API health probe above uses a separate endpoint.
 
 ## Version boundary and reset
 
-Installation format 2 and the `recordsV1` capability replace format-1 document storage. Old installations fail explicitly; they are not silently interpreted as empty. JSON import/export and language-handoff commands were removed. For an existing customer installation, a future reviewed migration or old-code recovery would be needed. The owner's explicit local reset authorization applies only to the named test deployment and excludes deletion of cloud instances.
+Installation format 2 and the `recordsV1` capability replace format-1 document storage. Old installations fail explicitly; they are not silently interpreted as empty. JSON import/export and language-handoff commands were removed. For an existing customer installation, a future reviewed migration or old-code recovery would be needed. Existing production upgrades follow the [public compatibility policy](decisions/0061-public-compatibility.md).
 
 For an authorized disposable reset, stop/drain the API, all Meta services and the local object server, remove only that deployment's local state/configuration, then initialize a new directory. Do not delete upstream resources or credentials elsewhere as an incidental cleanup step.
 
 ## Validation and current limits
 
-Run `npm run check` and `npm run backend:check`. The latter covers Rust format/Clippy/tests and real S3 integration: fresh bootstrap, version races, ordered pagination, receipts, durable visibility, crash/writer recovery, mTLS, tenant/authority isolation and full API behavior in both transport modes. Ordinary Node tests explicitly gate the native/S3 suites.
+For engine and cache changes, run `cargo test --locked -p workspace-meta-service --lib`. For durable commits, writer fencing and restart through the native protocol, build the fixtures and run the [Meta acceptance target](../backend/test-support/tests/meta.rs) with RustFS 1.0.4 available:
 
-The Meta record API has bounded pages and per-record conditions. The current Console/domain aggregate still has a 4096-row/24-MiB view bound; its public APIs need pagination before large deployments. Single Workspace API ownership, one physical shard per authority, receipt GC, production identity and automatic HA remain future work. Do not advertise million-resource capacity from this implementation.
+```sh
+cargo run --locked -p workspace-build-tools -- prepare
+cargo build --locked --workspace --bins --examples
+cargo test --locked -p workspace-test-support --test meta -- --ignored --test-threads=1
+```
+
+The tests create their own temporary storage and credentials. See [native verification](native-backend-retirement.md) for coverage of the two transports and the full backend acceptance run.
+
+Resource lists use bounded index reads. Some Workspace aggregate views still enforce a 4096-record/24-MiB limit. Each authority uses a single physical shard and each Workspace has one active API writer. Automated failover, receipt garbage collection and million-resource capacity remain open in the [scale design](decisions/0035-sparse-scale-metadata.md).

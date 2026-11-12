@@ -1,12 +1,12 @@
 # ADR 0008: DuckDB owns a private File System
 
-> **Deprecated.** Standalone DuckDB databases were retired by [ADR 0058](0058-public-resource-kinds.md). Existing backing storage stays private. For current DuckDB use see [File System analysis](0010-read-only-file-analysis.md).
+> **Deprecated.** Standalone DuckDB databases were retired by [ADR 0058](../../decisions/0058-public-resource-kinds.md). Existing backing storage stays private. For current DuckDB use see [File System analysis](../../decisions/0010-read-only-file-analysis.md).
 
-Runtime/storage amendment: [ADR 0020](0020-modular-rust-backend.md) selects the Rust backend;
-[ADR 0024](0024-fresh-record-metadata.md) replaces the original JSON vault/runtime with
+Runtime/storage amendment: [ADR 0020](../../decisions/0020-modular-rust-backend.md) selects the Rust backend;
+[ADR 0024](../../decisions/0024-fresh-record-metadata.md) replaces the original JSON vault/runtime with
 individual encrypted Meta records. Original integration evidence below remains historical.
 
-- Intent/specification: [GH-28](../../specs/gh-28/spec.md).
+- Intent/specification: [GH-28](../../../specs/gh-28/spec.md).
 
 ## Decision
 
@@ -27,7 +27,7 @@ acceptance. No Community Extensions publication or monitoring is part of this wo
 
 Pin `@duckdb/node-api` 2.0.0-r.1 and require an exact-version/platform tidbfs binary with an
 operator-pinned SHA-256. Load only that verified artifact during backend worker initialization.
-Use the direct APIs/native runtime per the [integration policy](../architecture.md#tidb-cloud-integration-policy).
+Use the direct APIs/native runtime per the [integration policy](../../architecture.md#tidb-cloud-integration-policy).
 No CLI or runtime extension download is needed. Unconfigured DuckDB creation reports unavailable
 before any external effect; existing bound resources never return demo SQL.
 

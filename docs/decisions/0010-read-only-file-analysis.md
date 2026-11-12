@@ -1,5 +1,7 @@
 # 0010: Read-only analysis of selected File System snapshots
 
+> **Current implementation.** The file authorization and snapshot boundaries remain current. The original JavaScript engine and worker details below were superseded by [native DuckDB and Bashkit workers](0021-native-rust-computation.md).
+
 - Status: Accepted for the loopback prototype, 2026-10-28; implements the owner-approved
   [GH-26 baseline](https://github.com/siddontang/tidb.ai/blob/b76e1dde2a02355552fcba50cb8299ec625ebeff/specs/gh-26/spec.md).
 - Context: CSV/Parquet and log analysis belong beside files. The checked Singapore anonymous

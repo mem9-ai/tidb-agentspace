@@ -1,6 +1,6 @@
 # ADR 0045: DuckDB creation-time table snapshot
 
-> **Deprecated.** The creation response and first-visit snapshot described below applied to standalone DuckDB. [ADR 0058](0058-public-resource-kinds.md) removed that public resource from both the API and the Console.
+> **Deprecated.** The creation response and first-visit snapshot described below applied to standalone DuckDB. [ADR 0058](../../decisions/0058-public-resource-kinds.md) removed that public resource from both the API and the Console.
 
 - Date: 2026-11-03.
 - Scope: DuckDB creation response and first Console visit.

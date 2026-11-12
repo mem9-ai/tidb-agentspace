@@ -61,7 +61,7 @@ The API retains a single active Workspace writer while provider workflows use pr
 
 An explicit `initializeWorkspace` creates an empty Workspace only when its core record is absent. Normal serving defaults false and rejects missing metadata. Local init generates fresh private configs/keys and independently scoped Meta installations. Successful bootstrap persists initialization state and disables creation for later starts. No sample resources, provider accounts, cloud instances or credentials are created automatically.
 
-Only the Rust executable is packaged as the API. Console assets remain a separate artifact. Node sources under `server/` remain isolated behavior oracles and build/test tools, with no JSON-to-Meta adapter or serving command. The local operator starts the common Rust binary in independent roles.
+Only the Rust executable is packaged as the API. Console assets remain a separate artifact. The Node oracles retained at the time of this decision were subsequently removed. [ADR 0059](0059-rust-backend-workflow.md) defines native contract generation and acceptance. The local operator starts the common Rust binary in independent roles.
 
 This change does not implement production identity, Global policy distribution, public collection pagination, sharding or million-resource capacity. The bounded aggregate Console API and single Workspace writer remain explicit limitations. The underlying record API avoids whole-group snapshot limits and permits bounded point reads and scans; those primitives are not a capacity benchmark.
 

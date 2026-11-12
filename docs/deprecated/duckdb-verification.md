@@ -1,9 +1,9 @@
 # DuckDB verification
 
 > Historical report: the standalone DuckDB database is retired and its manual verification
-> script has been removed. See [ADR 0048](decisions/0048-postgresql-only-databases.md).
+> script has been removed. See [ADR 0048](../decisions/0048-postgresql-only-databases.md).
 
-Date: 2026-10-28. Acceptance baseline: [GH-28 revision 1](../specs/gh-28/spec.md), accepted
+Date: 2026-10-28. Acceptance baseline: [GH-28 revision 1](../../specs/gh-28/spec.md), accepted
 at source `47c59cd7c0b34e05b7a285f8f20b6d6877dfe567`. Runtime: DuckDB 2.0.0 via
 `@duckdb/node-api@2.0.0-r.1`, native tidbfs from drive9-ai/duckdb revision
 `797d2c6250592d2b84716ebf43198b39bdfd3241`. The operator-supplied macOS arm64 artifact
@@ -54,12 +54,12 @@ details below it, preserving the exact route and SQL dialect. Catalog loading pa
 query execution because the native database admits one operation at a time. The retained example
 contains three synthetic agent metric rows; no customer data or credentials appear in evidence.
 
-![DuckDB creation](screenshots/duckdb/create-dark.png)
-![Key resource choices](screenshots/duckdb/key-resources-dark.png)
-![Desktop table data, dark](screenshots/duckdb/tables-dark.png)
-![Desktop SQL, light](screenshots/duckdb/sql-light.png)
-![Narrow database view, dark](screenshots/duckdb/mobile-dark.png)
-![Narrow SQL, light](screenshots/duckdb/mobile-light.png)
+![DuckDB creation](../screenshots/duckdb/create-dark.png)
+![Key resource choices](../screenshots/duckdb/key-resources-dark.png)
+![Desktop table data, dark](../screenshots/duckdb/tables-dark.png)
+![Desktop SQL, light](../screenshots/duckdb/sql-light.png)
+![Narrow database view, dark](../screenshots/duckdb/mobile-dark.png)
+![Narrow SQL, light](../screenshots/duckdb/mobile-light.png)
 
 Native remote storage remains experimental. The loopback API's SQL hardening is not a public
 multi-tenant OS sandbox. Cloud storage/billing are unmeasured; remote lock cleanup after a hard
@@ -96,7 +96,7 @@ alignment, strict types and both independent production builds. The existing tra
 `google-libphonenumber` eval warnings remain non-failing. No new backend behavior needed a new
 test; existing native persistence, authorization and snapshot API tests passed unchanged.
 
-- [Native database, 1280×800 Dark](screenshots/duckdb-native/desktop-dark.jpg)
-- [Native database, 1280×800 Light](screenshots/duckdb-native/desktop-light.jpg)
-- [Native database, 390×844 Dark](screenshots/duckdb-native/mobile-dark.jpg)
-- [Native database, 390×844 Light](screenshots/duckdb-native/mobile-light.jpg)
+- [Native database, 1280×800 Dark](../screenshots/duckdb-native/desktop-dark.jpg)
+- [Native database, 1280×800 Light](../screenshots/duckdb-native/desktop-light.jpg)
+- [Native database, 390×844 Dark](../screenshots/duckdb-native/mobile-dark.jpg)
+- [Native database, 390×844 Light](../screenshots/duckdb-native/mobile-light.jpg)

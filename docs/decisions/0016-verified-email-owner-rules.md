@@ -41,7 +41,7 @@ out of browser responses does not restrict a shared owner from using the resourc
 through the API. The deployed Node implementation stores Drive9 credentials in
 `<WORKSPACE_DATA_FILE>.providers.json`; this is private plaintext file storage, not an
 encrypted secret manager. See [ADR 0004](0004-drive9-anonymous-provider.md) and
-[DuckDB private storage](0008-duckdb-private-storage.md).
+[DuckDB private storage](../deprecated/decisions/0008-duckdb-private-storage.md).
 
 ## Operations and compatibility
 

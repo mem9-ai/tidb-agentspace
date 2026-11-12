@@ -208,9 +208,9 @@ regional bootstrap/shards, queried configuration progress and fenced root change
 This ADR does not claim those tests or a production migration exist. Repository checks only
 verify the current source/documents.
 
-GH-86 supplies executable evidence for the initial storage profile, including real local S3,
+GH-86 recorded historical evidence for the initial storage profile, including real local S3,
 durability blocking, fencing, TLS negatives and exact legacy import/updated rollback export.
-See the [runtime coverage and limitations](../meta-service.md#hosted-configuration-and-evidence-limits).
+See the [runtime coverage and limitations](../meta-service.md#validation-and-current-limits).
 That implementation does not establish the full acceptance list, production IAM/HA/KMS or
 million-resource capacity. Local migration does not change native provider identity or data.
 
