@@ -1,5 +1,7 @@
 # GH-28: DuckDB with private dedicated storage
 
+> **Deprecated.** This baseline describes the retired standalone DuckDB resource. [ADR 0058](../../docs/decisions/0058-public-resource-kinds.md) defines current public access. The [archive](../../docs/deprecated/README.md) preserves its storage and verification history.
+
 - Status: Accepted owner direction; revision 1, 2026-10-28. Implementation pending.
 - Intent: [#28](https://github.com/siddontang/tidb.ai/issues/28), contributor/maintainer Siddon Tang.
 - Source baseline: `cee381a`; dependency: existing MySQL, Drive9, Workspace Key and table APIs.

@@ -3,7 +3,7 @@
 The original MySQL catalog implementation, URL names and execute-only grants below are historical. The [PostgreSQL browser](../db9-postgres.md) checks the selected database and `queries:read` (also implied by `queries:execute`). [ADR 0032](0032-rest-workflow-resources.md) defines the current table and row routes.
 
 - Status: Accepted project choice for the owner-requested database browser, 2026-10-28.
-- Implementation evidence: [verification](../database-browser-verification.md).
+- Implementation evidence: [verification](../deprecated/database-browser-verification.md).
 
 Developers and agents need table structure and bounded row previews without discovering native
 credentials or constructing metadata SQL. Add three read operations to the Workspace API:

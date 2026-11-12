@@ -1,5 +1,7 @@
 # GH-34: DuckDB queries over authorized Workspace files
 
+> **Deprecated.** This contract attached selected File Systems to a standalone DuckDB database. The supported [File System analysis](../../docs/decisions/0010-read-only-file-analysis.md) uses a bounded snapshot. See the [retirement decision](../../docs/decisions/0058-public-resource-kinds.md).
+
 - Owner/intent contributor: Siddon Tang; [intent #34](https://github.com/siddontang/tidb.ai/issues/34).
 - Status: Design baseline revision 1, 2026-10-28; implementation pending.
 - Source baseline: `7031f139ef5f4fbd66d549a4c3867b960d268a93`.

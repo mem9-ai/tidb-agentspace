@@ -1,5 +1,7 @@
 # Database table browser
 
+> **Implementation update.** The original MySQL-specific catalog and test procedure are historical. [ADR 0007](../../docs/decisions/0007-database-browser.md) links the current table routes and read grants. See [PostgreSQL runtime and recovery](../../docs/db9-postgres.md).
+
 - Feature: DB-BROWSER; owner-requested interactive implementation, 2026-10-28.
 - Intent contributor / accountable maintainer: Siddon Tang. Specification and implementation:
   coding agent acting for Siddon. Source baseline: `08daa919415dd063d8294786bedeecf909f6a52c`.
@@ -67,7 +69,7 @@ Review the diff, sign commits, run `npm run check`, verify all latest-head CI ch
 focused PR under the owner's existing early-prototype authorization, then fast-forward and
 restart the local preview. No public deployment. Changes are additive; rollback code without
 modifying databases or private bindings. Completion evidence belongs in
-`docs/database-browser-verification.md`. No unresolved product decisions block this scope.
+[the historical browser report](../../docs/deprecated/database-browser-verification.md). No unresolved product decisions block this scope.
 
 ## Unified workspace amendment — owner correction, 2026-10-28
 

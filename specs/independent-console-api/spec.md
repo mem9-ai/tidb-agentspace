@@ -1,5 +1,7 @@
 # Independent Console and API
 
+> **Implementation update.** Independent delivery remains current. The Node backend, file-based storage and test paths below record the original baseline. Use the [current delivery guide](../../docs/independent-delivery.md) and [native verification](../../docs/native-backend-retirement.md).
+
 - Feature ID: `independent-console-api`.
 - Status: Accepted, revision 1, 2026-10-28.
 - Intent contributor/accountable maintainer: Siddon Tang.

@@ -1,5 +1,7 @@
 # GH-76: Addressable REST workflow resources
 
+> **Current setup attempts.** Provider-specific recovery examples for Zero and standalone DuckDB apply to the original baseline. Current [setup attempts](../../backend/product/src/setup_attempts.rs) operate on supported resources under [ADR 0058](../../docs/decisions/0058-public-resource-kinds.md).
+
 - Intent: https://github.com/mem9-ai/tidb.ai/issues/76
 - Direction: Owner requested implementation and removal of old interfaces on 2026-10-31.
 - Source baseline: `dfd11f1da7b59978fffa9df04dafb3b7b5414f59`.

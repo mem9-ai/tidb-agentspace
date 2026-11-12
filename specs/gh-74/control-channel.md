@@ -1,5 +1,7 @@
 # GH-74: Global-initiated regional control channel
 
+> **Partially superseded.** Regional data-path autonomy still applies. [ADR 0043](../../docs/decisions/0043-portal-agent-region-control.md) supersedes the connection direction below. Region establishes mTLS and Global delivers commands over that connection. See the [current regional runtime](../../docs/regional-token-api.md).
+
 - Status: Owner-requested direction; regional autonomy, protocol and deployment details proposed for review.
 - Parent: [Workspace control plane](spec.md) and [ADR 0019](../../docs/decisions/0019-workspace-kv-control-plane.md).
 - Implementation: Design only; no control network, TLS, policy replication or migration is implemented here.

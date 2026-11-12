@@ -1,5 +1,7 @@
 # GH-58: Export a result snapshot
 
+> **Supported destinations today.** Result snapshots can target PostgreSQL and File Systems. The MySQL and standalone DuckDB destinations in this baseline were retired by [ADR 0058](../../docs/decisions/0058-public-resource-kinds.md). See [regional exports](../../backend/product/src/exports.rs).
+
 ## Identity and status
 
 - Status: Accepted by PR 59 at `f2e90079fc80757d2cf020e7647b9185da2e8e07`; implementation evidence is recorded in [verification](../../docs/result-export-verification.md).

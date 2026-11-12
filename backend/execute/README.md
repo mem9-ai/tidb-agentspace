@@ -4,4 +4,6 @@ The Region uses [Executor](src/lib.rs) to run one computation in a disposable ch
 
 [Native tasks](src/native.rs) use DuckDB for tabular snapshots and Bashkit for a restricted virtual shell. The [product layer](../product/) selects the file and checks permissions before passing inputs to Execute. Provider credentials stay in the parent. See [the computation decision](../../docs/decisions/0021-native-rust-computation.md).
 
+The legacy `extensionPath` and `extensionSha256` fields remain readable in private deployment configuration. Current selected-file tasks run with bundled DuckDB support. They do not load the former standalone database extension.
+
 From the root, run `cargo run --locked -p workspace-build-tools -- prepare`, then `cargo test --locked -p workspace-execute --lib`. The [host tests](../host/tests/execute.rs) also exercise the child protocol through the executable.

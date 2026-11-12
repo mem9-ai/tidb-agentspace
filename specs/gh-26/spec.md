@@ -1,5 +1,7 @@
 # GH-26: Read-only File System analysis
 
+> **Implementation update.** File System analysis runs in a [disposable Rust worker](../../backend/execute/README.md). The package discovery and proposed JavaScript implementation below describe the original baseline.
+
 - Intent contributor/accountable maintainer: Siddon Tang.
 - Parent: [GH-26](https://github.com/siddontang/tidb.ai/issues/26); keep open until implementation
   and live/browser acceptance complete. This design change references it without closing it.
