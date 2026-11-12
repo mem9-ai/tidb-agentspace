@@ -43,7 +43,7 @@ node scripts/compatibility-report.mjs /tmp/agentspace-predecessor meta-service/t
 ```
 
 The probe uses two isolated loopback Owner sessions and a controlled SQL provider. It
-exercises existing scoped and revoked Keys, a regional token, two Workspaces with the same
+exercises scoped, expired and revoked Keys, a regional token, two Workspaces with the same
 paths, distinct content and a conflicted sales sample, old conditional versions and
 a post-upgrade write. It does not attest external provider durability, OIDC login, or
 every possible historical record. Preserve the oldest supported fixtures when adding a

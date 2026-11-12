@@ -197,6 +197,26 @@ async fn main() -> Result<()> {
     );
     let mut f = Workspaces::start_version(old).await?;
     let history = History::seed(&f).await?;
+    let deadline = std::time::SystemTime::now() + std::time::Duration::from_secs(12);
+    let expires = deadline.duration_since(std::time::UNIX_EPOCH)?.as_secs();
+    let expiring = expect(f.global(0,Method::POST,"/keys",None)
+        .header("Idempotency-Key", uuid::Uuid::new_v4().to_string())
+        .json(&json!({"name":"expiring files","scopes":["resources:read"],"resourceTypes":["filesystem"],"expiresAt":expires})),201).await?;
+    let secret = expiring["secret"]
+        .as_str()
+        .context("expiring fixture Key")?;
+    let expiring_token = f.exchange(0, secret).await?;
+    let allowed = expect(
+        f.agent(0, Method::GET, "/resources", Some(&expiring_token)),
+        200,
+    )
+    .await?;
+    let rows = allowed["data"].as_array().context("type grant resources")?;
+    ensure!(
+        !rows.is_empty() && rows.iter().all(|r| r["kind"] == "filesystem"),
+        "unexpected type grant"
+    );
+
     history
         .verify(&f, "old bytes")
         .await
@@ -207,6 +227,20 @@ async fn main() -> Result<()> {
         .verify(&f, "old bytes")
         .await
         .context("candidate observations")?;
+    if let Ok(remaining) = deadline.duration_since(std::time::SystemTime::now()) {
+        tokio::time::sleep(remaining).await;
+    }
+    expect(
+        f.global(0, Method::POST, "/token-issuances", Some(secret))
+            .json(&json!({"audience":REGION})),
+        401,
+    )
+    .await?;
+    expect(
+        f.agent(0, Method::GET, "/resources", Some(&expiring_token)),
+        401,
+    )
+    .await?;
     history.old_clients(&f, sdk)?;
     println!("PREVIOUS_CLIENTS_PASSED");
     expect(

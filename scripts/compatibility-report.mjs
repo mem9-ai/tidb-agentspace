@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { isDeepStrictEqual } from 'node:util';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 
@@ -132,6 +133,19 @@ try {
     ['predecessor', previousDir],
     ['candidate', candidateDir],
   ]) {
+    const source = role === 'candidate' ? candidate : baseline.previousRuntime;
+    const served = execFileSync(
+      join(resolve(directory), 'workspace-backend'),
+      ['openapi', 'regional'],
+      { maxBuffer: 16 * 1024 * 1024 },
+    );
+    if (
+      !isDeepStrictEqual(
+        JSON.parse(served),
+        JSON.parse(git('show', source + ':public/openapi.json')),
+      )
+    )
+      throw new Error(role + ' binary exports a different contract from its recorded source');
     report.binaries[role] = {};
     for (const file of ['workspace-backend', 'workspace-meta-service'])
       report.binaries[role][file] = await digest(join(directory, file));
