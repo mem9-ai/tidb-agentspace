@@ -291,6 +291,36 @@ mod tests {
     }
 
     #[test]
+    fn federated_ceiling_expires_within_sixty_real_seconds_under_declared_clock_error() {
+        let scopes = vec!["files:read".into()];
+        for global_error in [-5, 0, 5] {
+            for region_error in [-5, 0, 5] {
+                let observed = 1000 + global_error;
+                let mut issuance = issuance(&scopes);
+                issuance.grant_ref = "federated:fs_test";
+                issuance.key_expires_at = observed + crate::raft_auth::ADMISSION_SECONDS;
+                let token = signer(IssuerKind::Global)
+                    .sign(&issuance, observed)
+                    .unwrap();
+                assert!(
+                    verifier(IssuerKind::Global)
+                        .verify(&token.token, 1060 + region_error)
+                        .is_err()
+                );
+                issuance.grant_expires_at = observed + 10;
+                let shorter = signer(IssuerKind::Global)
+                    .sign(&issuance, observed)
+                    .unwrap();
+                assert!(
+                    verifier(IssuerKind::Global)
+                        .verify(&shorter.token, observed + 10)
+                        .is_err()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn regional_signer_requires_family_and_never_outlives_it() {
         let scopes = vec!["files:read".into()];
         let mut issuance = issuance(&scopes);

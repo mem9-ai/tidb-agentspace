@@ -77,10 +77,15 @@ pub async fn response(builder: RequestBuilder) -> Result<Reply> {
 }
 
 pub async fn expect(builder: RequestBuilder, code: u16) -> Result<Reply> {
+    let path = builder
+        .try_clone()
+        .and_then(|b| b.build().ok())
+        .map(|r| r.url().path().to_string())
+        .unwrap_or_default();
     let r = response(builder).await?;
     ensure!(
         r.status == code,
-        "Expected HTTP {code}, got {} ({})",
+        "Expected HTTP {code} at {path}, got {} ({})",
         r.status,
         r.body["error"]["code"]
     );
